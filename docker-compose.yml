@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # --- Supabase Stack ---
+  supabase-db:
+    image: supabase/postgres:15.1.1.78
+    container_name: supabase-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - supabase-db-data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d/migrations
+    networks:
+      - internal
+
+  supabase-auth:
+    image: supabase/gotrue:v2.132.3
+    container_name: supabase-auth
+    restart: unless-stopped
+    depends_on:
+      - supabase-db
+    environment:
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres?sslmode=disable
+      GOTRUE_SITE_URL: ${APP_URL}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_URL}/auth/v1/callback
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+    networks:
+      - internal
+
+  supabase-rest:
+    image: postgrest/postgrest:v10.1.2
+    container_name: supabase-rest
+    restart: unless-stopped
+    depends_on:
+      - supabase-db
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres?sslmode=disable
+      PGRST_DB_SCHEMA: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_STATS: "true"
+    networks:
+      - internal
+
+  supabase-realtime:
+    image: supabase/realtime:v2.25.40
+    container_name: supabase-realtime
+    restart: unless-stopped
+    depends_on:
+      - supabase-db
+    environment:
+      DB_HOST: supabase-db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime, public'
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET}
+      REPLICATION_MODE: RLS
+      REPLICATION_SLOT_NAME: supabase_realtime_replication_slot
+      PUBLICATION_NAME: supabase_realtime_publication
+    networks:
+      - internal
+
+  supabase-kong:
+    image: kong:2.8.1
+    container_name: supabase-kong
+    restart: unless-stopped
+    depends_on:
+      - supabase-auth
+      - supabase-rest
+      - supabase-realtime
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: '0.0.0.0:8001'
+    volumes:
+      - ./docker/supabase/kong.yml:/var/lib/kong/kong.yml
+    networks:
+      - internal
+
+  # --- Movabi Services ---
+  movabi-api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: movabi-api
+    restart: unless-stopped
+    depends_on:
+      - supabase-db
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      APP_URL: ${APP_URL}
+    networks:
+      - internal
+
+  movabi-admin:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        PROJECT_NAME: admin
+    container_name: movabi-admin
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # --- Reverse Proxy ---
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/nginx/certs:/etc/nginx/certs
+      - ./docker/nginx/vhost.d:/etc/nginx/vhost.d
+      - ./docker/nginx/html:/usr/share/nginx/html
+    depends_on:
+      - movabi-admin
+      - movabi-api
+      - supabase-kong
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  supabase-db-data:
+    driver: local
