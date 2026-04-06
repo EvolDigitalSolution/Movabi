@@ -50,7 +50,7 @@ export class NotificationService {
   /**
    * Helper to create a notification (usually called from server or other services)
    */
-  async notify(userId: string, title: string, body: string, type: Notification['type'] = 'system', metadata?: any) {
+  async notify(userId: string, title: string, body: string, type: Notification['type'] = 'system', metadata?: Record<string, unknown>) {
     const { error } = await this.supabase
       .from('notifications')
       .insert({

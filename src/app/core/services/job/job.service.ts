@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
-import { Job, JobStatus, JobEstimate, DispatchCandidate } from '@shared/models/booking.model';
+import { Job, JobStatus, JobEstimate, DispatchCandidate, City } from '@shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 @Injectable({
@@ -116,7 +116,7 @@ export class JobService {
       .select('*')
       .order('name', { ascending: true });
     if (error) throw error;
-    return data as any[];
+    return data as City[];
   }
 
   async enqueueJob(jobId: string, tenantId: string, cityId?: string) {
@@ -129,7 +129,7 @@ export class JobService {
     return await response.json();
   }
 
-  subscribeToJobs(callback: (payload: any) => void): RealtimeChannel {
+  subscribeToJobs(callback: (payload: Record<string, unknown>) => void): RealtimeChannel {
     return this.supabase.client
       .channel('public:jobs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, callback)
@@ -143,7 +143,7 @@ export class JobService {
     if (error) throw error;
   }
 
-  subscribeToJobLocations(jobId: string, callback: (payload: any) => void): RealtimeChannel {
+  subscribeToJobLocations(jobId: string, callback: (payload: Record<string, unknown>) => void): RealtimeChannel {
     return this.supabase.client
       .channel(`job_locations_${jobId}`)
       .on('postgres_changes', { 

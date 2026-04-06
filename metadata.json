@@ -1,6 +1,6 @@
 {
-  "name": "Movabi- Multi-Service Platform",
-  "description": "A multi-service mobile app for fixed-price rides and errand services with a driver subscription model.",
+  "name": "Movabi",
+  "description": "Movabi - Multi-Service Platform for rides, errands, and moving services with multi-currency support and driver performance tracking.",
   "requestFramePermissions": [
     "geolocation"
   ]

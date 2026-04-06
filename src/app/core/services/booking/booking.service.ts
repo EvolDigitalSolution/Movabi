@@ -72,7 +72,7 @@ export class BookingService {
         if (!details['passenger_count']) throw new Error('Passenger count is required for rides');
         break;
       case ServiceTypeEnum.ERRAND:
-        if (!details['items_list'] || (details['items_list'] as any[]).length === 0) {
+        if (!details['items_list'] || (details['items_list'] as unknown[]).length === 0) {
           throw new Error('Items list is required for errands');
         }
         break;
@@ -103,7 +103,7 @@ export class BookingService {
     notes?: string, 
     additionalData: Partial<Booking> = {},
     currentStatus?: BookingStatus,
-    isAdmin: boolean = false
+    isAdmin = false
   ) {
     let statusToValidate = currentStatus;
     
@@ -126,7 +126,7 @@ export class BookingService {
       throw new Error(`Invalid status transition from ${statusToValidate || 'unknown'} to ${nextStatus}`);
     }
 
-    const updatePayload: any = { ...additionalData, status: nextStatus };
+    const updatePayload: Partial<Booking> = { ...additionalData, status: nextStatus };
     
     if (nextStatus === 'completed' && !updatePayload.completed_at) {
       updatePayload.completed_at = new Date().toISOString();
@@ -170,7 +170,7 @@ export class BookingService {
       accepted: { title: 'Driver Accepted', body: 'Your driver is on the way!' },
       arrived: { title: 'Driver Arrived', body: 'Your driver has arrived at the pickup location.' },
       in_progress: { title: 'Trip Started', body: 'Your trip is now in progress.' },
-      completed: { title: 'Trip Completed', body: 'Thank you for choosing MoveMate!' },
+      completed: { title: 'Trip Completed', body: 'Thank you for choosing Movabi!' },
       cancelled: { title: 'Booking Cancelled', body: 'Your booking has been cancelled.' }
     };
 
@@ -209,7 +209,7 @@ export class BookingService {
       });
   }
 
-  async getBookingDetails(bookingId: string, serviceCode: ServiceTypeEnum): Promise<any> {
+  async getBookingDetails(bookingId: string, serviceCode: ServiceTypeEnum): Promise<unknown> {
     const table = this.getDetailsTable(serviceCode);
     const { data, error } = await this.supabase
       .from(table)

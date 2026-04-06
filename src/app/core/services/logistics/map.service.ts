@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { environment } from '@env/environment';
 
 @Injectable({
   providedIn: 'root'
@@ -14,8 +15,7 @@ export class MapService {
 
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      // @ts-ignore
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${environment.googleMapsApiKey}&libraries=places`;
       script.async = true;
       script.defer = true;
       script.onload = () => {
@@ -30,22 +30,19 @@ export class MapService {
   /**
    * Create a map instance
    */
-  createMap(element: HTMLElement, options: any): any {
-    // @ts-ignore
+  createMap(element: HTMLElement, options: google.maps.MapOptions): google.maps.Map {
     return new google.maps.Map(element, options);
   }
 
   /**
    * Add a marker to the map
    */
-  addMarker(map: any, position: { lat: number, lng: number }, icon?: string): any {
-    // @ts-ignore
+  addMarker(map: google.maps.Map, position: google.maps.LatLngLiteral, icon?: string): google.maps.Marker {
     return new google.maps.Marker({
       position,
       map,
       icon: icon ? {
         url: icon,
-        // @ts-ignore
         scaledSize: new google.maps.Size(40, 40)
       } : undefined
     });
@@ -54,10 +51,8 @@ export class MapService {
   /**
    * Draw a route between two points
    */
-  drawRoute(map: any, origin: { lat: number, lng: number }, destination: { lat: number, lng: number }): Promise<any> {
-    // @ts-ignore
+  drawRoute(map: google.maps.Map, origin: google.maps.LatLngLiteral, destination: google.maps.LatLngLiteral): Promise<google.maps.DirectionsResult> {
     const directionsService = new google.maps.DirectionsService();
-    // @ts-ignore
     const directionsRenderer = new google.maps.DirectionsRenderer({
       map,
       suppressMarkers: true
@@ -68,11 +63,9 @@ export class MapService {
         {
           origin,
           destination,
-          // @ts-ignore
           travelMode: google.maps.TravelMode.DRIVING
         },
-        (result: any, status: any) => {
-          // @ts-ignore
+        (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
           if (status === google.maps.DirectionsStatus.OK && result) {
             directionsRenderer.setDirections(result);
             resolve(result);

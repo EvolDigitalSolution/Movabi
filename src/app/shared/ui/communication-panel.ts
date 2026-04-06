@@ -5,7 +5,6 @@ import { CommunicationService } from '@core/services/communication/communication
 import { AuthService } from '@core/services/auth/auth.service';
 import { QUICK_MESSAGES, JobMessage } from '@shared/models/communication.model';
 import { ButtonComponent } from './button';
-import { BadgeComponent } from './badge';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 

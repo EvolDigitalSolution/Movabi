@@ -27,6 +27,7 @@ export interface Vehicle {
   color: string;
   is_verified: boolean;
   type: 'car' | 'van' | 'motorcycle';
+  capacity?: string; // e.g., "4 passengers", "2 tons"
 }
 
 export interface DriverProfile extends Profile {
@@ -36,6 +37,16 @@ export interface DriverProfile extends Profile {
   is_verified: boolean;
   subscription_status: 'active' | 'inactive' | 'expired';
   subscription_expires_at?: string;
+  pricing_plan: 'starter' | 'pro';
+  commission_rate: number;
+  
+  // Performance Metrics (Additive)
+  completed_jobs?: number;
+  cancelled_jobs?: number;
+  acceptance_rate?: number; // percentage
+  completion_rate?: number; // percentage
+  on_time_performance?: number; // percentage
+  total_earnings?: number;
 }
 
 export interface DriverSubscription {
@@ -49,6 +60,21 @@ export interface DriverSubscription {
   current_period_end?: string;
 }
 
+export interface SubscriptionPlan {
+  id: string;
+  plan_code: string;
+  country_code: string;
+  currency_code: string;
+  stripe_price_id: string;
+  amount: number;
+  interval: string;
+  display_name: string;
+  features: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Subscription {
   id: string;
   tenant_id: string;
@@ -60,6 +86,12 @@ export interface Subscription {
   current_period_start: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  currency_code: string;
+  country_code: string;
+  billing_country_code?: string | null;
+  billing_currency_code?: string | null;
+  billing_interval?: string | null;
+  billing_amount_display?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +125,15 @@ export interface Job {
   dropoff_lat?: number;
   dropoff_lng?: number;
   price: number | null;
+  commission_fee?: number;
+  commission_rate_used?: number;
+  base_fare?: number;
+  service_fee?: number;
+  platform_fee?: number;
+  driver_payout?: number;
+  pricing_plan_used?: 'starter' | 'pro';
+  currency_code: string;
+  country_code: string;
   estimated_distance?: number;
   estimated_price?: number;
   status: JobStatus;
@@ -172,6 +213,11 @@ export interface Earning {
   driver_id: string;
   booking_id: string;
   amount: number;
+  commission_fee: number;
+  commission_rate_used: number;
+  pricing_plan_used: 'starter' | 'pro';
+  currency_code: string;
+  country_code: string;
   created_at: string;
 }
 
@@ -184,6 +230,10 @@ export interface Profile {
   avatar_url?: string;
   role: 'customer' | 'driver' | 'admin';
   tenant_id: string;
+  pricing_plan: 'starter' | 'pro';
+  commission_rate: number;
+  currency_code: string;
+  country_code: string;
   stripe_customer_id?: string;
   is_online?: boolean;
   is_available?: boolean;
@@ -251,6 +301,17 @@ export interface VanDetails {
   floor_number?: number;
   has_elevator: boolean;
   notes?: string;
+}
+
+export type LocationSource = 'gps' | 'manual' | 'map';
+export type LocationMode = 'auto' | 'manual';
+
+export interface UnifiedLocation {
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+  country_code?: string;
+  source: LocationSource;
 }
 
 export interface Notification {

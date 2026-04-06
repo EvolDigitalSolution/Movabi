@@ -3,7 +3,7 @@ import { RouterOutlet } from '@angular/router';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  selector: 'app-admin-root',
+  selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet],
   template: `

@@ -23,7 +23,7 @@ export class BookingStatusManager {
   /**
    * Checks if a transition from current to next is allowed.
    */
-  canTransition(current: BookingStatus, next: BookingStatus, isAdmin: boolean = false): boolean {
+  canTransition(current: BookingStatus, next: BookingStatus, isAdmin = false): boolean {
     // Admin can force any transition except from completed/cancelled
     if (isAdmin && current !== 'completed' && current !== 'cancelled') {
       return true;

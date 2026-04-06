@@ -85,19 +85,19 @@
 
 /* Typography */
 h1 {
-  @apply font-display text-3xl font-bold tracking-tight text-text-primary mb-2;
+  @apply font-display text-3xl font-bold tracking-tight text-slate-900 mb-2;
 }
 
 h2 {
-  @apply font-display text-xl font-semibold text-text-primary mb-4;
+  @apply font-display text-xl font-semibold text-slate-900 mb-4;
 }
 
 p {
-  @apply text-base text-text-secondary leading-relaxed;
+  @apply text-base text-slate-500 leading-relaxed;
 }
 
 .text-muted {
-  @apply text-sm text-text-secondary;
+  @apply text-sm text-slate-500;
 }
 
 /* Layout Helpers */

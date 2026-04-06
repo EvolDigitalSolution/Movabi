@@ -32,6 +32,41 @@ export class LogisticsService {
   }
 
   /**
+   * Calculate payout breakdown for a job
+   */
+  static calculatePayout(totalPrice: number, pricingPlan: 'starter' | 'pro', commissionRate: number = 15.00) {
+    // SOURCE OF TRUTH: 10% platform fee from customer
+    const serviceFee = Math.round(totalPrice * 0.10 * 100) / 100; 
+    const baseFare = totalPrice - serviceFee;
+    
+    let commissionFee = 0;
+    let driverPayout = 0;
+
+    if (pricingPlan === 'pro') {
+      // Pro Plan: 0% commission from driver
+      commissionFee = 0;
+      driverPayout = baseFare;
+    } else {
+      // Starter Plan: Pay as you earn (commission applies to base fare)
+      commissionFee = Math.round(baseFare * (commissionRate / 100) * 100) / 100;
+      driverPayout = baseFare - commissionFee;
+    }
+
+    const platformFee = Math.round((serviceFee + commissionFee) * 100) / 100;
+
+    return {
+      total_price: totalPrice,
+      base_fare: baseFare,
+      service_fee: serviceFee,
+      commission_fee: commissionFee,
+      commission_rate_used: commissionRate,
+      platform_fee: platformFee,
+      driver_payout: driverPayout,
+      pricing_plan_used: pricingPlan
+    };
+  }
+
+  /**
    * Find nearest drivers within a tenant
    */
   static async findNearestDrivers(lat: number, lon: number, tenantId: string, limit = 5) {
@@ -58,5 +93,16 @@ export class LogisticsService {
     return candidates
       .sort((a, b) => a.distance - b.distance)
       .slice(0, limit);
+  }
+
+  /**
+   * Fetch driver profile details
+   */
+  static async findDriverProfile(driverId: string) {
+    return await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', driverId)
+      .single();
   }
 }

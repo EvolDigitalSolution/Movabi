@@ -4,6 +4,7 @@ import { IonicModule, NavController, LoadingController, ToastController } from '
 import { FormsModule } from '@angular/forms';
 import { JobService } from '@core/services/job/job.service';
 import { AuthService } from '@core/services/auth/auth.service';
+import { LocationService } from '@core/services/logistics/location.service';
 import { Job } from '@shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -20,6 +21,14 @@ import { RealtimeChannel } from '@supabase/supabase-js';
     </ion-header>
 
     <ion-content class="ion-padding">
+      @if (locationService.locationMode() === 'manual') {
+        <div class="mb-4 p-3 bg-amber-50 border border-amber-100 rounded-2xl flex items-center gap-3 text-amber-700 text-[10px] font-bold uppercase tracking-widest animate-in fade-in slide-in-from-top-2">
+          <ion-icon name="location-outline" class="text-lg"></ion-icon>
+          <span>Manual Mode: Distances may be inaccurate</span>
+          <button (click)="getCurrentLocation()" class="ml-auto text-blue-600">Retry GPS</button>
+        </div>
+      }
+
       <ion-segment [(ngModel)]="segment" (ionChange)="loadJobs()">
         <ion-segment-button value="available">
           <ion-label>Available</ion-label>
@@ -105,6 +114,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 export class VanJobsPage implements OnInit, OnDestroy {
   private jobService = inject(JobService);
   private auth = inject(AuthService);
+  public locationService = inject(LocationService);
   private loadingCtrl = inject(LoadingController);
   private toastCtrl = inject(ToastController);
   private nav = inject(NavController);
@@ -124,12 +134,12 @@ export class VanJobsPage implements OnInit, OnDestroy {
     this.channel?.unsubscribe();
   }
 
-  getCurrentLocation() {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => this.currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude },
-        (err) => console.error(err)
-      );
+  async getCurrentLocation() {
+    const pos = await this.locationService.getCurrentPosition();
+    if (pos) {
+      this.currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } else {
+      this.currentPos = null;
     }
   }
 
@@ -171,14 +181,14 @@ export class VanJobsPage implements OnInit, OnDestroy {
       
       const toast = await this.toastCtrl.create({ message: 'Job accepted!', duration: 2000, color: 'success' });
       toast.present();
-    } catch (error) {
+    } catch {
       await loading.dismiss();
       const toast = await this.toastCtrl.create({ message: 'Failed to accept job', duration: 2000, color: 'danger' });
       toast.present();
     }
   }
 
-  async updateStatus(jobId: string, status: any) {
+  async updateStatus(jobId: string, status: 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled') {
     await this.jobService.updateJobStatus(jobId, status);
     await this.loadJobs();
   }

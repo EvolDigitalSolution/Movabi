@@ -26,7 +26,9 @@ export const createStripeCheckoutSession = async (
   userId: string,
   tenantId: string,
   userEmail: string,
-  priceId: string
+  priceId: string,
+  countryCode?: string,
+  currencyCode?: string
 ) => {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -42,6 +44,8 @@ export const createStripeCheckoutSession = async (
     metadata: {
       userId,
       tenantId,
+      countryCode: countryCode || '',
+      currencyCode: currencyCode || '',
     },
     success_url: `${process.env.APP_URL}/driver/subscription?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.APP_URL}/driver/subscription`,

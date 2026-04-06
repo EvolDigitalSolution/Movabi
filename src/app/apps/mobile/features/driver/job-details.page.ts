@@ -1,10 +1,10 @@
-import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule, NavController, AlertController, LoadingController } from '@ionic/angular';
 import { ActivatedRoute } from '@angular/router';
 import { DriverService } from '../../../../core/services/driver/driver.service';
 import { BookingStatus } from '../../../../shared/models/booking.model';
-import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
+import { ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import { CommunicationPanelComponent } from '../../../../shared/ui/communication-panel';
 
 @Component({

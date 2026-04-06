@@ -56,7 +56,7 @@ export class AdminService {
 
   async getOperationalMetrics() {
     const { data, error } = await this.supabase
-      .from('operations_metrics')
+      .from('operations_metrics_v3')
       .select('*')
       .single();
     
@@ -225,7 +225,7 @@ export class AdminService {
     return data;
   }
 
-  async updateSubscriptionPlan(id: string, updates: any) {
+  async updateSubscriptionPlan(id: string, updates: Record<string, unknown>) {
     const { error } = await this.supabase
       .from('subscription_plans')
       .update(updates)

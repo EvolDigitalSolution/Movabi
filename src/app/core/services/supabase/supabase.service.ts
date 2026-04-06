@@ -29,11 +29,11 @@ export class SupabaseService {
 
   private createMockClient(): SupabaseClient {
     const handler = {
-      get: (target: any, prop: string) => {
+      get: (_target: unknown, prop: string) => {
         if (prop === 'auth') {
           return {
             getSession: () => Promise.resolve({ data: { session: null }, error: null }),
-            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => { /* empty */ } } } }),
             signInWithPassword: () => Promise.reject(new Error('Supabase not configured')),
             signUp: () => Promise.reject(new Error('Supabase not configured')),
             signOut: () => Promise.resolve({ error: null }),
@@ -53,7 +53,7 @@ export class SupabaseService {
     return new Proxy({}, handler) as SupabaseClient;
   }
 
-  constructor() {}
+  constructor() { /* empty */ }
 
   get auth() {
     return this.client.auth;

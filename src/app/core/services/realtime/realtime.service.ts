@@ -8,9 +8,9 @@ import { Observable, Subject } from 'rxjs';
 })
 export class RealtimeService {
   private supabase = inject(SupabaseService);
-  private channels: Map<string, RealtimeChannel> = new Map();
+  private channels = new Map<string, RealtimeChannel>();
 
-  subscribeToTable<T>(table: string, filter: string, callback: (payload: any) => void): RealtimeChannel {
+  subscribeToTable(table: string, filter: string, callback: (payload: Record<string, unknown>) => void): RealtimeChannel {
     const channelKey = `${table}-${filter}`;
     if (this.channels.has(channelKey)) {
       return this.channels.get(channelKey)!;
@@ -24,7 +24,7 @@ export class RealtimeService {
         table,
         filter
       }, payload => {
-        callback(payload);
+        callback(payload as Record<string, unknown>);
       })
       .subscribe();
 
@@ -43,9 +43,9 @@ export class RealtimeService {
   trackDriverLocation(driverId: string): Observable<{ lat: number, lng: number }> {
     const locationSubject = new Subject<{ lat: number, lng: number }>();
     
-    this.subscribeToTable<{ lat: number, lng: number }>('driver_locations', `driver_id=eq.${driverId}`, (payload) => {
-      if (payload.new) {
-        locationSubject.next(payload.new);
+    this.subscribeToTable('driver_locations', `driver_id=eq.${driverId}`, (payload) => {
+      if (payload['new']) {
+        locationSubject.next(payload['new'] as { lat: number, lng: number });
       }
     });
 

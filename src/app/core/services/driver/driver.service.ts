@@ -16,6 +16,7 @@ export class DriverService {
   private notificationService = inject(NotificationService);
 
   onlineStatus = signal<DriverStatus>('offline');
+  isAvailable = signal<boolean>(true);
   availableJobs = signal<Booking[]>([]);
   activeJob = signal<Booking | null>(null);
   earnings = signal<Earning[]>([]);
@@ -45,6 +46,19 @@ export class DriverService {
     } else {
       this.supabase.channel('available-jobs').unsubscribe();
     }
+  }
+
+  async toggleAvailability(available: boolean) {
+    const user = this.auth.currentUser();
+    if (!user) return;
+
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({ is_available: available })
+      .eq('id', user.id);
+
+    if (error) throw error;
+    this.isAvailable.set(available);
   }
 
   private async fetchProfile(): Promise<DriverProfile> {
@@ -107,7 +121,7 @@ export class DriverService {
       throw new Error('Active subscription required to accept jobs');
     }
 
-    const data = await this.bookingService.updateBookingStatus(
+    const updatedBooking = await this.bookingService.updateBookingStatus(
       bookingId, 
       'accepted', 
       'Job accepted by driver',
@@ -120,7 +134,7 @@ export class DriverService {
 
     this.activeJob.set(fullBooking);
     this.availableJobs.update(jobs => jobs.filter(j => j.id !== bookingId));
-    return fullBooking;
+    return updatedBooking;
   }
 
   async updateJobStatus(bookingId: string, status: BookingStatus) {

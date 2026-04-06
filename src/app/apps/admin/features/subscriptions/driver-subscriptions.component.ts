@@ -4,62 +4,64 @@ import { DriverSubscription, Profile } from '../../../../shared/models/booking.m
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 
+import { BadgeComponent } from '../../../../shared/ui/badge';
+
 @Component({
   selector: 'app-driver-subscriptions',
   template: `
-    <div class="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-      <div class="p-8 border-b border-gray-100 flex items-center justify-between">
+    <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
+      <div class="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h3 class="text-xl font-bold text-gray-900">Driver Subscriptions</h3>
-          <p class="text-sm text-gray-500 mt-1">Monitor and manage active driver subscription statuses.</p>
+          <h3 class="text-2xl font-display font-bold text-slate-900">Driver Subscriptions</h3>
+          <p class="text-slate-500 font-medium mt-1">Monitor and manage active driver subscription statuses.</p>
         </div>
         <div class="flex items-center gap-4">
-          <div class="relative">
-            <ion-icon name="search-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></ion-icon>
+          <div class="relative w-full sm:w-72 group">
+            <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors"></ion-icon>
             <input type="text" placeholder="Search drivers..." 
-                   class="bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-2 text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-64">
+                   class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500/50 transition-all">
           </div>
         </div>
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-left">
+        <table class="w-full text-left border-collapse">
           <thead>
-            <tr class="bg-gray-50/50 border-b border-gray-100">
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Driver</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Plan</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Status</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Expires At</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+            <tr class="bg-slate-50/50">
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Driver</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Plan</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Expires At</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-slate-50">
             @for (sub of subscriptions(); track sub.id) {
-              <tr class="hover:bg-gray-50/50 transition-all group">
-                <td class="px-8 py-4">
-                  <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+              <tr class="hover:bg-slate-50/80 transition-all group">
+                <td class="px-10 py-6">
+                  <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100 shadow-sm">
                       {{ sub.driver.first_name[0] || 'D' }}
                     </div>
                     <div>
-                      <h4 class="text-sm font-bold text-gray-900">{{ sub.driver.first_name }} {{ sub.driver.last_name }}</h4>
-                      <p class="text-xs text-gray-400">{{ sub.driver.email }}</p>
+                      <h4 class="text-sm font-bold text-slate-900">{{ sub.driver.first_name }} {{ sub.driver.last_name }}</h4>
+                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{{ sub.driver.email }}</p>
                     </div>
                   </div>
                 </td>
-                <td class="px-8 py-4">
-                  <span class="text-sm font-bold text-gray-900">{{ sub.plan_id }}</span>
+                <td class="px-10 py-6">
+                  <span class="text-sm font-bold text-slate-900">{{ sub.plan_id }}</span>
                 </td>
-                <td class="px-8 py-4">
-                  <span [class]="'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-widest ' + getStatusClass(sub.status)">
+                <td class="px-10 py-6">
+                  <app-badge [variant]="getStatusVariant(sub.status)">
                     {{ sub.status }}
-                  </span>
+                  </app-badge>
                 </td>
-                <td class="px-8 py-4 text-sm text-gray-500">
+                <td class="px-10 py-6 text-sm font-bold text-slate-900">
                   {{ sub.expires_at | date:'mediumDate' }}
                 </td>
-                <td class="px-8 py-4 text-right">
-                  <button (click)="toggleStatus(sub)" class="p-2 text-gray-400 hover:text-blue-600 transition-all">
+                <td class="px-10 py-6 text-right">
+                  <button (click)="toggleStatus(sub)" class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center ml-auto">
                     <ion-icon [name]="sub.status === 'active' ? 'pause-outline' : 'play-outline'" class="text-xl"></ion-icon>
                   </button>
                 </td>
@@ -70,7 +72,8 @@ import { IonicModule } from '@ionic/angular';
       </div>
     </div>
   `,
-  imports: [CommonModule, IonicModule]
+  standalone: true,
+  imports: [CommonModule, IonicModule, BadgeComponent]
 })
 export class DriverSubscriptionsComponent implements OnInit {
   private adminService = inject(AdminService);
@@ -91,12 +94,12 @@ export class DriverSubscriptionsComponent implements OnInit {
     await this.loadSubscriptions();
   }
 
-  getStatusClass(status: string) {
+  getStatusVariant(status: string) {
     switch (status) {
-      case 'active': return 'bg-emerald-100 text-emerald-600';
-      case 'inactive': return 'bg-red-100 text-red-600';
-      case 'expired': return 'bg-gray-100 text-gray-600';
-      default: return 'bg-amber-100 text-amber-600';
+      case 'active': return 'success';
+      case 'inactive': return 'error';
+      case 'expired': return 'secondary';
+      default: return 'warning';
     }
   }
 }

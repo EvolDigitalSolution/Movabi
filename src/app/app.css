@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-primary: #2563eb;
+  --color-secondary: #0f172a;
+  --color-success: #10b981;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+}
+
+@layer base {
+  body {
+    @apply font-sans text-slate-900 bg-slate-50;
+  }
+}
+
+@layer utilities {
+  .animate-shake {
+    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+  }
+
+  @keyframes shake {
+    10%, 90% { transform: translate3d(-1px, 0, 0); }
+    20%, 80% { transform: translate3d(2px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+    40%, 60% { transform: translate3d(4px, 0, 0); }
+  }
+
+  .animate-bounce-slow {
+    animation: bounce-slow 3s infinite;
+  }
+
+  @keyframes bounce-slow {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+}
+
+/* Ionic Customizations */
+ion-button {
+  --border-radius: 1rem;
+  --box-shadow: none;
+  font-family: var(--font-display);
+  text-transform: none;
+}
+
+ion-toolbar {
+  --background: transparent;
+  --border-width: 0;
+}
+
+ion-content {
+  --background: transparent;
+}
+
+ion-title {
+  font-family: var(--font-display);
+}
+
+.container-padding {
+  @apply px-4 md:px-8 lg:px-12;
+}

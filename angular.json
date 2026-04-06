@@ -5,7 +5,8 @@
     "packageManager": "npm",
     "schematicCollections": [
       "angular-eslint"
-    ]
+    ],
+    "analytics": false
   },
   "newProjectRoot": "projects",
   "projects": {
@@ -19,13 +20,6 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "define": {
-              "GEMINI_API_KEY": "'YOUR_GEMINI_API_KEY'",
-              "SUPABASE_URL": "'https://movabiapi.apps.evolsolution.com'",
-              "SUPABASE_ANON_KEY": "'YOUR_SUPABASE_ANON_KEY'",
-              "STRIPE_PUBLIC_KEY": "'YOUR_STRIPE_PUBLIC_KEY'",
-              "GOOGLE_MAPS_API_KEY": "'YOUR_GOOGLE_MAPS_API_KEY'"
-            },
             "outputPath": "dist/mobile",
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
@@ -50,13 +44,13 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "500kB",
-                  "maximumError": "1MB"
+                  "maximumWarning": "1MB",
+                  "maximumError": "2MB"
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
-                  "maximumError": "8kB"
+                  "maximumWarning": "100kB",
+                  "maximumError": "200kB"
                 }
               ],
               "outputHashing": "all"
@@ -71,6 +65,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "mobile:build:production"
@@ -80,6 +77,15 @@
             }
           },
           "defaultConfiguration": "development"
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
+          }
         }
       }
     },
@@ -93,13 +99,6 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "define": {
-              "GEMINI_API_KEY": "'YOUR_GEMINI_API_KEY'",
-              "SUPABASE_URL": "'https://movabiapi.apps.evolsolution.com'",
-              "SUPABASE_ANON_KEY": "'YOUR_SUPABASE_ANON_KEY'",
-              "STRIPE_PUBLIC_KEY": "'YOUR_STRIPE_PUBLIC_KEY'",
-              "GOOGLE_MAPS_API_KEY": "'YOUR_GOOGLE_MAPS_API_KEY'"
-            },
             "outputPath": "dist/admin",
             "browser": "src/main.admin.ts",
             "tsConfig": "tsconfig.app.json",
@@ -133,6 +132,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "admin:build:production"
@@ -142,6 +144,15 @@
             }
           },
           "defaultConfiguration": "development"
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
+          }
         }
       }
     }

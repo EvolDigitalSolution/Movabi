@@ -9,13 +9,13 @@ const router = Router();
 // Create checkout session
 router.post('/create-checkout-session', async (req: Request, res: Response) => {
   try {
-    const { userId, tenantId, userEmail, priceId } = req.body;
+    const { userId, tenantId, userEmail, priceId, countryCode, currencyCode } = req.body;
 
     if (!userId || !tenantId || !userEmail || !priceId) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    const session = await createStripeCheckoutSession(userId, tenantId, userEmail, priceId);
+    const session = await createStripeCheckoutSession(userId, tenantId, userEmail, priceId, countryCode, currencyCode);
     res.json({ sessionId: session.id, url: session.url });
   } catch (error: any) {
     console.error('Error creating checkout session:', error);
@@ -58,11 +58,14 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const session = event.data.object as Stripe.Checkout.Session;
       const userId = session.client_reference_id;
       const tenantId = session.metadata?.tenantId;
+      const countryCode = session.metadata?.countryCode;
+      const currencyCode = session.metadata?.currencyCode;
       const stripeCustomerId = session.customer as string;
       const stripeSubscriptionId = session.subscription as string;
 
       if (userId && tenantId && stripeSubscriptionId) {
         const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+        const price = stripeSub.items.data[0].price;
 
         // Update Supabase
         const { error: subError } = await supabaseAdmin
@@ -72,21 +75,26 @@ router.post('/webhook', async (req: Request, res: Response) => {
             user_id: userId,
             stripe_customer_id: stripeCustomerId,
             stripe_subscription_id: stripeSubscriptionId,
-            stripe_price_id: stripeSub.items.data[0].price.id,
+            stripe_price_id: price.id,
             status: stripeSub.status,
             current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
             current_period_end: new Date(stripeSub.current_period_end * 1000).toISOString(),
-            cancel_at_period_end: stripeSub.cancel_at_period_end
+            cancel_at_period_end: stripeSub.cancel_at_period_end,
+            billing_country_code: countryCode || 'GB',
+            billing_currency_code: currencyCode || price.currency.toUpperCase(),
+            billing_interval: price.recurring?.interval || 'month',
+            billing_amount_display: `${(price.unit_amount || 0) / 100} ${price.currency.toUpperCase()}/${price.recurring?.interval || 'month'}`
           }, { onConflict: 'stripe_subscription_id' });
 
         if (subError) {
           console.error('Error upserting subscription:', subError);
         } else {
-          // Update profile status
+          // Update profile status and plan
           const { error: profileError } = await supabaseAdmin
             .from('profiles')
             .update({ 
               subscription_status: 'active',
+              pricing_plan: 'pro',
               stripe_customer_id: stripeCustomerId
             })
             .eq('id', userId);
@@ -129,7 +137,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
         if (subData) {
           await supabaseAdmin
             .from('profiles')
-            .update({ subscription_status: 'inactive' })
+            .update({ 
+              subscription_status: 'inactive',
+              pricing_plan: 'starter'
+            })
             .eq('id', subData.user_id);
         }
       }
@@ -188,12 +199,12 @@ router.post('/webhook', async (req: Request, res: Response) => {
         if (jobData && jobData.driver_id && jobData.driver_payout) {
           await supabaseAdmin
             .from('driver_earnings')
-            .insert({
+            .upsert({
               driver_id: jobData.driver_id,
               job_id: jobId,
               amount: jobData.driver_payout,
               status: 'paid'
-            });
+            }, { onConflict: 'job_id' });
         }
 
         await EventService.logEvent('payment_completed', { 
@@ -209,6 +220,31 @@ router.post('/webhook', async (req: Request, res: Response) => {
   }
 
   res.json({ received: true });
+});
+
+/**
+ * Manually switch pricing plan (for admins or internal use)
+ */
+router.post('/switch-plan', async (req: Request, res: Response) => {
+  try {
+    const { userId, plan } = req.body;
+    if (!userId || !plan || !['starter', 'pro'].includes(plan)) {
+      return res.status(400).json({ error: 'userId and valid plan required' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({ pricing_plan: plan })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    await EventService.logEvent('plan_switched', { userId, plan }, undefined, userId);
+    res.json({ success: true, plan });
+  } catch (error: any) {
+    console.error('Error switching plan:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

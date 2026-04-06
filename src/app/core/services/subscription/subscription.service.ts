@@ -34,7 +34,7 @@ export class SubscriptionService {
     this.activeSubscription.set(data || null);
   }
 
-  async createCheckoutSession(priceId: string) {
+  async createCheckoutSession(priceId: string, countryCode?: string, currencyCode?: string) {
     const user = this.auth.currentUser();
     const profile = this.profileService.profile();
     
@@ -49,7 +49,9 @@ export class SubscriptionService {
         userId: user.id,
         tenantId: profile.tenant_id,
         userEmail: user.email,
-        priceId
+        priceId,
+        countryCode,
+        currencyCode
       }),
     });
 
@@ -57,6 +59,18 @@ export class SubscriptionService {
     if (data.error) throw new Error(data.error);
 
     return data.url;
+  }
+
+  async getAvailablePlans(countryCode: string, currencyCode: string) {
+    const { data, error } = await this.supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('country_code', countryCode)
+      .eq('currency_code', currencyCode)
+      .eq('is_active', true);
+
+    if (error) throw error;
+    return data;
   }
 
   async openCustomerPortal() {
@@ -88,7 +102,7 @@ export class SubscriptionService {
     }
   }
 
-  async handleSubscriptionSuccess(sessionId: string) {
+  async handleSubscriptionSuccess() {
     // Webhook handles the database update.
     // We just refresh the state here.
     await this.refreshSubscriptionStatus();

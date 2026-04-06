@@ -31,6 +31,32 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
 });
 
 /**
+ * Get payout breakdown for a driver
+ */
+router.post('/payout-breakdown', async (req: Request, res: Response) => {
+  try {
+    const { totalPrice, driverId } = req.body;
+    if (!totalPrice || !driverId) {
+      return res.status(400).json({ error: 'totalPrice and driverId required' });
+    }
+
+    const { data: profile, error } = await LogisticsService.findDriverProfile(driverId);
+    if (error || !profile) throw new Error('Driver profile not found');
+
+    const breakdown = LogisticsService.calculatePayout(
+      totalPrice, 
+      profile.pricing_plan || 'starter', 
+      profile.commission_rate || 15.00
+    );
+
+    res.json(breakdown);
+  } catch (error: any) {
+    console.error('Payout breakdown error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Suggest nearest drivers for a job
  */
 router.post('/suggest-drivers', async (req: Request, res: Response) => {

@@ -1,86 +1,90 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
-import { Booking, ServiceTypeEnum } from '../../../../shared/models/booking.model';
+import { Booking, ServiceTypeEnum, BookingStatus, DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { BookingService } from '../../../../core/services/booking/booking.service';
 import { CommonModule } from '@angular/common';
-import { IonicModule } from '@ionic/angular';
+import { IonicModule, AlertController, ToastController } from '@ionic/angular';
+import { BadgeComponent } from '../../../../shared/ui/badge';
+import { ButtonComponent } from '../../../../shared/ui/button';
+import { CardComponent } from '../../../../shared/ui/card';
 
 @Component({
   selector: 'app-booking-list',
   template: `
-    <div class="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-      <div class="p-8 border-b border-gray-100 flex items-center justify-between">
+    <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
+      <div class="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h3 class="text-xl font-bold text-gray-900">Live Bookings</h3>
-          <p class="text-sm text-gray-500 mt-1">Monitor all active and past bookings in real-time.</p>
+          <h3 class="text-2xl font-display font-bold text-slate-900">Live Bookings</h3>
+          <p class="text-slate-500 font-medium mt-1">Monitor all active and past bookings in real-time.</p>
         </div>
-        <div class="flex items-center gap-4">
-          <div class="relative">
-            <ion-icon name="search-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></ion-icon>
+        <div class="flex flex-col sm:flex-row items-center gap-4">
+          <div class="relative w-full sm:w-72 group">
+            <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors"></ion-icon>
             <input type="text" placeholder="Search bookings..." 
-                   class="bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-2 text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-64">
+                   class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500/50 transition-all">
           </div>
-          <button class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20">
+          <app-button variant="secondary" size="md" [fullWidth]="false" class="px-8 h-12 rounded-2xl">
+            <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
-          </button>
+          </app-button>
         </div>
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-left">
+        <table class="w-full text-left border-collapse">
           <thead>
-            <tr class="bg-gray-50/50 border-b border-gray-100">
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Booking ID</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Customer</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Driver</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Price</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Status</th>
-              <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+            <tr class="bg-slate-50/50">
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Booking ID</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Customer</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Driver</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Price</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-slate-50">
             @for (booking of bookings(); track booking.id) {
-              <tr class="hover:bg-gray-50/50 transition-all group">
-                <td class="px-8 py-4">
-                  <span class="text-sm font-bold text-gray-900">#{{ booking.id.slice(0, 8) }}</span>
-                  <p class="text-xs text-gray-400">{{ booking.created_at | date:'short' }}</p>
+              <tr class="hover:bg-slate-50/80 transition-all group">
+                <td class="px-10 py-6">
+                  <span class="text-sm font-bold text-slate-900 block mb-1">#{{ booking.id.slice(0, 8) }}</span>
+                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ booking.created_at | date:'short' }}</span>
                 </td>
-                <td class="px-8 py-4">
-                  <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                <td class="px-10 py-6">
+                  <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-xs border border-blue-100">
                       {{ booking.customer?.first_name?.[0] || 'C' }}
                     </div>
-                    <div>
-                      <h4 class="text-sm font-bold text-gray-900">{{ booking.customer?.first_name }}</h4>
-                      <p class="text-xs text-gray-400 truncate w-32">{{ booking.pickup_address }}</p>
+                    <div class="min-w-0">
+                      <h4 class="text-sm font-bold text-slate-900 truncate">{{ booking.customer?.first_name }}</h4>
+                      <p class="text-[10px] text-slate-400 truncate w-40 font-medium">{{ booking.pickup_address }}</p>
                     </div>
                   </div>
                 </td>
-                <td class="px-8 py-4">
+                <td class="px-10 py-6">
                   @if (booking.driver) {
-                    <div class="flex items-center gap-3">
-                      <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-xs">
+                    <div class="flex items-center gap-4">
+                      <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 font-bold text-xs border border-amber-100">
                         {{ booking.driver.first_name[0] || 'D' }}
                       </div>
-                      <div>
-                        <h4 class="text-sm font-bold text-gray-900">{{ booking.driver.first_name }}</h4>
-                        <p class="text-xs text-gray-400">ID: {{ booking.driver.id.slice(0, 8) }}</p>
+                      <div class="min-w-0">
+                        <h4 class="text-sm font-bold text-slate-900 truncate">{{ booking.driver.first_name }}</h4>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ID: {{ booking.driver.id.slice(0, 8) }}</p>
                       </div>
                     </div>
                   } @else {
-                    <span class="text-xs text-gray-400 font-bold uppercase tracking-widest">Searching...</span>
+                    <app-badge variant="warning" class="animate-pulse">SEARCHING...</app-badge>
                   }
                 </td>
-                <td class="px-8 py-4 text-sm font-bold text-gray-900">
-                  {{ '$' }}{{ booking.total_price }}
+                <td class="px-10 py-6">
+                  <span class="text-sm font-display font-bold text-slate-900">£{{ booking.total_price }}</span>
                 </td>
-                <td class="px-8 py-4">
-                  <span [class]="'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-widest ' + getStatusClass(booking.status)">
+                <td class="px-10 py-6">
+                  <app-badge [variant]="getBadgeVariant(booking.status)">
                     {{ booking.status.replace('_', ' ') }}
-                  </span>
+                  </app-badge>
                 </td>
-                <td class="px-8 py-4 text-right">
-                  <button (click)="viewDetails(booking)" class="p-2 text-gray-400 hover:text-blue-600 transition-all">
+                <td class="px-10 py-6 text-right">
+                  <button (click)="viewDetails(booking)" class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center mx-auto sm:ml-auto">
                     <ion-icon name="eye-outline" class="text-xl"></ion-icon>
                   </button>
                 </td>
@@ -92,171 +96,159 @@ import { IonicModule } from '@ionic/angular';
     </div>
 
     <!-- Booking Details Modal -->
-    <ion-modal [isOpen]="isModalOpen" (didDismiss)="closeModal()">
+    <ion-modal [isOpen]="isModalOpen" (didDismiss)="closeModal()" class="admin-modal">
       <ng-template>
-        <ion-header class="ion-no-border">
-          <ion-toolbar class="px-4 py-2">
-            <ion-title class="text-lg font-bold">Booking Details</ion-title>
-            <ion-buttons slot="end">
-              <ion-button (click)="closeModal()">Close</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
+        <div class="flex flex-col h-full bg-slate-50">
+          <div class="p-8 bg-white border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 class="text-2xl font-display font-bold text-slate-900">Booking Details</h2>
+              <p class="text-slate-500 font-medium text-sm mt-1">ID: #{{ selectedBooking?.id }}</p>
+            </div>
+            <app-button variant="secondary" size="sm" [fullWidth]="false" (click)="closeModal()" class="h-10 w-10 rounded-xl">
+              <ion-icon name="close-outline" slot="icon-only" class="text-xl"></ion-icon>
+            </app-button>
+          </div>
 
-        <ion-content class="ion-padding bg-gray-50">
-          @if (selectedBooking) {
-            <div class="space-y-6">
+          <div class="flex-1 overflow-y-auto p-8 space-y-8">
+            @if (selectedBooking) {
               <!-- Status Banner -->
-              <div [class]="'p-4 rounded-2xl text-center font-bold uppercase tracking-widest text-xs ' + getStatusClass(selectedBooking.status)">
-                Status: {{ selectedBooking.status.replace('_', ' ') }}
+              <div class="p-8 rounded-[2rem] text-center bg-white border border-slate-100 shadow-xl shadow-slate-200/20">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3">Current Status</p>
+                <app-badge [variant]="getBadgeVariant(selectedBooking.status)" class="text-lg px-6 py-2">
+                  {{ selectedBooking.status.replace('_', ' ') }}
+                </app-badge>
               </div>
 
               <!-- Route Info -->
-              <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-                <div class="flex items-start gap-4">
-                  <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-                    <ion-icon name="location-outline"></ion-icon>
+              <app-card class="p-8">
+                <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-8">Route Information</h3>
+                <div class="relative pl-8 space-y-8">
+                  <div class="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-100"></div>
+                  <div class="relative">
+                    <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
+                    <div>
+                      <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Pickup</p>
+                      <p class="font-bold text-slate-900 leading-snug">{{ selectedBooking.pickup_address }}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Pickup</p>
-                    <p class="text-sm font-bold text-gray-900">{{ selectedBooking.pickup_address }}</p>
+                  <div class="relative">
+                    <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
+                    <div>
+                      <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Destination</p>
+                      <p class="font-bold text-slate-900 leading-snug">{{ selectedBooking.dropoff_address || 'N/A' }}</p>
+                    </div>
                   </div>
                 </div>
-                <div class="flex items-start gap-4">
-                  <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
-                    <ion-icon name="flag-outline"></ion-icon>
-                  </div>
-                  <div>
-                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Dropoff</p>
-                    <p class="text-sm font-bold text-gray-900">{{ selectedBooking.dropoff_address || 'N/A' }}</p>
-                  </div>
-                </div>
-              </div>
+              </app-card>
 
               <!-- Customer & Driver -->
-              <div class="grid grid-cols-2 gap-4">
-                <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                  <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Customer</p>
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <app-card class="p-8">
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Customer</h3>
+                  <div class="flex items-center gap-5">
+                    <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold border border-blue-100">
                       {{ selectedBooking.customer?.first_name?.[0] }}
                     </div>
-                    <div>
-                      <h4 class="text-sm font-bold text-gray-900">{{ selectedBooking.customer?.first_name }}</h4>
-                      <p class="text-xs text-gray-500">{{ selectedBooking.customer?.email }}</p>
+                    <div class="min-w-0">
+                      <h4 class="text-lg font-bold text-slate-900 truncate">{{ selectedBooking.customer?.first_name }}</h4>
+                      <p class="text-sm text-slate-500 font-medium truncate">{{ selectedBooking.customer?.email }}</p>
                     </div>
                   </div>
-                </div>
-                <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                  <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Driver</p>
+                </app-card>
+
+                <app-card class="p-8">
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Driver</h3>
                   @if (selectedBooking.driver) {
-                    <div class="flex items-center gap-3">
-                      <div class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 font-bold">
+                    <div class="flex items-center gap-5">
+                      <div class="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 font-bold border border-amber-100">
                         {{ selectedBooking.driver.first_name[0] }}
                       </div>
-                      <div>
-                        <h4 class="text-sm font-bold text-gray-900">{{ selectedBooking.driver.first_name }}</h4>
-                        <p class="text-xs text-gray-500">ID: {{ selectedBooking.driver.id.slice(0, 8) }}</p>
+                      <div class="min-w-0">
+                        <h4 class="text-lg font-bold text-slate-900 truncate">{{ selectedBooking.driver.first_name }}</h4>
+                        <p class="text-sm text-slate-500 font-medium truncate">ID: {{ selectedBooking.driver.id.slice(0, 8) }}</p>
                       </div>
                     </div>
                   } @else {
-                    <p class="text-xs text-gray-400 italic">No driver assigned</p>
+                    <div class="flex items-center gap-4 text-slate-400 italic py-2">
+                      <ion-icon name="help-circle-outline" class="text-2xl"></ion-icon>
+                      <span class="text-sm font-medium">No driver assigned</span>
+                    </div>
                   }
-                </div>
+                </app-card>
               </div>
 
-              <!-- Service Details -->
-              @if (details()) {
-                <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                  <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Service Details ({{ selectedBooking.service_code }})</p>
-                  
-                  @if (selectedBooking.service_code === ServiceTypeEnum.RIDE) {
-                    <p class="text-sm"><span class="font-bold">Passengers:</span> {{ details().passenger_count }}</p>
-                  }
-                  @if (selectedBooking.service_code === ServiceTypeEnum.ERRAND) {
-                    <p class="text-sm font-bold mb-2">Items:</p>
-                    <ul class="list-disc ml-5 text-sm">
-                      @for (item of details().items_list; track item) {
-                        <li>{{ item }}</li>
-                      }
-                    </ul>
-                  }
-                  @if (selectedBooking.service_code === ServiceTypeEnum.DELIVERY) {
-                    <p class="text-sm"><span class="font-bold">Recipient:</span> {{ details().recipient_name }}</p>
-                  }
-                  @if (selectedBooking.service_code === ServiceTypeEnum.VAN) {
-                    <p class="text-sm"><span class="font-bold">Helpers:</span> {{ details().helper_count }}</p>
-                  }
-                </div>
-              }
-
               <!-- Admin Override -->
-              <div class="bg-red-50 p-6 rounded-3xl border border-red-100 shadow-sm space-y-6">
+              <div class="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl space-y-10">
                 <div>
-                  <p class="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-4">Manual Driver Assignment</p>
-                  <div class="flex items-center gap-4">
-                    <select #driverSelect class="flex-1 bg-white border border-red-200 rounded-xl px-4 py-2 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20">
-                      <option value="">Select a driver...</option>
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-6">Manual Driver Assignment</h3>
+                  <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <select #driverSelect class="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-3.5 text-sm font-medium text-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 transition-all appearance-none">
+                      <option value="" class="bg-slate-900">Select a driver...</option>
                       @for (driver of drivers(); track driver.id) {
-                        <option [value]="driver.id" [selected]="driver.id === selectedBooking.driver_id">
+                        <option [value]="driver.id" [selected]="driver.id === selectedBooking.driver_id" class="bg-slate-900">
                           {{ driver.first_name }} ({{ driver.status }})
                         </option>
                       }
                     </select>
-                    <button (click)="assignDriver(selectedBooking.id, driverSelect.value)" 
-                            [disabled]="!driverSelect.value"
-                            class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50">
-                      Assign
-                    </button>
+                    <app-button variant="primary" size="md" [fullWidth]="false" (click)="assignDriver(selectedBooking.id, driverSelect.value)" 
+                            [disabled]="!driverSelect.value" class="h-14 px-10 rounded-2xl shrink-0">
+                      Assign Driver
+                    </app-button>
                   </div>
                 </div>
 
-                <div>
-                  <p class="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-4">Status Override</p>
-                  <div class="flex items-center gap-4">
-                    <select #statusSelect class="flex-1 bg-white border border-red-200 rounded-xl px-4 py-2 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20">
+                <div class="pt-10 border-t border-white/5">
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-6">Status Override</h3>
+                  <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <select #statusSelect class="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-3.5 text-sm font-medium text-white focus:outline-none focus:ring-4 focus:ring-red-500/20 transition-all appearance-none">
                       @for (status of allStatuses; track status) {
-                        <option [value]="status" [selected]="status === selectedBooking.status">{{ status.replace('_', ' ') }}</option>
+                        <option [value]="status" [selected]="status === selectedBooking.status" class="bg-slate-900">{{ status.replace('_', ' ') }}</option>
                       }
                     </select>
-                    <button (click)="forceUpdateStatus(selectedBooking.id, statusSelect.value)" 
-                            class="bg-red-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-red-700 transition-all shadow-lg shadow-red-600/20">
+                    <app-button variant="error" size="md" [fullWidth]="false" (click)="forceUpdateStatus(selectedBooking.id, statusSelect.value)" 
+                            class="h-14 px-10 rounded-2xl shrink-0">
                       Force Update
-                    </button>
+                    </app-button>
                   </div>
-                  <p class="text-[10px] text-red-400 italic mt-2">Use this to fix stuck bookings. This bypasses standard transition rules.</p>
+                  <p class="text-[10px] text-slate-500 italic mt-4 flex items-center">
+                    <ion-icon name="information-circle-outline" class="mr-2 text-sm"></ion-icon>
+                    Use this to fix stuck bookings. This bypasses standard transition rules.
+                  </p>
                 </div>
               </div>
 
-              <!-- Pricing -->
-              <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                <div class="flex items-center justify-between">
-                  <p class="text-sm font-bold text-gray-900">Total Price</p>
-                  <p class="text-2xl font-bold text-blue-600">{{ '$' }}{{ selectedBooking.total_price }}</p>
+              <!-- Pricing Footer -->
+              <div class="bg-blue-600 rounded-[2.5rem] p-10 text-white flex items-center justify-between shadow-2xl shadow-blue-600/20">
+                <div>
+                  <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Total Price</p>
+                  <p class="text-4xl font-display font-bold tracking-tight">£{{ selectedBooking.total_price }}</p>
                 </div>
-                <div class="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500">
-                  <span>Service Type</span>
-                  <span class="font-bold uppercase tracking-widest">{{ selectedBooking.service_type?.name || 'Standard' }}</span>
+                <div class="text-right">
+                  <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Service Type</p>
+                  <app-badge variant="primary" class="bg-white/20 text-white border-white/30">{{ selectedBooking.service_type?.name || 'Standard' }}</app-badge>
                 </div>
               </div>
-            </div>
-          }
-        </ion-content>
+            }
+          </div>
+        </div>
       </ng-template>
     </ion-modal>
   `,
-  imports: [CommonModule, IonicModule]
+  standalone: true,
+  imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent, CardComponent]
 })
 export class BookingListComponent implements OnInit {
   private adminService = inject(AdminService);
   private bookingService = inject(BookingService);
+  private alertCtrl = inject(AlertController);
+  private toastCtrl = inject(ToastController);
 
   ServiceTypeEnum = ServiceTypeEnum;
   bookings = signal<Booking[]>([]);
-  drivers = signal<any[]>([]);
+  drivers = signal<(DriverProfile & { vehicles: Vehicle[] })[]>([]);
   isModalOpen = false;
   selectedBooking: Booking | null = null;
-  details = signal<any>(null);
+  details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
 
   allStatuses: string[] = ['requested', 'searching', 'assigned', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled'];
 
@@ -283,47 +275,104 @@ export class BookingListComponent implements OnInit {
     
     try {
       const details = await this.bookingService.getBookingDetails(booking.id, booking.service_code);
-      this.details.set(details);
+      this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);
     } catch (e) {
       console.error('Failed to load details', e);
       this.details.set(null);
     }
   }
 
-  async forceUpdateStatus(bookingId: string, status: any) {
-    if (!confirm(`Are you sure you want to force update this booking to ${status}?`)) return;
-    
-    try {
-      await this.adminService.updateBookingStatus(bookingId, status, 'Admin force update');
-      await this.loadBookings();
-      if (this.selectedBooking?.id === bookingId) {
-        this.selectedBooking = { ...this.selectedBooking, status };
-      }
-    } catch (e) {
-      alert('Failed to update status: ' + (e as Error).message);
-    }
+  async forceUpdateStatus(bookingId: string, status: string) {
+    const alert = await this.alertCtrl.create({
+      header: 'Confirm Update',
+      message: `Are you sure you want to force update this booking to ${status}?`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Update',
+          handler: async () => {
+            try {
+              await this.adminService.updateBookingStatus(bookingId, status as BookingStatus, 'Admin force update');
+              await this.loadBookings();
+              if (this.selectedBooking?.id === bookingId) {
+                this.selectedBooking = { ...this.selectedBooking, status: status as BookingStatus };
+              }
+              const toast = await this.toastCtrl.create({
+                message: 'Status updated successfully',
+                duration: 2000,
+                color: 'success'
+              });
+              await toast.present();
+            } catch (e) {
+              const toast = await this.toastCtrl.create({
+                message: 'Failed to update status: ' + (e as Error).message,
+                duration: 3000,
+                color: 'danger'
+              });
+              await toast.present();
+            }
+          }
+        }
+      ]
+    });
+    await alert.present();
   }
 
   async assignDriver(bookingId: string, driverId: string) {
-    if (!confirm('Are you sure you want to manually assign this driver?')) return;
-
-    try {
-      await this.adminService.manualAssignDriver(bookingId, driverId);
-      await this.loadBookings();
-      if (this.selectedBooking?.id === bookingId) {
-        // Refresh selected booking to show new driver
-        const updated = await this.bookingService.getBooking(bookingId);
-        this.selectedBooking = updated;
-      }
-    } catch (e) {
-      alert('Failed to assign driver: ' + (e as Error).message);
-    }
+    const alert = await this.alertCtrl.create({
+      header: 'Confirm Assignment',
+      message: 'Are you sure you want to manually assign this driver?',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Assign',
+          handler: async () => {
+            try {
+              await this.adminService.manualAssignDriver(bookingId, driverId);
+              await this.loadBookings();
+              if (this.selectedBooking?.id === bookingId) {
+                const updated = await this.bookingService.getBooking(bookingId);
+                this.selectedBooking = updated;
+              }
+              const toast = await this.toastCtrl.create({
+                message: 'Driver assigned successfully',
+                duration: 2000,
+                color: 'success'
+              });
+              await toast.present();
+            } catch (e) {
+              const toast = await this.toastCtrl.create({
+                message: 'Failed to assign driver: ' + (e as Error).message,
+                duration: 3000,
+                color: 'danger'
+              });
+              await toast.present();
+            }
+          }
+        }
+      ]
+    });
+    await alert.present();
   }
 
   closeModal() {
     this.isModalOpen = false;
     this.selectedBooking = null;
     this.details.set(null);
+  }
+
+  getBadgeVariant(status: string): 'success' | 'warning' | 'error' | 'primary' | 'secondary' | 'info' {
+    switch (status) {
+      case 'completed': return 'success';
+      case 'cancelled': return 'error';
+      case 'searching':
+      case 'requested': return 'warning';
+      case 'accepted':
+      case 'assigned':
+      case 'arrived': return 'primary';
+      case 'in_progress': return 'info';
+      default: return 'secondary';
+    }
   }
 
   getStatusClass(status: string) {

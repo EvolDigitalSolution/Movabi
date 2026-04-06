@@ -8,80 +8,121 @@ import { ProfileService } from '@core/services/profile/profile.service';
 import { Job, DriverLocation } from '@shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+import { BadgeComponent } from '../../../../shared/ui/badge';
+
 @Component({
   selector: 'app-job-monitoring',
   template: `
-    <div class="space-y-8">
-      <div class="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div class="p-8 border-b border-gray-100">
-          <h3 class="text-xl font-bold text-gray-900">Live Fleet View</h3>
-          <p class="text-sm text-gray-500 mt-1">Real-time driver positions across the tenant.</p>
+    <div class="space-y-10">
+      <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
+        <div class="p-10 border-b border-slate-50">
+          <h3 class="text-2xl font-display font-bold text-slate-900">Live Fleet View</h3>
+          <p class="text-slate-500 font-medium mt-1">Real-time driver positions across the tenant.</p>
         </div>
-        <div #mapContainer class="h-96 bg-gray-100"></div>
+        <div #mapContainer class="h-[500px] bg-slate-100 relative">
+          <!-- Map Overlay for Premium Feel -->
+          <div class="absolute top-6 left-6 z-10 bg-white/90 backdrop-blur-md p-4 rounded-2xl border border-white shadow-xl shadow-slate-900/5">
+            <div class="flex items-center gap-3">
+              <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span class="text-xs font-bold text-slate-900 uppercase tracking-widest">Live Tracking Active</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div class="p-8 border-b border-gray-100 flex items-center justify-between">
+      <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
+        <div class="p-10 border-b border-slate-50 flex items-center justify-between">
           <div>
-            <h3 class="text-xl font-bold text-gray-900">Van Moving Monitoring</h3>
-            <p class="text-sm text-gray-500 mt-1">Real-time overview of all moving jobs.</p>
+            <h3 class="text-2xl font-display font-bold text-slate-900">Van Moving Monitoring</h3>
+            <p class="text-slate-500 font-medium mt-1">Real-time overview of all moving jobs.</p>
           </div>
         </div>
 
         <div class="overflow-x-auto">
-          <table class="w-full text-left">
+          <table class="w-full text-left border-collapse">
             <thead>
-              <tr class="bg-gray-50/50 border-b border-gray-100">
-                <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Job ID</th>
-                <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Customer</th>
-                <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Driver</th>
-                <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Route</th>
-                <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                <th class="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Price</th>
+              <tr class="bg-slate-50/50">
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Job ID</th>
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Customer</th>
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Driver</th>
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Route</th>
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Plan</th>
+                <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Financials</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100">
+            <tbody class="divide-y divide-slate-50">
               @for (job of jobs(); track job.id) {
-                <tr class="hover:bg-gray-50/50 transition-all">
-                  <td class="px-8 py-4 text-sm font-mono text-gray-400">#{{ job.id.slice(0,8) }}</td>
-                  <td class="px-8 py-4">
-                    <div class="flex items-center gap-3">
-                      <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                <tr class="hover:bg-slate-50/80 transition-all group">
+                  <td class="px-10 py-6">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded-md">#{{ job.id.slice(0,8) }}</span>
+                  </td>
+                  <td class="px-10 py-6">
+                    <div class="flex items-center gap-4">
+                      <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-xs border border-blue-100">
                         {{ job.customer?.first_name?.[0] }}
                       </div>
                       <div>
-                        <p class="text-sm font-bold text-gray-900">{{ job.customer?.first_name }} {{ job.customer?.last_name }}</p>
-                        <p class="text-xs text-gray-400">{{ job.customer?.email }}</p>
+                        <p class="text-sm font-bold text-slate-900">{{ job.customer?.first_name }} {{ job.customer?.last_name }}</p>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{{ job.customer?.email }}</p>
                       </div>
                     </div>
                   </td>
-                  <td class="px-8 py-4">
+                  <td class="px-10 py-6">
                     @if (job.driver) {
-                      <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-xs">
+                      <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold text-xs border border-emerald-100">
                           {{ job.driver.first_name[0] }}
                         </div>
                         <div>
-                          <p class="text-sm font-bold text-gray-900">{{ job.driver.first_name }} {{ job.driver.last_name }}</p>
-                          <p class="text-xs text-gray-400">{{ job.driver.phone }}</p>
+                          <p class="text-sm font-bold text-slate-900">{{ job.driver.first_name }} {{ job.driver.last_name }}</p>
+                          <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{{ job.driver.phone }}</p>
                         </div>
                       </div>
                     } @else {
-                      <span class="text-xs text-amber-500 font-bold uppercase tracking-widest">Unassigned</span>
+                      <app-badge variant="warning">Unassigned</app-badge>
                     }
                   </td>
-                  <td class="px-8 py-4">
-                    <div class="text-xs space-y-1">
-                      <p><span class="text-gray-400">From:</span> {{ job.pickup_address }}</p>
-                      <p><span class="text-gray-400">To:</span> {{ job.dropoff_address }}</p>
+                  <td class="px-10 py-6">
+                    <div class="text-[10px] space-y-2 font-bold uppercase tracking-widest">
+                      <div class="flex items-center gap-2">
+                        <span class="text-slate-400 min-w-[32px]">From:</span>
+                        <span class="text-slate-600 line-clamp-1">{{ job.pickup_address }}</span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-slate-400 min-w-[32px]">To:</span>
+                        <span class="text-slate-600 line-clamp-1">{{ job.dropoff_address }}</span>
+                      </div>
                     </div>
                   </td>
-                  <td class="px-8 py-4">
-                    <span [class]="'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-widest ' + getStatusClass(job.status)">
+                  <td class="px-10 py-6">
+                    <app-badge [variant]="getStatusVariant(job.status)">
                       {{ job.status }}
-                    </span>
+                    </app-badge>
                   </td>
-                  <td class="px-8 py-4 text-sm font-bold text-gray-900">£{{ job.price }}</td>
+                  <td class="px-10 py-6">
+                    <div class="flex flex-col gap-1">
+                      <app-badge [variant]="job.pricing_plan_used === 'pro' ? 'primary' : 'secondary'">
+                        {{ job.pricing_plan_used || 'starter' | uppercase }}
+                      </app-badge>
+                      @if (job.commission_rate_used) {
+                        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center">
+                          {{ job.commission_rate_used }}% Fee
+                        </span>
+                      }
+                    </div>
+                  </td>
+                  <td class="px-10 py-6">
+                    <div class="flex flex-col gap-1">
+                      <span class="text-sm font-black text-slate-900">£{{ job.price }}</span>
+                      @if (job.status === 'completed' && job.driver_payout) {
+                        <div class="flex flex-col text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          <span class="text-emerald-600">Payout: £{{ job.driver_payout }}</span>
+                          <span class="text-blue-600">Platform: £{{ job.platform_fee }}</span>
+                        </div>
+                      }
+                    </div>
+                  </td>
                 </tr>
               }
             </tbody>
@@ -91,7 +132,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
     </div>
   `,
   standalone: true,
-  imports: [CommonModule, IonicModule]
+  imports: [CommonModule, IonicModule, BadgeComponent]
 })
 export class JobMonitoringComponent implements OnInit, OnDestroy {
   @ViewChild('mapContainer') mapContainer?: ElementRef;
@@ -102,8 +143,8 @@ export class JobMonitoringComponent implements OnInit, OnDestroy {
   private profileService = inject(ProfileService);
 
   jobs = signal<Job[]>([]);
-  private map: any;
-  private markers: Map<string, any> = new Map();
+  private map: google.maps.Map | null = null;
+  private markers = new Map<string, google.maps.Marker>();
   private jobChannel?: RealtimeChannel;
   private locationChannel?: RealtimeChannel;
 
@@ -155,14 +196,14 @@ export class JobMonitoringComponent implements OnInit, OnDestroy {
     this.jobs.set(await this.jobService.getAllJobs());
   }
 
-  getStatusClass(status: string) {
+  getStatusVariant(status: string) {
     switch (status) {
-      case 'pending': return 'bg-amber-100 text-amber-600';
-      case 'accepted': return 'bg-blue-100 text-blue-600';
-      case 'in_progress': return 'bg-indigo-100 text-indigo-600';
-      case 'completed': return 'bg-emerald-100 text-emerald-600';
-      case 'cancelled': return 'bg-red-100 text-red-600';
-      default: return 'bg-gray-100 text-gray-600';
+      case 'pending': return 'warning';
+      case 'accepted': return 'info';
+      case 'in_progress': return 'primary';
+      case 'completed': return 'success';
+      case 'cancelled': return 'error';
+      default: return 'secondary';
     }
   }
 }

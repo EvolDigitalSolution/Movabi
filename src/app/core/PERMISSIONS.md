@@ -1,6 +1,6 @@
-# MoveMate Permission Boundaries
+# Movabi Permission Boundaries
 
-This document outlines the security and permission boundaries for the MoveMate application. These boundaries are enforced at three levels:
+This document outlines the security and permission boundaries for the Movabi application. These boundaries are enforced at three levels:
 1. **Database Level (Firestore/Supabase RLS)**: The ultimate source of truth.
 2. **Service Level (Angular Core Services)**: Business logic enforcement.
 3. **UI Level (Angular Guards & Components)**: User experience and navigation.

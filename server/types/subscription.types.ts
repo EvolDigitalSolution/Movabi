@@ -19,6 +19,10 @@ export interface Subscription {
   current_period_start: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  billing_country_code?: string | null;
+  billing_currency_code?: string | null;
+  billing_interval?: string | null;
+  billing_amount_display?: string | null;
   created_at: string;
   updated_at: string;
 }

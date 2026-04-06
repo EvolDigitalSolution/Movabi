@@ -5,8 +5,7 @@ import { roleGuard } from '@core/guards/role.guard';
 export const MOBILE_ROUTES: Routes = [
   {
     path: '',
-    redirectTo: 'customer',
-    pathMatch: 'full'
+    loadComponent: () => import('@mobile/features/landing.page').then(m => m.LandingPage)
   },
   {
     path: 'auth',
@@ -14,6 +13,22 @@ export const MOBILE_ROUTES: Routes = [
       {
         path: 'login',
         loadComponent: () => import('@mobile/features/auth/login.page').then(m => m.LoginPage)
+      },
+      {
+        path: 'signup',
+        loadComponent: () => import('@mobile/features/auth/signup.page').then(m => m.SignupPage)
+      },
+      {
+        path: 'forgot-password',
+        loadComponent: () => import('@mobile/features/auth/forgot-password.page').then(m => m.ForgotPasswordPage)
+      },
+      {
+        path: 'reset-password',
+        loadComponent: () => import('@mobile/features/auth/reset-password.page').then(m => m.ResetPasswordPage)
+      },
+      {
+        path: 'callback',
+        loadComponent: () => import('@mobile/features/auth/callback.page').then(m => m.AuthCallbackPage)
       }
     ]
   },

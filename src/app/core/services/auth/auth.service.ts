@@ -49,16 +49,19 @@ export class AuthService {
     this.isAuthReady.set(true);
   }
 
-  async signUp(email: string, password: string, data?: any) {
+  async signUp(email: string, password: string, data?: Record<string, unknown>) {
     const { data: result, error } = await this.supabase.auth.signUp({
       email,
       password,
       options: {
         data,
-        emailRedirectTo: `${environment.appUrl}/auth/callback`
+        emailRedirectTo: environment.authCallbackUrl || `${environment.appUrl}/auth/callback`
       }
     });
-    if (error) throw error;
+    if (error) {
+      console.error('AuthService: signUp error', error);
+      throw error;
+    }
     return result;
   }
 
@@ -67,7 +70,10 @@ export class AuthService {
       email,
       password
     });
-    if (error) throw error;
+    if (error) {
+      console.error('AuthService: signIn error', error);
+      throw error;
+    }
     return result;
   }
 
@@ -75,22 +81,37 @@ export class AuthService {
     const { error } = await this.supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${environment.appUrl}/auth/callback`
+        redirectTo: environment.authCallbackUrl || `${environment.appUrl}/auth/callback`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       }
     });
-    if (error) throw error;
+    if (error) {
+      console.error('AuthService: signInWithGoogle error', error);
+      throw error;
+    }
   }
 
   async signOut() {
-    const { error } = await this.supabase.auth.signOut();
-    if (error) throw error;
-    this.router.navigate(['/auth/login']);
+    try {
+      const { error } = await this.supabase.auth.signOut();
+      if (error) throw error;
+    } catch (error) {
+      console.error('AuthService: signOut error', error);
+    } finally {
+      this.router.navigate(['/auth/login']);
+    }
   }
 
   async resetPassword(email: string) {
     const { error } = await this.supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${environment.appUrl}/auth/reset-password`
+      redirectTo: environment.resetPasswordUrl || `${environment.appUrl}/auth/reset-password`
     });
-    if (error) throw error;
+    if (error) {
+      console.error('AuthService: resetPassword error', error);
+      throw error;
+    }
   }
 }
