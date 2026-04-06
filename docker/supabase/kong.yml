@@ -2,7 +2,7 @@ _format_version: "1.1"
 
 services:
   - name: auth
-    url: http://movabi-supabase-auth:9999
+    url: http://movabi-supabase-auth:8081
     routes:
       - name: auth
         paths:
