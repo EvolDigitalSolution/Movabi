@@ -50,6 +50,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@a
             {{ phoneCode }}
           </div>
         }
+        <ng-content select="[dropdown]"></ng-content>
       </div>
       @if (error) {
         <p class="mt-2 text-xs text-red-500 ml-1 font-medium flex items-center animate-in fade-in slide-in-from-top-1 duration-200">

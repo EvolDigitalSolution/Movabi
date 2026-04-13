@@ -2,7 +2,7 @@ _format_version: "1.1"
 
 services:
   - name: auth
-    url: http://movabi-supabase-auth:8081
+    url: http://movabi-supabase-auth:9999
     routes:
       - name: auth
         paths:
@@ -21,3 +21,38 @@ services:
       - name: realtime
         paths:
           - /realtime/v1
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:3000
+        - https://movabi.apps.evolsolution.com
+      headers:
+        - Accept
+        - Accept-Language
+        - Content-Language
+        - Content-Type
+        - Authorization
+        - x-client-info
+        - apikey
+        - X-Client-Info
+        - Range
+        - Range-Unit
+        - Content-Profile
+        - Accept-Profile
+        - Prefer
+      methods:
+        - GET
+        - POST
+        - PATCH
+        - DELETE
+        - OPTIONS
+        - PUT
+      exposed_headers:
+        - Content-Range
+        - X-Total-Count
+        - Content-Profile
+        - Accept-Profile
+      max_age: 3600
+      credentials: true

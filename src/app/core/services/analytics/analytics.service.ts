@@ -9,6 +9,7 @@ export type AnalyticsEvent =
   | 'location_map_selection_used'
   | 'location_manual_address_entered'
   | 'location_retry_clicked'
+  | 'booking_created'
   | 'booking_created_with_gps'
   | 'booking_created_with_manual_address'
   | 'booking_created_with_map_selection';

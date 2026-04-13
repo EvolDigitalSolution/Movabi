@@ -173,9 +173,68 @@ router.post('/webhook', async (req: Request, res: Response) => {
     case 'payment_intent.succeeded': {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       const jobId = paymentIntent.metadata?.jobId;
+      const userId = paymentIntent.metadata?.userId;
+      const purpose = paymentIntent.metadata?.purpose;
       const tenantId = paymentIntent.metadata?.tenantId;
 
-      if (jobId) {
+      if (purpose === 'wallet_topup' && userId) {
+        const amount = paymentIntent.amount / 100;
+
+        // 1. Ensure wallet exists and increment balance
+        const { data: wallet, error: walletError } = await supabaseAdmin
+          .from('wallets')
+          .upsert({ 
+            user_id: userId,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' })
+          .select()
+          .single();
+
+        if (walletError) {
+          console.error('Error ensuring wallet exists for top-up:', walletError);
+        } else {
+          // 2. Atomic increment using RPC or direct update (since we are server-side and it's a top-up)
+          // We'll use a direct update here for simplicity, but in a high-concurrency app, an RPC is better.
+          const { error: updateError } = await supabaseAdmin.rpc('increment_wallet_balance', {
+            p_user_id: userId,
+            p_amount: amount
+          });
+
+          if (updateError) {
+            console.error('Error incrementing wallet balance:', updateError);
+          } else {
+            // 3. Log transaction with idempotency check (handled by unique index on stripe_payment_intent_id)
+            const { error: transError } = await supabaseAdmin
+              .from('wallet_transactions')
+              .insert({
+                user_id: userId,
+                amount: amount,
+                type: 'topup',
+                description: `Wallet top-up via Stripe`,
+                stripe_payment_intent_id: paymentIntent.id,
+                metadata: {
+                  stripe_payment_intent_id: paymentIntent.id,
+                  currency: paymentIntent.currency
+                }
+              });
+
+            if (transError) {
+              // If it's a duplicate key error, it means we already processed this top-up
+              if (transError.code === '23505') {
+                console.log(`Duplicate top-up detected for PaymentIntent ${paymentIntent.id}, skipping.`);
+              } else {
+                console.error('Error logging wallet transaction:', transError);
+              }
+            } else {
+              await EventService.logEvent('wallet_topped_up', { 
+                userId, 
+                amount,
+                paymentIntentId: paymentIntent.id
+              }, tenantId, userId);
+            }
+          }
+        }
+      } else if (jobId) {
         // Update job payment status
         const { error: jobError } = await supabaseAdmin
           .from('jobs')

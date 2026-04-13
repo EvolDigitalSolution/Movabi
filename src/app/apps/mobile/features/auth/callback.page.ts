@@ -3,6 +3,8 @@ import { IonicModule } from '@ionic/angular';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { CommonModule } from '@angular/common';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { filter, firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-auth-callback',
@@ -26,38 +28,14 @@ export class AuthCallbackPage implements OnInit {
   private auth = inject(AuthService);
   private router = inject(Router);
 
-  ngOnInit() {
-    // The AuthService constructor already listens to onAuthStateChange
-    // We just need to wait for it to be ready and then redirect
-    this.checkAuth();
-  }
-
-  private async checkAuth() {
-    // Give it a moment to process the hash/code in the URL
-    setTimeout(() => {
-      const user = this.auth.currentUser();
-      const role = this.auth.userRole();
-
-      if (user && role) {
-        this.redirectByRole(role);
-      } else if (user) {
-        // User is logged in but role is not yet loaded
-        // This might happen if the profile sync is still in progress
-        this.router.navigate(['/customer']);
-      } else {
-        // Not logged in, maybe something went wrong
-        this.router.navigate(['/auth/login']);
-      }
-    }, 1500);
-  }
-
-  private redirectByRole(role: string) {
-    if (role === 'admin') {
-      this.router.navigate(['/admin']);
-    } else if (role === 'driver') {
-      this.router.navigate(['/driver']);
-    } else {
-      this.router.navigate(['/customer']);
+  async ngOnInit() {
+    // Wait for auth to be ready
+    if (!this.auth.isAuthReady()) {
+      await firstValueFrom(
+        toObservable(this.auth.isAuthReady).pipe(filter(ready => ready))
+      );
     }
+
+    await this.auth.handlePostAuthRedirect();
   }
 }

@@ -55,6 +55,10 @@ export const ADMIN_WEB_ROUTES: Routes = [
         loadComponent: () => import('@admin/features/jobs/job-monitoring.component').then(m => m.JobMonitoringComponent)
       },
       {
+        path: 'settings',
+        loadComponent: () => import('@admin/features/settings/settings.component').then(m => m.AdminSettingsComponent)
+      },
+      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full'

@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
-import { Booking, ServiceTypeEnum, BookingStatus, DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
+import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
+import { Job, ServiceTypeEnum, BookingStatus, DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { BookingService } from '../../../../core/services/booking/booking.service';
 import { CommonModule } from '@angular/common';
 import { IonicModule, AlertController, ToastController } from '@ionic/angular';
@@ -76,7 +77,7 @@ import { CardComponent } from '../../../../shared/ui/card';
                   }
                 </td>
                 <td class="px-10 py-6">
-                  <span class="text-sm font-display font-bold text-slate-900">£{{ booking.total_price }}</span>
+                  <span class="text-sm font-display font-bold text-slate-900">£{{ booking.price }}</span>
                 </td>
                 <td class="px-10 py-6">
                   <app-badge [variant]="getBadgeVariant(booking.status)">
@@ -221,13 +222,51 @@ import { CardComponent } from '../../../../shared/ui/card';
               <div class="bg-blue-600 rounded-[2.5rem] p-10 text-white flex items-center justify-between shadow-2xl shadow-blue-600/20">
                 <div>
                   <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Total Price</p>
-                  <p class="text-4xl font-display font-bold tracking-tight">£{{ selectedBooking.total_price }}</p>
+                  <p class="text-4xl font-display font-bold tracking-tight">£{{ selectedBooking.price }}</p>
                 </div>
                 <div class="text-right">
                   <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Service Type</p>
-                  <app-badge variant="primary" class="bg-white/20 text-white border-white/30">{{ selectedBooking.service_type?.name || 'Standard' }}</app-badge>
+                  <app-badge variant="primary" class="bg-white/20 text-white border-white/30">{{ selectedBooking.service_slug }}</app-badge>
                 </div>
               </div>
+
+              <!-- Errand Specific Details -->
+              @if (selectedBooking.service_slug === 'errand' && details()) {
+                <app-card class="p-8 space-y-6">
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Errand Details</h3>
+                  
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
+                      <p class="text-xl font-display font-bold text-slate-900">£{{ details()?.['estimated_budget'] }}</p>
+                    </div>
+                    <div class="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Actual Spend</p>
+                      <p class="text-xl font-display font-bold text-emerald-600">£{{ details()?.['actual_spending'] || 0 }}</p>
+                    </div>
+                  </div>
+
+                  @if (details()?.['receipt_url']) {
+                    <div class="pt-4">
+                      <app-button variant="secondary" size="sm" (click)="viewReceipt(details()?.['receipt_url']?.toString())">
+                        <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
+                        View Receipt
+                      </app-button>
+                    </div>
+                  }
+
+                  @if (details()?.['items_list']) {
+                    <div class="pt-4">
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Items List</p>
+                      <div class="flex flex-wrap gap-2">
+                        @for (item of $any(details()?.['items_list']); track item) {
+                          <app-badge variant="secondary">{{ item }}</app-badge>
+                        }
+                      </div>
+                    </div>
+                  }
+                </app-card>
+              }
             }
           </div>
         </div>
@@ -244,13 +283,18 @@ export class BookingListComponent implements OnInit {
   private toastCtrl = inject(ToastController);
 
   ServiceTypeEnum = ServiceTypeEnum;
-  bookings = signal<Booking[]>([]);
+  bookings = signal<Job[]>([]);
   drivers = signal<(DriverProfile & { vehicles: Vehicle[] })[]>([]);
   isModalOpen = false;
-  selectedBooking: Booking | null = null;
+  selectedBooking: Job | null = null;
   details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
 
-  allStatuses: string[] = ['requested', 'searching', 'assigned', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled'];
+  allStatuses: string[] = [
+    'requested', 'searching', 'assigned', 'accepted', 'arrived', 
+    'heading_to_pickup', 'arrived_at_store', 'shopping_in_progress', 
+    'collected', 'en_route_to_customer', 'delivered',
+    'in_progress', 'completed', 'cancelled', 'settled'
+  ];
 
   async ngOnInit() {
     await Promise.all([
@@ -260,8 +304,8 @@ export class BookingListComponent implements OnInit {
   }
 
   async loadBookings() {
-    const data = await this.adminService.getLiveBookings();
-    this.bookings.set(data);
+    const data = await this.adminService.getJobs();
+    this.bookings.set(data as Job[]);
   }
 
   async loadDrivers() {
@@ -269,12 +313,12 @@ export class BookingListComponent implements OnInit {
     this.drivers.set(data);
   }
 
-  async viewDetails(booking: Booking) {
+  async viewDetails(booking: Job) {
     this.selectedBooking = booking;
     this.isModalOpen = true;
     
     try {
-      const details = await this.bookingService.getBookingDetails(booking.id, booking.service_code);
+      const details = await this.bookingService.getBookingDetails(booking.id, booking.service_slug as ServiceTypeEnum);
       this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);
     } catch (e) {
       console.error('Failed to load details', e);
@@ -332,7 +376,8 @@ export class BookingListComponent implements OnInit {
               await this.loadBookings();
               if (this.selectedBooking?.id === bookingId) {
                 const updated = await this.bookingService.getBooking(bookingId);
-                this.selectedBooking = updated;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                this.selectedBooking = updated as any;
               }
               const toast = await this.toastCtrl.create({
                 message: 'Driver assigned successfully',
@@ -383,6 +428,15 @@ export class BookingListComponent implements OnInit {
       case 'accepted': return 'bg-blue-100 text-blue-600';
       case 'in_progress': return 'bg-indigo-100 text-indigo-600';
       default: return 'bg-gray-100 text-gray-600';
+    }
+  }
+
+  private supabase = inject(SupabaseService);
+  viewReceipt(path: string | null | undefined) {
+    if (!path) return;
+    const { data } = this.supabase.storage.from('documents').getPublicUrl(path);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
     }
   }
 }

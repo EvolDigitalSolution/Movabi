@@ -1,10 +1,12 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, NavController, LoadingController, ToastController, AlertController } from '@ionic/angular';
+import { IonicModule, NavController, LoadingController, ToastController, AlertController, ActionSheetController } from '@ionic/angular';
 import { ActivatedRoute } from '@angular/router';
+import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
-import { BookingStatus, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
+import { BookingStatus, ServiceTypeEnum, ErrandDetails, RideDetails, DeliveryDetails, VanDetails, ErrandFunding } from '../../../../../shared/models/booking.model';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
 
@@ -28,7 +30,7 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../s
             <div class="relative z-10">
               <div class="flex justify-between items-center mb-8">
                 <app-badge variant="primary" class="bg-white/20 text-white border-white/30">{{ job()?.service_type?.name }}</app-badge>
-                <span class="text-4xl font-display font-bold">£{{ job()?.total_price }}</span>
+                <span class="text-4xl font-display font-bold">{{ config.formatCurrency(job()?.total_price) }}</span>
               </div>
               <h2 class="text-3xl font-display font-bold capitalize tracking-tight">{{ job()?.status?.replace('_', ' ') }}</h2>
               <p class="text-blue-100/80 font-medium mt-1 text-sm uppercase tracking-widest">ID: {{ job()?.id?.slice(0,8) }}</p>
@@ -77,51 +79,126 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../s
                 <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Service Requirements</h3>
                 
                 <div class="space-y-4">
-                  @if (job()?.service_code === ServiceTypeEnum.RIDE) {
+                  @if (job()?.service_slug === ServiceTypeEnum.RIDE) {
                     <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex justify-between items-center">
                       <span class="text-sm font-bold text-slate-600">Passengers</span>
-                      <span class="text-xl font-display font-bold text-slate-900">{{ details()!['passenger_count'] }}</span>
+                      <span class="text-xl font-display font-bold text-slate-900">{{ anyDetails()['passenger_count'] }}</span>
                     </div>
-                    @if (details()!['notes']) {
+                    @if (anyDetails()['notes']) {
                       <div class="p-5 bg-blue-50/50 rounded-3xl border border-blue-100/50">
                         <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Customer Notes</p>
-                        <p class="text-sm text-slate-700 italic leading-relaxed">"{{ details()!['notes'] }}"</p>
+                        <p class="text-sm text-slate-700 italic leading-relaxed">"{{ anyDetails()['notes'] }}"</p>
                       </div>
                     }
                   }
 
-                  @if (job()?.service_code === ServiceTypeEnum.ERRAND) {
+                  @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
                     <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Shopping List</p>
+                      <div class="flex justify-between items-center mb-4">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shopping List</p>
+                        @if (errandDetails()?.receipt_url) {
+                          <app-badge variant="primary" class="bg-emerald-100 text-emerald-700 border-emerald-200">
+                            <ion-icon name="checkmark-done" class="mr-1"></ion-icon>
+                            Receipt Uploaded
+                          </app-badge>
+                        }
+                      </div>
                       <div class="flex flex-wrap gap-2 mb-6">
                         @for (item of itemsList(); track item) {
                           <app-badge variant="primary" class="bg-white border-slate-100 text-slate-600">{{ item }}</app-badge>
                         }
                       </div>
-                      @if (details()!['estimated_budget']) {
-                        <div class="flex justify-between items-center pt-4 border-t border-slate-200/50">
-                          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Budget</span>
-                          <span class="text-xl font-display font-bold text-emerald-600">£{{ details()!['estimated_budget'] }}</span>
+                      
+                      <div class="pt-4 border-t border-slate-200/50 space-y-4">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Initial Budget</p>
+                            <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(errandDetails()?.estimated_budget) }}</p>
+                          </div>
+                          <div class="text-right">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Spent</p>
+                            <p class="text-lg font-display font-bold" [class.text-emerald-600]="(errandDetails()?.actual_spending || 0) <= (errandDetails()?.estimated_budget || 0)" [class.text-rose-600]="(errandDetails()?.actual_spending || 0) > (errandDetails()?.estimated_budget || 0)">
+                              {{ config.formatCurrency(errandDetails()?.actual_spending) }}
+                            </p>
+                          </div>
+                        </div>
+
+                        @if (funding()?.over_budget_status !== 'none') {
+                          <div class="p-4 rounded-2xl border" [class]="funding()?.over_budget_status === 'approved' ? 'bg-emerald-50 border-emerald-100' : funding()?.over_budget_status === 'requested' ? 'bg-amber-50 border-amber-100' : 'bg-rose-50 border-rose-100'">
+                            <div class="flex justify-between items-center">
+                              <span class="text-[10px] font-bold uppercase tracking-widest" [class]="funding()?.over_budget_status === 'approved' ? 'text-emerald-600' : funding()?.over_budget_status === 'requested' ? 'text-amber-600' : 'text-rose-600'">
+                                Over Budget: {{ funding()?.over_budget_status }}
+                              </span>
+                              <span class="font-bold text-slate-900">{{ config.formatCurrency(funding()?.over_budget_amount) }}</span>
+                            </div>
+                          </div>
+                        }
+                      </div>
+
+                      @if (job()?.status === 'in_progress') {
+                        <div class="grid grid-cols-2 gap-3 pt-6">
+                          <app-button variant="secondary" size="sm" (click)="recordSpending()">
+                            <ion-icon name="receipt-outline" slot="start"></ion-icon>
+                            Record Spend
+                          </app-button>
+                          <app-button variant="secondary" size="sm" (click)="requestOverBudget()">
+                            <ion-icon name="add-outline" slot="start"></ion-icon>
+                            Extra Budget
+                          </app-button>
+                        </div>
+                        
+                        <div class="mt-3">
+                          <input type="file" #receiptInput class="hidden" (change)="onReceiptSelected($event)" accept="image/*">
+                          <app-button variant="secondary" size="sm" class="w-full" (click)="receiptInput.click()">
+                            <ion-icon name="camera-outline" slot="start"></ion-icon>
+                            {{ errandDetails()?.receipt_url ? 'Update Receipt' : 'Upload Receipt' }}
+                          </app-button>
                         </div>
                       }
                     </div>
-                    @if (details()!['delivery_instructions']) {
-                      <div class="p-5 bg-blue-50/50 rounded-3xl border border-blue-100/50">
+
+                    <!-- Contact Info -->
+                    <div class="grid grid-cols-2 gap-4 mt-6">
+                      <app-card class="p-5">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Customer</p>
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs font-bold text-slate-900">Call</span>
+                          <app-button variant="secondary" size="sm" (click)="callPhone(anyDetails()['customer_phone']?.toString())" class="h-10 w-10">
+                            <ion-icon name="call-outline" slot="icon-only"></ion-icon>
+                          </app-button>
+                        </div>
+                      </app-card>
+
+                      @if (anyDetails()['recipient_phone']) {
+                        <app-card class="p-5">
+                          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Recipient</p>
+                          <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-900">Call</span>
+                            <app-button variant="secondary" size="sm" (click)="callPhone(anyDetails()['recipient_phone']?.toString())" class="h-10 w-10">
+                              <ion-icon name="call-outline" slot="icon-only"></ion-icon>
+                            </app-button>
+                          </div>
+                        </app-card>
+                      }
+                    </div>
+
+                    @if (anyDetails()['delivery_instructions']) {
+                      <div class="p-5 bg-blue-50/50 rounded-3xl border border-blue-100/50 mt-6">
                         <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Instructions</p>
-                        <p class="text-sm text-slate-700 italic leading-relaxed">"{{ details()!['delivery_instructions'] }}"</p>
+                        <p class="text-sm text-slate-700 italic leading-relaxed">"{{ anyDetails()['delivery_instructions'] }}"</p>
                       </div>
                     }
                   }
 
-                  @if (job()?.service_code === ServiceTypeEnum.VAN) {
+                  @if (job()?.service_slug === ServiceTypeEnum.VAN) {
                     <div class="grid grid-cols-2 gap-4">
                       <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100">
                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Helpers</p>
-                        <p class="text-xl font-display font-bold text-slate-900">{{ details()!['helper_count'] }}</p>
+                        <p class="text-xl font-display font-bold text-slate-900">{{ anyDetails()['helper_count'] }}</p>
                       </div>
                       <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100">
                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Floor</p>
-                        <p class="text-xl font-display font-bold text-slate-900">{{ details()!['floor_number'] || '0' }}</p>
+                        <p class="text-xl font-display font-bold text-slate-900">{{ anyDetails()['floor_number'] || '0' }}</p>
                       </div>
                     </div>
                   }
@@ -143,6 +220,26 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../s
                 </app-button>
               }
               @case ('in_progress') {
+                @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
+                  <div class="space-y-4 mb-6">
+                    <div class="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100">
+                      <div class="flex justify-between items-center mb-4">
+                        <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Errand Budget</span>
+                        <span class="text-xl font-display font-bold text-emerald-700">{{ config.formatCurrency(anyDetails()['estimated_budget']) }}</span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actual Spending</span>
+                        <span class="text-xl font-display font-bold text-slate-900">{{ config.formatCurrency(anyDetails()['actual_spending']) }}</span>
+                      </div>
+                    </div>
+                    
+                    <app-button variant="secondary" size="lg" class="w-full h-14 rounded-2xl border-emerald-200 text-emerald-700 hover:bg-emerald-50" (click)="recordSpending()">
+                      <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
+                      Record Spending
+                    </app-button>
+                  </div>
+                }
+
                 <app-button variant="primary" size="lg" class="w-full h-16 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (click)="completeTrip()">
                   Complete Trip
                 </app-button>
@@ -191,24 +288,38 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../s
   standalone: true,
   imports: [IonicModule, CommonModule, CardComponent, ButtonComponent, BadgeComponent]
 })
-export class JobDetailsPage implements OnInit {
+export class JobDetailsPage implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private driverService = inject(DriverService);
   private loadingCtrl = inject(LoadingController);
   private toastCtrl = inject(ToastController);
   private alertCtrl = inject(AlertController);
+  private actionSheetCtrl = inject(ActionSheetController);
   public nav = inject(NavController);
   private bookingService = inject(BookingService);
+  public config = inject(AppConfigService);
 
   ServiceTypeEnum = ServiceTypeEnum;
   job = this.driverService.activeJob;
-  details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
+  details = signal<ErrandDetails | RideDetails | DeliveryDetails | VanDetails | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  anyDetails = computed(() => this.details() as any);
+  errandDetails = computed(() => this.details() as ErrandDetails);
+  funding = signal<ErrandFunding | null>(null);
   isLoading = signal(true);
-  itemsList = computed(() => (this.details()?.['items_list'] as string[]) || []);
+  itemsList = computed(() => ((this.details() as ErrandDetails)?.items_list as string[]) || []);
+  private channel?: RealtimeChannel;
 
   ngOnInit() {
     const id = this.route.snapshot.params['id'];
     this.loadJob(id);
+    if (id) {
+      this.channel = this.bookingService.subscribeToBooking(id);
+    }
+  }
+
+  ngOnDestroy() {
+    this.channel?.unsubscribe();
   }
 
   async loadJob(id: string) {
@@ -226,8 +337,13 @@ export class JobDetailsPage implements OnInit {
     const currentJob = this.job();
     if (currentJob) {
       try {
-        const details = await this.bookingService.getBookingDetails(currentJob.id, currentJob.service_code);
-        this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);
+        const details = await this.bookingService.getBookingDetails(currentJob.id, currentJob.service_slug);
+        this.details.set(details as ErrandDetails | RideDetails | DeliveryDetails | VanDetails);
+
+        if (currentJob.service_slug === ServiceTypeEnum.ERRAND) {
+          const funding = await this.bookingService.getErrandFunding(currentJob.id);
+          this.funding.set(funding);
+        }
       } catch (e) {
         console.error('Failed to load job details', e);
       }
@@ -251,6 +367,32 @@ export class JobDetailsPage implements OnInit {
   }
 
   async completeTrip() {
+    if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
+      const errandDetails = this.details() as ErrandDetails;
+      if (!errandDetails.actual_spending || errandDetails.actual_spending <= 0) {
+        const toast = await this.toastCtrl.create({
+          message: 'Please record the actual spending before completing the trip.',
+          duration: 3000,
+          color: 'warning'
+        });
+        toast.present();
+        return;
+      }
+
+      if (!errandDetails.receipt_url) {
+        const confirm = await this.alertCtrl.create({
+          header: 'Missing Receipt',
+          message: 'You haven\'t uploaded a receipt. Are you sure you want to complete without one?',
+          buttons: [
+            { text: 'Upload Now', role: 'cancel' },
+            { text: 'Complete Anyway', handler: () => this.executeCompletion() }
+          ]
+        });
+        await confirm.present();
+        return;
+      }
+    }
+
     const alert = await this.alertCtrl.create({
       header: 'Complete Trip',
       message: 'Are you sure you want to complete this trip?',
@@ -258,12 +400,137 @@ export class JobDetailsPage implements OnInit {
         { text: 'Cancel', role: 'cancel' },
         {
           text: 'Complete',
-          handler: async () => {
-            await this.updateStatus('completed');
+          handler: () => this.executeCompletion()
+        }
+      ]
+    });
+    await alert.present();
+  }
+
+  private async executeCompletion() {
+    await this.updateStatus('completed');
+  }
+
+  async recordSpending() {
+    const alert = await this.alertCtrl.create({
+      header: 'Record Spending',
+      message: 'Enter the actual amount spent on items.',
+      inputs: [
+        {
+          name: 'amount',
+          type: 'number',
+          placeholder: 'Amount (e.g. 15.50)',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          value: (this.details() as any)?.['actual_spending']
+        },
+        {
+          name: 'notes',
+          type: 'textarea',
+          placeholder: 'Notes (optional)',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          value: (this.details() as any)?.['spending_notes']
+        }
+      ],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Save',
+          handler: async (data) => {
+            if (!data.amount) return false;
+            
+            const loading = await this.loadingCtrl.create({ message: 'Saving...' });
+            await loading.present();
+            
+            try {
+              await this.driverService.recordErrandSpending(this.job()!.id, parseFloat(data.amount), data.notes);
+              await this.loadJob(this.job()!.id); // Refresh
+              await loading.dismiss();
+              
+              const toast = await this.toastCtrl.create({ message: 'Spending recorded successfully', duration: 2000, color: 'success' });
+              toast.present();
+              return true;
+            } catch (e: unknown) {
+              await loading.dismiss();
+              const message = e instanceof Error ? e.message : 'Failed to save';
+              const toast = await this.toastCtrl.create({ message, duration: 2000, color: 'danger' });
+              toast.present();
+              return false;
+            }
           }
         }
       ]
     });
     await alert.present();
+  }
+
+  async requestOverBudget() {
+    const alert = await this.alertCtrl.create({
+      header: 'Request Over Budget',
+      subHeader: 'Ask customer to approve additional funds',
+      inputs: [
+        {
+          name: 'amount',
+          type: 'number',
+          placeholder: 'Additional amount needed (£)',
+        },
+        {
+          name: 'reason',
+          type: 'textarea',
+          placeholder: 'Reason for over budget',
+        }
+      ],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Request',
+          handler: async (data) => {
+            if (!data.amount) return false;
+            const loading = await this.loadingCtrl.create({ message: 'Sending request...' });
+            await loading.present();
+            try {
+              await this.driverService.requestOverBudget(this.job()!.id, parseFloat(data.amount), data.reason);
+              await this.loadJob(this.job()!.id); // Refresh to show requested status
+              await loading.dismiss();
+              const toast = await this.toastCtrl.create({ message: 'Request sent to customer', duration: 3000, color: 'success' });
+              toast.present();
+              return true;
+            } catch (error) {
+              console.error('Over budget request failed', error);
+              await loading.dismiss();
+              return false;
+            }
+          }
+        }
+      ]
+    });
+    await alert.present();
+  }
+
+  async onReceiptSelected(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    const loading = await this.loadingCtrl.create({ message: 'Uploading receipt...' });
+    await loading.present();
+
+    try {
+      await this.driverService.uploadErrandReceipt(this.job()!.id, file);
+      await this.loadJob(this.job()!.id);
+      await loading.dismiss();
+      const toast = await this.toastCtrl.create({ message: 'Receipt uploaded successfully', duration: 2000, color: 'success' });
+      toast.present();
+    } catch (e: unknown) {
+      await loading.dismiss();
+      const message = e instanceof Error ? e.message : 'Upload failed';
+      const toast = await this.toastCtrl.create({ message, duration: 2000, color: 'danger' });
+      toast.present();
+    }
+  }
+
+  callPhone(phone?: string) {
+    if (phone) {
+      window.open(`tel:${phone}`, '_system');
+    }
   }
 }

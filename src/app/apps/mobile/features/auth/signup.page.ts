@@ -1,10 +1,35 @@
 import { Component, inject, signal } from '@angular/core';
-import { IonicModule, NavController } from '@ionic/angular';
+import { 
+  IonHeader, 
+  IonToolbar, 
+  IonButtons, 
+  IonBackButton, 
+  IonTitle, 
+  IonContent, 
+  IonIcon, 
+  IonButton, 
+  IonSpinner, 
+  IonSelect, 
+  IonSelectOption
+} from '@ionic/angular/standalone';
+import { Router, RouterModule } from '@angular/router';
+import { addIcons } from 'ionicons';
+import { 
+  checkmarkCircleOutline, 
+  alertCircleOutline, 
+  globeOutline, 
+  personOutline, 
+  mailOutline, 
+  lockClosedOutline, 
+  eyeOutline, 
+  eyeOffOutline, 
+  logoGoogle 
+} from 'ionicons/icons';
 import { AuthService } from '../../../../core/services/auth/auth.service';
+import { ProfileService } from '../../../../core/services/profile/profile.service';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
-import { RouterModule } from '@angular/router';
 
 @Component({
   selector: 'app-signup',
@@ -61,7 +86,7 @@ import { RouterModule } from '@angular/router';
                   (ionChange)="onCountryChange($event)"
                   class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
                 >
-                  @for (country of config.countries; track country.code) {
+                  @for (country of config.countries(); track country.code) {
                     <ion-select-option [value]="country.code">{{ country.name }}</ion-select-option>
                   }
                 </ion-select>
@@ -184,12 +209,29 @@ import { RouterModule } from '@angular/router';
     </ion-content>
   `,
   standalone: true,
-  imports: [IonicModule, CommonModule, FormsModule, ReactiveFormsModule, RouterModule]
+  imports: [
+    CommonModule, 
+    FormsModule, 
+    ReactiveFormsModule, 
+    RouterModule, 
+    IonHeader, 
+    IonToolbar, 
+    IonButtons, 
+    IonBackButton, 
+    IonTitle, 
+    IonContent, 
+    IonIcon, 
+    IonButton, 
+    IonSpinner, 
+    IonSelect, 
+    IonSelectOption
+  ]
 })
 export class SignupPage {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
-  private nav = inject(NavController);
+  private profileService = inject(ProfileService);
+  private router = inject(Router);
   public config = inject(AppConfigService);
 
   signupForm = this.fb.group({
@@ -203,6 +245,20 @@ export class SignupPage {
   isLoading = signal(false);
   isSuccess = signal(false);
   errorMessage = signal<string | null>(null);
+
+  constructor() {
+    addIcons({ 
+      checkmarkCircleOutline, 
+      alertCircleOutline, 
+      globeOutline, 
+      personOutline, 
+      mailOutline, 
+      lockClosedOutline, 
+      eyeOutline, 
+      eyeOffOutline, 
+      logoGoogle 
+    });
+  }
 
   onCountryChange(event: Event) {
     const customEvent = event as CustomEvent;

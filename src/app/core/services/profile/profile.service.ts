@@ -1,38 +1,29 @@
-import { Injectable, inject, signal, effect } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { Profile, DriverProfile } from '@shared/models/booking.model';
-import { AuthService } from '../auth/auth.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ProfileService {
   private supabase = inject(SupabaseService);
-  private auth = inject(AuthService);
 
   profile = signal<Profile | null>(null);
-
-  constructor() {
-    // Sync profile when auth state changes
-    effect(() => {
-      const user = this.auth.currentUser();
-      if (user) {
-        this.fetchProfile(user.id);
-      } else {
-        this.profile.set(null);
-      }
-    });
-  }
 
   async fetchProfile(userId: string): Promise<Profile | null> {
     const { data, error } = await this.supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error fetching profile:', error);
+      return null;
+    }
+
+    if (!data) {
+      console.warn('Profile not found for user:', userId);
       return null;
     }
 
@@ -45,7 +36,7 @@ export class ProfileService {
       .from('profiles')
       .select('*, vehicles(*)')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error fetching driver profile:', error);
@@ -61,11 +52,11 @@ export class ProfileService {
       .update(updates)
       .eq('id', userId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     
-    if (this.profile()?.id === userId) {
+    if (data) {
       this.profile.set(data);
     }
     
@@ -77,9 +68,9 @@ export class ProfileService {
       .from('profiles')
       .select('role')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error) return null;
+    if (error || !data) return null;
     return data.role;
   }
 

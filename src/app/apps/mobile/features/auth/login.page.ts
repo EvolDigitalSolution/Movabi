@@ -1,7 +1,25 @@
-import { Component, inject, signal, effect } from '@angular/core';
-import { IonicModule, NavController } from '@ionic/angular';
+import { Component, inject, signal } from '@angular/core';
+import { 
+  IonHeader, 
+  IonToolbar, 
+  IonTitle, 
+  IonContent, 
+  IonIcon, 
+  IonButton, 
+  IonSpinner
+} from '@ionic/angular/standalone';
 import { Router, RouterModule } from '@angular/router';
+import { addIcons } from 'ionicons';
+import { 
+  alertCircleOutline, 
+  mailOutline, 
+  lockClosedOutline, 
+  eyeOutline, 
+  eyeOffOutline, 
+  logoGoogle 
+} from 'ionicons/icons';
 import { AuthService } from '../../../../core/services/auth/auth.service';
+import { ProfileService } from '../../../../core/services/profile/profile.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 
@@ -113,12 +131,24 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
     </ion-content>
   `,
   standalone: true,
-  imports: [IonicModule, CommonModule, FormsModule, ReactiveFormsModule, RouterModule]
+  imports: [
+    CommonModule, 
+    FormsModule, 
+    ReactiveFormsModule, 
+    RouterModule, 
+    IonHeader, 
+    IonToolbar, 
+    IonTitle, 
+    IonContent, 
+    IonIcon, 
+    IonButton, 
+    IonSpinner
+  ]
 })
 export class LoginPage {
   private fb = inject(FormBuilder);
   public auth = inject(AuthService);
-  private nav = inject(NavController);
+  private profileService = inject(ProfileService);
   private router = inject(Router);
 
   loginForm = this.fb.group({
@@ -129,15 +159,16 @@ export class LoginPage {
   showPassword = signal(false);
   isLoading = signal(false);
   errorMessage = signal<string | null>(null);
+  private isSubmitting = false;
 
   constructor() {
-    effect(() => {
-      const user = this.auth.currentUser();
-      const role = this.auth.userRole();
-      
-      if (user && role) {
-        this.redirectByRole(role);
-      }
+    addIcons({ 
+      alertCircleOutline, 
+      mailOutline, 
+      lockClosedOutline, 
+      eyeOutline, 
+      eyeOffOutline, 
+      logoGoogle 
     });
   }
 
@@ -146,43 +177,40 @@ export class LoginPage {
   }
 
   async onSubmit() {
-    if (this.loginForm.invalid) return;
+    if (this.loginForm.invalid || this.isSubmitting) return;
     const { email, password } = this.loginForm.value;
     if (!email || !password) return;
 
+    this.isSubmitting = true;
     this.isLoading.set(true);
     this.errorMessage.set(null);
     try {
       await this.auth.signIn(email, password);
+      await this.auth.handlePostAuthRedirect();
     } catch (err: unknown) {
       console.error('Login failed:', err);
       const message = err instanceof Error ? err.message : 'Invalid email or password. Please try again.';
       this.errorMessage.set(message);
     } finally {
       this.isLoading.set(false);
+      this.isSubmitting = false;
     }
   }
 
   async loginWithGoogle() {
+    if (this.isSubmitting) return;
+    this.isSubmitting = true;
     this.isLoading.set(true);
     this.errorMessage.set(null);
     try {
       await this.auth.signInWithGoogle();
+      // Note: OAuth usually redirects away and back to callback page
     } catch (err: unknown) {
       console.error('Google login failed:', err);
       const message = err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
       this.errorMessage.set(message);
       this.isLoading.set(false);
-    }
-  }
-
-  private redirectByRole(role: string) {
-    if (role === 'admin') {
-      this.router.navigate(['/admin']);
-    } else if (role === 'driver') {
-      this.router.navigate(['/driver']);
-    } else {
-      this.router.navigate(['/customer']);
+      this.isSubmitting = false;
     }
   }
 }

@@ -3,7 +3,7 @@ import { IonicModule } from '@ionic/angular';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 
 @Component({
   selector: 'app-forgot-password',
@@ -95,6 +95,7 @@ import { RouterModule } from '@angular/router';
 export class ForgotPasswordPage {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
+  private router = inject(Router);
 
   forgotForm = this.fb.group({
     email: ['', [Validators.required, Validators.email]]
@@ -105,6 +106,16 @@ export class ForgotPasswordPage {
   isLoading = signal(false);
   isSuccess = signal(false);
   errorMessage = signal<string | null>(null);
+
+  private redirectByRole(role: string) {
+    if (role === 'admin') {
+      this.router.navigate(['/admin']);
+    } else if (role === 'driver') {
+      this.router.navigate(['/driver']);
+    } else {
+      this.router.navigate(['/customer']);
+    }
+  }
 
   async onSubmit() {
     if (this.forgotForm.invalid) return;

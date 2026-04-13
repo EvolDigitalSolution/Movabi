@@ -1,6 +1,17 @@
 import { Component, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, ModalController } from '@ionic/angular';
+import { 
+  IonHeader, 
+  IonToolbar, 
+  IonTitle, 
+  IonButtons, 
+  IonButton, 
+  IonIcon, 
+  IonContent, 
+  ModalController 
+} from '@ionic/angular/standalone';
+import { addIcons } from 'ionicons';
+import { closeOutline, checkmarkCircle, closeCircle, bulbOutline } from 'ionicons/icons';
 import { ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
 import { AppConfigService } from '@core/services/config/app-config.service';
 import { SubscriptionPlan } from '@shared/models/booking.model';
@@ -8,7 +19,18 @@ import { SubscriptionPlan } from '@shared/models/booking.model';
 @Component({
   selector: 'app-plan-details-modal',
   standalone: true,
-  imports: [CommonModule, IonicModule, ButtonComponent, BadgeComponent],
+  imports: [
+    CommonModule, 
+    IonHeader, 
+    IonToolbar, 
+    IonTitle, 
+    IonButtons, 
+    IonButton, 
+    IonIcon, 
+    IonContent, 
+    ButtonComponent, 
+    BadgeComponent
+  ],
   template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-6 bg-white">
@@ -34,7 +56,7 @@ import { SubscriptionPlan } from '@shared/models/booking.model';
               <tr>
                 <th class="p-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Feature</th>
                 <th class="p-4 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-slate-50/50">Starter</th>
-                <th class="p-4 text-center text-[10px] font-bold text-blue-600 uppercase tracking-widest border-b border-blue-100 bg-blue-50/30">{{ proPlan?.display_name || 'Weekly Pro' }}</th>
+                <th class="p-4 text-center text-[10px] font-bold text-blue-600 uppercase tracking-widest border-b border-blue-100 bg-blue-50/30">{{ proPlan()?.display_name || 'Weekly Pro' }}</th>
               </tr>
             </thead>
             <tbody class="text-sm">
@@ -42,8 +64,8 @@ import { SubscriptionPlan } from '@shared/models/booking.model';
                 <td class="p-4 font-medium text-slate-700 border-b border-slate-50">Monthly Fee</td>
                 <td class="p-4 text-center text-slate-900 font-bold border-b border-slate-50 bg-slate-50/50">{{ formatPrice(0) }}</td>
                 <td class="p-4 text-center text-blue-600 font-bold border-b border-blue-50 bg-blue-50/30">
-                  {{ formatPrice(proPlan?.amount || 25) }}
-                  <span class="text-[10px] font-medium">/{{ proPlan?.interval === 'week' ? 'wk' : 'mo' }}</span>
+                  {{ formatPrice(proPlan()?.amount || 25) }}
+                  <span class="text-[10px] font-medium">/{{ proPlan()?.interval === 'week' ? 'wk' : 'mo' }}</span>
                 </td>
               </tr>
               <tr>
@@ -110,6 +132,10 @@ export class PlanDetailsModal {
 
   plans = input<SubscriptionPlan[]>([]);
 
+  constructor() {
+    addIcons({ closeOutline, checkmarkCircle, closeCircle, bulbOutline });
+  }
+
   dismiss() {
     this.modalCtrl.dismiss();
   }
@@ -119,6 +145,6 @@ export class PlanDetailsModal {
   }
 
   get proPlan() {
-    return this.plans()?.find(p => p.plan_code === 'pro');
+    return () => this.plans()?.find(p => p.plan_code === 'pro');
   }
 }

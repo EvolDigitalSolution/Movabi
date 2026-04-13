@@ -2,9 +2,10 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { Profile } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
-import { IonicModule } from '@ionic/angular';
+import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { BadgeComponent } from '../../../../shared/ui/badge';
 import { ButtonComponent } from '../../../../shared/ui/button';
+import { AuthService } from '../../../../core/services/auth/auth.service';
 
 @Component({
   selector: 'app-user-list',
@@ -57,15 +58,16 @@ import { ButtonComponent } from '../../../../shared/ui/button';
                 <td class="px-10 py-6 text-sm font-bold text-slate-900">{{ user.email }}</td>
                 <td class="px-10 py-6 text-sm font-bold text-slate-900">{{ user.created_at | date:'mediumDate' }}</td>
                 <td class="px-10 py-6">
-                  <app-badge variant="success">Active</app-badge>
+                  <app-badge [variant]="getStatusVariant(user.account_status || 'active')">
+                    {{ (user.account_status || 'active') | uppercase }}
+                  </app-badge>
                 </td>
                 <td class="px-10 py-6 text-right">
                   <div class="flex items-center justify-end gap-2">
-                    <button class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center">
-                      <ion-icon name="create-outline" class="text-xl"></ion-icon>
-                    </button>
-                    <button class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-600 hover:text-white hover:shadow-lg hover:shadow-red-600/20 transition-all flex items-center justify-center">
-                      <ion-icon name="trash-outline" class="text-xl"></ion-icon>
+                    <button (click)="moderateUser(user)" 
+                            class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center"
+                            title="Moderate User">
+                      <ion-icon name="shield-outline" class="text-xl"></ion-icon>
                     </button>
                   </div>
                 </td>
@@ -81,10 +83,104 @@ import { ButtonComponent } from '../../../../shared/ui/button';
 })
 export class UserListComponent implements OnInit {
   private adminService = inject(AdminService);
+  private authService = inject(AuthService);
+  private alertCtrl = inject(AlertController);
+  private toastCtrl = inject(ToastController);
+
   users = signal<Profile[]>([]);
 
   async ngOnInit() {
+    await this.loadUsers();
+  }
+
+  async loadUsers() {
     const data = await this.adminService.getUsers();
     this.users.set(data);
+  }
+
+  getStatusVariant(status: string) {
+    switch (status) {
+      case 'active': return 'success';
+      case 'suspended': return 'warning';
+      case 'banned': return 'error';
+      case 'disabled': return 'secondary';
+      default: return 'success';
+    }
+  }
+
+  async moderateUser(user: Profile) {
+    const alert = await this.alertCtrl.create({
+      header: 'Moderate User',
+      subHeader: `${user.first_name} ${user.last_name}`,
+      inputs: [
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Active',
+          value: 'active',
+          checked: user.account_status === 'active' || !user.account_status
+        },
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Suspend',
+          value: 'suspended',
+          checked: user.account_status === 'suspended'
+        },
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Ban',
+          value: 'banned',
+          checked: user.account_status === 'banned'
+        },
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Disable',
+          value: 'disabled',
+          checked: user.account_status === 'disabled'
+        },
+        {
+          name: 'reason',
+          type: 'textarea',
+          placeholder: 'Reason for moderation...'
+        }
+      ],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Apply',
+          handler: async (data) => {
+            if (!data.status) return;
+            try {
+              await this.adminService.updateAccountStatus(
+                user.id, 
+                data.status, 
+                data.reason || '', 
+                this.authService.currentUser()?.id || ''
+              );
+              const toast = await this.toastCtrl.create({
+                message: `User status updated to ${data.status}`,
+                duration: 2000,
+                color: 'success'
+              });
+              await toast.present();
+              await this.loadUsers();
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+              const toast = await this.toastCtrl.create({
+                message: errorMessage,
+                duration: 3000,
+                color: 'danger'
+              });
+              await toast.present();
+            }
+          }
+        }
+      ]
+    });
+
+    await alert.present();
   }
 }

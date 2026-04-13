@@ -1,12 +1,20 @@
 export type BookingStatus = 
+  | 'pending'      // Initial state for some flows
   | 'requested'    // Initial state
   | 'searching'    // Looking for drivers
   | 'assigned'     // Driver found but not yet accepted
   | 'accepted'     // Driver accepted
   | 'arrived'      // Driver at pickup
+  | 'heading_to_pickup'
+  | 'arrived_at_store'
+  | 'shopping_in_progress'
+  | 'collected'
+  | 'en_route_to_customer'
+  | 'delivered'
   | 'in_progress'  // Journey started
   | 'completed'    // Journey finished
-  | 'cancelled';   // Cancelled by user or driver
+  | 'cancelled'    // Cancelled by user or driver
+  | 'settled';     // Final state for funded errands
 
 export type DriverStatus = 'offline' | 'online' | 'busy';
 
@@ -14,7 +22,7 @@ export enum ServiceTypeEnum {
   RIDE = 'ride',
   ERRAND = 'errand',
   DELIVERY = 'delivery',
-  VAN = 'van'
+  VAN = 'van-moving'
 }
 
 export interface Vehicle {
@@ -111,7 +119,35 @@ export interface TenantUser {
   created_at: string;
 }
 
-export type JobStatus = 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
+export type JobStatus = BookingStatus;
+
+export type JobEventType = 
+  | 'job_created'
+  | 'payment_initiated'
+  | 'payment_succeeded'
+  | 'payment_failed'
+  | 'driver_assigned'
+  | 'driver_accepted'
+  | 'driver_arrived'
+  | 'job_started'
+  | 'job_completed'
+  | 'job_cancelled'
+  | 'admin_action'
+  | 'status_change'
+  | 'errand_spending_recorded'
+  | 'over_budget_requested'
+  | 'errand_receipt_uploaded';
+
+export interface JobEvent {
+  id: string;
+  job_id: string;
+  event_type: JobEventType;
+  actor_id?: string;
+  actor_role?: 'customer' | 'driver' | 'admin' | 'system';
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  notes?: string;
+}
 
 export interface Job {
   id: string;
@@ -135,14 +171,23 @@ export interface Job {
   currency_code: string;
   country_code: string;
   estimated_distance?: number;
+  estimated_duration?: number;
   estimated_price?: number;
   status: JobStatus;
+  payment_status?: 'pending' | 'paid' | 'failed';
+  payment_intent_id?: string;
   scheduled_time: string;
   created_at: string;
   updated_at: string;
   customer?: Profile;
   driver?: Profile;
+  total_price?: number;
+  service_type?: ServiceType;
+  service_slug?: ServiceTypeEnum;
   city_id?: string;
+  metadata?: Record<string, unknown>;
+  errand_details?: ErrandDetails;
+  errand_funding?: ErrandFunding;
 }
 
 export interface City {
@@ -206,12 +251,17 @@ export interface DispatchCandidate extends DriverLocation {
 export interface JobEstimate {
   estimated_distance: number;
   estimated_price: number;
+  estimated_duration?: number;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
 }
 
 export interface Earning {
   id: string;
   driver_id: string;
-  booking_id: string;
+  job_id: string;
   amount: number;
   commission_fee: number;
   commission_rate_used: number;
@@ -220,6 +270,8 @@ export interface Earning {
   country_code: string;
   created_at: string;
 }
+
+export type AccountStatus = 'active' | 'suspended' | 'banned' | 'disabled';
 
 export interface Profile {
   id: string;
@@ -235,21 +287,63 @@ export interface Profile {
   currency_code: string;
   country_code: string;
   stripe_customer_id?: string;
+  onboarding_completed: boolean;
   is_online?: boolean;
   is_available?: boolean;
   last_active_at?: string;
+  account_status: AccountStatus;
+  moderation_reason?: string;
+  moderated_at?: string;
+  moderated_by?: string;
   created_at: string;
+  stripe_connect_status?: 'not_started' | 'pending' | 'restricted' | 'enabled';
+}
+
+export interface DriverAccount {
+  id: string;
+  user_id: string;
+  tenant_id: string;
+  stripe_account_id: string;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  onboarding_status: 'not_started' | 'pending' | 'restricted' | 'enabled';
+  onboarding_complete: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Wallet {
+  user_id: string;
+  available_balance: number;
+  reserved_balance: number;
+  currency_code: string;
+  updated_at: string;
+}
+
+export interface ErrandFunding {
+  id: string;
+  job_id: string;
+  customer_id: string;
+  amount_reserved: number;
+  status: 'pending' | 'reserved' | 'approved' | 'settled' | 'cancelled';
+  over_budget_status: 'none' | 'requested' | 'approved' | 'rejected';
+  over_budget_amount: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ServiceType {
   id: string;
   name: string;
-  code: ServiceTypeEnum;
+  slug: ServiceTypeEnum;
   description?: string;
   base_price: number;
   price_per_km: number;
   icon: string;
   is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Booking {
@@ -257,9 +351,23 @@ export interface Booking {
   customer_id: string;
   driver_id?: string;
   service_type_id: string;
-  service_code: ServiceTypeEnum;
+  service_slug: ServiceTypeEnum;
   status: BookingStatus;
+  payment_status?: 'pending' | 'paid' | 'failed';
+  price: number;
   total_price: number;
+  tenant_id: string;
+  currency_code: string;
+  country_code: string;
+  scheduled_time: string;
+  updated_at: string;
+  commission_fee?: number;
+  commission_rate_used?: number;
+  base_fare?: number;
+  service_fee?: number;
+  platform_fee?: number;
+  driver_payout?: number;
+  pricing_plan_used?: 'starter' | 'pro';
   pickup_address: string;
   pickup_lat: number;
   pickup_lng: number;
@@ -268,26 +376,40 @@ export interface Booking {
   dropoff_lng?: number;
   created_at: string;
   completed_at?: string;
+  estimated_distance?: number;
+  estimated_duration?: number;
+  distance_meters?: number;
+  duration_seconds?: number;
   service_type?: ServiceType;
   driver?: Profile;
   customer?: Profile;
+  metadata?: Record<string, unknown>;
+  errand_details?: ErrandDetails;
+  errand_funding?: ErrandFunding;
 }
 
 export interface RideDetails {
-  booking_id: string;
+  job_id: string;
   passenger_count: number;
   notes?: string;
 }
 
 export interface ErrandDetails {
-  booking_id: string;
+  job_id: string;
   items_list: string[];
   estimated_budget?: number;
   delivery_instructions?: string;
+  actual_spending?: number;
+  spending_notes?: string;
+  receipt_url?: string;
+  customer_phone?: string;
+  recipient_phone?: string;
+  recipient_name?: string;
+  substitution_rule?: 'contact_me' | 'best_match' | 'do_not_substitute';
 }
 
 export interface DeliveryDetails {
-  booking_id: string;
+  job_id: string;
   recipient_name: string;
   recipient_phone: string;
   item_description?: string;
@@ -296,7 +418,7 @@ export interface DeliveryDetails {
 }
 
 export interface VanDetails {
-  booking_id: string;
+  job_id: string;
   helper_count: number;
   floor_number?: number;
   has_elevator: boolean;
@@ -327,7 +449,7 @@ export interface Notification {
 
 export interface BookingStatusHistory {
   id: string;
-  booking_id: string;
+  job_id: string;
   status: BookingStatus;
   changed_by: string;
   created_at: string;

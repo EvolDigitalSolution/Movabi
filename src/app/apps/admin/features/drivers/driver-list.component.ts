@@ -2,8 +2,9 @@ import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
-import { IonicModule } from '@ionic/angular';
+import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent } from '../../../../shared/ui';
+import { AuthService } from '../../../../core/services/auth/auth.service';
 
 @Component({
   selector: 'app-driver-list',
@@ -53,6 +54,7 @@ import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent }
               <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Vehicle</th>
               <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Metrics</th>
               <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Verification</th>
+              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Stripe Payouts</th>
               <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
               <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
             </tr>
@@ -120,14 +122,31 @@ import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent }
                   </div>
                 </td>
                 <td class="px-10 py-6">
-                  <app-badge [variant]="driver.status === 'online' ? 'success' : driver.status === 'busy' ? 'warning' : 'secondary'">
-                    {{ driver.status }}
+                  <app-badge [variant]="driver.stripe_connect_status === 'enabled' ? 'success' : 'warning'">
+                    {{ (driver.stripe_connect_status || 'not_started') | uppercase }}
                   </app-badge>
                 </td>
+                <td class="px-10 py-6">
+                  <div class="flex flex-col gap-1">
+                    <app-badge [variant]="driver.status === 'online' ? 'success' : driver.status === 'busy' ? 'warning' : 'secondary'">
+                      {{ driver.status }}
+                    </app-badge>
+                    <app-badge [variant]="getAccountStatusVariant(driver.account_status || 'active')">
+                      {{ (driver.account_status || 'active') | uppercase }}
+                    </app-badge>
+                  </div>
+                </td>
                 <td class="px-10 py-6 text-right">
-                  <button class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center mx-auto sm:ml-auto">
-                    <ion-icon name="eye-outline" class="text-xl"></ion-icon>
-                  </button>
+                  <div class="flex items-center justify-end gap-2">
+                    <button (click)="moderateDriver(driver)" 
+                            class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center"
+                            title="Moderate Driver">
+                      <ion-icon name="shield-outline" class="text-xl"></ion-icon>
+                    </button>
+                    <button class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center">
+                      <ion-icon name="eye-outline" class="text-xl"></ion-icon>
+                    </button>
+                  </div>
                 </td>
               </tr>
             }
@@ -149,6 +168,10 @@ import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent }
 })
 export class DriverListComponent implements OnInit {
   private adminService = inject(AdminService);
+  private authService = inject(AuthService);
+  private alertCtrl = inject(AlertController);
+  private toastCtrl = inject(ToastController);
+
   drivers = signal<(DriverProfile & { vehicles: Vehicle[] })[]>([]);
   searchTerm = signal('');
   statusFilter = signal('all');
@@ -197,6 +220,93 @@ export class DriverListComponent implements OnInit {
     await this.adminService.verifyDriver(driverId, isVerified);
     // Update local state
     this.drivers.update(drivers => drivers.map(d => d.id === driverId ? { ...d, is_verified: isVerified } : d));
+  }
+
+  getAccountStatusVariant(status: string) {
+    switch (status) {
+      case 'active': return 'success';
+      case 'suspended': return 'warning';
+      case 'banned': return 'error';
+      case 'disabled': return 'secondary';
+      default: return 'success';
+    }
+  }
+
+  async moderateDriver(driver: DriverProfile) {
+    const alert = await this.alertCtrl.create({
+      header: 'Moderate Driver',
+      subHeader: `${driver.first_name} ${driver.last_name}`,
+      inputs: [
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Active',
+          value: 'active',
+          checked: driver.account_status === 'active' || !driver.account_status
+        },
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Suspend',
+          value: 'suspended',
+          checked: driver.account_status === 'suspended'
+        },
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Ban',
+          value: 'banned',
+          checked: driver.account_status === 'banned'
+        },
+        {
+          name: 'status',
+          type: 'radio',
+          label: 'Disable',
+          value: 'disabled',
+          checked: driver.account_status === 'disabled'
+        },
+        {
+          name: 'reason',
+          type: 'textarea',
+          placeholder: 'Reason for moderation...'
+        }
+      ],
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Apply',
+          handler: async (data) => {
+            if (!data.status) return;
+            try {
+              await this.adminService.updateAccountStatus(
+                driver.id, 
+                data.status, 
+                data.reason || '', 
+                this.authService.currentUser()?.id || ''
+              );
+              const toast = await this.toastCtrl.create({
+                message: `Driver status updated to ${data.status}`,
+                duration: 2000,
+                color: 'success'
+              });
+              await toast.present();
+              const updatedData = await this.adminService.getDrivers();
+              this.drivers.set(updatedData as (DriverProfile & { vehicles: Vehicle[] })[]);
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+              const toast = await this.toastCtrl.create({
+                message: errorMessage,
+                duration: 3000,
+                color: 'danger'
+              });
+              await toast.present();
+            }
+          }
+        }
+      ]
+    });
+
+    await alert.present();
   }
 
   getMetricLabel(value: number): string {

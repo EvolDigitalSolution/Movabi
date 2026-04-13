@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
-import { Profile, Booking, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
+import { Profile, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
 import { BookingService } from '@core/services/booking/booking.service';
 
 @Injectable({
@@ -13,9 +13,9 @@ export class AdminService {
   stats = signal({
     totalUsers: 0,
     totalDrivers: 0,
-    totalBookings: 0,
+    totalJobs: 0,
     totalRevenue: 0,
-    activeBookings: 0
+    activeJobs: 0
   });
 
   async fetchStats() {
@@ -29,28 +29,28 @@ export class AdminService {
       .select('*', { count: 'exact', head: true })
       .eq('role', 'driver');
 
-    const { count: bookingsCount } = await this.supabase
-      .from('bookings')
+    const { count: jobsCount } = await this.supabase
+      .from('jobs')
       .select('*', { count: 'exact', head: true });
 
     const { data: revenueData } = await this.supabase
-      .from('bookings')
-      .select('total_price')
+      .from('jobs')
+      .select('price')
       .eq('status', 'completed');
 
-    const totalRevenue = revenueData?.reduce((sum, b) => sum + (b.total_price || 0), 0) || 0;
+    const totalRevenue = revenueData?.reduce((sum, b) => sum + (b.price || 0), 0) || 0;
 
-    const { count: activeBookings } = await this.supabase
-      .from('bookings')
+    const { count: activeJobs } = await this.supabase
+      .from('jobs')
       .select('*', { count: 'exact', head: true })
       .in('status', ['accepted', 'arrived', 'in_progress']);
 
     this.stats.set({
       totalUsers: usersCount || 0,
       totalDrivers: driversCount || 0,
-      totalBookings: bookingsCount || 0,
+      totalJobs: jobsCount || 0,
       totalRevenue,
-      activeBookings: activeBookings || 0
+      activeJobs: activeJobs || 0
     });
   }
 
@@ -80,8 +80,8 @@ export class AdminService {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const { data, error } = await this.supabase
-      .from('bookings')
-      .select('total_price, completed_at')
+      .from('jobs')
+      .select('price, completed_at')
       .eq('status', 'completed')
       .gte('completed_at', sevenDaysAgo.toISOString())
       .order('completed_at', { ascending: true });
@@ -99,10 +99,10 @@ export class AdminService {
       stats[days[d.getDay()]] = 0;
     }
 
-    data?.forEach(booking => {
-      const day = days[new Date(booking.completed_at).getDay()];
+    data?.forEach(job => {
+      const day = days[new Date(job.completed_at).getDay()];
       if (stats[day] !== undefined) {
-        stats[day] += booking.total_price || 0;
+        stats[day] += job.price || 0;
       }
     });
 
@@ -137,28 +137,48 @@ export class AdminService {
     if (error) throw error;
   }
 
-  async getLiveBookings() {
-    const { data, error } = await this.supabase
-      .from('bookings')
-      .select('*, customer:profiles(*), driver:profiles(*), service_type:service_types(*)')
+  async getJobs(filters?: { status?: string, payment_status?: string, service_type_id?: string }) {
+    let query = this.supabase
+      .from('jobs')
+      .select('*, customer:profiles(*), driver:profiles(*), service_type:service_types(*), errand_details(*), errand_funding(*)')
       .order('created_at', { ascending: false });
+
+    if (filters?.status) query = query.eq('status', filters.status);
+    if (filters?.payment_status) query = query.eq('payment_status', filters.payment_status);
+    if (filters?.service_type_id) query = query.eq('service_type_id', filters.service_type_id);
+
+    const { data, error } = await query;
     if (error) throw error;
-    return data as Booking[];
+    const bookings = (data || []).map(job => this.bookingService.mapJobToBooking(job));
+    return bookings;
   }
 
-  async getStuckBookings() {
+  async getStuckJobs() {
     const fiveMinutesAgo = new Date();
     fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5);
 
     const { data, error } = await this.supabase
-      .from('bookings')
+      .from('jobs')
       .select('*, customer:profiles(*), service_type:service_types(*)')
-      .eq('status', 'searching')
-      .lte('created_at', fiveMinutesAgo.toISOString())
-      .order('created_at', { ascending: true });
+      .or(`and(status.eq.searching,created_at.lte.${fiveMinutesAgo.toISOString()}),and(payment_status.eq.paid,status.eq.requested)`);
 
     if (error) throw error;
-    return data as Booking[];
+    const bookings = (data || []).map(job => this.bookingService.mapJobToBooking(job));
+    return bookings;
+  }
+
+  async updateAccountStatus(userId: string, status: string, reason: string, adminId: string) {
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({
+        account_status: status,
+        moderation_reason: reason,
+        moderated_at: new Date().toISOString(),
+        moderated_by: adminId
+      })
+      .eq('id', userId);
+    
+    if (error) throw error;
   }
 
   async getServiceTypes() {

@@ -70,4 +70,8 @@ export class SupabaseService {
   from(table: string) {
     return this.client.from(table);
   }
+
+  rpc(fn: string, args?: Record<string, unknown>) {
+    return this.client.rpc(fn, args);
+  }
 }

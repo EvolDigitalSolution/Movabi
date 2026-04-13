@@ -10,12 +10,20 @@ export class BookingStatusManager {
    * This centralizes the business logic for the booking lifecycle.
    */
   private readonly transitions: Record<BookingStatus, BookingStatus[]> = {
+    pending: ['requested', 'cancelled'],
     requested: ['searching', 'cancelled'],
-    searching: ['assigned', 'accepted', 'cancelled'],
+    searching: ['assigned', 'cancelled'],
     assigned: ['accepted', 'searching', 'cancelled'],
-    accepted: ['arrived', 'cancelled'],
-    arrived: ['in_progress', 'cancelled'],
+    accepted: ['heading_to_pickup', 'arrived', 'cancelled'],
+    heading_to_pickup: ['arrived', 'cancelled'],
+    arrived: ['in_progress', 'arrived_at_store', 'cancelled'],
+    arrived_at_store: ['shopping_in_progress', 'cancelled'],
+    shopping_in_progress: ['collected', 'cancelled'],
+    collected: ['en_route_to_customer', 'cancelled'],
+    en_route_to_customer: ['delivered', 'cancelled'],
+    delivered: ['completed', 'cancelled'],
     in_progress: ['completed', 'cancelled'],
+    settled: [],
     completed: [],
     cancelled: []
   };

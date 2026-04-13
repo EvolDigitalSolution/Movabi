@@ -1,11 +1,30 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, NavController, AlertController } from '@ionic/angular';
-import { ActivatedRoute } from '@angular/router';
+import { IonicModule, AlertController } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { 
+  chevronBackOutline, 
+  call, 
+  chevronDown, 
+  chatbubbles, 
+  alertCircleOutline,
+  navigate,
+  shieldCheckmark,
+  informationCircle
+} from 'ionicons/icons';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
-import { ServiceTypeEnum } from '../../../../../shared/models/booking.model';
+import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
+import { ServiceTypeEnum, DriverLocation, ErrandFunding } from '../../../../../shared/models/booking.model';
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
 import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
+import { RealtimeChannel } from '@supabase/supabase-js';
+import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { RoutingService } from '../../../../../core/services/maps/routing.service';
+import { LocationService } from '../../../../../core/services/logistics/location.service';
+import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
+import { WalletService } from '../../../../../core/services/wallet/wallet.service';
+import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
 @Component({
   selector: 'app-booking-tracking',
@@ -24,24 +43,7 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
         <div class="flex flex-col h-full">
           <!-- Map Area -->
           <div class="flex-1 bg-slate-100 relative overflow-hidden min-h-[300px]">
-            <!-- Mock Map Background -->
-            <div class="absolute inset-0 opacity-10 pointer-events-none">
-              <div class="absolute inset-0" style="background-image: radial-gradient(#2563eb 1px, transparent 1px); background-size: 40px 40px;"></div>
-            </div>
-
-            <div class="absolute inset-0 flex items-center justify-center">
-              <div class="text-center space-y-6">
-                <div class="relative">
-                  <div class="absolute inset-0 bg-blue-600 rounded-full animate-ping opacity-20"></div>
-                  <div class="relative w-20 h-20 bg-white rounded-[2rem] shadow-2xl flex items-center justify-center text-blue-600 border border-blue-50/50 mx-auto">
-                    <ion-icon name="car-sport" class="text-4xl"></ion-icon>
-                  </div>
-                </div>
-                <div class="bg-white/80 backdrop-blur-xl px-6 py-3 rounded-2xl shadow-xl border border-white/50">
-                  <p class="text-xs font-bold text-slate-900 uppercase tracking-widest">Driver is on the way</p>
-                </div>
-              </div>
-            </div>
+            <app-map #map></app-map>
             
             @if (booking()?.status === 'searching') {
               <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-8 z-20">
@@ -67,12 +69,71 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
                 <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">ID: {{ booking()?.id?.slice(0,8) }}</p>
               </div>
               <div class="text-right">
-                <p class="text-4xl font-display font-bold text-slate-900">£{{ booking()?.total_price }}</p>
-                <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-1">Fixed Price</p>
+                <p class="text-4xl font-display font-bold text-slate-900">
+                  {{ config.formatCurrency((booking()?.total_price || 0) + (errandFunding()?.amount_reserved || 0)) }}
+                </p>
+                @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
+                  <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-1">Total Reserved</p>
+                } @else {
+                  <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-1">Fixed Price</p>
+                }
               </div>
             </div>
 
+            @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
+              <div class="grid grid-cols-2 gap-4">
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
+                  <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(booking()?.total_price || 0) }}</p>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
+                  <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</p>
+                </div>
+              </div>
+            }
+
             @if (booking()?.driver_id) {
+              <!-- Over Budget Request -->
+              @if (errandFunding()?.over_budget_status === 'requested') {
+                <div class="p-8 bg-rose-50 rounded-[2.5rem] border border-rose-100 animate-in slide-in-from-top-4">
+                  <div class="flex items-center gap-4 mb-6">
+                    <div class="w-12 h-12 rounded-2xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
+                      <ion-icon name="alert-circle" class="text-2xl"></ion-icon>
+                    </div>
+                    <div>
+                      <h3 class="text-lg font-display font-bold text-slate-900">Budget Increase Requested</h3>
+                      <p class="text-[10px] font-bold text-rose-600 uppercase tracking-widest">Action Required</p>
+                    </div>
+                  </div>
+
+                  <div class="space-y-4 mb-8">
+                    <div class="flex justify-between items-center p-4 bg-white rounded-2xl border border-rose-100">
+                      <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Original Budget</span>
+                      <span class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</span>
+                    </div>
+                    <div class="flex justify-between items-center p-4 bg-rose-100/50 rounded-2xl border border-rose-200">
+                      <span class="text-xs font-bold text-rose-600 uppercase tracking-widest">New Required</span>
+                      <span class="text-lg font-display font-bold text-rose-700">{{ config.formatCurrency(errandFunding()?.over_budget_amount || 0) }}</span>
+                    </div>
+                    @if (errandFunding()?.metadata?.['over_budget_reason']) {
+                      <div class="p-4 bg-white/50 rounded-2xl border border-rose-100 italic text-sm text-slate-600">
+                        "{{ errandFunding()?.metadata?.['over_budget_reason'] }}"
+                      </div>
+                    }
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    <app-button variant="secondary" (onClick)="rejectOverBudget()" class="border-rose-200 text-rose-700">
+                      Reject
+                    </app-button>
+                    <app-button variant="primary" (onClick)="approveOverBudget()" class="bg-rose-600 border-rose-600 shadow-lg shadow-rose-200">
+                      Approve
+                    </app-button>
+                  </div>
+                </div>
+              }
+
               <div class="flex items-center p-6 bg-slate-50 rounded-[2rem] border border-slate-100 group transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-200/50">
                 <div class="w-16 h-16 rounded-2xl overflow-hidden mr-5 border-4 border-white shadow-lg shadow-slate-200/50">
                   <img src="https://picsum.photos/seed/driver/200" alt="Driver profile" class="w-full h-full object-cover" />
@@ -139,14 +200,14 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
                 <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Service Details</h3>
                 
                 <div class="grid grid-cols-2 gap-5">
-                  @if (booking()?.service_code === ServiceTypeEnum.RIDE) {
+                  @if (booking()?.service_slug === ServiceTypeEnum.RIDE) {
                     <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Passengers</p>
                       <p class="text-xl font-display font-bold text-slate-900">{{ details()?.['passenger_count'] }}</p>
                     </div>
                   }
 
-                  @if (booking()?.service_code === ServiceTypeEnum.VAN) {
+                  @if (booking()?.service_slug === ServiceTypeEnum.VAN) {
                     <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Helpers</p>
                       <p class="text-xl font-display font-bold text-slate-900">{{ details()?.['helper_count'] }}</p>
@@ -154,20 +215,37 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
                   }
                 </div>
 
-                @if (booking()?.service_code === ServiceTypeEnum.ERRAND) {
+                @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
                   <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 mt-5">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Items Requested</p>
+                    <div class="flex justify-between items-center mb-4">
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items Requested</p>
+                      @if (details()?.['actual_spending']) {
+                        <app-badge variant="success" class="bg-emerald-100 text-emerald-700 border-emerald-200">
+                          {{ config.formatCurrency($any(details()?.['actual_spending']) || 0) }} Spent
+                        </app-badge>
+                      }
+                    </div>
                     <div class="flex flex-wrap gap-2">
                       @for (item of (details()?.['items_list'] || []); track item) {
                         <app-badge variant="primary" class="bg-white border-slate-100 text-slate-600">{{ item }}</app-badge>
                       }
                     </div>
-                    @if (details()?.['estimated_budget']) {
-                      <div class="mt-6 pt-6 border-t border-slate-200/50 flex justify-between items-center">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Budget</span>
-                        <span class="text-xl font-display font-bold text-emerald-600">£{{ details()?.['estimated_budget'] }}</span>
+                    
+                    <div class="mt-6 pt-6 border-t border-slate-200/50 space-y-4">
+                      <div class="flex justify-between items-center">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Initial Budget</span>
+                        <span class="text-xl font-display font-bold text-emerald-600">{{ config.formatCurrency($any(details()?.['estimated_budget']) || 0) }}</span>
                       </div>
-                    }
+
+                      @if (details()?.['receipt_url']) {
+                        <div class="pt-4">
+                          <app-button variant="secondary" size="sm" class="w-full" (onClick)="viewReceipt(details()?.['receipt_url']?.toString())">
+                            <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
+                            View Receipt
+                          </app-button>
+                        </div>
+                      }
+                    </div>
                   </div>
                 }
               </div>
@@ -204,7 +282,7 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
               <h3 class="text-2xl font-display font-bold text-slate-900">Booking Not Found</h3>
               <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">We couldn't find this booking. It might have been completed or cancelled.</p>
             </div>
-            <app-button variant="secondary" size="lg" (click)="nav.navigateRoot('/customer')" class="w-full">
+            <app-button variant="secondary" size="lg" (click)="router.navigate(['/customer'])" class="w-full">
               Back to Home
             </app-button>
           }
@@ -213,19 +291,42 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
     </ion-content>
   `,
   standalone: true,
-  imports: [IonicModule, CommonModule, CardComponent, ButtonComponent, BadgeComponent, CommunicationPanelComponent]
+  imports: [IonicModule, CommonModule, CardComponent, ButtonComponent, BadgeComponent, CommunicationPanelComponent, MapComponent]
 })
-export class BookingTrackingPage implements OnInit {
+export class BookingTrackingPage implements OnInit, OnDestroy {
+  @ViewChild('map') mapComponent!: MapComponent;
+
   private route = inject(ActivatedRoute);
   private bookingService = inject(BookingService);
+  private supabase = inject(SupabaseService);
   private alertCtrl = inject(AlertController);
-  public nav = inject(NavController);
+  private routing = inject(RoutingService);
+  private locationService = inject(LocationService);
+  private walletService = inject(WalletService);
+  public config = inject(AppConfigService);
+  public router = inject(Router);
 
   ServiceTypeEnum = ServiceTypeEnum;
   booking = this.bookingService.activeBooking;
   details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
+  errandFunding = signal<ErrandFunding | null>(null);
   isLoading = signal(true);
   showChat = signal(false);
+
+  constructor() {
+    addIcons({ 
+      chevronBackOutline, 
+      call, 
+      chevronDown, 
+      chatbubbles, 
+      alertCircleOutline,
+      navigate,
+      shieldCheckmark,
+      informationCircle
+    });
+  }
+  private channel?: RealtimeChannel;
+  private locationSubscription?: RealtimeChannel;
 
   getStatusVariant(status: string): 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' {
     switch (status) {
@@ -233,7 +334,8 @@ export class BookingTrackingPage implements OnInit {
       case 'accepted':
       case 'arrived':
       case 'in_progress': return 'primary';
-      case 'completed': return 'success';
+      case 'completed':
+      case 'settled': return 'success';
       case 'cancelled': return 'error';
       default: return 'secondary';
     }
@@ -242,9 +344,14 @@ export class BookingTrackingPage implements OnInit {
   ngOnInit() {
     const id = this.route.snapshot.params['id'];
     if (id) {
-      this.bookingService.subscribeToBooking(id);
+      this.channel = this.bookingService.subscribeToBooking(id);
       this.loadBookingAndDetails(id);
     }
+  }
+
+  ngOnDestroy() {
+    this.channel?.unsubscribe();
+    this.locationSubscription?.unsubscribe();
   }
 
   async loadBookingAndDetails(id: string) {
@@ -253,13 +360,86 @@ export class BookingTrackingPage implements OnInit {
       const b = await this.bookingService.getBooking(id);
       this.bookingService.activeBooking.set(b);
       
-      const details = await this.bookingService.getBookingDetails(b.id, b.service_code);
+      const details = await this.bookingService.getBookingDetails(b.id, b.service_slug);
       this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);
+
+      if (b.service_slug === ServiceTypeEnum.ERRAND) {
+        const funding = await this.bookingService.getErrandFunding(b.id);
+        this.errandFunding.set(funding);
+      }
+
+      this.initMap();
+      if (b.driver_id) {
+        this.subscribeToDriverLocation(b.driver_id);
+      }
     } catch (e) {
       console.error('Failed to load booking or details', e);
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  initMap() {
+    const b = this.booking();
+    if (!b) return;
+
+    const pickup = { lat: b.pickup_lat, lng: b.pickup_lng };
+    const dropoff = { lat: b.dropoff_lat || 0, lng: b.dropoff_lng || 0 };
+
+    // Defensive guard against NaN coordinates
+    if (isNaN(pickup.lat) || isNaN(pickup.lng)) {
+      console.warn('[BookingTracking] Invalid pickup coordinates', pickup);
+      return;
+    }
+
+    setTimeout(() => {
+      if (!this.mapComponent) return;
+
+      this.mapComponent.addOrUpdateMarker({
+        id: 'pickup',
+        coordinates: pickup,
+        kind: 'pickup',
+        serviceType: b.service_slug as ServiceTypeSlug,
+        label: 'PICKUP'
+      });
+
+      if (b.dropoff_lat && !isNaN(b.dropoff_lat) && !isNaN(b.dropoff_lng || 0)) {
+        this.mapComponent.addOrUpdateMarker({
+          id: 'dropoff',
+          coordinates: dropoff,
+          kind: 'destination',
+          serviceType: b.service_slug as ServiceTypeSlug,
+          label: 'DROPOFF'
+        });
+
+        this.routing.getRoute(pickup, dropoff).subscribe(route => {
+          if (route) this.mapComponent.drawRoute(route);
+        });
+      }
+
+      this.mapComponent.setCenter(pickup.lng, pickup.lat, 14);
+    }, 500);
+  }
+
+  subscribeToDriverLocation(driverId: string) {
+    this.locationSubscription?.unsubscribe();
+    this.locationSubscription = this.locationService.subscribeToDriverLocation(driverId, (location) => {
+      this.updateDriverMarker(location);
+    });
+  }
+
+  updateDriverMarker(location: DriverLocation) {
+    if (!this.mapComponent) return;
+    const b = this.booking();
+    if (!b) return;
+
+    this.mapComponent.addOrUpdateMarker({
+      id: 'driver',
+      coordinates: { lat: location.lat, lng: location.lng },
+      kind: 'driver',
+      serviceType: b.service_slug as ServiceTypeSlug,
+      heading: location.heading
+    });
   }
 
   async showRating() {
@@ -271,12 +451,12 @@ export class BookingTrackingPage implements OnInit {
         { name: 'comment', type: 'textarea', placeholder: 'Optional comment' }
       ],
       buttons: [
-        { text: 'Skip', role: 'cancel', handler: () => this.nav.navigateRoot('/customer') },
+        { text: 'Skip', role: 'cancel', handler: () => this.router.navigate(['/customer']) },
         {
           text: 'Submit',
           handler: async (data) => {
             await this.bookingService.rateBooking(this.booking()!.id, data.score, data.comment);
-            this.nav.navigateRoot('/customer');
+            this.router.navigate(['/customer']);
           }
         }
       ]
@@ -299,7 +479,7 @@ export class BookingTrackingPage implements OnInit {
           handler: async (data) => {
             try {
               await this.bookingService.cancelBooking(this.booking()!.id, data.reason || 'No reason provided');
-              this.nav.navigateRoot('/customer');
+              this.router.navigate(['/customer']);
             } catch (e) {
               const errorAlert = await this.alertCtrl.create({
                 header: 'Error',
@@ -319,6 +499,70 @@ export class BookingTrackingPage implements OnInit {
     const phone = this.booking()?.driver?.phone;
     if (phone) {
       window.open(`tel:${phone}`, '_system');
+    }
+  }
+
+  async approveOverBudget() {
+    const b = this.booking();
+    if (!b) return;
+
+    const alert = await this.alertCtrl.create({
+      header: 'Approve Budget Increase',
+      message: `Are you sure you want to increase the budget to ${this.config.formatCurrency(this.errandFunding()?.over_budget_amount || 0)}? This will reserve additional funds from your wallet.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Approve',
+          handler: async () => {
+            try {
+              await this.walletService.approveErrandOverBudget(b.id);
+              await this.loadBookingAndDetails(b.id);
+            } catch (e) {
+              const errorAlert = await this.alertCtrl.create({
+                header: 'Approval Failed',
+                message: (e as Error).message,
+                buttons: ['OK']
+              });
+              await errorAlert.present();
+            }
+          }
+        }
+      ]
+    });
+    await alert.present();
+  }
+
+  async rejectOverBudget() {
+    const b = this.booking();
+    if (!b) return;
+
+    const alert = await this.alertCtrl.create({
+      header: 'Reject Budget Increase',
+      message: 'Are you sure you want to reject this request? The driver may not be able to complete the errand if funds are insufficient.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Reject',
+          role: 'destructive',
+          handler: async () => {
+            try {
+              await this.walletService.rejectErrandOverBudget(b.id);
+              await this.loadBookingAndDetails(b.id);
+            } catch (e) {
+              console.error('Rejection failed', e);
+            }
+          }
+        }
+      ]
+    });
+    await alert.present();
+  }
+
+  viewReceipt(path: string | null | undefined) {
+    if (!path) return;
+    const { data } = this.supabase.storage.from('documents').getPublicUrl(path);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
     }
   }
 }

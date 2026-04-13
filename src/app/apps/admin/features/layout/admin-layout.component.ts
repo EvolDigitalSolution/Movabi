@@ -124,5 +124,6 @@ export class AdminLayoutComponent {
     { label: 'Active Subs', path: '/admin/active-subscriptions', icon: 'shield-checkmark-outline' },
     { label: 'Driver Subs', path: '/admin/driver-subscriptions', icon: 'people-circle-outline' },
     { label: 'Van Jobs', path: '/admin/van-jobs', icon: 'bus-outline' },
+    { label: 'Settings', path: '/admin/settings', icon: 'settings-outline' },
   ];
 }

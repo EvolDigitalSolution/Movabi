@@ -1,5 +1,6 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, computed } from '@angular/core';
 import { environment } from '@env/environment';
+import { SystemConfigService } from './system-config.service';
 
 export interface CountryConfig {
   code: string;
@@ -15,11 +16,13 @@ export interface CountryConfig {
   providedIn: 'root'
 })
 export class AppConfigService {
+  private systemConfig = inject(SystemConfigService);
+
   // Environment access
   public readonly env = environment;
 
   // Default to UK as per current project state
-  public readonly countries: CountryConfig[] = [
+  public readonly defaultCountries: CountryConfig[] = [
     {
       code: 'GB',
       name: 'United Kingdom',
@@ -49,13 +52,28 @@ export class AppConfigService {
     }
   ];
 
-  currentCountry = signal<CountryConfig>(this.countries[0]);
+  public readonly countries = computed(() => {
+    return this.systemConfig.getConfig<CountryConfig[]>('countries', this.defaultCountries);
+  });
+
+  public readonly currentCountry = computed(() => {
+    const code = this.systemConfig.getConfig<string>('default_country_code', 'GB');
+    return this.countries().find(c => c.code === code) || this.defaultCountries[0];
+  });
+
+  constructor() {
+    this.refreshConfigs();
+  }
+
+  async refreshConfigs() {
+    await this.systemConfig.loadConfigs();
+  }
 
   setCountry(code: string) {
-    const country = this.countries.find(c => c.code === code);
-    if (country) {
-      this.currentCountry.set(country);
-    }
+    // This is now handled by the computed currentCountry signal
+    // but we keep the method if needed for explicit overrides, 
+    // though it would need to update SystemConfig to persist.
+    this.systemConfig.setConfig('default_country_code', code);
   }
 
   get currencySymbol() {
@@ -70,10 +88,20 @@ export class AppConfigService {
     return this.currentCountry().locale;
   }
 
-  formatCurrency(amount: number): string {
-    return new Intl.NumberFormat(this.locale, {
-      style: 'currency',
-      currency: this.currencyCode,
-    }).format(amount);
+  formatCurrency(amount: number | string | null | undefined): string {
+    const numericAmount = typeof amount === 'string' ? parseFloat(amount) : (amount || 0);
+    if (isNaN(numericAmount)) return `${this.currencySymbol}0.00`;
+
+    try {
+      return new Intl.NumberFormat(this.locale, {
+        style: 'currency',
+        currency: this.currencyCode,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(numericAmount);
+    } catch {
+      // Fallback to simple formatting if Intl fails
+      return `${this.currencySymbol}${numericAmount.toFixed(2)}`;
+    }
   }
 }

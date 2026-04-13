@@ -1,12 +1,16 @@
-import { Component, inject, OnInit, OnDestroy, ViewChild, ElementRef, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, ViewChild, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, NavController } from '@ionic/angular';
-import { ActivatedRoute } from '@angular/router';
+import { IonicModule } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { chevronBackOutline, call, pin } from 'ionicons/icons';
+import { ActivatedRoute, Router } from '@angular/router';
 import { JobService } from '@core/services/job/job.service';
 import { LocationService } from '@core/services/logistics/location.service';
-import { MapService } from '@core/services/logistics/map.service';
 import { Job, DriverLocation } from '@shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { MapComponent } from '@shared/components/map/map.component';
+import { RoutingService } from '@core/services/maps/routing.service';
+import { ServiceTypeSlug } from '@core/models/maps/map-marker.model';
 
 import { CardComponent, BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
 
@@ -25,7 +29,7 @@ import { CardComponent, BadgeComponent, ButtonComponent } from '../../../../../s
     <ion-content class="bg-slate-50">
       @if (job()) {
         <div class="relative h-[40vh] w-full">
-          <div #mapContainer class="h-full w-full bg-slate-200"></div>
+          <app-map #map></app-map>
           <div class="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-50 to-transparent pointer-events-none"></div>
         </div>
 
@@ -124,29 +128,30 @@ import { CardComponent, BadgeComponent, ButtonComponent } from '../../../../../s
     </ion-content>
   `,
   standalone: true,
-  imports: [IonicModule, CommonModule, CardComponent, BadgeComponent, ButtonComponent]
+  imports: [IonicModule, CommonModule, CardComponent, BadgeComponent, ButtonComponent, MapComponent]
 })
 export class JobStatusPage implements OnInit, OnDestroy {
-  @ViewChild('mapContainer') mapContainer?: ElementRef;
+  @ViewChild('map') mapComponent!: MapComponent;
 
   private route = inject(ActivatedRoute);
   private jobService = inject(JobService);
   private locationService = inject(LocationService);
-  private mapService = inject(MapService);
-  private navCtrl = inject(NavController);
+  private routing = inject(RoutingService);
+  private router = inject(Router);
 
   job = signal<Job | null>(null);
   private jobSubscription?: RealtimeChannel;
   private locationSubscription?: RealtimeChannel;
-  private map: google.maps.Map | null = null;
-  private driverMarker: google.maps.Marker | null = null;
+
+  constructor() {
+    addIcons({ chevronBackOutline, call, pin });
+  }
 
   async ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       await this.loadJob(id);
       this.subscribeToUpdates(id);
-      await this.mapService.loadGoogleMaps();
       this.initMap();
     }
   }
@@ -167,115 +172,38 @@ export class JobStatusPage implements OnInit, OnDestroy {
 
   initMap() {
     const job = this.job();
-    if (!job || !this.mapContainer) return;
+    if (!job) return;
 
     const pickup = { lat: job.pickup_lat || 0, lng: job.pickup_lng || 0 };
     const dropoff = { lat: job.dropoff_lat || 0, lng: job.dropoff_lng || 0 };
 
-    this.map = this.mapService.createMap(this.mapContainer.nativeElement, {
-      center: pickup,
-      zoom: 13,
-      disableDefaultUI: true,
-      styles: [
-        {
-          "featureType": "all",
-          "elementType": "geometry.fill",
-          "stylers": [{ "weight": "2.00" }]
-        },
-        {
-          "featureType": "all",
-          "elementType": "geometry.stroke",
-          "stylers": [{ "color": "#9c9c9c" }]
-        },
-        {
-          "featureType": "all",
-          "elementType": "labels.text",
-          "stylers": [{ "visibility": "on" }]
-        },
-        {
-          "featureType": "landscape",
-          "elementType": "all",
-          "stylers": [{ "color": "#f2f2f2" }]
-        },
-        {
-          "featureType": "landscape",
-          "elementType": "geometry.fill",
-          "stylers": [{ "color": "#ffffff" }]
-        },
-        {
-          "featureType": "landscape.man_made",
-          "elementType": "geometry.fill",
-          "stylers": [{ "color": "#ffffff" }]
-        },
-        {
-          "featureType": "poi",
-          "elementType": "all",
-          "stylers": [{ "visibility": "off" }]
-        },
-        {
-          "featureType": "road",
-          "elementType": "all",
-          "stylers": [{ "saturation": -100 }, { "lightness": 45 }]
-        },
-        {
-          "featureType": "road",
-          "elementType": "geometry.fill",
-          "stylers": [{ "color": "#eeeeee" }]
-        },
-        {
-          "featureType": "road",
-          "elementType": "labels.text.fill",
-          "stylers": [{ "color": "#7b7b7b" }]
-        },
-        {
-          "featureType": "road",
-          "elementType": "labels.text.stroke",
-          "stylers": [{ "color": "#ffffff" }]
-        },
-        {
-          "featureType": "road.highway",
-          "elementType": "all",
-          "stylers": [{ "visibility": "simplified" }]
-        },
-        {
-          "featureType": "road.arterial",
-          "elementType": "labels.icon",
-          "stylers": [{ "visibility": "off" }]
-        },
-        {
-          "featureType": "transit",
-          "elementType": "all",
-          "stylers": [{ "visibility": "off" }]
-        },
-        {
-          "featureType": "water",
-          "elementType": "all",
-          "stylers": [{ "color": "#46bcec" }, { "visibility": "on" }]
-        },
-        {
-          "featureType": "water",
-          "elementType": "geometry.fill",
-          "stylers": [{ "color": "#c8d7d4" }]
-        },
-        {
-          "featureType": "water",
-          "elementType": "labels.text.fill",
-          "stylers": [{ "color": "#070707" }]
-        },
-        {
-          "featureType": "water",
-          "elementType": "labels.text.stroke",
-          "stylers": [{ "color": "#ffffff" }]
-        }
-      ]
-    });
+    setTimeout(() => {
+      this.mapComponent.addOrUpdateMarker({
+        id: 'pickup',
+        coordinates: pickup,
+        kind: 'pickup',
+        serviceType: 'van-moving' as ServiceTypeSlug,
+        label: 'PICKUP'
+      });
 
-    this.mapService.addMarker(this.map!, pickup, 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png');
-    this.mapService.addMarker(this.map!, dropoff, 'https://maps.google.com/mapfiles/ms/icons/green-dot.png');
-    
-    if (job.pickup_lat && job.dropoff_lat) {
-      this.mapService.drawRoute(this.map!, pickup, dropoff);
-    }
+      this.mapComponent.addOrUpdateMarker({
+        id: 'dropoff',
+        coordinates: dropoff,
+        kind: 'destination',
+        serviceType: 'van-moving' as ServiceTypeSlug,
+        label: 'DROPOFF'
+      });
+
+      if (job.pickup_lat && job.dropoff_lat) {
+        this.routing.getRoute(pickup, dropoff).subscribe(route => {
+          if (route) {
+            this.mapComponent.drawRoute(route);
+          }
+        });
+      }
+
+      this.mapComponent.setCenter(pickup.lng, pickup.lat, 13);
+    }, 500);
   }
 
   subscribeToUpdates(id: string) {
@@ -300,14 +228,16 @@ export class JobStatusPage implements OnInit, OnDestroy {
   }
 
   updateDriverMarker(location: DriverLocation) {
-    if (!this.map) return;
+    if (!this.mapComponent) return;
 
     const pos = { lat: location.lat, lng: location.lng };
-    if (this.driverMarker) {
-      this.driverMarker.setPosition(pos);
-    } else {
-      this.driverMarker = this.mapService.addMarker(this.map!, pos, 'https://maps.google.com/mapfiles/ms/icons/bus.png');
-    }
+    this.mapComponent.addOrUpdateMarker({
+      id: 'driver',
+      coordinates: pos,
+      kind: 'driver',
+      serviceType: 'van-moving' as ServiceTypeSlug,
+      heading: location.heading
+    });
   }
 
   getStatusVariant(status: string): 'success' | 'error' | 'warning' | 'info' | 'primary' {
@@ -327,7 +257,7 @@ export class JobStatusPage implements OnInit, OnDestroy {
     
     try {
       await this.jobService.updateJobStatus(job.id, 'cancelled');
-      this.navCtrl.back();
+      this.router.navigate(['/customer']);
     } catch (error) {
       console.error('Error cancelling job:', error);
     }

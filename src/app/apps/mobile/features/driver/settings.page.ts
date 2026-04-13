@@ -1,10 +1,24 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, NavController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
+import { Router } from '@angular/router';
 import { DriverService } from '../../../../core/services/driver/driver.service';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
+
+import { addIcons } from 'ionicons';
+import { 
+  globeOutline, 
+  cardOutline, 
+  shieldCheckmarkOutline, 
+  carOutline, 
+  starOutline, 
+  walletOutline, 
+  openOutline, 
+  refreshOutline,
+  alertCircleOutline
+} from 'ionicons/icons';
 
 @Component({
   selector: 'app-driver-settings',
@@ -39,7 +53,7 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shar
                 </div>
               </div>
               <ion-select [value]="config.currentCountry().code" (ionChange)="onCountryChange($event)" class="text-xs font-black text-blue-600 uppercase tracking-widest">
-                @for (country of config.countries; track country.code) {
+                @for (country of config.countries(); track country.code) {
                   <ion-select-option [value]="country.code">{{ country.name }}</ion-select-option>
                 }
               </ion-select>
@@ -107,6 +121,66 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shar
           </app-card>
         </section>
 
+        <!-- Payments & Payouts Section -->
+        <section>
+          <div class="flex items-center gap-3 mb-4 ml-1">
+            <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Payments & Payouts</h2>
+          </div>
+          
+          <app-card>
+            <div class="space-y-6">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
+                    <ion-icon name="wallet-outline" class="text-2xl"></ion-icon>
+                  </div>
+                  <div>
+                    <h3 class="text-sm font-bold text-slate-900">Stripe Connect</h3>
+                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                      @if (driverService.stripeAccount()?.onboarding_complete) {
+                        Payouts Enabled
+                      } @else {
+                        Setup required for payouts
+                      }
+                    </p>
+                  </div>
+                </div>
+                @if (driverService.stripeAccount()?.onboarding_complete) {
+                  <app-badge variant="success">Enabled</app-badge>
+                } @else {
+                  <app-badge variant="warning">Action Required</app-badge>
+                }
+              </div>
+
+              @if (!driverService.stripeAccount()?.onboarding_complete) {
+                <div class="bg-amber-50 rounded-2xl p-4 border border-amber-100 flex gap-3">
+                  <ion-icon name="alert-circle-outline" class="text-amber-600 text-xl shrink-0"></ion-icon>
+                  <div class="space-y-3">
+                    <p class="text-xs text-amber-900 leading-relaxed">
+                      Complete your Stripe onboarding to receive payouts directly to your bank account.
+                    </p>
+                    <app-button size="sm" (click)="setupStripe()" class="w-full">
+                      Complete Setup
+                    </app-button>
+                  </div>
+                </div>
+              } @else {
+                <div class="grid grid-cols-2 gap-3">
+                  <app-button variant="secondary" size="sm" (click)="openStripeDashboard()" class="w-full">
+                    <ion-icon name="open-outline" slot="start"></ion-icon>
+                    Dashboard
+                  </app-button>
+                  <app-button variant="secondary" size="sm" (click)="refreshStripe()" class="w-full">
+                    <ion-icon name="refresh-outline" slot="start"></ion-icon>
+                    Refresh
+                  </app-button>
+                </div>
+              }
+            </div>
+          </app-card>
+        </section>
+
         <!-- Subscription Section -->
         <section>
           <div class="flex items-center gap-3 mb-4 ml-1">
@@ -114,7 +188,7 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shar
             <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Subscription</h2>
           </div>
           
-          <app-card (click)="nav.navigateForward('/driver/subscription')" class="cursor-pointer active:scale-[0.98] transition-transform">
+          <app-card (click)="router.navigate(['/driver/subscription'])" class="cursor-pointer active:scale-[0.98] transition-transform">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-4">
                 <div class="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100">
@@ -145,9 +219,47 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shar
   imports: [IonicModule, CommonModule, CardComponent, ButtonComponent, BadgeComponent]
 })
 export class DriverSettingsPage {
-  public nav = inject(NavController);
-  private driverService = inject(DriverService);
+  public router = inject(Router);
+  public driverService = inject(DriverService);
   public config = inject(AppConfigService);
+
+  constructor() {
+    addIcons({ 
+      globeOutline, 
+      cardOutline, 
+      shieldCheckmarkOutline, 
+      carOutline, 
+      starOutline, 
+      walletOutline, 
+      openOutline, 
+      refreshOutline,
+      alertCircleOutline
+    });
+  }
+
+  async setupStripe() {
+    try {
+      const url = await this.driverService.setupStripeConnect();
+      window.location.href = url;
+    } catch (e) {
+      console.error('Failed to setup stripe', e);
+    }
+  }
+
+  async openStripeDashboard() {
+    const accountId = this.driverService.stripeAccount()?.stripe_account_id;
+    if (accountId) {
+      // In a real app, this would call the backend to get a login link
+      console.log('Open dashboard for:', accountId);
+    }
+  }
+
+  async refreshStripe() {
+    const accountId = this.driverService.stripeAccount()?.stripe_account_id;
+    if (accountId) {
+      await this.driverService.refreshStripeStatus(accountId);
+    }
+  }
 
   onCountryChange(event: Event) {
     const customEvent = event as CustomEvent;

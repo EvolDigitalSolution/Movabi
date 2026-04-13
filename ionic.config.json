@@ -1,0 +1,7 @@
+{
+  "name": "movabi",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular"
+}

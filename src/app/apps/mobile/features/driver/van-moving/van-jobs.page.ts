@@ -1,7 +1,8 @@
 import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, NavController, LoadingController, ToastController } from '@ionic/angular';
+import { IonicModule, LoadingController, ToastController } from '@ionic/angular';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { JobService } from '@core/services/job/job.service';
 import { AuthService } from '@core/services/auth/auth.service';
 import { LocationService } from '@core/services/logistics/location.service';
@@ -117,7 +118,7 @@ export class VanJobsPage implements OnInit, OnDestroy {
   public locationService = inject(LocationService);
   private loadingCtrl = inject(LoadingController);
   private toastCtrl = inject(ToastController);
-  private nav = inject(NavController);
+  private router = inject(Router);
 
   segment = 'available';
   jobs = signal<Job[]>([]);
@@ -194,7 +195,7 @@ export class VanJobsPage implements OnInit, OnDestroy {
   }
 
   viewDetails(jobId: string) {
-    this.nav.navigateForward(['/customer/van-moving/status', jobId]);
+    this.router.navigate(['/customer/van-moving/status', jobId]);
   }
 
   getStatusColor(status: string) {

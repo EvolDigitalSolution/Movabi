@@ -1,15 +1,19 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { IonicModule } from '@ionic/angular';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { RouterModule, Router } from '@angular/router';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
+import { AuthService } from '../../../../core/services/auth/auth.service';
 
 @Component({
   selector: 'app-reset-password',
   template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-4 bg-white">
+        <ion-buttons slot="start">
+          <ion-back-button defaultHref="/auth/login" text="" icon="chevron-back-outline"></ion-back-button>
+        </ion-buttons>
         <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -104,9 +108,10 @@ import { SupabaseService } from '../../../../core/services/supabase/supabase.ser
   standalone: true,
   imports: [IonicModule, CommonModule, FormsModule, ReactiveFormsModule, RouterModule]
 })
-export class ResetPasswordPage {
+export class ResetPasswordPage implements OnInit {
   private fb = inject(FormBuilder);
   private supabase = inject(SupabaseService);
+  private auth = inject(AuthService);
   private router = inject(Router);
 
   resetForm = this.fb.group({
@@ -118,6 +123,13 @@ export class ResetPasswordPage {
   isLoading = signal(false);
   isSuccess = signal(false);
   errorMessage = signal<string | null>(null);
+
+  async ngOnInit() {
+    const { data: { session } } = await this.supabase.auth.getSession();
+    if (!session) {
+      this.errorMessage.set('Invalid or expired reset link. Please request a new one.');
+    }
+  }
 
   passwordMatchValidator(g: FormGroup) {
     const password = g.get('password')?.value;

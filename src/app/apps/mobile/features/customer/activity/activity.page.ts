@@ -1,6 +1,9 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, NavController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { chevronBackOutline, calendarClearOutline, car, cart, bus, map } from 'ionicons/icons';
+import { Router } from '@angular/router';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
@@ -12,7 +15,7 @@ import { CardComponent, BadgeComponent, EmptyStateComponent } from '../../../../
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-6 bg-slate-50">
         <ion-buttons slot="start">
-          <button (click)="nav.back()" class="w-12 h-12 rounded-2xl bg-white text-slate-900 flex items-center justify-center border border-slate-200 shadow-sm active:scale-95 transition-all">
+          <button (click)="router.navigate(['/customer'])" class="w-12 h-12 rounded-2xl bg-white text-slate-900 flex items-center justify-center border border-slate-200 shadow-sm active:scale-95 transition-all">
             <ion-icon name="chevron-back-outline" class="text-xl"></ion-icon>
           </button>
         </ion-buttons>
@@ -29,7 +32,7 @@ import { CardComponent, BadgeComponent, EmptyStateComponent } from '../../../../
               title="No bookings yet"
               description="Your journey history will appear here once you complete your first ride or errand."
               actionLabel="Book a Ride"
-              (action)="nav.navigateForward('/customer/home')"
+              (action)="router.navigate(['/customer/home'])"
             ></app-empty-state>
           </div>
         }
@@ -98,8 +101,12 @@ import { CardComponent, BadgeComponent, EmptyStateComponent } from '../../../../
 export class ActivityPage implements OnInit {
   private bookingService = inject(BookingService);
   private config = inject(AppConfigService);
-  public nav = inject(NavController);
+  public router = inject(Router);
   history = this.bookingService.bookingHistory;
+
+  constructor() {
+    addIcons({ chevronBackOutline, calendarClearOutline, car, cart, bus, map });
+  }
 
   ngOnInit() {
     this.bookingService.getHistory();

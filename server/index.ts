@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import subscriptionRoutes from './routes/subscription.routes';
 import logisticsRoutes from './routes/logistics.routes';
 import connectRoutes from './routes/connect.routes';
+import paymentRoutes from './routes/payment.routes';
+import webhookRoutes from './routes/webhook.routes';
 import { dispatchService } from './services/dispatch.service';
 
 dotenv.config();
@@ -17,6 +19,7 @@ app.use(cors());
 
 // Stripe webhook needs raw body for signature verification
 app.use('/api/subscriptions/webhook', bodyParser.raw({ type: 'application/json' }));
+app.use('/api/webhook/stripe', bodyParser.raw({ type: 'application/json' }));
 
 // Other routes use JSON body
 app.use(bodyParser.json());
@@ -25,6 +28,8 @@ app.use(bodyParser.json());
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/logistics', logisticsRoutes);
 app.use('/api/connect', connectRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/webhook', webhookRoutes);
 
 // Start Dispatch Engine Loop
 setInterval(() => {

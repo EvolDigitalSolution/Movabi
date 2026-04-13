@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
@@ -6,8 +6,10 @@ import { RouterModule } from '@angular/router';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { CardComponent, ButtonComponent, BadgeComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
-import { Booking, Profile } from '../../../../shared/models/booking.model';
+import { Job, Profile } from '../../../../shared/models/booking.model';
+import { JobAnomalyService, JobAnomaly } from '@core/services/job/job-anomaly.service';
 
 interface DashboardStat {
   label: string;
@@ -61,20 +63,20 @@ interface AdminEvent {
         </div>
       </div>
 
-      <!-- Stuck Bookings Alert -->
-      @if (stuckBookings().length > 0) {
+      <!-- Stuck Jobs Alert -->
+      @if (stuckJobs().length > 0) {
         <div class="bg-red-50 border border-red-100 rounded-[2rem] p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-red-600/5">
           <div class="flex items-center gap-6">
             <div class="w-16 h-16 rounded-3xl bg-red-100 flex items-center justify-center text-red-600 shadow-lg shadow-red-600/10">
               <ion-icon name="alert-circle" class="text-3xl"></ion-icon>
             </div>
             <div>
-              <h3 class="text-xl font-bold text-red-900">{{ stuckBookings().length }} Stuck Bookings Detected</h3>
-              <p class="text-slate-600 font-medium">These bookings have been searching for a driver for over 5 minutes.</p>
+              <h3 class="text-xl font-bold text-red-900">{{ stuckJobs().length }} Stuck Jobs Detected</h3>
+              <p class="text-slate-600 font-medium">These jobs are searching too long or paid but not dispatchable.</p>
             </div>
           </div>
-          <app-button variant="error" size="md" [fullWidth]="false" routerLink="/admin/bookings" class="px-8">
-            Take Action
+          <app-button variant="error" size="md" [fullWidth]="false" routerLink="/admin/van-jobs" class="px-8">
+            Monitor Jobs
           </app-button>
         </div>
       }
@@ -205,36 +207,36 @@ interface AdminEvent {
           </div>
         </app-card>
 
-        <!-- Active Bookings -->
-        <app-card title="Active Bookings">
+      <!-- Active Jobs -->
+        <app-card title="Active Jobs">
           <div class="space-y-5">
-            @for (booking of activeBookings(); track booking.id) {
+            @for (job of activeJobs(); track job.id) {
               <div class="flex items-center gap-5 p-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 hover:border-blue-500/20 hover:bg-white hover:shadow-xl hover:shadow-blue-600/5 transition-all group cursor-pointer">
                 <div class="w-14 h-14 rounded-2xl bg-white flex items-center justify-center text-blue-600 shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">
                   <ion-icon name="car" class="text-2xl"></ion-icon>
                 </div>
                 <div class="flex-1 min-w-0">
-                  <h4 class="text-sm font-bold text-slate-900 truncate">{{ booking.pickup_address }}</h4>
-                  <p class="text-[10px] text-slate-400 truncate uppercase font-bold tracking-widest mt-1">{{ booking.dropoff_address }}</p>
+                  <h4 class="text-sm font-bold text-slate-900 truncate">{{ job.pickup_address }}</h4>
+                  <p class="text-[10px] text-slate-400 truncate uppercase font-bold tracking-widest mt-1">{{ job.dropoff_address }}</p>
                 </div>
                 <div class="text-right">
-                  <app-badge variant="info">{{ booking.status }}</app-badge>
-                  <p class="text-sm font-bold text-slate-900 mt-2">{{ formatPrice(booking.total_price) }}</p>
+                  <app-badge variant="info">{{ job.status }}</app-badge>
+                  <p class="text-sm font-bold text-slate-900 mt-2">{{ formatPrice(job.price || 0) }}</p>
                 </div>
               </div>
             }
-            @if (activeBookings().length === 0) {
+            @if (activeJobs().length === 0) {
               <div class="text-center py-20">
                 <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100">
                   <ion-icon name="calendar-outline" class="text-3xl text-slate-300"></ion-icon>
                 </div>
-                <p class="text-slate-500 text-sm font-medium">No active bookings at the moment.</p>
+                <p class="text-slate-500 text-sm font-medium">No active jobs at the moment.</p>
               </div>
             }
           </div>
           <div footer>
-            <app-button variant="secondary" size="md" routerLink="/admin/bookings">
-              View All Bookings
+            <app-button variant="secondary" size="md" routerLink="/admin/van-jobs">
+              Monitor All Jobs
             </app-button>
           </div>
         </app-card>
@@ -275,18 +277,20 @@ interface AdminEvent {
   standalone: true,
   imports: [CommonModule, IonicModule, RouterModule, CardComponent, ButtonComponent, BadgeComponent, EmptyStateComponent]
 })
-export class AdminDashboardComponent implements OnInit {
+export class AdminDashboardComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   private supabase = inject(SupabaseService);
   private config = inject(AppConfigService);
+  private anomalyService = inject(JobAnomalyService);
   
   stats = this.adminService.stats;
-  activeBookings = signal<Booking[]>([]);
-  stuckBookings = signal<Booking[]>([]);
+  activeJobs = signal<Job[]>([]);
+  stuckJobs = signal<JobAnomaly[]>([]);
   operationalMetrics = signal<OperationalMetrics | null>(null);
   events = signal<AdminEvent[]>([]);
   revenueBars: RevenueBar[] = [];
   statsList: DashboardStat[] = [];
+  private channels: RealtimeChannel[] = [];
 
   async ngOnInit() {
     if (!this.supabase.isConfigured) {
@@ -294,18 +298,27 @@ export class AdminDashboardComponent implements OnInit {
       return;
     }
 
+    await this.refreshData();
+    this.setupRealtime();
+  }
+
+  ngOnDestroy() {
+    this.channels.forEach(channel => channel.unsubscribe());
+  }
+
+  private async refreshData() {
     await this.adminService.fetchStats();
     this.updateStatsList();
     
-    const [bookings, stuck, metrics, evs] = await Promise.all([
-      this.adminService.getLiveBookings(),
-      this.adminService.getStuckBookings(),
+    const [jobs, metrics, evs] = await Promise.all([
+      this.adminService.getJobs(),
       this.adminService.getOperationalMetrics(),
       this.adminService.getEvents(10)
     ]);
 
-    this.activeBookings.set(bookings.filter(b => ['accepted', 'arrived', 'in_progress'].includes(b.status)).slice(0, 5));
-    this.stuckBookings.set(stuck);
+    const allJobs = jobs as Job[];
+    this.activeJobs.set(allJobs.filter(b => ['accepted', 'arrived', 'in_progress'].includes(b.status)).slice(0, 5));
+    this.stuckJobs.set(this.anomalyService.detectAnomalies(allJobs));
     this.operationalMetrics.set(metrics as OperationalMetrics);
     this.events.set(evs as AdminEvent[]);
 
@@ -317,12 +330,30 @@ export class AdminDashboardComponent implements OnInit {
     }));
   }
 
+  private setupRealtime() {
+    const jobsChannel = this.supabase.client
+      .channel('admin-dashboard-jobs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => {
+        this.refreshData();
+      })
+      .subscribe();
+
+    const profilesChannel = this.supabase.client
+      .channel('admin-dashboard-profiles')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
+        this.refreshData();
+      })
+      .subscribe();
+
+    this.channels = [jobsChannel, profilesChannel];
+  }
+
   private updateStatsList() {
     this.statsList = [
       { label: 'Total Revenue', value: this.stats().totalRevenue, prefix: this.config.currencySymbol, icon: 'cash-outline', colorClass: 'bg-emerald-100 text-emerald-600' },
       { label: 'Total Users', value: this.stats().totalUsers, icon: 'people-outline', colorClass: 'bg-blue-100 text-blue-600' },
       { label: 'Active Drivers', value: this.stats().totalDrivers, icon: 'car-outline', colorClass: 'bg-amber-100 text-amber-600' },
-      { label: 'Total Bookings', value: this.stats().totalBookings, icon: 'calendar-outline', colorClass: 'bg-indigo-100 text-indigo-600' },
+      { label: 'Total Jobs', value: this.stats().totalJobs, icon: 'calendar-outline', colorClass: 'bg-indigo-100 text-indigo-600' },
     ];
   }
 

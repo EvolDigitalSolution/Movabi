@@ -1,19 +1,24 @@
 import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
-import { Job, JobStatus, JobEstimate, DispatchCandidate, City } from '@shared/models/booking.model';
+import { Job, JobStatus, JobEstimate, DispatchCandidate, City, JobEventType } from '@shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { JobEventService } from './job-event.service';
+import { ApiUrlService } from '../api-url.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class JobService {
   private supabase = inject(SupabaseService);
+  private eventService = inject(JobEventService);
+  private apiUrlService = inject(ApiUrlService);
 
   /**
    * Calculate price via Node backend
    */
   async calculatePrice(pickup: { lat: number, lng: number }, dropoff: { lat: number, lng: number }) {
-    const response = await fetch('/api/logistics/calculate-price', {
+    const url = this.apiUrlService.getApiUrl('/api/logistics/calculate-price');
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pickup, dropoff })
@@ -26,7 +31,8 @@ export class JobService {
    * Suggest nearest drivers via Node backend
    */
   async suggestDrivers(lat: number, lng: number, tenantId: string) {
-    const response = await fetch('/api/logistics/suggest-drivers', {
+    const url = this.apiUrlService.getApiUrl('/api/logistics/suggest-drivers');
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lat, lng, tenant_id: tenantId })
@@ -36,12 +42,20 @@ export class JobService {
   }
 
   async createJob(job: Partial<Job>) {
+    const payload = {
+      ...job,
+      scheduled_time: job.scheduled_time || new Date().toISOString()
+    };
     const { data, error } = await this.supabase
       .from('jobs')
-      .insert(job)
+      .insert(payload)
       .select()
       .single();
-    if (error) throw error;
+
+    if (error) {
+      console.error('Error creating job:', error);
+      throw error;
+    }
     return data as Job;
   }
 
@@ -77,6 +91,9 @@ export class JobService {
       .select()
       .single();
     if (error) throw error;
+    
+    await this.eventService.logEvent(jobId, 'driver_accepted', 'Job accepted via backend dispatch');
+    
     return data as Job;
   }
 
@@ -88,6 +105,19 @@ export class JobService {
       .select()
       .single();
     if (error) throw error;
+
+    const eventTypeMap: Partial<Record<JobStatus, JobEventType>> = {
+      'arrived': 'driver_arrived',
+      'in_progress': 'job_started',
+      'completed': 'job_completed',
+      'cancelled': 'job_cancelled'
+    };
+
+    const eventType = eventTypeMap[status];
+    if (eventType) {
+      await this.eventService.logEvent(jobId, eventType, `Status updated to ${status}`);
+    }
+
     return data as Job;
   }
 
@@ -120,12 +150,16 @@ export class JobService {
   }
 
   async enqueueJob(jobId: string, tenantId: string, cityId?: string) {
-    const response = await fetch('/api/logistics/enqueue', {
+    const url = this.apiUrlService.getApiUrl('/api/logistics/enqueue');
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId, tenantId, cityId })
     });
     if (!response.ok) throw new Error('Failed to enqueue job');
+    
+    await this.eventService.logEvent(jobId, 'driver_assigned', 'Job enqueued for dispatching');
+    
     return await response.json();
   }
 
@@ -134,6 +168,40 @@ export class JobService {
       .channel('public:jobs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, callback)
       .subscribe();
+  }
+
+  async retryDispatch(jobId: string, tenantId: string) {
+    const { data: job } = await this.supabase
+      .from('jobs')
+      .select('status, payment_status')
+      .eq('id', jobId)
+      .single();
+
+    if (job?.payment_status !== 'paid') {
+      throw new Error('Cannot dispatch unpaid job');
+    }
+
+    await this.updateJobStatus(jobId, 'searching');
+    await this.eventService.logEvent(jobId, 'admin_action', 'Manual dispatch retry initiated by admin');
+    return this.enqueueJob(jobId, tenantId);
+  }
+
+  async markForReview(jobId: string, notes: string) {
+    await this.eventService.logEvent(jobId, 'admin_action', `Marked for manual review: ${notes}`);
+  }
+
+  async forceCancel(jobId: string, reason: string) {
+    const { data, error } = await this.supabase
+      .from('jobs')
+      .update({ status: 'cancelled' })
+      .eq('id', jobId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    await this.eventService.logEvent(jobId, 'job_cancelled', `Force cancelled by admin: ${reason}`);
+    return data as Job;
   }
 
   async updateLocation(jobId: string, driverId: string, lat: number, lng: number) {

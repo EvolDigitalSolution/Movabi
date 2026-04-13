@@ -12,7 +12,14 @@
   "projects": {
     "mobile": {
       "projectType": "application",
-      "schematics": {},
+      "schematics": {
+        "@ionic/angular-toolkit:component": {
+          "style": "css"
+        },
+        "@ionic/angular-toolkit:page": {
+          "style": "css"
+        }
+      },
       "root": "",
       "sourceRoot": "src",
       "prefix": "app",

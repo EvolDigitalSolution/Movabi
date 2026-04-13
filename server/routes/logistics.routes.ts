@@ -94,4 +94,22 @@ router.post('/enqueue', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Complete a job and trigger payout
+ */
+router.post('/complete', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId required' });
+    }
+
+    const data = await LogisticsService.completeJob(jobId);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error('Complete job error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

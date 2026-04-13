@@ -27,17 +27,32 @@ services:
       - movabi-supabase-db
     environment:
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD_ENCODED}@movabi-supabase-db:5432/postgres?sslmode=disable
-      GOTRUE_SITE_URL: ${APP_URL}
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:MovabiDB%402026Secure%21@movabi-supabase-db:5432/postgres?sslmode=disable
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_SITE_URL: ${APP_URL}
       GOTRUE_JWT_EXP: 3600
-      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "false"
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${SUPABASE_URL}/auth/v1/callback
+      GOTRUE_API_EXTERNAL_URL: ${SUPABASE_URL}/auth/v1
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/invite
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
       GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
       GOTRUE_SMTP_HOST: ${SMTP_HOST}
       GOTRUE_SMTP_PORT: ${SMTP_PORT}
       GOTRUE_SMTP_USER: ${SMTP_USER}
       GOTRUE_SMTP_PASS: ${SMTP_PASS}
       GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_EXTERNAL_REDIRECT_URLS: http://localhost:3000/**,https://movabi.apps.evolsolution.com/**,capacitor://localhost/**
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - movabi-private
 
@@ -182,7 +197,11 @@ services:
 networks:
   movabi-private:
     name: movabi-private
-    internal: true
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+          gateway: 172.25.0.1
   nginx-proxy:
     external: true
     name: web

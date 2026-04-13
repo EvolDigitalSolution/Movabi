@@ -3,6 +3,9 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
 import { ProfileService } from '../profile/profile.service';
 import { Subscription } from '@shared/models/booking.model';
+import { ApiUrlService } from '../api-url.service';
+
+type JsonObject = Record<string, unknown>;
 
 @Injectable({
   providedIn: 'root'
@@ -10,15 +13,19 @@ import { Subscription } from '@shared/models/booking.model';
 export class SubscriptionService {
   private supabase = inject(SupabaseService);
   private auth = inject(AuthService);
+  private profileService = inject(ProfileService);
+  private apiUrlService = inject(ApiUrlService);
 
   activeSubscription = signal<Subscription | null>(null);
-  private apiUrl = 'http://localhost:3001/api/subscriptions';
 
-  private profileService = inject(ProfileService);
+  private readonly apiUrl = this.apiUrlService.getApiUrl('/api/subscriptions');
 
-  async fetchActiveSubscription() {
+  async fetchActiveSubscription(): Promise<void> {
     const user = this.auth.currentUser();
-    if (!user) return;
+    if (!user) {
+      this.activeSubscription.set(null);
+      return;
+    }
 
     const { data, error } = await this.supabase
       .from('subscriptions')
@@ -27,36 +34,42 @@ export class SubscriptionService {
       .eq('status', 'active')
       .order('current_period_end', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') throw error;
-    
-    this.activeSubscription.set(data || null);
+    if (error) {
+      throw error;
+    }
+
+    this.activeSubscription.set(data ?? null);
   }
 
-  async createCheckoutSession(priceId: string, countryCode?: string, currencyCode?: string) {
+  async createCheckoutSession(
+    priceId: string,
+    countryCode?: string,
+    currencyCode?: string
+  ): Promise<string> {
     const user = this.auth.currentUser();
     const profile = this.profileService.profile();
-    
-    if (!user || !profile) throw new Error('Not authenticated or profile missing');
 
-    const response = await fetch(`${this.apiUrl}/create-checkout-session`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    if (!user || !profile) {
+      throw new Error('Not authenticated or profile missing');
+    }
+
+    const data = await this.post<{ url: string }>(
+      `${this.apiUrl}/create-checkout-session`,
+      {
         userId: user.id,
         tenantId: profile.tenant_id,
         userEmail: user.email,
         priceId,
         countryCode,
         currencyCode
-      }),
-    });
+      }
+    );
 
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+    if (!data.url) {
+      throw new Error('Checkout session URL was not returned');
+    }
 
     return data.url;
   }
@@ -69,79 +82,81 @@ export class SubscriptionService {
       .eq('currency_code', currencyCode)
       .eq('is_active', true);
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
+
     return data;
   }
 
-  async openCustomerPortal() {
+  async openCustomerPortal(): Promise<void> {
     const profile = this.profileService.profile();
-    if (!profile?.stripe_customer_id) throw new Error('No Stripe customer found');
 
-    const response = await fetch(`${this.apiUrl}/create-portal-session`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    if (!profile?.stripe_customer_id) {
+      throw new Error('No Stripe customer found');
+    }
+
+    const data = await this.post<{ url: string }>(
+      `${this.apiUrl}/create-portal-session`,
+      {
         stripeCustomerId: profile.stripe_customer_id,
         returnUrl: `${window.location.origin}/driver/subscription`
-      }),
-    });
+      }
+    );
 
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+    if (!data.url) {
+      throw new Error('Customer portal URL was not returned');
+    }
 
     window.location.href = data.url;
   }
 
-  async refreshSubscriptionStatus() {
+  async refreshSubscriptionStatus(): Promise<void> {
     await this.fetchActiveSubscription();
+
     const user = this.auth.currentUser();
     if (user) {
       await this.profileService.fetchProfile(user.id);
     }
   }
 
-  async handleSubscriptionSuccess() {
-    // Webhook handles the database update.
-    // We just refresh the state here.
+  async handleSubscriptionSuccess(): Promise<void> {
+    // Stripe webhook remains source of truth for DB changes.
     await this.refreshSubscriptionStatus();
   }
 
-  async cancelSubscription(id: string) {
+  async cancelSubscription(id: string): Promise<void> {
     const user = this.auth.currentUser();
     const sub = this.activeSubscription();
-    
+
     if (!sub?.stripe_subscription_id) {
-      // Fallback for mock/manual subscriptions
       const { error } = await this.supabase
         .from('driver_subscriptions')
         .update({ status: 'inactive' })
         .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
     } else {
-      // Call Node backend to cancel Stripe subscription
-      const response = await fetch(`${this.apiUrl}/cancel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      await this.post(
+        `${this.apiUrl}/cancel`,
+        {
           subscriptionId: id,
           stripeSubscriptionId: sub.stripe_subscription_id
-        }),
-      });
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
+        }
+      );
     }
 
     if (user) {
-      await this.supabase
+      const { error } = await this.supabase
         .from('profiles')
         .update({ subscription_status: 'inactive' })
         .eq('id', user.id);
+
+      if (error) {
+        throw error;
+      }
     }
 
     this.activeSubscription.set(null);
@@ -149,7 +164,9 @@ export class SubscriptionService {
 
   async getActiveSubscription(): Promise<Subscription | null> {
     const user = this.auth.currentUser();
-    if (!user) return null;
+    if (!user) {
+      return null;
+    }
 
     const { data, error } = await this.supabase
       .from('subscriptions')
@@ -158,15 +175,54 @@ export class SubscriptionService {
       .eq('status', 'active')
       .order('current_period_end', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') throw error;
-    return data || null;
+    if (error) {
+      throw error;
+    }
+
+    return data ?? null;
   }
 
   async checkSubscription(): Promise<Subscription | null> {
     const sub = await this.getActiveSubscription();
     this.activeSubscription.set(sub);
     return sub;
+  }
+
+  private async post<T = JsonObject>(
+    url: string,
+    body: JsonObject
+  ): Promise<T> {
+    const accessToken = await this.getAccessToken();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+      },
+      body: JSON.stringify(body)
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message =
+        typeof data?.error === 'string'
+          ? data.error
+          : `Request failed with status ${response.status}`;
+      throw new Error(message);
+    }
+
+    return data as T;
+  }
+
+  private async getAccessToken(): Promise<string | null> {
+    const {
+      data: { session }
+    } = await this.supabase.auth.getSession();
+
+    return session?.access_token ?? null;
   }
 }

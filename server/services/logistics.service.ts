@@ -96,6 +96,59 @@ export class LogisticsService {
   }
 
   /**
+   * Complete a job and finalize payout
+   */
+  static async completeJob(jobId: string) {
+    // 1. Fetch job details
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select('*, service_type:service_types(*), driver:profiles(*)')
+      .eq('id', jobId)
+      .single();
+
+    if (jobError || !job) throw new Error('Job not found');
+    if (job.status === 'completed') return job;
+
+    // 2. Calculate payout
+    const breakdown = this.calculatePayout(
+      job.price,
+      job.driver?.pricing_plan || 'starter',
+      job.driver?.commission_rate || 15.00
+    );
+
+    // 3. Update job status and payout info atomically
+    const { data: updatedJob, error: updateError } = await supabaseAdmin
+      .from('jobs')
+      .update({
+        status: 'completed',
+        driver_payout: breakdown.driver_payout,
+        platform_fee: breakdown.platform_fee,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId)
+      .neq('status', 'completed') // Prevent duplicate completion
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    // 4. Record driver earning
+    if (job.driver_id) {
+      await supabaseAdmin
+        .from('driver_earnings')
+        .upsert({
+          driver_id: job.driver_id,
+          job_id: jobId,
+          amount: breakdown.driver_payout,
+          status: 'pending_payout', // Payout to bank account happens later via Stripe
+          metadata: breakdown
+        }, { onConflict: 'job_id' });
+    }
+
+    return updatedJob;
+  }
+
+  /**
    * Fetch driver profile details
    */
   static async findDriverProfile(driverId: string) {

@@ -1,8 +1,30 @@
 import { Component, inject } from '@angular/core';
-import { IonicModule, NavController } from '@ionic/angular';
 import { CommonModule } from '@angular/common';
+import { 
+  IonHeader, 
+  IonToolbar, 
+  IonTitle, 
+  IonButtons, 
+  IonContent, 
+  IonIcon
+} from '@ionic/angular/standalone';
+import { Router } from '@angular/router';
+import { addIcons } from 'ionicons';
+import { 
+  shieldCheckmark, 
+  timeOutline, 
+  logOutOutline, 
+  car, 
+  cart, 
+  bus, 
+  chevronForward, 
+  receiptOutline,
+  walletOutline 
+} from 'ionicons/icons';
 import { AuthService } from '../../../../core/services/auth/auth.service';
-import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
+import { WalletService } from '../../../../core/services/wallet/wallet.service';
+import { AppConfigService } from '../../../../core/services/config/app-config.service';
+import { EmptyStateComponent } from '../../../../shared/ui';
 
 @Component({
   selector: 'app-customer-home',
@@ -12,12 +34,15 @@ import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
         <ion-title class="font-display font-black text-3xl tracking-tighter text-slate-900">Movabi</ion-title>
         <ion-buttons slot="end">
           @if (auth.userRole() === 'admin') {
-            <button (click)="nav.navigateForward('/admin')" class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm active:scale-95 transition-all">
+            <button (click)="router.navigate(['/admin'])" class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm active:scale-95 transition-all">
               <ion-icon name="shield-checkmark" class="text-xl"></ion-icon>
             </button>
           }
-          <button (click)="nav.navigateForward('/customer/activity')" class="w-12 h-12 rounded-2xl bg-white text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm ml-3 active:scale-95 transition-all">
+          <button (click)="router.navigate(['/customer/activity'])" class="w-12 h-12 rounded-2xl bg-white text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm ml-3 active:scale-95 transition-all">
             <ion-icon name="time-outline" class="text-xl"></ion-icon>
+          </button>
+          <button (click)="router.navigate(['/customer/wallet'])" class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm ml-3 active:scale-95 transition-all">
+            <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
           </button>
           <button (click)="auth.signOut()" class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-sm ml-3 active:scale-95 transition-all">
             <ion-icon name="log-out-outline" class="text-xl"></ion-icon>
@@ -32,7 +57,7 @@ import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
         <div class="relative bg-slate-900 rounded-[2.5rem] p-10 shadow-2xl shadow-slate-900/20 overflow-hidden group min-h-[320px] flex items-center">
           <!-- Background Image -->
           <div class="absolute inset-0">
-            <img src="assets/images/movabi-customer-hero.webp" 
+            <img src="https://picsum.photos/seed/customer/1920/1080?blur=4" 
                  alt="Movabi Services" 
                  class="w-full h-full object-cover opacity-40 group-hover:scale-105 transition-transform duration-1000"
                  referrerpolicy="no-referrer">
@@ -48,10 +73,10 @@ import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
             <p class="text-slate-300 font-medium text-lg">Where can we take you today?</p>
             
             <div class="mt-10 grid grid-cols-2 gap-4">
-              <div class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 transition-colors">
+              <button (click)="router.navigate(['/customer/wallet'])" class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 transition-colors cursor-pointer active:scale-95 transition-all text-left w-full">
                 <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Wallet Balance</p>
-                <p class="text-2xl font-display font-bold text-white">£0.00</p>
-              </div>
+                <p class="text-2xl font-display font-bold text-white">{{ formatCurrency(walletService.wallet()?.available_balance || 0) }}</p>
+              </button>
               <div class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 transition-colors">
                 <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Active Trips</p>
                 <p class="text-2xl font-display font-bold text-white">0</p>
@@ -100,7 +125,7 @@ import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
               </div>
             </button>
 
-            <button (click)="nav.navigateForward('/customer/van-moving/create')" 
+            <button (click)="router.navigate(['/customer/van-moving/create'])" 
                  class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-indigo-600/10 hover:-translate-y-1 transition-all duration-500">
               <div class="flex items-center gap-6">
                 <div class="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-indigo-600/20 group-hover:rotate-6 transition-transform">
@@ -125,7 +150,7 @@ import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Recent Activity</h3>
             </div>
-            <button (click)="nav.navigateForward('/customer/activity')" class="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 transition-colors">
+            <button (click)="router.navigate(['/customer/activity'])" class="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 transition-colors">
               View All
             </button>
           </div>
@@ -144,13 +169,44 @@ import { CardComponent, EmptyStateComponent } from '../../../../shared/ui';
     </ion-content>
   `,
   standalone: true,
-  imports: [IonicModule, CommonModule, CardComponent, EmptyStateComponent]
+  imports: [
+    CommonModule, 
+    IonHeader, 
+    IonToolbar, 
+    IonTitle, 
+    IonButtons, 
+    IonContent, 
+    IonIcon, 
+    EmptyStateComponent
+  ]
 })
 export class HomePage {
-  public nav = inject(NavController);
+  public router = inject(Router);
   public auth = inject(AuthService);
+  public walletService = inject(WalletService);
+  private config = inject(AppConfigService);
+
+  constructor() {
+    addIcons({ 
+      shieldCheckmark, 
+      timeOutline, 
+      logOutOutline, 
+      car, 
+      cart, 
+      bus, 
+      chevronForward, 
+      receiptOutline,
+      walletOutline
+    });
+
+    this.walletService.fetchWallet();
+  }
+
+  formatCurrency(amount: number) {
+    return this.config.formatCurrency(amount);
+  }
 
   goToBooking(type: string) {
-    this.nav.navigateForward(['/customer/request'], { queryParams: { type } });
+    this.router.navigate(['/customer/request'], { queryParams: { type } });
   }
 }
