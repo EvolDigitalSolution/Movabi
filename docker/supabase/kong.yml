@@ -7,6 +7,13 @@ services:
       - name: auth
         paths:
           - /auth/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
 
   - name: rest
     url: http://movabi-supabase-rest:3000
@@ -14,6 +21,13 @@ services:
       - name: rest
         paths:
           - /rest/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
 
   - name: realtime
     url: http://movabi-supabase-realtime:4000
@@ -21,6 +35,10 @@ services:
       - name: realtime
         paths:
           - /realtime/v1
+        methods:
+          - GET
+          - POST
+          - OPTIONS
 
 plugins:
   - name: cors
@@ -28,6 +46,7 @@ plugins:
       origins:
         - http://localhost:3000
         - https://movabi.apps.evolsolution.com
+
       methods:
         - GET
         - POST
@@ -35,6 +54,7 @@ plugins:
         - PATCH
         - DELETE
         - OPTIONS
+
       headers:
         - Accept
         - Accept-Language
@@ -51,11 +71,14 @@ plugins:
         - Accept-Profile
         - Prefer
         - x-supabase-api-version
+
       exposed_headers:
         - Content-Range
         - X-Total-Count
         - Content-Profile
         - Accept-Profile
+        - Authorization
+
       credentials: true
       max_age: 3600
       preflight_continue: false
