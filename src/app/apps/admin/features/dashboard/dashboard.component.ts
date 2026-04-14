@@ -1,10 +1,10 @@
-import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
-import { AdminService } from '../../services/admin.service';
+import { Component, inject, OnInit, OnDestroy, signal, ViewChild } from '@angular/core';
+import { AdminService, FailedBooking, WalletTransaction } from '../../services/admin.service';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { RouterModule } from '@angular/router';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
-import { CardComponent, ButtonComponent, BadgeComponent, EmptyStateComponent } from '../../../../shared/ui';
+import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -43,6 +43,8 @@ interface AdminEvent {
   created_at: string;
   payload: Record<string, unknown>;
 }
+
+import { MapComponent } from '../../../../shared/components/map/map.component';
 
 @Component({
   selector: 'app-admin-dashboard',
@@ -106,6 +108,25 @@ interface AdminEvent {
           </app-card>
         }
       </div>
+
+      <!-- Demand Heatmap -->
+      <app-card title="Demand Heatmap" class="overflow-hidden">
+        <div header-action>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-red-500"></div>
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">High Demand</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balanced</span>
+            </div>
+          </div>
+        </div>
+        <div class="h-[400px] w-full relative">
+          <app-map #adminMap></app-map>
+        </div>
+      </app-card>
 
       <!-- Operational Insights -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -207,7 +228,7 @@ interface AdminEvent {
           </div>
         </app-card>
 
-      <!-- Active Jobs -->
+        <!-- Active Jobs -->
         <app-card title="Active Jobs">
           <div class="space-y-5">
             @for (job of activeJobs(); track job.id) {
@@ -238,6 +259,52 @@ interface AdminEvent {
             <app-button variant="secondary" size="md" routerLink="/admin/van-jobs">
               Monitor All Jobs
             </app-button>
+          </div>
+        </app-card>
+      </div>
+
+      <!-- Failures & Payments -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        <app-card title="Failed Bookings">
+          <div class="space-y-4">
+            @for (failure of failedBookings(); track failure.id) {
+              <div class="flex items-center justify-between p-4 bg-red-50/50 rounded-2xl border border-red-100">
+                <div>
+                  <h5 class="text-sm font-bold text-slate-900">{{ failure.customer?.first_name }} {{ failure.customer?.last_name }}</h5>
+                  <p class="text-xs text-slate-500 mt-1">{{ failure.status }} - {{ failure.cancellation_reason || 'No reason' }}</p>
+                </div>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ failure.created_at | date:'shortTime' }}</span>
+              </div>
+            }
+            @if (failedBookings().length === 0) {
+              <p class="text-center py-10 text-slate-400 text-sm">No recent failures.</p>
+            }
+          </div>
+        </app-card>
+
+        <app-card title="Recent Wallet Activity">
+          <div class="space-y-4">
+            @for (payment of recentPayments(); track payment.id) {
+              <div class="flex items-center justify-between p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                <div class="flex items-center gap-4">
+                  <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100">
+                    <ion-icon [name]="payment.type === 'credit' ? 'arrow-down' : 'arrow-up'"></ion-icon>
+                  </div>
+                  <div>
+                    <h5 class="text-sm font-bold text-slate-900">{{ payment.user?.first_name }}</h5>
+                    <p class="text-xs text-slate-500 mt-1">{{ payment.description }}</p>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <p [class]="'text-sm font-bold ' + (payment.type === 'credit' ? 'text-emerald-600' : 'text-red-600')">
+                    {{ payment.type === 'credit' ? '+' : '-' }}{{ formatPrice(payment.amount) }}
+                  </p>
+                </div>
+              </div>
+            }
+            @if (recentPayments().length === 0) {
+              <p class="text-center py-10 text-slate-400 text-sm">No recent transactions.</p>
+            }
           </div>
         </app-card>
       </div>
@@ -275,9 +342,11 @@ interface AdminEvent {
     </div>
   `,
   standalone: true,
-  imports: [CommonModule, IonicModule, RouterModule, CardComponent, ButtonComponent, BadgeComponent, EmptyStateComponent]
+  imports: [CommonModule, IonicModule, RouterModule, CardComponent, ButtonComponent, BadgeComponent, MapComponent]
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
+  @ViewChild('adminMap') adminMap!: MapComponent;
+
   private adminService = inject(AdminService);
   private supabase = inject(SupabaseService);
   private config = inject(AppConfigService);
@@ -287,6 +356,8 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   activeJobs = signal<Job[]>([]);
   stuckJobs = signal<JobAnomaly[]>([]);
   operationalMetrics = signal<OperationalMetrics | null>(null);
+  failedBookings = signal<FailedBooking[]>([]);
+  recentPayments = signal<WalletTransaction[]>([]);
   events = signal<AdminEvent[]>([]);
   revenueBars: RevenueBar[] = [];
   statsList: DashboardStat[] = [];
@@ -310,10 +381,12 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     await this.adminService.fetchStats();
     this.updateStatsList();
     
-    const [jobs, metrics, evs] = await Promise.all([
+    const [jobs, metrics, evs, failures, payments] = await Promise.all([
       this.adminService.getJobs(),
       this.adminService.getOperationalMetrics(),
-      this.adminService.getEvents(10)
+      this.adminService.getEvents(10),
+      this.adminService.getFailedBookings(),
+      this.adminService.getRecentPayments()
     ]);
 
     const allJobs = jobs as Job[];
@@ -321,6 +394,8 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     this.stuckJobs.set(this.anomalyService.detectAnomalies(allJobs));
     this.operationalMetrics.set(metrics as OperationalMetrics);
     this.events.set(evs as AdminEvent[]);
+    this.failedBookings.set(failures);
+    this.recentPayments.set(payments);
 
     const revenueData = await this.adminService.getRevenueStats();
     const maxValue = Math.max(...revenueData.map(d => d.value), 100);
@@ -328,6 +403,19 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
       ...d,
       height: (d.value / maxValue) * 100
     }));
+
+    // Heatmap
+    try {
+      const heatmap = await this.adminService.getHeatmapData();
+      if (heatmap && heatmap.zones && this.adminMap) {
+        this.adminMap.drawHeatmap(heatmap.zones);
+        if (heatmap.zones.length > 0) {
+          this.adminMap.setCenter(heatmap.zones[0].lng, heatmap.zones[0].lat, 12);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load heatmap', e);
+    }
   }
 
   private setupRealtime() {

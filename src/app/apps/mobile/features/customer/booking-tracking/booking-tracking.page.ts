@@ -59,36 +59,36 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
           </div>
 
           <!-- Info Sheet -->
-          <div class="bg-white rounded-t-[3rem] shadow-2xl p-10 space-y-10 -mt-12 relative z-10 max-h-[65%] overflow-y-auto custom-scrollbar border-t border-slate-100">
-            <div class="w-16 h-1.5 bg-slate-100 rounded-full mx-auto mb-2"></div>
+          <div class="bg-white rounded-t-[2.5rem] shadow-2xl p-6 space-y-6 -mt-10 relative z-10 max-h-[70%] overflow-y-auto custom-scrollbar border-t border-slate-100">
+            <div class="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-2"></div>
 
             <div class="flex justify-between items-start">
               <div>
-                <app-badge [variant]="getStatusVariant(booking()?.status || '')" class="mb-3">{{ booking()?.status?.replace('_', ' ') }}</app-badge>
-                <h2 class="text-3xl font-display font-bold text-slate-900 tracking-tight">Booking Details</h2>
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">ID: {{ booking()?.id?.slice(0,8) }}</p>
+                <app-badge [variant]="getStatusVariant(booking()?.status || '')" class="mb-2">{{ booking()?.status?.replace('_', ' ') }}</app-badge>
+                <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight">Booking Details</h2>
+                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">ID: {{ booking()?.id?.slice(0,8) }}</p>
               </div>
               <div class="text-right">
-                <p class="text-4xl font-display font-bold text-slate-900">
+                <p class="text-3xl font-display font-bold text-slate-900">
                   {{ config.formatCurrency((booking()?.total_price || 0) + (errandFunding()?.amount_reserved || 0)) }}
                 </p>
                 @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                  <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-1">Total Reserved</p>
+                  <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">Total Reserved</p>
                 } @else {
-                  <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-1">Fixed Price</p>
+                  <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">Fixed Price</p>
                 }
               </div>
             </div>
 
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
-              <div class="grid grid-cols-2 gap-4">
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
-                  <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(booking()?.total_price || 0) }}</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Service Fee</p>
+                  <p class="text-base font-display font-bold text-slate-900">{{ config.formatCurrency(booking()?.total_price || 0) }}</p>
                 </div>
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
-                  <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</p>
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Item Budget</p>
+                  <p class="text-base font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</p>
                 </div>
               </div>
             }
@@ -96,55 +96,50 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
             @if (booking()?.driver_id) {
               <!-- Over Budget Request -->
               @if (errandFunding()?.over_budget_status === 'requested') {
-                <div class="p-8 bg-rose-50 rounded-[2.5rem] border border-rose-100 animate-in slide-in-from-top-4">
-                  <div class="flex items-center gap-4 mb-6">
-                    <div class="w-12 h-12 rounded-2xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
-                      <ion-icon name="alert-circle" class="text-2xl"></ion-icon>
+                <div class="p-6 bg-rose-50 rounded-[2rem] border border-rose-100 animate-in slide-in-from-top-4">
+                  <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
+                      <ion-icon name="alert-circle" class="text-xl"></ion-icon>
                     </div>
                     <div>
-                      <h3 class="text-lg font-display font-bold text-slate-900">Budget Increase Requested</h3>
-                      <p class="text-[10px] font-bold text-rose-600 uppercase tracking-widest">Action Required</p>
+                      <h3 class="text-base font-display font-bold text-slate-900">Budget Increase</h3>
+                      <p class="text-[9px] font-bold text-rose-600 uppercase tracking-widest">Action Required</p>
                     </div>
                   </div>
 
-                  <div class="space-y-4 mb-8">
-                    <div class="flex justify-between items-center p-4 bg-white rounded-2xl border border-rose-100">
-                      <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Original Budget</span>
-                      <span class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</span>
+                  <div class="space-y-3 mb-6">
+                    <div class="flex justify-between items-center p-3 bg-white rounded-xl border border-rose-100">
+                      <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Original</span>
+                      <span class="text-base font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</span>
                     </div>
-                    <div class="flex justify-between items-center p-4 bg-rose-100/50 rounded-2xl border border-rose-200">
-                      <span class="text-xs font-bold text-rose-600 uppercase tracking-widest">New Required</span>
-                      <span class="text-lg font-display font-bold text-rose-700">{{ config.formatCurrency(errandFunding()?.over_budget_amount || 0) }}</span>
+                    <div class="flex justify-between items-center p-3 bg-rose-100/50 rounded-xl border border-rose-200">
+                      <span class="text-[10px] font-bold text-rose-600 uppercase tracking-widest">New Required</span>
+                      <span class="text-base font-display font-bold text-rose-700">{{ config.formatCurrency(errandFunding()?.over_budget_amount || 0) }}</span>
                     </div>
-                    @if (errandFunding()?.metadata?.['over_budget_reason']) {
-                      <div class="p-4 bg-white/50 rounded-2xl border border-rose-100 italic text-sm text-slate-600">
-                        "{{ errandFunding()?.metadata?.['over_budget_reason'] }}"
-                      </div>
-                    }
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
-                    <app-button variant="secondary" (onClick)="rejectOverBudget()" class="border-rose-200 text-rose-700">
+                  <div class="grid grid-cols-2 gap-2">
+                    <app-button variant="secondary" size="sm" (onClick)="rejectOverBudget()" class="border-rose-200 text-rose-700">
                       Reject
                     </app-button>
-                    <app-button variant="primary" (onClick)="approveOverBudget()" class="bg-rose-600 border-rose-600 shadow-lg shadow-rose-200">
+                    <app-button variant="primary" size="sm" (onClick)="approveOverBudget()" class="bg-rose-600 border-rose-600 shadow-lg shadow-rose-200">
                       Approve
                     </app-button>
                   </div>
                 </div>
               }
 
-              <div class="flex items-center p-6 bg-slate-50 rounded-[2rem] border border-slate-100 group transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-200/50">
-                <div class="w-16 h-16 rounded-2xl overflow-hidden mr-5 border-4 border-white shadow-lg shadow-slate-200/50">
+              <div class="flex items-center p-3 bg-slate-50 rounded-xl border border-slate-100 group transition-all hover:bg-white hover:shadow-lg hover:shadow-slate-200/50">
+                <div class="w-12 h-12 rounded-xl overflow-hidden mr-4 border-2 border-white shadow-md">
                   <img src="https://picsum.photos/seed/driver/200" alt="Driver profile" class="w-full h-full object-cover" />
                 </div>
                 <div class="flex-1 min-w-0">
-                  <h3 class="text-lg font-bold text-slate-900 truncate">{{ booking()?.driver?.first_name }} {{ booking()?.driver?.last_name }}</h3>
-                  <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-0.5">Arriving in 5 mins</p>
+                  <h3 class="text-base font-bold text-slate-900 truncate">{{ booking()?.driver?.first_name }} {{ booking()?.driver?.last_name }}</h3>
+                  <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Arriving in 5 mins</p>
                 </div>
                 <div class="flex gap-2">
-                  <app-button variant="secondary" size="sm" [fullWidth]="false" class="h-12 w-12 rounded-2xl" (onClick)="callDriver()">
-                    <ion-icon name="call" slot="icon-only" class="text-xl"></ion-icon>
+                  <app-button variant="secondary" size="sm" [fullWidth]="false" class="h-10 w-10 rounded-xl" (onClick)="callDriver()">
+                    <ion-icon name="call" slot="icon-only" class="text-lg"></ion-icon>
                   </app-button>
                 </div>
               </div>
@@ -201,14 +196,14 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                 
                 <div class="grid grid-cols-2 gap-5">
                   @if (booking()?.service_slug === ServiceTypeEnum.RIDE) {
-                    <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Passengers</p>
                       <p class="text-xl font-display font-bold text-slate-900">{{ details()?.['passenger_count'] }}</p>
                     </div>
                   }
 
                   @if (booking()?.service_slug === ServiceTypeEnum.VAN) {
-                    <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Helpers</p>
                       <p class="text-xl font-display font-bold text-slate-900">{{ details()?.['helper_count'] }}</p>
                     </div>
@@ -216,7 +211,7 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                 </div>
 
                 @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                  <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 mt-5">
+                  <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 mt-4">
                     <div class="flex justify-between items-center mb-4">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items Requested</p>
                       @if (details()?.['actual_spending']) {
@@ -327,6 +322,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
   }
   private channel?: RealtimeChannel;
   private locationSubscription?: RealtimeChannel;
+  private searchTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  private pollingInterval: ReturnType<typeof setInterval> | null = null;
 
   getStatusVariant(status: string): 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' {
     switch (status) {
@@ -346,19 +343,83 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     if (id) {
       this.channel = this.bookingService.subscribeToBooking(id);
       this.loadBookingAndDetails(id);
+      
+      // Start search timeout if status is searching
+      this.checkSearchTimeout();
+
+      // Polling fallback
+      this.startPolling(id);
+    }
+  }
+
+  private startPolling(id: string) {
+    this.pollingInterval = setInterval(() => {
+      this.loadBookingAndDetails(id, false);
+    }, 5000);
+  }
+
+  private stopPolling() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+  }
+
+  private checkSearchTimeout() {
+    const b = this.booking();
+    if (b?.status === 'searching') {
+      this.mapComponent?.showSearchingOverlay.set(true);
+      if (this.searchTimeoutHandle) clearTimeout(this.searchTimeoutHandle);
+      this.searchTimeoutHandle = setTimeout(() => {
+        this.handleNoDriverFound();
+      }, 90000);
+    } else {
+      this.mapComponent?.showSearchingOverlay.set(false);
+      if (this.searchTimeoutHandle) {
+        clearTimeout(this.searchTimeoutHandle);
+        this.searchTimeoutHandle = null;
+      }
+    }
+  }
+
+  private async handleNoDriverFound() {
+    const b = this.booking();
+    if (!b || b.status !== 'searching') return;
+
+    // stop realtime
+    this.channel?.unsubscribe();
+    this.locationSubscription?.unsubscribe();
+
+    try {
+      await this.bookingService.updateBookingStatus(b.id, 'no_driver_found', 'No driver found within timeout');
+      
+      const toast = await this.alertCtrl.create({
+        header: 'No Driver Found',
+        message: 'No drivers available right now. Please try again.',
+        buttons: ['OK']
+      });
+      await toast.present();
+
+      this.router.navigate(['/customer']);
+    } catch (e) {
+      console.error('Failed to update status to no_driver_found', e);
     }
   }
 
   ngOnDestroy() {
+    this.stopPolling();
     this.channel?.unsubscribe();
     this.locationSubscription?.unsubscribe();
   }
 
-  async loadBookingAndDetails(id: string) {
-    this.isLoading.set(true);
+  async loadBookingAndDetails(id: string, showLoading = true) {
+    if (showLoading) this.isLoading.set(true);
     try {
       const b = await this.bookingService.getBooking(id);
       this.bookingService.activeBooking.set(b);
+      
+      // Check timeout after loading
+      this.checkSearchTimeout();
       
       const details = await this.bookingService.getBookingDetails(b.id, b.service_slug);
       this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);

@@ -1,11 +1,12 @@
-import { Component, inject, signal, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
+﻿import { Component, inject, signal, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
 import {
     IonHeader, IonToolbar, IonTitle, IonContent, IonButtons,
     IonBackButton, IonCard, IonCardHeader, IonCardTitle,
     IonCardContent, IonButton, IonIcon, IonItem, IonLabel,
-    IonInput, IonList, IonBadge, IonRefresher, IonRefresherContent
+    IonInput, IonList, IonBadge, IonRefresher, IonRefresherContent,
+    IonListHeader, IonNote
 } from '@ionic/angular/standalone';
 import { WalletService } from '@core/services/wallet/wallet.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
@@ -15,15 +16,18 @@ import { FormsModule } from '@angular/forms';
 import { ToastController, LoadingController } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { informationCircleOutline } from 'ionicons/icons';
+import { IonicModule } from '@ionic/angular';
 
 @Component({
     selector: 'app-wallet',
     standalone: true,
     imports: [
         CommonModule, FormsModule, IonHeader, IonToolbar, IonTitle,
+        IonicModule,   // ✅ MUST BE HERE
         IonContent, IonButtons, IonBackButton, IonCard, IonCardHeader,
         IonCardTitle, IonCardContent, IonButton, IonIcon, IonItem,
-        IonLabel, IonInput, IonList, IonBadge, IonRefresher, IonRefresherContent
+        IonLabel, IonInput, IonList, IonBadge, IonRefresher, IonRefresherContent,
+        IonListHeader, IonNote
     ],
     template: `
     <ion-header>
@@ -40,49 +44,57 @@ import { informationCircleOutline } from 'ionicons/icons';
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <ion-card class="bg-indigo-600 text-white m-0 mb-6">
-        <ion-card-content class="py-8 text-center">
-          <p class="text-indigo-100 text-sm uppercase tracking-wider mb-2">Available Balance</p>
-          <h1 class="text-4xl font-bold">
+      <ion-card class="bg-indigo-600 text-white m-0 mb-6 shadow-lg rounded-[2rem] overflow-hidden">
+        <ion-card-content class="py-10 text-center relative">
+          <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+          <div class="absolute bottom-0 left-0 w-24 h-24 bg-indigo-400/20 rounded-full -ml-12 -mb-12 blur-xl"></div>
+          
+          <p class="text-indigo-100 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">Available Balance</p>
+          <h1 class="text-5xl font-display font-bold tracking-tight">
             {{ appConfig.formatCurrency(walletService.wallet()?.available_balance || 0) }}
           </h1>
         </ion-card-content>
       </ion-card>
 
-      <div class="space-y-4">
-        <h2 class="text-lg font-bold">Top Up Wallet</h2>
-        <ion-card class="m-0">
-          <ion-card-content>
-            <ion-item lines="none" class="bg-gray-50 rounded-lg mb-4">
-              <ion-label position="stacked">Amount to Add</ion-label>
+      <div class="space-y-6">
+        <div class="flex justify-between items-center px-1">
+          <h2 class="text-xl font-display font-bold text-slate-900">Top Up Wallet</h2>
+        </div>
+        
+        <ion-card class="m-0 shadow-xl shadow-slate-200/50 rounded-[2rem] border border-slate-100">
+          <ion-card-content class="p-6">
+            <div class="bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100">
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Amount to Add</p>
               <ion-input
                 type="number"
                 [(ngModel)]="topUpAmount"
                 placeholder="0.00"
-                class="text-xl font-bold"
+                class="text-2xl font-display font-bold text-slate-900"
               ></ion-input>
-            </ion-item>
+            </div>
 
-            <div class="grid grid-cols-3 gap-2 mb-4">
+            <div class="grid grid-cols-3 gap-3 mb-8">
               @for (amount of quickAmounts; track amount) {
                 <ion-button
                   fill="outline"
                   size="small"
                   (click)="topUpAmount = amount"
                   [color]="topUpAmount === amount ? 'primary' : 'medium'"
+                  class="h-10 rounded-xl"
                 >
-                  +{{ appConfig.formatCurrency(amount) }}
+                  +{{ amount }}
                 </ion-button>
               }
             </div>
 
-            <div class="mb-6">
-              <span class="block text-sm font-medium text-gray-700 mb-2">Card Details</span>
-              <div #cardElementContainer class="p-4 bg-gray-50 rounded-lg border border-gray-200 min-h-[44px]">
+            <div class="mb-8">
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Card Details</p>
+              <div #cardElementContainer class="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[50px] flex items-center">
                 <!-- Stripe Card Element will be mounted here -->
               </div>
               @if (cardError()) {
-                <p id="card-errors" role="alert" class="mt-2 text-sm text-red-600">
+                <p id="card-errors" role="alert" class="mt-3 text-xs font-medium text-rose-500 flex items-center gap-1">
+                  <ion-icon name="alert-circle-outline"></ion-icon>
                   {{ cardError() }}
                 </p>
               }
@@ -91,9 +103,11 @@ import { informationCircleOutline } from 'ionicons/icons';
             <ion-button
               expand="block"
               (click)="handleTopUp()"
-             [disabled]="!canSubmitTopUp"
+              [disabled]="!canSubmitTopUp"
+              class="h-14 font-bold text-lg rounded-2xl shadow-lg shadow-indigo-200"
             >
               @if (loading()) {
+                <ion-spinner name="crescent" class="mr-2"></ion-spinner>
                 Processing...
               } @else {
                 Top Up Now
@@ -107,6 +121,33 @@ import { informationCircleOutline } from 'ionicons/icons';
           <p class="text-sm text-blue-800">
             Funds in your wallet can be used to pay for errands, including item budgets and service fees.
           </p>
+        </div>
+
+        <div class="mt-8">
+          <h2 class="text-lg font-bold mb-4">Transaction History</h2>
+          <ion-list class="bg-transparent">
+            @for (tx of transactions(); track tx['id']) {
+              <ion-item lines="full" class="bg-white rounded-xl mb-2 overflow-hidden">
+                <ion-label>
+                  <div class="flex justify-between items-center mb-1">
+                    <span class="font-bold text-slate-900">{{ tx['description'] || 'Transaction' }}</span>
+                    <span [class]="tx['type'] === 'credit' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'">
+                      {{ tx['type'] === 'credit' ? '+' : '-' }}{{ appConfig.formatCurrency($any(tx['amount'])) }}
+                    </span>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <ion-note class="text-xs">{{ $any(tx['created_at']) | date:'medium' }}</ion-note>
+                    <ion-note class="text-[10px] uppercase tracking-tighter">{{ tx['type'] }}</ion-note>
+                  </div>
+                </ion-label>
+              </ion-item>
+            } @empty {
+              <div class="text-center py-8 text-slate-400">
+                <ion-icon name="receipt-outline" class="text-4xl mb-2"></ion-icon>
+                <p>No transactions yet</p>
+              </div>
+            }
+          </ion-list>
         </div>
       </div>
     </ion-content>
@@ -126,6 +167,7 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     quickAmounts = [10, 20, 50];
     loading = signal(false);
     cardError = signal<string | null>(null);
+    transactions = signal<Record<string, unknown>[]>([]);
 
     private stripe: Stripe | null = null;
     private elements: StripeElements | null = null;
@@ -137,6 +179,19 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
 
     ngOnInit() {
         void this.walletService.fetchWallet();
+        void this.loadTransactions();
+    }
+
+    async loadTransactions() {
+        const user = this.auth.currentUser();
+        if (user) {
+            try {
+                const txs = await this.paymentService.getTransactions(user.id);
+                this.transactions.set(txs);
+            } catch (error) {
+                console.error('Failed to load transactions:', error);
+            }
+        }
     }
 
     async ngAfterViewInit() {
@@ -190,7 +245,10 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     async handleRefresh(event: { target: { complete: () => void } }) {
-        await this.walletService.fetchWallet();
+        await Promise.all([
+            this.walletService.fetchWallet(),
+            this.loadTransactions()
+        ]);
         event.target.complete();
     }
 
@@ -224,18 +282,28 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
 
         try {
             const { clientSecret } = await this.paymentService.createWalletTopupIntent(
-                this.topUpAmount,
-                this.appConfig.currencyCode
+                Number(this.topUpAmount),
+                this.appConfig.currencyCode,
+                user.id,
+                this.auth.tenantId() || ''
             );
 
             loading.message = 'Confirming payment...';
 
-            await this.paymentService.confirmCardPayment(clientSecret, this.card);
+            const paymentIntent = await this.paymentService.confirmCardPayment(clientSecret, this.card);
 
             loading.message = 'Finalizing top-up...';
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            await this.paymentService.confirmWalletTopup({
+                paymentIntentId: paymentIntent.id,
+                userId: user.id,
+                amount: Number(this.topUpAmount)
+            });
 
-            await this.walletService.fetchWallet();
+            await Promise.all([
+                this.walletService.fetchWallet(),
+                this.loadTransactions()
+            ]);
 
             const toast = await this.toastCtrl.create({
                 message: `Successfully added ${this.appConfig.formatCurrency(this.topUpAmount)} to your wallet!`,

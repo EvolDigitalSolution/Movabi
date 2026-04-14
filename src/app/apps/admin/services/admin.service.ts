@@ -1,7 +1,32 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { Profile, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
 import { BookingService } from '@core/services/booking/booking.service';
+import { ApiUrlService } from '@core/services/api-url.service';
+
+export interface FailedBooking {
+  id: string;
+  customer?: {
+    first_name: string;
+    last_name: string;
+  };
+  status: string;
+  cancellation_reason?: string;
+  created_at: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  user?: {
+    first_name: string;
+  };
+  type: 'credit' | 'debit';
+  description: string;
+  amount: number;
+  created_at: string;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -9,6 +34,8 @@ import { BookingService } from '@core/services/booking/booking.service';
 export class AdminService {
   private supabase = inject(SupabaseService);
   private bookingService = inject(BookingService);
+  private http = inject(HttpClient);
+  private apiUrlService = inject(ApiUrlService);
 
   stats = signal({
     totalUsers: 0,
@@ -251,5 +278,29 @@ export class AdminService {
       .update(updates)
       .eq('id', id);
     if (error) throw error;
+  }
+
+  async getHeatmapData() {
+    return firstValueFrom(
+      this.http.get<{ zones: { lat: number; lng: number; demand: number; drivers: number }[] }>(this.apiUrlService.getApiUrl('/api/admin/heatmap'))
+    );
+  }
+
+  async getPlatformMetrics() {
+    return firstValueFrom(
+      this.http.get<Record<string, number>>(this.apiUrlService.getApiUrl('/api/admin/metrics'))
+    );
+  }
+
+  async getFailedBookings() {
+    return firstValueFrom(
+      this.http.get<FailedBooking[]>(this.apiUrlService.getApiUrl('/api/admin/failures'))
+    );
+  }
+
+  async getRecentPayments() {
+    return firstValueFrom(
+      this.http.get<WalletTransaction[]>(this.apiUrlService.getApiUrl('/api/admin/payments'))
+    );
   }
 }

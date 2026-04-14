@@ -11,7 +11,7 @@ if (!stripeSecretKey) {
 }
 
 export const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2025-02-11.acacia',
+  apiVersion: '2023-10-16',
 });
 
 export const verifyWebhookSignature = (payload: string | Buffer, signature: string) => {

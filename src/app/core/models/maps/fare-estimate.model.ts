@@ -8,6 +8,7 @@ export interface PricingInput {
   countryCode?: string;
   cityId?: string | null;
   basePriceOverride?: number | null;
+  surgeMultiplier?: number;
   moveDetails?: {
     size: 'small' | 'medium' | 'large' | 'full-house';
     helperCount: number;
@@ -32,6 +33,8 @@ export interface FareEstimate {
   serviceFee: number;
   subtotal: number;
   minimumFareApplied: boolean;
+  surgeMultiplier?: number;
+  surgeAmount?: number;
   total: number;
   breakdownLabel?: string;
 }

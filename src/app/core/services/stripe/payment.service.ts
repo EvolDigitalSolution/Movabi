@@ -44,11 +44,12 @@ export class PaymentService {
         return this.stripePromise;
     }
 
-    async createPaymentIntent(
+  async createPaymentIntent(
         jobId: string,
         amount: number,
         currency: string,
-        tenantId: string
+        tenantId: string,
+        surgeMultiplier = 1.0
     ): Promise<CreateJobPaymentIntentResponse> {
         if (!environment.stripePublicKey) {
             throw new Error('Payment service is currently unavailable (missing configuration).');
@@ -66,7 +67,7 @@ export class PaymentService {
             jobId,
             'payment_initiated',
             'Payment intent creation requested',
-            { amount, currency }
+            { amount, currency, surgeMultiplier }
         );
 
         return firstValueFrom(
@@ -76,7 +77,8 @@ export class PaymentService {
                     jobId,
                     amount,
                     currency,
-                    tenantId
+                    tenantId,
+                    surgeMultiplier
                 }
             )
         );
@@ -154,7 +156,7 @@ export class PaymentService {
     // Backward-compatible wrapper for existing booking flow callers.
     async confirmPayment(
         clientSecret: string,
-        cardElement?: StripeCardElement | null
+        cardElement: StripeCardElement
     ) {
         const stripe = await this.getStripe();
 
@@ -166,20 +168,38 @@ export class PaymentService {
             throw new Error('clientSecret is required');
         }
 
-        if (cardElement) {
-            return this.confirmCardPayment(clientSecret, cardElement);
+        if (!cardElement) {
+            throw new Error('Card details are required to confirm this payment.');
         }
 
-        const result = await stripe.confirmCardPayment(clientSecret);
+        return this.confirmCardPayment(clientSecret, cardElement);
+    }
 
-        if (result.error) {
-            throw new Error(result.error.message || 'Payment confirmation failed');
-        }
+    async confirmWalletTopup(data: {
+        paymentIntentId: string;
+        userId: string;
+        amount: number;
+    }): Promise<unknown> {
+        return firstValueFrom(
+            this.http.post(`${this.apiUrl}/confirm-wallet-topup`, data)
+        );
+    }
 
-        if (!result.paymentIntent) {
-            throw new Error('Payment confirmation did not return a payment intent');
-        }
+    async getTransactions(userId: string): Promise<Record<string, unknown>[]> {
+        return firstValueFrom(
+            this.http.get<Record<string, unknown>[]>(`${this.apiUrlService.getApiUrl('/api/wallet')}/transactions`, {
+                params: { userId }
+            })
+        );
+    }
 
-        return result.paymentIntent;
+    async refundPayment(paymentIntentId: string, amount?: number, reason?: string): Promise<unknown> {
+        return firstValueFrom(
+            this.http.post(`${this.apiUrl}/refund`, {
+                paymentIntentId,
+                amount,
+                reason
+            })
+        );
     }
 }

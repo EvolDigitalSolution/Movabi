@@ -12,7 +12,7 @@ export class BookingStatusManager {
   private readonly transitions: Record<BookingStatus, BookingStatus[]> = {
     pending: ['requested', 'cancelled'],
     requested: ['searching', 'cancelled'],
-    searching: ['assigned', 'cancelled'],
+    searching: ['assigned', 'cancelled', 'no_driver_found'],
     assigned: ['accepted', 'searching', 'cancelled'],
     accepted: ['heading_to_pickup', 'arrived', 'cancelled'],
     heading_to_pickup: ['arrived', 'cancelled'],
@@ -25,7 +25,8 @@ export class BookingStatusManager {
     in_progress: ['completed', 'cancelled'],
     settled: [],
     completed: [],
-    cancelled: []
+    cancelled: [],
+    no_driver_found: []
   };
 
   /**

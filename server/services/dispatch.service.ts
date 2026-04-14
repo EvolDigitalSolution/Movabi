@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from './supabase.service';
 import { Job, JobQueueItem, DispatchResult } from '../../src/app/shared/models/booking.model';
 import { EventService } from './event.service';
+import { NotificationService } from './notification.service';
 
 export class DispatchService {
   private get supabase() {
@@ -12,7 +13,10 @@ export class DispatchService {
    */
   async runDispatchEngine() {
     try {
-      // 1. Fetch waiting jobs from queue
+      // 1. Cleanup stale bookings
+      await this.cleanupStaleBookings();
+
+      // 2. Fetch waiting jobs from queue
       const { data: queueItems, error: queueError } = await this.supabase
         .from('job_queue')
         .select(`
@@ -34,6 +38,58 @@ export class DispatchService {
   }
 
   /**
+   * Cleanup stale bookings that are stuck in searching or assigned without progress
+   */
+  private async cleanupStaleBookings() {
+    const searchingThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 mins
+    const assignedThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString(); // 30 mins
+
+    // 1. Handle stale searching bookings
+    const { data: staleSearching } = await this.supabase
+      .from('jobs')
+      .select('id, payment_intent_id')
+      .eq('status', 'searching')
+      .lt('created_at', searchingThreshold);
+
+    if (staleSearching && staleSearching.length > 0) {
+      console.log(`[DispatchService] Cleaning up ${staleSearching.length} stale searching bookings`);
+      for (const job of staleSearching) {
+        await this.supabase
+          .from('jobs')
+          .update({ 
+            status: 'no_driver_found',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+        
+        // Log event
+        await EventService.logEvent('job_cleanup', { jobId: job.id, reason: 'searching_timeout' });
+      }
+    }
+
+    // 2. Handle stale assigned bookings (no progress)
+    const { data: staleAssigned } = await this.supabase
+      .from('jobs')
+      .select('id')
+      .eq('status', 'assigned')
+      .lt('accepted_at', assignedThreshold);
+
+    if (staleAssigned && staleAssigned.length > 0) {
+      console.log(`[DispatchService] Cleaning up ${staleAssigned.length} stale assigned bookings`);
+      for (const job of staleAssigned) {
+        await this.supabase
+          .from('jobs')
+          .update({ 
+            status: 'cancelled',
+            cancellation_reason: 'System cleanup: Stale assignment',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+      }
+    }
+  }
+
+  /**
    * Dispatch a single job
    */
   private async dispatchJob(item: any): Promise<DispatchResult> {
@@ -42,14 +98,27 @@ export class DispatchService {
     const tenantId = item.tenant_id;
 
     try {
-      // 2. Find best driver using load balancing function
-      const { data: driverId, error: rpcError } = await this.supabase
-        .rpc('get_least_recently_assigned_driver', {
-          p_city_id: cityId,
-          p_tenant_id: tenantId
-        });
+      // 2. Find best driver using geo-aware bounding box + load balancing
+      // We look for drivers within ~5km (0.05 degrees)
+      const { data: drivers, error: driverError } = await this.supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'driver')
+        .eq('is_available', true)
+        .gte('lat', job.pickup_lat - 0.05)
+        .lte('lat', job.pickup_lat + 0.05)
+        .gte('lng', job.pickup_lng - 0.05)
+        .lte('lng', job.pickup_lng + 0.05)
+        .limit(10);
 
-      if (rpcError) throw rpcError;
+      if (driverError) throw driverError;
+
+      let driverId = null;
+      if (drivers && drivers.length > 0) {
+        // For simplicity in this version, we take the first one.
+        // In a more advanced version, we'd use the RPC to pick the least recently assigned among these.
+        driverId = drivers[0].id;
+      }
 
       if (!driverId) {
         // No driver found, check if expired
@@ -93,6 +162,16 @@ export class DispatchService {
         tenantId
       }, tenantId, driverId);
 
+      // 6.5 Send Notifications
+      await NotificationService.notifyJobStatusUpdate(job.customer_id, job.id, 'accepted');
+      await NotificationService.sendNotification({
+        userId: driverId,
+        title: 'Job Assigned',
+        body: 'You have been assigned a new booking. Please check the app.',
+        type: 'booking_update',
+        data: { jobId: job.id }
+      });
+
       // 7. Create dispatch log for AI
       await this.supabase
         .from('dispatch_logs')
@@ -129,9 +208,56 @@ export class DispatchService {
 
     if (!result.error) {
       await EventService.logEvent('job_enqueued', { jobId, cityId, tenantId }, tenantId);
+      
+      // Notify nearby drivers
+      const { data: job } = await this.supabase.from('jobs').select('pickup_lat, pickup_lng').eq('id', jobId).single();
+      if (job) {
+        const { data: drivers } = await this.supabase
+          .from('profiles')
+          .select('id')
+          .eq('role', 'driver')
+          .eq('is_available', true)
+          .gte('lat', job.pickup_lat - 0.05)
+          .lte('lat', job.pickup_lat + 0.05)
+          .gte('lng', job.pickup_lng - 0.05)
+          .lte('lng', job.pickup_lng + 0.05)
+          .limit(20);
+
+        if (drivers) {
+          for (const driver of drivers) {
+            await NotificationService.notifyNewJob(driver.id, jobId);
+          }
+        }
+      }
     }
 
     return result;
+  }
+
+  /**
+   * Get demand and supply stats for an area
+   */
+  async getAreaStats(lat: number, lng: number, radius: number = 0.05) {
+    const { count: demand } = await this.supabase
+      .from('jobs')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'searching')
+      .gte('pickup_lat', lat - radius)
+      .lte('pickup_lat', lat + radius)
+      .gte('pickup_lng', lng - radius)
+      .lte('pickup_lng', lng + radius);
+
+    const { count: supply } = await this.supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'driver')
+      .eq('is_available', true)
+      .gte('lat', lat - radius)
+      .lte('lat', lat + radius)
+      .gte('lng', lng - radius)
+      .lte('lng', lng + radius);
+
+    return { demand: demand || 0, supply: supply || 0 };
   }
 }
 

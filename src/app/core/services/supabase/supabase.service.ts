@@ -21,7 +21,22 @@ export class SupabaseService {
       }
       this._client = createClient(
         environment.supabaseUrl,
-        environment.supabaseAnonKey
+        environment.supabaseAnonKey,
+        {
+          realtime: {
+            params: {
+              eventsPerSecond: 10
+            },
+            // Exponential backoff is handled by supabase-js by default, 
+            // but we can ensure clean connection management here.
+            timeout: 20000,
+          },
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true
+          }
+        }
       );
     }
     return this._client;

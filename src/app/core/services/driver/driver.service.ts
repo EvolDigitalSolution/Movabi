@@ -1,4 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
 import { Booking, DriverStatus, Earning, Vehicle, DriverProfile, BookingStatus, JobEventType, DriverAccount, ServiceTypeEnum, ErrandDetails } from '@shared/models/booking.model';
 import { AuthService } from '../auth/auth.service';
@@ -15,6 +18,7 @@ import { ApiUrlService } from '../api-url.service';
 })
 export class DriverService {
   private supabase = inject(SupabaseService);
+  private http = inject(HttpClient);
   private auth = inject(AuthService);
   private bookingService = inject(BookingService);
   private walletService = inject(WalletService);
@@ -178,13 +182,19 @@ export class DriverService {
       }
     }
 
-    const updatedBooking = await this.bookingService.updateBookingStatus(
-      bookingId, 
-      'accepted', 
-      'Job accepted by driver',
-      { driver_id: user.id },
-      'searching'
-    );
+    // Call backend to accept and capture payment
+    try {
+      await firstValueFrom(
+        this.http.post(`${environment.apiUrl}/booking/accept`, { 
+          jobId: bookingId, 
+          driverId: user.id 
+        })
+      );
+    } catch (error: unknown) {
+      const err = error as { error?: { message?: string } };
+      console.error('Failed to accept job via API', error);
+      throw new Error(err.error?.message || 'Failed to accept job. It may have been taken.');
+    }
 
     await this.eventService.logEvent(bookingId, 'driver_accepted', 'Job accepted by driver');
 
@@ -193,7 +203,7 @@ export class DriverService {
 
     this.activeJob.set(fullBooking);
     this.availableJobs.update(jobs => jobs.filter(j => j.id !== bookingId));
-    return updatedBooking;
+    return fullBooking;
   }
 
   async updateJobStatus(bookingId: string, status: BookingStatus) {

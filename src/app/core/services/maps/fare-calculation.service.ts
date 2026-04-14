@@ -33,6 +33,15 @@ export class FareCalculationService {
     const subtotal = this.normalizeMoney(baseFare + distanceFare + timeFare);
     let totalBeforeMinimum = this.normalizeMoney(subtotal + serviceFee);
     
+    // Apply Surge Multiplier
+    const surgeMultiplier = input.surgeMultiplier || 1.0;
+    let surgeAmount = 0;
+    if (surgeMultiplier > 1.0) {
+      const originalTotal = totalBeforeMinimum;
+      totalBeforeMinimum = this.normalizeMoney(totalBeforeMinimum * surgeMultiplier);
+      surgeAmount = this.normalizeMoney(totalBeforeMinimum - originalTotal);
+    }
+
     // Apply errand-specific logic
     if (serviceType === 'errand' && input.errandDetails) {
       const mode = input.errandDetails.mode || 'collect_deliver';
@@ -100,6 +109,8 @@ export class FareCalculationService {
       serviceFee,
       subtotal,
       minimumFareApplied,
+      surgeMultiplier,
+      surgeAmount,
       total: this.normalizeMoney(total),
       breakdownLabel: config.label
     };

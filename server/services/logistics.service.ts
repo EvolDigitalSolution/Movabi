@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase.service';
+import { AuditService } from './audit.service';
 
 export class LogisticsService {
   private static readonly EARTH_RADIUS_KM = 6371;
@@ -96,6 +97,38 @@ export class LogisticsService {
   }
 
   /**
+   * Validate booking status transition
+   */
+  static isValidBookingTransition(current: string, next: string): boolean {
+    const transitions: Record<string, string[]> = {
+      'requested': ['searching', 'cancelled'],
+      'searching': ['assigned', 'no_driver_found', 'cancelled'],
+      'assigned': ['in_progress', 'cancelled'],
+      'in_progress': ['completed'],
+      'completed': [],
+      'cancelled': [],
+      'no_driver_found': ['searching', 'cancelled']
+    };
+
+    return transitions[current]?.includes(next) || false;
+  }
+
+  /**
+   * Validate payment status transition
+   */
+  static isValidPaymentTransition(current: string, next: string): boolean {
+    const transitions: Record<string, string[]> = {
+      'pending': ['authorized', 'failed'],
+      'authorized': ['captured', 'cancelled'],
+      'captured': ['refunded'],
+      'refunded': [],
+      'failed': ['pending']
+    };
+
+    return transitions[current]?.includes(next) || false;
+  }
+
+  /**
    * Complete a job and finalize payout
    */
   static async completeJob(jobId: string) {
@@ -140,12 +173,52 @@ export class LogisticsService {
           driver_id: job.driver_id,
           job_id: jobId,
           amount: breakdown.driver_payout,
-          status: 'pending_payout', // Payout to bank account happens later via Stripe
+          gross_amount: breakdown.total_price,
+          platform_fee: breakdown.platform_fee,
+          net_amount: breakdown.driver_payout,
+          status: 'payable', // Ready for payout
           metadata: breakdown
         }, { onConflict: 'job_id' });
+
+      // 5. Update reliability stats
+      await this.updateDriverReliability(job.driver_id);
     }
 
+    // 6. Audit Log
+    await AuditService.logBooking(job.customer_id, 'job_completed', jobId, { breakdown });
+
     return updatedJob;
+  }
+
+  /**
+   * Update driver reliability stats
+   */
+  static async updateDriverReliability(driverId: string) {
+    try {
+      const { data: jobs } = await supabaseAdmin
+        .from('jobs')
+        .select('status, cancellation_reason')
+        .eq('driver_id', driverId);
+
+      if (!jobs || jobs.length === 0) return;
+
+      const total = jobs.length;
+      const completed = jobs.filter(j => j.status === 'completed').length;
+      const cancelledByDriver = jobs.filter(j => j.status === 'cancelled' && j.cancellation_reason?.toLowerCase().includes('driver')).length;
+      
+      const completionRate = (completed / total) * 100;
+      const cancellationRate = (cancelledByDriver / total) * 100;
+
+      await supabaseAdmin
+        .from('profiles')
+        .update({
+          completion_rate: Math.round(completionRate),
+          cancellation_rate: Math.round(cancellationRate)
+        })
+        .eq('id', driverId);
+    } catch (err) {
+      console.error('[LogisticsService] Error updating driver reliability:', err);
+    }
   }
 
   /**

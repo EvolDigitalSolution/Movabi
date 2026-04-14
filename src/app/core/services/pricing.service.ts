@@ -1,7 +1,10 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from './supabase/supabase.service';
 import { ServiceTypeEnum } from '../../shared/models/booking.model';
 import { AppConfigService } from './config/app-config.service';
+import { ApiUrlService } from './api-url.service';
 
 @Injectable({
   providedIn: 'root'
@@ -9,8 +12,12 @@ import { AppConfigService } from './config/app-config.service';
 export class PricingService {
   private supabase = inject(SupabaseService);
   private config = inject(AppConfigService);
+  private http = inject(HttpClient);
+  private apiUrlService = inject(ApiUrlService);
 
-  async calculatePrice(serviceTypeId: string, serviceSlug: ServiceTypeEnum, distanceKm: number): Promise<number> {
+  surgeMultiplier = signal<number>(1.0);
+
+  async calculatePrice(serviceTypeId: string, serviceSlug: ServiceTypeEnum, distanceKm: number, lat?: number, lng?: number): Promise<number> {
     if (!serviceTypeId) {
       console.warn('PricingService: Missing serviceTypeId, skipping calculation');
       return 0;
@@ -24,12 +31,12 @@ export class PricingService {
       return 0;
     }
 
-    console.log('PricingService: Calculating price', { serviceTypeId, serviceSlug, distanceKm, currencyCode, countryCode });
-
     try {
+      let basePrice = 0;
+
       // 1. Check for fixed fare bands (primarily for Rides)
       if (serviceSlug === ServiceTypeEnum.RIDE) {
-        const { data: band, error: bandError } = await this.supabase
+        const { data: band } = await this.supabase
           .from('fixed_fare_bands')
           .select('flat_rate')
           .eq('service_type_id', serviceTypeId)
@@ -39,47 +46,54 @@ export class PricingService {
           .gte('max_distance_km', distanceKm)
           .single();
 
-        if (bandError && bandError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-          console.error('PricingService: Error fetching fixed fare band', bandError);
-        }
-
-        if (band) return band.flat_rate;
+        if (band) basePrice = band.flat_rate;
       }
 
-      // 2. Fallback to pricing rules (Base + Distance)
-      const { data: rule, error: ruleError } = await this.supabase
-        .from('pricing_rules')
-        .select('*')
-        .eq('service_type_id', serviceTypeId)
-        .eq('currency_code', currencyCode)
-        .eq('country_code', countryCode)
-        .single();
-
-      if (ruleError && ruleError.code !== 'PGRST116') {
-        console.error('PricingService: Error fetching pricing rule', ruleError);
-        // If it's a 400 or other fatal error, we might want to stop here or fallback to service_type
-      }
-
-      if (!rule) {
-        console.log('PricingService: No pricing rule found, falling back to service_type');
-        // Last resort: fetch from service_type directly if rules aren't set up
-        const { data: service, error: serviceError } = await this.supabase
-          .from('service_types')
-          .select('base_price')
-          .eq('id', serviceTypeId)
+      if (basePrice === 0) {
+        // 2. Fallback to pricing rules (Base + Distance)
+        const { data: rule } = await this.supabase
+          .from('pricing_rules')
+          .select('*')
+          .eq('service_type_id', serviceTypeId)
+          .eq('currency_code', currencyCode)
+          .eq('country_code', countryCode)
           .single();
-        
-        if (serviceError) {
-          console.error('PricingService: Error fetching service type fallback', serviceError);
-          return 0;
+
+        if (rule) {
+          basePrice = rule.base_fare + (distanceKm * rule.per_km_rate);
+          basePrice = Math.max(basePrice, rule.minimum_fare);
+        } else {
+          // Last resort: fetch from service_type directly
+          const { data: service } = await this.supabase
+            .from('service_types')
+            .select('base_price')
+            .eq('id', serviceTypeId)
+            .single();
+          
+          basePrice = service?.base_price || 0;
         }
-        
-        if (!service) return 0;
-        return service.base_price;
       }
 
-      const price = rule.base_fare + (distanceKm * rule.per_km_rate);
-      return Math.max(price, rule.minimum_fare);
+      // 3. Apply Surge if coordinates provided
+      if (lat !== undefined && lng !== undefined) {
+        try {
+          const surgeData = await firstValueFrom(
+            this.http.post<{ surgeMultiplier: number; totalPrice: number }>(this.apiUrlService.getApiUrl('/api/payment/calculate-price'), {
+              lat,
+              lng,
+              basePrice
+            })
+          );
+          this.surgeMultiplier.set(surgeData.surgeMultiplier || 1.0);
+          return surgeData.totalPrice;
+        } catch (e) {
+          console.error('Failed to fetch surge pricing, using base price', e);
+          this.surgeMultiplier.set(1.0);
+        }
+      }
+
+      this.surgeMultiplier.set(1.0);
+      return basePrice;
     } catch (err) {
       console.error('PricingService: Unexpected error in calculatePrice', err);
       return 0;

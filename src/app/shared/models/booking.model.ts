@@ -14,6 +14,7 @@ export type BookingStatus =
   | 'in_progress'  // Journey started
   | 'completed'    // Journey finished
   | 'cancelled'    // Cancelled by user or driver
+  | 'no_driver_found' // Search timeout
   | 'settled';     // Final state for funded errands
 
 export type DriverStatus = 'offline' | 'online' | 'busy';

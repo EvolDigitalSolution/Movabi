@@ -191,6 +191,53 @@ export class MapRendererService {
     if (this.map.getSource(this.routeSourceId)) this.map.removeSource(this.routeSourceId);
   }
 
+  drawHeatmap(zones: { lat: number; lng: number; demand: number; drivers: number }[]) {
+    if (!this.map) return;
+
+    const sourceId = 'heatmap-source';
+    const layerId = 'heatmap-layer';
+
+    if (this.map.getLayer(layerId)) this.map.removeLayer(layerId);
+    if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
+
+    const features = zones.map(zone => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [zone.lng, zone.lat]
+      },
+      properties: {
+        demand: zone.demand,
+        drivers: zone.drivers,
+        // Color logic: red if demand > drivers, green if drivers >= demand
+        color: zone.demand > zone.drivers ? '#ef4444' : '#10b981',
+        radius: Math.min(20 + (zone.demand * 5), 50)
+      }
+    }));
+
+    this.map.addSource(sourceId, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        features: features as any[]
+      }
+    });
+
+    this.map.addLayer({
+      id: layerId,
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': ['get', 'radius'],
+        'circle-color': ['get', 'color'],
+        'circle-opacity': 0.4,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': ['get', 'color']
+      }
+    });
+  }
+
   fitBounds(bounds: [[number, number], [number, number]], options?: unknown) {
     if (!this.map || !bounds) return;
     
@@ -209,7 +256,7 @@ export class MapRendererService {
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.map.fitBounds(bounds, options as any);
+      this.map.fitBounds(bounds, options as Record<string, any>);
     } catch (e) {
       console.warn('[MapRenderer] fitBounds failed', e);
     }

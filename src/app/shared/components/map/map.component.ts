@@ -2,7 +2,7 @@ import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } f
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { mapOutline, alertCircleOutline, swapHorizontalOutline, closeCircleOutline } from 'ionicons/icons';
+import { mapOutline, alertCircleOutline, swapHorizontalOutline, closeCircleOutline, searchOutline } from 'ionicons/icons';
 import { MapRendererService } from '../../../core/services/maps/map-renderer.service';
 import { AppConfigService } from '../../../core/services/config/app-config.service';
 import { MarkerOptions } from '../../../core/models/maps/map-marker.model';
@@ -16,6 +16,23 @@ import { RouteSummary } from '../../../core/models/maps/route-result.model';
     <div class="w-full h-full relative">
       <div #mapContainer class="map-container w-full h-full min-h-[300px] relative overflow-hidden" [class.opacity-0]="!mapReady()"></div>
       
+      @if (showSearchingOverlay()) {
+        <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-[2px] z-[40] animate-in fade-in duration-500">
+          <div class="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center gap-3 max-w-[200px] text-center">
+            <div class="relative">
+              <ion-spinner name="crescent" color="primary" class="w-10 h-10"></ion-spinner>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <ion-icon name="search-outline" class="text-blue-600 text-sm animate-pulse"></ion-icon>
+              </div>
+            </div>
+            <div>
+              <h4 class="text-slate-900 font-bold text-sm">Finding driver...</h4>
+              <p class="text-[10px] text-slate-500 font-medium mt-0.5">Contacting nearby drivers</p>
+            </div>
+          </div>
+        </div>
+      }
+
       @if (!mapReady() && !initializing()) {
         <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-6 text-center animate-in fade-in duration-500">
           <ion-icon name="map-outline" class="text-6xl mb-4 opacity-20"></ion-icon>
@@ -131,13 +148,15 @@ export class MapComponent implements OnInit, OnDestroy {
 
   mapReady = signal(false);
   initializing = signal(true);
+  showSearchingOverlay = signal(false);
 
   constructor() {
     addIcons({ 
       mapOutline, 
       alertCircleOutline, 
       swapHorizontalOutline, 
-      closeCircleOutline 
+      closeCircleOutline,
+      searchOutline
     });
   }
 
@@ -169,6 +188,10 @@ export class MapComponent implements OnInit, OnDestroy {
 
   clearRoute() {
     this.mapRenderer.clearRoute();
+  }
+
+  drawHeatmap(zones: { lat: number; lng: number; demand: number; drivers: number }[]) {
+    this.mapRenderer.drawHeatmap(zones);
   }
 
   setCenter(lng: number, lat: number, zoom?: number) {

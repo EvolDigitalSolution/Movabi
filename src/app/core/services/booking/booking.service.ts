@@ -1,4 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Booking, ServiceType, ServiceTypeEnum, BookingStatus, ErrandFunding } from '@shared/models/booking.model';
@@ -14,6 +17,7 @@ import { EmailService } from '../notification/email.service';
 })
 export class BookingService {
   private supabase = inject(SupabaseService);
+  private http = inject(HttpClient);
   private auth = inject(AuthService);
   private config = inject(AppConfigService);
   private statusManager = inject(BookingStatusManager);
@@ -213,7 +217,8 @@ export class BookingService {
       in_progress: { title: 'Trip Started', body: 'Your trip is now in progress.' },
       settled: { title: 'Errand Settled', body: 'The funds for your errand have been settled.' },
       completed: { title: 'Trip Completed', body: 'Thank you for choosing Movabi!' },
-      cancelled: { title: 'Booking Cancelled', body: 'Your booking has been cancelled.' }
+      cancelled: { title: 'Booking Cancelled', body: 'Your booking has been cancelled.' },
+      no_driver_found: { title: 'No Driver Found', body: 'We could not find a driver for your request. Please try again later.' }
     };
 
     const msg = statusMessages[booking.status];
@@ -243,11 +248,32 @@ export class BookingService {
   async getBooking(bookingId: string): Promise<Booking> {
     const { data, error } = await this.supabase
       .from('jobs')
-      .select('*, customer:profiles(*), driver:profiles(*), service_type:service_types(*)')
+      .select('*, service_type:service_types(*)')
       .eq('id', bookingId)
       .single();
 
     if (error) throw error;
+
+    // Fetch customer profile separately
+    if (data.customer_id) {
+      const { data: customer } = await this.supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.customer_id)
+        .single();
+      data.customer = customer;
+    }
+
+    // Fetch driver profile separately
+    if (data.driver_id) {
+      const { data: driver } = await this.supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.driver_id)
+        .single();
+      data.driver = driver;
+    }
+
     return this.mapJobToBooking(data);
   }
 
@@ -354,26 +380,33 @@ export class BookingService {
   }
 
   async cancelBooking(bookingId: string, reason: string) {
-    const { data: job } = await this.supabase
-      .from('jobs')
-      .select('driver_id')
-      .eq('id', bookingId)
-      .single();
-    
-    const result = await this.updateBookingStatus(bookingId, 'cancelled', `Cancelled by user: ${reason}`);
-    await this.eventService.logEvent(bookingId, 'job_cancelled', `Cancellation reason: ${reason}`);
-    
-    if (job?.driver_id) {
-      this.notificationService.notify(
-        job.driver_id, 
-        'Booking Cancelled', 
-        'A customer has cancelled their booking.', 
-        'booking', 
-        { bookingId }
+    try {
+      return await firstValueFrom(
+        this.http.post(`${environment.apiUrl}/booking/cancel`, { jobId: bookingId, reason })
       );
+    } catch (error) {
+      console.error('Failed to cancel booking via API', error);
+      // Fallback to direct update if API fails (though API is preferred for Stripe handling)
+      const { data: job } = await this.supabase
+        .from('jobs')
+        .select('driver_id')
+        .eq('id', bookingId)
+        .single();
+      
+      const result = await this.updateBookingStatus(bookingId, 'cancelled', `Cancelled by user: ${reason}`);
+      await this.eventService.logEvent(bookingId, 'job_cancelled', `Cancellation reason: ${reason}`);
+      
+      if (job?.driver_id) {
+        this.notificationService.notify(
+          job.driver_id, 
+          'Booking Cancelled', 
+          'A customer has cancelled their booking.', 
+          'booking', 
+          { bookingId }
+        );
+      }
+      return result;
     }
-    
-    return result;
   }
 
   async getErrandFunding(bookingId: string): Promise<ErrandFunding | null> {
