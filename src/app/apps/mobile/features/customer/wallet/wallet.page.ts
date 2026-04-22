@@ -1,12 +1,11 @@
-﻿import { Component, inject, signal, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
 import {
     IonHeader, IonToolbar, IonTitle, IonContent, IonButtons,
-    IonBackButton, IonCard, IonCardHeader, IonCardTitle,
-    IonCardContent, IonButton, IonIcon, IonItem, IonLabel,
-    IonInput, IonList, IonBadge, IonRefresher, IonRefresherContent,
-    IonListHeader, IonNote
+    IonBackButton, IonCard, IonCardContent, IonButton, IonIcon,
+    IonInput, IonList, IonItem, IonLabel, IonNote,
+    IonRefresher, IonRefresherContent, IonSpinner
 } from '@ionic/angular/standalone';
 import { WalletService } from '@core/services/wallet/wallet.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
@@ -15,19 +14,32 @@ import { AuthService } from '@core/services/auth/auth.service';
 import { FormsModule } from '@angular/forms';
 import { ToastController, LoadingController } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { informationCircleOutline } from 'ionicons/icons';
-import { IonicModule } from '@ionic/angular';
+import { informationCircleOutline, alertCircleOutline, receiptOutline } from 'ionicons/icons';
 
 @Component({
     selector: 'app-wallet',
     standalone: true,
     imports: [
-        CommonModule, FormsModule, IonHeader, IonToolbar, IonTitle,
-        IonicModule,   // ✅ MUST BE HERE
-        IonContent, IonButtons, IonBackButton, IonCard, IonCardHeader,
-        IonCardTitle, IonCardContent, IonButton, IonIcon, IonItem,
-        IonLabel, IonInput, IonList, IonBadge, IonRefresher, IonRefresherContent,
-        IonListHeader, IonNote
+        CommonModule,
+        FormsModule,
+        IonHeader,
+        IonToolbar,
+        IonTitle,
+        IonContent,
+        IonButtons,
+        IonBackButton,
+        IonCard,
+        IonCardContent,
+        IonButton,
+        IonIcon,
+        IonInput,
+        IonList,
+        IonItem,
+        IonLabel,
+        IonNote,
+        IonRefresher,
+        IonRefresherContent,
+        IonSpinner
     ],
     template: `
     <ion-header>
@@ -44,13 +56,18 @@ import { IonicModule } from '@ionic/angular';
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <ion-card class="bg-indigo-600 text-white m-0 mb-6 shadow-lg rounded-[2rem] overflow-hidden">
+      <ion-card
+        class="m-0 mb-6 shadow-lg rounded-[2rem] overflow-hidden"
+        style="--background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); --color: #ffffff;"
+      >
         <ion-card-content class="py-10 text-center relative">
           <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
           <div class="absolute bottom-0 left-0 w-24 h-24 bg-indigo-400/20 rounded-full -ml-12 -mb-12 blur-xl"></div>
-          
-          <p class="text-indigo-100 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">Available Balance</p>
-          <h1 class="text-5xl font-display font-bold tracking-tight">
+
+          <p class="text-white/80 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">
+            Available Balance
+          </p>
+          <h1 class="text-white text-5xl font-display font-bold tracking-tight">
             {{ appConfig.formatCurrency(walletService.wallet()?.available_balance || 0) }}
           </h1>
         </ion-card-content>
@@ -60,7 +77,7 @@ import { IonicModule } from '@ionic/angular';
         <div class="flex justify-between items-center px-1">
           <h2 class="text-xl font-display font-bold text-slate-900">Top Up Wallet</h2>
         </div>
-        
+
         <ion-card class="m-0 shadow-xl shadow-slate-200/50 rounded-[2rem] border border-slate-100">
           <ion-card-content class="p-6">
             <div class="bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100">
@@ -89,9 +106,11 @@ import { IonicModule } from '@ionic/angular';
 
             <div class="mb-8">
               <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Card Details</p>
-              <div #cardElementContainer class="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[50px] flex items-center">
-                <!-- Stripe Card Element will be mounted here -->
-              </div>
+              <div
+                #cardElementContainer
+                class="w-full p-4 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[52px] cursor-text"
+              ></div>
+
               @if (cardError()) {
                 <p id="card-errors" role="alert" class="mt-3 text-xs font-medium text-rose-500 flex items-center gap-1">
                   <ion-icon name="alert-circle-outline"></ion-icon>
@@ -130,14 +149,18 @@ import { IonicModule } from '@ionic/angular';
               <ion-item lines="full" class="bg-white rounded-xl mb-2 overflow-hidden">
                 <ion-label>
                   <div class="flex justify-between items-center mb-1">
-                    <span class="font-bold text-slate-900">{{ tx['description'] || 'Transaction' }}</span>
-                    <span [class]="tx['type'] === 'credit' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'">
-                      {{ tx['type'] === 'credit' ? '+' : '-' }}{{ appConfig.formatCurrency($any(tx['amount'])) }}
+                    <span class="font-bold text-slate-900">
+                      {{ tx['description'] || getTransactionLabel(tx) }}
+                    </span>
+                    <span [class]="isPositiveTransaction(tx) ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'">
+                      {{ isPositiveTransaction(tx) ? '+' : '-' }}{{ appConfig.formatCurrency(toNumber(tx['amount'])) }}
                     </span>
                   </div>
                   <div class="flex justify-between items-center">
                     <ion-note class="text-xs">{{ $any(tx['created_at']) | date:'medium' }}</ion-note>
-                    <ion-note class="text-[10px] uppercase tracking-tighter">{{ tx['type'] }}</ion-note>
+                    <ion-note class="text-[10px] uppercase tracking-tighter">
+                      {{ tx['transaction_type'] || tx['type'] || 'transaction' }}
+                    </ion-note>
                   </div>
                 </ion-label>
               </ion-item>
@@ -174,12 +197,32 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     private card: StripeCardElement | null = null;
 
     constructor() {
-        addIcons({ informationCircleOutline });
+        addIcons({
+            informationCircleOutline,
+            alertCircleOutline,
+            receiptOutline
+        });
     }
 
     ngOnInit() {
         void this.walletService.fetchWallet();
         void this.loadTransactions();
+    }
+
+    async ngAfterViewInit() {
+        setTimeout(() => {
+            void this.initStripeElements();
+        }, 0);
+    }
+
+    ngOnDestroy() {
+        if (this.card) {
+            this.card.destroy();
+        }
+    }
+
+    get canSubmitTopUp(): boolean {
+        return !!this.topUpAmount && this.topUpAmount > 0 && !this.loading() && !!this.stripe && !!this.card;
     }
 
     async loadTransactions() {
@@ -194,20 +237,6 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
-    async ngAfterViewInit() {
-        await this.initStripeElements();
-    }
-
-    ngOnDestroy() {
-        if (this.card) {
-            this.card.destroy();
-        }
-    }
-
-    get canSubmitTopUp(): boolean {
-        return !!this.topUpAmount && this.topUpAmount > 0 && !this.loading() && !!this.stripe && !!this.card;
-    }
-
     private async initStripeElements() {
         this.stripe = await this.paymentService.getStripe();
         if (!this.stripe) {
@@ -216,19 +245,22 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
         }
 
         this.elements = this.stripe.elements();
+
         this.card = this.elements.create('card', {
+            hidePostalCode: true,
             style: {
                 base: {
                     fontSize: '16px',
-                    color: '#32325d',
+                    color: '#0f172a',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                    lineHeight: '24px',
                     '::placeholder': {
-                        color: '#aab7c4'
+                        color: '#94a3b8'
                     }
                 },
                 invalid: {
-                    color: '#fa755a',
-                    iconColor: '#fa755a'
+                    color: '#ef4444',
+                    iconColor: '#ef4444'
                 }
             }
         });
@@ -253,14 +285,10 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     async handleTopUp() {
-        if (this.topUpAmount <= 0) {
-            return;
-        }
+        if (this.topUpAmount <= 0) return;
 
         const user = this.auth.currentUser();
-        if (!user) {
-            return;
-        }
+        if (!user) return;
 
         if (!this.card) {
             const toast = await this.toastCtrl.create({
@@ -293,7 +321,7 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
             const paymentIntent = await this.paymentService.confirmCardPayment(clientSecret, this.card);
 
             loading.message = 'Finalizing top-up...';
-            
+
             await this.paymentService.confirmWalletTopup({
                 paymentIntentId: paymentIntent.id,
                 userId: user.id,
@@ -313,6 +341,7 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
             await toast.present();
 
             this.topUpAmount = 0;
+            this.card.clear();
         } catch (error: unknown) {
             console.error('Top up failed:', error);
             const errorMessage = error instanceof Error ? error.message : 'Payment failed. Please try again.';
@@ -327,5 +356,36 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
             await loading.dismiss();
             this.loading.set(false);
         }
+    }
+
+    isPositiveTransaction(tx: Record<string, unknown>): boolean {
+        const transactionType = String(tx['transaction_type'] || tx['type'] || '').toLowerCase();
+        return ['topup', 'refund', 'release', 'credit'].includes(transactionType);
+    }
+
+    getTransactionLabel(tx: Record<string, unknown>): string {
+        const transactionType = String(tx['transaction_type'] || tx['type'] || '').toLowerCase();
+
+        switch (transactionType) {
+            case 'topup':
+                return 'Wallet top-up';
+            case 'reservation':
+                return 'Funds reserved';
+            case 'release':
+                return 'Funds released';
+            case 'settlement':
+                return 'Payment settled';
+            case 'refund':
+                return 'Refund';
+            case 'adjustment':
+                return 'Balance adjustment';
+            default:
+                return 'Transaction';
+        }
+    }
+
+    toNumber(value: unknown): number {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
     }
 }

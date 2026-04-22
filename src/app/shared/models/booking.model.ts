@@ -1,4 +1,4 @@
-export type BookingStatus = 
+﻿export type BookingStatus = 
   | 'pending'      // Initial state for some flows
   | 'requested'    // Initial state
   | 'searching'    // Looking for drivers
@@ -274,45 +274,57 @@ export interface Earning {
 
 export type AccountStatus = 'active' | 'suspended' | 'banned' | 'disabled';
 
+export type VerificationStatus =
+    | 'draft'
+    | 'under_review'
+    | 'action_required'
+    | 'approved';
+
 export interface Profile {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone?: string;
-  avatar_url?: string;
-  role: 'customer' | 'driver' | 'admin';
-  tenant_id: string;
-  pricing_plan: 'starter' | 'pro';
-  commission_rate: number;
-  currency_code: string;
-  country_code: string;
-  stripe_customer_id?: string;
-  onboarding_completed: boolean;
-  is_online?: boolean;
-  is_available?: boolean;
-  last_active_at?: string;
-  account_status: AccountStatus;
-  moderation_reason?: string;
-  moderated_at?: string;
-  moderated_by?: string;
-  created_at: string;
-  stripe_connect_status?: 'not_started' | 'pending' | 'restricted' | 'enabled';
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+    avatar_url?: string;
+    role: 'customer' | 'driver' | 'admin';
+    tenant_id: string;
+    pricing_plan: 'starter' | 'pro';
+    commission_rate: number;
+    currency_code: string;
+    country_code: string;
+    stripe_customer_id?: string;
+    onboarding_completed: boolean;
+    is_verified?: boolean;
+    is_online?: boolean;
+    is_available?: boolean;
+    last_active_at?: string;
+    account_status: AccountStatus;
+    moderation_reason?: string;
+    moderated_at?: string;
+    moderated_by?: string;
+    created_at: string;
+    stripe_connect_status?: 'not_started' | 'pending' | 'restricted' | 'enabled';
+    driver_license_url?: string | null;
+    insurance_url?: string | null;
+    verification_status?: VerificationStatus;
+    verification_notes?: string | null;
+    verification_items?: string[] | null;
+    verified_at?: string | null;
 }
 
 export interface DriverAccount {
-  id: string;
-  user_id: string;
-  tenant_id: string;
-  stripe_account_id: string;
-  charges_enabled: boolean;
-  payouts_enabled: boolean;
-  onboarding_status: 'not_started' | 'pending' | 'restricted' | 'enabled';
-  onboarding_complete: boolean;
-  created_at: string;
-  updated_at: string;
+    id: string;
+    user_id: string;
+    tenant_id: string;
+    stripe_account_id: string;
+    charges_enabled: boolean;
+    payouts_enabled: boolean;
+    onboarding_status: 'not_started' | 'pending' | 'restricted' | 'enabled';
+    onboarding_complete: boolean;
+    created_at: string;
+    updated_at: string;
 }
-
 export interface Wallet {
   user_id: string;
   available_balance: number;

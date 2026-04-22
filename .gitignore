@@ -45,4 +45,6 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+/.vs/slnx.sqlite
+/.gitignore
 /.vs/Movabi/FileContentIndex

@@ -18,7 +18,7 @@ import { HealthService } from './services/health.service';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3001;
+const PORT = Number(process.env['PORT'] || 3001);
 
 // Failsafe middleware
 const failsafeGuard = (req: Request, res: Response, next: NextFunction) => {
@@ -99,6 +99,6 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });

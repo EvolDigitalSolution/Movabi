@@ -1,4 +1,4 @@
-﻿import { stripe } from './stripe.service';
+import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
 

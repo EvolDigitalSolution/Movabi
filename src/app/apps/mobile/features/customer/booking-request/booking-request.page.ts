@@ -80,6 +80,8 @@ import {
 import { FareEstimate } from '../../../../../core/models/maps/fare-estimate.model';
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
+type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
+
 @Component({
     selector: 'app-booking-request',
     template: `
@@ -94,20 +96,23 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
 
     <ion-content class="bg-slate-50">
       <div class="flex flex-col h-full">
-        <div class="w-full h-[40vh] relative z-10 shadow-lg">
+        <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
           <app-map #map></app-map>
 
           @if (routeResult()) {
-            <div class="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
+            <div class="absolute bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
-                  <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                  <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0">
                     <ion-icon name="navigate" class="text-2xl"></ion-icon>
                   </div>
-                  <div>
+                  <div class="min-w-0">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Estimated Trip</p>
                     <p class="text-lg font-display font-bold text-slate-900">
                       {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km • {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
+                    </p>
+                    <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                      Route auto-focused on map
                     </p>
                   </div>
                 </div>
@@ -116,10 +121,10 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
           }
         </div>
 
-        <div class="flex-1 bg-white rounded-t-[3rem] -mt-10 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] p-8 overflow-y-auto">
-          <div class="max-w-2xl mx-auto space-y-8 pb-32">
-            <div class="flex items-center gap-5 p-2">
-              <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100">
+        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto">
+          <div class="max-w-2xl mx-auto space-y-5 pb-24">
+            <div class="flex items-center gap-4 p-1">
+              <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100 shrink-0">
                 <ion-icon [name]="getIcon()" class="text-2xl"></ion-icon>
               </div>
               <div>
@@ -140,8 +145,8 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
               </div>
             }
 
-            <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-8">
-              <div class="space-y-6">
+            <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-5">
+              <div class="space-y-5">
                 <div class="relative">
                   <app-input
                     label="Pickup Location"
@@ -233,10 +238,10 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
               }
 
               @if (type === ServiceTypeEnum.ERRAND) {
-                <div class="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
                   <div class="space-y-3">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
-                    <div class="grid grid-cols-3 gap-2">
+                    <div class="grid grid-cols-3 gap-3">
                       <button
                         type="button"
                         (click)="bookingForm.patchValue({ errand_mode: 'collect_deliver' })"
@@ -244,10 +249,13 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
                         [class.text-white]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
                         [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
                         [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        class="flex flex-col items-center gap-2 p-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="swap-horizontal-outline" class="text-lg"></ion-icon>
-                        <span class="text-[8px] font-bold uppercase text-center leading-tight">Collect & Deliver</span>
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="swap-horizontal-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Collect & Deliver
+                        </span>
                       </button>
+
                       <button
                         type="button"
                         (click)="bookingForm.patchValue({ errand_mode: 'quick_buy' })"
@@ -255,10 +263,13 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
                         [class.text-white]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
                         [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
                         [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        class="flex flex-col items-center gap-2 p-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="cart-outline" class="text-lg"></ion-icon>
-                        <span class="text-[8px] font-bold uppercase text-center leading-tight">Quick Buy</span>
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="cart-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Quick Buy
+                        </span>
                       </button>
+
                       <button
                         type="button"
                         (click)="bookingForm.patchValue({ errand_mode: 'shop_deliver' })"
@@ -266,34 +277,74 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
                         [class.text-white]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
                         [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
                         [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        class="flex flex-col items-center gap-2 p-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="business-outline" class="text-lg"></ion-icon>
-                        <span class="text-[8px] font-bold uppercase text-center leading-tight">Shop & Deliver</span>
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="business-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Shop & Deliver
+                        </span>
                       </button>
                     </div>
                   </div>
 
                   <div class="space-y-2">
-                    <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Items to Buy</label>
+                    <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Items to Buy
+                    </label>
+
                     <textarea
                       id="items_list"
                       formControlName="items_list"
-                      placeholder="List the items you need (e.g. Milk, Bread, Eggs...)"
+                      [attr.placeholder]="usesItemListMode() ? 'List the items you need (e.g. Milk, Bread, Eggs...)' : 'Disabled for Collect & Deliver'"
+                      [disabled]="!usesItemListMode()"
+                      [class.opacity-50]="!usesItemListMode()"
+                      [class.cursor-not-allowed]="!usesItemListMode()"
                       class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[100px] placeholder:text-slate-300 shadow-sm">
                     </textarea>
+
+                    @if (!usesItemListMode()) {
+                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        Items to Buy is enabled only for Quick Buy and Shop & Deliver.
+                      </p>
+                    } @else {
+                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                        {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
+                        @if (additionalItemCharge() > 0) {
+                          • +{{ config.formatCurrency(additionalItemCharge()) }} extra item charge
+                        }
+                      </p>
+                    }
                   </div>
 
                   <div class="space-y-2">
-                    <app-input
-                      label="Item Cost Budget"
-                      type="number"
-                      formControlName="estimated_budget"
-                      icon="cash-outline"
-                      placeholder="How much should the driver spend?">
-                    </app-input>
-                    <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                      This is the amount the driver will spend on your items. This is <strong>separate</strong> from the service fare.
-                    </p>
+                    <label for="estimated_budget" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Item Cost Budget
+                    </label>
+                    <div
+                      class="flex items-center gap-3 w-full px-4 py-4 rounded-xl bg-white border border-slate-100 shadow-sm"
+                      [class.opacity-50]="!usesBudgetMode()"
+                      [class.cursor-not-allowed]="!usesBudgetMode()">
+                      <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
+                      <input
+                        id="estimated_budget"
+                        type="text"
+                        inputmode="decimal"
+                        [value]="displayBudgetValue()"
+                        (input)="onBudgetInput($any($event).target.value)"
+                        (blur)="formatBudgetOnBlur()"
+                        [disabled]="!usesBudgetMode()"
+                        [placeholder]="usesBudgetMode() ? '0.00' : 'Disabled for Collect & Deliver'"
+                        class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
+                    </div>
+
+                    @if (usesBudgetMode()) {
+                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        This amount must be available in your wallet and will be reserved for item purchase only.
+                      </p>
+                    } @else {
+                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        Item Cost Budget is enabled only for Quick Buy and Shop & Deliver.
+                      </p>
+                    }
                   </div>
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
@@ -358,7 +409,7 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
                   <div class="space-y-3">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Move Size</p>
                     <div class="grid grid-cols-2 gap-3">
-                      @for (size of moveSizes; track size.id) {
+                      @for (size of moveSizes(); track size.id) {
                         <button
                           type="button"
                           (click)="bookingForm.patchValue({ size: size.id })"
@@ -435,72 +486,110 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
               @if (fareEstimate()) {
                 <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
                   <app-price-display
-                    [total]="fareEstimate()?.total || 0"
+                    [total]="cardChargeRequired()"
                     [fare]="fareEstimate()?.subtotal || 0"
                     [serviceFee]="fareEstimate()?.serviceFee || 0"
-                    [itemBudget]="bookingForm.get('estimated_budget')?.value || 0"
+                    [itemBudget]="walletBudgetRequired()"
                     [minimumFareApplied]="fareEstimate()?.minimumFareApplied || false">
                   </app-price-display>
 
                   @if (type === ServiceTypeEnum.ERRAND) {
-                    <div
-                      class="p-4 rounded-xl border transition-all"
-                      [class.bg-emerald-50]="!hasInsufficientFunds()"
-                      [class.border-emerald-100]="!hasInsufficientFunds()"
-                      [class.bg-rose-50]="hasInsufficientFunds()"
-                      [class.border-rose-100]="hasInsufficientFunds()">
-                      <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-3">
-                          <div
-                            class="w-8 h-8 rounded-xl flex items-center justify-center"
-                            [class.bg-emerald-500]="!hasInsufficientFunds()"
-                            [class.bg-rose-500]="hasInsufficientFunds()">
-                            <ion-icon name="wallet-outline" class="text-white text-lg"></ion-icon>
+                    <div class="grid gap-4">
+                      <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                        <p class="text-sm leading-8 text-slate-700">
+                          The <strong>Service Estimate</strong> is paid to the driver, and the <strong>Item Budget</strong> is available for them to spend on your behalf. This total will be reserved from your wallet now.
+                        </p>
+                      </div>
+
+                      <div
+                        class="p-4 rounded-xl border transition-all"
+                        [class.bg-emerald-50]="!hasInsufficientFunds()"
+                        [class.border-emerald-100]="!hasInsufficientFunds()"
+                        [class.bg-rose-50]="hasInsufficientFunds()"
+                        [class.border-rose-100]="hasInsufficientFunds()">
+
+                        <div class="flex items-center justify-between mb-3">
+                          <div class="flex items-center gap-3">
+                            <div
+                              class="w-8 h-8 rounded-xl flex items-center justify-center"
+                              [class.bg-emerald-500]="!hasInsufficientFunds()"
+                              [class.bg-rose-500]="hasInsufficientFunds()">
+                              <ion-icon name="wallet-outline" class="text-white text-lg"></ion-icon>
+                            </div>
+                            <div>
+                              <p
+                                class="text-[10px] font-bold uppercase tracking-widest"
+                                [class.text-emerald-600]="!hasInsufficientFunds()"
+                                [class.text-rose-600]="hasInsufficientFunds()">
+                                Wallet for Item Budget
+                              </p>
+                              <p class="text-sm font-bold text-slate-900">
+                                Balance: {{ config.formatCurrency(walletService.wallet()?.available_balance || 0) }}
+                              </p>
+                              <p class="text-xs text-slate-500 font-semibold">
+                                Required: {{ config.formatCurrency(walletBudgetRequired()) }}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p
-                              class="text-[10px] font-bold uppercase tracking-widest"
-                              [class.text-emerald-600]="!hasInsufficientFunds()"
-                              [class.text-rose-600]="hasInsufficientFunds()">
-                              Wallet Balance
-                            </p>
-                            <p class="text-sm font-bold text-slate-900">
-                              {{ config.formatCurrency(walletService.wallet()?.available_balance || 0) }}
-                            </p>
-                          </div>
+
+                          @if (hasInsufficientFunds()) {
+                            <app-button variant="secondary" size="sm" (click)="router.navigate(['/customer/wallet'])">
+                              Top Up
+                            </app-button>
+                          }
                         </div>
+
                         @if (hasInsufficientFunds()) {
-                          <app-button variant="secondary" size="sm" (click)="router.navigate(['/customer/wallet'])">
-                            Top Up
-                          </app-button>
+                          <div class="mt-4 p-4 bg-rose-100/60 rounded-2xl border border-rose-200">
+                            <p class="text-xs font-bold text-rose-700 flex items-center gap-2">
+                              <ion-icon name="alert-circle"></ion-icon>
+                              You need {{ config.formatCurrency(walletBudgetRequired() - (walletService.wallet()?.available_balance || 0)) }} more in your wallet.
+                            </p>
+                          </div>
+                        } @else {
+                          <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
+                            Item budget will be reserved from your wallet. Service fare and platform fee will be charged to your card.
+                          </p>
                         }
                       </div>
 
-                      @if (hasInsufficientFunds()) {
-                        <div class="mt-4 p-4 bg-rose-100/50 rounded-2xl border border-rose-200 animate-pulse">
-                          <p class="text-xs font-bold text-rose-700 flex items-center gap-2">
-                            <ion-icon name="alert-circle"></ion-icon>
-                            Total Reserved Required:
-                            {{ config.formatCurrency(estimatedPrice() + (bookingForm.get('estimated_budget')?.value || 0)) }}
-                          </p>
-                          <p class="text-[10px] font-bold text-rose-600 uppercase tracking-widest leading-relaxed mt-1">
-                            Insufficient funds. You need
-                            {{ config.formatCurrency((estimatedPrice() + (bookingForm.get('estimated_budget')?.value || 0)) - (walletService.wallet()?.available_balance || 0)) }}
-                            more.
-                          </p>
+                      <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Service Estimate</p>
+                            <p class="text-sm font-bold text-slate-900">
+                              Fare & Platform Fee: {{ config.formatCurrency(cardChargeRequired()) }}
+                            </p>
+                          </div>
+                          <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">
+                            {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
+                          </span>
                         </div>
-                      } @else {
-                        <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
-                          Funds will be reserved from your wallet.
-                        </p>
-                      }
+
+                        <div
+                          #cardElementContainer
+                          class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
+                        </div>
+
+                        @if (!cardReady() && !cardError()) {
+                          <p class="mt-2 text-xs text-slate-500 font-bold px-2">
+                            Loading card input...
+                          </p>
+                        }
+
+                        @if (cardError()) {
+                          <p class="mt-2 text-xs text-rose-600 font-bold px-2">
+                            {{ cardError() }}
+                          </p>
+                        }
+                      </div>
                     </div>
                   } @else {
                     <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                       <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Payment Method</p>
                       <div
                         #cardElementContainer
-                        class="p-4 bg-white rounded-xl border border-slate-100 min-h-[44px]">
+                        class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
                       </div>
 
                       @if (!cardReady() && !cardError()) {
@@ -519,21 +608,24 @@ import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.mode
                 </div>
               }
 
-              <div class="pt-6">
+              <div class="pt-4">
                 <app-button
                   type="submit"
-                  [disabled]="
-                    !bookingForm.valid ||
-                    submitting() ||
-                    hasInsufficientFunds() ||
-                    (type !== ServiceTypeEnum.ERRAND && !cardReady())
-                  "
+                  [disabled]="!canSubmit()"
                   size="lg"
                   class="w-full shadow-xl shadow-blue-200">
-                  {{ submitting() ? 'Processing...' : (type === ServiceTypeEnum.ERRAND ? 'Reserve & Confirm' : 'Confirm & Pay') }}
+                  {{
+                    submitting()
+                      ? 'Processing...'
+                      : (
+                          type === ServiceTypeEnum.ERRAND
+                            ? 'Reserve Budget & Pay Service Fee'
+                            : 'Confirm & Pay'
+                        )
+                  }}
                 </app-button>
 
-                <p class="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-8 flex items-center justify-center gap-2">
+                <p class="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-6 flex items-center justify-center gap-2">
                   <ion-icon name="shield-checkmark" class="text-emerald-500 text-sm"></ion-icon>
                   Secure payment via Movabi Pay
                 </p>
@@ -565,10 +657,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     set cardElementContainerRef(ref: ElementRef<HTMLDivElement> | undefined) {
         if (ref && !this.cardElementHost) {
             this.cardElementHost = ref;
-            this.initStripeElements();
+            void this.initStripeElements();
         } else if (!ref) {
             this.cardMounted = false;
             this.cardReady.set(false);
+            this.cardComplete.set(false);
             this.cardElementHost = null;
         }
     }
@@ -629,7 +722,14 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     submitting = signal(false);
     cardError = signal<string | null>(null);
     cardReady = signal(false);
+    cardComplete = signal(false);
+    paymentProcessing = signal(false);
     serviceType = signal<ServiceType | null>(null);
+
+    budgetValue = signal(0);
+    itemCount = signal(0);
+    errandMode = signal<ErrandMode>('collect_deliver');
+    formValidSignal = signal(false);
 
     private stripe: Stripe | null = null;
     private elements: StripeElements | null = null;
@@ -648,29 +748,121 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
 
-    hasInsufficientFunds = computed(() => {
+    usesItemListMode = computed(() => {
         if (this.type !== ServiceTypeEnum.ERRAND) return false;
-        const itemBudget = parseFloat(this.bookingForm?.get('estimated_budget')?.value) || 0;
-        const totalRequired = this.estimatedPrice() + itemBudget;
-        const balance = this.walletService.wallet()?.available_balance || 0;
-        return balance < totalRequired;
+        return this.isQuickBuyMode(this.errandMode());
     });
 
-    moveSizes = [
+    usesBudgetMode = computed(() => {
+        if (this.type !== ServiceTypeEnum.ERRAND) return false;
+        return this.isQuickBuyMode(this.errandMode());
+    });
+
+    walletBudgetRequired = computed(() => {
+        if (this.type !== ServiceTypeEnum.ERRAND) return 0;
+        return this.toMoney(this.budgetValue());
+    });
+
+    additionalItemCharge = computed(() => {
+        if (this.type !== ServiceTypeEnum.ERRAND) return 0;
+        if (!this.usesItemListMode()) return 0;
+
+        const extraItems = Math.max(0, this.itemCount() - 1);
+        return this.toMoney(extraItems * 0.75);
+    });
+
+    driverItemCharge = computed(() => {
+        return this.toMoney(this.additionalItemCharge() * 0.6);
+    });
+
+    platformItemCharge = computed(() => {
+        return this.toMoney(this.additionalItemCharge() * 0.4);
+    });
+
+    cardChargeRequired = computed(() => {
+        return this.toMoney(this.fareEstimate()?.total || 0);
+    });
+
+    hasInsufficientFunds = computed(() => {
+        if (this.type !== ServiceTypeEnum.ERRAND) return false;
+        const budgetRequired = this.walletBudgetRequired();
+        const balance = this.toMoney(this.walletService.wallet()?.available_balance || 0);
+        return balance < budgetRequired;
+    });
+
+    canSubmit = computed(() => {
+        if (!this.formValidSignal() || this.submitting() || this.paymentProcessing()) {
+            return false;
+        }
+
+        if (this.type === ServiceTypeEnum.ERRAND) {
+            return !this.hasInsufficientFunds() && this.cardReady() && this.cardComplete();
+        }
+
+        return this.cardReady() && this.cardComplete();
+    });
+
+    moveSizes = signal([
         { id: 'small', label: 'Small (Few items)', icon: 'cube-outline' },
         { id: 'medium', label: 'Medium (1-2 rooms)', icon: 'business-outline' },
         { id: 'large', label: 'Large (3-4 rooms)', icon: 'home-outline' },
         { id: 'full-house', label: 'Full House', icon: 'storefront-outline' }
-    ];
+    ]);
+
+    private isQuickBuyMode(mode: unknown): mode is ErrandMode {
+        return mode === 'quick_buy' || mode === 'shop_deliver';
+    }
+
+    private isCollectDeliverMode(mode: unknown): mode is ErrandMode {
+        return mode === 'collect_deliver';
+    }
+
+    private parseErrandItems(raw: unknown): string[] {
+        if (!raw) return [];
+
+        return String(raw)
+            .split(/[,\n]+/)
+            .map(v => v.trim())
+            .filter(Boolean);
+    }
+
+    private getErrandItemCount(raw: unknown): number {
+        return this.parseErrandItems(raw).length;
+    }
+
+    private getErrandSubmissionError(formVal: Record<string, unknown>): string | null {
+        if (this.type !== ServiceTypeEnum.ERRAND) return null;
+
+        const mode = String(formVal['errand_mode'] || 'collect_deliver') as ErrandMode;
+
+        if (this.isCollectDeliverMode(mode)) {
+            return null;
+        }
+
+        const items = this.parseErrandItems(formVal['items_list']);
+        const budget = this.toMoney(formVal['estimated_budget'] || 0);
+
+        if (items.length === 0) {
+            return 'Please enter the items to buy for this errand.';
+        }
+
+        if (budget <= 0) {
+            return 'Please enter a valid item cost budget for this errand.';
+        }
+
+        return null;
+    }
 
     private pickupSearch$ = new Subject<string>();
     private dropoffSearch$ = new Subject<string>();
+    private lastBookingTime = 0;
 
     ngOnInit() {
         const typeParam = this.route.snapshot.queryParams['type'];
         this.type = (typeParam as ServiceTypeEnum) || ServiceTypeEnum.RIDE;
+
         this.initForm();
-        this.loadPricing();
+        void this.loadPricing();
 
         this.pickupSearch$
             .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
@@ -687,6 +879,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.cardReady.set(false);
+        this.cardComplete.set(false);
+        this.paymentProcessing.set(false);
         this.cardMounted = false;
 
         if (this.card) {
@@ -698,13 +892,48 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.stripe = null;
     }
 
+    private toMoney(value: unknown): number {
+        const n = Number(value);
+        return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
+    }
+
+    displayBudgetValue(): string {
+        const value = this.budgetValue();
+        return value ? String(value) : '';
+    }
+
+    onBudgetInput(value: unknown) {
+        if (!this.usesBudgetMode()) return;
+
+        const numeric = this.parseBudgetInput(value);
+        this.budgetValue.set(numeric);
+        this.bookingForm.get('estimated_budget')?.setValue(numeric, { emitEvent: true });
+    }
+
+    formatBudgetOnBlur() {
+        if (!this.usesBudgetMode()) return;
+
+        const numeric = this.toMoney(this.budgetValue());
+        this.budgetValue.set(numeric);
+        this.bookingForm.get('estimated_budget')?.setValue(numeric, { emitEvent: true });
+    }
+
+    private parseBudgetInput(value: unknown): number {
+        if (value === null || value === undefined) return 0;
+
+        const cleaned = String(value).replace(/[^0-9.]/g, '');
+        const parsed = Number(cleaned);
+
+        return Number.isFinite(parsed) ? this.toMoney(parsed) : 0;
+    }
+
     private async initStripeElements() {
-        if (this.type === ServiceTypeEnum.ERRAND) return;
         if (this.cardMounted || this.stripeInitializing) return;
         if (!this.cardElementHost?.nativeElement) return;
 
         this.stripeInitializing = true;
         this.cardReady.set(false);
+        this.cardComplete.set(false);
         this.cardError.set(null);
 
         try {
@@ -719,18 +948,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             if (!this.card) {
                 this.card = this.elements.create('card', {
+                    hidePostalCode: true,
                     style: {
                         base: {
                             fontSize: '16px',
-                            color: '#32325d',
+                            color: '#0f172a',
                             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                            lineHeight: '24px',
                             '::placeholder': {
-                                color: '#aab7c4'
+                                color: '#94a3b8'
                             }
                         },
                         invalid: {
-                            color: '#fa755a',
-                            iconColor: '#fa755a'
+                            color: '#ef4444',
+                            iconColor: '#ef4444'
                         }
                     }
                 });
@@ -742,20 +973,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                 this.card.on('change', event => {
                     this.cardError.set(event.error?.message ?? null);
+                    this.cardComplete.set(!!event.complete && !event.error);
                 });
             }
 
             this.card.mount(this.cardElementHost.nativeElement);
             this.cardMounted = true;
-            
-            // If the card was already ready, ensure the signal is updated
-            if (this.cardReady()) {
-                // No-op, already ready
-            }
         } catch (error) {
             console.error('Failed to initialize Stripe Elements', error);
             this.cardError.set('Unable to load card input right now.');
             this.cardReady.set(false);
+            this.cardComplete.set(false);
             this.cardMounted = false;
         } finally {
             this.stripeInitializing = false;
@@ -813,8 +1041,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
-                    items_list: ['', Validators.required],
-                    estimated_budget: [0, [Validators.required, Validators.min(1)]],
+                    items_list: [''],
+                    estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
                     customer_phone: [this.auth.currentUser()?.phone || '', Validators.required],
                     recipient_phone: [''],
@@ -848,11 +1076,89 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 break;
         }
 
+        if (this.type === ServiceTypeEnum.ERRAND) {
+            const initialMode = String(
+                this.bookingForm.get('errand_mode')?.value || 'collect_deliver'
+            ) as ErrandMode;
+
+            this.applyErrandModeRules(initialMode);
+
+            this.bookingForm.get('errand_mode')?.valueChanges
+                .pipe(takeUntilDestroyed(this.destroyRef))
+                .subscribe(mode => {
+                    this.applyErrandModeRules(
+                        String(mode || 'collect_deliver') as ErrandMode
+                    );
+
+                    this.syncFormSignals(this.bookingForm.getRawValue());
+                    this.formValidSignal.set(this.bookingForm.valid);
+                    void this.recalculateFare();
+                });
+        }
+
+        this.syncFormSignals(this.bookingForm.getRawValue());
+        this.formValidSignal.set(this.bookingForm.valid);
+
         this.bookingForm.valueChanges
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe(() => {
-                this.recalculateFare();
+                this.syncFormSignals(this.bookingForm.getRawValue());
+                this.formValidSignal.set(this.bookingForm.valid);
+                void this.recalculateFare();
             });
+
+        this.bookingForm.statusChanges
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe(() => {
+                this.formValidSignal.set(this.bookingForm.valid);
+            });
+    }
+
+    private syncFormSignals(values: Record<string, unknown>) {
+        const mode = String(values['errand_mode'] || 'collect_deliver') as ErrandMode;
+        this.errandMode.set(mode);
+
+        const quickBuyMode = this.isQuickBuyMode(mode);
+
+        const budget = quickBuyMode
+            ? this.toMoney(values['estimated_budget'] || 0)
+            : 0;
+
+        this.budgetValue.set(budget);
+
+        const items = quickBuyMode ? values['items_list'] : '';
+        this.itemCount.set(this.getErrandItemCount(items));
+    }
+
+    private applyErrandModeRules(mode: ErrandMode) {
+        const itemsControl = this.bookingForm.get('items_list');
+        const budgetControl = this.bookingForm.get('estimated_budget');
+
+        if (!itemsControl || !budgetControl) return;
+
+        const quickBuyMode = this.isQuickBuyMode(mode);
+
+        if (quickBuyMode) {
+            itemsControl.enable({ emitEvent: false });
+            itemsControl.setValidators([Validators.required]);
+
+            budgetControl.enable({ emitEvent: false });
+            budgetControl.setValidators([Validators.required, Validators.min(1)]);
+        } else {
+            itemsControl.reset('', { emitEvent: false });
+            itemsControl.clearValidators();
+            itemsControl.disable({ emitEvent: false });
+
+            budgetControl.reset(0, { emitEvent: false });
+            budgetControl.clearValidators();
+            budgetControl.disable({ emitEvent: false });
+
+            this.itemCount.set(0);
+            this.budgetValue.set(0);
+        }
+
+        itemsControl.updateValueAndValidity({ emitEvent: false });
+        budgetControl.updateValueAndValidity({ emitEvent: false });
     }
 
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
@@ -924,6 +1230,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private updateMarker(kind: 'pickup' | 'dropoff') {
         const loc = kind === 'pickup' ? this.pickupLocation : this.dropoffLocation;
+
         if (loc.latitude && loc.longitude) {
             this.mapComponent.addOrUpdateMarker({
                 id: kind,
@@ -934,7 +1241,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             });
 
             if (!this.pickupLocation.latitude || !this.dropoffLocation.latitude) {
-                this.mapComponent.setCenter(loc.longitude, loc.latitude, 14);
+                this.mapComponent.setCenter(loc.longitude, loc.latitude, 16);
+            } else {
+                setTimeout(() => this.updateRoute(), 80);
             }
         }
     }
@@ -961,10 +1270,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 isNaN(dropoff.lat) ||
                 isNaN(dropoff.lng)
             ) {
-                console.warn('[BookingRequest] Invalid coordinates for route update', {
-                    pickup,
-                    dropoff
-                });
+                console.warn('[BookingRequest] Invalid coordinates for route update', { pickup, dropoff });
                 return;
             }
 
@@ -973,19 +1279,28 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     this.routeResult.set(result);
                     this.mapComponent.drawRoute(result);
 
-                    this.mapComponent.fitBounds(
-                        [
-                            [pickup.lng, pickup.lat],
-                            [dropoff.lng, dropoff.lat]
-                        ],
-                        { padding: { top: 80, bottom: 320, left: 50, right: 50 } }
-                    );
+                    setTimeout(() => {
+                        this.mapComponent.fitBounds(
+                            [
+                                [pickup.lng, pickup.lat],
+                                [dropoff.lng, dropoff.lat]
+                            ],
+                            {
+                                padding: {
+                                    top: 70,
+                                    bottom: 240,
+                                    left: 50,
+                                    right: 50
+                                }
+                            }
+                        );
+                    }, 120);
 
-                    this.recalculateFare();
+                    void this.recalculateFare();
                 } else {
                     this.routeResult.set(null);
                     this.mapComponent.clearRoute();
-                    this.recalculateFare();
+                    void this.recalculateFare();
                 }
             });
         } else {
@@ -997,57 +1312,48 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     async loadPricing() {
         const types = await this.bookingService.getServiceTypes();
-        const selected = types.find((t: ServiceType) => t.slug === this.type);
+        const slug = this.getServiceSlug();
+        const selected = types.find((t: ServiceType) => t.slug === slug);
+
+        console.log('AVAILABLE SERVICE TYPES', types);
+        console.log('REQUESTED SLUG', slug);
+        console.log('SELECTED SERVICE TYPE', selected);
+
         if (selected) {
             this.serviceType.set(selected);
+        } else {
+            console.warn('No matching service type found for slug:', slug);
         }
     }
 
     private async recalculateFare() {
         const route = this.routeResult();
         const serviceSlug = this.getServiceSlug();
+        const formVal = this.bookingForm?.getRawValue?.() || this.bookingForm?.value || {};
         const pickup = this.pickupLocation;
 
-        // 1. Get Surge Multiplier from backend if we have coordinates
         let surge = 1.0;
+        let backendTotal = 0;
+
         if (pickup.latitude && pickup.longitude) {
-            // We calculate a temporary base price to get surge from backend
-            // In a real app, we might want to debounce this or only do it when locations are stable
-            this.fareCalculator.calculateFare({
-                serviceType: serviceSlug,
-                distanceMeters: route?.distanceMeters || 0,
-                durationSeconds: route?.durationSeconds || 0,
-                basePriceOverride: this.serviceType()?.base_price
-            });
-            
-            // This updates the signal in pricingService
-            await this.pricingService.calculatePrice(
+            const dbPrice = await this.pricingService.calculatePrice(
                 this.serviceType()?.id || '',
                 serviceSlug as ServiceTypeEnum,
                 (route?.distanceMeters || 0) / 1000,
                 pickup.latitude,
                 pickup.longitude
             );
-            surge = this.pricingService.surgeMultiplier();
+
+            console.log('DB PRICING RESPONSE', dbPrice);
+
+            surge = this.pricingService.surgeMultiplier() || 1;
+            backendTotal = this.toMoney(dbPrice || 0);
         }
 
-        if (!route) {
-            const fallbackEstimate = this.fareCalculator.calculateFare({
-                serviceType: serviceSlug,
-                distanceMeters: 0,
-                durationSeconds: 0,
-                surgeMultiplier: surge
-            });
-            this.fareEstimate.set(fallbackEstimate);
-            this.estimatedPrice.set(fallbackEstimate.total);
-            return;
-        }
-
-        const formVal = this.bookingForm.value;
-        const estimate = this.fareCalculator.calculateFare({
+        const localEstimate = this.fareCalculator.calculateFare({
             serviceType: serviceSlug,
-            distanceMeters: route.distanceMeters,
-            durationSeconds: route.durationSeconds,
+            distanceMeters: route?.distanceMeters || 0,
+            durationSeconds: route?.durationSeconds || 0,
             basePriceOverride: this.serviceType()?.base_price,
             surgeMultiplier: surge,
             errandDetails: serviceSlug === 'errand'
@@ -1063,6 +1369,38 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 }
                 : null
         });
+
+        const baseTotal = backendTotal > 0
+            ? backendTotal
+            : this.toMoney(localEstimate.total);
+
+        const baseServiceFee =
+            serviceSlug === 'errand'
+                ? this.toMoney(baseTotal >= 25 ? 1.5 : 1.0)
+                : this.toMoney(localEstimate.serviceFee || 0);
+
+        const baseFare = this.toMoney(Math.max(0, baseTotal - baseServiceFee));
+
+        const extraDriverCharge =
+            serviceSlug === 'errand' && this.usesItemListMode()
+                ? this.driverItemCharge()
+                : 0;
+
+        const extraPlatformCharge =
+            serviceSlug === 'errand' && this.usesItemListMode()
+                ? this.platformItemCharge()
+                : 0;
+
+        const subtotal = this.toMoney(baseFare + extraDriverCharge);
+        const serviceFee = this.toMoney(baseServiceFee + extraPlatformCharge);
+        const finalTotal = this.toMoney(subtotal + serviceFee);
+
+        const estimate: FareEstimate = {
+            ...localEstimate,
+            subtotal,
+            serviceFee,
+            total: finalTotal
+        };
 
         this.fareEstimate.set(estimate);
         this.estimatedPrice.set(estimate.total);
@@ -1103,10 +1441,50 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
-    private lastBookingTime = 0;
+    private async validateBeforeSubmit(): Promise<string | null> {
+        if (
+            !this.locationService.isLocationValidForBooking(this.pickupLocation) ||
+            !this.locationService.isLocationValidForBooking(this.dropoffLocation)
+        ) {
+            return 'Please provide valid pickup and dropoff locations.';
+        }
+
+        this.bookingForm.markAllAsTouched();
+        this.bookingForm.updateValueAndValidity({ emitEvent: false });
+        this.formValidSignal.set(this.bookingForm.valid);
+
+        if (!this.formValidSignal()) {
+            return 'Please complete all required fields.';
+        }
+
+        const formVal = this.bookingForm.getRawValue();
+        const errandSubmissionError = this.getErrandSubmissionError(formVal);
+        if (errandSubmissionError) {
+            return errandSubmissionError;
+        }
+
+        if (!this.card || !this.cardMounted || !this.cardReady()) {
+            return 'Card input is still loading. Please wait a moment.';
+        }
+
+        if (!this.cardComplete()) {
+            return 'Please enter your card details before continuing.';
+        }
+
+        if (this.type === ServiceTypeEnum.ERRAND) {
+            const wallet = await this.walletService.fetchWallet();
+            const itemBudget = this.walletBudgetRequired();
+
+            if (!wallet || this.toMoney(wallet.available_balance) < itemBudget) {
+                return `Insufficient wallet balance for item budget. You need ${this.config.formatCurrency(itemBudget)} in your wallet.`;
+            }
+        }
+
+        return null;
+    }
 
     async submit() {
-        if (this.submitting()) return;
+        if (this.submitting() || this.paymentProcessing()) return;
 
         const now = Date.now();
         if (now - this.lastBookingTime < 30000) {
@@ -1119,14 +1497,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
-        if (
-            !this.locationService.isLocationValidForBooking(this.pickupLocation) ||
-            (this.type !== ServiceTypeEnum.ERRAND &&
-                !this.locationService.isLocationValidForBooking(this.dropoffLocation))
-        ) {
+        const validationError = await this.validateBeforeSubmit();
+        if (validationError) {
             const toast = await this.toastCtrl.create({
-                message: 'Please provide valid pickup and dropoff locations.',
-                duration: 2000,
+                message: validationError,
+                duration: 3000,
                 color: 'warning'
             });
             await toast.present();
@@ -1134,31 +1509,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
 
         this.submitting.set(true);
-        const loading = await this.loadingCtrl.create({ message: 'Processing request...' });
+        this.paymentProcessing.set(true);
+
+        const loading = await this.loadingCtrl.create({
+            message: 'Preparing your booking...'
+        });
         await loading.present();
 
+        let booking: { id: string } | null = null;
+        let paymentIntentId: string | null = null;
+
         try {
-            const formVal = this.bookingForm.value;
-            const itemBudget =
-                this.type === ServiceTypeEnum.ERRAND
-                    ? ((formVal['estimated_budget'] as number) || 0)
-                    : 0;
-            const totalRequired = this.estimatedPrice() + itemBudget;
-
-            if (this.type === ServiceTypeEnum.ERRAND) {
-                loading.message = 'Checking wallet balance...';
-                const wallet = await this.walletService.fetchWallet();
-
-                if (!wallet || wallet.available_balance < totalRequired) {
-                    throw new Error(
-                        `Insufficient wallet balance. You need ${this.config.formatCurrency(totalRequired)} to fund this errand (Fare: ${this.config.formatCurrency(this.estimatedPrice())} + Budget: ${this.config.formatCurrency(itemBudget)}). Please top up your wallet.`
-                    );
-                }
-            } else {
-                if (!this.card || !this.cardReady() || !this.cardMounted) {
-                    throw new Error('Card input is still loading. Please wait a moment and try again.');
-                }
-            }
+            const formVal = this.bookingForm.getRawValue();
+            const itemBudget = this.walletBudgetRequired();
+            const cardCharge = this.cardChargeRequired();
 
             const bookingData = {
                 pickup_address: formVal.pickup_address,
@@ -1168,7 +1532,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 dropoff_lat: this.dropoffLocation.latitude || 0,
                 dropoff_lng: this.dropoffLocation.longitude || 0,
                 service_type_id: this.serviceType()?.id,
-                total_price: this.estimatedPrice(),
+                total_price: cardCharge,
                 distance_meters: this.routeResult()?.distanceMeters || 0,
                 duration_seconds: this.routeResult()?.durationSeconds || 0,
                 metadata: this.getMetadataPayload(formVal)
@@ -1176,65 +1540,77 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             const details = this.getDetailsPayload(formVal);
 
-            const booking = await this.bookingService.createBooking(bookingData, details, this.type);
+            loading.message = 'Creating booking...';
+            booking = await this.bookingService.createBooking(bookingData, details, this.type);
             this.lastBookingTime = Date.now();
 
-            if (this.type === ServiceTypeEnum.ERRAND) {
-                loading.message = 'Reserving funds from wallet...';
+            if (this.type === ServiceTypeEnum.ERRAND && itemBudget > 0) {
+                loading.message = 'Reserving item budget from wallet...';
                 await this.walletService.reserveErrandFunds(
                     booking.id,
                     itemBudget,
-                    this.estimatedPrice()
+                    0
                 );
-
-                loading.message = 'Activating errand...';
-                await this.bookingService.confirmJobPayment(booking.id, 'wallet_funded');
-            } else {
-                loading.message = 'Initializing payment...';
-
-                const { clientSecret } = await this.paymentService.createPaymentIntent(
-                    booking.id,
-                    booking.total_price,
-                    this.config.currencyCode,
-                    this.auth.tenantId() || '',
-                    this.pricingService.surgeMultiplier()
-                );
-
-                loading.message = 'Confirming payment...';
-
-                const card = this.card;
-                if (!card) {
-                    throw new Error('Card details are required to confirm this payment.');
-                }
-
-                const paymentIntent = await this.paymentService.confirmPayment(
-                    clientSecret,
-                    card
-                );
-
-                loading.message = 'Activating job...';
-                await this.bookingService.confirmJobPayment(booking.id, paymentIntent.id);
             }
+
+            loading.message = 'Initializing card payment...';
+            const { clientSecret } = await this.paymentService.createPaymentIntent(
+                booking.id,
+                cardCharge,
+                this.config.currencyCode,
+                this.auth.tenantId() || '',
+                this.pricingService.surgeMultiplier()
+            );
+
+            loading.message = 'Charging card...';
+            const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card!);
+            paymentIntentId = paymentIntent.id;
+
+            loading.message = this.type === ServiceTypeEnum.ERRAND
+                ? 'Activating errand...'
+                : 'Activating job...';
+
+            await this.bookingService.confirmJobPayment(booking.id, paymentIntentId);
 
             this.analytics.track('booking_created', {
                 job_id: booking.id,
                 type: this.type,
                 pickup_source: this.pickupLocation.source,
-                distance_km: (bookingData.distance_meters / 1000).toFixed(2)
+                distance_km: ((bookingData.distance_meters || 0) / 1000).toFixed(2),
+                item_budget: itemBudget,
+                card_charge: cardCharge
             });
 
             await loading.dismiss();
             await this.router.navigate(['/customer/tracking', booking.id]);
         } catch (e: unknown) {
-            await loading.dismiss();
-            this.submitting.set(false);
+            console.error('[BookingRequest] submit failed', e);
+
             const message = e instanceof Error ? e.message : 'An error occurred';
+
+            if (booking?.id && !paymentIntentId) {
+                try {
+                    await this.bookingService.updateBookingStatus(
+                        booking.id,
+                        'cancelled',
+                        `Auto-cancelled after checkout failure: ${message}`
+                    );
+                } catch (cancelError) {
+                    console.error('[BookingRequest] booking auto-cancel failed', cancelError);
+                }
+            }
+
+            await loading.dismiss();
+
             const toast = await this.toastCtrl.create({
                 message,
-                duration: 3000,
+                duration: 4000,
                 color: 'danger'
             });
             await toast.present();
+        } finally {
+            this.submitting.set(false);
+            this.paymentProcessing.set(false);
         }
     }
 
@@ -1255,13 +1631,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
 
         if (this.type === ServiceTypeEnum.ERRAND) {
+            const mode = String(formVal['errand_mode'] || 'collect_deliver') as ErrandMode;
+            const isShoppingMode = this.isQuickBuyMode(mode);
+            const budget = isShoppingMode ? this.walletBudgetRequired() : 0;
+            const items = isShoppingMode
+                ? this.parseErrandItems(formVal['items_list'])
+                : [];
+
             return {
                 errand_details: {
-                    items: ((formVal['items_list'] as string) || '')
-                        .split(',')
-                        .map(i => i.trim())
-                        .filter(Boolean),
-                    budget: formVal['estimated_budget'] as number
+                    mode,
+                    itemCount: items.length,
+                    ...(isShoppingMode ? { items, budget } : {})
+                },
+                payment_split: {
+                    wallet_budget: budget,
+                    card_service_charge: this.cardChargeRequired()
                 }
             };
         }
@@ -1279,19 +1664,26 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     notes: formVal['notes']
                 };
 
-            case ServiceTypeEnum.ERRAND:
-                return {
-                    items_list: ((formVal['items_list'] as string) || '')
-                        .split(',')
-                        .map(i => i.trim())
-                        .filter(Boolean),
-                    estimated_budget: formVal['estimated_budget'],
+            case ServiceTypeEnum.ERRAND: {
+                const mode = String(formVal['errand_mode'] || 'collect_deliver') as ErrandMode;
+                const isShoppingMode = this.isQuickBuyMode(mode);
+
+                const payload: Record<string, unknown> = {
+                    errand_mode: mode,
                     delivery_instructions: formVal['notes'],
                     customer_phone: formVal['customer_phone'],
                     recipient_phone: formVal['recipient_phone'],
                     recipient_name: formVal['recipient_name'],
                     substitution_rule: formVal['substitution_rule']
                 };
+
+                if (isShoppingMode) {
+                    payload['items_list'] = this.parseErrandItems(formVal['items_list']);
+                    payload['estimated_budget'] = this.walletBudgetRequired();
+                }
+
+                return payload;
+            }
 
             case ServiceTypeEnum.DELIVERY:
                 return {
