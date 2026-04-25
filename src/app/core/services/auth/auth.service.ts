@@ -238,7 +238,8 @@ export class AuthService {
         } else if (role === 'customer') {
           await this.router.navigate(['/customer/onboarding'], { replaceUrl: true });
         } else if (role === 'admin') {
-          await this.router.navigate(['/admin'], { replaceUrl: true });
+            //await this.router.navigate(['/admin'], { replaceUrl: true });
+            await this.router.navigateByUrl('/dashboard', { replaceUrl: true });
         } else {
           // Fallback if role is unknown
           await this.router.navigate(['/auth/role-selection'], { replaceUrl: true });
@@ -248,7 +249,7 @@ export class AuthService {
 
       // 6. Route by Role (Onboarding Complete)
       if (role === 'admin') {
-        await this.router.navigate(['/admin'], { replaceUrl: true });
+          await this.router.navigate(['/dashboard'], { replaceUrl: true });
       } else if (role === 'driver') {
         await this.router.navigate(['/driver'], { replaceUrl: true });
       } else {

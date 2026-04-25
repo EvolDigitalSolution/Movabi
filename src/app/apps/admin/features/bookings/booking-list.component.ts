@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { Job, ServiceTypeEnum, BookingStatus, DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
@@ -10,163 +10,273 @@ import { ButtonComponent } from '../../../../shared/ui/button';
 import { CardComponent } from '../../../../shared/ui/card';
 
 @Component({
-  selector: 'app-booking-list',
-  template: `
-    <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
-      <div class="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+    selector: 'app-booking-list',
+    standalone: true,
+    imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent, CardComponent],
+    template: `
+    <div class="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+      <div class="p-6 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
         <div>
-          <h3 class="text-2xl font-display font-bold text-slate-900">Live Bookings</h3>
-          <p class="text-slate-500 font-medium mt-1">Monitor all active and past bookings in real-time.</p>
+          <h3 class="text-xl font-display font-bold text-slate-900">Live Bookings</h3>
+          <p class="text-sm text-slate-500 font-medium mt-1">
+            {{ filteredBookings().length }} bookings found · Showing {{ pagedBookings().length }} on this page
+          </p>
         </div>
-        <div class="flex flex-col sm:flex-row items-center gap-4">
-          <div class="relative w-full sm:w-72 group">
-            <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors"></ion-icon>
-            <input type="text" placeholder="Search bookings..." 
-                   class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500/50 transition-all">
+
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
+          <div class="relative w-full sm:w-72">
+            <ion-icon name="search-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></ion-icon>
+            <input
+              type="text"
+              placeholder="Search bookings..."
+              (input)="onSearch($event)"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-600 focus:outline-none"
+            >
           </div>
-          <app-button variant="secondary" size="md" [fullWidth]="false" class="px-8 h-12 rounded-2xl">
+
+          <select
+            (change)="onStatusFilterChange($event)"
+            class="filter-select"
+          >
+            <option value="all">All Statuses</option>
+            @for (status of allStatuses; track status) {
+              <option [value]="status">{{ formatStatus(status) }}</option>
+            }
+          </select>
+
+          <select
+            (change)="onPageSizeChange($event)"
+            class="filter-select sm:w-32"
+          >
+            <option value="10">10 / page</option>
+            <option value="20">20 / page</option>
+            <option value="50">50 / page</option>
+          </select>
+
+          <app-button variant="secondary" size="sm" [fullWidth]="false" class="px-5 h-10 rounded-xl">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
         </div>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
+      <div class="overflow-x-auto max-w-full">
+        <table class="w-full text-left border-collapse min-w-[980px]">
           <thead>
-            <tr class="bg-slate-50/50">
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Booking ID</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Customer</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Driver</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Price</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
+            <tr class="bg-slate-50/70">
+              <th class="th-cell">Booking</th>
+              <th class="th-cell">Customer</th>
+              <th class="th-cell">Driver</th>
+              <th class="th-cell">Route</th>
+              <th class="th-cell">Price</th>
+              <th class="th-cell">Status</th>
+              <th class="th-cell text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-50">
-            @for (booking of bookings(); track booking.id) {
-              <tr class="hover:bg-slate-50/80 transition-all group">
-                <td class="px-10 py-6">
-                  <span class="text-sm font-bold text-slate-900 block mb-1">#{{ booking.id.slice(0, 8) }}</span>
-                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ booking.created_at | date:'short' }}</span>
+
+          <tbody class="divide-y divide-slate-100">
+            @for (booking of pagedBookings(); track booking.id) {
+              <tr class="hover:bg-slate-50/80 transition-all align-top">
+                <td class="px-4 py-4">
+                  <div class="min-w-[115px]">
+                    <span class="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
+                      #{{ shortId(booking.id) }}
+                    </span>
+                    <p class="text-[11px] text-slate-400 font-medium mt-2">
+                      {{ booking.created_at | date:'short' }}
+                    </p>
+                  </div>
                 </td>
-                <td class="px-10 py-6">
-                  <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-xs border border-blue-100">
-                      {{ booking.customer?.first_name?.[0] || 'C' }}
+
+                <td class="px-4 py-4">
+                  <div class="flex items-center gap-3 min-w-[180px]">
+                    <div class="avatar bg-blue-50 text-blue-600 border-blue-100">
+                      {{ getInitial(booking.customer, 'C') }}
                     </div>
                     <div class="min-w-0">
-                      <h4 class="text-sm font-bold text-slate-900 truncate">{{ booking.customer?.first_name }}</h4>
-                      <p class="text-[10px] text-slate-400 truncate w-40 font-medium">{{ booking.pickup_address }}</p>
+                      <h4 class="text-sm font-semibold text-slate-900 truncate">
+                        {{ getPersonName(booking.customer, 'Customer') }}
+                      </h4>
+                      <p class="text-xs text-slate-500 font-medium truncate">
+                        {{ booking.customer?.email || booking.customer?.phone || 'No contact' }}
+                      </p>
                     </div>
                   </div>
                 </td>
-                <td class="px-10 py-6">
+
+                <td class="px-4 py-4">
                   @if (booking.driver) {
-                    <div class="flex items-center gap-4">
-                      <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 font-bold text-xs border border-amber-100">
-                        {{ booking.driver.first_name[0] || 'D' }}
+                    <div class="flex items-center gap-3 min-w-[170px]">
+                      <div class="avatar bg-amber-50 text-amber-600 border-amber-100">
+                        {{ getInitial(booking.driver, 'D') }}
                       </div>
                       <div class="min-w-0">
-                        <h4 class="text-sm font-bold text-slate-900 truncate">{{ booking.driver.first_name }}</h4>
-                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ID: {{ booking.driver.id.slice(0, 8) }}</p>
+                        <h4 class="text-sm font-semibold text-slate-900 truncate">
+                          {{ getPersonName(booking.driver, 'Driver') }}
+                        </h4>
+                        <p class="text-xs text-slate-500 font-medium truncate">
+                          ID: {{ shortId(booking.driver.id) }}
+                        </p>
                       </div>
                     </div>
                   } @else {
-                    <app-badge variant="warning" class="animate-pulse">SEARCHING...</app-badge>
+                    <app-badge variant="warning">Unassigned</app-badge>
                   }
                 </td>
-                <td class="px-10 py-6">
-                  <span class="text-sm font-display font-bold text-slate-900">£{{ booking.price }}</span>
+
+                <td class="px-4 py-4">
+                  <div class="text-xs space-y-1.5 font-medium min-w-[250px] max-w-[360px]">
+                    <div class="flex items-start gap-2">
+                      <span class="text-slate-400 min-w-[36px] font-bold">From:</span>
+                      <span class="text-slate-600 line-clamp-1">{{ booking.pickup_address || 'Missing pickup' }}</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                      <span class="text-slate-400 min-w-[36px] font-bold">To:</span>
+                      <span class="text-slate-600 line-clamp-1">{{ booking.dropoff_address || 'Missing dropoff' }}</span>
+                    </div>
+                  </div>
                 </td>
-                <td class="px-10 py-6">
+
+                <td class="px-4 py-4">
+                  <span class="text-sm font-bold text-slate-900">
+                    {{ getCurrency(booking) }}{{ toMoney(booking.price) }}
+                  </span>
+                </td>
+
+                <td class="px-4 py-4">
                   <app-badge [variant]="getBadgeVariant(booking.status)">
-                    {{ booking.status.replace('_', ' ') }}
+                    {{ formatStatus(booking.status) }}
                   </app-badge>
                 </td>
-                <td class="px-10 py-6 text-right">
-                  <button (click)="viewDetails(booking)" class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center mx-auto sm:ml-auto">
-                    <ion-icon name="eye-outline" class="text-xl"></ion-icon>
+
+                <td class="px-4 py-4 text-right">
+                  <button
+                    type="button"
+                    (click)="viewDetails(booking)"
+                    class="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center ml-auto"
+                    title="View booking details"
+                  >
+                    <ion-icon name="eye-outline" class="text-lg"></ion-icon>
                   </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="7" class="px-10 py-20 text-center">
+                  <div class="w-20 h-20 rounded-[2rem] bg-slate-50 flex items-center justify-center text-slate-300 mx-auto mb-6 border border-slate-100">
+                    <ion-icon name="calendar-outline" class="text-4xl"></ion-icon>
+                  </div>
+                  <h4 class="text-lg font-bold text-slate-900">No bookings found</h4>
+                  <p class="text-slate-500 font-medium mt-1">Try changing the search or status filter.</p>
                 </td>
               </tr>
             }
           </tbody>
         </table>
       </div>
+
+      <div class="p-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p class="text-xs text-slate-500 font-semibold">
+          Showing {{ pageStart() }}–{{ pageEnd() }} of {{ filteredBookings().length }} bookings
+        </p>
+
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            (click)="prevPage()"
+            [disabled]="currentPage() <= 1"
+            class="page-btn disabled:opacity-40"
+          >
+            Previous
+          </button>
+
+          <span class="text-xs font-bold text-slate-500 px-2">
+            {{ currentPage() }} / {{ totalPages() }}
+          </span>
+
+          <button
+            type="button"
+            (click)="nextPage()"
+            [disabled]="currentPage() >= totalPages()"
+            class="page-btn bg-blue-600 text-white disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- Booking Details Modal -->
-    <ion-modal [isOpen]="isModalOpen" (didDismiss)="closeModal()" class="admin-modal">
+    <ion-modal [isOpen]="isModalOpen()" (didDismiss)="closeModal()" class="admin-modal">
       <ng-template>
         <div class="flex flex-col h-full bg-slate-50">
-          <div class="p-8 bg-white border-b border-slate-100 flex items-center justify-between">
+          <div class="p-6 bg-white border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h2 class="text-2xl font-display font-bold text-slate-900">Booking Details</h2>
-              <p class="text-slate-500 font-medium text-sm mt-1">ID: #{{ selectedBooking?.id }}</p>
+              <h2 class="text-xl font-display font-bold text-slate-900">Booking Details</h2>
+              <p class="text-slate-500 font-medium text-sm mt-1">ID: #{{ selectedBooking()?.id }}</p>
             </div>
-            <app-button variant="secondary" size="sm" [fullWidth]="false" (click)="closeModal()" class="h-10 w-10 rounded-xl">
-              <ion-icon name="close-outline" slot="icon-only" class="text-xl"></ion-icon>
-            </app-button>
+
+            <button
+              type="button"
+              (click)="closeModal()"
+              class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-slate-900 hover:text-white transition flex items-center justify-center"
+            >
+              <ion-icon name="close-outline" class="text-xl"></ion-icon>
+            </button>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-8 space-y-8">
-            @if (selectedBooking) {
-              <!-- Status Banner -->
-              <div class="p-8 rounded-[2rem] text-center bg-white border border-slate-100 shadow-xl shadow-slate-200/20">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3">Current Status</p>
-                <app-badge [variant]="getBadgeVariant(selectedBooking.status)" class="text-lg px-6 py-2">
-                  {{ selectedBooking.status.replace('_', ' ') }}
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            @if (selectedBooking()) {
+              <div class="p-6 rounded-[1.5rem] text-center bg-white border border-slate-100 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Current Status</p>
+                <app-badge [variant]="getBadgeVariant(selectedBooking()!.status)">
+                  {{ formatStatus(selectedBooking()!.status) }}
                 </app-badge>
               </div>
 
-              <!-- Route Info -->
-              <app-card class="p-8">
-                <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-8">Route Information</h3>
-                <div class="relative pl-8 space-y-8">
+              <app-card class="p-6">
+                <h3 class="modal-section-title">Route Information</h3>
+                <div class="relative pl-8 space-y-6">
                   <div class="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-100"></div>
+
                   <div class="relative">
                     <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
-                    <div>
-                      <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Pickup</p>
-                      <p class="font-bold text-slate-900 leading-snug">{{ selectedBooking.pickup_address }}</p>
-                    </div>
+                    <p class="modal-label">Pickup</p>
+                    <p class="font-semibold text-sm text-slate-900 leading-snug">{{ selectedBooking()!.pickup_address }}</p>
                   </div>
+
                   <div class="relative">
                     <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
-                    <div>
-                      <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Destination</p>
-                      <p class="font-bold text-slate-900 leading-snug">{{ selectedBooking.dropoff_address || 'N/A' }}</p>
-                    </div>
+                    <p class="modal-label">Destination</p>
+                    <p class="font-semibold text-sm text-slate-900 leading-snug">{{ selectedBooking()!.dropoff_address || 'N/A' }}</p>
                   </div>
                 </div>
               </app-card>
 
-              <!-- Customer & Driver -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <app-card class="p-8">
-                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Customer</h3>
-                  <div class="flex items-center gap-5">
-                    <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold border border-blue-100">
-                      {{ selectedBooking.customer?.first_name?.[0] }}
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <app-card class="p-6">
+                  <h3 class="modal-section-title">Customer</h3>
+                  <div class="flex items-center gap-4">
+                    <div class="modal-avatar bg-blue-50 text-blue-600 border-blue-100">
+                      {{ getInitial(selectedBooking()!.customer, 'C') }}
                     </div>
                     <div class="min-w-0">
-                      <h4 class="text-lg font-bold text-slate-900 truncate">{{ selectedBooking.customer?.first_name }}</h4>
-                      <p class="text-sm text-slate-500 font-medium truncate">{{ selectedBooking.customer?.email }}</p>
+                      <h4 class="text-base font-bold text-slate-900 truncate">{{ getPersonName(selectedBooking()!.customer, 'Customer') }}</h4>
+                      <p class="text-sm text-slate-500 font-medium truncate">{{ selectedBooking()!.customer?.email || 'No email' }}</p>
                     </div>
                   </div>
                 </app-card>
 
-                <app-card class="p-8">
-                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Driver</h3>
-                  @if (selectedBooking.driver) {
-                    <div class="flex items-center gap-5">
-                      <div class="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 font-bold border border-amber-100">
-                        {{ selectedBooking.driver.first_name[0] }}
+                <app-card class="p-6">
+                  <h3 class="modal-section-title">Driver</h3>
+
+                  @if (selectedBooking()!.driver) {
+                    <div class="flex items-center gap-4">
+                      <div class="modal-avatar bg-amber-50 text-amber-600 border-amber-100">
+                        {{ getInitial(selectedBooking()!.driver, 'D') }}
                       </div>
                       <div class="min-w-0">
-                        <h4 class="text-lg font-bold text-slate-900 truncate">{{ selectedBooking.driver.first_name }}</h4>
-                        <p class="text-sm text-slate-500 font-medium truncate">ID: {{ selectedBooking.driver.id.slice(0, 8) }}</p>
+                        <h4 class="text-base font-bold text-slate-900 truncate">{{ getPersonName(selectedBooking()!.driver, 'Driver') }}</h4>
+                        <p class="text-sm text-slate-500 font-medium truncate">ID: {{ shortId(selectedBooking()!.driver!.id) }}</p>
                       </div>
                     </div>
                   } @else {
@@ -178,88 +288,111 @@ import { CardComponent } from '../../../../shared/ui/card';
                 </app-card>
               </div>
 
-              <!-- Admin Override -->
-              <div class="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl space-y-10">
+              <div class="bg-slate-900 rounded-[2rem] p-6 text-white shadow-xl space-y-8">
                 <div>
-                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-6">Manual Driver Assignment</h3>
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Manual Driver Assignment</h3>
                   <div class="flex flex-col sm:flex-row items-center gap-4">
-                    <select #driverSelect class="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-3.5 text-sm font-medium text-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 transition-all appearance-none">
+                    <select
+                      #driverSelect
+                      class="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-sm font-medium text-white focus:outline-none appearance-none"
+                    >
                       <option value="" class="bg-slate-900">Select a driver...</option>
                       @for (driver of drivers(); track driver.id) {
-                        <option [value]="driver.id" [selected]="driver.id === selectedBooking.driver_id" class="bg-slate-900">
-                          {{ driver.first_name }} ({{ driver.status }})
+                        <option [value]="driver.id" [selected]="driver.id === selectedBooking()!.driver_id" class="bg-slate-900">
+                          {{ getPersonName(driver, 'Driver') }} — {{ driver.status || 'unknown' }}
                         </option>
                       }
                     </select>
-                    <app-button variant="primary" size="md" [fullWidth]="false" (click)="assignDriver(selectedBooking.id, driverSelect.value)" 
-                            [disabled]="!driverSelect.value" class="h-14 px-10 rounded-2xl shrink-0">
+
+                    <app-button
+                      variant="primary"
+                      size="md"
+                      [fullWidth]="false"
+                      (clicked)="assignDriver(selectedBooking()!.id, driverSelect.value)"
+                      [disabled]="!driverSelect.value"
+                      class="h-12 px-8 rounded-xl shrink-0"
+                    >
                       Assign Driver
                     </app-button>
                   </div>
                 </div>
 
-                <div class="pt-10 border-t border-white/5">
-                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-6">Status Override</h3>
+                <div class="pt-8 border-t border-white/10">
+                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Status Override</h3>
                   <div class="flex flex-col sm:flex-row items-center gap-4">
-                    <select #statusSelect class="w-full bg-white/10 border border-white/10 rounded-2xl px-6 py-3.5 text-sm font-medium text-white focus:outline-none focus:ring-4 focus:ring-red-500/20 transition-all appearance-none">
+                    <select
+                      #statusSelect
+                      class="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-sm font-medium text-white focus:outline-none appearance-none"
+                    >
                       @for (status of allStatuses; track status) {
-                        <option [value]="status" [selected]="status === selectedBooking.status" class="bg-slate-900">{{ status.replace('_', ' ') }}</option>
+                        <option [value]="status" [selected]="status === selectedBooking()!.status" class="bg-slate-900">
+                          {{ formatStatus(status) }}
+                        </option>
                       }
                     </select>
-                    <app-button variant="error" size="md" [fullWidth]="false" (click)="forceUpdateStatus(selectedBooking.id, statusSelect.value)" 
-                            class="h-14 px-10 rounded-2xl shrink-0">
+
+                    <app-button
+                      variant="error"
+                      size="md"
+                      [fullWidth]="false"
+                      (clicked)="forceUpdateStatus(selectedBooking()!.id, statusSelect.value)"
+                      class="h-12 px-8 rounded-xl shrink-0"
+                    >
                       Force Update
                     </app-button>
                   </div>
+
                   <p class="text-[10px] text-slate-500 italic mt-4 flex items-center">
                     <ion-icon name="information-circle-outline" class="mr-2 text-sm"></ion-icon>
-                    Use this to fix stuck bookings. This bypasses standard transition rules.
+                    Use this only to fix stuck bookings. This bypasses standard transition rules.
                   </p>
                 </div>
               </div>
 
-              <!-- Pricing Footer -->
-              <div class="bg-blue-600 rounded-[2.5rem] p-10 text-white flex items-center justify-between shadow-2xl shadow-blue-600/20">
+              <div class="bg-blue-600 rounded-[2rem] p-6 text-white flex items-center justify-between shadow-xl shadow-blue-600/20">
                 <div>
                   <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Total Price</p>
-                  <p class="text-4xl font-display font-bold tracking-tight">£{{ selectedBooking.price }}</p>
+                  <p class="text-3xl font-display font-bold tracking-tight">
+                    {{ getCurrency(selectedBooking()) }}{{ toMoney(selectedBooking()!.price) }}
+                  </p>
                 </div>
+
                 <div class="text-right">
                   <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Service Type</p>
-                  <app-badge variant="primary" class="bg-white/20 text-white border-white/30">{{ selectedBooking.service_slug }}</app-badge>
+                  <app-badge variant="primary" class="bg-white/20 text-white border-white/30">
+                    {{ selectedBooking()!.service_slug || 'booking' }}
+                  </app-badge>
                 </div>
               </div>
 
-              <!-- Errand Specific Details -->
-              @if (selectedBooking.service_slug === 'errand' && details()) {
-                <app-card class="p-8 space-y-6">
-                  <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Errand Details</h3>
-                  
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              @if (selectedBooking()!.service_slug === 'errand' && details()) {
+                <app-card class="p-6 space-y-6">
+                  <h3 class="modal-section-title">Errand Details</h3>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div class="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
-                      <p class="text-xl font-display font-bold text-slate-900">£{{ details()?.['estimated_budget'] }}</p>
+                      <p class="modal-label">Item Budget</p>
+                      <p class="text-xl font-display font-bold text-slate-900">£{{ details()?.['estimated_budget'] || 0 }}</p>
                     </div>
+
                     <div class="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Actual Spend</p>
+                      <p class="modal-label">Actual Spend</p>
                       <p class="text-xl font-display font-bold text-emerald-600">£{{ details()?.['actual_spending'] || 0 }}</p>
                     </div>
                   </div>
 
                   @if (details()?.['receipt_url']) {
-                    <div class="pt-4">
-                      <app-button variant="secondary" size="sm" (click)="viewReceipt(details()?.['receipt_url']?.toString())">
-                        <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
-                        View Receipt
-                      </app-button>
-                    </div>
+                    <app-button variant="secondary" size="sm" (clicked)="viewReceipt(details()?.['receipt_url']?.toString())">
+                      <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
+                      View Receipt
+                    </app-button>
                   }
 
                   @if (details()?.['items_list']) {
-                    <div class="pt-4">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Items List</p>
+                    <div>
+                      <p class="modal-label mb-2">Items List</p>
                       <div class="flex flex-wrap gap-2">
-                        @for (item of $any(details()?.['items_list']); track item) {
+                        @for (item of asStringArray(details()?.['items_list']); track item) {
                           <app-badge variant="secondary">{{ item }}</app-badge>
                         }
                       </div>
@@ -273,170 +406,396 @@ import { CardComponent } from '../../../../shared/ui/card';
       </ng-template>
     </ion-modal>
   `,
-  standalone: true,
-  imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent, CardComponent]
+    styles: [`
+    .filter-select {
+      width: 100%;
+      background: rgb(248 250 252);
+      border: 1px solid rgb(226 232 240);
+      border-radius: 0.75rem;
+      padding: 0.625rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: rgb(71 85 105);
+      outline: none;
+    }
+
+    .th-cell {
+      padding: 1rem;
+      font-size: 10px;
+      font-weight: 800;
+      color: rgb(148 163 184);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      white-space: nowrap;
+    }
+
+    .avatar {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 0.75rem;
+      border-width: 1px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .modal-avatar {
+      width: 3.25rem;
+      height: 3.25rem;
+      border-radius: 1rem;
+      border-width: 1px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .page-btn {
+      height: 2.25rem;
+      padding: 0 0.8rem;
+      border-radius: 0.75rem;
+      background: rgb(248 250 252);
+      color: rgb(71 85 105);
+      border: 1px solid rgb(226 232 240);
+      font-size: 0.75rem;
+      font-weight: 800;
+    }
+
+    .modal-section-title {
+      font-size: 10px;
+      font-weight: 800;
+      color: rgb(148 163 184);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-bottom: 1.25rem;
+    }
+
+    .modal-label {
+      font-size: 10px;
+      color: rgb(148 163 184);
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      margin-bottom: 0.25rem;
+    }
+  `]
 })
 export class BookingListComponent implements OnInit {
-  private adminService = inject(AdminService);
-  private bookingService = inject(BookingService);
-  private alertCtrl = inject(AlertController);
-  private toastCtrl = inject(ToastController);
+    private adminService = inject(AdminService);
+    private bookingService = inject(BookingService);
+    private alertCtrl = inject(AlertController);
+    private toastCtrl = inject(ToastController);
+    private supabase = inject(SupabaseService);
 
-  ServiceTypeEnum = ServiceTypeEnum;
-  bookings = signal<Job[]>([]);
-  drivers = signal<(DriverProfile & { vehicles: Vehicle[] })[]>([]);
-  isModalOpen = false;
-  selectedBooking: Job | null = null;
-  details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
+    ServiceTypeEnum = ServiceTypeEnum;
 
-  allStatuses: string[] = [
-    'requested', 'searching', 'assigned', 'accepted', 'arrived', 
-    'heading_to_pickup', 'arrived_at_store', 'shopping_in_progress', 
-    'collected', 'en_route_to_customer', 'delivered',
-    'in_progress', 'completed', 'cancelled', 'settled'
-  ];
+    bookings = signal<Job[]>([]);
+    drivers = signal<(DriverProfile & { vehicles: Vehicle[] })[]>([]);
+    selectedBooking = signal<Job | null>(null);
+    details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
+    isModalOpen = signal(false);
 
-  async ngOnInit() {
-    await Promise.all([
-      this.loadBookings(),
-      this.loadDrivers()
-    ]);
-  }
+    searchTerm = signal('');
+    statusFilter = signal('all');
+    currentPage = signal(1);
+    pageSize = signal(10);
 
-  async loadBookings() {
-    const data = await this.adminService.getJobs();
-    this.bookings.set(data as Job[]);
-  }
+    allStatuses: string[] = [
+        'requested',
+        'searching',
+        'assigned',
+        'accepted',
+        'arrived',
+        'heading_to_pickup',
+        'arrived_at_store',
+        'shopping_in_progress',
+        'collected',
+        'en_route_to_customer',
+        'delivered',
+        'in_progress',
+        'completed',
+        'cancelled',
+        'settled'
+    ];
 
-  async loadDrivers() {
-    const data = await this.adminService.getDrivers();
-    this.drivers.set(data);
-  }
+    filteredBookings = computed(() => {
+        const term = this.searchTerm().toLowerCase().trim();
+        const status = this.statusFilter();
 
-  async viewDetails(booking: Job) {
-    this.selectedBooking = booking;
-    this.isModalOpen = true;
-    
-    try {
-      const details = await this.bookingService.getBookingDetails(booking.id, booking.service_slug as ServiceTypeEnum);
-      this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);
-    } catch (e) {
-      console.error('Failed to load details', e);
-      this.details.set(null);
-    }
-  }
+        return this.bookings().filter((booking: any) => {
+            const searchText = [
+                booking.id,
+                booking.status,
+                booking.service_slug,
+                booking.pickup_address,
+                booking.dropoff_address,
+                booking.customer?.full_name,
+                booking.customer?.first_name,
+                booking.customer?.last_name,
+                booking.customer?.email,
+                booking.customer?.phone,
+                booking.driver?.full_name,
+                booking.driver?.first_name,
+                booking.driver?.last_name,
+                booking.driver?.email,
+                booking.driver?.phone
+            ].filter(Boolean).join(' ').toLowerCase();
 
-  async forceUpdateStatus(bookingId: string, status: string) {
-    const alert = await this.alertCtrl.create({
-      header: 'Confirm Update',
-      message: `Are you sure you want to force update this booking to ${status}?`,
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Update',
-          handler: async () => {
-            try {
-              await this.adminService.updateBookingStatus(bookingId, status as BookingStatus, 'Admin force update');
-              await this.loadBookings();
-              if (this.selectedBooking?.id === bookingId) {
-                this.selectedBooking = { ...this.selectedBooking, status: status as BookingStatus };
-              }
-              const toast = await this.toastCtrl.create({
-                message: 'Status updated successfully',
-                duration: 2000,
-                color: 'success'
-              });
-              await toast.present();
-            } catch (e) {
-              const toast = await this.toastCtrl.create({
-                message: 'Failed to update status: ' + (e as Error).message,
-                duration: 3000,
-                color: 'danger'
-              });
-              await toast.present();
-            }
-          }
-        }
-      ]
+            const matchesSearch = !term || searchText.includes(term);
+            const matchesStatus = status === 'all' || String(booking.status || '').toLowerCase() === status;
+
+            return matchesSearch && matchesStatus;
+        });
     });
-    await alert.present();
-  }
 
-  async assignDriver(bookingId: string, driverId: string) {
-    const alert = await this.alertCtrl.create({
-      header: 'Confirm Assignment',
-      message: 'Are you sure you want to manually assign this driver?',
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Assign',
-          handler: async () => {
-            try {
-              await this.adminService.manualAssignDriver(bookingId, driverId);
-              await this.loadBookings();
-              if (this.selectedBooking?.id === bookingId) {
-                const updated = await this.bookingService.getBooking(bookingId);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                this.selectedBooking = updated as any;
-              }
-              const toast = await this.toastCtrl.create({
-                message: 'Driver assigned successfully',
-                duration: 2000,
-                color: 'success'
-              });
-              await toast.present();
-            } catch (e) {
-              const toast = await this.toastCtrl.create({
-                message: 'Failed to assign driver: ' + (e as Error).message,
-                duration: 3000,
-                color: 'danger'
-              });
-              await toast.present();
-            }
-          }
-        }
-      ]
+    totalPages = computed(() => Math.max(1, Math.ceil(this.filteredBookings().length / this.pageSize())));
+
+    pagedBookings = computed(() => {
+        const start = (this.currentPage() - 1) * this.pageSize();
+        return this.filteredBookings().slice(start, start + this.pageSize());
     });
-    await alert.present();
-  }
 
-  closeModal() {
-    this.isModalOpen = false;
-    this.selectedBooking = null;
-    this.details.set(null);
-  }
+    pageStart = computed(() => this.filteredBookings().length ? ((this.currentPage() - 1) * this.pageSize()) + 1 : 0);
+    pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.filteredBookings().length));
 
-  getBadgeVariant(status: string): 'success' | 'warning' | 'error' | 'primary' | 'secondary' | 'info' {
-    switch (status) {
-      case 'completed': return 'success';
-      case 'cancelled': return 'error';
-      case 'searching':
-      case 'requested': return 'warning';
-      case 'accepted':
-      case 'assigned':
-      case 'arrived': return 'primary';
-      case 'in_progress': return 'info';
-      default: return 'secondary';
+    async ngOnInit() {
+        await Promise.all([
+            this.loadBookings(),
+            this.loadDrivers()
+        ]);
     }
-  }
 
-  getStatusClass(status: string) {
-    switch (status) {
-      case 'completed': return 'bg-emerald-100 text-emerald-600';
-      case 'cancelled': return 'bg-red-100 text-red-600';
-      case 'searching': return 'bg-amber-100 text-amber-600';
-      case 'accepted': return 'bg-blue-100 text-blue-600';
-      case 'in_progress': return 'bg-indigo-100 text-indigo-600';
-      default: return 'bg-gray-100 text-gray-600';
-    }
-  }
+    async loadBookings() {
+        try {
+            const data = await this.adminService.getJobs();
+            this.bookings.set(Array.isArray(data) ? data as Job[] : []);
 
-  private supabase = inject(SupabaseService);
-  viewReceipt(path: string | null | undefined) {
-    if (!path) return;
-    const { data } = this.supabase.storage.from('documents').getPublicUrl(path);
-    if (data?.publicUrl) {
-      window.open(data.publicUrl, '_blank');
+            if (this.currentPage() > this.totalPages()) {
+                this.currentPage.set(this.totalPages());
+            }
+        } catch (error: unknown) {
+            await this.showToast(error instanceof Error ? error.message : 'Failed to load bookings.', 'danger');
+            this.bookings.set([]);
+        }
     }
-  }
+
+    async loadDrivers() {
+        try {
+            const data = await this.adminService.getDrivers();
+            this.drivers.set(Array.isArray(data) ? data as (DriverProfile & { vehicles: Vehicle[] })[] : []);
+        } catch (error: unknown) {
+            await this.showToast(error instanceof Error ? error.message : 'Failed to load drivers.', 'danger');
+            this.drivers.set([]);
+        }
+    }
+
+    onSearch(event: Event) {
+        this.searchTerm.set((event.target as HTMLInputElement).value || '');
+        this.currentPage.set(1);
+    }
+
+    onStatusFilterChange(event: Event) {
+        this.statusFilter.set((event.target as HTMLSelectElement).value || 'all');
+        this.currentPage.set(1);
+    }
+
+    onPageSizeChange(event: Event) {
+        this.pageSize.set(Number((event.target as HTMLSelectElement).value || 10));
+        this.currentPage.set(1);
+    }
+
+    nextPage() {
+        this.currentPage.update(page => Math.min(page + 1, this.totalPages()));
+    }
+
+    prevPage() {
+        this.currentPage.update(page => Math.max(page - 1, 1));
+    }
+
+    async viewDetails(booking: Job) {
+        this.selectedBooking.set(booking);
+        this.isModalOpen.set(true);
+        this.details.set(null);
+
+        try {
+            const bookingDetails = await this.bookingService.getBookingDetails(
+                booking.id,
+                booking.service_slug as ServiceTypeEnum
+            );
+
+            this.details.set(bookingDetails as Record<string, string | number | boolean | string[] | null | undefined>);
+        } catch (e) {
+            console.error('Failed to load details', e);
+            this.details.set(null);
+        }
+    }
+
+    async forceUpdateStatus(bookingId: string, status: string) {
+        const alert = await this.alertCtrl.create({
+            header: 'Confirm Update',
+            message: `Force update this booking to ${this.formatStatus(status)}?`,
+            buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Update',
+                    handler: async () => {
+                        try {
+                            await this.adminService.updateBookingStatus(bookingId, status as BookingStatus, 'Admin force update');
+                            await this.loadBookings();
+
+                            const updated = this.bookings().find(b => b.id === bookingId);
+                            if (updated) this.selectedBooking.set(updated);
+
+                            await this.showToast('Status updated successfully.', 'success');
+                        } catch (e: unknown) {
+                            await this.showToast('Failed to update status: ' + (e instanceof Error ? e.message : 'Unknown error'), 'danger');
+                        }
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    async assignDriver(bookingId: string, driverId: string) {
+        if (!driverId) {
+            await this.showToast('Please select a driver.', 'warning');
+            return;
+        }
+
+        const alert = await this.alertCtrl.create({
+            header: 'Confirm Assignment',
+            message: 'Manually assign this driver to the booking?',
+            buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Assign',
+                    handler: async () => {
+                        try {
+                            await this.adminService.manualAssignDriver(bookingId, driverId);
+                            await this.loadBookings();
+
+                            const updated = await this.bookingService.getBooking(bookingId);
+                            this.selectedBooking.set(updated as Job);
+
+                            await this.showToast('Driver assigned successfully.', 'success');
+                        } catch (e: unknown) {
+                            await this.showToast('Failed to assign driver: ' + (e instanceof Error ? e.message : 'Unknown error'), 'danger');
+                        }
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    closeModal() {
+        this.isModalOpen.set(false);
+        this.selectedBooking.set(null);
+        this.details.set(null);
+    }
+
+    getBadgeVariant(status: string): 'success' | 'warning' | 'error' | 'primary' | 'secondary' | 'info' {
+        switch ((status || '').toLowerCase()) {
+            case 'completed':
+            case 'settled':
+            case 'delivered':
+                return 'success';
+            case 'cancelled':
+            case 'canceled':
+                return 'error';
+            case 'searching':
+            case 'requested':
+                return 'warning';
+            case 'accepted':
+            case 'assigned':
+            case 'arrived':
+            case 'heading_to_pickup':
+                return 'primary';
+            case 'in_progress':
+            case 'shopping_in_progress':
+            case 'arrived_at_store':
+            case 'collected':
+            case 'en_route_to_customer':
+                return 'info';
+            default:
+                return 'secondary';
+        }
+    }
+
+    formatStatus(status: string | null | undefined): string {
+        return String(status || 'unknown').replace(/_/g, ' ');
+    }
+
+    shortId(id: string | null | undefined): string {
+        return (id || '').slice(0, 8).toUpperCase() || 'UNKNOWN';
+    }
+
+    getPersonName(person: any, fallback: string): string {
+        const fullName = person?.full_name || `${person?.first_name || ''} ${person?.last_name || ''}`.trim();
+        return fullName || person?.email || person?.phone || fallback;
+    }
+
+    getInitial(person: any, fallback: string): string {
+        return this.getPersonName(person, fallback).charAt(0).toUpperCase();
+    }
+
+    getCurrency(booking: any): string {
+        if (booking?.currency_symbol) return booking.currency_symbol;
+
+        switch (String(booking?.currency_code || 'GBP').toUpperCase()) {
+            case 'NGN': return '₦';
+            case 'USD': return '$';
+            case 'EUR': return '€';
+            case 'CAD': return '$';
+            case 'AUD': return '$';
+            case 'GBP':
+            default:
+                return '£';
+        }
+    }
+
+    toMoney(value: unknown): string {
+        return Number(value || 0).toFixed(2);
+    }
+
+    asStringArray(value: unknown): string[] {
+        if (Array.isArray(value)) return value.map(v => String(v));
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) return parsed.map(v => String(v));
+            } catch {
+                return value.split('\n').map(v => v.trim()).filter(Boolean);
+            }
+        }
+
+        return [];
+    }
+
+    viewReceipt(path: string | null | undefined) {
+        if (!path) return;
+
+        const { data } = this.supabase.storage.from('documents').getPublicUrl(path);
+
+        if (data?.publicUrl) {
+            window.open(data.publicUrl, '_blank');
+        }
+    }
+
+    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+        const toast = await this.toastCtrl.create({
+            message,
+            duration: 2500,
+            color
+        });
+
+        await toast.present();
+    }
 }

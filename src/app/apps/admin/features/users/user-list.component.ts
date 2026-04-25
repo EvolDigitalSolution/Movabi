@@ -8,27 +8,32 @@ import { ButtonComponent } from '../../../../shared/ui/button';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 
 @Component({
-  selector: 'app-user-list',
-  template: `
+    selector: 'app-user-list',
+    template: `
     <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
       <div class="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h3 class="text-2xl font-display font-bold text-slate-900">User Management</h3>
           <p class="text-slate-500 font-medium mt-1">Manage and monitor all customer accounts.</p>
         </div>
+
         <div class="flex flex-col sm:flex-row items-center gap-4">
           <div class="relative w-full sm:w-72 group">
             <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors"></ion-icon>
-            <input type="text" placeholder="Search users..." 
-                   class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500/50 transition-all">
+            <input
+              type="text"
+              placeholder="Search users..."
+              (input)="onSearch($event)"
+              class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500/50 transition-all"
+            >
           </div>
+
           <app-button variant="secondary" size="md" [fullWidth]="false" class="px-8 h-12 rounded-2xl">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
         </div>
       </div>
-      
 
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
@@ -41,32 +46,46 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
               <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
             </tr>
           </thead>
+
           <tbody class="divide-y divide-slate-50">
-            @for (user of users(); track user.id) {
+            @for (user of filteredUsers(); track user.id) {
               <tr class="hover:bg-slate-50/80 transition-all group">
                 <td class="px-10 py-6">
                   <div class="flex items-center gap-4">
                     <div class="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100 shadow-sm">
-                      {{ user.first_name[0] || user.email[0] }}
+                      {{ getInitial(user) }}
                     </div>
+
                     <div>
-                      <h4 class="text-sm font-bold text-slate-900">{{ user.first_name }} {{ user.last_name }}</h4>
-                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {{ user.id.slice(0, 8) }}</p>
+                      <h4 class="text-sm font-bold text-slate-900">{{ getUserName(user) }}</h4>
+                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                        ID: {{ shortId(user?.id) }}
+                      </p>
                     </div>
                   </div>
                 </td>
-                <td class="px-10 py-6 text-sm font-bold text-slate-900">{{ user.email }}</td>
-                <td class="px-10 py-6 text-sm font-bold text-slate-900">{{ user.created_at | date:'mediumDate' }}</td>
+
+                <td class="px-10 py-6 text-sm font-bold text-slate-900">
+                  {{ getUserEmail(user) }}
+                </td>
+
+                <td class="px-10 py-6 text-sm font-bold text-slate-900">
+                  {{ user?.created_at ? (user.created_at | date:'mediumDate') : 'N/A' }}
+                </td>
+
                 <td class="px-10 py-6">
-                  <app-badge [variant]="getStatusVariant(user.account_status || 'active')">
-                    {{ (user.account_status || 'active') | uppercase }}
+                  <app-badge [variant]="getStatusVariant(user?.account_status || 'active')">
+                    {{ (user?.account_status || 'active') | uppercase }}
                   </app-badge>
                 </td>
+
                 <td class="px-10 py-6 text-right">
                   <div class="flex items-center justify-end gap-2">
-                    <button (click)="moderateUser(user)" 
-                            class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center"
-                            title="Moderate User">
+                    <button
+                      (click)="moderateUser(user)"
+                      class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-600/20 transition-all flex items-center justify-center"
+                      title="Moderate User"
+                    >
                       <ion-icon name="shield-outline" class="text-xl"></ion-icon>
                     </button>
                   </div>
@@ -75,112 +94,191 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
             }
           </tbody>
         </table>
+
+        @if (filteredUsers().length === 0) {
+          <div class="p-10 text-center text-slate-400 font-bold text-sm">
+            No users found.
+          </div>
+        }
       </div>
     </div>
   `,
-  standalone: true,
-  imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent]
+    standalone: true,
+    imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent]
 })
 export class UserListComponent implements OnInit {
-  private adminService = inject(AdminService);
-  private authService = inject(AuthService);
-  private alertCtrl = inject(AlertController);
-  private toastCtrl = inject(ToastController);
+    private adminService = inject(AdminService);
+    private authService = inject(AuthService);
+    private alertCtrl = inject(AlertController);
+    private toastCtrl = inject(ToastController);
 
-  users = signal<Profile[]>([]);
+    users = signal<Profile[]>([]);
+    searchTerm = signal('');
 
-  async ngOnInit() {
-    await this.loadUsers();
-  }
+    filteredUsers = signal<Profile[]>([]);
 
-  async loadUsers() {
-    const data = await this.adminService.getUsers();
-    this.users.set(data);
-  }
-
-  getStatusVariant(status: string) {
-    switch (status) {
-      case 'active': return 'success';
-      case 'suspended': return 'warning';
-      case 'banned': return 'error';
-      case 'disabled': return 'secondary';
-      default: return 'success';
+    async ngOnInit() {
+        await this.loadUsers();
     }
-  }
 
-  async moderateUser(user: Profile) {
-    const alert = await this.alertCtrl.create({
-      header: 'Moderate User',
-      subHeader: `${user.first_name} ${user.last_name}`,
-      inputs: [
-        {
-          name: 'status',
-          type: 'radio',
-          label: 'Active',
-          value: 'active',
-          checked: user.account_status === 'active' || !user.account_status
-        },
-        {
-          name: 'status',
-          type: 'radio',
-          label: 'Suspend',
-          value: 'suspended',
-          checked: user.account_status === 'suspended'
-        },
-        {
-          name: 'status',
-          type: 'radio',
-          label: 'Ban',
-          value: 'banned',
-          checked: user.account_status === 'banned'
-        },
-        {
-          name: 'status',
-          type: 'radio',
-          label: 'Disable',
-          value: 'disabled',
-          checked: user.account_status === 'disabled'
-        },
-        {
-          name: 'reason',
-          type: 'textarea',
-          placeholder: 'Reason for moderation...'
-        }
-      ],
-      buttons: [
-        { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Apply',
-          handler: async (data) => {
-            if (!data.status) return;
-            try {
-              await this.adminService.updateAccountStatus(
-                user.id, 
-                data.status, 
-                data.reason || '', 
-                this.authService.currentUser()?.id || ''
-              );
-              const toast = await this.toastCtrl.create({
-                message: `User status updated to ${data.status}`,
-                duration: 2000,
-                color: 'success'
-              });
-              await toast.present();
-              await this.loadUsers();
-            } catch (error: unknown) {
-              const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-              const toast = await this.toastCtrl.create({
-                message: errorMessage,
-                duration: 3000,
-                color: 'danger'
-              });
-              await toast.present();
-            }
-          }
-        }
-      ]
-    });
+    async loadUsers() {
+        const data = await this.adminService.getUsers();
+        const safeUsers = Array.isArray(data) ? data : [];
 
-    await alert.present();
-  }
+        this.users.set(safeUsers);
+        this.applySearchFilter();
+    }
+
+    onSearch(event: Event) {
+        const input = event.target as HTMLInputElement;
+        this.searchTerm.set(input.value || '');
+        this.applySearchFilter();
+    }
+
+    applySearchFilter() {
+        const term = (this.searchTerm() || '').toLowerCase().trim();
+        const users = this.users() || [];
+
+        if (!term) {
+            this.filteredUsers.set(users);
+            return;
+        }
+
+        this.filteredUsers.set(
+            users.filter((user: any) => {
+                const name = this.getUserName(user).toLowerCase();
+                const email = this.getUserEmail(user).toLowerCase();
+                const phone = (user?.phone || '').toLowerCase();
+                const status = (user?.account_status || 'active').toLowerCase();
+                const id = (user?.id || '').toLowerCase();
+
+                return (
+                    name.includes(term) ||
+                    email.includes(term) ||
+                    phone.includes(term) ||
+                    status.includes(term) ||
+                    id.includes(term)
+                );
+            })
+        );
+    }
+
+    getUserName(user: any): string {
+        const firstName = user?.first_name || '';
+        const lastName = user?.last_name || '';
+        const fullName = user?.full_name || `${firstName} ${lastName}`.trim();
+
+        return fullName || user?.email || user?.phone || `User ${this.shortId(user?.id)}`;
+    }
+
+    getUserEmail(user: any): string {
+        return user?.email || 'No email';
+    }
+
+    getInitial(user: any): string {
+        const name = this.getUserName(user) || 'U';
+        return name.charAt(0).toUpperCase();
+    }
+
+    shortId(id: string | undefined | null): string {
+        return (id || '').slice(0, 8).toUpperCase() || 'UNKNOWN';
+    }
+
+    getStatusVariant(status: string): 'success' | 'warning' | 'error' | 'secondary' {
+        switch (status) {
+            case 'active':
+                return 'success';
+            case 'suspended':
+                return 'warning';
+            case 'banned':
+                return 'error';
+            case 'disabled':
+                return 'secondary';
+            default:
+                return 'success';
+        }
+    }
+
+    async moderateUser(user: Profile) {
+        const displayName = this.getUserName(user);
+
+        const alert = await this.alertCtrl.create({
+            header: 'Moderate User',
+            subHeader: displayName,
+            inputs: [
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Active',
+                    value: 'active',
+                    checked: user.account_status === 'active' || !user.account_status
+                },
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Suspend',
+                    value: 'suspended',
+                    checked: user.account_status === 'suspended'
+                },
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Ban',
+                    value: 'banned',
+                    checked: user.account_status === 'banned'
+                },
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Disable',
+                    value: 'disabled',
+                    checked: user.account_status === 'disabled'
+                },
+                {
+                    name: 'reason',
+                    type: 'textarea',
+                    placeholder: 'Reason for moderation...'
+                }
+            ],
+            buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Apply',
+                    handler: async (data) => {
+                        if (!data.status) return;
+
+                        try {
+                            await this.adminService.updateAccountStatus(
+                                user.id,
+                                data.status,
+                                data.reason || '',
+                                this.authService.currentUser()?.id || ''
+                            );
+
+                            const toast = await this.toastCtrl.create({
+                                message: `User status updated to ${data.status}`,
+                                duration: 2000,
+                                color: 'success'
+                            });
+
+                            await toast.present();
+                            await this.loadUsers();
+                        } catch (error: unknown) {
+                            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+
+                            const toast = await this.toastCtrl.create({
+                                message: errorMessage,
+                                duration: 3000,
+                                color: 'danger'
+                            });
+
+                            await toast.present();
+                        }
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
 }

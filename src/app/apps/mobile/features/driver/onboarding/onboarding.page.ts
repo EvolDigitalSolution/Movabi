@@ -331,6 +331,49 @@ import { CardComponent, ButtonComponent, BadgeComponent } from '@shared/ui';
           </section>
 
           <section class="space-y-4">
+  <div class="flex items-center gap-3 ml-1">
+    <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+    <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Council Taxi Licence</h2>
+  </div>
+
+  <div class="bg-white rounded-[2.25rem] border border-slate-100 shadow-sm overflow-hidden">
+    <div class="divide-y divide-slate-50">
+      <div class="p-4">
+        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+          Council Name
+        </label>
+        <input formControlName="council_name" placeholder="e.g. Oldham Council" [readonly]="isReadOnly()"
+          class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-900 placeholder:text-slate-300">
+      </div>
+
+      <div class="p-4">
+        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+          Council Licence Number
+        </label>
+        <input formControlName="council_license_number" placeholder="e.g. PHV/123456" [readonly]="isReadOnly()"
+          class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-900 placeholder:text-slate-300">
+      </div>
+
+      <div class="p-4">
+        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+          Taxi Badge Number
+        </label>
+        <input formControlName="taxi_badge_number" placeholder="e.g. BADGE-1234" [readonly]="isReadOnly()"
+          class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-900 placeholder:text-slate-300">
+      </div>
+
+      <div class="p-4">
+        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+          Taxi Licence Expiry Date
+        </label>
+        <input type="date" formControlName="taxi_license_expiry" [readonly]="isReadOnly()"
+          class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-900 placeholder:text-slate-300">
+      </div>
+    </div>
+  </div>
+</section>
+
+          <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Documents</h2>
@@ -556,7 +599,12 @@ export class OnboardingPage implements OnInit {
             make: ['', Validators.required],
             model: ['', Validators.required],
             year: [new Date().getFullYear(), [Validators.required, Validators.min(1900)]],
-            license_plate: ['', Validators.required]
+            license_plate: ['', Validators.required],
+
+            council_name: ['', Validators.required],
+            council_license_number: ['', Validators.required],
+            taxi_badge_number: ['', Validators.required],
+            taxi_license_expiry: ['', Validators.required]
         });
     }
 
@@ -818,13 +866,19 @@ export class OnboardingPage implements OnInit {
                 await this.profileService.updateProfile(user.id, {
                     onboarding_completed: true,
                     role: 'driver',
+
+                    council_name: this.onboardingForm.value.council_name,
+                    council_license_number: this.onboardingForm.value.council_license_number,
+                    taxi_badge_number: this.onboardingForm.value.taxi_badge_number,
+                    taxi_license_expiry: this.onboardingForm.value.taxi_license_expiry,
+
                     driver_license_url: this.docs().license || null,
                     insurance_url: this.docs().insurance || null,
                     verification_status: 'under_review',
                     verification_notes: null,
                     verification_items: null,
                     is_verified: false
-                });
+                } as any);
 
                 if (typeof (this.profileService as any).fetchProfile === 'function') {
                     await (this.profileService as any).fetchProfile();
