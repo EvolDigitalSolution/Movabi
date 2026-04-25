@@ -48,3 +48,15 @@ Thumbs.db
 /.vs/slnx.sqlite
 /.gitignore
 /.vs/Movabi/FileContentIndex
+
+
+# temp / junk
+=
+*.bak
+*.sql
+
+# docker backups
+docker/**/*.bak
+
+# server backups
+server/*.bak.*
