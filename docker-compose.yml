@@ -194,6 +194,31 @@ services:
       - movabi-private
       - nginx-proxy
 
+  movabi-supabase-storage:
+    image: supabase/storage-api:latest
+    container_name: movabi-supabase-storage
+    restart: unless-stopped
+    depends_on:
+      - movabi-supabase-db
+      - movabi-supabase-rest
+    environment:
+      ANON_KEY: ${SUPABASE_ANON_KEY}
+      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://movabi-supabase-rest:3000
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@movabi-supabase-db:5432/postgres
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      JWT_SECRET: ${SUPABASE_JWT_SECRET}
+    volumes:
+      - movabi-storage-data:/var/lib/storage
+    networks:
+      - movabi-private
+
 networks:
   movabi-private:
     name: movabi-private
@@ -209,3 +234,4 @@ networks:
 volumes:
   movabi-supabase-db-data:
     name: movabi-supabase-db-data
+  movabi-storage-data:

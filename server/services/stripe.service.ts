@@ -10,8 +10,9 @@ if (!stripeSecretKey) {
   console.warn('Stripe Secret Key is missing in environment variables.');
 }
 
-export const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2023-10-16',
+export const stripe = new Stripe(process.env['STRIPE_SECRET_KEY'] || '', {
+  // Keep the runtime API version you want, but bypass stale local typings.
+  apiVersion: '2023-10-16' as any as any
 });
 
 export const verifyWebhookSignature = (payload: string | Buffer, signature: string) => {

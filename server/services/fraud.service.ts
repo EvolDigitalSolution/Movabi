@@ -1,26 +1,28 @@
 import { supabaseAdmin } from './supabase.service';
-import { eventService } from './event.service';
+import { EventService } from './event.service';
 
 export class FraudService {
   /**
    * Check if a user is flagged for excessive cancellations
    */
-  static async checkCancellationAbuse(userId: string): Promise<{ isAbusing: boolean; reason?: string }> {
+  static async checkCancellationAbuse(
+    userId: string
+  ): Promise<{ isAbusing: boolean; reason?: string }> {
     const { data: profile, error } = await supabaseAdmin
       .from('profiles')
       .select('cancel_count, account_status')
       .eq('id', userId)
       .single();
 
-    if (error || !profile) return { isAbusing: false };
+    if (error || !profile) {
+      return { isAbusing: false };
+    }
 
     if (profile.account_status === 'suspended') {
       return { isAbusing: true, reason: 'Account is already suspended' };
     }
 
-    // Threshold: 5 cancellations in a short period (or total if we don't have a window)
-    // For now, we use the cancel_count column
-    if (profile.cancel_count >= 10) {
+    if ((profile.cancel_count || 0) >= 10) {
       return { isAbusing: true, reason: 'Excessive cancellations detected' };
     }
 
@@ -47,28 +49,36 @@ export class FraudService {
     if (newCount >= 10) {
       await supabaseAdmin
         .from('profiles')
-        .update({ account_status: 'suspended', moderation_reason: 'Automatic suspension: Excessive cancellations' })
+        .update({
+          account_status: 'suspended',
+          moderation_reason: 'Automatic suspension: Excessive cancellations'
+        })
         .eq('id', userId);
-      
-      await eventService.logEvent(
-        'system',
-        'account_suspended',
-        `User ${userId} suspended for excessive cancellations`,
-        { userId, cancelCount: newCount }
-      );
+
+    await EventService.logEvent(
+   'system',
+   'fraud_abuse_detected',
+   `Cancellation abuse detected for user ${userId}`,
+    JSON.stringify({
+    userId,
+    cancelCount: newCount
+    })
+    );      
+
     }
   }
 
   /**
    * Check for suspicious wallet activity
    */
-  static async checkWalletAbuse(userId: string, amount: number): Promise<{ isSuspicious: boolean; reason?: string }> {
-    // 1. Check for very large top-ups
+  static async checkWalletAbuse(
+    userId: string,
+    amount: number
+  ): Promise<{ isSuspicious: boolean; reason?: string }> {
     if (amount > 1000) {
       return { isSuspicious: true, reason: 'Single top-up exceeds limit' };
     }
 
-    // 2. Check for frequency (e.g., more than 3 top-ups in 1 hour)
     const oneHourAgo = new Date();
     oneHourAgo.setHours(oneHourAgo.getHours() - 1);
 
