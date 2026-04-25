@@ -1,5 +1,5 @@
 import { supabaseAdmin } from './supabase.service';
-import { eventService } from './event.service';
+import { EventService } from './event.service';
 
 export interface NotificationPayload {
   userId: string;
@@ -35,12 +35,18 @@ export class NotificationService {
       }
 
       // 2. Log event
-      await eventService.logEvent(
-        'system',
-        'notification_sent',
-        `Notification sent to ${payload.userId}: ${payload.title}`,
-        payload
-      );
+      await EventService.logEvent(
+  'notification_sent',
+  {
+    userId: payload.userId,
+    title: payload.title,
+    body: payload.body,
+    type: payload.type,
+    data: payload.data
+  },
+  undefined,
+  payload.userId
+);
 
       // 3. TODO: Integrate with Push Provider (FCM/OneSignal)
       // Example:

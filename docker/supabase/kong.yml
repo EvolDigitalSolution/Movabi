@@ -40,6 +40,20 @@ services:
           - POST
           - OPTIONS
 
+  - name: storage
+    url: http://movabi-supabase-storage:5000
+    routes:
+      - name: storage
+        paths:
+          - /storage/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+
 plugins:
   - name: cors
     config:
@@ -71,6 +85,7 @@ plugins:
         - Accept-Profile
         - Prefer
         - x-supabase-api-version
+        - x-upsert
 
       exposed_headers:
         - Content-Range

@@ -176,31 +176,46 @@ router.get('/accounting-export', async (req: Request, res: Response) => {
  */
 router.get('/payment/:id/timeline', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
     
-    // 1. Fetch PaymentIntent from Stripe
-    const pi = await stripe.paymentIntents.retrieve(id);
-    
-    // 2. Fetch related audit logs
-    const { data: logs } = await supabaseAdmin
-      .from('audit_logs')
-      .select('*')
-      .eq('entity_id', id)
-      .order('created_at', { ascending: true });
+      const rawId = req.params.id;
 
-    // 3. Fetch webhook events
-    const { data: events } = await supabaseAdmin
-      .from('stripe_events')
-      .select('*')
-      .filter('id', 'ilike', `%${id}%`); // Rough lookup if PI ID is in metadata or similar
+const paymentIntentId =
+  typeof rawId === 'string'
+    ? rawId
+    : Array.isArray(rawId)
+      ? rawId[0]
+      : '';
 
-    res.json({
-      stripe_status: pi.status,
-      amount: pi.amount,
-      timeline: logs,
-      webhook_events: events,
-      raw_stripe: pi
-    });
+if (!paymentIntentId) {
+  return res.status(400).json({ error: 'Invalid payment intent id' });
+}
+
+// 1. Fetch PaymentIntent from Stripe
+const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+// Audit logs
+const { data: logs } = await supabaseAdmin
+  .from('audit_logs')
+  .select('*')
+  .eq('entity_id', paymentIntentId)
+  .order('created_at', { ascending: true });
+
+// Webhook events
+const { data: events } = await supabaseAdmin
+  .from('stripe_events')
+  .select('*')
+  .filter('id', 'ilike', `%${paymentIntentId}%`);
+
+res.json({
+  stripe_status: pi.status,
+  amount: pi.amount,
+  timeline: logs,
+  webhook_events: events,
+  raw_stripe: pi
+});    
+
+
+ 
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
