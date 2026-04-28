@@ -1,0 +1,98 @@
+_format_version: "1.1"
+
+services:
+  - name: auth
+    url: http://movabi-supabase-auth:8081
+    routes:
+      - name: auth
+        paths:
+          - /auth/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+
+  - name: rest
+    url: http://movabi-supabase-rest:3000
+    routes:
+      - name: rest
+        paths:
+          - /rest/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+
+  - name: realtime
+    url: http://movabi-supabase-realtime:4000
+    routes:
+      - name: realtime
+        paths:
+          - /realtime/v1
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+
+  - name: storage
+    url: http://movabi-supabase-storage:5000
+    routes:
+      - name: storage
+        paths:
+          - /storage/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:3000
+        - https://movabi.apps.evolsolution.com
+
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+
+      headers:
+        - Accept
+        - Accept-Language
+        - Content-Language
+        - Content-Type
+        - Authorization
+        - apikey
+        - x-client-info
+        - X-Client-Info
+        - X-Requested-With
+        - Range
+        - Range-Unit
+        - Content-Profile
+        - Accept-Profile
+        - Prefer
+        - x-supabase-api-version
+
+      exposed_headers:
+        - Content-Range
+        - X-Total-Count
+        - Content-Profile
+        - Accept-Profile
+        - Authorization
+
+      credentials: true
+      max_age: 3600
+      preflight_continue: false
