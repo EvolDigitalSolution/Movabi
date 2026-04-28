@@ -10,6 +10,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
 
+
 @Component({
   selector: 'app-job-details',
   template: `
@@ -337,7 +338,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     const currentJob = this.job();
     if (currentJob) {
       try {
-        const details = await this.bookingService.getBookingDetails(currentJob.id, currentJob.service_slug);
+          const details = await this.bookingService.getBookingDetails(
+              currentJob.id,
+              currentJob.service_slug as ServiceTypeEnum
+          );
         this.details.set(details as ErrandDetails | RideDetails | DeliveryDetails | VanDetails);
 
         if (currentJob.service_slug === ServiceTypeEnum.ERRAND) {

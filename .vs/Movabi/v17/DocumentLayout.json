@@ -3,12 +3,36 @@
   "WorkspaceRootPath": "C:\\Users\\fedri\\source\\repos\\Movabi\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\reconciliation.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\services\\reconciliation.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\job\\job.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\job\\job.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\auth\\auth.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\auth\\auth.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\shared\\models\\booking.model.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\shared\\models\\booking.model.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\booking\\booking.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\booking\\booking.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\booking.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\routes\\booking.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\payment.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\routes\\payment.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\stripe.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\services\\stripe.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\pricing.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\services\\pricing.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\payout.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
@@ -23,12 +47,44 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\jobs\\job-monitoring.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\features\\jobs\\job-monitoring.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\bookings\\booking-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\features\\bookings\\booking-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\job-details\\job-details.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\driver\\job-details\\job-details.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\subscription\\subscription.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\driver\\subscription\\subscription.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\pricing\\pricing-config.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\pricing\\pricing-config.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\drivers\\driver-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\features\\drivers\\driver-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\users\\user-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\features\\users\\user-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\admin.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\routes\\admin.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\reconciliation.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\services\\reconciliation.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\subscriptions\\subscription-list.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
@@ -51,10 +107,6 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\driver\\onboarding\\onboarding.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\shared\\models\\booking.model.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\shared\\models\\booking.model.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\layout\\admin-layout.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\features\\layout\\admin-layout.component.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
@@ -69,10 +121,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\admin-web.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\admin\\admin-web.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\auth\\auth.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\auth\\auth.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\package.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
@@ -99,24 +147,12 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\customer\\booking-tracking\\booking-tracking.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\booking\\booking.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\booking\\booking.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\wallet\\wallet.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\apps\\mobile\\features\\customer\\wallet\\wallet.page.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\stripe\\payment.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\app\\core\\services\\stripe\\payment.service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\payment.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\routes\\payment.routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
     }
   ],
   "DocumentGroupContainers": [
@@ -131,71 +167,279 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "reconciliation.service.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\reconciliation.service.ts",
-              "RelativeDocumentMoniker": "server\\services\\reconciliation.service.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\reconciliation.service.ts",
-              "RelativeToolTip": "server\\services\\reconciliation.service.ts",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAvAAAAAAAAAA==",
+              "Title": "job.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\job\\job.service.ts",
+              "RelativeDocumentMoniker": "src\\app\\core\\services\\job\\job.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\job\\job.service.ts",
+              "RelativeToolTip": "src\\app\\core\\services\\job\\job.service.ts",
+              "ViewState": "AgIAAJ0AAAAAAAAAAAAUwLIAAAAFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-25T18:41:34.272Z",
+              "WhenOpened": "2026-04-28T22:30:08.93Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 7,
+              "Title": "pricing.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\pricing.service.ts",
+              "RelativeDocumentMoniker": "server\\services\\pricing.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\pricing.service.ts",
+              "RelativeToolTip": "server\\services\\pricing.service.ts",
+              "ViewState": "AgIAADIBAAAAAAAAAAAYwCUAAAAhAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-25T22:55:29.185Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "payout.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\payout.service.ts",
+              "RelativeDocumentMoniker": "server\\services\\payout.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\payout.service.ts",
+              "RelativeToolTip": "server\\services\\payout.service.ts",
+              "ViewState": "AgIAAKMAAAAAAAAAAAAUwKsAAAARAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-14T18:13:53.329Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
               "Title": "stripe.service.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\stripe.service.ts",
               "RelativeDocumentMoniker": "server\\services\\stripe.service.ts",
               "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\stripe.service.ts",
               "RelativeToolTip": "server\\services\\stripe.service.ts",
-              "ViewState": "AgIAAHgAAAAAAAAAAAAAAHUAAAA7AAAAAAAAAA==",
+              "ViewState": "AgIAAFEAAAAAAAAAAAAkwGMAAAAbAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2026-04-25T18:40:09.613Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "booking.routes.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\booking.routes.ts",
+              "RelativeDocumentMoniker": "server\\routes\\booking.routes.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\booking.routes.ts",
+              "RelativeToolTip": "server\\routes\\booking.routes.ts",
+              "ViewState": "AgIAACsBAAAAAAAAAAAkwEcBAAAWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-25T23:02:10.436Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "payment.routes.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\payment.routes.ts",
+              "RelativeDocumentMoniker": "server\\routes\\payment.routes.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\payment.routes.ts",
+              "RelativeToolTip": "server\\routes\\payment.routes.ts",
+              "ViewState": "AgIAAEUBAAAAAAAAAAAkwGEBAAAWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-14T18:05:11.175Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 3,
+              "Title": "booking.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\booking\\booking.service.ts",
+              "RelativeDocumentMoniker": "src\\app\\core\\services\\booking\\booking.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\booking\\booking.service.ts",
+              "RelativeToolTip": "src\\app\\core\\services\\booking\\booking.service.ts",
+              "ViewState": "AgIAALACAAAAAAAAAAAkwMMCAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-16T00:11:03.394Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "booking.model.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\shared\\models\\booking.model.ts",
+              "RelativeDocumentMoniker": "src\\app\\shared\\models\\booking.model.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\shared\\models\\booking.model.ts",
+              "RelativeToolTip": "src\\app\\shared\\models\\booking.model.ts",
+              "ViewState": "AgIAAAsAAAAAAAAAAAAkwBwAAAARAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-16T22:34:24.831Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "auth.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\auth\\auth.service.ts",
+              "RelativeDocumentMoniker": "src\\app\\core\\services\\auth\\auth.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\auth\\auth.service.ts",
+              "RelativeToolTip": "src\\app\\core\\services\\auth\\auth.service.ts",
+              "ViewState": "AgIAAI8AAAAAAAAAAAAUwKAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-24T14:54:33.906Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
               "Title": "settings.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\settings\\settings.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\settings\\settings.component.ts",
               "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\settings\\settings.component.ts",
               "RelativeToolTip": "src\\app\\apps\\admin\\features\\settings\\settings.component.ts",
-              "ViewState": "AgIAAFECAAAAAAAAAAAwwGwCAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAPkCAAAAAAAAAAAkwBUDAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2026-04-25T18:20:07.223Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 10,
+              "Title": "dashboard.component.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
+              "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
+              "RelativeToolTip": "src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
+              "ViewState": "AgIAAOoBAAAAAAAAAAAUwPsBAAAuAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-24T13:46:31.798Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "job-monitoring.component.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\jobs\\job-monitoring.component.ts",
+              "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\jobs\\job-monitoring.component.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\jobs\\job-monitoring.component.ts",
+              "RelativeToolTip": "src\\app\\apps\\admin\\features\\jobs\\job-monitoring.component.ts",
+              "ViewState": "AgIAAAkCAAAAAAAAAAAkwB4CAAAJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-27T21:18:46.822Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "job-details.page.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\job-details\\job-details.page.ts",
+              "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\driver\\job-details\\job-details.page.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\job-details\\job-details.page.ts",
+              "RelativeToolTip": "src\\app\\apps\\mobile\\features\\driver\\job-details\\job-details.page.ts",
+              "ViewState": "AgIAAAkAAAAAAAAAAAAgwBIAAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-27T10:29:30.662Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "subscription.page.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\subscription\\subscription.page.ts",
+              "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\driver\\subscription\\subscription.page.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\subscription\\subscription.page.ts",
+              "RelativeToolTip": "src\\app\\apps\\mobile\\features\\driver\\subscription\\subscription.page.ts",
+              "ViewState": "AgIAAN0AAAAAAAAAAAApwOEAAAAzAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-27T10:31:18.727Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "pricing-config.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\pricing\\pricing-config.service.ts",
+              "RelativeDocumentMoniker": "src\\app\\core\\services\\pricing\\pricing-config.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\pricing\\pricing-config.service.ts",
+              "RelativeToolTip": "src\\app\\core\\services\\pricing\\pricing-config.service.ts",
+              "ViewState": "AgIAACQAAAAAAAAAAAAwwDIAAAAJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-27T10:20:27.647Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
               "Title": "booking-list.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\bookings\\booking-list.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\bookings\\booking-list.component.ts",
               "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\bookings\\booking-list.component.ts",
               "RelativeToolTip": "src\\app\\apps\\admin\\features\\bookings\\booking-list.component.ts",
-              "ViewState": "AgIAAAUDAAAAAAAAAAAuwCADAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAOcCAAAAAAAAAAAUwPwCAAAlAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2026-04-25T15:34:12.838Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 16,
+              "Title": "booking-request.page.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
+              "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
+              "RelativeToolTip": "src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
+              "ViewState": "AgIAAMEGAAAAAAAAAAAwwNEGAAAgAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-15T17:03:39.108Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "user-list.component.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\users\\user-list.component.ts",
+              "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\users\\user-list.component.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\users\\user-list.component.ts",
+              "RelativeToolTip": "src\\app\\apps\\admin\\features\\users\\user-list.component.ts",
+              "ViewState": "AgIAAPQAAAAAAAAAAAAuwP0AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-25T19:53:39.287Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "admin.routes.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\admin.routes.ts",
+              "RelativeDocumentMoniker": "server\\routes\\admin.routes.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\admin.routes.ts",
+              "RelativeToolTip": "server\\routes\\admin.routes.ts",
+              "ViewState": "AgIAAKEAAAAAAAAAAAAwwKkAAAAtAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-25T19:39:25.437Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "reconciliation.service.ts",
+              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\reconciliation.service.ts",
+              "RelativeDocumentMoniker": "server\\services\\reconciliation.service.ts",
+              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\reconciliation.service.ts",
+              "RelativeToolTip": "server\\services\\reconciliation.service.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAAGAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-04-25T18:41:34.272Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
               "Title": "driver-list.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\drivers\\driver-list.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\drivers\\driver-list.component.ts",
               "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\drivers\\driver-list.component.ts",
               "RelativeToolTip": "src\\app\\apps\\admin\\features\\drivers\\driver-list.component.ts",
-              "ViewState": "AgIAAN0CAAAAAAAAAAAuwPgCAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAL4CAAAAAAAAAAAuwAYDAAAFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2026-04-25T14:45:39.195Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 21,
               "Title": "subscription-list.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\subscriptions\\subscription-list.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\subscriptions\\subscription-list.component.ts",
@@ -208,33 +452,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "dashboard.component.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
-              "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
-              "RelativeToolTip": "src\\app\\apps\\admin\\features\\dashboard\\dashboard.component.ts",
-              "ViewState": "AgIAAAUCAAAAAAAAAAAuwCACAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-24T13:46:31.798Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "payout.service.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\payout.service.ts",
-              "RelativeDocumentMoniker": "server\\services\\payout.service.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\services\\payout.service.ts",
-              "RelativeToolTip": "server\\services\\payout.service.ts",
-              "ViewState": "AgIAAIMAAAAAAAAAAAAQwJIAAAAmAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-14T18:13:53.329Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 22,
               "Title": "driver-subscriptions.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\subscriptions\\driver-subscriptions.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\subscriptions\\driver-subscriptions.component.ts",
@@ -247,7 +465,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 23,
               "Title": "subscription-plans.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\subscriptions\\subscription-plans.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\subscriptions\\subscription-plans.component.ts",
@@ -260,7 +478,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 24,
               "Title": "admin.service.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\services\\admin.service.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\services\\admin.service.ts",
@@ -273,7 +491,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 13,
+              "DocumentIndex": 26,
               "Title": "admin-layout.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\features\\layout\\admin-layout.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\features\\layout\\admin-layout.component.ts",
@@ -286,20 +504,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 12,
-              "Title": "booking.model.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\shared\\models\\booking.model.ts",
-              "RelativeDocumentMoniker": "src\\app\\shared\\models\\booking.model.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\shared\\models\\booking.model.ts",
-              "RelativeToolTip": "src\\app\\shared\\models\\booking.model.ts",
-              "ViewState": "AgIAACQAAAAAAAAAAAAhwDEAAAAcAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-16T22:34:24.831Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 11,
+              "DocumentIndex": 25,
               "Title": "onboarding.page.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\onboarding\\onboarding.page.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\driver\\onboarding\\onboarding.page.ts",
@@ -312,7 +517,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 14,
+              "DocumentIndex": 27,
               "Title": "admin.config.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\admin.config.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\admin.config.ts",
@@ -325,7 +530,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 15,
+              "DocumentIndex": 28,
               "Title": "admin-web.component.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\admin-web.component.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\admin-web.component.ts",
@@ -338,7 +543,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 16,
+              "DocumentIndex": 29,
               "Title": "admin-web.routes.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\admin\\admin-web.routes.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\admin\\admin-web.routes.ts",
@@ -351,20 +556,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 17,
-              "Title": "auth.service.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\auth\\auth.service.ts",
-              "RelativeDocumentMoniker": "src\\app\\core\\services\\auth\\auth.service.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\auth\\auth.service.ts",
-              "RelativeToolTip": "src\\app\\core\\services\\auth\\auth.service.ts",
-              "ViewState": "AgIAAPcAAAAAAAAAAAAQwAkBAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-24T14:54:33.906Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 18,
+              "DocumentIndex": 30,
               "Title": "package.json",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\package.json",
               "RelativeDocumentMoniker": "package.json",
@@ -377,7 +569,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 19,
+              "DocumentIndex": 31,
               "Title": ".env.example",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\.env.example",
               "RelativeDocumentMoniker": ".env.example",
@@ -390,7 +582,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 21,
+              "DocumentIndex": 33,
               "Title": "mobile.routes.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\mobile.routes.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\mobile.routes.ts",
@@ -423,7 +615,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 20,
+              "DocumentIndex": 32,
               "Title": "dashboard.page.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\driver\\dashboard\\dashboard.page.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\driver\\dashboard\\dashboard.page.ts",
@@ -436,7 +628,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 23,
+              "DocumentIndex": 35,
               "Title": "booking-tracking.page.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-tracking\\booking-tracking.page.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\customer\\booking-tracking\\booking-tracking.page.ts",
@@ -449,33 +641,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 25,
-              "Title": "booking.service.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\booking\\booking.service.ts",
-              "RelativeDocumentMoniker": "src\\app\\core\\services\\booking\\booking.service.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\booking\\booking.service.ts",
-              "RelativeToolTip": "src\\app\\core\\services\\booking\\booking.service.ts",
-              "ViewState": "AgIAAD8CAAAAAAAAAAAqwFUCAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-16T00:11:03.394Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 24,
-              "Title": "booking-request.page.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
-              "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
-              "RelativeToolTip": "src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
-              "ViewState": "AgIAAPcBAAAAAAAAAAAuwAQCAABPAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-15T17:03:39.108Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 26,
+              "DocumentIndex": 36,
               "Title": "wallet.page.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\wallet\\wallet.page.ts",
               "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\customer\\wallet\\wallet.page.ts",
@@ -483,24 +649,25 @@
               "RelativeToolTip": "src\\app\\apps\\mobile\\features\\customer\\wallet\\wallet.page.ts",
               "ViewState": "AgIAAGwBAAAAAAAAAAAIwIYBAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-15T14:36:15.184Z"
+              "WhenOpened": "2026-04-15T14:36:15.184Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 22,
+              "DocumentIndex": 34,
               "Title": "kong.yml",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\docker\\supabase\\kong.yml",
               "RelativeDocumentMoniker": "docker\\supabase\\kong.yml",
               "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\docker\\supabase\\kong.yml",
               "RelativeToolTip": "docker\\supabase\\kong.yml",
-              "ViewState": "AgIAAEgAAAAAAAAAAAAAAEMAAAAPAAAAAAAAAA==",
+              "ViewState": "AgIAAFUAAAAAAAAAAAAAAFIAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003775|",
               "WhenOpened": "2026-04-14T18:28:35.845Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 27,
+              "DocumentIndex": 37,
               "Title": "payment.service.ts",
               "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\core\\services\\stripe\\payment.service.ts",
               "RelativeDocumentMoniker": "src\\app\\core\\services\\stripe\\payment.service.ts",
@@ -508,19 +675,8 @@
               "RelativeToolTip": "src\\app\\core\\services\\stripe\\payment.service.ts",
               "ViewState": "AgIAAPoAAAAAAAAAAAAIwBQBAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-14T18:18:14.942Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 28,
-              "Title": "payment.routes.ts",
-              "DocumentMoniker": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\payment.routes.ts",
-              "RelativeDocumentMoniker": "server\\routes\\payment.routes.ts",
-              "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\server\\routes\\payment.routes.ts",
-              "RelativeToolTip": "server\\routes\\payment.routes.ts",
-              "ViewState": "AgIAACEBAAAAAAAAAAAIwCsBAAA9AAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-14T18:05:11.175Z"
+              "WhenOpened": "2026-04-14T18:18:14.942Z",
+              "EditorCaption": ""
             }
           ]
         }

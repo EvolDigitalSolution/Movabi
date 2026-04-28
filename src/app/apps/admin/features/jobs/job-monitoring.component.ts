@@ -528,7 +528,19 @@ export class JobMonitoringComponent implements OnInit, OnDestroy {
     }
 
     getCurrency(job: any): string {
-        return job?.currency_symbol || (job?.currency_code === 'NGN' ? '₦' : '£');
+        if (job?.currency_symbol) return job.currency_symbol;
+
+        switch (String(job?.currency_code || 'GBP').toUpperCase()) {
+            case 'NGN': return '₦';
+            case 'AED': return 'د.إ';
+            case 'USD': return '$';
+            case 'EUR': return '€';
+            case 'CAD': return '$';
+            case 'AUD': return '$';
+            case 'GBP':
+            default:
+                return '£';
+        }
     }
 
     toMoney(value: unknown): string {

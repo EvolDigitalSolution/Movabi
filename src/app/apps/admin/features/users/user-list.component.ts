@@ -206,73 +206,46 @@ export class UserListComponent implements OnInit {
             header: 'Moderate User',
             subHeader: displayName,
             inputs: [
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Active',
-                    value: 'active',
-                    checked: user.account_status === 'active' || !user.account_status
-                },
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Suspend',
-                    value: 'suspended',
-                    checked: user.account_status === 'suspended'
-                },
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Ban',
-                    value: 'banned',
-                    checked: user.account_status === 'banned'
-                },
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Disable',
-                    value: 'disabled',
-                    checked: user.account_status === 'disabled'
-                },
-                {
-                    name: 'reason',
-                    type: 'textarea',
-                    placeholder: 'Reason for moderation...'
-                }
+                { name: 'status', type: 'radio', label: 'Active', value: 'active', checked: user.account_status === 'active' || !user.account_status },
+                { name: 'status', type: 'radio', label: 'Suspend', value: 'suspended', checked: user.account_status === 'suspended' },
+                { name: 'status', type: 'radio', label: 'Ban', value: 'banned', checked: user.account_status === 'banned' },
+                { name: 'status', type: 'radio', label: 'Disable', value: 'disabled', checked: user.account_status === 'disabled' }
             ],
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Apply',
-                    handler: async (data) => {
-                        if (!data.status) return;
+                    handler: async (status: string) => {
+                        if (!status) return false;
 
                         try {
                             await this.adminService.updateAccountStatus(
                                 user.id,
-                                data.status,
-                                data.reason || '',
+                                status,
+                                `Admin changed user status to ${status}`,
                                 this.authService.currentUser()?.id || ''
                             );
 
-                            const toast = await this.toastCtrl.create({
-                                message: `User status updated to ${data.status}`,
-                                duration: 2000,
-                                color: 'success'
-                            });
+                            await this.showToast(`User status updated to ${status}`, 'success');
 
-                            await toast.present();
+                            this.users.update(users =>
+                                users.map(u =>
+                                    u.id === user.id
+                                        ? { ...u, account_status: status } as Profile
+                                        : u
+                                )
+                            );
+
+                            this.applySearchFilter();
                             await this.loadUsers();
+
+                            return true;
                         } catch (error: unknown) {
-                            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-
-                            const toast = await this.toastCtrl.create({
-                                message: errorMessage,
-                                duration: 3000,
-                                color: 'danger'
-                            });
-
-                            await toast.present();
+                            await this.showToast(
+                                error instanceof Error ? error.message : 'Failed to update user status.',
+                                'danger'
+                            );
+                            return false;
                         }
                     }
                 }
@@ -280,5 +253,15 @@ export class UserListComponent implements OnInit {
         });
 
         await alert.present();
+    }
+
+    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+        const toast = await this.toastCtrl.create({
+            message,
+            duration: 2500,
+            color
+        });
+
+        await toast.present();
     }
 }

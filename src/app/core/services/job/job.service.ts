@@ -163,12 +163,20 @@ export class JobService {
     return await response.json();
   }
 
-  subscribeToJobs(callback: (payload: Record<string, unknown>) => void): RealtimeChannel {
-    return this.supabase.client
-      .channel('public:jobs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, callback)
-      .subscribe();
-  }
+    subscribeToJobs(callback: () => void): RealtimeChannel {
+        return this.supabase
+            .channel('jobs-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'jobs'
+                },
+                () => callback()
+            )
+            .subscribe();
+    }
 
   async retryDispatch(jobId: string, tenantId: string) {
     const { data: job } = await this.supabase

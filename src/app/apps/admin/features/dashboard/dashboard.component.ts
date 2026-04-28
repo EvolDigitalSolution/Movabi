@@ -502,7 +502,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
             {
                 label: 'Total Revenue',
                 value: this.formatNumber(this.stats().totalRevenue || 0),
-                prefix: this.config.currencySymbol,
+                prefix: this.config.currentCountry()?.currencySymbol || this.config.currencySymbol || '£',
                 icon: 'cash-outline',
                 bgClass: 'bg-emerald-100',
                 iconClass: 'text-emerald-700',

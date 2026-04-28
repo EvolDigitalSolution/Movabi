@@ -724,27 +724,47 @@ export class DriverListComponent implements OnInit {
                 { name: 'status', type: 'radio', label: 'Active', value: 'active', checked: driver.account_status === 'active' || !driver.account_status },
                 { name: 'status', type: 'radio', label: 'Suspend', value: 'suspended', checked: driver.account_status === 'suspended' },
                 { name: 'status', type: 'radio', label: 'Ban', value: 'banned', checked: driver.account_status === 'banned' },
-                { name: 'status', type: 'radio', label: 'Disable', value: 'disabled', checked: driver.account_status === 'disabled' },
-                { name: 'reason', type: 'textarea', placeholder: 'Reason for moderation...' }
+                { name: 'status', type: 'radio', label: 'Disable', value: 'disabled', checked: driver.account_status === 'disabled' }
             ],
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Apply',
-                    handler: async (data) => {
-                        if (!data.status) return;
+                    handler: async (status: string) => {
+                        if (!status) return false;
 
                         try {
                             await this.adminService.updateAccountStatus(
                                 driver.id,
-                                data.status,
-                                data.reason || '',
+                                status,
+                                `Admin changed driver status to ${status}`,
                                 this.authService.currentUser()?.id || ''
                             );
-                            await this.showToast(`Driver status updated to ${data.status}`, 'success');
+
+                            await this.showToast(`Driver status updated to ${status}`, 'success');
+
+                            this.drivers.update(drivers =>
+                                drivers.map(d =>
+                                    d.id === driver.id
+                                        ? { ...d, account_status: status } as AdminDriver
+                                        : d
+                                )
+                            );
+
                             await this.loadDrivers();
+
+                            const updated = this.drivers().find(d => d.id === driver.id);
+                            if (updated && this.selectedDriver()) {
+                                this.selectedDriver.set(updated);
+                            }
+
+                            return true;
                         } catch (error: unknown) {
-                            await this.showToast(error instanceof Error ? error.message : 'An unknown error occurred', 'danger');
+                            await this.showToast(
+                                error instanceof Error ? error.message : 'Failed to update driver status.',
+                                'danger'
+                            );
+                            return false;
                         }
                     }
                 }
@@ -753,7 +773,6 @@ export class DriverListComponent implements OnInit {
 
         await alert.present();
     }
-
     private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
         const toast = await this.toastCtrl.create({ message, duration: 2500, color });
         await toast.present();

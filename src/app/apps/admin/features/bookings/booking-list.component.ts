@@ -755,6 +755,7 @@ export class BookingListComponent implements OnInit {
             case 'EUR': return '€';
             case 'CAD': return '$';
             case 'AUD': return '$';
+            case 'AED': return 'د.إ';
             case 'GBP':
             default:
                 return '£';

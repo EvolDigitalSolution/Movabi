@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+﻿import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -17,6 +17,7 @@ import { BookingStatusManager } from './booking-status.manager';
 import { NotificationService } from '../notification.service';
 import { JobEventService } from '../job/job-event.service';
 import { EmailService } from '../notification/email.service';
+import { ApiUrlService } from '../api-url.service';
 
 @Injectable({
     providedIn: 'root'
@@ -30,6 +31,7 @@ export class BookingService {
     private notificationService = inject(NotificationService);
     private eventService = inject(JobEventService);
     private emailService = inject(EmailService);
+    private apiUrlService = inject(ApiUrlService);
 
     activeBooking = signal<Booking | null>(null);
     bookingHistory = signal<Booking[]>([]);
@@ -63,6 +65,20 @@ export class BookingService {
             ...normalizedDetails
         });
 
+        const pricing = await this.calculateRegionalPrice(bookingData, serviceSlug);
+
+        const totalPrice = Number(
+            pricing?.totalPrice ??
+            pricing?.basePrice ??
+            bookingData.total_price ??
+            bookingData.price ??
+            0
+        );
+
+        const countryCode = String(pricing?.countryCode || this.getCountryCode() || 'GB').toUpperCase();
+        const currencyCode = String(pricing?.currencyCode || this.getCurrencyCode() || this.currencyFromCountry(countryCode)).toUpperCase();
+        const currencySymbol = pricing?.currencySymbol || this.getCurrencySymbol(currencyCode);
+
         const { data: job, error: bError } = await this.supabase
             .from('jobs')
             .insert({
@@ -70,18 +86,38 @@ export class BookingService {
                 service_type_id: bookingData.service_type_id,
                 status: 'requested',
                 payment_status: 'pending',
+
                 pickup_address: bookingData.pickup_address,
                 pickup_lat: bookingData.pickup_lat,
                 pickup_lng: bookingData.pickup_lng,
                 dropoff_address: bookingData.dropoff_address,
                 dropoff_lat: bookingData.dropoff_lat,
                 dropoff_lng: bookingData.dropoff_lng,
-                price: bookingData.total_price,
+
+                price: totalPrice,
+                total_price: totalPrice,
+
+                country_code: countryCode,
+                currency_code: currencyCode,
+                currency_symbol: currencySymbol,
+
+                regional_pricing_rule_id: pricing?.regionalPricingRuleId || null,
+                pricing_plan_used: pricing?.pricingPlanUsed || (bookingData as any).pricing_plan || 'starter',
+                base_fare_used: Number(pricing?.baseFareUsed || 0),
+                price_per_km_used: Number(pricing?.pricePerKmUsed || 0),
+                commission_rate_used: Number(pricing?.commissionRateUsed || 15),
+                platform_fee: Number(pricing?.platformFee || 0),
+                driver_payout: Number(pricing?.driverPayout || 0),
+                tax_amount: Number(pricing?.taxAmount || 0),
+                surge_multiplier: Number(pricing?.surgeMultiplier || 1),
+
                 scheduled_time: bookingData.scheduled_time || new Date().toISOString(),
                 tenant_id: this.auth.tenantId(),
-                currency_code: this.auth.profileService.profile()?.currency_code || this.config.currencyCode,
-                country_code: this.auth.profileService.profile()?.country_code || this.config.currentCountry().code,
-                metadata: bookingData.metadata
+                metadata: {
+                    ...(bookingData.metadata || {}),
+                    pricing_source: pricing?.pricingSource || pricing?.source || 'unknown',
+                    distance_km: this.getDistanceKm(bookingData)
+                }
             })
             .select()
             .single();
@@ -89,7 +125,6 @@ export class BookingService {
         if (bError) throw bError;
 
         const detailsTable = this.getDetailsTable(serviceSlug);
-
         let detailsInsert: Record<string, unknown>;
 
         switch (serviceSlug) {
@@ -116,12 +151,6 @@ export class BookingService {
                 break;
         }
 
-        console.log('[BookingService] details insert payload', {
-            serviceSlug,
-            detailsTable,
-            detailsInsert
-        });
-
         const { error: dError } = await this.supabase
             .from(detailsTable)
             .insert(detailsInsert);
@@ -134,6 +163,107 @@ export class BookingService {
         const booking = this.mapJobToBooking(job);
         this.activeBooking.set(booking);
         return booking;
+    }
+
+    private async calculateRegionalPrice(
+        bookingData: Partial<Booking>,
+        serviceSlug: ServiceTypeEnum
+    ): Promise<any> {
+        const pickupLat = Number(bookingData.pickup_lat || 0);
+        const pickupLng = Number(bookingData.pickup_lng || 0);
+        const distanceKm = this.getDistanceKm(bookingData);
+
+        const countryCode = String((bookingData as any).country_code || this.getCountryCode() || 'GB').toUpperCase();
+        const currencyCode = String((bookingData as any).currency_code || this.getCurrencyCode() || this.currencyFromCountry(countryCode)).toUpperCase();
+
+        const url = this.apiUrlService.getApiUrl('/api/payment/calculate-price');
+
+        return await firstValueFrom(
+            this.http.post<any>(url, {
+                lat: pickupLat,
+                lng: pickupLng,
+                basePrice: bookingData.total_price || bookingData.price || 0,
+                distanceKm,
+                serviceSlug,
+                serviceType: serviceSlug,
+                countryCode,
+                currencyCode,
+                pricingPlan: (bookingData as any).pricing_plan || 'starter'
+            })
+        );
+    }
+
+    private getDistanceKm(bookingData: Partial<Booking>): number {
+        const distance = Number(
+            (bookingData as any).distance_km ||
+            (bookingData as any).estimated_distance_km ||
+            (bookingData as any).distance ||
+            0
+        );
+
+        return Number.isFinite(distance) ? distance : 0;
+    }
+
+    private getCountryCode(): string {
+        return String(
+            this.auth.profileService.profile()?.country_code ||
+            this.config.currentCountry()?.code ||
+            'GB'
+        ).toUpperCase();
+    }
+
+    private getCurrencyCode(): string {
+        return String(
+            this.auth.profileService.profile()?.currency_code ||
+            this.config.currencyCode ||
+            this.currencyFromCountry(this.getCountryCode()) ||
+            'GBP'
+        ).toUpperCase();
+    }
+
+    private getCurrencySymbol(currencyCode?: string | null): string {
+        const currentCountry = this.config.currentCountry();
+
+        if (currentCountry?.currencySymbol && currentCountry?.currency === currencyCode) {
+            return currentCountry.currencySymbol;
+        }
+
+        return this.symbolFromCurrency(currencyCode || this.getCurrencyCode());
+    }
+
+    private currencyFromCountry(countryCode?: string | null): string {
+        const map: Record<string, string> = {
+            GB: 'GBP',
+            US: 'USD',
+            NG: 'NGN',
+            AE: 'AED',
+            CA: 'CAD',
+            AU: 'AUD',
+            IE: 'EUR',
+            FR: 'EUR',
+            DE: 'EUR',
+            ES: 'EUR',
+            IT: 'EUR',
+            NL: 'EUR',
+            BE: 'EUR',
+            PT: 'EUR'
+        };
+
+        return map[String(countryCode || 'GB').toUpperCase()] || 'GBP';
+    }
+
+    private symbolFromCurrency(currencyCode?: string | null): string {
+        const map: Record<string, string> = {
+            GBP: '£',
+            USD: '$',
+            EUR: '€',
+            NGN: '₦',
+            AED: 'د.إ',
+            CAD: '$',
+            AUD: '$'
+        };
+
+        return map[String(currencyCode || 'GBP').toUpperCase()] || '£';
     }
 
     private isShoppingErrandMode(mode: unknown): boolean {
@@ -258,6 +388,7 @@ export class BookingService {
                     .select('status')
                     .eq('id', bookingId)
                     .single();
+
                 if (error) throw error;
                 statusToValidate = data.status as BookingStatus;
             }
@@ -267,12 +398,13 @@ export class BookingService {
             throw new Error(`Invalid status transition from ${statusToValidate || 'unknown'} to ${nextStatus}`);
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updatePayload: any = { status: nextStatus };
 
         if (additionalData.driver_id) updatePayload.driver_id = additionalData.driver_id;
+
         if (additionalData.total_price !== undefined && additionalData.total_price !== null) {
             updatePayload.price = Number(additionalData.total_price) || 0;
+            updatePayload.total_price = Number(additionalData.total_price) || 0;
         }
 
         const query = this.supabase
@@ -290,6 +422,7 @@ export class BookingService {
             if (error.code === 'PGRST116') {
                 throw new Error('Job status has changed or job not found. Please refresh.');
             }
+
             throw error;
         }
 
@@ -332,36 +465,37 @@ export class BookingService {
         };
 
         const msg = statusMessages[booking.status];
-        if (msg) {
+
+        if (!msg) return;
+
+        await this.notificationService.notify(
+            booking.customer_id,
+            msg.title,
+            msg.body,
+            'booking',
+            { bookingId: booking.id }
+        );
+
+        if (booking.driver_id) {
             await this.notificationService.notify(
-                booking.customer_id,
+                booking.driver_id,
                 msg.title,
                 msg.body,
                 'booking',
                 { bookingId: booking.id }
             );
+        }
 
-            if (booking.driver_id) {
-                await this.notificationService.notify(
-                    booking.driver_id,
-                    msg.title,
-                    msg.body,
-                    'booking',
-                    { bookingId: booking.id }
-                );
-            }
-
-            if (booking.status === 'completed') {
-                this.getBooking(booking.id)
-                    .then(fullBooking => {
-                        this.emailService.sendJobReceipt(fullBooking).catch(e => {
-                            console.error('[BookingService] Failed to send completion email:', e);
-                        });
-                    })
-                    .catch(e => {
-                        console.error('[BookingService] Failed to fetch booking for email:', e);
+        if (booking.status === 'completed') {
+            this.getBooking(booking.id)
+                .then(fullBooking => {
+                    this.emailService.sendJobReceipt(fullBooking).catch(e => {
+                        console.error('[BookingService] Failed to send completion email:', e);
                     });
-            }
+                })
+                .catch(e => {
+                    console.error('[BookingService] Failed to fetch booking for email:', e);
+                });
         }
     }
 
@@ -380,6 +514,7 @@ export class BookingService {
                 .select('*')
                 .eq('id', data.customer_id)
                 .single();
+
             data.customer = customer;
         }
 
@@ -389,13 +524,13 @@ export class BookingService {
                 .select('*')
                 .eq('id', data.driver_id)
                 .single();
+
             data.driver = driver;
         }
 
         return this.mapJobToBooking(data);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     public mapJobToBooking(job: any): Booking {
         return {
             ...job,
@@ -403,10 +538,10 @@ export class BookingService {
             customer_id: job.customer_id,
             driver_id: job.driver_id,
             service_type_id: job.service_type_id,
-            service_slug: job.service_type?.slug,
+            service_slug: job.service_type?.slug || job.service_slug,
             status: job.status as BookingStatus,
             price: job.price,
-            total_price: job.price,
+            total_price: job.total_price || job.price,
             pickup_address: job.pickup_address,
             pickup_lat: job.pickup_lat,
             pickup_lng: job.pickup_lng,
@@ -418,16 +553,30 @@ export class BookingService {
             driver: job.driver,
             customer: job.customer,
             errand_details: job.errand_details,
-            errand_funding: job.errand_funding
-        };
+            errand_funding: job.errand_funding,
+
+            country_code: job.country_code,
+            currency_code: job.currency_code,
+            currency_symbol: job.currency_symbol,
+            regional_pricing_rule_id: job.regional_pricing_rule_id,
+            pricing_plan_used: job.pricing_plan_used,
+            base_fare_used: job.base_fare_used,
+            price_per_km_used: job.price_per_km_used,
+            commission_rate_used: job.commission_rate_used,
+            platform_fee: job.platform_fee,
+            driver_payout: job.driver_payout,
+            tax_amount: job.tax_amount,
+            surge_multiplier: job.surge_multiplier
+        } as Booking;
     }
 
     async confirmJobPayment(jobId: string, paymentIntentId: string) {
         const isWallet = paymentIntentId === 'wallet_funded';
+
         const { data, error } = await this.supabase
             .from('jobs')
             .update({
-                payment_status: isWallet ? 'wallet_funded' : 'paid',
+                payment_status: isWallet ? 'wallet_funded' : 'authorized',
                 payment_intent_id: isWallet ? null : paymentIntentId,
                 status: 'searching'
             })
@@ -442,22 +591,24 @@ export class BookingService {
             'searching',
             isWallet
                 ? 'Wallet funds reserved, job is now dispatchable'
-                : 'Payment confirmed, job is now dispatchable'
+                : 'Payment authorized, job is now dispatchable'
         );
 
         await this.eventService.logEvent(
             jobId,
             'payment_succeeded',
-            isWallet ? 'Payment confirmed via Wallet' : 'Payment confirmed via Stripe'
+            isWallet ? 'Payment confirmed via Wallet' : 'Payment authorized via Stripe'
         );
 
         const booking = this.mapJobToBooking(data);
         this.activeBooking.set(booking);
+
         return booking;
     }
 
     private async logStatusHistory(bookingId: string, status: BookingStatus, notes?: string) {
         const user = this.auth.currentUser();
+
         await this.supabase
             .from('booking_status_history')
             .insert({
@@ -470,6 +621,7 @@ export class BookingService {
 
     async getBookingDetails(bookingId: string, serviceCode: ServiceTypeEnum): Promise<unknown> {
         const table = this.getDetailsTable(serviceCode);
+
         const { data, error } = await this.supabase
             .from(table)
             .select('*')
@@ -491,6 +643,7 @@ export class BookingService {
             .order('created_at', { ascending: false });
 
         if (error) throw error;
+
         const bookings = (data || []).map(job => this.mapJobToBooking(job));
         this.bookingHistory.set(bookings);
     }
@@ -508,58 +661,51 @@ export class BookingService {
         if (error) throw error;
     }
 
-   async cancelBooking(bookingId: string, reason: string) {
-    try {
-        const response = await firstValueFrom(
-            this.http.post<{
-                data?: Booking;
-                message?: string;
-            }>(`${environment.apiUrl}/booking/cancel`, {
-                jobId: bookingId,
-                reason
-            })
-        );
+    async cancelBooking(bookingId: string, reason: string) {
+        try {
+            const response = await firstValueFrom(
+                this.http.post<{
+                    data?: Booking;
+                    message?: string;
+                }>(this.apiUrlService.getApiUrl('/api/booking/cancel'), {
+                    jobId: bookingId,
+                    reason
+                })
+            );
 
-        if (response?.data) {
-            this.activeBooking.set(response.data);
-        } else {
-            try {
-                const refreshedBooking = await this.getBooking(bookingId);
-                this.activeBooking.set(refreshedBooking);
-            } catch (refreshError) {
-                console.warn('[BookingService] Booking cancelled, but failed to refresh booking state.', refreshError);
+            if (response?.data) {
+                this.activeBooking.set(response.data);
+            } else {
+                try {
+                    const refreshedBooking = await this.getBooking(bookingId);
+                    this.activeBooking.set(refreshedBooking);
+                } catch (refreshError) {
+                    console.warn('[BookingService] Booking cancelled, but failed to refresh booking state.', refreshError);
+                }
             }
+
+            await this.eventService.logEvent(
+                bookingId,
+                'job_cancelled',
+                `Cancellation reason: ${reason}`
+            );
+
+            return response;
+        } catch (error: unknown) {
+            console.error('[BookingService] Failed to cancel booking via API', error);
+
+            let message = 'Unable to cancel booking right now. Please try again.';
+
+            if (typeof error === 'object' && error !== null && 'error' in error) {
+                const apiError = error as { error?: { message?: string; error?: string } };
+                message = apiError.error?.message || apiError.error?.error || message;
+            } else if (error instanceof Error && error.message) {
+                message = error.message;
+            }
+
+            throw new Error(message);
         }
-
-        await this.eventService.logEvent(
-            bookingId,
-            'job_cancelled',
-            `Cancellation reason: ${reason}`
-        );
-
-        return response;
-    } catch (error: unknown) {
-        console.error('[BookingService] Failed to cancel booking via API', error);
-
-        let message = 'Unable to cancel booking right now. Please try again.';
-
-        if (
-            typeof error === 'object' &&
-            error !== null &&
-            'error' in error
-        ) {
-            const apiError = error as { error?: { message?: string; error?: string } };
-            message =
-                apiError.error?.message ||
-                apiError.error?.error ||
-                message;
-        } else if (error instanceof Error && error.message) {
-            message = error.message;
-        }
-
-        throw new Error(message);
     }
-}
 
     async getErrandFunding(bookingId: string): Promise<ErrandFunding | null> {
         const { data, error } = await this.supabase
@@ -572,6 +718,7 @@ export class BookingService {
             console.error('[BookingService] Error fetching errand funding:', error);
             throw error;
         }
+
         return data as ErrandFunding;
     }
 

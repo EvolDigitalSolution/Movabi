@@ -1,21 +1,37 @@
 ﻿export type BookingStatus =
-    | 'pending'      // Initial state for some flows
-    | 'requested'    // Initial state
-    | 'searching'    // Looking for drivers
-    | 'assigned'     // Driver found but not yet accepted
-    | 'accepted'     // Driver accepted
-    | 'arrived'      // Driver at pickup
+    | 'pending'
+    | 'requested'
+    | 'searching'
+    | 'assigned'
+    | 'accepted'
+    | 'arrived'
     | 'heading_to_pickup'
     | 'arrived_at_store'
     | 'shopping_in_progress'
     | 'collected'
     | 'en_route_to_customer'
     | 'delivered'
-    | 'in_progress'  // Journey started
-    | 'completed'    // Journey finished
-    | 'cancelled'    // Cancelled by user or driver
-    | 'no_driver_found' // Search timeout
-    | 'settled';     // Final state for funded errands
+    | 'in_progress'
+    | 'completed'
+    | 'cancelled'
+    | 'no_driver_found'
+    | 'settled';
+
+export type PaymentStatus =
+    | 'pending'
+    | 'authorized'
+    | 'requires_capture'
+    | 'capture_pending'
+    | 'paid'
+    | 'captured'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+    | 'canceled'
+    | 'refunded'
+    | 'wallet_funded'
+    | 'requires_review'
+    | 'requires_refund';
 
 export type DriverStatus = 'offline' | 'online' | 'busy';
 
@@ -25,6 +41,8 @@ export enum ServiceTypeEnum {
     DELIVERY = 'delivery',
     VAN = 'van-moving'
 }
+
+export type PricingPlan = 'starter' | 'pro';
 
 export interface Vehicle {
     id: string;
@@ -36,7 +54,7 @@ export interface Vehicle {
     color: string;
     is_verified: boolean;
     type: 'car' | 'van' | 'motorcycle';
-    capacity?: string; // e.g., "4 passengers", "2 tons"
+    capacity?: string;
 }
 
 export interface DriverProfile extends Profile {
@@ -46,14 +64,13 @@ export interface DriverProfile extends Profile {
     is_verified: boolean;
     subscription_status: 'active' | 'inactive' | 'expired';
     subscription_expires_at?: string;
-    pricing_plan: 'starter' | 'pro';
+    pricing_plan: PricingPlan;
     commission_rate: number;
-    // Performance Metrics (Additive)
     completed_jobs?: number;
     cancelled_jobs?: number;
-    acceptance_rate?: number; // percentage
-    completion_rate?: number; // percentage
-    on_time_performance?: number; // percentage
+    acceptance_rate?: number;
+    completion_rate?: number;
+    on_time_performance?: number;
     total_earnings?: number;
 }
 
@@ -71,12 +88,16 @@ export interface DriverSubscription {
 export interface SubscriptionPlan {
     id: string;
     plan_code: string;
+    name?: string;
+    display_name?: string;
+    description?: string;
     country_code: string;
     currency_code: string;
-    stripe_price_id: string;
-    amount: number;
+    currency_symbol?: string;
+    stripe_price_id?: string | null;
+    amount?: number;
+    price?: number;
     interval: string;
-    display_name: string;
     features: string[];
     is_active: boolean;
     created_at: string;
@@ -95,6 +116,7 @@ export interface Subscription {
     current_period_end: string | null;
     cancel_at_period_end: boolean;
     currency_code: string;
+    currency_symbol?: string | null;
     country_code: string;
     billing_country_code?: string | null;
     billing_currency_code?: string | null;
@@ -154,38 +176,65 @@ export interface Job {
     tenant_id: string;
     customer_id: string;
     driver_id: string | null;
+
     pickup_address: string;
     pickup_lat?: number;
     pickup_lng?: number;
     dropoff_address: string;
     dropoff_lat?: number;
     dropoff_lng?: number;
+
     price: number | null;
-    commission_fee?: number;
-    commission_rate_used?: number;
+    total_price?: number | null;
+
+    country_code: string;
+    currency_code: string;
+    currency_symbol?: string | null;
+
+    regional_pricing_rule_id?: string | null;
+    pricing_plan_used?: PricingPlan | string;
     base_fare?: number;
+    base_fare_used?: number;
     service_fee?: number;
     platform_fee?: number;
     driver_payout?: number;
-    pricing_plan_used?: 'starter' | 'pro';
-    currency_code: string;
-    country_code: string;
+    commission_fee?: number;
+    commission_rate_used?: number;
+    price_per_km_used?: number;
+    tax_amount?: number;
+    surge_multiplier?: number;
+
     estimated_distance?: number;
+    estimated_distance_km?: number;
+    distance_km?: number;
+    distance_meters?: number;
     estimated_duration?: number;
+    duration_seconds?: number;
     estimated_price?: number;
+
     status: JobStatus;
-    payment_status?: 'pending' | 'paid' | 'failed';
+    payment_status?: PaymentStatus;
     payment_intent_id?: string;
+    payment_method?: string | null;
+
     scheduled_time: string;
     created_at: string;
     updated_at: string;
+    completed_at?: string | null;
+
     customer?: Profile;
     driver?: Profile;
-    total_price?: number;
     service_type?: ServiceType;
-    service_slug?: ServiceTypeEnum;
+    service_type_id?: string;
+    service_slug?: ServiceTypeEnum | string;
     city_id?: string;
     metadata?: Record<string, unknown>;
+
+    cancellation_fee?: number;
+    cancellation_fee_charged?: number;
+    refund_id?: string | null;
+    admin_review_reason?: string | null;
+
     errand_details?: ErrandDetails;
     errand_funding?: ErrandFunding;
 }
@@ -194,6 +243,7 @@ export interface City {
     id: string;
     name: string;
     country: string;
+    country_code?: string;
     lat: number;
     lng: number;
     radius_km: number;
@@ -256,6 +306,9 @@ export interface JobEstimate {
     pickup_lng?: number;
     dropoff_lat?: number;
     dropoff_lng?: number;
+    country_code?: string;
+    currency_code?: string;
+    currency_symbol?: string;
 }
 
 export interface Earning {
@@ -265,8 +318,9 @@ export interface Earning {
     amount: number;
     commission_fee: number;
     commission_rate_used: number;
-    pricing_plan_used: 'starter' | 'pro';
+    pricing_plan_used: PricingPlan | string;
     currency_code: string;
+    currency_symbol?: string;
     country_code: string;
     created_at: string;
 }
@@ -276,6 +330,7 @@ export type AccountStatus = 'active' | 'suspended' | 'banned' | 'disabled';
 export type VerificationStatus =
     | 'draft'
     | 'under_review'
+    | 'ready_for_admin_review'
     | 'action_required'
     | 'approved';
 
@@ -283,12 +338,13 @@ export interface Profile {
     id: string;
     first_name: string;
     last_name: string;
+    full_name?: string;
     email: string;
     phone?: string;
     avatar_url?: string;
     role: 'customer' | 'driver' | 'admin';
     tenant_id: string;
-    pricing_plan: 'starter' | 'pro';
+    pricing_plan: PricingPlan;
     commission_rate: number;
     currency_code: string;
     country_code: string;
@@ -303,12 +359,16 @@ export interface Profile {
     moderated_at?: string;
     moderated_by?: string;
     created_at: string;
-    stripe_connect_status?: 'not_started' | 'pending' | 'restricted' | 'enabled';
+    updated_at?: string;
+    stripe_connect_status?: 'not_started' | 'pending' | 'restricted' | 'enabled' | 'connected';
     driver_license_url?: string | null;
     insurance_url?: string | null;
     verification_status?: VerificationStatus;
     verification_notes?: string | null;
     verification_items?: string[] | null;
+    verification_blockers?: string[] | string | null;
+    testing_approval_override?: boolean | null;
+    manual_verification_notes?: string | null;
     verified_at?: string | null;
 }
 
@@ -324,11 +384,13 @@ export interface DriverAccount {
     created_at: string;
     updated_at: string;
 }
+
 export interface Wallet {
     user_id: string;
     available_balance: number;
     reserved_balance: number;
     currency_code: string;
+    currency_symbol?: string;
     updated_at: string;
 }
 
@@ -351,7 +413,7 @@ export interface ServiceType {
     slug: ServiceTypeEnum;
     description?: string;
     base_price: number;
-    price_per_km: number;
+    price_per_km?: number;
     icon: string;
     is_active: boolean;
     created_at?: string;
@@ -361,41 +423,66 @@ export interface ServiceType {
 export interface Booking {
     id: string;
     customer_id: string;
-    driver_id?: string;
+    driver_id?: string | null;
     service_type_id: string;
-    service_slug: ServiceTypeEnum;
+    service_slug: ServiceTypeEnum | string;
     status: BookingStatus;
-    payment_status?: 'pending' | 'paid' | 'failed';
+    payment_status?: PaymentStatus;
+
     price: number;
     total_price: number;
+
     tenant_id: string;
-    currency_code: string;
     country_code: string;
-    scheduled_time: string;
-    updated_at: string;
-    commission_fee?: number;
-    commission_rate_used?: number;
+    currency_code: string;
+    currency_symbol?: string | null;
+
+    regional_pricing_rule_id?: string | null;
+    pricing_plan?: PricingPlan | string;
+    pricing_plan_used?: PricingPlan | string;
     base_fare?: number;
+    base_fare_used?: number;
     service_fee?: number;
     platform_fee?: number;
     driver_payout?: number;
-    pricing_plan_used?: 'starter' | 'pro';
+    commission_fee?: number;
+    commission_rate_used?: number;
+    price_per_km_used?: number;
+    tax_amount?: number;
+    surge_multiplier?: number;
+
+    scheduled_time: string;
+    updated_at: string;
+    created_at: string;
+    completed_at?: string | null;
+
     pickup_address: string;
     pickup_lat: number;
     pickup_lng: number;
     dropoff_address?: string;
     dropoff_lat?: number;
     dropoff_lng?: number;
-    created_at: string;
-    completed_at?: string;
+
     estimated_distance?: number;
+    estimated_distance_km?: number;
+    distance_km?: number;
     estimated_duration?: number;
     distance_meters?: number;
     duration_seconds?: number;
+
+    payment_intent_id?: string | null;
+    payment_method?: string | null;
+
     service_type?: ServiceType;
     driver?: Profile;
     customer?: Profile;
     metadata?: Record<string, unknown>;
+
+    cancellation_fee?: number;
+    cancellation_fee_charged?: number;
+    refund_id?: string | null;
+    admin_review_reason?: string | null;
+
     errand_details?: ErrandDetails;
     errand_funding?: ErrandFunding;
 }

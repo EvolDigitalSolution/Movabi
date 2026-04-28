@@ -1524,6 +1524,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const itemBudget = this.walletBudgetRequired();
             const cardCharge = this.cardChargeRequired();
 
+            const countryCode = this.config.currentCountry()?.code || 'GB';
+            const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
+            const currencySymbol = this.config.currentCountry()?.currencySymbol || this.getCurrencySymbol(currencyCode);
+
             const bookingData = {
                 pickup_address: formVal.pickup_address,
                 pickup_lat: this.pickupLocation.latitude || 0,
@@ -1531,11 +1535,27 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 dropoff_address: formVal.dropoff_address || 'Errand Delivery',
                 dropoff_lat: this.dropoffLocation.latitude || 0,
                 dropoff_lng: this.dropoffLocation.longitude || 0,
+
                 service_type_id: this.serviceType()?.id,
                 total_price: cardCharge,
+
+                distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
+                estimated_distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
                 distance_meters: this.routeResult()?.distanceMeters || 0,
                 duration_seconds: this.routeResult()?.durationSeconds || 0,
-                metadata: this.getMetadataPayload(formVal)
+
+                country_code: countryCode,
+                currency_code: currencyCode,
+                currency_symbol: currencySymbol,
+                pricing_plan: 'starter',
+
+                metadata: {
+                    ...(this.getMetadataPayload(formVal) || {}),
+                    country_code: countryCode,
+                    currency_code: currencyCode,
+                    currency_symbol: currencySymbol,
+                    pricing_plan: 'starter'
+                }
             };
 
             const details = this.getDetailsPayload(formVal);
@@ -1557,7 +1577,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const { clientSecret } = await this.paymentService.createPaymentIntent(
                 booking.id,
                 cardCharge,
-                this.config.currencyCode,
+                currencyCode,
                 this.auth.tenantId() || '',
                 this.pricingService.surgeMultiplier()
             );
@@ -1704,12 +1724,28 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
+    private getCurrencySymbol(currencyCode?: string | null): string {
+        const map: Record<string, string> = {
+            GBP: '£',
+            USD: '$',
+            EUR: '€',
+            NGN: '₦',
+            AED: 'د.إ',
+            CAD: '$',
+            AUD: '$'
+        };
+
+        return map[String(currencyCode || 'GBP').toUpperCase()] || '£';
+    }
+
     private getServiceSlug(): ServiceTypeSlug {
         switch (this.type) {
             case ServiceTypeEnum.RIDE:
                 return 'ride';
             case ServiceTypeEnum.ERRAND:
                 return 'errand';
+            case ServiceTypeEnum.DELIVERY:
+                return 'delivery';
             case ServiceTypeEnum.VAN:
                 return 'van-moving';
             default:

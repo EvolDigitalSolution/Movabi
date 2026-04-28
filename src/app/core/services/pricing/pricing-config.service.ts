@@ -13,32 +13,43 @@ export class PricingConfigService {
   private isLoaded = false;
 
   // Fallback defaults as per spec
-  private readonly DEFAULT_CONFIGS: Record<ServiceTypeSlug, FarePricingConfig> = {
-    ride: {
-      baseFare: 2.5,
-      distanceRatePerKm: 0.95,
-      timeRatePerMinute: 0.15,
-      serviceFee: 0.75,
-      minimumFare: 5.0,
-      label: 'Estimated ride fare'
-    },
-    errand: {
-      baseFare: 5.0,
-      distanceRatePerKm: 0.9,
-      timeRatePerMinute: 0.28,
-      serviceFee: 1.5,
-      minimumFare: 8.0,
-      label: 'Estimated errand fee'
-    },
-    'van-moving': {
-      baseFare: 18.0,
-      distanceRatePerKm: 1.8,
-      timeRatePerMinute: 0.35,
-      serviceFee: 3.5,
-      minimumFare: 25.0,
-      label: 'Estimated moving fare'
-    }
-  };
+    private readonly DEFAULT_CONFIGS: Record<ServiceTypeSlug, FarePricingConfig> = {
+        ride: {
+            baseFare: 5,
+            distanceRatePerKm: 1.5,
+            timeRatePerMinute: 0.2,
+            serviceFee: 1,
+            minimumFare: 6,
+            label: 'Ride'
+        },
+
+        delivery: {
+            baseFare: 7.5,
+            distanceRatePerKm: 1.2,
+            timeRatePerMinute: 0.15,
+            serviceFee: 1.0,
+            minimumFare: 8,
+            label: 'Delivery'
+        },
+
+        errand: {
+            baseFare: 10,
+            distanceRatePerKm: 1.5,
+            timeRatePerMinute: 0.2,
+            serviceFee: 1,
+            minimumFare: 12,
+            label: 'Errand'
+        },
+
+        'van-moving': {
+            baseFare: 45,
+            distanceRatePerKm: 2.5,
+            timeRatePerMinute: 0.4,
+            serviceFee: 3,
+            minimumFare: 50,
+            label: 'Van Moving'
+        }
+    };
 
   constructor() {
     // Initialize with defaults immediately

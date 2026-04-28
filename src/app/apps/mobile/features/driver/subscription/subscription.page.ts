@@ -121,7 +121,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
                   <div class="mb-10">
                     <h4 class="text-2xl font-display font-bold text-slate-900 mb-2">{{ plan.display_name }}</h4>
                     <div class="flex items-baseline">
-                      <span class="text-5xl font-display font-bold text-slate-900">{{ formatPrice(plan.amount) }}</span>
+                      <span class="text-5xl font-display font-bold text-slate-900">{{ formatPrice(plan.amount || plan.price || 0) }}</span>
                       <span class="text-slate-400 font-medium ml-2">/{{ plan.interval }}</span>
                     </div>
                   </div>
@@ -137,7 +137,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
                     }
                   </div>
 
-                  <app-button variant="primary" size="lg" class="w-full h-16 rounded-2xl shadow-xl shadow-blue-600/20" (click)="subscribe(plan.stripe_price_id)">
+                  <app-button variant="primary" size="lg" class="w-full h-16 rounded-2xl shadow-xl shadow-blue-600/20" (click)="subscribe(plan.stripe_price_id || '')">
                     {{ activeSub()?.stripe_price_id === plan.stripe_price_id ? 'Manage Subscription' : 'Subscribe Now' }}
                   </app-button>
                 </div>
@@ -211,7 +211,18 @@ export class SubscriptionPage implements OnInit {
     await modal.present();
   }
 
-  async subscribe(priceId: string) {
+    async subscribe(priceId: string) {
+
+        if (!priceId) {
+            const toast = await this.toastCtrl.create({
+                message: 'This plan is missing a Stripe Price ID.',
+                duration: 2500,
+                color: 'warning'
+            });
+            await toast.present();
+            return;
+        }
+
     if (this.activeSub()?.stripe_price_id === priceId) {
       await this.manageSubscription();
       return;
