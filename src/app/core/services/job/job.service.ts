@@ -163,7 +163,9 @@ export class JobService {
     return await response.json();
   }
 
-    subscribeToJobs(callback: () => void): RealtimeChannel {
+    subscribeToJobs(
+        callback: (payload: { new?: Job; old?: Job; eventType?: string }) => void
+    ): RealtimeChannel {
         return this.supabase
             .channel('jobs-changes')
             .on(
@@ -173,7 +175,12 @@ export class JobService {
                     schema: 'public',
                     table: 'jobs'
                 },
-                () => callback()
+                payload =>
+                    callback(payload as {
+                        new?: Job;
+                        old?: Job;
+                        eventType?: string;
+                    })
             )
             .subscribe();
     }
