@@ -15,6 +15,6 @@ RUN npm run build -- --configuration production
 FROM nginx:stable-alpine
 
 # Copy built app
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist/admin/browser /usr/share/nginx/html
 
 EXPOSE 80
