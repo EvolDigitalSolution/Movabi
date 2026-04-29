@@ -39,7 +39,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
             basePrice: basePrice !== undefined ? Number(basePrice) : undefined,
             distanceKm: distanceKm !== undefined ? Number(distanceKm) : undefined,
             serviceSlug: serviceSlug || serviceType || 'ride',
-            countryCode: countryCode || city?.country_code || 'GB',
+            countryCode: countryCode || (city as any)?.country_code || (city as any)?.country || 'GB',
             currencyCode,
             pricingPlan: pricingPlan || 'starter',
             city

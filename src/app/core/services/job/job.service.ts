@@ -163,6 +163,7 @@ export class JobService {
     return await response.json();
   }
 
+
     subscribeToJobs(
         callback: (payload: { new?: Job; old?: Job; eventType?: string }) => void
     ): RealtimeChannel {
@@ -184,6 +185,7 @@ export class JobService {
             )
             .subscribe();
     }
+
 
   async retryDispatch(jobId: string, tenantId: string) {
     const { data: job } = await this.supabase
