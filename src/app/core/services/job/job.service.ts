@@ -177,7 +177,7 @@ export class JobService {
                     table: 'jobs'
                 },
                 payload =>
-                    callback(payload as {
+                    callback(payload as unknown as {
                         new?: Job;
                         old?: Job;
                         eventType?: string;
