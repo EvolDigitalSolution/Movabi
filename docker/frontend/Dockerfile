@@ -16,5 +16,6 @@ FROM nginx:stable-alpine
 
 # Copy built app
 COPY --from=builder /app/dist/admin/browser /usr/share/nginx/html
+COPY docker/frontend/default.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
