@@ -7,13 +7,18 @@ import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent }
 import { AuthService } from '../../../../core/services/auth/auth.service';
 
 type AdminDriver = DriverProfile & {
-    vehicles: Vehicle[];
+    vehicles?: Vehicle[];
+    vehicle?: Vehicle | null;
+    full_name?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
     email?: string | null;
     council_license_number?: string | null;
     council_name?: string | null;
     taxi_badge_number?: string | null;
     taxi_license_expiry?: string | null;
     stripe_connect_status?: string | null;
+    stripe_account_id?: string | null;
     driver_license_url?: string | null;
     insurance_url?: string | null;
     verification_blockers?: string[] | string | null;
@@ -28,7 +33,14 @@ type AdminDriver = DriverProfile & {
 @Component({
     selector: 'app-driver-list',
     standalone: true,
-    imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent],
+    imports: [
+        CommonModule,
+        IonicModule,
+        BadgeComponent,
+        ButtonComponent,
+        RatingComponent,
+        EmptyStateComponent
+    ],
     template: `
     <div class="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
       <div class="p-6 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
@@ -63,7 +75,7 @@ type AdminDriver = DriverProfile & {
               placeholder="Search drivers..."
               (input)="onSearch($event)"
               class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-600 focus:outline-none"
-            >
+            />
           </div>
 
           <select (change)="onPageSizeChange($event)" class="filter-select sm:w-32">
@@ -96,13 +108,16 @@ type AdminDriver = DriverProfile & {
                     <div class="avatar bg-amber-50 text-amber-600 border-amber-100">
                       {{ getInitial(driver) }}
                     </div>
+
                     <div class="min-w-0">
                       <h4 class="text-sm font-semibold text-slate-900 leading-tight truncate">
                         {{ getDriverName(driver) }}
                       </h4>
+
                       <p class="text-xs text-slate-500 font-medium mt-1 truncate">
-                        {{ driver.email || driver.phone || 'No contact' }}
+                        {{ getDriverContact(driver) }}
                       </p>
+
                       @if (driver.testing_approval_override) {
                         <span class="inline-flex mt-2 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">
                           Manually Approved
@@ -114,13 +129,16 @@ type AdminDriver = DriverProfile & {
 
                 <td class="px-4 py-4">
                   <div class="space-y-1 min-w-[165px]">
-                    <p class="text-xs font-semibold leading-tight" [class.text-slate-800]="driver.council_name" [class.text-rose-600]="!driver.council_name">
+                    <p class="text-xs font-semibold leading-tight"
+                      [class.text-slate-800]="driver.council_name"
+                      [class.text-rose-600]="!driver.council_name">
                       {{ driver.council_name || 'Council missing' }}
                     </p>
+
                     <p class="mini-line">Licence: {{ driver.council_license_number || 'Missing' }}</p>
                     <p class="mini-line">Badge: {{ driver.taxi_badge_number || 'Missing' }}</p>
                     <p class="mini-line">
-                      Expiry: {{ driver.taxi_license_expiry ? (driver.taxi_license_expiry | date:'mediumDate') : 'Missing' }}
+                      Expiry: {{ formatDate(driver.taxi_license_expiry) }}
                     </p>
                   </div>
                 </td>
@@ -128,11 +146,12 @@ type AdminDriver = DriverProfile & {
                 <td class="px-4 py-4">
                   @if (getVehicle(driver)) {
                     <div class="text-sm font-semibold text-slate-900 leading-tight min-w-[145px]">
-                      {{ getVehicle(driver)?.make || 'Unknown' }} {{ getVehicle(driver)?.model || '' }}
+                      {{ getVehicleMakeModel(driver) }}
+
                       <div class="flex gap-2 mt-1">
-                        <span class="mini-line">{{ getVehicle(driver)?.license_plate || 'No plate' }}</span>
+                        <span class="mini-line">{{ getVehiclePlate(driver) }}</span>
                         <span class="mini-line">•</span>
-                        <span class="mini-line">{{ getVehicle(driver)?.color || 'No colour' }}</span>
+                        <span class="mini-line">{{ getVehicleColor(driver) }}</span>
                       </div>
                     </div>
                   } @else {
@@ -142,13 +161,21 @@ type AdminDriver = DriverProfile & {
 
                 <td class="px-4 py-4">
                   <div class="flex flex-col gap-2 min-w-[125px]">
-                    <button type="button" (click)="openDocument(driver.driver_license_url, 'Driver licence')" class="doc-pill"
-                      [class.doc-ok]="driver.driver_license_url" [class.doc-missing]="!driver.driver_license_url">
+                    <button
+                      type="button"
+                      (click)="openDocument(driver.driver_license_url, 'Driver licence')"
+                      class="doc-pill"
+                      [class.doc-ok]="driver.driver_license_url"
+                      [class.doc-missing]="!driver.driver_license_url">
                       {{ driver.driver_license_url ? 'Licence' : 'No licence' }}
                     </button>
 
-                    <button type="button" (click)="openDocument(driver.insurance_url, 'Insurance')" class="doc-pill"
-                      [class.doc-ok]="driver.insurance_url" [class.doc-missing]="!driver.insurance_url">
+                    <button
+                      type="button"
+                      (click)="openDocument(driver.insurance_url, 'Insurance')"
+                      class="doc-pill"
+                      [class.doc-ok]="driver.insurance_url"
+                      [class.doc-missing]="!driver.insurance_url">
                       {{ driver.insurance_url ? 'Insurance' : 'No insurance' }}
                     </button>
                   </div>
@@ -165,6 +192,7 @@ type AdminDriver = DriverProfile & {
                     <app-badge [variant]="getVerificationVariant(driver)">
                       {{ getVerificationText(driver) }}
                     </app-badge>
+
                     <span class="text-[11px] text-slate-500 font-medium">
                       {{ getManualReviewSummary(driver) }}
                     </span>
@@ -176,12 +204,15 @@ type AdminDriver = DriverProfile & {
                     <button type="button" (click)="viewDriver(driver)" class="action-btn hover:bg-blue-600 hover:text-white" title="View Details">
                       <ion-icon name="eye-outline" class="text-lg"></ion-icon>
                     </button>
+
                     <button type="button" (click)="preVerifyDriver(driver)" class="action-btn hover:bg-amber-600 hover:text-white" title="Check Missing Items">
                       <ion-icon name="checkmark-circle-outline" class="text-lg"></ion-icon>
                     </button>
+
                     <button type="button" (click)="manualApproveDriver(driver)" class="action-btn hover:bg-green-600 hover:text-white" title="Manual Approval">
                       <ion-icon name="checkmark-done-outline" class="text-lg"></ion-icon>
                     </button>
+
                     <button type="button" (click)="moderateDriver(driver)" class="action-btn hover:bg-slate-800 hover:text-white" title="Moderate Driver">
                       <ion-icon name="shield-outline" class="text-lg"></ion-icon>
                     </button>
@@ -191,7 +222,11 @@ type AdminDriver = DriverProfile & {
             } @empty {
               <tr>
                 <td colspan="7" class="px-10 py-16">
-                  <app-empty-state icon="people-outline" title="No drivers found" description="No drivers match your current filters."></app-empty-state>
+                  <app-empty-state
+                    icon="people-outline"
+                    title="No drivers found"
+                    description="No drivers match your current filters.">
+                  </app-empty-state>
                 </td>
               </tr>
             }
@@ -208,7 +243,11 @@ type AdminDriver = DriverProfile & {
           <button type="button" (click)="prevPage()" [disabled]="currentPage() <= 1" class="page-btn disabled:opacity-40">
             Previous
           </button>
-          <span class="text-xs font-bold text-slate-500 px-2">{{ currentPage() }} / {{ totalPages() }}</span>
+
+          <span class="text-xs font-bold text-slate-500 px-2">
+            {{ currentPage() }} / {{ totalPages() }}
+          </span>
+
           <button type="button" (click)="nextPage()" [disabled]="currentPage() >= totalPages()" class="page-btn bg-blue-600 text-white disabled:opacity-40">
             Next
           </button>
@@ -221,9 +260,14 @@ type AdminDriver = DriverProfile & {
         <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
           <div class="p-6 border-b border-slate-100 flex items-start justify-between gap-4">
             <div>
-              <h2 class="text-xl font-display font-bold text-slate-900">{{ getDriverName(selectedDriver()) }}</h2>
-              <p class="text-sm text-slate-500 font-medium mt-1">Full driver verification details</p>
+              <h2 class="text-xl font-display font-bold text-slate-900">
+                {{ getDriverName(selectedDriver()) }}
+              </h2>
+              <p class="text-sm text-slate-500 font-medium mt-1">
+                Full driver verification details
+              </p>
             </div>
+
             <button type="button" (click)="closeDriverModal()" class="w-10 h-10 rounded-xl bg-slate-50 text-slate-500 hover:bg-slate-900 hover:text-white transition">
               <ion-icon name="close-outline" class="text-xl"></ion-icon>
             </button>
@@ -233,14 +277,18 @@ type AdminDriver = DriverProfile & {
             <div class="grid md:grid-cols-3 gap-4">
               <div class="detail-card">
                 <p class="detail-label">Verification</p>
-                <app-badge [variant]="getVerificationVariant(selectedDriver())">{{ getVerificationText(selectedDriver()) }}</app-badge>
+                <app-badge [variant]="getVerificationVariant(selectedDriver())">
+                  {{ getVerificationText(selectedDriver()) }}
+                </app-badge>
               </div>
+
               <div class="detail-card">
                 <p class="detail-label">Account</p>
                 <app-badge [variant]="getAccountStatusVariant(selectedDriver()?.account_status || 'active')">
                   {{ selectedDriver()?.account_status || 'active' | uppercase }}
                 </app-badge>
               </div>
+
               <div class="detail-card">
                 <p class="detail-label">Manual Approval</p>
                 <app-badge [variant]="selectedDriver()?.testing_approval_override ? 'success' : 'secondary'">
@@ -255,30 +303,65 @@ type AdminDriver = DriverProfile & {
                 <p class="detail-value">{{ selectedDriver()?.email || 'No email' }}</p>
                 <p class="detail-muted">{{ selectedDriver()?.phone || 'No phone' }}</p>
               </div>
+
               <div class="detail-card">
                 <p class="detail-label">Stripe</p>
-                <app-badge [variant]="getStripeVariant(selectedDriver())">{{ getStripeText(selectedDriver()) }}</app-badge>
+                <app-badge [variant]="getStripeVariant(selectedDriver())">
+                  {{ getStripeText(selectedDriver()) }}
+                </app-badge>
               </div>
             </div>
 
             <div class="detail-card">
               <p class="detail-label">Council / Taxi Licence</p>
+
               <div class="grid sm:grid-cols-2 gap-3 mt-3">
-                <div><span class="detail-muted">Council:</span> <span class="detail-value">{{ selectedDriver()?.council_name || 'Missing' }}</span></div>
-                <div><span class="detail-muted">Licence No:</span> <span class="detail-value">{{ selectedDriver()?.council_license_number || 'Missing' }}</span></div>
-                <div><span class="detail-muted">Badge No:</span> <span class="detail-value">{{ selectedDriver()?.taxi_badge_number || 'Missing' }}</span></div>
-                <div><span class="detail-muted">Expiry:</span> <span class="detail-value">{{ selectedDriver()?.taxi_license_expiry || 'Missing' }}</span></div>
+                <div>
+                  <span class="detail-muted">Council:</span>
+                  <span class="detail-value">{{ selectedDriver()?.council_name || 'Missing' }}</span>
+                </div>
+
+                <div>
+                  <span class="detail-muted">Licence No:</span>
+                  <span class="detail-value">{{ selectedDriver()?.council_license_number || 'Missing' }}</span>
+                </div>
+
+                <div>
+                  <span class="detail-muted">Badge No:</span>
+                  <span class="detail-value">{{ selectedDriver()?.taxi_badge_number || 'Missing' }}</span>
+                </div>
+
+                <div>
+                  <span class="detail-muted">Expiry:</span>
+                  <span class="detail-value">{{ formatDate(selectedDriver()?.taxi_license_expiry) }}</span>
+                </div>
               </div>
             </div>
 
             <div class="detail-card">
               <p class="detail-label">Vehicle</p>
+
               @if (getVehicle(selectedDriver())) {
                 <div class="grid sm:grid-cols-2 gap-3 mt-3">
-                  <div><span class="detail-muted">Make/Model:</span> <span class="detail-value">{{ getVehicle(selectedDriver())?.make }} {{ getVehicle(selectedDriver())?.model }}</span></div>
-                  <div><span class="detail-muted">Plate:</span> <span class="detail-value">{{ getVehicle(selectedDriver())?.license_plate || 'Missing' }}</span></div>
-                  <div><span class="detail-muted">Colour:</span> <span class="detail-value">{{ getVehicle(selectedDriver())?.color || 'Missing' }}</span></div>
-                  <div><span class="detail-muted">Year:</span> <span class="detail-value">{{ getVehicle(selectedDriver())?.year || 'Missing' }}</span></div>
+                  <div>
+                    <span class="detail-muted">Make/Model:</span>
+                    <span class="detail-value">{{ getVehicleMakeModel(selectedDriver()) }}</span>
+                  </div>
+
+                  <div>
+                    <span class="detail-muted">Plate:</span>
+                    <span class="detail-value">{{ getVehiclePlate(selectedDriver()) }}</span>
+                  </div>
+
+                  <div>
+                    <span class="detail-muted">Colour:</span>
+                    <span class="detail-value">{{ getVehicleColor(selectedDriver()) }}</span>
+                  </div>
+
+                  <div>
+                    <span class="detail-muted">Year:</span>
+                    <span class="detail-value">{{ getVehicle(selectedDriver())?.year || 'Missing' }}</span>
+                  </div>
                 </div>
               } @else {
                 <p class="text-sm text-rose-500 font-semibold mt-2">No vehicle details found.</p>
@@ -287,12 +370,20 @@ type AdminDriver = DriverProfile & {
 
             <div class="detail-card">
               <p class="detail-label">Documents</p>
+
               <div class="flex flex-col sm:flex-row gap-3 mt-4">
-                <button type="button" (click)="openDocument(selectedDriver()?.driver_license_url, 'Driver licence')" class="modal-doc-btn">
+                <button
+                  type="button"
+                  (click)="openDocument(selectedDriver()?.driver_license_url, 'Driver licence')"
+                  class="modal-doc-btn">
                   <ion-icon name="document-text-outline"></ion-icon>
                   {{ selectedDriver()?.driver_license_url ? 'Open Driver Licence' : 'Driver Licence Missing' }}
                 </button>
-                <button type="button" (click)="openDocument(selectedDriver()?.insurance_url, 'Insurance')" class="modal-doc-btn">
+
+                <button
+                  type="button"
+                  (click)="openDocument(selectedDriver()?.insurance_url, 'Insurance')"
+                  class="modal-doc-btn">
                   <ion-icon name="shield-checkmark-outline"></ion-icon>
                   {{ selectedDriver()?.insurance_url ? 'Open Insurance' : 'Insurance Missing' }}
                 </button>
@@ -301,7 +392,10 @@ type AdminDriver = DriverProfile & {
 
             @if (getBlockers(selectedDriver()).length) {
               <div class="rounded-2xl border border-amber-100 bg-amber-50 p-5">
-                <p class="text-xs font-bold text-amber-900 uppercase tracking-widest mb-3">Review Notes / Blockers</p>
+                <p class="text-xs font-bold text-amber-900 uppercase tracking-widest mb-3">
+                  Review Notes / Blockers
+                </p>
+
                 <ul class="space-y-2">
                   @for (blocker of getBlockers(selectedDriver()); track blocker) {
                     <li class="text-sm text-amber-800 font-medium">• {{ blocker }}</li>
@@ -313,13 +407,20 @@ type AdminDriver = DriverProfile & {
             @if (selectedDriver()?.manual_verification_notes) {
               <div class="detail-card">
                 <p class="detail-label">Manual Approval Notes</p>
-                <p class="text-sm text-slate-700 font-medium mt-2">{{ selectedDriver()?.manual_verification_notes }}</p>
+                <p class="text-sm text-slate-700 font-medium mt-2">
+                  {{ selectedDriver()?.manual_verification_notes }}
+                </p>
               </div>
             }
 
             <div class="flex flex-col sm:flex-row gap-3 pt-2">
-              <app-button variant="secondary" class="flex-1" (clicked)="preVerifyDriver(selectedDriver())">Check Missing Items</app-button>
-              <app-button class="flex-1" (clicked)="manualApproveDriver(selectedDriver())">Manual Approval</app-button>
+              <app-button variant="secondary" class="flex-1" (clicked)="preVerifyDriver(selectedDriver())">
+                Check Missing Items
+              </app-button>
+
+              <app-button class="flex-1" (clicked)="manualApproveDriver(selectedDriver())">
+                Manual Approval
+              </app-button>
             </div>
           </div>
         </div>
@@ -338,6 +439,7 @@ type AdminDriver = DriverProfile & {
       color: rgb(71 85 105);
       outline: none;
     }
+
     .th-cell {
       padding: 1rem;
       font-size: 10px;
@@ -347,6 +449,7 @@ type AdminDriver = DriverProfile & {
       letter-spacing: 0.14em;
       white-space: nowrap;
     }
+
     .avatar {
       width: 2.5rem;
       height: 2.5rem;
@@ -359,11 +462,13 @@ type AdminDriver = DriverProfile & {
       font-weight: 800;
       flex-shrink: 0;
     }
+
     .mini-line {
       font-size: 11px;
       font-weight: 500;
       color: rgb(100 116 139);
     }
+
     .doc-pill {
       font-size: 0.75rem;
       font-weight: 700;
@@ -373,16 +478,19 @@ type AdminDriver = DriverProfile & {
       text-align: left;
       transition: all 150ms ease;
     }
+
     .doc-ok {
       background: rgb(236 253 245);
       color: rgb(4 120 87);
       border-color: rgb(209 250 229);
     }
+
     .doc-missing {
       background: rgb(255 241 242);
       color: rgb(244 63 94);
       border-color: rgb(255 228 230);
     }
+
     .action-btn {
       width: 2.25rem;
       height: 2.25rem;
@@ -394,6 +502,7 @@ type AdminDriver = DriverProfile & {
       justify-content: center;
       transition: all 150ms ease;
     }
+
     .page-btn {
       height: 2.25rem;
       padding: 0 0.8rem;
@@ -404,12 +513,14 @@ type AdminDriver = DriverProfile & {
       font-size: 0.75rem;
       font-weight: 800;
     }
+
     .detail-card {
       border: 1px solid rgb(241 245 249);
       background: rgb(248 250 252 / 0.6);
       border-radius: 1.1rem;
       padding: 1rem;
     }
+
     .detail-label {
       font-size: 10px;
       font-weight: 800;
@@ -418,16 +529,19 @@ type AdminDriver = DriverProfile & {
       color: rgb(148 163 184);
       margin-bottom: 0.45rem;
     }
+
     .detail-value {
       font-size: 0.82rem;
       font-weight: 700;
       color: rgb(15 23 42);
     }
+
     .detail-muted {
       font-size: 0.75rem;
       font-weight: 600;
       color: rgb(100 116 139);
     }
+
     .modal-doc-btn {
       flex: 1;
       border-radius: 0.9rem;
@@ -443,6 +557,7 @@ type AdminDriver = DriverProfile & {
       gap: 0.5rem;
       transition: all 150ms ease;
     }
+
     .modal-doc-btn:hover {
       background: rgb(16 185 129);
       color: white;
@@ -465,46 +580,66 @@ export class DriverListComponent implements OnInit {
     pageSize = signal(10);
 
     filteredDrivers = computed(() => {
-        const term = this.searchTerm().toLowerCase().trim();
-        const statusFilter = this.statusFilter();
-        const planFilter = this.planFilter();
+        const term = this.safeLower(this.searchTerm()).trim();
+        const statusFilter = this.safeLower(this.statusFilter());
+        const planFilter = this.safeLower(this.planFilter());
 
-        return this.drivers().filter(driver => {
+        return this.drivers().filter((driver) => {
             const vehicle = this.getVehicle(driver);
 
             const searchText = [
                 this.getDriverName(driver),
-                driver.phone,
-                driver.email,
-                driver.verification_status,
-                driver.account_status,
-                driver.council_name,
-                driver.council_license_number,
-                driver.taxi_badge_number,
-                vehicle?.license_plate,
+                driver?.phone,
+                driver?.email,
+                driver?.verification_status,
+                driver?.account_status,
+                driver?.council_name,
+                driver?.council_license_number,
+                driver?.taxi_badge_number,
+                this.getVehiclePlate(driver),
                 vehicle?.make,
-                vehicle?.model
-            ].filter(Boolean).join(' ').toLowerCase();
+                vehicle?.model,
+                vehicle?.color
+            ]
+                .map((item) => this.safeLower(item))
+                .join(' ');
 
-            const plan = (driver.pricing_plan || 'starter').toLowerCase();
-            const verification = (driver.verification_status || '').toLowerCase();
-            const accountStatus = (driver.account_status || '').toLowerCase();
+            const plan = this.safeLower((driver as any)?.pricing_plan || 'starter');
+            const verification = this.safeLower((driver as any)?.verification_status);
+            const accountStatus = this.safeLower((driver as any)?.account_status);
+            const legacyStatus = this.safeLower((driver as any)?.status);
 
-            return (!term || searchText.includes(term)) &&
-                (statusFilter === 'all' || verification === statusFilter || accountStatus === statusFilter || driver.status === statusFilter) &&
-                (planFilter === 'all' || plan === planFilter);
+            const matchesSearch = !term || searchText.includes(term);
+
+            const matchesStatus =
+                statusFilter === 'all' ||
+                verification === statusFilter ||
+                accountStatus === statusFilter ||
+                legacyStatus === statusFilter;
+
+            const matchesPlan = planFilter === 'all' || plan === planFilter;
+
+            return matchesSearch && matchesStatus && matchesPlan;
         });
     });
 
-    totalPages = computed(() => Math.max(1, Math.ceil(this.filteredDrivers().length / this.pageSize())));
+    totalPages = computed(() =>
+        Math.max(1, Math.ceil(this.filteredDrivers().length / this.pageSize()))
+    );
 
     pagedDrivers = computed(() => {
-        const start = (this.currentPage() - 1) * this.pageSize();
+        const safePage = Math.min(this.currentPage(), this.totalPages());
+        const start = (safePage - 1) * this.pageSize();
         return this.filteredDrivers().slice(start, start + this.pageSize());
     });
 
-    pageStart = computed(() => this.filteredDrivers().length ? ((this.currentPage() - 1) * this.pageSize()) + 1 : 0);
-    pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.filteredDrivers().length));
+    pageStart = computed(() =>
+        this.filteredDrivers().length ? ((this.currentPage() - 1) * this.pageSize()) + 1 : 0
+    );
+
+    pageEnd = computed(() =>
+        Math.min(this.currentPage() * this.pageSize(), this.filteredDrivers().length)
+    );
 
     async ngOnInit() {
         await this.loadDrivers();
@@ -514,7 +649,10 @@ export class DriverListComponent implements OnInit {
         try {
             const data = await this.adminService.getDrivers();
             this.drivers.set((Array.isArray(data) ? data : []) as AdminDriver[]);
-            if (this.currentPage() > this.totalPages()) this.currentPage.set(this.totalPages());
+
+            if (this.currentPage() > this.totalPages()) {
+                this.currentPage.set(this.totalPages());
+            }
         } catch (error: unknown) {
             await this.showToast(error instanceof Error ? error.message : 'Failed to load drivers.', 'danger');
             this.drivers.set([]);
@@ -522,44 +660,102 @@ export class DriverListComponent implements OnInit {
     }
 
     onSearch(event: Event) {
-        this.searchTerm.set((event.target as HTMLInputElement).value || '');
+        this.searchTerm.set((event.target as HTMLInputElement)?.value || '');
         this.currentPage.set(1);
     }
 
     onStatusFilterChange(event: Event) {
-        this.statusFilter.set((event.target as HTMLSelectElement).value || 'all');
+        this.statusFilter.set((event.target as HTMLSelectElement)?.value || 'all');
         this.currentPage.set(1);
     }
 
     onPlanFilterChange(event: Event) {
-        this.planFilter.set((event.target as HTMLSelectElement).value || 'all');
+        this.planFilter.set((event.target as HTMLSelectElement)?.value || 'all');
         this.currentPage.set(1);
     }
 
     onPageSizeChange(event: Event) {
-        this.pageSize.set(Number((event.target as HTMLSelectElement).value || 10));
+        const value = Number((event.target as HTMLSelectElement)?.value || 10);
+        this.pageSize.set(Number.isFinite(value) && value > 0 ? value : 10);
         this.currentPage.set(1);
     }
 
     nextPage() {
-        this.currentPage.update(page => Math.min(page + 1, this.totalPages()));
+        this.currentPage.update((page) => Math.min(page + 1, this.totalPages()));
     }
 
     prevPage() {
-        this.currentPage.update(page => Math.max(page - 1, 1));
+        this.currentPage.update((page) => Math.max(page - 1, 1));
     }
 
-    getVehicle(driver: any): Vehicle | null {
-        return Array.isArray(driver?.vehicles) && driver.vehicles.length ? driver.vehicles[0] : null;
+    getVehicle(driver: any): any | null {
+        if (driver?.vehicle) return driver.vehicle;
+
+        if (Array.isArray(driver?.vehicles) && driver.vehicles.length > 0) {
+            return driver.vehicles[0] || null;
+        }
+
+        return null;
     }
 
     getDriverName(driver: any): string {
-        const fullName = driver?.full_name || `${driver?.first_name || ''} ${driver?.last_name || ''}`.trim();
+        const fullName =
+            driver?.full_name ||
+            `${driver?.first_name || ''} ${driver?.last_name || ''}`.trim();
+
         return fullName || driver?.email || driver?.phone || 'Driver';
     }
 
     getInitial(driver: any): string {
-        return this.getDriverName(driver).charAt(0).toUpperCase();
+        const name = this.getDriverName(driver);
+        return name.charAt(0).toUpperCase();
+    }
+
+    getDriverContact(driver: any): string {
+        return driver?.email || driver?.phone || 'No contact';
+    }
+
+    getVehicleMakeModel(driver: any): string {
+        const vehicle = this.getVehicle(driver);
+
+        if (!vehicle) return 'No vehicle';
+
+        const make = vehicle?.make || 'Unknown';
+        const model = vehicle?.model || '';
+
+        return `${make} ${model}`.trim();
+    }
+
+    getVehiclePlate(driver: any): string {
+        const vehicle = this.getVehicle(driver);
+
+        return (
+            vehicle?.license_plate ||
+            vehicle?.registration_number ||
+            vehicle?.plate_number ||
+            'No plate'
+        );
+    }
+
+    getVehicleColor(driver: any): string {
+        const vehicle = this.getVehicle(driver);
+        return vehicle?.color || 'No colour';
+    }
+
+    formatDate(value: string | null | undefined): string {
+        if (!value) return 'Missing';
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleDateString();
+    }
+
+    safeLower(value: any): string {
+        return String(value || '').toLowerCase();
     }
 
     isApproved(driver: any): boolean {
@@ -567,41 +763,61 @@ export class DriverListComponent implements OnInit {
     }
 
     getVerificationText(driver: any): string {
-        if (driver?.verification_status === 'approved' || driver?.is_verified) return 'Approved';
+        if (driver?.verification_status === 'approved' || driver?.is_verified) {
+            return driver?.testing_approval_override ? 'Approved Manually' : 'Approved';
+        }
+
         if (driver?.verification_status === 'ready_for_admin_review') return 'Ready For Review';
         if (driver?.verification_status === 'action_required') return 'Action Required';
         if (driver?.verification_status === 'under_review') return 'Under Review';
+        if (driver?.verification_status === 'rejected') return 'Rejected';
+
         return 'Pending';
     }
 
     getVerificationVariant(driver: any): 'success' | 'warning' | 'error' | 'secondary' {
         if (driver?.verification_status === 'approved' || driver?.is_verified) return 'success';
-        if (driver?.verification_status === 'action_required') return 'error';
+        if (driver?.verification_status === 'action_required' || driver?.verification_status === 'rejected') return 'error';
         if (driver?.verification_status === 'under_review' || driver?.verification_status === 'ready_for_admin_review') return 'warning';
         return 'secondary';
     }
 
     getStripeText(driver: any): string {
-        const status = driver?.stripe_connect_status || 'not_started';
-        if (status === 'enabled' || status === 'connected') return 'Enabled';
+        const status = this.safeLower(driver?.stripe_connect_status);
+
+        if (status === 'enabled' || status === 'connected' || driver?.stripe_account_id) {
+            return 'Enabled';
+        }
+
         if (status === 'pending') return 'Pending';
+
         return 'Not Started';
     }
 
     getStripeVariant(driver: any): 'success' | 'warning' | 'secondary' {
-        const status = driver?.stripe_connect_status || 'not_started';
-        if (status === 'enabled' || status === 'connected') return 'success';
+        const status = this.safeLower(driver?.stripe_connect_status);
+
+        if (status === 'enabled' || status === 'connected' || driver?.stripe_account_id) {
+            return 'success';
+        }
+
         if (status === 'pending') return 'warning';
+
         return 'secondary';
     }
 
     getAccountStatusVariant(status: string): 'success' | 'warning' | 'error' | 'secondary' {
-        switch (status) {
-            case 'active': return 'success';
-            case 'suspended': return 'warning';
-            case 'banned': return 'error';
-            case 'disabled': return 'secondary';
-            default: return 'success';
+        switch (this.safeLower(status)) {
+            case 'active':
+                return 'success';
+            case 'suspended':
+                return 'warning';
+            case 'banned':
+                return 'error';
+            case 'disabled':
+                return 'secondary';
+            default:
+                return 'success';
         }
     }
 
@@ -613,15 +829,24 @@ export class DriverListComponent implements OnInit {
 
     getBlockers(driver: any): string[] {
         const raw = driver?.verification_blockers;
-        if (Array.isArray(raw)) return raw;
+
+        if (Array.isArray(raw)) {
+            return raw.map((item) => String(item)).filter(Boolean);
+        }
+
         if (typeof raw === 'string') {
             try {
                 const parsed = JSON.parse(raw);
-                return Array.isArray(parsed) ? parsed : [];
+                return Array.isArray(parsed)
+                    ? parsed.map((item) => String(item)).filter(Boolean)
+                    : raw
+                        ? [raw]
+                        : [];
             } catch {
                 return raw ? [raw] : [];
             }
         }
+
         return [];
     }
 
@@ -641,12 +866,22 @@ export class DriverListComponent implements OnInit {
 
         try {
             let url = path;
+
             if (!path.startsWith('http')) {
                 url = await this.adminService.getDriverDocumentSignedUrl(path);
             }
+
+            if (!url) {
+                await this.showToast(`Could not create secure link for ${label}.`, 'danger');
+                return;
+            }
+
             window.open(url, '_blank', 'noopener,noreferrer');
         } catch (error: unknown) {
-            await this.showToast(error instanceof Error ? error.message : `Could not open ${label}.`, 'danger');
+            await this.showToast(
+                error instanceof Error ? error.message : `Could not open ${label}.`,
+                'danger'
+            );
         }
     }
 
@@ -658,18 +893,26 @@ export class DriverListComponent implements OnInit {
             const blockers = Array.isArray(result?.blockers) ? result.blockers : [];
 
             const alert = await this.alertCtrl.create({
-                header: result.canApprove ? 'Ready for manual approval' : 'Manual review needed',
-                message: blockers.length ? blockers.join('\n') : 'No blockers found. Driver can be approved manually.',
+                header: result?.canApprove ? 'Ready for manual approval' : 'Manual review needed',
+                message: blockers.length
+                    ? blockers.join('\n')
+                    : 'No blockers found. Driver can be approved manually.',
                 buttons: ['OK']
             });
 
             await alert.present();
             await this.loadDrivers();
 
-            const updated = this.drivers().find(d => d.id === driver.id);
-            if (updated && this.selectedDriver()) this.selectedDriver.set(updated);
+            const updated = this.drivers().find((d) => d.id === driver.id);
+
+            if (updated && this.selectedDriver()) {
+                this.selectedDriver.set(updated);
+            }
         } catch (error: unknown) {
-            await this.showToast(error instanceof Error ? error.message : 'Pre-verification failed', 'danger');
+            await this.showToast(
+                error instanceof Error ? error.message : 'Pre-verification failed',
+                'danger'
+            );
         }
     }
 
@@ -689,19 +932,29 @@ export class DriverListComponent implements OnInit {
                 }
             ],
             buttons: [
-                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Cancel',
+                    role: 'cancel'
+                },
                 {
                     text: 'Approve',
                     handler: async (data) => {
                         try {
                             await this.adminService.manualApproveDriver(driver.id, data?.notes || '');
+
                             await this.showToast('Driver approved manually.', 'success');
                             await this.loadDrivers();
 
-                            const updated = this.drivers().find(d => d.id === driver.id);
-                            if (updated && this.selectedDriver()) this.selectedDriver.set(updated);
+                            const updated = this.drivers().find((d) => d.id === driver.id);
+
+                            if (updated && this.selectedDriver()) {
+                                this.selectedDriver.set(updated);
+                            }
                         } catch (error: unknown) {
-                            await this.showToast(error instanceof Error ? error.message : 'Manual approval failed', 'danger');
+                            await this.showToast(
+                                error instanceof Error ? error.message : 'Manual approval failed',
+                                'danger'
+                            );
                         }
                     }
                 }
@@ -712,8 +965,15 @@ export class DriverListComponent implements OnInit {
     }
 
     async toggleVerification(driverId: string, isVerified: boolean) {
-        await this.adminService.verifyDriver(driverId, isVerified);
-        await this.loadDrivers();
+        try {
+            await this.adminService.verifyDriver(driverId, isVerified);
+            await this.loadDrivers();
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Failed to update verification.',
+                'danger'
+            );
+        }
     }
 
     async moderateDriver(driver: AdminDriver) {
@@ -721,13 +981,40 @@ export class DriverListComponent implements OnInit {
             header: 'Moderate Driver',
             subHeader: this.getDriverName(driver),
             inputs: [
-                { name: 'status', type: 'radio', label: 'Active', value: 'active', checked: driver.account_status === 'active' || !driver.account_status },
-                { name: 'status', type: 'radio', label: 'Suspend', value: 'suspended', checked: driver.account_status === 'suspended' },
-                { name: 'status', type: 'radio', label: 'Ban', value: 'banned', checked: driver.account_status === 'banned' },
-                { name: 'status', type: 'radio', label: 'Disable', value: 'disabled', checked: driver.account_status === 'disabled' }
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Active',
+                    value: 'active',
+                    checked: driver.account_status === 'active' || !driver.account_status
+                },
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Suspend',
+                    value: 'suspended',
+                    checked: driver.account_status === 'suspended'
+                },
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Ban',
+                    value: 'banned',
+                    checked: driver.account_status === 'banned'
+                },
+                {
+                    name: 'status',
+                    type: 'radio',
+                    label: 'Disable',
+                    value: 'disabled',
+                    checked: driver.account_status === 'disabled'
+                }
             ],
             buttons: [
-                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Cancel',
+                    role: 'cancel'
+                },
                 {
                     text: 'Apply',
                     handler: async (status: string) => {
@@ -743,17 +1030,18 @@ export class DriverListComponent implements OnInit {
 
                             await this.showToast(`Driver status updated to ${status}`, 'success');
 
-                            this.drivers.update(drivers =>
-                                drivers.map(d =>
+                            this.drivers.update((drivers) =>
+                                drivers.map((d) =>
                                     d.id === driver.id
-                                        ? { ...d, account_status: status } as AdminDriver
+                                        ? ({ ...d, account_status: status } as AdminDriver)
                                         : d
                                 )
                             );
 
                             await this.loadDrivers();
 
-                            const updated = this.drivers().find(d => d.id === driver.id);
+                            const updated = this.drivers().find((d) => d.id === driver.id);
+
                             if (updated && this.selectedDriver()) {
                                 this.selectedDriver.set(updated);
                             }
@@ -764,6 +1052,7 @@ export class DriverListComponent implements OnInit {
                                 error instanceof Error ? error.message : 'Failed to update driver status.',
                                 'danger'
                             );
+
                             return false;
                         }
                     }
@@ -773,8 +1062,17 @@ export class DriverListComponent implements OnInit {
 
         await alert.present();
     }
-    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
-        const toast = await this.toastCtrl.create({ message, duration: 2500, color });
+
+    private async showToast(
+        message: string,
+        color: 'success' | 'danger' | 'warning' = 'success'
+    ) {
+        const toast = await this.toastCtrl.create({
+            message,
+            duration: 2500,
+            color
+        });
+
         await toast.present();
     }
 }
