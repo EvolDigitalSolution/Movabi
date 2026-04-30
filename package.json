@@ -48,6 +48,7 @@
     "@capacitor/status-bar": "^8.0.2",
     "@google/genai": "^1.27.0",
     "@ionic/angular": "^8.8.3",
+    "@ionic/core": "^8.8.5",
     "@stripe/stripe-js": "^9.1.0",
     "@supabase/supabase-js": "^2.101.1",
     "axios": "^1.15.2",
