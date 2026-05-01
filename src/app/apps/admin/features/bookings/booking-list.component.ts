@@ -4,7 +4,7 @@ import { SupabaseService } from '../../../../core/services/supabase/supabase.ser
 import { Job, ServiceTypeEnum, BookingStatus, DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { BookingService } from '../../../../core/services/booking/booking.service';
 import { CommonModule } from '@angular/common';
-import { IonicModule, AlertController, ToastController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
 import { BadgeComponent } from '../../../../shared/ui/badge';
 import { ButtonComponent } from '../../../../shared/ui/button';
 import { CardComponent } from '../../../../shared/ui/card';
@@ -206,8 +206,9 @@ import { CardComponent } from '../../../../shared/ui/card';
       </div>
     </div>
 
-    <ion-modal [isOpen]="isModalOpen()" (didDismiss)="closeModal()" class="admin-modal">
-      <ng-template>
+    @if (isModalOpen()) {
+      <div class="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-5xl max-h-[92vh] rounded-[2rem] overflow-hidden shadow-2xl bg-white">
         <div class="flex flex-col h-full bg-slate-50">
           <div class="p-6 bg-white border-b border-slate-100 flex items-center justify-between">
             <div>
@@ -403,8 +404,37 @@ import { CardComponent } from '../../../../shared/ui/card';
             }
           </div>
         </div>
-      </ng-template>
-    </ion-modal>
+        </div>
+      </div>
+    }
+
+    @if (confirmModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-xl font-bold text-slate-900">{{ confirmModal()?.title }}</h3>
+          <p class="text-sm text-slate-600 mt-4">{{ confirmModal()?.message }}</p>
+
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="confirmModal.set(null)">
+              {{ confirmModal()?.cancelText || 'Cancel' }}
+            </button>
+            <button type="button" class="modal-action" (click)="runConfirmAction()">
+              {{ confirmModal()?.confirmText || 'Confirm' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (toastMessage()) {
+      <div class="fixed bottom-6 right-6 z-[11000] rounded-2xl px-5 py-4 shadow-2xl text-white font-semibold"
+           [class.bg-emerald-600]="toastType() === 'success'"
+           [class.bg-rose-600]="toastType() === 'danger'"
+           [class.bg-amber-600]="toastType() === 'warning'">
+        {{ toastMessage() }}
+      </div>
+    }
+
   `,
     styles: [`
     .filter-select {
@@ -482,13 +512,29 @@ import { CardComponent } from '../../../../shared/ui/card';
       letter-spacing: 0.14em;
       margin-bottom: 0.25rem;
     }
+
+    .modal-action {
+      border-radius: 0.9rem;
+      background: rgb(37 99 235);
+      color: white;
+      font-weight: 800;
+      padding: 0.7rem 1rem;
+    }
+
+    .modal-cancel {
+      border-radius: 0.9rem;
+      background: rgb(248 250 252);
+      color: rgb(71 85 105);
+      font-weight: 800;
+      padding: 0.7rem 1rem;
+      border: 1px solid rgb(226 232 240);
+    }
+
   `]
 })
 export class BookingListComponent implements OnInit {
     private adminService = inject(AdminService);
     private bookingService = inject(BookingService);
-    private alertCtrl = inject(AlertController);
-    private toastCtrl = inject(ToastController);
     private supabase = inject(SupabaseService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -498,6 +544,17 @@ export class BookingListComponent implements OnInit {
     selectedBooking = signal<Job | null>(null);
     details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
     isModalOpen = signal(false);
+
+    toastMessage = signal<string | null>(null);
+    toastType = signal<'success' | 'danger' | 'warning'>('success');
+
+    confirmModal = signal<{
+        title: string;
+        message: string;
+        confirmText?: string;
+        cancelText?: string;
+        action?: () => Promise<void>;
+    } | null>(null);
 
     searchTerm = signal('');
     statusFilter = signal('all');
@@ -634,32 +691,28 @@ export class BookingListComponent implements OnInit {
         }
     }
 
+
     async forceUpdateStatus(bookingId: string, status: string) {
-        const alert = await this.alertCtrl.create({
-            header: 'Confirm Update',
+        this.confirmModal.set({
+            title: 'Confirm Update',
             message: `Force update this booking to ${this.formatStatus(status)}?`,
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Update',
-                    handler: async () => {
-                        try {
-                            await this.adminService.updateBookingStatus(bookingId, status as BookingStatus, 'Admin force update');
-                            await this.loadBookings();
+            confirmText: 'Update',
+            cancelText: 'Cancel',
+            action: async () => {
+                await this.adminService.updateBookingStatus(
+                    bookingId,
+                    status as BookingStatus,
+                    'Admin force update'
+                );
 
-                            const updated = this.bookings().find(b => b.id === bookingId);
-                            if (updated) this.selectedBooking.set(updated);
+                await this.loadBookings();
 
-                            await this.showToast('Status updated successfully.', 'success');
-                        } catch (e: unknown) {
-                            await this.showToast('Failed to update status: ' + (e instanceof Error ? e.message : 'Unknown error'), 'danger');
-                        }
-                    }
-                }
-            ]
+                const updated = this.bookings().find(b => b.id === bookingId);
+                if (updated) this.selectedBooking.set(updated);
+
+                await this.showToast('Status updated successfully.', 'success');
+            }
         });
-
-        await alert.present();
     }
 
     async assignDriver(bookingId: string, driverId: string) {
@@ -668,31 +721,40 @@ export class BookingListComponent implements OnInit {
             return;
         }
 
-        const alert = await this.alertCtrl.create({
-            header: 'Confirm Assignment',
+        this.confirmModal.set({
+            title: 'Confirm Assignment',
             message: 'Manually assign this driver to the booking?',
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Assign',
-                    handler: async () => {
-                        try {
-                            await this.adminService.manualAssignDriver(bookingId, driverId);
-                            await this.loadBookings();
+            confirmText: 'Assign',
+            cancelText: 'Cancel',
+            action: async () => {
+                await this.adminService.manualAssignDriver(bookingId, driverId);
+                await this.loadBookings();
 
-                            const updated = await this.bookingService.getBooking(bookingId);
-                            this.selectedBooking.set(updated as Job);
+                const updated = await this.bookingService.getBooking(bookingId);
+                this.selectedBooking.set(updated as Job);
 
-                            await this.showToast('Driver assigned successfully.', 'success');
-                        } catch (e: unknown) {
-                            await this.showToast('Failed to assign driver: ' + (e instanceof Error ? e.message : 'Unknown error'), 'danger');
-                        }
-                    }
-                }
-            ]
+                await this.showToast('Driver assigned successfully.', 'success');
+            }
         });
+    }
 
-        await alert.present();
+    async runConfirmAction() {
+        const current = this.confirmModal();
+
+        if (!current?.action) {
+            this.confirmModal.set(null);
+            return;
+        }
+
+        try {
+            await current.action();
+            this.confirmModal.set(null);
+        } catch (e: unknown) {
+            await this.showToast(
+                e instanceof Error ? e.message : 'Action failed.',
+                'danger'
+            );
+        }
     }
 
     closeModal() {
@@ -790,13 +852,14 @@ export class BookingListComponent implements OnInit {
         }
     }
 
-    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
-        const toast = await this.toastCtrl.create({
-            message,
-            duration: 2500,
-            color
-        });
 
-        await toast.present();
+    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+        this.toastType.set(color);
+        this.toastMessage.set(message);
+
+        window.setTimeout(() => {
+            this.toastMessage.set(null);
+        }, 2500);
     }
+
 }

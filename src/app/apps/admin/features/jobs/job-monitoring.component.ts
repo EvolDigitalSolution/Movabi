@@ -1,6 +1,6 @@
 import { Component, computed, inject, OnDestroy, OnInit, signal, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, ModalController, AlertController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
 import { JobService } from '@core/services/job/job.service';
 import { AdminService } from '../../services/admin.service';
 import { LocationService } from '@core/services/logistics/location.service';
@@ -15,16 +15,18 @@ import { BadgeComponent } from '../../../../shared/ui/badge';
 import { JobTimelineComponent } from './job-timeline.component';
 
 type JobRisk = {
-    label: string;
-    variant: 'success' | 'warning' | 'error' | 'secondary';
-    message: string;
+  label: string;
+  variant: 'success' | 'warning' | 'error' | 'secondary';
+  message: string;
 };
 
+type RecoveryAction = 'retry' | 'review' | 'cancel';
+
 @Component({
-    selector: 'app-job-monitoring',
-    standalone: true,
-    imports: [CommonModule, IonicModule, BadgeComponent, JobTimelineComponent, MapComponent],
-    template: `
+  selector: 'app-job-monitoring',
+  standalone: true,
+  imports: [CommonModule, IonicModule, BadgeComponent, JobTimelineComponent, MapComponent],
+  template: `
     <div class="space-y-6">
       <div class="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
         <div class="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
@@ -124,7 +126,7 @@ type JobRisk = {
                         #{{ shortId(job.id) }}
                       </span>
                       <p class="text-[11px] text-slate-400 font-medium mt-2">
-                        {{ job.created_at | date:'mediumDate' }}
+                        {{ formatDate(job.created_at) }}
                       </p>
                     </div>
                   </td>
@@ -298,333 +300,469 @@ type JobRisk = {
         </div>
       </div>
     </div>
-  `
+
+    @if (timelineJobId()) {
+      <div class="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
+          <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900">Job Timeline</h3>
+              <p class="text-xs text-slate-500 font-semibold">#{{ shortId(timelineJobId()) }}</p>
+            </div>
+
+            <button
+              type="button"
+              (click)="timelineJobId.set(null)"
+              class="w-10 h-10 rounded-xl bg-slate-50 text-slate-500 hover:bg-slate-900 hover:text-white transition"
+            >
+              <ion-icon name="close-outline" class="text-xl"></ion-icon>
+            </button>
+          </div>
+
+          <app-job-timeline [jobId]="timelineJobId()!"></app-job-timeline>
+        </div>
+      </div>
+    }
+
+    @if (recoveryJob()) {
+      @let job = recoveryJob();
+      @let risk = getJobRisk(job);
+
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-lg font-bold text-slate-900">Recovery Action</h3>
+          <p class="text-sm text-slate-500 mt-1">{{ risk.label }}</p>
+
+          <div class="mt-4 rounded-2xl bg-slate-50 border border-slate-100 p-4">
+            <p class="text-sm font-semibold text-slate-700">{{ risk.message }}</p>
+            <p class="text-xs text-slate-400 mt-2">Job #{{ shortId(job?.id) }}</p>
+          </div>
+
+          <div class="mt-6 flex flex-col gap-3">
+            @if (risk.label === 'Stuck booking') {
+              <button type="button" (click)="runRecoveryAction('retry')" class="modal-action">
+                Retry Dispatch
+              </button>
+            }
+
+            <button type="button" (click)="runRecoveryAction('review')" class="modal-action bg-blue-600">
+              Mark for Review
+            </button>
+
+            <button type="button" (click)="runRecoveryAction('cancel')" class="modal-danger">
+              Force Cancel
+            </button>
+
+            <button type="button" (click)="recoveryJob.set(null)" class="modal-cancel">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if(showToast()) {
+      <div class="fixed top-5 right-5 z-[11000]">
+        <div
+          class="px-5 py-3 rounded-2xl shadow-xl text-white text-sm font-semibold"
+          [class.bg-emerald-600]="toastColor()==='success'"
+          [class.bg-rose-600]="toastColor()==='danger'"
+          [class.bg-amber-500]="toastColor()==='warning'"
+        >
+          {{ toastMessage() }}
+        </div>
+      </div>
+    }
+  `,
+  styles: [`
+    .modal-action {
+      width: 100%;
+      min-height: 2.75rem;
+      border-radius: 0.9rem;
+      background: rgb(37 99 235);
+      color: white;
+      font-size: 0.875rem;
+      font-weight: 800;
+    }
+
+    .modal-danger {
+      width: 100%;
+      min-height: 2.75rem;
+      border-radius: 0.9rem;
+      background: rgb(225 29 72);
+      color: white;
+      font-size: 0.875rem;
+      font-weight: 800;
+    }
+
+    .modal-cancel {
+      width: 100%;
+      min-height: 2.75rem;
+      border-radius: 0.9rem;
+      background: rgb(248 250 252);
+      color: rgb(51 65 85);
+      border: 1px solid rgb(226 232 240);
+      font-size: 0.875rem;
+      font-weight: 800;
+    }
+  `]
 })
 export class JobMonitoringComponent implements OnInit, OnDestroy {
-    @ViewChild('map') mapComponent!: MapComponent;
+  @ViewChild('map') mapComponent!: MapComponent;
 
-    private jobService = inject(JobService);
-    private adminService = inject(AdminService);
-    private locationService = inject(LocationService);
-    private profileService = inject(ProfileService);
-    private modalCtrl = inject(ModalController);
-    private anomalyService = inject(JobAnomalyService);
-    private alertCtrl = inject(AlertController);
-    private supabase = inject(SupabaseService);
+  private jobService = inject(JobService);
+  private adminService = inject(AdminService);
+  private locationService = inject(LocationService);
+  private profileService = inject(ProfileService);
+  private anomalyService = inject(JobAnomalyService);
+  private supabase = inject(SupabaseService);
 
-    jobs = signal<Job[]>([]);
-    anomalies = signal<JobAnomaly[]>([]);
-    searchTerm = signal('');
-    statusFilter = signal('all');
-    currentPage = signal(1);
-    pageSize = signal(10);
+  jobs = signal<Job[]>([]);
+  anomalies = signal<JobAnomaly[]>([]);
+  searchTerm = signal('');
+  statusFilter = signal('all');
+  currentPage = signal(1);
+  pageSize = signal(10);
 
-    private jobChannel?: RealtimeChannel;
-    private locationChannel?: RealtimeChannel;
+  timelineJobId = signal<string | null>(null);
+  recoveryJob = signal<Job | null>(null);
 
-    filteredJobs = computed(() => {
-        const term = this.searchTerm().toLowerCase().trim();
-        const status = this.statusFilter();
+  toastMessage = signal('');
+  toastColor = signal<'success' | 'danger' | 'warning'>('success');
+  showToast = signal(false);
 
-        return this.jobs().filter((job: any) => {
-            const searchText = [
-                job.id,
-                job.status,
-                job.payment_status,
-                job.pickup_address,
-                job.dropoff_address,
-                job.customer?.full_name,
-                job.customer?.first_name,
-                job.customer?.last_name,
-                job.customer?.email,
-                job.driver?.full_name,
-                job.driver?.first_name,
-                job.driver?.last_name,
-                job.driver?.phone
-            ].filter(Boolean).join(' ').toLowerCase();
+  private jobChannel?: RealtimeChannel;
+  private locationChannel?: RealtimeChannel;
 
-            const matchesSearch = !term || searchText.includes(term);
-            const matchesStatus = status === 'all' || this.normalise(job.status) === status;
+  filteredJobs = computed(() => {
+    const term = this.normalise(this.searchTerm());
+    const status = this.statusFilter();
 
-            return matchesSearch && matchesStatus;
-        });
+    return this.jobs().filter((job: any) => {
+      const searchText = [
+        job.id,
+        job.status,
+        job.payment_status,
+        job.pickup_address,
+        job.dropoff_address,
+        job.customer?.full_name,
+        job.customer?.first_name,
+        job.customer?.last_name,
+        job.customer?.email,
+        job.driver?.full_name,
+        job.driver?.first_name,
+        job.driver?.last_name,
+        job.driver?.phone
+      ]
+        .map((item) => this.normalise(item))
+        .join(' ');
+
+      const matchesSearch = !term || searchText.includes(term);
+      const matchesStatus = status === 'all' || this.normalise(job.status) === status;
+
+      return matchesSearch && matchesStatus;
     });
+  });
 
-    totalPages = computed(() => Math.max(1, Math.ceil(this.filteredJobs().length / this.pageSize())));
+  totalPages = computed(() => Math.max(1, Math.ceil(this.filteredJobs().length / this.pageSize())));
 
-    pagedJobs = computed(() => {
-        const start = (this.currentPage() - 1) * this.pageSize();
-        return this.filteredJobs().slice(start, start + this.pageSize());
+  pagedJobs = computed(() => {
+    const page = Math.min(this.currentPage(), this.totalPages());
+    const start = (page - 1) * this.pageSize();
+    return this.filteredJobs().slice(start, start + this.pageSize());
+  });
+
+  pageStart = computed(() => {
+    if (this.filteredJobs().length === 0) return 0;
+    return (this.currentPage() - 1) * this.pageSize() + 1;
+  });
+
+  pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.filteredJobs().length));
+
+  async ngOnInit() {
+    await this.loadJobs();
+
+    this.jobChannel = this.jobService.subscribeToJobs(() => this.loadJobs());
+    this.subscribeToAllLocations();
+  }
+
+  ngOnDestroy() {
+    this.jobChannel?.unsubscribe();
+    this.locationChannel?.unsubscribe();
+  }
+
+  onSearch(event: Event) {
+    this.searchTerm.set((event.target as HTMLInputElement)?.value || '');
+    this.currentPage.set(1);
+  }
+
+  onStatusFilterChange(event: Event) {
+    this.statusFilter.set((event.target as HTMLSelectElement)?.value || 'all');
+    this.currentPage.set(1);
+  }
+
+  onPageSizeChange(event: Event) {
+    const value = Number((event.target as HTMLSelectElement)?.value || 10);
+    this.pageSize.set(Number.isFinite(value) && value > 0 ? value : 10);
+    this.currentPage.set(1);
+  }
+
+  nextPage() {
+    this.currentPage.update(page => Math.min(page + 1, this.totalPages()));
+  }
+
+  prevPage() {
+    this.currentPage.update(page => Math.max(page - 1, 1));
+  }
+
+  subscribeToAllLocations() {
+    const profile = this.profileService.profile();
+    if (!profile) return;
+
+    this.locationChannel = this.locationService.subscribeToAllTenantLocations(profile.tenant_id, (location) => {
+      this.updateMarker(location);
     });
+  }
 
-    pageStart = computed(() => {
-        if (this.filteredJobs().length === 0) return 0;
-        return (this.currentPage() - 1) * this.pageSize() + 1;
+  updateMarker(location: DriverLocation) {
+    if (!this.mapComponent) return;
+
+    this.mapComponent.addOrUpdateMarker({
+      id: location.driver_id,
+      coordinates: { lat: location.lat, lng: location.lng },
+      kind: 'driver',
+      serviceType: ServiceTypeEnum.RIDE,
+      heading: location.heading,
+      label: location.driver?.first_name || 'Driver'
     });
+  }
 
-    pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.filteredJobs().length));
+  async loadJobs() {
+    try {
+      const data = await this.adminService.getJobs();
+      const safeJobs = Array.isArray(data) ? data as Job[] : [];
 
-    async ngOnInit() {
-        await this.loadJobs();
+      this.jobs.set(safeJobs);
+      this.anomalies.set(this.anomalyService.detectAnomalies(safeJobs));
 
-        this.jobChannel = this.jobService.subscribeToJobs(() => this.loadJobs());
-        this.subscribeToAllLocations();
+      if (this.currentPage() > this.totalPages()) {
+        this.currentPage.set(this.totalPages());
+      }
+    } catch (error: unknown) {
+      this.jobs.set([]);
+      this.anomalies.set([]);
+      this.triggerToast(error instanceof Error ? error.message : 'Failed to load jobs.', 'danger');
+    }
+  }
+
+  getAnomaly(jobId: string): JobAnomaly | undefined {
+    return this.anomalies().find(a => a.jobId === jobId);
+  }
+
+  getJobRisk(job: any): JobRisk {
+    const status = this.normalise(job?.status);
+    const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
+    const hasDriver = !!job?.driver_id || !!job?.driver;
+    const ageMinutes = this.getJobAgeMinutes(job);
+
+    if (['cancelled', 'canceled'].includes(status) && this.isPaymentCaptured(paymentStatus)) {
+      return { label: 'Refund required', variant: 'error', message: 'Cancelled after payment capture.' };
     }
 
-    ngOnDestroy() {
-        this.jobChannel?.unsubscribe();
-        this.locationChannel?.unsubscribe();
+    if (['requested', 'pending'].includes(status) && !hasDriver && this.isPaymentCaptured(paymentStatus)) {
+      return { label: 'Payment risk', variant: 'error', message: 'Paid before driver assignment.' };
     }
 
-    onSearch(event: Event) {
-        this.searchTerm.set((event.target as HTMLInputElement).value || '');
-        this.currentPage.set(1);
+    if (['requested', 'pending'].includes(status) && !hasDriver && ageMinutes > 15) {
+      return { label: 'Stuck booking', variant: 'warning', message: `${Math.round(ageMinutes)} mins unassigned.` };
     }
 
-    onStatusFilterChange(event: Event) {
-        this.statusFilter.set((event.target as HTMLSelectElement).value || 'all');
-        this.currentPage.set(1);
+    if (status === 'completed' && !this.isPaymentCaptured(paymentStatus)) {
+      return { label: 'Payment missing', variant: 'error', message: 'Completed job has no captured payment.' };
     }
 
-    onPageSizeChange(event: Event) {
-        this.pageSize.set(Number((event.target as HTMLSelectElement).value || 10));
-        this.currentPage.set(1);
+    const anomaly = this.getAnomaly(job?.id);
+
+    if (anomaly) {
+      return {
+        label: anomaly.type || 'Anomaly',
+        variant: anomaly.severity === 'high' ? 'error' : 'warning',
+        message: anomaly.message || 'Needs review.'
+      };
     }
 
-    nextPage() {
-        this.currentPage.update(page => Math.min(page + 1, this.totalPages()));
+    return { label: 'Healthy', variant: 'success', message: 'No risk detected.' };
+  }
+
+  getPaymentText(job: any): string {
+    const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
+
+    if (!paymentStatus) return 'Unknown';
+    if (['paid', 'captured', 'succeeded'].includes(paymentStatus)) return 'Captured';
+    if (['authorized', 'requires_capture'].includes(paymentStatus)) return 'Authorized';
+    if (['cancelled', 'canceled'].includes(paymentStatus)) return 'Cancelled';
+    if (paymentStatus === 'refunded') return 'Refunded';
+
+    return paymentStatus.replace(/_/g, ' ');
+  }
+
+  getPaymentVariant(job: any): 'success' | 'warning' | 'error' | 'secondary' {
+    const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
+    const status = this.normalise(job?.status);
+
+    if (['cancelled', 'canceled'].includes(status) && this.isPaymentCaptured(paymentStatus)) return 'error';
+    if (['paid', 'captured', 'succeeded'].includes(paymentStatus)) return 'success';
+    if (['authorized', 'requires_capture'].includes(paymentStatus)) return 'warning';
+    if (paymentStatus === 'refunded') return 'secondary';
+
+    return 'secondary';
+  }
+
+  private isPaymentCaptured(paymentStatus: string): boolean {
+    return ['paid', 'captured', 'succeeded'].includes(paymentStatus);
+  }
+
+  private normalise(value: unknown): string {
+    return String(value || '').toLowerCase().trim();
+  }
+
+  private getJobAgeMinutes(job: any): number {
+    const rawDate = job?.created_at || job?.createdAt;
+    if (!rawDate) return 0;
+
+    const createdAt = new Date(rawDate).getTime();
+    if (Number.isNaN(createdAt)) return 0;
+
+    return (Date.now() - createdAt) / 60000;
+  }
+
+  shortId(id: string | undefined | null): string {
+    return (id || '').slice(0, 8).toUpperCase() || 'UNKNOWN';
+  }
+
+  getPersonName(person: any, fallback: string): string {
+    const fullName = person?.full_name || `${person?.first_name || ''} ${person?.last_name || ''}`.trim();
+    return fullName || person?.email || person?.phone || fallback;
+  }
+
+  getInitial(person: any): string {
+    return this.getPersonName(person, 'U').charAt(0).toUpperCase();
+  }
+
+  getCurrency(job: any): string {
+    if (job?.currency_symbol) return job.currency_symbol;
+
+    switch (String(job?.currency_code || 'GBP').toUpperCase()) {
+      case 'NGN': return '₦';
+      case 'AED': return 'د.إ';
+      case 'USD': return '$';
+      case 'EUR': return '€';
+      case 'CAD': return '$';
+      case 'AUD': return '$';
+      case 'GBP':
+      default:
+        return '£';
+    }
+  }
+
+  toMoney(value: unknown): string {
+    return Number(value || 0).toFixed(2);
+  }
+
+  formatDate(value: string | null | undefined): string {
+    if (!value) return 'N/A';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
     }
 
-    prevPage() {
-        this.currentPage.update(page => Math.max(page - 1, 1));
+    return date.toLocaleDateString();
+  }
+
+  handleRecovery(job: Job) {
+    this.recoveryJob.set(job);
+  }
+
+  async runRecoveryAction(action: RecoveryAction) {
+    const job = this.recoveryJob();
+    if (!job) return;
+
+    try {
+      if (action === 'retry') {
+        await this.retryDispatch(job);
+      }
+
+      if (action === 'review') {
+        await this.markForReview(job);
+      }
+
+      if (action === 'cancel') {
+        await this.forceCancel(job);
+      }
+
+      this.recoveryJob.set(null);
+      await this.loadJobs();
+      this.triggerToast('Recovery action completed.', 'success');
+    } catch (error: unknown) {
+      this.triggerToast(error instanceof Error ? error.message : 'Recovery action failed.', 'danger');
     }
+  }
 
-    subscribeToAllLocations() {
-        const profile = this.profileService.profile();
-        if (!profile) return;
+  private async retryDispatch(job: Job) {
+    await this.jobService.retryDispatch(job.id, job.tenant_id);
+  }
 
-        this.locationChannel = this.locationService.subscribeToAllTenantLocations(profile.tenant_id, (location) => {
-            this.updateMarker(location);
-        });
-    }
+  private async markForReview(job: Job) {
+    await this.jobService.markForReview(job.id, 'Admin flagged for manual review via dashboard');
+  }
 
-    updateMarker(location: DriverLocation) {
-        if (!this.mapComponent) return;
+  private async forceCancel(job: Job) {
+    await this.jobService.forceCancel(job.id, 'Admin forced cancellation via dashboard');
+  }
 
-        this.mapComponent.addOrUpdateMarker({
-            id: location.driver_id,
-            coordinates: { lat: location.lat, lng: location.lng },
-            kind: 'driver',
-            serviceType: ServiceTypeEnum.RIDE,
-            heading: location.heading,
-            label: location.driver?.first_name || 'Driver'
-        });
-    }
-
-    async loadJobs() {
-        const data = await this.adminService.getJobs();
-        const safeJobs = Array.isArray(data) ? data as Job[] : [];
-
-        this.jobs.set(safeJobs);
-        this.anomalies.set(this.anomalyService.detectAnomalies(safeJobs));
-
-        if (this.currentPage() > this.totalPages()) {
-            this.currentPage.set(this.totalPages());
-        }
-    }
-
-    getAnomaly(jobId: string): JobAnomaly | undefined {
-        return this.anomalies().find(a => a.jobId === jobId);
-    }
-
-    getJobRisk(job: any): JobRisk {
-        const status = this.normalise(job?.status);
-        const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
-        const hasDriver = !!job?.driver_id || !!job?.driver;
-        const ageMinutes = this.getJobAgeMinutes(job);
-
-        if (['cancelled', 'canceled'].includes(status) && this.isPaymentCaptured(paymentStatus)) {
-            return { label: 'Refund required', variant: 'error', message: 'Cancelled after payment capture.' };
-        }
-
-        if (['requested', 'pending'].includes(status) && !hasDriver && this.isPaymentCaptured(paymentStatus)) {
-            return { label: 'Payment risk', variant: 'error', message: 'Paid before driver assignment.' };
-        }
-
-        if (['requested', 'pending'].includes(status) && !hasDriver && ageMinutes > 15) {
-            return { label: 'Stuck booking', variant: 'warning', message: `${Math.round(ageMinutes)} mins unassigned.` };
-        }
-
-        if (status === 'completed' && !this.isPaymentCaptured(paymentStatus)) {
-            return { label: 'Payment missing', variant: 'error', message: 'Completed job has no captured payment.' };
-        }
-
-        const anomaly = this.getAnomaly(job?.id);
-
-        if (anomaly) {
-            return {
-                label: anomaly.type || 'Anomaly',
-                variant: anomaly.severity === 'high' ? 'error' : 'warning',
-                message: anomaly.message || 'Needs review.'
-            };
-        }
-
-        return { label: 'Healthy', variant: 'success', message: 'No risk detected.' };
-    }
-
-    getPaymentText(job: any): string {
-        const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
-
-        if (!paymentStatus) return 'Unknown';
-        if (['paid', 'captured', 'succeeded'].includes(paymentStatus)) return 'Captured';
-        if (['authorized', 'requires_capture'].includes(paymentStatus)) return 'Authorized';
-        if (['cancelled', 'canceled'].includes(paymentStatus)) return 'Cancelled';
-        if (paymentStatus === 'refunded') return 'Refunded';
-
-        return paymentStatus.replace(/_/g, ' ');
-    }
-
-    getPaymentVariant(job: any): 'success' | 'warning' | 'error' | 'secondary' {
-        const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
-        const status = this.normalise(job?.status);
-
-        if (['cancelled', 'canceled'].includes(status) && this.isPaymentCaptured(paymentStatus)) return 'error';
-        if (['paid', 'captured', 'succeeded'].includes(paymentStatus)) return 'success';
-        if (['authorized', 'requires_capture'].includes(paymentStatus)) return 'warning';
-        if (paymentStatus === 'refunded') return 'secondary';
-
+  getStatusVariant(status: string): 'success' | 'warning' | 'error' | 'info' | 'primary' | 'secondary' {
+    switch (this.normalise(status)) {
+      case 'requested':
+      case 'pending':
+        return 'warning';
+      case 'accepted':
+        return 'info';
+      case 'in_progress':
+        return 'primary';
+      case 'completed':
+        return 'success';
+      case 'cancelled':
+      case 'canceled':
+        return 'error';
+      default:
         return 'secondary';
     }
+  }
 
-    private isPaymentCaptured(paymentStatus: string): boolean {
-        return ['paid', 'captured', 'succeeded'].includes(paymentStatus);
+  viewTimeline(jobId: string) {
+    this.timelineJobId.set(jobId);
+  }
+
+  async viewReceipt(receiptPath: string) {
+    const { data } = this.supabase.storage.from('documents').getPublicUrl(receiptPath);
+
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank', 'noopener,noreferrer');
+      return;
     }
 
-    private normalise(value: unknown): string {
-        return String(value || '').toLowerCase().trim();
-    }
+    this.triggerToast('Receipt not available.', 'warning');
+  }
 
-    private getJobAgeMinutes(job: any): number {
-        const rawDate = job?.created_at || job?.createdAt;
-        if (!rawDate) return 0;
+  triggerToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+    this.toastMessage.set(message);
+    this.toastColor.set(color);
+    this.showToast.set(true);
 
-        const createdAt = new Date(rawDate).getTime();
-        if (Number.isNaN(createdAt)) return 0;
-
-        return (Date.now() - createdAt) / 60000;
-    }
-
-    shortId(id: string | undefined | null): string {
-        return (id || '').slice(0, 8).toUpperCase() || 'UNKNOWN';
-    }
-
-    getPersonName(person: any, fallback: string): string {
-        const fullName = person?.full_name || `${person?.first_name || ''} ${person?.last_name || ''}`.trim();
-        return fullName || person?.email || person?.phone || fallback;
-    }
-
-    getInitial(person: any): string {
-        return this.getPersonName(person, 'U').charAt(0).toUpperCase();
-    }
-
-    getCurrency(job: any): string {
-        if (job?.currency_symbol) return job.currency_symbol;
-
-        switch (String(job?.currency_code || 'GBP').toUpperCase()) {
-            case 'NGN': return '₦';
-            case 'AED': return 'د.إ';
-            case 'USD': return '$';
-            case 'EUR': return '€';
-            case 'CAD': return '$';
-            case 'AUD': return '$';
-            case 'GBP':
-            default:
-                return '£';
-        }
-    }
-
-    toMoney(value: unknown): string {
-        return Number(value || 0).toFixed(2);
-    }
-
-    async handleRecovery(job: Job) {
-        const risk = this.getJobRisk(job);
-
-        const buttons: any[] = [
-            { text: 'Mark for Review', handler: () => this.markForReview(job) }
-        ];
-
-        if (risk.label === 'Stuck booking') {
-            buttons.unshift({ text: 'Retry Dispatch', handler: () => this.retryDispatch(job) });
-        }
-
-        buttons.push({ text: 'Force Cancel', role: 'destructive', handler: () => this.forceCancel(job) });
-        buttons.push({ text: 'Close', role: 'cancel' });
-
-        const alert = await this.alertCtrl.create({
-            header: 'Recovery Action',
-            subHeader: risk.label,
-            message: risk.message,
-            buttons
-        });
-
-        await alert.present();
-    }
-
-    private async retryDispatch(job: Job) {
-        try {
-            await this.jobService.retryDispatch(job.id, job.tenant_id);
-            await this.loadJobs();
-        } catch (e: unknown) {
-            const errAlert = await this.alertCtrl.create({
-                header: 'Error',
-                message: e instanceof Error ? e.message : 'Failed to retry dispatch',
-                buttons: ['OK']
-            });
-            await errAlert.present();
-        }
-    }
-
-    private async markForReview(job: Job) {
-        await this.jobService.markForReview(job.id, 'Admin flagged for manual review via dashboard');
-        await this.loadJobs();
-    }
-
-    private async forceCancel(job: Job) {
-        await this.jobService.forceCancel(job.id, 'Admin forced cancellation via dashboard');
-        await this.loadJobs();
-    }
-
-    getStatusVariant(status: string): 'success' | 'warning' | 'error' | 'info' | 'primary' | 'secondary' {
-        switch (this.normalise(status)) {
-            case 'requested':
-            case 'pending': return 'warning';
-            case 'accepted': return 'info';
-            case 'in_progress': return 'primary';
-            case 'completed': return 'success';
-            case 'cancelled':
-            case 'canceled': return 'error';
-            default: return 'secondary';
-        }
-    }
-
-    async viewTimeline(jobId: string) {
-        const modal = await this.modalCtrl.create({
-            component: JobTimelineComponent,
-            componentProps: { jobId },
-            cssClass: 'timeline-modal',
-            breakpoints: [0, 0.65, 0.9],
-            initialBreakpoint: 0.65
-        });
-
-        await modal.present();
-    }
-
-    async viewReceipt(receiptPath: string) {
-        const { data } = this.supabase.storage.from('documents').getPublicUrl(receiptPath);
-
-        if (data?.publicUrl) {
-            window.open(data.publicUrl, '_blank');
-        }
-    }
+    setTimeout(() => {
+      this.showToast.set(false);
+    }, 2500);
+  }
 }

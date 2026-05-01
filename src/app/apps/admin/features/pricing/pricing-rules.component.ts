@@ -2,7 +2,7 @@
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AdminService } from '../../services/admin.service';
 import { CommonModule } from '@angular/common';
-import { IonicModule, ToastController, AlertController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
 import { ServiceType } from '../../../../shared/models/booking.model';
 import { ButtonComponent } from '../../../../shared/ui/button';
 
@@ -109,8 +109,9 @@ type PricingServiceType = ServiceType & {
       </div>
     </div>
 
-    <ion-modal [isOpen]="isModalOpen()" (didDismiss)="closeModal()" class="admin-modal">
-      <ng-template>
+    @if (isModalOpen()) {
+      <div class="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden">
         <div class="flex flex-col h-full bg-white">
           <div class="p-8 border-b border-slate-100 flex items-center justify-between">
             <div>
@@ -263,20 +264,76 @@ type PricingServiceType = ServiceType & {
             </form>
           </div>
         </div>
-      </ng-template>
-    </ion-modal>
-  `
+        </div>
+      </div>
+    }
+
+    @if (confirmModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-xl font-bold text-slate-900">{{ confirmModal()?.title }}</h3>
+          <p class="text-sm text-slate-600 mt-4">{{ confirmModal()?.message }}</p>
+
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="confirmModal.set(null)">
+              {{ confirmModal()?.cancelText || 'Cancel' }}
+            </button>
+            <button type="button" class="modal-danger" (click)="runConfirmAction()">
+              {{ confirmModal()?.confirmText || 'Confirm' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (toastMessage()) {
+      <div class="fixed bottom-6 right-6 z-[11000] rounded-2xl px-5 py-4 shadow-2xl text-white font-semibold"
+           [class.bg-emerald-600]="toastType() === 'success'"
+           [class.bg-rose-600]="toastType() === 'danger'"
+           [class.bg-amber-600]="toastType() === 'warning'">
+        {{ toastMessage() }}
+      </div>
+    }
+
+  `,
+    styles: [`
+    .modal-danger {
+      border-radius: 0.9rem;
+      background: rgb(225 29 72);
+      color: white;
+      font-weight: 800;
+      padding: 0.7rem 1rem;
+    }
+
+    .modal-cancel {
+      border-radius: 0.9rem;
+      background: rgb(248 250 252);
+      color: rgb(71 85 105);
+      font-weight: 800;
+      padding: 0.7rem 1rem;
+      border: 1px solid rgb(226 232 240);
+    }
+  `]
 })
 export class PricingRulesComponent implements OnInit {
     private adminService = inject(AdminService);
     private fb = inject(FormBuilder);
-    private toastCtrl = inject(ToastController);
-    private alertCtrl = inject(AlertController);
 
     serviceTypes = signal<PricingServiceType[]>([]);
     isModalOpen = signal(false);
     isSaving = signal(false);
     selectedService = signal<PricingServiceType | null>(null);
+
+    toastMessage = signal<string | null>(null);
+    toastType = signal<'success' | 'danger' | 'warning'>('success');
+
+    confirmModal = signal<{
+        title: string;
+        message: string;
+        confirmText?: string;
+        cancelText?: string;
+        action?: () => Promise<void>;
+    } | null>(null);
 
     editForm: FormGroup = this.fb.group({
         name: ['', Validators.required],
@@ -386,29 +443,38 @@ export class PricingRulesComponent implements OnInit {
         }
     }
 
-    async deleteRule(service: PricingServiceType) {
-        const alert = await this.alertCtrl.create({
-            header: 'Delete Pricing Rule',
-            message: `Delete "${service.name || 'this rule'}"?`,
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Delete',
-                    role: 'destructive',
-                    handler: async () => {
-                        try {
-                            await this.adminService.deleteServiceType(service.id);
-                            await this.showToast('Pricing rule deleted.', 'success');
-                            await this.loadServiceTypes();
-                        } catch (error: unknown) {
-                            await this.showToast(error instanceof Error ? error.message : 'Failed to delete pricing rule.', 'danger');
-                        }
-                    }
-                }
-            ]
-        });
 
-        await alert.present();
+    async deleteRule(service: PricingServiceType) {
+        this.confirmModal.set({
+            title: 'Delete Pricing Rule',
+            message: `Delete "${service.name || 'this rule'}"?`,
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            action: async () => {
+                await this.adminService.deleteServiceType(service.id);
+                await this.showToast('Pricing rule deleted.', 'success');
+                await this.loadServiceTypes();
+            }
+        });
+    }
+
+    async runConfirmAction() {
+        const current = this.confirmModal();
+
+        if (!current?.action) {
+            this.confirmModal.set(null);
+            return;
+        }
+
+        try {
+            await current.action();
+            this.confirmModal.set(null);
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Action failed.',
+                'danger'
+            );
+        }
     }
 
     onCurrencyCodeChange() {
@@ -458,13 +524,14 @@ export class PricingRulesComponent implements OnInit {
         return (base + perKm * 5).toFixed(2);
     }
 
-    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
-        const toast = await this.toastCtrl.create({
-            message,
-            duration: 2500,
-            color
-        });
 
-        await toast.present();
+    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+        this.toastType.set(color);
+        this.toastMessage.set(message);
+
+        window.setTimeout(() => {
+            this.toastMessage.set(null);
+        }, 2500);
     }
+
 }

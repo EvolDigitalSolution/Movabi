@@ -1,24 +1,24 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, ToastController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
 import { AdminService } from '../../services/admin.service';
 import { Subscription, Profile } from '../../../../shared/models/booking.model';
 import { BadgeComponent } from '../../../../shared/ui/badge';
 
 type SubscriptionRow = Subscription & {
-    user?: Profile | null;
-    plan?: any;
-    billing_amount_display?: string | null;
-    stripe_price_id?: string | null;
-    current_period_end?: string | null;
-    cancel_at_period_end?: boolean | null;
+  user?: Profile | null;
+  plan?: any;
+  billing_amount_display?: string | null;
+  stripe_price_id?: string | null;
+  current_period_end?: string | null;
+  cancel_at_period_end?: boolean | null;
 };
 
 @Component({
-    selector: 'app-subscription-list',
-    standalone: true,
-    imports: [CommonModule, IonicModule, BadgeComponent],
-    template: `
+  selector: 'app-subscription-list',
+  standalone: true,
+  imports: [CommonModule, IonicModule, BadgeComponent],
+  template: `
     <div class="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
       <div class="p-8 border-b border-slate-100 flex items-center justify-between">
         <div>
@@ -45,8 +45,8 @@ type SubscriptionRow = Subscription & {
                 <td class="px-6 py-5">
                   <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden border border-slate-200 shadow-sm">
-                      @if (sub.user?.avatar_url) {
-                        <img [src]="sub.user?.avatar_url" class="w-full h-full object-cover" alt="Driver avatar" referrerpolicy="no-referrer">
+                      @if (getAvatarUrl(sub.user)) {
+                        <img [src]="getAvatarUrl(sub.user)" class="w-full h-full object-cover" alt="Driver avatar" referrerpolicy="no-referrer">
                       } @else {
                         <span class="text-xs font-bold text-slate-500">{{ getInitial(sub.user) }}</span>
                       }
@@ -54,7 +54,7 @@ type SubscriptionRow = Subscription & {
 
                     <div>
                       <div class="text-sm font-semibold text-slate-900">{{ getUserName(sub.user) }}</div>
-                      <div class="text-xs text-slate-500 font-medium mt-0.5">{{ sub.user?.email || sub.user?.phone || 'No contact' }}</div>
+                      <div class="text-xs text-slate-500 font-medium mt-0.5">{{ getUserContact(sub.user) }}</div>
                     </div>
                   </div>
                 </td>
@@ -71,7 +71,7 @@ type SubscriptionRow = Subscription & {
 
                 <td class="px-6 py-5">
                   <div class="text-sm font-semibold text-slate-900">
-                    {{ sub.current_period_end ? (sub.current_period_end | date:'mediumDate') : 'N/A' }}
+                    {{ formatDate(sub.current_period_end) }}
                   </div>
                 </td>
 
@@ -110,58 +110,109 @@ type SubscriptionRow = Subscription & {
         </table>
       </div>
     </div>
+
+    @if(showToast()) {
+      <div class="fixed top-5 right-5 z-[11000]">
+        <div
+          class="px-5 py-3 rounded-2xl shadow-xl text-white text-sm font-semibold"
+          [class.bg-emerald-600]="toastColor()==='success'"
+          [class.bg-rose-600]="toastColor()==='danger'"
+          [class.bg-amber-500]="toastColor()==='warning'"
+        >
+          {{ toastMessage() }}
+        </div>
+      </div>
+    }
   `
 })
 export class SubscriptionListComponent implements OnInit {
-    private adminService = inject(AdminService);
-    private toastCtrl = inject(ToastController);
+  private adminService = inject(AdminService);
 
-    subscriptions = signal<SubscriptionRow[]>([]);
+  subscriptions = signal<SubscriptionRow[]>([]);
 
-    async ngOnInit() {
-        await this.loadSubscriptions();
+  toastMessage = signal('');
+  toastColor = signal<'success' | 'danger' | 'warning'>('success');
+  showToast = signal(false);
+
+  async ngOnInit() {
+    await this.loadSubscriptions();
+  }
+
+  async loadSubscriptions() {
+    try {
+      const data = await this.adminService.getSubscriptions();
+      this.subscriptions.set(Array.isArray(data) ? (data as SubscriptionRow[]) : []);
+    } catch (error: unknown) {
+      this.triggerToast(error instanceof Error ? error.message : 'Failed to load subscriptions.', 'danger');
+      this.subscriptions.set([]);
+    }
+  }
+
+  getUserName(user?: Profile | null): string {
+    const fullName =
+      (user as any)?.full_name ||
+      `${(user as any)?.first_name || ''} ${(user as any)?.last_name || ''}`.trim();
+
+    return fullName || (user as any)?.email || (user as any)?.phone || 'Driver';
+  }
+
+  getInitial(user?: Profile | null): string {
+    return this.getUserName(user).charAt(0).toUpperCase();
+  }
+
+  getUserContact(user?: Profile | null): string {
+    return (user as any)?.email || (user as any)?.phone || 'No contact';
+  }
+
+  getAvatarUrl(user?: Profile | null): string | null {
+    return (user as any)?.avatar_url || null;
+  }
+
+  getPlanDisplay(sub: SubscriptionRow): string {
+    return (
+      sub?.plan?.display_name ||
+      sub?.plan?.name ||
+      sub?.billing_amount_display ||
+      sub?.stripe_price_id ||
+      'No plan'
+    );
+  }
+
+  formatDate(value?: string | null): string {
+    if (!value) return 'N/A';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
     }
 
-    async loadSubscriptions() {
-        try {
-            const data = await this.adminService.getSubscriptions();
-            this.subscriptions.set(Array.isArray(data) ? data as SubscriptionRow[] : []);
-        } catch (error: unknown) {
-            await this.showToast(error instanceof Error ? error.message : 'Failed to load subscriptions.', 'danger');
-            this.subscriptions.set([]);
-        }
-    }
+    return date.toLocaleDateString();
+  }
 
-    getUserName(user?: Profile | null): string {
-        const fullName = (user as any)?.full_name || `${(user as any)?.first_name || ''} ${(user as any)?.last_name || ''}`.trim();
-        return fullName || (user as any)?.email || (user as any)?.phone || 'Driver';
+  getStatusVariant(status: string | null | undefined): 'success' | 'error' | 'warning' | 'info' | 'primary' | 'secondary' {
+    switch (String(status || '').toLowerCase()) {
+      case 'active':
+        return 'success';
+      case 'canceled':
+      case 'cancelled':
+        return 'error';
+      case 'past_due':
+        return 'warning';
+      case 'trialing':
+        return 'info';
+      default:
+        return 'secondary';
     }
+  }
 
-    getInitial(user?: Profile | null): string {
-        return this.getUserName(user).charAt(0).toUpperCase();
-    }
+  triggerToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+    this.toastMessage.set(message);
+    this.toastColor.set(color);
+    this.showToast.set(true);
 
-    getPlanDisplay(sub: SubscriptionRow): string {
-        return sub.plan?.display_name ||
-            sub.plan?.name ||
-            sub.billing_amount_display ||
-            sub.stripe_price_id ||
-            'No plan';
-    }
-
-    getStatusVariant(status: string): 'success' | 'error' | 'warning' | 'info' | 'primary' | 'secondary' {
-        switch ((status || '').toLowerCase()) {
-            case 'active': return 'success';
-            case 'canceled':
-            case 'cancelled': return 'error';
-            case 'past_due': return 'warning';
-            case 'trialing': return 'info';
-            default: return 'secondary';
-        }
-    }
-
-    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
-        const toast = await this.toastCtrl.create({ message, duration: 2500, color });
-        await toast.present();
-    }
+    setTimeout(() => {
+      this.showToast.set(false);
+    }, 2500);
+  }
 }

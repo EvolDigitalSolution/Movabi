@@ -1,16 +1,16 @@
-﻿import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { IonicModule, ToastController, AlertController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
 import { FormsModule } from '@angular/forms';
 import { addIcons } from 'ionicons';
 import {
-    settingsOutline,
-    globeOutline,
-    trashOutline,
-    addCircleOutline,
-    saveOutline,
-    refreshOutline,
-    checkmarkCircleOutline
+  settingsOutline,
+  globeOutline,
+  trashOutline,
+  addCircleOutline,
+  saveOutline,
+  refreshOutline,
+  checkmarkCircleOutline
 } from 'ionicons/icons';
 import { SystemConfigService } from '../../../../core/services/config/system-config.service';
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
@@ -19,10 +19,10 @@ import { CardComponent, ButtonComponent, InputComponent } from '../../../../shar
 type SettingsTab = 'general' | 'countries';
 
 @Component({
-    selector: 'app-admin-settings',
-    standalone: true,
-    imports: [CommonModule, IonicModule, FormsModule, CardComponent, ButtonComponent, InputComponent],
-    template: `
+  selector: 'app-admin-settings',
+  standalone: true,
+  imports: [CommonModule, IonicModule, FormsModule, CardComponent, ButtonComponent, InputComponent],
+  template: `
     <div class="w-full min-h-screen bg-slate-50 overflow-y-auto">
       <div class="max-w-6xl mx-auto p-5 md:p-8 space-y-6 pb-12">
 
@@ -164,7 +164,7 @@ type SettingsTab = 'general' | 'countries';
                             </p>
                           </div>
 
-                          <button type="button" (click)="removeCountry(i)" class="icon-danger-btn" title="Remove country">
+                          <button type="button" (click)="askRemoveCountry(i)" class="icon-danger-btn" title="Remove country">
                             <ion-icon name="trash-outline" class="text-lg"></ion-icon>
                           </button>
                         </div>
@@ -244,8 +244,42 @@ type SettingsTab = 'general' | 'countries';
         </div>
       </div>
     </div>
+
+    @if (confirmRemoveIndex() !== null) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-xl w-full max-w-md p-6">
+          <h3 class="text-lg font-bold text-slate-900">Remove Country</h3>
+          <p class="text-sm text-slate-500 mt-2">
+            Remove "{{ countries[confirmRemoveIndex()!]?.name || 'this country' }}"?
+          </p>
+
+          <div class="mt-6 flex gap-3">
+            <button type="button" (click)="confirmRemoveIndex.set(null)" class="flex-1 h-11 rounded-xl bg-slate-100 font-bold">
+              Cancel
+            </button>
+
+            <button type="button" (click)="removeCountryNow()" class="flex-1 h-11 rounded-xl bg-rose-600 text-white font-bold">
+              Remove
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if(showToast()) {
+      <div class="fixed top-5 right-5 z-[11000]">
+        <div
+          class="px-5 py-3 rounded-2xl shadow-xl text-white text-sm font-semibold"
+          [class.bg-emerald-600]="toastColor()==='success'"
+          [class.bg-rose-600]="toastColor()==='danger'"
+          [class.bg-amber-500]="toastColor()==='warning'"
+        >
+          {{ toastMessage() }}
+        </div>
+      </div>
+    }
   `,
-    styles: [`
+  styles: [`
     :host {
       display: block;
       width: 100%;
@@ -360,431 +394,431 @@ type SettingsTab = 'general' | 'countries';
   `]
 })
 export class AdminSettingsComponent implements OnInit {
-    private systemConfig = inject(SystemConfigService);
-    private appConfig = inject(AppConfigService);
-    private toastCtrl = inject(ToastController);
-    private alertCtrl = inject(AlertController);
+  private systemConfig = inject(SystemConfigService);
+  private appConfig = inject(AppConfigService);
 
-    activeTab = signal<SettingsTab>('general');
-    saving = signal(false);
-    loading = signal(true);
+  activeTab = signal<SettingsTab>('general');
+  saving = signal(false);
+  loading = signal(true);
+  confirmRemoveIndex = signal<number | null>(null);
 
-    generalConfig = {
-        defaultCountryCode: 'GB',
-        mapLat: 51.5074,
-        mapLng: -0.1278
+  toastMessage = signal('');
+  toastColor = signal<'success' | 'danger' | 'warning'>('success');
+  showToast = signal(false);
+
+  generalConfig = {
+    defaultCountryCode: 'GB',
+    mapLat: 51.5074,
+    mapLng: -0.1278
+  };
+
+  countries: CountryConfig[] = [];
+  private originalCountries: CountryConfig[] = [];
+
+  constructor() {
+    addIcons({
+      settingsOutline,
+      globeOutline,
+      trashOutline,
+      addCircleOutline,
+      saveOutline,
+      refreshOutline,
+      checkmarkCircleOutline
+    });
+  }
+
+  async ngOnInit() {
+    await this.loadSettings();
+  }
+
+  async loadSettings() {
+    this.loading.set(true);
+
+    try {
+      await this.systemConfig.loadConfigs();
+
+      const appCountries = this.appConfig.countries();
+      const loadedCountries = Array.isArray(appCountries) && appCountries.length
+        ? appCountries
+        : this.getDefaultCountries();
+
+      this.countries = this.mergeCountries(
+        this.cloneCountries(loadedCountries).map(country => this.normaliseCountry(country)),
+        this.getDefaultCountries().map(country => this.normaliseCountry(country))
+      );
+
+      this.originalCountries = this.cloneCountries(this.countries);
+
+      this.generalConfig.defaultCountryCode = this.normaliseCode(
+        this.systemConfig.getConfig('default_country_code', this.countries[0]?.code || 'GB')
+      );
+
+      if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
+        this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
+      }
+
+      this.onDefaultCountryChange();
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+
+      this.countries = this.getDefaultCountries();
+      this.originalCountries = this.cloneCountries(this.countries);
+      this.generalConfig.defaultCountryCode = 'GB';
+      this.onDefaultCountryChange();
+
+      this.triggerToast('Settings loaded with defaults.', 'warning');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private mergeCountries(saved: CountryConfig[], defaults: CountryConfig[]): CountryConfig[] {
+    const map = new Map<string, CountryConfig>();
+
+    for (const country of defaults) {
+      map.set(country.code, country);
+    }
+
+    for (const country of saved) {
+      map.set(country.code, {
+        ...map.get(country.code),
+        ...country,
+        defaultCenter: {
+          ...(map.get(country.code)?.defaultCenter || { lat: 0, lng: 0 }),
+          ...(country.defaultCenter || { lat: 0, lng: 0 })
+        }
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  addCountry() {
+    this.countries.push({
+      code: 'GB',
+      name: 'New Country',
+      currency: 'GBP',
+      currencySymbol: '£',
+      locale: 'en-GB',
+      phoneCode: '+44',
+      defaultCenter: { lat: 51.5074, lng: -0.1278 }
+    });
+
+    this.activeTab.set('countries');
+  }
+
+  askRemoveCountry(index: number) {
+    this.confirmRemoveIndex.set(index);
+  }
+
+  removeCountryNow() {
+    const index = this.confirmRemoveIndex();
+
+    if (index === null || index < 0 || index >= this.countries.length) {
+      this.confirmRemoveIndex.set(null);
+      return;
+    }
+
+    this.countries.splice(index, 1);
+
+    if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
+      this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
+      this.onDefaultCountryChange();
+    }
+
+    this.confirmRemoveIndex.set(null);
+    this.triggerToast('Country removed.', 'success');
+  }
+
+  resetChanges() {
+    this.countries = this.cloneCountries(this.originalCountries);
+    this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
+    this.onDefaultCountryChange();
+    this.triggerToast('Changes reset.', 'success');
+  }
+
+  onDefaultCountryChange() {
+    const country = this.getDefaultCountry();
+
+    if (country?.defaultCenter) {
+      this.generalConfig.mapLat = Number(country.defaultCenter.lat || 0);
+      this.generalConfig.mapLng = Number(country.defaultCenter.lng || 0);
+    }
+  }
+
+  onCurrencyChange(country: CountryConfig) {
+    country.currency = this.normaliseCode(country.currency);
+    country.currencySymbol = this.symbolFromCode(country.currency);
+
+    if (!country.locale) {
+      country.locale = this.localeFromCountry(country.code);
+    }
+  }
+
+  async saveAll() {
+    if (!this.validateSettings()) return;
+
+    this.saving.set(true);
+
+    try {
+      const normalisedCountries = this.countries.map(country => this.normaliseCountry(country));
+
+      await this.systemConfig.setConfig('countries', normalisedCountries);
+      await this.systemConfig.setConfig('default_country_code', this.normaliseCode(this.generalConfig.defaultCountryCode));
+      await this.systemConfig.setConfig('default_map_center', {
+        lat: Number(this.generalConfig.mapLat || 0),
+        lng: Number(this.generalConfig.mapLng || 0)
+      });
+
+      await this.appConfig.refreshConfigs();
+
+      this.countries = this.cloneCountries(normalisedCountries);
+      this.originalCountries = this.cloneCountries(normalisedCountries);
+
+      this.triggerToast('Settings saved successfully.', 'success');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      this.triggerToast(error instanceof Error ? error.message : JSON.stringify(error), 'danger');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  validateSettings(): boolean {
+    if (!this.countries.length) {
+      this.triggerToast('Add at least one country.', 'warning');
+      return false;
+    }
+
+    const codes = new Set<string>();
+
+    for (const country of this.countries) {
+      const normalised = this.normaliseCountry(country);
+      Object.assign(country, normalised);
+
+      if (!country.code || !country.name || !country.currency || !country.currencySymbol) {
+        this.triggerToast('Country name, code, currency and symbol are required.', 'warning');
+        return false;
+      }
+
+      if (codes.has(country.code)) {
+        this.triggerToast(`Duplicate country code: ${country.code}`, 'warning');
+        return false;
+      }
+
+      codes.add(country.code);
+    }
+
+    this.generalConfig.defaultCountryCode = this.normaliseCode(this.generalConfig.defaultCountryCode);
+
+    if (!codes.has(this.generalConfig.defaultCountryCode)) {
+      this.triggerToast('Default country must exist in countries list.', 'warning');
+      return false;
+    }
+
+    return true;
+  }
+
+  getDefaultCountry(): CountryConfig | undefined {
+    return this.countries.find(c => c.code === this.generalConfig.defaultCountryCode) || this.countries[0];
+  }
+
+  trackCountry(country: CountryConfig, index: number): string {
+    return `${country.code || 'new'}-${index}`;
+  }
+
+  normaliseCode(value?: string | null): string {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  symbolFromCode(code?: string | null): string {
+    const map: Record<string, string> = {
+      GBP: '£',
+      USD: '$',
+      EUR: '€',
+      NGN: '₦',
+      CAD: '$',
+      AUD: '$',
+      AED: 'د.إ'
     };
 
-    countries: CountryConfig[] = [];
-    private originalCountries: CountryConfig[] = [];
+    return map[this.normaliseCode(code)] || '£';
+  }
 
-    constructor() {
-        addIcons({
-            settingsOutline,
-            globeOutline,
-            trashOutline,
-            addCircleOutline,
-            saveOutline,
-            refreshOutline,
-            checkmarkCircleOutline
-        });
-    }
+  localeFromCountry(code?: string | null): string {
+    const map: Record<string, string> = {
+      GB: 'en-GB',
+      US: 'en-US',
+      NG: 'en-NG',
+      CA: 'en-CA',
+      AU: 'en-AU',
+      AE: 'ar-AE',
+      EU: 'en-IE'
+    };
 
-    async ngOnInit() {
-        await this.loadSettings();
-    }
+    return map[this.normaliseCode(code)] || 'en-GB';
+  }
 
-    async loadSettings() {
-        this.loading.set(true);
+  private normaliseCountry(country: CountryConfig): CountryConfig {
+    const code = this.normaliseCode(country?.code || 'GB');
+    const currency = this.normaliseCode(country?.currency || 'GBP');
 
-        try {
-            await this.systemConfig.loadConfigs();
+    return {
+      code,
+      name: country?.name || code,
+      currency,
+      currencySymbol: country?.currencySymbol || this.symbolFromCode(currency),
+      locale: country?.locale || this.localeFromCountry(code),
+      phoneCode: country?.phoneCode || '',
+      defaultCenter: {
+        lat: Number(country?.defaultCenter?.lat || 0),
+        lng: Number(country?.defaultCenter?.lng || 0)
+      }
+    };
+  }
 
-            const appCountries = this.appConfig.countries();
-            const loadedCountries = Array.isArray(appCountries) && appCountries.length
-                ? appCountries
-                : this.getDefaultCountries();
+  private cloneCountries(countries: CountryConfig[]): CountryConfig[] {
+    return JSON.parse(JSON.stringify(countries || []));
+  }
 
-            this.countries = this.mergeCountries(
-                this.cloneCountries(loadedCountries).map(country => this.normaliseCountry(country)),
-                this.getDefaultCountries().map(country => this.normaliseCountry(country))
-            );
-            this.originalCountries = this.cloneCountries(this.countries);
+  private getDefaultCountries(): CountryConfig[] {
+    return [
+      {
+        code: 'GB',
+        name: 'United Kingdom',
+        currency: 'GBP',
+        currencySymbol: '£',
+        locale: 'en-GB',
+        phoneCode: '+44',
+        defaultCenter: { lat: 51.5074, lng: -0.1278 }
+      },
+      {
+        code: 'US',
+        name: 'United States',
+        currency: 'USD',
+        currencySymbol: '$',
+        locale: 'en-US',
+        phoneCode: '+1',
+        defaultCenter: { lat: 38.9072, lng: -77.0369 }
+      },
+      {
+        code: 'NG',
+        name: 'Nigeria',
+        currency: 'NGN',
+        currencySymbol: '₦',
+        locale: 'en-NG',
+        phoneCode: '+234',
+        defaultCenter: { lat: 6.5244, lng: 3.3792 }
+      },
+      {
+        code: 'IE',
+        name: 'Ireland',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'en-IE',
+        phoneCode: '+353',
+        defaultCenter: { lat: 53.3498, lng: -6.2603 }
+      },
+      {
+        code: 'FR',
+        name: 'France',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'fr-FR',
+        phoneCode: '+33',
+        defaultCenter: { lat: 48.8566, lng: 2.3522 }
+      },
+      {
+        code: 'DE',
+        name: 'Germany',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'de-DE',
+        phoneCode: '+49',
+        defaultCenter: { lat: 52.52, lng: 13.405 }
+      },
+      {
+        code: 'ES',
+        name: 'Spain',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'es-ES',
+        phoneCode: '+34',
+        defaultCenter: { lat: 40.4168, lng: -3.7038 }
+      },
+      {
+        code: 'IT',
+        name: 'Italy',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'it-IT',
+        phoneCode: '+39',
+        defaultCenter: { lat: 41.9028, lng: 12.4964 }
+      },
+      {
+        code: 'NL',
+        name: 'Netherlands',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'nl-NL',
+        phoneCode: '+31',
+        defaultCenter: { lat: 52.3676, lng: 4.9041 }
+      },
+      {
+        code: 'BE',
+        name: 'Belgium',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'nl-BE',
+        phoneCode: '+32',
+        defaultCenter: { lat: 50.8503, lng: 4.3517 }
+      },
+      {
+        code: 'PT',
+        name: 'Portugal',
+        currency: 'EUR',
+        currencySymbol: '€',
+        locale: 'pt-PT',
+        phoneCode: '+351',
+        defaultCenter: { lat: 38.7223, lng: -9.1393 }
+      },
+      {
+        code: 'CA',
+        name: 'Canada',
+        currency: 'CAD',
+        currencySymbol: '$',
+        locale: 'en-CA',
+        phoneCode: '+1',
+        defaultCenter: { lat: 45.4215, lng: -75.6972 }
+      },
+      {
+        code: 'AU',
+        name: 'Australia',
+        currency: 'AUD',
+        currencySymbol: '$',
+        locale: 'en-AU',
+        phoneCode: '+61',
+        defaultCenter: { lat: -35.2809, lng: 149.13 }
+      },
+      {
+        code: 'AE',
+        name: 'United Arab Emirates',
+        currency: 'AED',
+        currencySymbol: 'د.إ',
+        locale: 'ar-AE',
+        phoneCode: '+971',
+        defaultCenter: { lat: 25.2048, lng: 55.2708 }
+      }
+    ];
+  }
 
-            this.generalConfig.defaultCountryCode = this.normaliseCode(
-                this.systemConfig.getConfig('default_country_code', this.countries[0]?.code || 'GB')
-            );
+  triggerToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+    this.toastMessage.set(message);
+    this.toastColor.set(color);
+    this.showToast.set(true);
 
-            if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
-                this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
-            }
-
-            this.onDefaultCountryChange();
-        } catch (error) {
-            console.error('Failed to load settings:', error);
-
-            this.countries = this.getDefaultCountries();
-            this.originalCountries = this.cloneCountries(this.countries);
-            this.generalConfig.defaultCountryCode = 'GB';
-            this.onDefaultCountryChange();
-
-            await this.showToast('Settings loaded with defaults.', 'warning');
-        } finally {
-            this.loading.set(false);
-        }
-    }
-
-    private mergeCountries(saved: CountryConfig[], defaults: CountryConfig[]): CountryConfig[] {
-        const map = new Map<string, CountryConfig>();
-
-        for (const country of defaults) {
-            map.set(country.code, country);
-        }
-
-        for (const country of saved) {
-            map.set(country.code, {
-                ...map.get(country.code),
-                ...country,
-                defaultCenter: {
-                    ...(map.get(country.code)?.defaultCenter || { lat: 0, lng: 0 }),
-                    ...(country.defaultCenter || { lat: 0, lng: 0 })
-                }
-            });
-        }
-
-        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    addCountry() {
-        this.countries.push({
-            code: 'GB',
-            name: 'New Country',
-            currency: 'GBP',
-            currencySymbol: '£',
-            locale: 'en-GB',
-            phoneCode: '+44',
-            defaultCenter: { lat: 51.5074, lng: -0.1278 }
-        });
-
-        this.activeTab.set('countries');
-    }
-
-    async removeCountry(index: number) {
-        const country = this.countries[index];
-
-        const alert = await this.alertCtrl.create({
-            header: 'Remove Country',
-            message: `Remove "${country?.name || 'this country'}"?`,
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Remove',
-                    role: 'destructive',
-                    handler: () => {
-                        this.countries.splice(index, 1);
-
-                        if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
-                            this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
-                            this.onDefaultCountryChange();
-                        }
-                    }
-                }
-            ]
-        });
-
-        await alert.present();
-    }
-
-    resetChanges() {
-        this.countries = this.cloneCountries(this.originalCountries);
-        this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
-        this.onDefaultCountryChange();
-    }
-
-    onDefaultCountryChange() {
-        const country = this.getDefaultCountry();
-
-        if (country?.defaultCenter) {
-            this.generalConfig.mapLat = Number(country.defaultCenter.lat || 0);
-            this.generalConfig.mapLng = Number(country.defaultCenter.lng || 0);
-        }
-    }
-
-    onCurrencyChange(country: CountryConfig) {
-        country.currency = this.normaliseCode(country.currency);
-        country.currencySymbol = this.symbolFromCode(country.currency);
-
-        if (!country.locale) {
-            country.locale = this.localeFromCountry(country.code);
-        }
-    }
-
-    async saveAll() {
-        if (!this.validateSettings()) return;
-
-        this.saving.set(true);
-
-        try {
-            const normalisedCountries = this.countries.map(country => this.normaliseCountry(country));
-
-            await this.systemConfig.setConfig('countries', normalisedCountries);
-            await this.systemConfig.setConfig('default_country_code', this.normaliseCode(this.generalConfig.defaultCountryCode));
-            await this.systemConfig.setConfig('default_map_center', {
-                lat: Number(this.generalConfig.mapLat || 0),
-                lng: Number(this.generalConfig.mapLng || 0)
-            });
-
-            await this.appConfig.refreshConfigs();
-
-            this.countries = this.cloneCountries(normalisedCountries);
-            this.originalCountries = this.cloneCountries(normalisedCountries);
-
-            await this.showToast('Settings saved successfully.', 'success');
-        } catch (error) {
-            console.error('Error saving settings:', error);
-            await this.showToast(
-                error instanceof Error ? error.message : JSON.stringify(error),
-                'danger'
-            );
-        } finally {
-            this.saving.set(false);
-        }
-    }
-
-    validateSettings(): boolean {
-        if (!this.countries.length) {
-            this.showToast('Add at least one country.', 'warning');
-            return false;
-        }
-
-        const codes = new Set<string>();
-
-        for (const country of this.countries) {
-            const normalised = this.normaliseCountry(country);
-            Object.assign(country, normalised);
-
-            if (!country.code || !country.name || !country.currency || !country.currencySymbol) {
-                this.showToast('Country name, code, currency and symbol are required.', 'warning');
-                return false;
-            }
-
-            if (codes.has(country.code)) {
-                this.showToast(`Duplicate country code: ${country.code}`, 'warning');
-                return false;
-            }
-
-            codes.add(country.code);
-        }
-
-        this.generalConfig.defaultCountryCode = this.normaliseCode(this.generalConfig.defaultCountryCode);
-
-        if (!codes.has(this.generalConfig.defaultCountryCode)) {
-            this.showToast('Default country must exist in countries list.', 'warning');
-            return false;
-        }
-
-        return true;
-    }
-
-    getDefaultCountry(): CountryConfig | undefined {
-        return this.countries.find(c => c.code === this.generalConfig.defaultCountryCode) || this.countries[0];
-    }
-
-    trackCountry(country: CountryConfig, index: number): string {
-        return `${country.code || 'new'}-${index}`;
-    }
-
-    normaliseCode(value?: string | null): string {
-        return String(value || '').trim().toUpperCase();
-    }
-
-    symbolFromCode(code?: string | null): string {
-        const map: Record<string, string> = {
-            GBP: '£',
-            USD: '$',
-            EUR: '€',
-            NGN: '₦',
-            CAD: '$',
-            AUD: '$',
-            AED: 'د.إ' // ✅ add this
-        };
-
-        return map[this.normaliseCode(code)] || '£';
-    }
-    localeFromCountry(code?: string | null): string {
-        const map: Record<string, string> = {
-            GB: 'en-GB',
-            US: 'en-US',
-            NG: 'en-NG',
-            CA: 'en-CA',
-            AU: 'en-AU',
-            AE: 'ar-AE', // ✅ add this
-            EU: 'en-IE'
-        };
-
-        return map[this.normaliseCode(code)] || 'en-GB';
-    }
-
-    private normaliseCountry(country: CountryConfig): CountryConfig {
-        const code = this.normaliseCode(country?.code || 'GB');
-        const currency = this.normaliseCode(country?.currency || 'GBP');
-
-        return {
-            code,
-            name: country?.name || code,
-            currency,
-            currencySymbol: country?.currencySymbol || this.symbolFromCode(currency),
-            locale: country?.locale || this.localeFromCountry(code),
-            phoneCode: country?.phoneCode || '',
-            defaultCenter: {
-                lat: Number(country?.defaultCenter?.lat || 0),
-                lng: Number(country?.defaultCenter?.lng || 0)
-            }
-        };
-    }
-
-    private cloneCountries(countries: CountryConfig[]): CountryConfig[] {
-        return JSON.parse(JSON.stringify(countries || []));
-    }
-
-    private getDefaultCountries(): CountryConfig[] {
-        return [
-            {
-                code: 'GB',
-                name: 'United Kingdom',
-                currency: 'GBP',
-                currencySymbol: '£',
-                locale: 'en-GB',
-                phoneCode: '+44',
-                defaultCenter: { lat: 51.5074, lng: -0.1278 }
-            },
-            {
-                code: 'US',
-                name: 'United States',
-                currency: 'USD',
-                currencySymbol: '$',
-                locale: 'en-US',
-                phoneCode: '+1',
-                defaultCenter: { lat: 38.9072, lng: -77.0369 }
-            },
-            {
-                code: 'NG',
-                name: 'Nigeria',
-                currency: 'NGN',
-                currencySymbol: '₦',
-                locale: 'en-NG',
-                phoneCode: '+234',
-                defaultCenter: { lat: 6.5244, lng: 3.3792 }
-            },
-            {
-                code: 'IE',
-                name: 'Ireland',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'en-IE',
-                phoneCode: '+353',
-                defaultCenter: { lat: 53.3498, lng: -6.2603 }
-            },
-            {
-                code: 'FR',
-                name: 'France',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'fr-FR',
-                phoneCode: '+33',
-                defaultCenter: { lat: 48.8566, lng: 2.3522 }
-            },
-            {
-                code: 'DE',
-                name: 'Germany',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'de-DE',
-                phoneCode: '+49',
-                defaultCenter: { lat: 52.52, lng: 13.405 }
-            },
-            {
-                code: 'ES',
-                name: 'Spain',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'es-ES',
-                phoneCode: '+34',
-                defaultCenter: { lat: 40.4168, lng: -3.7038 }
-            },
-            {
-                code: 'IT',
-                name: 'Italy',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'it-IT',
-                phoneCode: '+39',
-                defaultCenter: { lat: 41.9028, lng: 12.4964 }
-            },
-            {
-                code: 'NL',
-                name: 'Netherlands',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'nl-NL',
-                phoneCode: '+31',
-                defaultCenter: { lat: 52.3676, lng: 4.9041 }
-            },
-            {
-                code: 'BE',
-                name: 'Belgium',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'nl-BE',
-                phoneCode: '+32',
-                defaultCenter: { lat: 50.8503, lng: 4.3517 }
-            },
-            {
-                code: 'PT',
-                name: 'Portugal',
-                currency: 'EUR',
-                currencySymbol: '€',
-                locale: 'pt-PT',
-                phoneCode: '+351',
-                defaultCenter: { lat: 38.7223, lng: -9.1393 }
-            },
-            {
-                code: 'CA',
-                name: 'Canada',
-                currency: 'CAD',
-                currencySymbol: '$',
-                locale: 'en-CA',
-                phoneCode: '+1',
-                defaultCenter: { lat: 45.4215, lng: -75.6972 }
-            },
-            {
-                code: 'AU',
-                name: 'Australia',
-                currency: 'AUD',
-                currencySymbol: '$',
-                locale: 'en-AU',
-                phoneCode: '+61',
-                defaultCenter: { lat: -35.2809, lng: 149.13 }
-            },
-            {
-                code: 'AE',
-                name: 'United Arab Emirates',
-                currency: 'AED',
-                currencySymbol: 'د.إ',
-                locale: 'ar-AE',
-                phoneCode: '+971',
-                defaultCenter: { lat: 25.2048, lng: 55.2708 }
-            },
-        ];
-    }
-
-    private async showToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
-        const toast = await this.toastCtrl.create({
-            message,
-            duration: 2500,
-            color
-        });
-
-        await toast.present();
-    }
+    setTimeout(() => {
+      this.showToast.set(false);
+    }, 2500);
+  }
 }

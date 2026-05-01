@@ -1,9 +1,9 @@
-import { Component, inject, OnInit, OnDestroy, signal, ViewChild } from '@angular/core';
-import { AdminService, FailedBooking, WalletTransaction } from '../../services/admin.service';
+import { Component, inject, OnDestroy, OnInit, signal, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { RouterModule } from '@angular/router';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
+import { AdminService, FailedBooking, WalletTransaction } from '../../services/admin.service';
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -12,45 +12,45 @@ import { JobAnomalyService, JobAnomaly } from '@core/services/job/job-anomaly.se
 import { MapComponent } from '../../../../shared/components/map/map.component';
 
 interface DashboardStat {
-    label: string;
-    value: number | string;
-    prefix?: string;
-    icon: string;
-    bgClass: string;
-    iconClass: string;
-    note: string;
+  label: string;
+  value: number | string;
+  prefix?: string;
+  icon: string;
+  bgClass: string;
+  iconClass: string;
+  note: string;
 }
 
 interface RevenueBar {
-    day: string;
-    value: number;
-    height?: number;
+  day: string;
+  value: number;
+  height?: number;
 }
 
 interface OperationalMetrics {
-    online_drivers_count: number;
-    revenue_today: number;
-    active_jobs_count: number;
-    platform_earnings_today: number;
-    driver_payouts_today: number;
-    pro_jobs_count: number;
-    starter_jobs_count: number;
-    total_pro_drivers: number;
+  online_drivers_count: number;
+  revenue_today: number;
+  active_jobs_count: number;
+  platform_earnings_today: number;
+  driver_payouts_today: number;
+  pro_jobs_count: number;
+  starter_jobs_count: number;
+  total_pro_drivers: number;
 }
 
 interface AdminEvent {
-    id: string;
-    type: string;
-    user?: Profile;
-    created_at: string;
-    payload: Record<string, unknown>;
+  id: string;
+  type: string;
+  user?: Profile;
+  created_at: string;
+  payload: Record<string, unknown>;
 }
 
 @Component({
-    selector: 'app-admin-dashboard',
-    standalone: true,
-    imports: [CommonModule, IonicModule, RouterModule, CardComponent, ButtonComponent, BadgeComponent, MapComponent],
-    template: `
+  selector: 'app-admin-dashboard',
+  standalone: true,
+  imports: [CommonModule, IonicModule, RouterModule, CardComponent, ButtonComponent, BadgeComponent, MapComponent],
+  template: `
     <div class="space-y-6 container-padding pb-12 bg-slate-50 min-h-screen">
       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pt-6">
         <div>
@@ -246,14 +246,14 @@ interface AdminEvent {
               <div class="flex items-center justify-between gap-4 p-4 bg-rose-50 rounded-2xl border border-rose-100">
                 <div class="min-w-0">
                   <h5 class="text-sm font-bold text-slate-900 truncate">
-                    {{ failure.customer?.first_name || 'Unknown' }} {{ failure.customer?.last_name || '' }}
+                    {{ getPersonName(failure.customer, 'Unknown') }}
                   </h5>
                   <p class="text-xs text-rose-700 mt-1 truncate">
-                    {{ failure.status || 'unknown' }} · {{ failure.cancellation_reason || 'No reason' }}
+                    {{ failure.status || 'unknown' }} Â· {{ failure.cancellation_reason || 'No reason' }}
                   </p>
                 </div>
                 <span class="text-[11px] font-bold text-slate-500 whitespace-nowrap">
-                  {{ failure.created_at | date:'shortTime' }}
+                  {{ formatTime(failure.created_at) }}
                 </span>
               </div>
             }
@@ -275,7 +275,7 @@ interface AdminEvent {
                     <ion-icon [name]="payment.type === 'credit' ? 'arrow-down-outline' : 'arrow-up-outline'"></ion-icon>
                   </div>
                   <div class="min-w-0">
-                    <h5 class="text-sm font-bold text-slate-900 truncate">{{ payment.user?.first_name || 'Unknown' }}</h5>
+                    <h5 class="text-sm font-bold text-slate-900 truncate">{{ getPersonName(payment.user, 'Unknown') }}</h5>
                     <p class="text-xs text-slate-600 mt-1 truncate">{{ payment.description || 'Wallet transaction' }}</p>
                   </div>
                 </div>
@@ -317,10 +317,10 @@ interface AdminEvent {
               @for (event of (events() || []); track event.id) {
                 <tr class="text-sm hover:bg-slate-50/80 transition-colors">
                   <td class="py-4 px-5">
-                    <app-badge variant="secondary">{{ (event.type || 'system').replace('_', ' ') }}</app-badge>
+                    <app-badge variant="secondary">{{ formatEventType(event.type) }}</app-badge>
                   </td>
-                  <td class="py-4 px-5 font-bold text-slate-900">{{ event.user?.first_name || 'System' }}</td>
-                  <td class="py-4 px-5 text-slate-500 font-medium">{{ event.created_at | date:'shortTime' }}</td>
+                  <td class="py-4 px-5 font-bold text-slate-900">{{ getPersonName(event.user, 'System') }}</td>
+                  <td class="py-4 px-5 text-slate-500 font-medium">{{ formatTime(event.created_at) }}</td>
                   <td class="py-4 px-5 text-slate-500 text-xs truncate max-w-xs font-mono">
                     {{ event.payload || {} | json }}
                   </td>
@@ -336,7 +336,7 @@ interface AdminEvent {
       </div>
     </div>
   `,
-    styles: [`
+  styles: [`
     .metric-panel {
       border-radius: 1.5rem;
       padding: 1.5rem;
@@ -387,159 +387,184 @@ interface AdminEvent {
   `]
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
-    @ViewChild('adminMap') adminMap!: MapComponent;
+  @ViewChild('adminMap') adminMap!: MapComponent;
 
-    private adminService = inject(AdminService);
-    private supabase = inject(SupabaseService);
-    private config = inject(AppConfigService);
-    private anomalyService = inject(JobAnomalyService);
+  private adminService = inject(AdminService);
+  private supabase = inject(SupabaseService);
+  private config = inject(AppConfigService);
+  private anomalyService = inject(JobAnomalyService);
 
-    stats = this.adminService.stats;
-    activeJobs = signal<Job[]>([]);
-    stuckJobs = signal<JobAnomaly[]>([]);
-    operationalMetrics = signal<OperationalMetrics | null>(null);
-    failedBookings = signal<FailedBooking[]>([]);
-    recentPayments = signal<WalletTransaction[]>([]);
-    events = signal<AdminEvent[]>([]);
-    revenueBars: RevenueBar[] = [];
-    statsList: DashboardStat[] = [];
+  stats = this.adminService.stats;
+  activeJobs = signal<Job[]>([]);
+  stuckJobs = signal<JobAnomaly[]>([]);
+  operationalMetrics = signal<OperationalMetrics | null>(null);
+  failedBookings = signal<FailedBooking[]>([]);
+  recentPayments = signal<WalletTransaction[]>([]);
+  events = signal<AdminEvent[]>([]);
+  revenueBars: RevenueBar[] = [];
+  statsList: DashboardStat[] = [];
 
-    private channels: RealtimeChannel[] = [];
+  private channels: RealtimeChannel[] = [];
 
-    async ngOnInit() {
-        if (!this.supabase.isConfigured) {
-            console.warn('AdminDashboard: Supabase is not configured.');
-            return;
+  async ngOnInit() {
+    if (!this.supabase.isConfigured) {
+      console.warn('AdminDashboard: Supabase is not configured.');
+      return;
+    }
+
+    await this.refreshData();
+
+    // Keep disabled until Kong realtime websocket config is stable.
+    // this.setupRealtime();
+  }
+
+  ngOnDestroy() {
+    this.channels.forEach(channel => channel.unsubscribe());
+  }
+
+  async refreshData() {
+    try {
+      await this.adminService.fetchStats();
+      this.updateStatsList();
+
+      const [jobs, metrics, evs, failures, payments] = await Promise.all([
+        this.adminService.getJobs(),
+        this.adminService.getOperationalMetrics(),
+        this.adminService.getEvents(10),
+        this.adminService.getFailedBookings(),
+        this.adminService.getRecentPayments()
+      ]);
+
+      const allJobs = Array.isArray(jobs) ? jobs as Job[] : [];
+      const safeEvents = Array.isArray(evs) ? evs as AdminEvent[] : [];
+      const safeFailures = Array.isArray(failures) ? failures : [];
+      const safePayments = Array.isArray(payments) ? payments : [];
+
+      this.activeJobs.set(
+        allJobs
+          .filter(job => ['accepted', 'arrived', 'assigned', 'in_progress', 'heading_to_pickup'].includes(String(job.status || '')))
+          .slice(0, 5)
+      );
+
+      this.stuckJobs.set(this.anomalyService.detectAnomalies(allJobs));
+      this.operationalMetrics.set((metrics || null) as OperationalMetrics | null);
+      this.events.set(safeEvents);
+      this.failedBookings.set(safeFailures);
+      this.recentPayments.set(safePayments);
+
+      const revenueData = await this.adminService.getRevenueStats();
+      const safeRevenueData = Array.isArray(revenueData) ? revenueData : [];
+      const maxValue = Math.max(...safeRevenueData.map((item: any) => Number(item.value || 0)), 100);
+
+      this.revenueBars = safeRevenueData.map((item: any) => ({
+        day: String(item.day || ''),
+        value: Number(item.value || 0),
+        height: Math.max(4, (Number(item.value || 0) / maxValue) * 100)
+      }));
+
+      try {
+        const heatmap = await this.adminService.getHeatmapData();
+
+        if (heatmap?.zones && Array.isArray(heatmap.zones) && this.adminMap) {
+          this.adminMap.drawHeatmap(heatmap.zones);
+
+          if (heatmap.zones.length > 0) {
+            this.adminMap.setCenter(heatmap.zones[0].lng, heatmap.zones[0].lat, 12);
+          }
         }
+      } catch (error) {
+        console.error('Failed to load heatmap', error);
+      }
+    } catch (error) {
+      console.error('AdminDashboard refreshData failed:', error);
+    }
+  }
 
-        await this.refreshData();
+  private setupRealtime() {
+    const jobsChannel = this.supabase.client
+      .channel('admin-dashboard-jobs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => {
+        this.refreshData();
+      })
+      .subscribe();
 
-        // Keep disabled until Kong realtime websocket config is stable.
-        // this.setupRealtime();
+    const profilesChannel = this.supabase.client
+      .channel('admin-dashboard-profiles')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
+        this.refreshData();
+      })
+      .subscribe();
+
+    this.channels = [jobsChannel, profilesChannel];
+  }
+
+  private updateStatsList() {
+    this.statsList = [
+      {
+        label: 'Total Revenue',
+        value: this.formatNumber(this.stats().totalRevenue || 0),
+        prefix: this.config.currentCountry()?.currencySymbol || this.config.currencySymbol || 'Â£',
+        icon: 'cash-outline',
+        bgClass: 'bg-emerald-100',
+        iconClass: 'text-emerald-700',
+        note: 'Revenue tracked'
+      },
+      {
+        label: 'Total Users',
+        value: this.formatNumber(this.stats().totalUsers || 0),
+        icon: 'people-outline',
+        bgClass: 'bg-blue-100',
+        iconClass: 'text-blue-700',
+        note: 'Registered users'
+      },
+      {
+        label: 'Active Drivers',
+        value: this.formatNumber(this.stats().totalDrivers || 0),
+        icon: 'car-outline',
+        bgClass: 'bg-amber-100',
+        iconClass: 'text-amber-700',
+        note: 'Driver accounts'
+      },
+      {
+        label: 'Total Jobs',
+        value: this.formatNumber(this.stats().totalJobs || 0),
+        icon: 'calendar-outline',
+        bgClass: 'bg-indigo-100',
+        iconClass: 'text-indigo-700',
+        note: 'Jobs created'
+      }
+    ];
+  }
+
+  getPersonName(person: any, fallback = 'Unknown'): string {
+    const fullName =
+      person?.full_name ||
+      `${person?.first_name || ''} ${person?.last_name || ''}`.trim();
+
+    return fullName || person?.email || person?.phone || fallback;
+  }
+
+  formatEventType(type: string | null | undefined): string {
+    return String(type || 'system').replace(/_/g, ' ');
+  }
+
+  formatTime(value: string | null | undefined): string {
+    if (!value) return 'N/A';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
     }
 
-    ngOnDestroy() {
-        this.channels.forEach(channel => channel.unsubscribe());
-    }
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
 
-    async refreshData() {
-        try {
-            await this.adminService.fetchStats();
-            this.updateStatsList();
+  formatPrice(amount: number) {
+    return this.config.formatCurrency(amount || 0);
+  }
 
-            const [jobs, metrics, evs, failures, payments] = await Promise.all([
-                this.adminService.getJobs(),
-                this.adminService.getOperationalMetrics(),
-                this.adminService.getEvents(10),
-                this.adminService.getFailedBookings(),
-                this.adminService.getRecentPayments()
-            ]);
-
-            const allJobs = Array.isArray(jobs) ? jobs as Job[] : [];
-            const safeEvents = Array.isArray(evs) ? evs as AdminEvent[] : [];
-            const safeFailures = Array.isArray(failures) ? failures : [];
-            const safePayments = Array.isArray(payments) ? payments : [];
-
-            this.activeJobs.set(
-                allJobs
-                    .filter(job => ['accepted', 'arrived', 'assigned', 'in_progress', 'heading_to_pickup'].includes(job.status))
-                    .slice(0, 5)
-            );
-
-            this.stuckJobs.set(this.anomalyService.detectAnomalies(allJobs));
-            this.operationalMetrics.set((metrics || null) as OperationalMetrics | null);
-            this.events.set(safeEvents);
-            this.failedBookings.set(safeFailures);
-            this.recentPayments.set(safePayments);
-
-            const revenueData = await this.adminService.getRevenueStats();
-            const safeRevenueData = Array.isArray(revenueData) ? revenueData : [];
-            const maxValue = Math.max(...safeRevenueData.map(item => item.value || 0), 100);
-
-            this.revenueBars = safeRevenueData.map(item => ({
-                ...item,
-                height: Math.max(4, ((item.value || 0) / maxValue) * 100)
-            }));
-
-            try {
-                const heatmap = await this.adminService.getHeatmapData();
-
-                if (heatmap?.zones && Array.isArray(heatmap.zones) && this.adminMap) {
-                    this.adminMap.drawHeatmap(heatmap.zones);
-
-                    if (heatmap.zones.length > 0) {
-                        this.adminMap.setCenter(heatmap.zones[0].lng, heatmap.zones[0].lat, 12);
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load heatmap', error);
-            }
-        } catch (error) {
-            console.error('AdminDashboard refreshData failed:', error);
-        }
-    }
-
-    private setupRealtime() {
-        const jobsChannel = this.supabase.client
-            .channel('admin-dashboard-jobs')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => {
-                this.refreshData();
-            })
-            .subscribe();
-
-        const profilesChannel = this.supabase.client
-            .channel('admin-dashboard-profiles')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
-                this.refreshData();
-            })
-            .subscribe();
-
-        this.channels = [jobsChannel, profilesChannel];
-    }
-
-    private updateStatsList() {
-        this.statsList = [
-            {
-                label: 'Total Revenue',
-                value: this.formatNumber(this.stats().totalRevenue || 0),
-                prefix: this.config.currentCountry()?.currencySymbol || this.config.currencySymbol || '£',
-                icon: 'cash-outline',
-                bgClass: 'bg-emerald-100',
-                iconClass: 'text-emerald-700',
-                note: 'Revenue tracked'
-            },
-            {
-                label: 'Total Users',
-                value: this.formatNumber(this.stats().totalUsers || 0),
-                icon: 'people-outline',
-                bgClass: 'bg-blue-100',
-                iconClass: 'text-blue-700',
-                note: 'Registered users'
-            },
-            {
-                label: 'Active Drivers',
-                value: this.formatNumber(this.stats().totalDrivers || 0),
-                icon: 'car-outline',
-                bgClass: 'bg-amber-100',
-                iconClass: 'text-amber-700',
-                note: 'Driver accounts'
-            },
-            {
-                label: 'Total Jobs',
-                value: this.formatNumber(this.stats().totalJobs || 0),
-                icon: 'calendar-outline',
-                bgClass: 'bg-indigo-100',
-                iconClass: 'text-indigo-700',
-                note: 'Jobs created'
-            }
-        ];
-    }
-
-    formatPrice(amount: number) {
-        return this.config.formatCurrency(amount || 0);
-    }
-
-    formatNumber(value: number) {
-        return Number(value || 0).toLocaleString();
-    }
+  formatNumber(value: number) {
+    return Number(value || 0).toLocaleString();
+  }
 }

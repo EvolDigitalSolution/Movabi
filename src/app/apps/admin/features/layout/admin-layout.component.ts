@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { CommonModule } from '@angular/common';
-import { IonicModule } from '@ionic/angular';
+import { IonicModule, MenuController } from '@ionic/angular';
 import { Router, RouterModule } from '@angular/router';
 
 import { addIcons } from 'ionicons';
@@ -47,10 +47,10 @@ addIcons(allIcons);
           <div class="p-8 border-t border-slate-800/50">
             <div class="bg-slate-800/30 p-5 rounded-3xl flex items-center gap-4 mb-6 border border-slate-700/30">
               <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-inner">
-                {{ auth.currentUser()?.email?.[0]?.toUpperCase() || 'A' }}
+                {{ getInitial() }}
               </div>
               <div class="flex-1 min-w-0">
-                <h4 class="text-sm font-bold text-white truncate">{{ auth.currentUser()?.email }}</h4>
+                <h4 class="text-sm font-bold text-white truncate">{{ auth.currentUser()?.email || 'Admin' }}</h4>
                 <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">System Admin</p>
               </div>
             </div>
@@ -68,27 +68,24 @@ addIcons(allIcons);
       </aside>
 
       <main class="admin-main">
-        <ion-header class="ion-no-border">
-          <ion-toolbar class="admin-toolbar">
-            <ion-title>
-              <div class="flex items-center gap-4">
-                <div class="w-1.5 h-8 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-                <span class="text-xl font-display font-bold text-slate-900 tracking-tight">
-                  Control Center
-                </span>
-              </div>
-            </ion-title>
+        <header class="admin-topbar">
+          <div class="flex items-center gap-4">
+            <div class="w-1.5 h-8 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+            <span class="text-xl font-display font-bold text-slate-900 tracking-tight">
+              Control Center
+            </span>
+          </div>
 
-            <ion-buttons slot="end">
-              <ion-button (click)="navigate('/settings')" class="header-icon-button">
-                <ion-icon name="settings-outline" slot="icon-only"></ion-icon>
-              </ion-button>
-              <ion-button (click)="signOut()" class="header-icon-button">
-                <ion-icon name="log-out-outline" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
+          <div class="flex items-center gap-3">
+            <button type="button" (click)="navigate('/settings')" class="header-icon-button">
+              <ion-icon name="settings-outline"></ion-icon>
+            </button>
+
+            <button type="button" (click)="signOut()" class="header-icon-button">
+              <ion-icon name="log-out-outline"></ion-icon>
+            </button>
+          </div>
+        </header>
 
         <div class="admin-content bg-slate-50">
           <div class="max-w-7xl mx-auto px-4 md:px-8 py-10">
@@ -125,6 +122,19 @@ addIcons(allIcons);
       overflow: hidden;
     }
 
+    .admin-topbar {
+      min-height: 84px;
+      background: rgba(255,255,255,0.92);
+      border-bottom: 1px solid #e2e8f0;
+      backdrop-filter: blur(16px);
+      padding: 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
     .admin-content {
       flex: 1;
       min-height: 0;
@@ -132,22 +142,23 @@ addIcons(allIcons);
       -webkit-overflow-scrolling: touch;
     }
 
-    .admin-toolbar {
-      --background: rgba(255,255,255,0.9);
-      --border-color: #e2e8f0;
-      --min-height: 84px;
-      backdrop-filter: blur(16px);
-      padding-left: 1rem;
-      padding-right: 1rem;
-    }
-
     .header-icon-button {
-      --background: #f8fafc;
-      --color: #475569;
-      --border-radius: 1rem;
       width: 48px;
       height: 48px;
-      margin-left: 0.5rem;
+      border-radius: 1rem;
+      background: #f8fafc;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 150ms ease;
+    }
+
+    .header-icon-button:hover {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
     }
 
     .nav-link.active {
@@ -176,6 +187,9 @@ addIcons(allIcons);
     @media (max-width: 900px) {
       .admin-shell {
         display: block;
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
       }
 
       .admin-sidebar {
@@ -184,12 +198,23 @@ addIcons(allIcons);
         height: auto;
         position: relative;
       }
+
+      .admin-main {
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .admin-topbar {
+        position: sticky;
+        top: 0;
+      }
     }
   `]
 })
 export class AdminLayoutComponent {
   public auth = inject(AuthService);
   private router = inject(Router);
+  private menuCtrl = inject(MenuController);
 
   navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: 'grid-outline' },
@@ -206,13 +231,25 @@ export class AdminLayoutComponent {
 
   async navigate(path: string) {
     await this.router.navigateByUrl(path);
+
+    try {
+      await this.menuCtrl.close();
+    } catch {
+      // no mobile ion-menu active
+    }
   }
 
   isActive(path: string) {
     return this.router.url === path || this.router.url.startsWith(path + '/');
   }
 
+  getInitial(): string {
+    const email = this.auth.currentUser()?.email || 'A';
+    return email.charAt(0).toUpperCase();
+  }
+
   async signOut() {
     await this.auth.signOut();
+    await this.router.navigateByUrl('/login');
   }
 }

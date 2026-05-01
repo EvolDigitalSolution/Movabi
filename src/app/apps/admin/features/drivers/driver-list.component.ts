@@ -2,7 +2,7 @@ import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
-import { IonicModule, AlertController, ToastController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 
@@ -426,6 +426,84 @@ type AdminDriver = DriverProfile & {
         </div>
       </div>
     }
+
+    @if (reviewModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6">
+          <h3 class="text-xl font-bold text-slate-900">{{ reviewModal()?.title }}</h3>
+          <p class="text-sm text-slate-600 whitespace-pre-line mt-4">{{ reviewModal()?.message }}</p>
+
+          <div class="flex justify-end mt-6">
+            <button type="button" class="modal-action" (click)="reviewModal.set(null)">OK</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (confirmModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-xl p-6">
+          <h3 class="text-xl font-bold text-slate-900">{{ confirmModal()?.title }}</h3>
+          <p class="text-sm font-medium text-slate-700 mt-1">{{ confirmModal()?.subtitle }}</p>
+          <p class="text-sm text-slate-600 mt-4">{{ confirmModal()?.message }}</p>
+
+          <textarea
+            class="w-full mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm outline-none"
+            rows="4"
+            [value]="confirmModal()?.notes || ''"
+            (input)="updateConfirmNotes($event)"
+          ></textarea>
+
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="confirmModal.set(null)">
+              {{ confirmModal()?.cancelText || 'Cancel' }}
+            </button>
+            <button type="button" class="modal-action" (click)="runConfirmAction()">
+              {{ confirmModal()?.confirmText || 'Confirm' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (moderationModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-xl font-bold text-slate-900">Moderate Driver</h3>
+          <p class="text-sm font-medium text-slate-700 mt-1">{{ getDriverName(moderationModal()?.driver) }}</p>
+
+          <div class="space-y-3 mt-5">
+            @for (status of ['active', 'suspended', 'banned', 'disabled']; track status) {
+              <label class="flex items-center gap-3 rounded-2xl border border-slate-100 p-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="driverStatus"
+                  [value]="status"
+                  [checked]="moderationModal()?.status === status"
+                  (change)="setModerationStatus(status)"
+                />
+                <span class="font-semibold capitalize">{{ status }}</span>
+              </label>
+            }
+          </div>
+
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="moderationModal.set(null)">Cancel</button>
+            <button type="button" class="modal-action" (click)="applyModerationStatus()">Apply</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (toastMessage()) {
+      <div class="fixed bottom-6 right-6 z-[11000] rounded-2xl px-5 py-4 shadow-2xl text-white font-semibold"
+           [class.bg-emerald-600]="toastType() === 'success'"
+           [class.bg-rose-600]="toastType() === 'danger'"
+           [class.bg-amber-600]="toastType() === 'warning'">
+        {{ toastMessage() }}
+      </div>
+    }
+
   `,
     styles: [`
     .filter-select {
@@ -562,16 +640,55 @@ type AdminDriver = DriverProfile & {
       background: rgb(16 185 129);
       color: white;
     }
+
+    .modal-action {
+      border-radius: 0.9rem;
+      background: rgb(22 163 74);
+      color: white;
+      font-weight: 800;
+      padding: 0.7rem 1rem;
+    }
+
+    .modal-cancel {
+      border-radius: 0.9rem;
+      background: rgb(248 250 252);
+      color: rgb(71 85 105);
+      font-weight: 800;
+      padding: 0.7rem 1rem;
+      border: 1px solid rgb(226 232 240);
+    }
+
   `]
 })
 export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
-    private alertCtrl = inject(AlertController);
-    private toastCtrl = inject(ToastController);
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
+
+    toastMessage = signal<string | null>(null);
+    toastType = signal<'success' | 'danger' | 'warning'>('success');
+
+    confirmModal = signal<{
+        title: string;
+        subtitle?: string;
+        message: string;
+        confirmText?: string;
+        cancelText?: string;
+        notes?: string;
+        action?: (notes?: string) => Promise<void>;
+    } | null>(null);
+
+    reviewModal = signal<{
+        title: string;
+        message: string;
+    } | null>(null);
+
+    moderationModal = signal<{
+        driver: AdminDriver;
+        status: string;
+    } | null>(null);
 
     searchTerm = signal('');
     statusFilter = signal('all');
@@ -885,6 +1002,7 @@ export class DriverListComponent implements OnInit {
         }
     }
 
+
     async preVerifyDriver(driver: any) {
         if (!driver?.id) return;
 
@@ -892,15 +1010,13 @@ export class DriverListComponent implements OnInit {
             const result = await this.adminService.preVerifyDriver(driver.id);
             const blockers = Array.isArray(result?.blockers) ? result.blockers : [];
 
-            const alert = await this.alertCtrl.create({
-                header: result?.canApprove ? 'Ready for manual approval' : 'Manual review needed',
+            this.reviewModal.set({
+                title: result?.canApprove ? 'Ready for manual approval' : 'Manual review needed',
                 message: blockers.length
-                    ? blockers.join('\n')
-                    : 'No blockers found. Driver can be approved manually.',
-                buttons: ['OK']
+                    ? blockers.join('\\n')
+                    : 'No blockers found. Driver can be approved manually.'
             });
 
-            await alert.present();
             await this.loadDrivers();
 
             const updated = this.drivers().find((d) => d.id === driver.id);
@@ -919,49 +1035,25 @@ export class DriverListComponent implements OnInit {
     async manualApproveDriver(driver: any) {
         if (!driver?.id) return;
 
-        const alert = await this.alertCtrl.create({
-            header: 'Manual Approval',
-            subHeader: this.getDriverName(driver),
+        this.confirmModal.set({
+            title: 'Manual Approval',
+            subtitle: this.getDriverName(driver),
             message: 'This approves the driver manually while external verification APIs are disabled.',
-            inputs: [
-                {
-                    name: 'notes',
-                    type: 'textarea',
-                    placeholder: 'Approval notes...',
-                    value: 'Approved manually. External verification APIs are not enabled yet.'
+            notes: 'Approved manually. External verification APIs are not enabled yet.',
+            confirmText: 'Approve',
+            cancelText: 'Cancel',
+            action: async (notes?: string) => {
+                await this.adminService.manualApproveDriver(driver.id, notes || '');
+                await this.showToast('Driver approved manually.', 'success');
+                await this.loadDrivers();
+
+                const updated = this.drivers().find((d) => d.id === driver.id);
+
+                if (updated && this.selectedDriver()) {
+                    this.selectedDriver.set(updated);
                 }
-            ],
-            buttons: [
-                {
-                    text: 'Cancel',
-                    role: 'cancel'
-                },
-                {
-                    text: 'Approve',
-                    handler: async (data) => {
-                        try {
-                            await this.adminService.manualApproveDriver(driver.id, data?.notes || '');
-
-                            await this.showToast('Driver approved manually.', 'success');
-                            await this.loadDrivers();
-
-                            const updated = this.drivers().find((d) => d.id === driver.id);
-
-                            if (updated && this.selectedDriver()) {
-                                this.selectedDriver.set(updated);
-                            }
-                        } catch (error: unknown) {
-                            await this.showToast(
-                                error instanceof Error ? error.message : 'Manual approval failed',
-                                'danger'
-                            );
-                        }
-                    }
-                }
-            ]
+            }
         });
-
-        await alert.present();
     }
 
     async toggleVerification(driverId: string, isVerified: boolean) {
@@ -977,102 +1069,97 @@ export class DriverListComponent implements OnInit {
     }
 
     async moderateDriver(driver: AdminDriver) {
-        const alert = await this.alertCtrl.create({
-            header: 'Moderate Driver',
-            subHeader: this.getDriverName(driver),
-            inputs: [
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Active',
-                    value: 'active',
-                    checked: driver.account_status === 'active' || !driver.account_status
-                },
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Suspend',
-                    value: 'suspended',
-                    checked: driver.account_status === 'suspended'
-                },
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Ban',
-                    value: 'banned',
-                    checked: driver.account_status === 'banned'
-                },
-                {
-                    name: 'status',
-                    type: 'radio',
-                    label: 'Disable',
-                    value: 'disabled',
-                    checked: driver.account_status === 'disabled'
-                }
-            ],
-            buttons: [
-                {
-                    text: 'Cancel',
-                    role: 'cancel'
-                },
-                {
-                    text: 'Apply',
-                    handler: async (status: string) => {
-                        if (!status) return false;
-
-                        try {
-                            await this.adminService.updateAccountStatus(
-                                driver.id,
-                                status,
-                                `Admin changed driver status to ${status}`,
-                                this.authService.currentUser()?.id || ''
-                            );
-
-                            await this.showToast(`Driver status updated to ${status}`, 'success');
-
-                            this.drivers.update((drivers) =>
-                                drivers.map((d) =>
-                                    d.id === driver.id
-                                        ? ({ ...d, account_status: status } as AdminDriver)
-                                        : d
-                                )
-                            );
-
-                            await this.loadDrivers();
-
-                            const updated = this.drivers().find((d) => d.id === driver.id);
-
-                            if (updated && this.selectedDriver()) {
-                                this.selectedDriver.set(updated);
-                            }
-
-                            return true;
-                        } catch (error: unknown) {
-                            await this.showToast(
-                                error instanceof Error ? error.message : 'Failed to update driver status.',
-                                'danger'
-                            );
-
-                            return false;
-                        }
-                    }
-                }
-            ]
+        this.moderationModal.set({
+            driver,
+            status: driver.account_status || 'active'
         });
+    }
 
-        await alert.present();
+    updateConfirmNotes(event: Event) {
+        const value = (event.target as HTMLTextAreaElement)?.value || '';
+        const current = this.confirmModal();
+
+        if (current) {
+            this.confirmModal.set({ ...current, notes: value });
+        }
+    }
+
+    async runConfirmAction() {
+        const current = this.confirmModal();
+
+        if (!current?.action) {
+            this.confirmModal.set(null);
+            return;
+        }
+
+        try {
+            await current.action(current.notes);
+            this.confirmModal.set(null);
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Action failed',
+                'danger'
+            );
+        }
+    }
+
+    setModerationStatus(status: string) {
+        const current = this.moderationModal();
+
+        if (current) {
+            this.moderationModal.set({ ...current, status });
+        }
+    }
+
+    async applyModerationStatus() {
+        const current = this.moderationModal();
+
+        if (!current?.driver || !current.status) return;
+
+        try {
+            await this.adminService.updateAccountStatus(
+                current.driver.id,
+                current.status,
+                `Admin changed driver status to ${current.status}`,
+                this.authService.currentUser()?.id || ''
+            );
+
+            await this.showToast(`Driver status updated to ${current.status}`, 'success');
+            this.moderationModal.set(null);
+
+            this.drivers.update((drivers) =>
+                drivers.map((d) =>
+                    d.id === current.driver.id
+                        ? ({ ...d, account_status: current.status } as AdminDriver)
+                        : d
+                )
+            );
+
+            await this.loadDrivers();
+
+            const updated = this.drivers().find((d) => d.id === current.driver.id);
+
+            if (updated && this.selectedDriver()) {
+                this.selectedDriver.set(updated);
+            }
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Failed to update driver status.',
+                'danger'
+            );
+        }
     }
 
     private async showToast(
         message: string,
         color: 'success' | 'danger' | 'warning' = 'success'
     ) {
-        const toast = await this.toastCtrl.create({
-            message,
-            duration: 2500,
-            color
-        });
+        this.toastType.set(color);
+        this.toastMessage.set(message);
 
-        await toast.present();
+        window.setTimeout(() => {
+            this.toastMessage.set(null);
+        }, 2500);
     }
+
 }
