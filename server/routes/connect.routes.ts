@@ -1,158 +1,250 @@
-import { Router, Request, Response } from "express";
-import Stripe from "stripe";
+import { Router } from 'express';
 import {
   createConnectAccount,
+  createLoginLink,
   createOnboardingLink,
-  createLoginLink
-} from "../services/stripe.service";
-import { getSupabaseAdmin } from "../services/supabase.service";
-import { EventService } from "../services/event.service";
+  getConnectAccountStatus
+} from '../services/stripe.service';
+import { supabaseAdmin } from '../services/supabase.service';
 
-const router = Router();
-const supabase = getSupabaseAdmin();
+export const connectRouter = Router();
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const isUuid = (value: unknown): value is string => {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+};
 
-if (!stripeSecretKey) {
-  console.warn("[connect.routes] STRIPE_SECRET_KEY is not set. Stripe account status route will fail until it is configured.");
-}
+const cleanTenantId = (value: unknown): string | null => {
+  return isUuid(value) ? value : null;
+};
 
-const stripe = new Stripe(stripeSecretKey || "sk_test_placeholder", {
-  apiVersion: "2022-11-15"
-});
+const safeProfileUpdate = async (
+  userId: string,
+  updates: Record<string, unknown>
+) => {
+  const cleanUpdates = Object.entries(updates).reduce<Record<string, unknown>>(
+    (acc, [key, value]) => {
+      if (value === undefined) return acc;
+      if (value === null) return acc;
+      if (key === 'status') return acc;
+      if (key === '_status') return acc;
+      acc[key] = value;
+      return acc;
+    },
+    {}
+  );
 
-/**
- * Create a Stripe Connect account for a driver
- */
-router.post("/create-account", async (req: Request, res: Response) => {
+  if (!Object.keys(cleanUpdates).length) return;
+
+  const { error } = await supabaseAdmin
+    .from('profiles')
+    .update(cleanUpdates)
+    .eq('id', userId);
+
+  if (!error) return;
+
+  const message = error.message || '';
+  const missingColumn = message.match(/column "([^"]+)"/i)?.[1];
+
+  if (error.code === '42703' && missingColumn && cleanUpdates[missingColumn] !== undefined) {
+    const retryUpdates = { ...cleanUpdates };
+    delete retryUpdates[missingColumn];
+
+    if (!Object.keys(retryUpdates).length) return;
+
+    const retry = await supabaseAdmin
+      .from('profiles')
+      .update(retryUpdates)
+      .eq('id', userId);
+
+    if (retry.error) throw retry.error;
+    return;
+  }
+
+  throw error;
+};
+
+const getProfile = async (userId: string) => {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id, tenant_id, stripe_account_id, stripe_connect_status')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+};
+
+const findProfileByStripeAccountId = async (accountId: string) => {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id, tenant_id, stripe_account_id, stripe_connect_status')
+    .eq('stripe_account_id', accountId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+};
+
+const syncStripeAccountToProfile = async (
+  accountId: string,
+  userId?: string
+) => {
+  const status = await getConnectAccountStatus(accountId);
+
+  const connectStatus =
+    status.charges_enabled && status.payouts_enabled
+      ? 'connected'
+      : status.status === 'restricted'
+        ? 'restricted'
+        : 'pending';
+
+  let profileId = userId || '';
+
+  if (!profileId) {
+    const profile = await findProfileByStripeAccountId(accountId);
+    profileId = profile?.id || '';
+  }
+
+  if (profileId) {
+    await safeProfileUpdate(profileId, {
+      stripe_account_id: accountId,
+      stripe_connect_status: connectStatus,
+      updated_at: new Date().toISOString()
+    });
+  }
+
+  return {
+    ...status,
+    status: connectStatus
+  };
+};
+
+connectRouter.post('/create-account', async (req, res) => {
   try {
-    const { userId, email, tenantId } = req.body;
+    const { userId, email, tenantId } = req.body || {};
 
-    if (!userId || !email || !tenantId) {
-      return res.status(400).json({ error: "userId, email, and tenantId required" });
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
     }
 
-    const { data: existingAccount, error: existingAccountError } = await supabase
-      .from("driver_accounts")
-      .select("stripe_account_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (existingAccountError) {
-      throw existingAccountError;
+    if (!email) {
+      return res.status(400).json({ error: 'email is required' });
     }
 
-    if (existingAccount?.stripe_account_id) {
-      return res.json({ stripe_account_id: existingAccount.stripe_account_id });
+    const profile = await getProfile(userId);
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Driver profile not found' });
     }
 
-    const account = await createConnectAccount(userId, email);
+    if (profile.stripe_account_id) {
+      const status = await syncStripeAccountToProfile(
+        profile.stripe_account_id,
+        userId
+      );
 
-    const { error } = await supabase
-      .from("driver_accounts")
-      .insert({
-        user_id: userId,
-        tenant_id: tenantId,
-        stripe_account_id: account.id
+      return res.json({
+        stripe_account_id: profile.stripe_account_id,
+        status
       });
-
-    if (error) {
-      throw error;
     }
 
-    await EventService.logEvent(
-      "connect_account_created",
-      { userId, accountId: account.id },
-      tenantId,
-      userId
+    const validTenantId =
+      cleanTenantId(tenantId) ||
+      cleanTenantId(profile.tenant_id);
+
+    const account = await createConnectAccount(
+      userId,
+      email,
+      validTenantId || undefined
     );
 
-    return res.json({ stripe_account_id: account.id });
-  } catch (error) {
-    console.error("Create Connect Account Error:", error);
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to create Stripe Connect account"
+    await safeProfileUpdate(userId, {
+      stripe_account_id: account.id,
+      stripe_connect_status: 'pending',
+      updated_at: new Date().toISOString()
     });
-  }
-});
-
-/**
- * Get onboarding link
- */
-router.post("/onboarding-link", async (req: Request, res: Response) => {
-  try {
-    const { accountId, returnUrl, refreshUrl } = req.body;
-
-    if (!accountId) {
-      return res.status(400).json({ error: "accountId required" });
-    }
-
-    const link = await createOnboardingLink(accountId, returnUrl, refreshUrl);
-    return res.json(link);
-  } catch (error) {
-    console.error("Onboarding Link Error:", error);
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to create onboarding link"
-    });
-  }
-});
-
-/**
- * Get dashboard link
- */
-router.post("/dashboard-link", async (req: Request, res: Response) => {
-  try {
-    const { accountId } = req.body;
-
-    if (!accountId) {
-      return res.status(400).json({ error: "accountId required" });
-    }
-
-    const link = await createLoginLink(accountId);
-    return res.json(link);
-  } catch (error) {
-    console.error("Dashboard Link Error:", error);
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to create dashboard link"
-    });
-  }
-});
-
-/**
- * Get Stripe account status
- */
-router.get("/account-status/:accountId", async (req: Request, res: Response) => {
-  try {
-    const rawAccountId = req.params.accountId;
-    const accountId = Array.isArray(rawAccountId) ? rawAccountId[0] : rawAccountId;
-
-    if (!accountId) {
-      return res.status(400).json({ error: "accountId is required" });
-    }
-
-    if (!stripeSecretKey) {
-      return res.status(500).json({ error: "Stripe is not configured on the server" });
-    }
-
-    const account = await stripe.accounts.retrieve(accountId);
 
     return res.json({
-      id: account.id,
-      charges_enabled: account.charges_enabled,
-      payouts_enabled: account.payouts_enabled,
-      details_submitted: account.details_submitted,
-      requirements: account.requirements,
-      country: account.country,
-      default_currency: account.default_currency,
-      email: account.email,
-      type: account.type
+      stripe_account_id: account.id
     });
-  } catch (error) {
-    console.error("Error fetching account status:", error);
+  } catch (error: any) {
+    console.error('Create Connect Account Error:', error);
     return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to fetch account status"
+      error: error?.message || 'Failed to create Stripe Connect account'
     });
   }
 });
 
-export default router;
+connectRouter.post('/onboarding-link', async (req, res) => {
+  try {
+    const { accountId, returnUrl, refreshUrl } = req.body || {};
+
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+    if (!returnUrl) return res.status(400).json({ error: 'returnUrl is required' });
+    if (!refreshUrl) return res.status(400).json({ error: 'refreshUrl is required' });
+
+    const link = await createOnboardingLink(accountId, returnUrl, refreshUrl);
+
+    return res.json({ url: link.url });
+  } catch (error: any) {
+    console.error('Create Onboarding Link Error:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to create onboarding link'
+    });
+  }
+});
+
+connectRouter.post('/dashboard-link', async (req, res) => {
+  try {
+    const { accountId } = req.body || {};
+
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+
+    const link = await createLoginLink(accountId);
+
+    return res.json({ url: link.url });
+  } catch (error: any) {
+    console.error('Create Dashboard Link Error:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to create dashboard link'
+    });
+  }
+});
+
+connectRouter.get('/account-status/:accountId', async (req, res) => {
+  try {
+    const { accountId } = req.params;
+
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+
+    const status = await syncStripeAccountToProfile(accountId);
+
+    return res.json(status);
+  } catch (error: any) {
+    console.error('Get Connect Account Status Error:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to fetch Stripe account status'
+    });
+  }
+});
+
+connectRouter.post('/refresh-account-status', async (req, res) => {
+  try {
+    const { accountId, userId } = req.body || {};
+
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+
+    const status = await syncStripeAccountToProfile(accountId, userId);
+
+    return res.json(status);
+  } catch (error: any) {
+    console.error('Refresh Connect Account Status Error:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to refresh Stripe account status'
+    });
+  }
+});
+
+export default connectRouter;
