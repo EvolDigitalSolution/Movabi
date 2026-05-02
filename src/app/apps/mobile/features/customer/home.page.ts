@@ -1,50 +1,86 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { 
-  IonHeader, 
-  IonToolbar, 
-  IonTitle, 
-  IonButtons, 
-  IonContent, 
-  IonIcon
+import {
+    IonHeader,
+    IonToolbar,
+    IonTitle,
+    IonButtons,
+    IonContent,
+    IonIcon,
+    ToastController
 } from '@ionic/angular/standalone';
 import { Router } from '@angular/router';
 import { addIcons } from 'ionicons';
-import { 
-  shieldCheckmark, 
-  timeOutline, 
-  logOutOutline, 
-  car, 
-  cart, 
-  bus, 
-  chevronForward, 
-  receiptOutline,
-  walletOutline 
+import {
+    shieldCheckmark,
+    timeOutline,
+    logOutOutline,
+    car,
+    cart,
+    bus,
+    chevronForward,
+    receiptOutline,
+    walletOutline
 } from 'ionicons/icons';
+
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { WalletService } from '../../../../core/services/wallet/wallet.service';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 import { EmptyStateComponent } from '../../../../shared/ui';
 
 @Component({
-  selector: 'app-customer-home',
-  template: `
+    selector: 'app-customer-home',
+    standalone: true,
+    imports: [
+        CommonModule,
+        IonHeader,
+        IonToolbar,
+        IonTitle,
+        IonButtons,
+        IonContent,
+        IonIcon,
+        EmptyStateComponent
+    ],
+    template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-6 bg-slate-50">
-        <ion-title class="font-display font-black text-3xl tracking-tighter text-slate-900">Movabi</ion-title>
+        <ion-title class="font-display font-black text-3xl tracking-tighter text-slate-900">
+          Movabi
+        </ion-title>
+
         <ion-buttons slot="end">
           @if (auth.userRole() === 'admin') {
-            <button (click)="router.navigate(['/admin'])" class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm active:scale-95 transition-all">
+            <button
+              type="button"
+              (click)="goAdmin()"
+              class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm active:scale-95 transition-all"
+            >
               <ion-icon name="shield-checkmark" class="text-xl"></ion-icon>
             </button>
           }
-          <button (click)="router.navigate(['/customer/activity'])" class="w-12 h-12 rounded-2xl bg-white text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm ml-3 active:scale-95 transition-all">
+
+          <button
+            type="button"
+            (click)="router.navigate(['/customer/activity'])"
+            class="w-12 h-12 rounded-2xl bg-white text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm ml-3 active:scale-95 transition-all"
+          >
             <ion-icon name="time-outline" class="text-xl"></ion-icon>
           </button>
-          <button (click)="router.navigate(['/customer/wallet'])" class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm ml-3 active:scale-95 transition-all">
+
+          <button
+            type="button"
+            (click)="router.navigate(['/customer/wallet'])"
+            class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm ml-3 active:scale-95 transition-all"
+          >
             <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
           </button>
-          <button (click)="auth.signOut()" class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-sm ml-3 active:scale-95 transition-all">
+
+          <button
+            type="button"
+            (click)="signOut()"
+            [disabled]="signingOut()"
+            class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-sm ml-3 active:scale-95 transition-all disabled:opacity-50"
+          >
             <ion-icon name="log-out-outline" class="text-xl"></ion-icon>
           </button>
         </ion-buttons>
@@ -53,89 +89,140 @@ import { EmptyStateComponent } from '../../../../shared/ui';
 
     <ion-content class="bg-slate-50">
       <div class="max-w-2xl mx-auto p-6 space-y-10 pb-12">
-        <!-- Hero Section -->
         <div class="relative bg-slate-900 rounded-[2.5rem] p-10 shadow-2xl shadow-slate-900/20 overflow-hidden group min-h-[320px] flex items-center">
-          <!-- Background Image -->
           <div class="absolute inset-0">
-            <img src="https://picsum.photos/seed/customer/1920/1080?blur=4" 
-                 alt="Movabi Services" 
-                 class="w-full h-full object-cover opacity-40 group-hover:scale-105 transition-transform duration-1000"
-                 referrerpolicy="no-referrer">
+            <img
+              src="https://picsum.photos/seed/customer/1920/1080?blur=4"
+              alt="Movabi Services"
+              class="w-full h-full object-cover opacity-40 group-hover:scale-105 transition-transform duration-1000"
+              referrerpolicy="no-referrer"
+            />
           </div>
+
           <div class="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent"></div>
 
           <div class="relative z-10 w-full">
-            @let userEmail = auth.currentUser()?.email;
-            <p class="text-blue-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-4">Welcome Back</p>
+            <p class="text-blue-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-4">
+              Welcome Back
+            </p>
+
             <h1 class="text-4xl font-display font-bold text-white mb-3 tracking-tight">
-              Hello, {{ userEmail ? userEmail.split('@')[0] : 'User' }}!
+              Hello, {{ displayName() }}!
             </h1>
-            <p class="text-slate-300 font-medium text-lg">Where can we take you today?</p>
-            
+
+            <p class="text-slate-300 font-medium text-lg">
+              Where can we take you today?
+            </p>
+
             <div class="mt-10 grid grid-cols-2 gap-4">
-              <button (click)="router.navigate(['/customer/wallet'])" class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 transition-colors cursor-pointer active:scale-95 transition-all text-left w-full">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Wallet Balance</p>
-                <p class="text-2xl font-display font-bold text-white">{{ formatCurrency(walletService.wallet()?.available_balance || 0) }}</p>
+              <button
+                type="button"
+                (click)="router.navigate(['/customer/wallet'])"
+                class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 cursor-pointer active:scale-95 transition-all text-left w-full"
+              >
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  Wallet Balance
+                </p>
+                <p class="text-2xl font-display font-bold text-white">
+                  {{ formatCurrency(walletService.wallet()?.available_balance || 0) }}
+                </p>
               </button>
-              <div class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 transition-colors">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Active Trips</p>
-                <p class="text-2xl font-display font-bold text-white">0</p>
-              </div>
+
+              <button
+                type="button"
+                (click)="router.navigate(['/customer/activity'])"
+                class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 cursor-pointer active:scale-95 transition-all text-left w-full"
+              >
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  Active Trips
+                </p>
+                <p class="text-2xl font-display font-bold text-white">
+                  {{ activeTrips() }}
+                </p>
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Services Grid -->
         <div class="space-y-6">
           <div class="flex items-center gap-3 ml-1">
             <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Our Premium Services</h3>
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
+              Our Premium Services
+            </h3>
           </div>
-          
+
           <div class="grid grid-cols-1 gap-5">
-            <button (click)="goToBooking('ride')" 
-                 class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-blue-600/10 hover:-translate-y-1 transition-all duration-500">
+            <button
+              type="button"
+              (click)="goToBooking('ride')"
+              class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-blue-600/10 hover:-translate-y-1 transition-all duration-500"
+            >
               <div class="flex items-center gap-6">
                 <div class="w-20 h-20 bg-blue-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-blue-600/20 group-hover:rotate-6 transition-transform">
                   <ion-icon name="car" class="text-4xl"></ion-icon>
                 </div>
-                <div class="flex-1">
-                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">Book a Ride</h2>
-                  <p class="text-slate-500 text-sm font-medium">Fixed price, no surge pricing.</p>
+
+                <div class="flex-1 min-w-0">
+                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">
+                    Book a Ride
+                  </h2>
+                  <p class="text-slate-500 text-sm font-medium">
+                    Fixed price, no surge pricing.
+                  </p>
                 </div>
-                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
+
+                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
             </button>
 
-            <button (click)="goToBooking('errand')" 
-                 class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-emerald-600/10 hover:-translate-y-1 transition-all duration-500">
+            <button
+              type="button"
+              (click)="goToBooking('errand')"
+              class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-emerald-600/10 hover:-translate-y-1 transition-all duration-500"
+            >
               <div class="flex items-center gap-6">
                 <div class="w-20 h-20 bg-emerald-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-emerald-600/20 group-hover:rotate-6 transition-transform">
                   <ion-icon name="cart" class="text-4xl"></ion-icon>
                 </div>
-                <div class="flex-1">
-                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">Run an Errand</h2>
-                  <p class="text-slate-500 text-sm font-medium">We shop and deliver for you.</p>
+
+                <div class="flex-1 min-w-0">
+                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">
+                    Run an Errand
+                  </h2>
+                  <p class="text-slate-500 text-sm font-medium">
+                    We shop and deliver for you.
+                  </p>
                 </div>
-                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+
+                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
             </button>
 
-            <button (click)="router.navigate(['/customer/van-moving/create'])" 
-                 class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-indigo-600/10 hover:-translate-y-1 transition-all duration-500">
+            <button
+              type="button"
+              (click)="router.navigate(['/customer/van-moving/create'])"
+              class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-indigo-600/10 hover:-translate-y-1 transition-all duration-500"
+            >
               <div class="flex items-center gap-6">
                 <div class="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-indigo-600/20 group-hover:rotate-6 transition-transform">
                   <ion-icon name="bus" class="text-4xl"></ion-icon>
                 </div>
-                <div class="flex-1">
-                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">Van Moving</h2>
-                  <p class="text-slate-500 text-sm font-medium">Professional help for your move.</p>
+
+                <div class="flex-1 min-w-0">
+                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">
+                    Van Moving
+                  </h2>
+                  <p class="text-slate-500 text-sm font-medium">
+                    Professional help for your move.
+                  </p>
                 </div>
-                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+
+                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
@@ -143,20 +230,26 @@ import { EmptyStateComponent } from '../../../../shared/ui';
           </div>
         </div>
 
-        <!-- Recent Activity Section -->
         <div class="space-y-6">
           <div class="flex items-center justify-between px-1">
             <div class="flex items-center gap-3">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Recent Activity</h3>
+              <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
+                Recent Activity
+              </h3>
             </div>
-            <button (click)="router.navigate(['/customer/activity'])" class="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 transition-colors">
+
+            <button
+              type="button"
+              (click)="router.navigate(['/customer/activity'])"
+              class="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 transition-colors"
+            >
               View All
             </button>
           </div>
-          
+
           <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-            <app-empty-state 
+            <app-empty-state
               icon="receipt-outline"
               title="No recent activity"
               description="Your trips and errands will appear here once you start using Movabi."
@@ -167,46 +260,78 @@ import { EmptyStateComponent } from '../../../../shared/ui';
         </div>
       </div>
     </ion-content>
-  `,
-  standalone: true,
-  imports: [
-    CommonModule, 
-    IonHeader, 
-    IonToolbar, 
-    IonTitle, 
-    IonButtons, 
-    IonContent, 
-    IonIcon, 
-    EmptyStateComponent
-  ]
+  `
 })
-export class HomePage {
-  public router = inject(Router);
-  public auth = inject(AuthService);
-  public walletService = inject(WalletService);
-  private config = inject(AppConfigService);
+export class HomePage implements OnInit {
+    public router = inject(Router);
+    public auth = inject(AuthService);
+    public walletService = inject(WalletService);
 
-  constructor() {
-    addIcons({ 
-      shieldCheckmark, 
-      timeOutline, 
-      logOutOutline, 
-      car, 
-      cart, 
-      bus, 
-      chevronForward, 
-      receiptOutline,
-      walletOutline
-    });
+    private config = inject(AppConfigService);
+    private toastCtrl = inject(ToastController);
 
-    this.walletService.fetchWallet();
-  }
+    signingOut = signal(false);
+    activeTrips = signal(0);
 
-  formatCurrency(amount: number) {
-    return this.config.formatCurrency(amount);
-  }
+    constructor() {
+        addIcons({
+            shieldCheckmark,
+            timeOutline,
+            logOutOutline,
+            car,
+            cart,
+            bus,
+            chevronForward,
+            receiptOutline,
+            walletOutline
+        });
+    }
 
-  goToBooking(type: string) {
-    this.router.navigate(['/customer/request'], { queryParams: { type } });
-  }
+    ngOnInit(): void {
+        void this.walletService.fetchWallet();
+    }
+
+    displayName(): string {
+        const email = this.auth.currentUser()?.email || '';
+        const name = email.split('@')[0]?.trim();
+
+        return name || 'Customer';
+    }
+
+    formatCurrency(amount: number): string {
+        return this.config.formatCurrency(Number(amount || 0));
+    }
+
+    goAdmin(): void {
+        void this.router.navigate(['/dashboard']);
+    }
+
+    goToBooking(type: 'ride' | 'errand' | 'delivery'): void {
+        void this.router.navigate(['/customer/request'], {
+            queryParams: { type }
+        });
+    }
+
+    async signOut(): Promise<void> {
+        if (this.signingOut()) return;
+
+        this.signingOut.set(true);
+
+        try {
+            await this.auth.signOut();
+            await this.router.navigate(['/auth/login']);
+        } catch (error) {
+            console.error('Sign out failed:', error);
+
+            const toast = await this.toastCtrl.create({
+                message: 'Could not sign out. Please try again.',
+                duration: 2500,
+                color: 'danger'
+            });
+
+            await toast.present();
+        } finally {
+            this.signingOut.set(false);
+        }
+    }
 }

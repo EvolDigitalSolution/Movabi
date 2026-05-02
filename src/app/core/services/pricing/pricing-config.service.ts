@@ -4,110 +4,171 @@ import { PricingConfig, FarePricingConfig } from '../../models/pricing-config.mo
 import { ServiceTypeSlug } from '../../models/maps/map-marker.model';
 
 @Injectable({
-  providedIn: 'root'
+    providedIn: 'root'
 })
 export class PricingConfigService {
-  private supabase = inject(SupabaseService);
-  
-  private configs = new Map<ServiceTypeSlug, FarePricingConfig>();
-  private isLoaded = false;
+    private supabase = inject(SupabaseService);
 
-  // Fallback defaults as per spec
+    private configs = new Map<ServiceTypeSlug, FarePricingConfig>();
+    private isLoaded = false;
+
     private readonly DEFAULT_CONFIGS: Record<ServiceTypeSlug, FarePricingConfig> = {
         ride: {
-            baseFare: 5,
-            distanceRatePerKm: 1.5,
-            timeRatePerMinute: 0.2,
-            serviceFee: 1,
-            minimumFare: 6,
+            baseFare: 2.5,
+            distanceRatePerKm: 0.95,
+            timeRatePerMinute: 0.12,
+            serviceFee: 0.25,
+            minimumFare: 3.99,
             label: 'Ride'
         },
 
         delivery: {
-            baseFare: 7.5,
-            distanceRatePerKm: 1.2,
-            timeRatePerMinute: 0.15,
-            serviceFee: 1.0,
-            minimumFare: 8,
+            baseFare: 3.5,
+            distanceRatePerKm: 0.85,
+            timeRatePerMinute: 0.08,
+            serviceFee: 0.25,
+            minimumFare: 4.5,
             label: 'Delivery'
         },
 
         errand: {
-            baseFare: 10,
-            distanceRatePerKm: 1.5,
-            timeRatePerMinute: 0.2,
-            serviceFee: 1,
-            minimumFare: 12,
+            baseFare: 5,
+            distanceRatePerKm: 0.95,
+            timeRatePerMinute: 0.12,
+            serviceFee: 0.5,
+            minimumFare: 6.5,
             label: 'Errand'
         },
 
         'van-moving': {
-            baseFare: 45,
-            distanceRatePerKm: 2.5,
-            timeRatePerMinute: 0.4,
-            serviceFee: 3,
-            minimumFare: 50,
+            baseFare: 25,
+            distanceRatePerKm: 1.6,
+            timeRatePerMinute: 0.25,
+            serviceFee: 1.5,
+            minimumFare: 30,
             label: 'Van Moving'
         }
     };
 
-  constructor() {
-    // Initialize with defaults immediately
-    this.initializeWithDefaults();
-  }
+    constructor() {
+        this.initializeWithDefaults();
+    }
 
-  private initializeWithDefaults() {
-    Object.entries(this.DEFAULT_CONFIGS).forEach(([type, config]) => {
-      this.configs.set(type as ServiceTypeSlug, config);
-    });
-  }
-
-  /**
-   * Load pricing configurations from Supabase
-   */
-  async loadPricingConfigs(): Promise<void> {
-    try {
-      const { data, error } = await this.supabase
-        .from('pricing_config')
-        .select('*')
-        .eq('is_active', true);
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        data.forEach((item: PricingConfig) => {
-          const serviceType = item.service_type;
-          this.configs.set(serviceType, {
-            baseFare: Number(item.base_fare),
-            distanceRatePerKm: Number(item.per_km),
-            timeRatePerMinute: Number(item.per_min),
-            serviceFee: Number(item.service_fee),
-            minimumFare: Number(item.minimum_fare),
-            label: this.getLabelForService(serviceType)
-          });
+    private initializeWithDefaults() {
+        Object.entries(this.DEFAULT_CONFIGS).forEach(([type, config]) => {
+            this.configs.set(type as ServiceTypeSlug, { ...config });
         });
-        this.isLoaded = true;
-        console.log('Pricing configurations loaded from database.');
-      }
-    } catch (error) {
-      console.warn('Failed to load pricing from database, using defaults.', error);
-      // Fallback is already initialized in constructor
     }
-  }
 
-  /**
-   * Get pricing configuration for a specific service type
-   */
-  getConfig(serviceType: ServiceTypeSlug): FarePricingConfig {
-    return this.configs.get(serviceType) || this.DEFAULT_CONFIGS[serviceType] || this.DEFAULT_CONFIGS.ride;
-  }
+    async loadPricingConfigs(force = false): Promise<void> {
+        if (this.isLoaded && !force) return;
 
-  private getLabelForService(serviceType: ServiceTypeSlug): string {
-    switch (serviceType) {
-      case 'ride': return 'Estimated ride fare';
-      case 'errand': return 'Estimated errand fee';
-      case 'van-moving': return 'Estimated moving fare';
-      default: return 'Estimated fare';
+        try {
+            const { data, error } = await this.supabase
+                .from('pricing_config')
+                .select('*')
+                .eq('is_active', true);
+
+            if (error) throw error;
+
+            this.initializeWithDefaults();
+
+            if (data?.length) {
+                data.forEach((item: PricingConfig) => {
+                    const serviceType = String(item.service_type || '') as ServiceTypeSlug;
+
+                    if (!this.isSupportedServiceType(serviceType)) return;
+
+                    this.configs.set(serviceType, {
+                        baseFare: this.safeMoney(item.base_fare, this.DEFAULT_CONFIGS[serviceType].baseFare),
+                        distanceRatePerKm: this.safeMoney(item.per_km, this.DEFAULT_CONFIGS[serviceType].distanceRatePerKm),
+                        timeRatePerMinute: this.safeMoney(item.per_min, this.DEFAULT_CONFIGS[serviceType].timeRatePerMinute),
+                        serviceFee: this.safeMoney(item.service_fee, this.DEFAULT_CONFIGS[serviceType].serviceFee),
+                        minimumFare: this.safeMoney(item.minimum_fare, this.DEFAULT_CONFIGS[serviceType].minimumFare),
+                        label: this.getLabelForService(serviceType)
+                    });
+                });
+            }
+
+            this.isLoaded = true;
+        } catch (error) {
+            console.warn('Failed to load pricing from database. Using competitive defaults.', error);
+            this.initializeWithDefaults();
+            this.isLoaded = true;
+        }
     }
-  }
+
+    getConfig(serviceType: ServiceTypeSlug | string | null | undefined): FarePricingConfig {
+        const normalized = this.normalizeServiceType(serviceType);
+
+        return (
+            this.configs.get(normalized) ||
+            this.DEFAULT_CONFIGS[normalized] ||
+            this.DEFAULT_CONFIGS.ride
+        );
+    }
+
+    getAllConfigs(): Record<ServiceTypeSlug, FarePricingConfig> {
+        return {
+            ride: this.getConfig('ride'),
+            delivery: this.getConfig('delivery'),
+            errand: this.getConfig('errand'),
+            'van-moving': this.getConfig('van-moving')
+        };
+    }
+
+    getSupportedServiceTypes(): ServiceTypeSlug[] {
+        return ['ride', 'delivery', 'errand', 'van-moving'];
+    }
+
+    private normalizeServiceType(serviceType: ServiceTypeSlug | string | null | undefined): ServiceTypeSlug {
+        const value = String(serviceType || 'ride').trim().toLowerCase();
+
+        if (value === 'van' || value === 'moving' || value === 'van_moving' || value === 'van-moving') {
+            return 'van-moving';
+        }
+
+        if (value === 'courier' || value === 'package' || value === 'parcel' || value === 'delivery') {
+            return 'delivery';
+        }
+
+        if (value === 'shopping' || value === 'task' || value === 'errand') {
+            return 'errand';
+        }
+
+        if (value === 'taxi' || value === 'cab' || value === 'ride') {
+            return 'ride';
+        }
+
+        return 'ride';
+    }
+
+    private isSupportedServiceType(serviceType: string): serviceType is ServiceTypeSlug {
+        return ['ride', 'delivery', 'errand', 'van-moving'].includes(serviceType);
+    }
+
+    private safeMoney(value: unknown, fallback = 0): number {
+        const parsed = Number(value);
+
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            return fallback;
+        }
+
+        return Math.round(parsed * 100) / 100;
+    }
+
+    private getLabelForService(serviceType: ServiceTypeSlug): string {
+        switch (serviceType) {
+            case 'ride':
+                return 'Estimated ride fare';
+            case 'delivery':
+                return 'Estimated delivery fee';
+            case 'errand':
+                return 'Estimated errand fee';
+            case 'van-moving':
+                return 'Estimated moving fare';
+            default:
+                return 'Estimated fare';
+        }
+    }
 }

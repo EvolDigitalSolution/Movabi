@@ -1,7 +1,6 @@
 ﻿import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import {
@@ -50,8 +49,9 @@ export class BookingService {
         bookingData: Partial<Booking>,
         details: Record<string, unknown>,
         serviceSlug: ServiceTypeEnum
-    ) {
+    ): Promise<Booking> {
         const user = this.auth.currentUser();
+
         if (!user) throw new Error('Not authenticated');
 
         if (this.auth.accountStatus() !== 'active') {
@@ -75,51 +75,70 @@ export class BookingService {
             0
         );
 
-        const countryCode = String(pricing?.countryCode || this.getCountryCode() || 'GB').toUpperCase();
-        const currencyCode = String(pricing?.currencyCode || this.getCurrencyCode() || this.currencyFromCountry(countryCode)).toUpperCase();
+        const safePrice = Number.isFinite(totalPrice) ? totalPrice : 0;
+
+        const countryCode = String(
+            pricing?.countryCode ||
+            (bookingData as any).country_code ||
+            this.getCountryCode() ||
+            'GB'
+        ).toUpperCase();
+
+        const currencyCode = String(
+            pricing?.currencyCode ||
+            (bookingData as any).currency_code ||
+            this.getCurrencyCode() ||
+            this.currencyFromCountry(countryCode)
+        ).toUpperCase();
+
         const currencySymbol = pricing?.currencySymbol || this.getCurrencySymbol(currencyCode);
+
+        const insertPayload: Record<string, unknown> = {
+            customer_id: user.id,
+            service_type_id: bookingData.service_type_id || null,
+            status: 'requested',
+            payment_status: 'pending',
+
+            pickup_address: bookingData.pickup_address || '',
+            pickup_lat: bookingData.pickup_lat ?? null,
+            pickup_lng: bookingData.pickup_lng ?? null,
+            dropoff_address: bookingData.dropoff_address || '',
+            dropoff_lat: bookingData.dropoff_lat ?? null,
+            dropoff_lng: bookingData.dropoff_lng ?? null,
+
+            price: safePrice,
+            estimated_price: safePrice,
+
+            country_code: countryCode,
+            currency_code: currencyCode,
+            currency_symbol: currencySymbol,
+
+            regional_pricing_rule_id: pricing?.regionalPricingRuleId || null,
+            pricing_plan_used: pricing?.pricingPlanUsed || (bookingData as any).pricing_plan || 'starter',
+            base_fare_used: Number(pricing?.baseFareUsed || 0),
+            price_per_km_used: Number(pricing?.pricePerKmUsed || 0),
+            commission_rate_used: Number(pricing?.commissionRateUsed || 15),
+            platform_fee: Number(pricing?.platformFee || 0),
+            driver_payout: Number(pricing?.driverPayout || 0),
+            tax_amount: Number(pricing?.taxAmount || 0),
+            surge_multiplier: Number(pricing?.surgeMultiplier || 1),
+
+            scheduled_time: bookingData.scheduled_time || new Date().toISOString(),
+            tenant_id: this.auth.tenantId(),
+
+            metadata: {
+                ...(bookingData.metadata || {}),
+                pricing_source: pricing?.pricingSource || pricing?.source || 'unknown',
+                distance_km: this.getDistanceKm(bookingData),
+                frontend_total_price: safePrice,
+                service_slug: serviceSlug
+            }
+        };
 
         const { data: job, error: bError } = await this.supabase
             .from('jobs')
-            .insert({
-                customer_id: user.id,
-                service_type_id: bookingData.service_type_id,
-                status: 'requested',
-                payment_status: 'pending',
-
-                pickup_address: bookingData.pickup_address,
-                pickup_lat: bookingData.pickup_lat,
-                pickup_lng: bookingData.pickup_lng,
-                dropoff_address: bookingData.dropoff_address,
-                dropoff_lat: bookingData.dropoff_lat,
-                dropoff_lng: bookingData.dropoff_lng,
-
-                price: totalPrice,
-                total_price: totalPrice,
-
-                country_code: countryCode,
-                currency_code: currencyCode,
-                currency_symbol: currencySymbol,
-
-                regional_pricing_rule_id: pricing?.regionalPricingRuleId || null,
-                pricing_plan_used: pricing?.pricingPlanUsed || (bookingData as any).pricing_plan || 'starter',
-                base_fare_used: Number(pricing?.baseFareUsed || 0),
-                price_per_km_used: Number(pricing?.pricePerKmUsed || 0),
-                commission_rate_used: Number(pricing?.commissionRateUsed || 15),
-                platform_fee: Number(pricing?.platformFee || 0),
-                driver_payout: Number(pricing?.driverPayout || 0),
-                tax_amount: Number(pricing?.taxAmount || 0),
-                surge_multiplier: Number(pricing?.surgeMultiplier || 1),
-
-                scheduled_time: bookingData.scheduled_time || new Date().toISOString(),
-                tenant_id: this.auth.tenantId(),
-                metadata: {
-                    ...(bookingData.metadata || {}),
-                    pricing_source: pricing?.pricingSource || pricing?.source || 'unknown',
-                    distance_km: this.getDistanceKm(bookingData)
-                }
-            })
-            .select()
+            .insert(insertPayload)
+            .select('*, service_type:service_types(*)')
             .single();
 
         if (bError) throw bError;
@@ -162,6 +181,7 @@ export class BookingService {
 
         const booking = this.mapJobToBooking(job);
         this.activeBooking.set(booking);
+
         return booking;
     }
 
@@ -173,8 +193,17 @@ export class BookingService {
         const pickupLng = Number(bookingData.pickup_lng || 0);
         const distanceKm = this.getDistanceKm(bookingData);
 
-        const countryCode = String((bookingData as any).country_code || this.getCountryCode() || 'GB').toUpperCase();
-        const currencyCode = String((bookingData as any).currency_code || this.getCurrencyCode() || this.currencyFromCountry(countryCode)).toUpperCase();
+        const countryCode = String(
+            (bookingData as any).country_code ||
+            this.getCountryCode() ||
+            'GB'
+        ).toUpperCase();
+
+        const currencyCode = String(
+            (bookingData as any).currency_code ||
+            this.getCurrencyCode() ||
+            this.currencyFromCountry(countryCode)
+        ).toUpperCase();
 
         const url = this.apiUrlService.getApiUrl('/api/payment/calculate-price');
 
@@ -197,6 +226,7 @@ export class BookingService {
         const distance = Number(
             (bookingData as any).distance_km ||
             (bookingData as any).estimated_distance_km ||
+            (bookingData as any).estimated_distance ||
             (bookingData as any).distance ||
             0
         );
@@ -311,7 +341,7 @@ export class BookingService {
         }
     }
 
-    private validateDetails(serviceCode: ServiceTypeEnum, details: Record<string, unknown>) {
+    private validateDetails(serviceCode: ServiceTypeEnum, details: Record<string, unknown>): void {
         switch (serviceCode) {
             case ServiceTypeEnum.RIDE:
                 if (!details['passenger_count']) {
@@ -375,11 +405,12 @@ export class BookingService {
         additionalData: Partial<Booking> = {},
         currentStatus?: BookingStatus,
         isAdmin = false
-    ) {
+    ): Promise<Booking> {
         let statusToValidate = currentStatus;
 
         if (!statusToValidate) {
             const active = this.activeBooking();
+
             if (active && active.id === bookingId) {
                 statusToValidate = active.status;
             } else {
@@ -398,13 +429,24 @@ export class BookingService {
             throw new Error(`Invalid status transition from ${statusToValidate || 'unknown'} to ${nextStatus}`);
         }
 
-        const updatePayload: any = { status: nextStatus };
+        const updatePayload: Record<string, unknown> = {
+            status: nextStatus
+        };
 
-        if (additionalData.driver_id) updatePayload.driver_id = additionalData.driver_id;
+        if (additionalData.driver_id) {
+            updatePayload['driver_id'] = additionalData.driver_id;
+        }
 
         if (additionalData.total_price !== undefined && additionalData.total_price !== null) {
-            updatePayload.price = Number(additionalData.total_price) || 0;
-            updatePayload.total_price = Number(additionalData.total_price) || 0;
+            const price = Number(additionalData.total_price) || 0;
+            updatePayload['price'] = price;
+            updatePayload['estimated_price'] = price;
+        }
+
+        if (additionalData.price !== undefined && additionalData.price !== null) {
+            const price = Number(additionalData.price) || 0;
+            updatePayload['price'] = price;
+            updatePayload['estimated_price'] = price;
         }
 
         const query = this.supabase
@@ -416,7 +458,9 @@ export class BookingService {
             query.eq('status', statusToValidate);
         }
 
-        const { data, error } = await query.select('*, service_type:service_types(*)').single();
+        const { data, error } = await query
+            .select('*, service_type:service_types(*)')
+            .single();
 
         if (error) {
             if (error.code === 'PGRST116') {
@@ -443,8 +487,8 @@ export class BookingService {
         return booking;
     }
 
-    private async notifyStatusChange(booking: Booking) {
-        const statusMessages: Record<BookingStatus, { title: string; body: string }> = {
+    private async notifyStatusChange(booking: Booking): Promise<void> {
+        const statusMessages: Record<string, { title: string; body: string }> = {
             pending: { title: 'Booking Pending', body: 'Your booking is being processed.' },
             requested: { title: 'Booking Requested', body: 'Your booking has been received.' },
             searching: { title: 'Searching for Driver', body: 'We are looking for a driver for your request.' },
@@ -532,16 +576,18 @@ export class BookingService {
     }
 
     public mapJobToBooking(job: any): Booking {
+        const price = Number(job?.price ?? job?.estimated_price ?? job?.metadata?.frontend_total_price ?? 0);
+
         return {
             ...job,
             id: job.id,
             customer_id: job.customer_id,
             driver_id: job.driver_id,
             service_type_id: job.service_type_id,
-            service_slug: job.service_type?.slug || job.service_slug,
+            service_slug: job.service_type?.slug || job.service_slug || job.metadata?.service_slug,
             status: job.status as BookingStatus,
-            price: job.price,
-            total_price: job.total_price || job.price,
+            price,
+            total_price: price,
             pickup_address: job.pickup_address,
             pickup_lat: job.pickup_lat,
             pickup_lng: job.pickup_lng,
@@ -570,7 +616,7 @@ export class BookingService {
         } as Booking;
     }
 
-    async confirmJobPayment(jobId: string, paymentIntentId: string) {
+    async confirmJobPayment(jobId: string, paymentIntentId: string): Promise<Booking> {
         const isWallet = paymentIntentId === 'wallet_funded';
 
         const { data, error } = await this.supabase
@@ -606,7 +652,7 @@ export class BookingService {
         return booking;
     }
 
-    private async logStatusHistory(bookingId: string, status: BookingStatus, notes?: string) {
+    private async logStatusHistory(bookingId: string, status: BookingStatus, notes?: string): Promise<void> {
         const user = this.auth.currentUser();
 
         await this.supabase
@@ -632,23 +678,55 @@ export class BookingService {
         return data;
     }
 
-    async getHistory() {
+    async getHistory(): Promise<void> {
         const user = this.auth.currentUser();
-        if (!user) return;
 
-        const { data, error } = await this.supabase
+        if (!user?.id) {
+            this.bookingHistory.set([]);
+            return;
+        }
+
+        const { data: jobs, error } = await this.supabase
             .from('jobs')
-            .select('*, service_type:service_types(*), driver:profiles(*)')
+            .select('*, service_type:service_types(*)')
             .eq('customer_id', user.id)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        const bookings = (data || []).map(job => this.mapJobToBooking(job));
+        const driverIds = Array.from(
+            new Set(
+                (jobs || [])
+                    .map((job: any) => job.driver_id)
+                    .filter(Boolean)
+            )
+        );
+
+        let driversById: Record<string, any> = {};
+
+        if (driverIds.length > 0) {
+            const { data: drivers } = await this.supabase
+                .from('profiles')
+                .select('*')
+                .in('id', driverIds);
+
+            driversById = (drivers || []).reduce((acc: Record<string, any>, driver: any) => {
+                acc[driver.id] = driver;
+                return acc;
+            }, {});
+        }
+
+        const bookings = (jobs || []).map((job: any) =>
+            this.mapJobToBooking({
+                ...job,
+                driver: job.driver_id ? driversById[job.driver_id] || null : null
+            })
+        );
+
         this.bookingHistory.set(bookings);
     }
 
-    async rateBooking(bookingId: string, score: number, comment: string) {
+    async rateBooking(bookingId: string, score: number, comment: string): Promise<void> {
         const { error } = await this.supabase
             .from('ratings')
             .insert({
@@ -661,7 +739,7 @@ export class BookingService {
         if (error) throw error;
     }
 
-    async cancelBooking(bookingId: string, reason: string) {
+    async cancelBooking(bookingId: string, reason: string): Promise<any> {
         try {
             const response = await firstValueFrom(
                 this.http.post<{
@@ -723,7 +801,7 @@ export class BookingService {
     }
 
     subscribeToBooking(bookingId: string): RealtimeChannel {
-        const channel = this.supabase
+        return this.supabase
             .channel(`booking-${bookingId}`)
             .on(
                 'postgres_changes',
@@ -739,7 +817,5 @@ export class BookingService {
                 }
             )
             .subscribe();
-
-        return channel;
     }
 }

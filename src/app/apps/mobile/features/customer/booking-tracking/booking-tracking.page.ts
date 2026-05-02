@@ -1,7 +1,17 @@
-import { Component, inject, OnInit, OnDestroy, signal, ViewChild, computed } from '@angular/core';
+import {
+    Component,
+    inject,
+    OnInit,
+    OnDestroy,
+    signal,
+    ViewChild,
+    computed
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule, AlertController } from '@ionic/angular';
+import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
+
 import {
     chevronBackOutline,
     call,
@@ -20,22 +30,45 @@ import {
     timerOutline,
     checkmarkCircleOutline
 } from 'ionicons/icons';
-import { ActivatedRoute, Router } from '@angular/router';
+
+import { RealtimeChannel } from '@supabase/supabase-js';
+
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
-import { ServiceTypeEnum, DriverLocation, ErrandFunding } from '../../../../../shared/models/booking.model';
-import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
-import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
-import { RealtimeChannel } from '@supabase/supabase-js';
-import { MapComponent } from '../../../../../shared/components/map/map.component';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
-import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
+import {
+    ServiceTypeEnum,
+    DriverLocation,
+    ErrandFunding
+} from '../../../../../shared/models/booking.model';
+
+import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
+
+import {
+    CardComponent,
+    ButtonComponent,
+    BadgeComponent
+} from '../../../../../shared/ui';
+
+import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
+import { MapComponent } from '../../../../../shared/components/map/map.component';
+
 @Component({
     selector: 'app-booking-tracking',
+    standalone: true,
+    imports: [
+        CommonModule,
+        IonicModule,
+        CardComponent,
+        ButtonComponent,
+        BadgeComponent,
+        CommunicationPanelComponent,
+        MapComponent
+    ],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 bg-white">
@@ -49,7 +82,6 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
     <ion-content class="bg-slate-50">
       @if (booking()) {
         <div class="flex flex-col h-full">
-          <!-- Map Area -->
           <div class="flex-1 bg-slate-100 relative overflow-hidden min-h-[300px]">
             <app-map #map></app-map>
 
@@ -74,40 +106,12 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                         {{ searchCountdownLabel() }}
                       </span>
                     </div>
+
                     <div class="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
                       <div
                         class="h-full bg-blue-600 rounded-full transition-all duration-1000"
-                        [style.width.%]="searchProgressPercent()">
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="space-y-2 text-left">
-                    <div class="flex items-start gap-3 text-slate-600">
-                      <div class="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                        <ion-icon name="sparkles-outline" class="text-lg"></ion-icon>
-                      </div>
-                      <p class="text-xs font-semibold leading-relaxed">
-                        We’re checking nearby drivers in real time.
-                      </p>
-                    </div>
-
-                    <div class="flex items-start gap-3 text-slate-600">
-                      <div class="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                        <ion-icon name="shield-checkmark" class="text-lg"></ion-icon>
-                      </div>
-                      <p class="text-xs font-semibold leading-relaxed">
-                        If no driver is found in time, we’ll automatically cancel this booking.
-                      </p>
-                    </div>
-
-                    <div class="flex items-start gap-3 text-slate-600">
-                      <div class="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                        <ion-icon name="information-circle" class="text-lg"></ion-icon>
-                      </div>
-                      <p class="text-xs font-semibold leading-relaxed">
-                        Any payment or reserved errand funds will follow your existing cancellation/refund flow.
-                      </p>
+                        [style.width.%]="searchProgressPercent()"
+                      ></div>
                     </div>
                   </div>
 
@@ -123,11 +127,9 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
             }
           </div>
 
-          <!-- Info Sheet -->
-          <div class="bg-white rounded-t-[2.5rem] shadow-2xl p-6 space-y-6 -mt-10 relative z-10 max-h-[72%] overflow-y-auto custom-scrollbar border-t border-slate-100">
+          <div class="bg-white rounded-t-[2.5rem] shadow-2xl p-6 space-y-6 -mt-10 relative z-10 max-h-[72%] overflow-y-auto border-t border-slate-100">
             <div class="w-12 h-1 bg-slate-100 rounded-full mx-auto"></div>
 
-            <!-- Hero Summary -->
             <div class="p-5 rounded-[2rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
               <div class="flex justify-between items-start gap-4">
                 <div class="min-w-0">
@@ -135,10 +137,14 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                     {{ getStatusLabel(booking()?.status || '') }}
                   </app-badge>
 
-                  <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight">Booking Details</h2>
+                  <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight">
+                    Booking Details
+                  </h2>
+
                   <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                     {{ getStatusHint(booking()?.status || '') }}
                   </p>
+
                   <p class="text-[9px] font-bold text-slate-300 uppercase tracking-widest mt-2">
                     ID: {{ booking()?.id?.slice(0, 8) }}
                   </p>
@@ -161,7 +167,9 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                       <ion-icon name="timer-outline" class="text-blue-600"></ion-icon>
                       <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Time left</p>
                     </div>
-                    <p class="text-lg font-display font-bold text-slate-900">{{ searchCountdownLabel() }}</p>
+                    <p class="text-lg font-display font-bold text-slate-900">
+                      {{ searchCountdownLabel() }}
+                    </p>
                   </div>
 
                   <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
@@ -179,18 +187,23 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
               <div class="grid grid-cols-2 gap-3">
                 <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
-                  <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(booking()?.total_price || 0) }}</p>
+                  <p class="text-lg font-display font-bold text-slate-900">
+                    {{ config.formatCurrency(booking()?.total_price || 0) }}
+                  </p>
                 </div>
+
                 <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
-                  <p class="text-lg font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</p>
+                  <p class="text-lg font-display font-bold text-slate-900">
+                    {{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}
+                  </p>
                 </div>
               </div>
             }
 
             @if (booking()?.driver_id) {
               @if (errandFunding()?.over_budget_status === 'requested') {
-                <div class="p-6 bg-rose-50 rounded-[2rem] border border-rose-100 animate-in slide-in-from-top-4">
+                <div class="p-6 bg-rose-50 rounded-[2rem] border border-rose-100">
                   <div class="flex items-center gap-3 mb-4">
                     <div class="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
                       <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
@@ -204,19 +217,25 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                   <div class="space-y-3 mb-6">
                     <div class="flex justify-between items-center p-3 bg-white rounded-xl border border-rose-100">
                       <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Original</span>
-                      <span class="text-base font-display font-bold text-slate-900">{{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}</span>
+                      <span class="text-base font-display font-bold text-slate-900">
+                        {{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}
+                      </span>
                     </div>
+
                     <div class="flex justify-between items-center p-3 bg-rose-100/50 rounded-xl border border-rose-200">
                       <span class="text-[10px] font-bold text-rose-600 uppercase tracking-widest">New Required</span>
-                      <span class="text-base font-display font-bold text-rose-700">{{ config.formatCurrency(errandFunding()?.over_budget_amount || 0) }}</span>
+                      <span class="text-base font-display font-bold text-rose-700">
+                        {{ config.formatCurrency(errandFunding()?.over_budget_amount || 0) }}
+                      </span>
                     </div>
                   </div>
 
                   <div class="grid grid-cols-2 gap-2">
-                    <app-button variant="secondary" size="sm" (onClick)="rejectOverBudget()" class="border-rose-200 text-rose-700">
+                    <app-button variant="secondary" size="sm" (onClick)="rejectOverBudget()">
                       Reject
                     </app-button>
-                    <app-button variant="primary" size="sm" (onClick)="approveOverBudget()" class="bg-rose-600 border-rose-600 shadow-lg shadow-rose-200">
+
+                    <app-button variant="primary" size="sm" (onClick)="approveOverBudget()">
                       Approve
                     </app-button>
                   </div>
@@ -231,30 +250,36 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
 
                   <div class="flex-1 min-w-0">
                     <h3 class="text-base font-bold text-slate-900 truncate">
-                      {{ booking()?.driver?.first_name }} {{ booking()?.driver?.last_name }}
+                      {{ booking()?.driver?.first_name || 'Driver' }} {{ booking()?.driver?.last_name || '' }}
                     </h3>
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
                       {{ getDriverStatusText() }}
                     </p>
                   </div>
 
-                  <div class="flex gap-2 shrink-0">
-                    <app-button variant="secondary" size="sm" [fullWidth]="false" class="h-11 w-11 rounded-xl" (onClick)="callDriver()">
-                      <ion-icon name="call" slot="icon-only" class="text-lg"></ion-icon>
-                    </app-button>
-                  </div>
+                  @if (booking()?.driver?.phone) {
+                    <div class="flex gap-2 shrink-0">
+                      <app-button variant="secondary" size="sm" [fullWidth]="false" class="h-11 w-11 rounded-xl" (onClick)="callDriver()">
+                        <ion-icon name="call" slot="icon-only" class="text-lg"></ion-icon>
+                      </app-button>
+                    </div>
+                  }
                 </div>
               </div>
 
               @if (['accepted', 'arrived', 'in_progress', 'heading_to_pickup', 'en_route_to_customer'].includes(booking()?.status || '')) {
                 <div class="pt-2">
-                  <app-button [variant]="showChat() ? 'outline' : 'secondary'" (onClick)="showChat.set(!showChat())" class="w-full">
+                  <app-button
+                    [variant]="showChat() ? 'outline' : 'secondary'"
+                    (onClick)="showChat.set(!showChat())"
+                    class="w-full"
+                  >
                     <ion-icon [name]="showChat() ? 'chevron-down' : 'chatbubbles'" class="mr-2 text-xl"></ion-icon>
                     {{ showChat() ? 'Hide Chat' : 'Message Driver' }}
                   </app-button>
 
                   @if (showChat()) {
-                    <div class="mt-6 h-[500px] border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-200/50 animate-in slide-in-from-top-4 duration-500">
+                    <div class="mt-6 h-[500px] border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-200/50">
                       <app-communication-panel
                         [jobId]="booking()!.id"
                         [receiverId]="booking()!.driver_id!"
@@ -266,7 +291,6 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
               }
             }
 
-            <!-- Route Details -->
             <div class="p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
               <div class="flex items-center gap-2 mb-5">
                 <div class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
@@ -285,7 +309,9 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                   <div class="absolute -left-[31px] top-1 w-5 h-5 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
                   <div>
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pickup Location</p>
-                    <h3 class="text-sm font-bold text-slate-900 leading-snug">{{ booking()?.pickup_address }}</h3>
+                    <h3 class="text-sm font-bold text-slate-900 leading-snug">
+                      {{ booking()?.pickup_address }}
+                    </h3>
                   </div>
                 </div>
 
@@ -293,7 +319,9 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                   <div class="absolute -left-[31px] top-1 w-5 h-5 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
                   <div>
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Destination</p>
-                    <h3 class="text-sm font-bold text-slate-900 leading-snug">{{ booking()?.dropoff_address }}</h3>
+                    <h3 class="text-sm font-bold text-slate-900 leading-snug">
+                      {{ booking()?.dropoff_address }}
+                    </h3>
                   </div>
                 </div>
               </div>
@@ -315,14 +343,18 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                   @if (booking()?.service_slug === ServiceTypeEnum.RIDE) {
                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Passengers</p>
-                      <p class="text-xl font-display font-bold text-slate-900">{{ details()?.['passenger_count'] }}</p>
+                      <p class="text-xl font-display font-bold text-slate-900">
+                        {{ details()?.['passenger_count'] || 1 }}
+                      </p>
                     </div>
                   }
 
                   @if (booking()?.service_slug === ServiceTypeEnum.VAN) {
                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Helpers</p>
-                      <p class="text-xl font-display font-bold text-slate-900">{{ details()?.['helper_count'] }}</p>
+                      <p class="text-xl font-display font-bold text-slate-900">
+                        {{ details()?.['helper_count'] || 0 }}
+                      </p>
                     </div>
                   }
                 </div>
@@ -331,16 +363,17 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                   <div class="p-4 bg-slate-50 rounded-[2rem] border border-slate-100 mt-4">
                     <div class="flex justify-between items-center mb-4 gap-3">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items Requested</p>
+
                       @if (details()?.['actual_spending']) {
-                        <app-badge variant="success" class="bg-emerald-100 text-emerald-700 border-emerald-200">
+                        <app-badge variant="success">
                           {{ config.formatCurrency($any(details()?.['actual_spending']) || 0) }} Spent
                         </app-badge>
                       }
                     </div>
 
                     <div class="flex flex-wrap gap-2">
-                      @for (item of (details()?.['items_list'] || []); track item) {
-                        <app-badge variant="primary" class="bg-white border-slate-100 text-slate-600">{{ item }}</app-badge>
+                      @for (item of ($any(details()?.['items_list']) || []); track item) {
+                        <app-badge variant="primary">{{ item }}</app-badge>
                       }
                     </div>
 
@@ -353,12 +386,10 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
                       </div>
 
                       @if (details()?.['receipt_url']) {
-                        <div class="pt-2">
-                          <app-button variant="secondary" size="sm" class="w-full" (onClick)="viewReceipt(details()?.['receipt_url']?.toString())">
-                            <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
-                            View Receipt
-                          </app-button>
-                        </div>
+                        <app-button variant="secondary" size="sm" class="w-full" (onClick)="viewReceipt(details()?.['receipt_url']?.toString())">
+                          <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
+                          View Receipt
+                        </app-button>
                       }
                     </div>
                   </div>
@@ -368,12 +399,12 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
 
             <div class="pt-4 space-y-4">
               @if (booking()?.status === 'completed') {
-                <app-button variant="primary" size="lg" (click)="showRating()" class="w-full">
+                <app-button variant="primary" size="lg" (onClick)="showRating()" class="w-full">
                   <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
                   Rate Experience
                 </app-button>
               } @else if (canManuallyCancel()) {
-                <app-button variant="outline" color="error" size="lg" (click)="cancelBooking()" class="w-full">
+                <app-button variant="outline" color="error" size="lg" (onClick)="cancelBooking()" class="w-full">
                   <ion-icon name="close-circle-outline" slot="start" class="mr-2"></ion-icon>
                   Cancel Booking
                 </app-button>
@@ -398,54 +429,59 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
             <div class="space-y-3">
               <h3 class="text-2xl font-display font-bold text-slate-900">Booking Not Found</h3>
               <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                We couldn't find this booking. It might have been completed or cancelled.
+                We couldn't find this booking. It may have been completed or cancelled.
               </p>
             </div>
-            <app-button variant="secondary" size="lg" (click)="router.navigate(['/customer'])" class="w-full">
+            <app-button variant="secondary" size="lg" (onClick)="router.navigate(['/customer'])" class="w-full">
               Back to Home
             </app-button>
           }
         </div>
       }
     </ion-content>
-  `,
-    standalone: true,
-    imports: [
-        IonicModule,
-        CommonModule,
-        CardComponent,
-        ButtonComponent,
-        BadgeComponent,
-        CommunicationPanelComponent,
-        MapComponent
-    ]
+  `
 })
 export class BookingTrackingPage implements OnInit, OnDestroy {
-    @ViewChild('map') mapComponent!: MapComponent;
+    @ViewChild('map') mapComponent?: MapComponent;
 
     private route = inject(ActivatedRoute);
+    public router = inject(Router);
+
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
     private alertCtrl = inject(AlertController);
     private routing = inject(RoutingService);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
+
     public config = inject(AppConfigService);
-    public router = inject(Router);
 
     ServiceTypeEnum = ServiceTypeEnum;
+
     booking = this.bookingService.activeBooking;
-    details = signal<Record<string, string | number | boolean | string[] | null | undefined> | null>(null);
+
+    details = signal<Record<string, any> | null>(null);
     errandFunding = signal<ErrandFunding | null>(null);
+
     isLoading = signal(true);
     showChat = signal(false);
     autoCancelling = signal(false);
+
     searchCountdownSeconds = signal(90);
 
     searchProgressPercent = computed(() => {
-        const value = Math.max(0, Math.min(90, this.searchCountdownSeconds()));
-        return (value / 90) * 100;
+        const val = Math.max(0, Math.min(90, this.searchCountdownSeconds()));
+        return (val / 90) * 100;
     });
+
+    private channel?: RealtimeChannel;
+    private locationSubscription?: RealtimeChannel;
+
+    private pollingInterval?: ReturnType<typeof setInterval>;
+    private countdownInterval?: ReturnType<typeof setInterval>;
+    private searchTimeoutHandle?: ReturnType<typeof setTimeout>;
+
+    private searchStartedAt: number | null = null;
 
     constructor() {
         addIcons({
@@ -468,14 +504,35 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         });
     }
 
-    private channel?: RealtimeChannel;
-    private locationSubscription?: RealtimeChannel;
-    private searchTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
-    private pollingInterval: ReturnType<typeof setInterval> | null = null;
-    private countdownInterval: ReturnType<typeof setInterval> | null = null;
-    private searchStartedAt: number | null = null;
+    async ngOnInit(): Promise<void> {
+        const id = this.route.snapshot.paramMap.get('id');
 
-    getStatusVariant(status: string): 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' {
+        if (!id) {
+            this.isLoading.set(false);
+            return;
+        }
+
+        this.channel = this.bookingService.subscribeToBooking(id);
+
+        await this.loadBookingAndDetails(id, true);
+        this.startPolling(id);
+    }
+
+    ngOnDestroy(): void {
+        this.resetSearchState();
+
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = undefined;
+        }
+
+        this.channel?.unsubscribe();
+        this.locationSubscription?.unsubscribe();
+    }
+
+    getStatusVariant(
+        status: string
+    ): 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' {
         switch (status) {
             case 'searching':
             case 'no_driver_found':
@@ -497,70 +554,63 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getStatusLabel(status: string): string {
-        switch (status) {
-            case 'searching': return 'Searching for driver';
-            case 'accepted': return 'Driver assigned';
-            case 'heading_to_pickup': return 'Driver heading to pickup';
-            case 'arrived': return 'Driver arrived';
-            case 'in_progress': return 'Trip in progress';
-            case 'arrived_at_store': return 'Driver at store';
-            case 'shopping_in_progress': return 'Shopping in progress';
-            case 'collected': return 'Items collected';
-            case 'en_route_to_customer': return 'En route to you';
-            case 'delivered': return 'Delivered';
-            case 'completed': return 'Completed';
-            case 'settled': return 'Settled';
-            case 'cancelled': return 'Cancelled';
-            case 'no_driver_found': return 'No driver found';
-            default: return status.replace(/_/g, ' ');
-        }
+        const map: Record<string, string> = {
+            searching: 'Searching for driver',
+            accepted: 'Driver assigned',
+            heading_to_pickup: 'Heading to pickup',
+            arrived: 'Driver arrived',
+            in_progress: 'Trip in progress',
+            arrived_at_store: 'Driver at store',
+            shopping_in_progress: 'Shopping in progress',
+            collected: 'Items collected',
+            en_route_to_customer: 'On the way',
+            delivered: 'Delivered',
+            completed: 'Completed',
+            settled: 'Settled',
+            cancelled: 'Cancelled',
+            no_driver_found: 'No driver found'
+        };
+
+        return map[status] ?? status.replace(/_/g, ' ');
     }
 
     getStatusHint(status: string): string {
-        switch (status) {
-            case 'searching':
-                return 'We are actively matching your request';
-            case 'accepted':
-            case 'heading_to_pickup':
-                return 'Your driver is on the way';
-            case 'arrived':
-                return 'Driver has reached pickup point';
-            case 'in_progress':
-            case 'shopping_in_progress':
-                return 'Your service is currently ongoing';
-            case 'completed':
-            case 'delivered':
-                return 'Everything has been completed successfully';
-            case 'cancelled':
-                return 'This booking was cancelled';
-            case 'no_driver_found':
-                return 'No driver was available in time';
-            default:
-                return 'Live updates will appear here';
-        }
+        const map: Record<string, string> = {
+            searching: 'Matching nearby drivers',
+            accepted: 'Driver is coming',
+            heading_to_pickup: 'Driver is on the way',
+            arrived: 'Driver reached pickup',
+            in_progress: 'Journey in progress',
+            completed: 'Trip completed',
+            delivered: 'Delivery completed',
+            cancelled: 'Booking cancelled',
+            no_driver_found: 'No available driver'
+        };
+
+        return map[status] ?? 'Live updates available';
     }
 
     getDriverStatusText(): string {
+        return this.getStatusHint(this.booking()?.status || '');
+    }
+
+    canManuallyCancel(): boolean {
         const status = this.booking()?.status || '';
-        switch (status) {
-            case 'accepted': return 'Driver assigned to your booking';
-            case 'heading_to_pickup': return 'Heading to pickup location';
-            case 'arrived': return 'Driver has arrived';
-            case 'arrived_at_store': return 'Driver is at the store';
-            case 'shopping_in_progress': return 'Driver is shopping for your items';
-            case 'collected': return 'Items collected';
-            case 'en_route_to_customer': return 'On the way to your destination';
-            case 'in_progress': return 'Trip in progress';
-            default: return 'Connected to your booking';
-        }
+
+        return ![
+            'cancelled',
+            'completed',
+            'settled',
+            'no_driver_found'
+        ].includes(status);
     }
 
     getDisplayedTotal(): string {
-        const bookingTotal = this.booking()?.total_price || 0;
-        const reserved = this.errandFunding()?.amount_reserved || 0;
+        const bookingTotal = Number(this.booking()?.total_price || 0);
+        const reserve = Number(this.errandFunding()?.amount_reserved || 0);
 
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            return this.config.formatCurrency(bookingTotal + reserved);
+            return this.config.formatCurrency(bookingTotal + reserve);
         }
 
         return this.config.formatCurrency(bookingTotal);
@@ -570,84 +620,61 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const total = Math.max(0, this.searchCountdownSeconds());
         const mins = Math.floor(total / 60);
         const secs = total % 60;
+
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
-    canManuallyCancel(): boolean {
-        const status = this.booking()?.status || '';
-        return !['cancelled', 'completed', 'settled', 'no_driver_found'].includes(status);
-    }
+    private startSearchCountdown(): void {
+        this.stopSearchCountdown();
 
-    ngOnInit() {
-        const id = this.route.snapshot.params['id'];
-        if (id) {
-            this.channel = this.bookingService.subscribeToBooking(id);
-            this.loadBookingAndDetails(id);
-            this.startPolling(id);
-        }
-    }
-
-    private startPolling(id: string) {
-        this.pollingInterval = setInterval(() => {
-            this.loadBookingAndDetails(id, false);
-        }, 5000);
-    }
-
-    private stopPolling() {
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
-        }
-    }
-
-    private startSearchCountdown() {
-        if (this.searchStartedAt === null) {
+        if (!this.searchStartedAt) {
             this.searchStartedAt = Date.now();
         }
 
-        this.stopSearchCountdown();
-
         this.countdownInterval = setInterval(() => {
-            if (this.searchStartedAt === null) return;
+            if (!this.searchStartedAt) return;
 
             const elapsed = Math.floor((Date.now() - this.searchStartedAt) / 1000);
-            const remaining = Math.max(0, 90 - elapsed);
-            this.searchCountdownSeconds.set(remaining);
+            const remain = Math.max(0, 90 - elapsed);
 
-            if (remaining <= 0) {
+            this.searchCountdownSeconds.set(remain);
+
+            if (remain <= 0) {
                 this.stopSearchCountdown();
             }
         }, 1000);
     }
 
-    private stopSearchCountdown() {
+    private stopSearchCountdown(): void {
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
-            this.countdownInterval = null;
+            this.countdownInterval = undefined;
         }
     }
 
-    private resetSearchState() {
+    private resetSearchState(): void {
         if (this.searchTimeoutHandle) {
             clearTimeout(this.searchTimeoutHandle);
-            this.searchTimeoutHandle = null;
+            this.searchTimeoutHandle = undefined;
         }
 
         this.stopSearchCountdown();
+
         this.searchStartedAt = null;
         this.searchCountdownSeconds.set(90);
         this.autoCancelling.set(false);
     }
 
-    private checkSearchTimeout() {
+    private checkSearchTimeout(): void {
         const b = this.booking();
 
-        if (b?.status === 'searching') {
-            this.mapComponent?.showSearchingOverlay.set(true);
+        if (!b) return;
+
+        if (b.status === 'searching') {
+            this.mapComponent?.showSearchingOverlay?.set(true);
 
             if (!this.searchTimeoutHandle) {
                 this.searchStartedAt = Date.now();
-                this.searchCountdownSeconds.set(90);
                 this.startSearchCountdown();
 
                 this.searchTimeoutHandle = setTimeout(() => {
@@ -655,31 +682,27 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 }, 90000);
             }
         } else {
-            this.mapComponent?.showSearchingOverlay.set(false);
+            this.mapComponent?.showSearchingOverlay?.set(false);
             this.resetSearchState();
         }
     }
 
-    private async handleNoDriverFound() {
+    private async handleNoDriverFound(): Promise<void> {
         const b = this.booking();
+
         if (!b || b.status !== 'searching' || this.autoCancelling()) return;
 
         this.autoCancelling.set(true);
-        this.stopPolling();
-        this.channel?.unsubscribe();
-        this.locationSubscription?.unsubscribe();
 
         try {
-            // Use cancelBooking so existing server-side cancellation flow can
-            // handle refunds / wallet release / payment cancellation if implemented there.
             await this.bookingService.cancelBooking(
                 b.id,
-                'Auto-cancelled because no driver was found within the search window'
+                'Auto cancelled - no driver found'
             );
 
             const alert = await this.alertCtrl.create({
                 header: 'No Driver Found',
-                message: 'We could not find an available driver in time, so this booking has been automatically cancelled.',
+                message: 'We could not find an available driver in time.',
                 buttons: [
                     {
                         text: 'OK',
@@ -687,42 +710,41 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     }
                 ]
             });
-            await alert.present();
-        } catch (e) {
-            console.error('Failed to auto-cancel after no driver found', e);
 
-            const alert = await this.alertCtrl.create({
-                header: 'Search Timed Out',
-                message: 'We could not find a driver, but automatic cancellation did not complete. Please try cancelling manually.',
-                buttons: ['OK']
-            });
             await alert.present();
+        } catch (err) {
+            console.error('Auto cancel failed:', err);
         } finally {
             this.resetSearchState();
         }
     }
 
-    ngOnDestroy() {
-        this.resetSearchState();
-        this.stopPolling();
-        this.channel?.unsubscribe();
-        this.locationSubscription?.unsubscribe();
+    private startPolling(id: string): void {
+        this.pollingInterval = setInterval(() => {
+            void this.loadBookingAndDetails(id, false);
+        }, 5000);
     }
 
-    async loadBookingAndDetails(id: string, showLoading = true) {
+    async loadBookingAndDetails(id: string, showLoading = true): Promise<void> {
         if (showLoading) this.isLoading.set(true);
 
         try {
             const b = await this.bookingService.getBooking(id);
-            this.bookingService.activeBooking.set(b);
 
+            if (!b) {
+                this.isLoading.set(false);
+                return;
+            }
+
+            this.bookingService.activeBooking.set(b);
             this.checkSearchTimeout();
 
-            const details = await this.bookingService.getBookingDetails(
+            const bookingDetails = await this.bookingService.getBookingDetails(
                 b.id,
                 b.service_slug as ServiceTypeEnum
             );
-            this.details.set(details as Record<string, string | number | boolean | string[] | null | undefined>);
+
+            this.details.set(bookingDetails || null);
 
             if (b.service_slug === ServiceTypeEnum.ERRAND) {
                 const funding = await this.bookingService.getErrandFunding(b.id);
@@ -737,197 +759,215 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 this.subscribeToDriverLocation(b.driver_id);
             } else {
                 this.locationSubscription?.unsubscribe();
+                this.locationSubscription = undefined;
             }
-        } catch (e) {
-            console.error('Failed to load booking or details', e);
+        } catch (err) {
+            console.error('Load booking failed', err);
         } finally {
             this.isLoading.set(false);
         }
     }
 
-    initMap() {
+    private initMap(): void {
         const b = this.booking();
-        if (!b) return;
 
-        const pickup = { lat: b.pickup_lat, lng: b.pickup_lng };
-        const dropoff = { lat: b.dropoff_lat || 0, lng: b.dropoff_lng || 0 };
+        if (!b || !this.mapComponent) return;
 
-        if (isNaN(pickup.lat) || isNaN(pickup.lng)) {
-            console.warn('[BookingTracking] Invalid pickup coordinates', pickup);
+        const pickupLat = Number(b.pickup_lat);
+        const pickupLng = Number(b.pickup_lng);
+
+        const dropLat = Number(b.dropoff_lat);
+        const dropLng = Number(b.dropoff_lng);
+
+        if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) {
             return;
         }
 
         setTimeout(() => {
-            if (!this.mapComponent) return;
-
-            this.mapComponent.addOrUpdateMarker({
+            this.mapComponent?.addOrUpdateMarker({
                 id: 'pickup',
-                coordinates: pickup,
+                coordinates: { lat: pickupLat, lng: pickupLng },
                 kind: 'pickup',
                 serviceType: b.service_slug as ServiceTypeSlug,
                 label: 'PICKUP'
             });
 
-            if (b.dropoff_lat && !isNaN(b.dropoff_lat) && !isNaN(b.dropoff_lng || 0)) {
-                this.mapComponent.addOrUpdateMarker({
+            if (this.isValidCoordinate(dropLat) && this.isValidCoordinate(dropLng)) {
+                this.mapComponent?.addOrUpdateMarker({
                     id: 'dropoff',
-                    coordinates: dropoff,
+                    coordinates: { lat: dropLat, lng: dropLng },
                     kind: 'destination',
                     serviceType: b.service_slug as ServiceTypeSlug,
                     label: 'DROPOFF'
                 });
 
-                this.routing.getRoute(pickup, dropoff).subscribe(route => {
-                    if (route) this.mapComponent.drawRoute(route);
-                });
+                this.routing
+                    .getRoute(
+                        { lat: pickupLat, lng: pickupLng },
+                        { lat: dropLat, lng: dropLng }
+                    )
+                    .subscribe({
+                        next: (route: any) => {
+                            if (route) {
+                                this.mapComponent?.drawRoute(route);
+                            }
+                        },
+                        error: (error) => console.warn('Route draw failed:', error)
+                    });
             }
 
-            this.mapComponent.setCenter(pickup.lng, pickup.lat, 14);
-        }, 500);
+            this.mapComponent?.setCenter(pickupLng, pickupLat, 14);
+        }, 300);
     }
 
-    subscribeToDriverLocation(driverId: string) {
+    private subscribeToDriverLocation(driverId: string): void {
         this.locationSubscription?.unsubscribe();
-        this.locationSubscription = this.locationService.subscribeToDriverLocation(driverId, (location) => {
-            this.updateDriverMarker(location);
-        });
+
+        this.locationSubscription = this.locationService.subscribeToDriverLocation(
+            driverId,
+            (location: DriverLocation) => {
+                this.updateDriverMarker(location);
+            }
+        );
     }
 
-    updateDriverMarker(location: DriverLocation) {
-        if (!this.mapComponent) return;
+    private updateDriverMarker(location: DriverLocation): void {
         const b = this.booking();
-        if (!b) return;
+
+        if (!b || !this.mapComponent) return;
+
+        const lat = Number(location.lat);
+        const lng = Number(location.lng);
+
+        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) return;
 
         this.mapComponent.addOrUpdateMarker({
             id: 'driver',
-            coordinates: { lat: location.lat, lng: location.lng },
+            coordinates: { lat, lng },
             kind: 'driver',
             serviceType: b.service_slug as ServiceTypeSlug,
-            heading: location.heading
+            heading: Number(location.heading || 0)
         });
     }
 
-    async showRating() {
-        const alert = await this.alertCtrl.create({
-            header: 'Rate your Trip',
-            message: 'How was your experience with Movabi?',
-            inputs: [
-                { name: 'score', type: 'number', placeholder: 'Score (1-5)', min: 1, max: 5 },
-                { name: 'comment', type: 'textarea', placeholder: 'Optional comment' }
-            ],
-            buttons: [
-                { text: 'Skip', role: 'cancel', handler: () => this.router.navigate(['/customer']) },
-                {
-                    text: 'Submit',
-                    handler: async (data) => {
-                        await this.bookingService.rateBooking(this.booking()!.id, data.score, data.comment);
-                        this.router.navigate(['/customer']);
-                    }
-                }
-            ]
-        });
-        await alert.present();
-    }
+    async cancelBooking(): Promise<void> {
+        const b = this.booking();
+        if (!b) return;
 
-    async cancelBooking() {
         const alert = await this.alertCtrl.create({
             header: 'Cancel Booking',
             message: 'Are you sure you want to cancel this booking?',
             inputs: [
-                { name: 'reason', type: 'text', placeholder: 'Reason for cancellation' }
+                {
+                    name: 'reason',
+                    type: 'text',
+                    placeholder: 'Reason'
+                }
             ],
             buttons: [
-                { text: 'No', role: 'cancel' },
+                {
+                    text: 'No',
+                    role: 'cancel'
+                },
                 {
                     text: 'Yes, Cancel',
                     role: 'destructive',
                     handler: async (data) => {
-                        try {
-                            await this.bookingService.cancelBooking(this.booking()!.id, data.reason || 'No reason provided');
-                            this.router.navigate(['/customer']);
-                        } catch (e) {
-                            const errorAlert = await this.alertCtrl.create({
-                                header: 'Error',
-                                message: (e as Error).message,
-                                buttons: ['OK']
-                            });
-                            await errorAlert.present();
-                        }
+                        await this.bookingService.cancelBooking(
+                            b.id,
+                            data?.reason || 'Customer cancelled'
+                        );
+
+                        await this.router.navigate(['/customer']);
                     }
                 }
             ]
         });
+
         await alert.present();
     }
 
-    callDriver() {
+    async showRating(): Promise<void> {
+        const b = this.booking();
+        if (!b) return;
+
+        const alert = await this.alertCtrl.create({
+            header: 'Rate Trip',
+            inputs: [
+                {
+                    name: 'score',
+                    type: 'number',
+                    placeholder: '1-5',
+                    min: 1,
+                    max: 5
+                },
+                {
+                    name: 'comment',
+                    type: 'textarea',
+                    placeholder: 'Comment'
+                }
+            ],
+            buttons: [
+                {
+                    text: 'Skip',
+                    role: 'cancel',
+                    handler: () => this.router.navigate(['/customer'])
+                },
+                {
+                    text: 'Submit',
+                    handler: async (data) => {
+                        await this.bookingService.rateBooking(
+                            b.id,
+                            Number(data.score || 5),
+                            data.comment || ''
+                        );
+
+                        await this.router.navigate(['/customer']);
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    callDriver(): void {
         const phone = this.booking()?.driver?.phone;
+
         if (phone) {
             window.open(`tel:${phone}`, '_system');
         }
     }
 
-    async approveOverBudget() {
+    async approveOverBudget(): Promise<void> {
         const b = this.booking();
         if (!b) return;
 
-        const alert = await this.alertCtrl.create({
-            header: 'Approve Budget Increase',
-            message: `Are you sure you want to increase the budget to ${this.config.formatCurrency(this.errandFunding()?.over_budget_amount || 0)}? This will reserve additional funds from your wallet.`,
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Approve',
-                    handler: async () => {
-                        try {
-                            await this.walletService.approveErrandOverBudget(b.id);
-                            await this.loadBookingAndDetails(b.id);
-                        } catch (e) {
-                            const errorAlert = await this.alertCtrl.create({
-                                header: 'Approval Failed',
-                                message: (e as Error).message,
-                                buttons: ['OK']
-                            });
-                            await errorAlert.present();
-                        }
-                    }
-                }
-            ]
-        });
-        await alert.present();
+        await this.walletService.approveErrandOverBudget(b.id);
+        await this.loadBookingAndDetails(b.id, false);
     }
 
-    async rejectOverBudget() {
+    async rejectOverBudget(): Promise<void> {
         const b = this.booking();
         if (!b) return;
 
-        const alert = await this.alertCtrl.create({
-            header: 'Reject Budget Increase',
-            message: 'Are you sure you want to reject this request? The driver may not be able to complete the errand if funds are insufficient.',
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Reject',
-                    role: 'destructive',
-                    handler: async () => {
-                        try {
-                            await this.walletService.rejectErrandOverBudget(b.id);
-                            await this.loadBookingAndDetails(b.id);
-                        } catch (e) {
-                            console.error('Rejection failed', e);
-                        }
-                    }
-                }
-            ]
-        });
-        await alert.present();
+        await this.walletService.rejectErrandOverBudget(b.id);
+        await this.loadBookingAndDetails(b.id, false);
     }
 
-    viewReceipt(path: string | null | undefined) {
+    viewReceipt(path?: string | null): void {
         if (!path) return;
-        const { data } = this.supabase.storage.from('documents').getPublicUrl(path);
+
+        const { data } = this.supabase.storage
+            .from('documents')
+            .getPublicUrl(path);
+
         if (data?.publicUrl) {
             window.open(data.publicUrl, '_blank');
         }
+    }
+
+    private isValidCoordinate(value: number): boolean {
+        return Number.isFinite(value) && !Number.isNaN(value);
     }
 }

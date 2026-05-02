@@ -3,7 +3,18 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
-import { Booking, DriverStatus, Earning, Vehicle, DriverProfile, BookingStatus, JobEventType, DriverAccount, ServiceTypeEnum, ErrandDetails } from '@shared/models/booking.model';
+import {
+    Booking,
+    DriverStatus,
+    Earning,
+    Vehicle,
+    DriverProfile,
+    BookingStatus,
+    JobEventType,
+    DriverAccount,
+    ServiceTypeEnum,
+    ErrandDetails
+} from '@shared/models/booking.model';
 import { AuthService } from '../auth/auth.service';
 import { BookingService } from '../booking/booking.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -34,7 +45,6 @@ export class DriverService {
     vehicle = signal<Vehicle | null>(null);
     stripeAccount = signal<DriverAccount | null>(null);
 
-    // Prevent repeated Stripe status calls
     private stripeStatusInFlight = new Map<string, Promise<void>>();
     private lastStripeRefreshAt = new Map<string, number>();
 
@@ -48,6 +58,7 @@ export class DriverService {
             }
 
             const profile = await this.fetchProfile();
+
             if (profile.pricing_plan === 'pro' && profile.subscription_status !== 'active') {
                 throw new Error('Active subscription required for Pro Plan to go online');
             }
@@ -55,16 +66,22 @@ export class DriverService {
 
         const { error } = await this.supabase
             .from('profiles')
-            .update({ status })
+            .update({
+                is_online: status === 'online',
+                last_active_at: new Date().toISOString()
+            })
             .eq('id', user.id);
 
         if (error) throw error;
+
         this.onlineStatus.set(status);
 
         if (status === 'online') {
             this.subscribeToJobs();
             await this.fetchStripeAccount();
+            await this.fetchAvailableJobs();
         } else {
+            this.availableJobs.set([]);
             this.supabase.channel('available-jobs').unsubscribe();
         }
     }
@@ -75,77 +92,115 @@ export class DriverService {
 
         const { error } = await this.supabase
             .from('profiles')
-            .update({ is_available: available })
+            .update({
+                is_available: available,
+                last_active_at: new Date().toISOString()
+            })
             .eq('id', user.id);
 
         if (error) throw error;
+
         this.isAvailable.set(available);
     }
 
     private async fetchProfile(): Promise<DriverProfile> {
         const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            throw new Error('Not authenticated');
+        }
+
         const { data, error } = await this.supabase
             .from('profiles')
             .select('*')
-            .eq('id', user?.id)
+            .eq('id', user.id)
             .single();
+
         if (error) throw error;
+
         return data as DriverProfile;
     }
 
     private subscribeToJobs() {
+        this.supabase.channel('available-jobs').unsubscribe();
+
         this.supabase
             .channel('available-jobs')
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'jobs',
-                filter: 'status=eq.searching'
-            }, async payload => {
-                const rawJob = payload.new;
-                if (rawJob['payment_status'] === 'paid' || rawJob['payment_status'] === 'wallet_funded') {
-                    try {
-                        const newJob = await this.bookingService.getBooking(rawJob['id']);
-                        this.availableJobs.update(jobs => {
-                            const exists = jobs.find(j => j.id === newJob.id);
-                            return exists ? jobs : [newJob, ...jobs];
-                        });
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'jobs',
+                    filter: 'status=eq.searching'
+                },
+                async (payload) => {
+                    const rawJob = payload.new;
 
-                        const user = this.auth.currentUser();
-                        if (user) {
-                            await this.notificationService.notify(
-                                user.id,
-                                'New Job Available',
-                                `A new request is available near you.`,
-                                'booking',
-                                { bookingId: newJob.id }
-                            );
+                    if (
+                        rawJob['payment_status'] === 'paid' ||
+                        rawJob['payment_status'] === 'wallet_funded' ||
+                        rawJob['payment_status'] === 'authorized'
+                    ) {
+                        try {
+                            const newJob = await this.bookingService.getBooking(rawJob['id']);
+
+                            this.availableJobs.update((jobs) => {
+                                const exists = jobs.find((job) => job.id === newJob.id);
+                                return exists ? jobs : [newJob, ...jobs];
+                            });
+
+                            const user = this.auth.currentUser();
+
+                            if (user) {
+                                await this.notificationService.notify(
+                                    user.id,
+                                    'New Request Available',
+                                    'A new request is available near you.',
+                                    'booking',
+                                    { bookingId: newJob.id }
+                                );
+                            }
+                        } catch (error) {
+                            console.error('Failed to fetch new job details', error);
                         }
-                    } catch (e) {
-                        console.error('Failed to fetch new job details', e);
                     }
                 }
-            })
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'jobs'
-            }, payload => {
-                const updatedJob = payload.new;
-                if (updatedJob['status'] !== 'searching' || updatedJob['payment_status'] !== 'paid') {
-                    this.availableJobs.update(jobs => jobs.filter(j => j.id !== updatedJob['id']));
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'jobs'
+                },
+                (payload) => {
+                    const updatedJob = payload.new;
+                    const status = updatedJob['status'];
+                    const paymentStatus = updatedJob['payment_status'];
+
+                    if (
+                        status !== 'searching' ||
+                        !['paid', 'wallet_funded', 'authorized'].includes(paymentStatus)
+                    ) {
+                        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== updatedJob['id']));
+                    }
                 }
-            })
-            .on('postgres_changes', {
-                event: 'DELETE',
-                schema: 'public',
-                table: 'jobs'
-            }, payload => {
-                this.availableJobs.update(jobs => jobs.filter(j => j.id !== payload.old['id']));
-            })
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'jobs'
+                },
+                (payload) => {
+                    this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== payload.old['id']));
+                }
+            )
             .subscribe();
 
-        this.fetchAvailableJobs();
+        void this.fetchAvailableJobs();
     }
 
     async fetchVehicle() {
@@ -172,11 +227,12 @@ export class DriverService {
             .from('jobs')
             .select('*, service_type:service_types(*)')
             .eq('status', 'searching')
-            .in('payment_status', ['paid', 'wallet_funded'])
+            .in('payment_status', ['paid', 'wallet_funded', 'authorized'])
             .order('created_at', { ascending: false });
 
         if (error) throw error;
-        const bookings = (data || []).map(job => this.bookingService.mapJobToBooking(job));
+
+        const bookings = (data || []).map((job) => this.bookingService.mapJobToBooking(job));
         this.availableJobs.set(bookings);
     }
 
@@ -185,17 +241,26 @@ export class DriverService {
         if (!user) throw new Error('Not authenticated');
 
         if (this.auth.accountStatus() !== 'active') {
-            throw new Error(`Your account is ${this.auth.accountStatus()}. You cannot accept jobs.`);
+            throw new Error(`Your account is ${this.auth.accountStatus()}. You cannot accept requests.`);
         }
 
         const profile = await this.fetchProfile();
+
         if (profile.subscription_status !== 'active') {
-            throw new Error('Active subscription required to accept jobs');
+            throw new Error('Active subscription required to accept requests');
         }
 
         const job = await this.bookingService.getBooking(bookingId);
+
         if (job.service_slug === 'errand' && job.errand_funding) {
-            if (this.auth.stripeConnectStatus() !== 'enabled') {
+            const account = await this.fetchStripeAccount();
+
+            const stripeReady =
+                account?.stripe_account_id &&
+                account?.charges_enabled === true &&
+                account?.payouts_enabled === true;
+
+            if (!stripeReady) {
                 throw new Error('You must complete Stripe Connect onboarding to accept wallet-funded errands.');
             }
         }
@@ -210,15 +275,16 @@ export class DriverService {
         } catch (error: unknown) {
             const err = error as { error?: { message?: string } };
             console.error('Failed to accept job via API', error);
-            throw new Error(err.error?.message || 'Failed to accept job. It may have been taken.');
+            throw new Error(err.error?.message || 'Failed to accept request. It may have been taken.');
         }
 
-        await this.eventService.logEvent(bookingId, 'driver_accepted', 'Job accepted by driver');
+        await this.eventService.logEvent(bookingId, 'driver_accepted', 'Request accepted by driver');
 
         const fullBooking = await this.bookingService.getBooking(bookingId);
 
         this.activeJob.set(fullBooking);
-        this.availableJobs.update(jobs => jobs.filter(j => j.id !== bookingId));
+        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== bookingId));
+
         return fullBooking;
     }
 
@@ -242,28 +308,33 @@ export class DriverService {
 
     async updateJobStatus(bookingId: string, status: BookingStatus) {
         const eventTypeMap: Partial<Record<BookingStatus, JobEventType>> = {
-            'arrived': 'driver_arrived',
-            'arrived_at_store': 'driver_arrived',
-            'shopping_in_progress': 'job_started',
-            'collected': 'job_started',
-            'en_route_to_customer': 'job_started',
-            'delivered': 'job_completed',
-            'in_progress': 'job_started',
-            'completed': 'job_completed'
+            arrived: 'driver_arrived',
+            arrived_at_store: 'driver_arrived',
+            shopping_in_progress: 'job_started',
+            collected: 'job_started',
+            en_route_to_customer: 'job_started',
+            delivered: 'job_completed',
+            in_progress: 'job_started',
+            completed: 'job_completed'
         };
 
         const eventType = eventTypeMap[status];
+
         if (eventType) {
             await this.eventService.logEvent(bookingId, eventType, `Driver updated status to ${status}`);
         }
 
-        const updatedBooking = await this.bookingService.updateBookingStatus(bookingId, status, `Status updated by driver to ${status}`);
+        const updatedBooking = await this.bookingService.updateBookingStatus(
+            bookingId,
+            status,
+            `Status updated by driver to ${status}`
+        );
 
         if (status === 'completed' && updatedBooking.service_slug === 'errand') {
             try {
                 await this.walletService.settleErrandFunds(bookingId);
-            } catch (e) {
-                console.error('Failed to settle errand funds:', e);
+            } catch (error) {
+                console.error('Failed to settle errand funds:', error);
             }
         }
 
@@ -281,6 +352,7 @@ export class DriverService {
             .order('created_at', { ascending: false });
 
         if (error) throw error;
+
         this.earnings.set(data || []);
     }
 
@@ -289,7 +361,10 @@ export class DriverService {
 
         if (job.service_slug === 'errand') {
             const funding = await this.bookingService.getErrandFunding(jobId);
-            const details = await this.bookingService.getBookingDetails(jobId, ServiceTypeEnum.ERRAND) as ErrandDetails;
+            const details = (await this.bookingService.getBookingDetails(
+                jobId,
+                ServiceTypeEnum.ERRAND
+            )) as ErrandDetails;
 
             if (funding?.over_budget_status === 'requested') {
                 throw new Error('Please wait for the customer to approve or reject your over-budget request before completing.');
@@ -305,6 +380,7 @@ export class DriverService {
         }
 
         const url = this.apiUrlService.getApiUrl('/api/logistics/complete');
+
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -313,10 +389,11 @@ export class DriverService {
 
         if (!response.ok) {
             const err = await response.json();
-            throw new Error(err.error || 'Failed to complete job');
+            throw new Error(err.error || 'Failed to complete request');
         }
 
         const result = await response.json();
+
         this.activeJob.set(null);
         return result.data;
     }
@@ -332,7 +409,12 @@ export class DriverService {
 
         if (error) throw error;
 
-        await this.eventService.logEvent(jobId, 'errand_spending_recorded', `Driver recorded spending of £${amount.toFixed(2)}`, { amount, notes });
+        await this.eventService.logEvent(
+            jobId,
+            'errand_spending_recorded',
+            `Driver recorded spending of £${amount.toFixed(2)}`,
+            { amount, notes }
+        );
     }
 
     async updateVehicle(vehicleData: Partial<Vehicle>) {
@@ -373,12 +455,15 @@ export class DriverService {
         const user = this.auth.currentUser();
         if (!user) return;
 
-        const path = `drivers/${user.id}/${type}_${Date.now()}`;
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `drivers/${user.id}/${type}_${Date.now()}_${safeName}`;
+
         const { data, error } = await this.supabase.storage
             .from('documents')
             .upload(path, file);
 
         if (error) throw error;
+
         return data.path;
     }
 
@@ -386,7 +471,9 @@ export class DriverService {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
 
-        const path = `receipts/${jobId}/${Date.now()}_${file.name}`;
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `receipts/${jobId}/${Date.now()}_${safeName}`;
+
         const { data, error } = await this.supabase.storage
             .from('documents')
             .upload(path, file);
@@ -400,7 +487,9 @@ export class DriverService {
 
         if (updateError) throw updateError;
 
-        await this.eventService.logEvent(jobId, 'errand_receipt_uploaded', 'Driver uploaded a receipt', { path: data.path });
+        await this.eventService.logEvent(jobId, 'errand_receipt_uploaded', 'Driver uploaded a receipt', {
+            path: data.path
+        });
 
         return data.path;
     }
@@ -414,60 +503,86 @@ export class DriverService {
         const user = this.auth.currentUser();
         if (!user) return null;
 
-        const { data, error } = await this.supabase
-            .from('driver_accounts')
-            .select('*')
-            .eq('user_id', user.id)
+        const { data: profile, error: profileError } = await this.supabase
+            .from('profiles')
+            .select('id, stripe_account_id, stripe_connect_status')
+            .eq('id', user.id)
             .maybeSingle();
 
-        if (error) {
-            console.error('Error fetching stripe account:', error);
+        if (profileError) {
+            console.error('Error fetching profile Stripe account:', profileError);
             return null;
         }
 
-        this.stripeAccount.set((data as DriverAccount) ?? null);
-        return (data as DriverAccount) ?? null;
+        const profileAccountId = (profile as any)?.stripe_account_id;
+
+        if (!profileAccountId) {
+            this.stripeAccount.set(null);
+            return null;
+        }
+
+        try {
+            const status = await this.connectService.refreshAccountStatus(profileAccountId, user.id);
+
+            const account = {
+                user_id: user.id,
+                stripe_account_id: status.stripe_account_id || profileAccountId,
+                onboarding_complete: status.onboarding_complete,
+                payouts_enabled: status.payouts_enabled === true,
+                charges_enabled: status.charges_enabled === true,
+                onboarding_status: status.status
+            } as any;
+
+            this.stripeAccount.set(account);
+            return account;
+        } catch (error) {
+            console.error('Error fetching Stripe account status:', error);
+
+            const fallback = {
+                user_id: user.id,
+                stripe_account_id: profileAccountId,
+                onboarding_complete: false,
+                payouts_enabled: false,
+                charges_enabled: false,
+                onboarding_status: (profile as any)?.stripe_connect_status || 'pending'
+            } as any;
+
+            this.stripeAccount.set(fallback);
+            return fallback;
+        }
     }
 
     async refreshStripeStatus(accountId: string, force = false) {
-        if (!accountId) return;
+        const user = this.auth.currentUser();
+
+        if (!accountId || !user) return;
 
         const now = Date.now();
         const lastRun = this.lastStripeRefreshAt.get(accountId) ?? 0;
 
-        if (!force && now - lastRun < 15000) {
-            return;
-        }
+        if (!force && now - lastRun < 15000) return;
 
         const existing = this.stripeStatusInFlight.get(accountId);
-        if (existing) {
-            return existing;
-        }
+        if (existing) return existing;
 
         const promise = (async () => {
             try {
                 this.lastStripeRefreshAt.set(accountId, Date.now());
 
-                const status = await this.connectService.getAccountStatus(accountId);
+                const status = await this.connectService.refreshAccountStatus(accountId, user.id);
 
-                // ✅ FIX: use correct fields from your API
-                const updatePayload = {
+                const account = {
+                    user_id: user.id,
+                    stripe_account_id: status.stripe_account_id || accountId,
                     onboarding_complete: status.onboarding_complete,
-                    payouts_enabled: status.payouts_enabled,
-                    charges_enabled: status.charges_enabled,
+                    payouts_enabled: status.payouts_enabled === true,
+                    charges_enabled: status.charges_enabled === true,
                     onboarding_status: status.status
-                };
+                } as any;
 
-                const { error } = await this.supabase
-                    .from('driver_accounts')
-                    .update(updatePayload)
-                    .eq('stripe_account_id', accountId);
-
-                if (error) throw error;
-
-                await this.fetchStripeAccount();
-            } catch (e) {
-                console.error('Failed to refresh stripe status', e);
+                this.stripeAccount.set(account);
+            } catch (error) {
+                console.error('Failed to refresh stripe status', error);
             } finally {
                 this.stripeStatusInFlight.delete(accountId);
             }
@@ -481,14 +596,23 @@ export class DriverService {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
 
+        await this.fetchStripeAccount();
+
         let accountId = this.stripeAccount()?.stripe_account_id;
 
         if (!accountId) {
+            const { data: profile } = await this.supabase
+                .from('profiles')
+                .select('tenant_id')
+                .eq('id', user.id)
+                .maybeSingle();
+
             const { stripe_account_id } = await this.connectService.createAccount(
                 user.id,
-                user.email!,
-                this.auth.tenantId()!
+                user.email || '',
+                (profile as any)?.tenant_id || null
             );
+
             accountId = stripe_account_id;
             await this.fetchStripeAccount();
         }
@@ -496,7 +620,12 @@ export class DriverService {
         const returnUrl = `${window.location.origin}/driver?stripe=success`;
         const refreshUrl = `${window.location.origin}/driver?stripe=refresh`;
 
-        const { url } = await this.connectService.getOnboardingLink(accountId, returnUrl, refreshUrl);
+        const { url } = await this.connectService.getOnboardingLink(
+            accountId,
+            returnUrl,
+            refreshUrl
+        );
+
         return url;
     }
 }

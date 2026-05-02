@@ -51,6 +51,7 @@ import {
 import { Router, ActivatedRoute } from '@angular/router';
 import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { PricingService } from '../../../../../core/services/pricing.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
@@ -62,21 +63,27 @@ import { WalletService } from '../../../../../core/services/wallet/wallet.servic
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
+import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
+
 import {
     ServiceType,
     ServiceTypeEnum,
     UnifiedLocation
 } from '../../../../../shared/models/booking.model';
+
 import {
     ButtonComponent,
     InputComponent,
     PriceDisplayComponent
 } from '../../../../../shared/ui';
+
 import { MapComponent } from '../../../../../shared/components/map/map.component';
+
 import {
     AutocompleteResult,
     RouteSummary
 } from '../../../../../core/models/maps/route-result.model';
+
 import { FareEstimate } from '../../../../../core/models/maps/fare-estimate.model';
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
@@ -84,6 +91,17 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
 @Component({
     selector: 'app-booking-request',
+    standalone: true,
+    imports: [
+        IonicModule,
+        CommonModule,
+        FormsModule,
+        ReactiveFormsModule,
+        ButtonComponent,
+        InputComponent,
+        PriceDisplayComponent,
+        MapComponent
+    ],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 bg-white">
@@ -111,9 +129,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <p class="text-lg font-display font-bold text-slate-900">
                       {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km • {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
                     </p>
-                    <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
-                      Route auto-focused on map
-                    </p>
+                    
                   </div>
                 </div>
               </div>
@@ -138,7 +154,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 <ion-icon name="information-circle" class="text-2xl text-amber-500 shrink-0"></ion-icon>
                 <div class="flex-1">
                   <p>{{ locationService.locationError() }}</p>
-                  <button (click)="locationService.setManualMode()" class="text-blue-600 font-bold uppercase tracking-widest text-[10px] mt-2">
+                  <button type="button" (click)="locationService.setManualMode()" class="text-blue-600 font-bold uppercase tracking-widest text-[10px] mt-2">
                     Continue with manual address
                   </button>
                 </div>
@@ -191,7 +207,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     label="Dropoff Location"
                     formControlName="dropoff_address"
                     (input)="onAddressInput('dropoff', $any($event).target.value)"
-                    placeholder="Where should we deliver?"
+                    [placeholder]="type === ServiceTypeEnum.DELIVERY ? 'Where should we deliver the package?' : 'Where should we deliver?'"
                     icon="pin-outline"
                     (focus)="showDropoffResults.set(true)"
                     (blur)="hideResults('dropoff')">
@@ -400,6 +416,52 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                         </div>
                       </div>
                     </ion-radio-group>
+                  </div>
+                </div>
+              }
+
+              @if (type === ServiceTypeEnum.DELIVERY) {
+                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
+                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Delivery Contact
+                    </p>
+
+                    <div class="grid grid-cols-1 gap-4">
+                      <app-input
+                        label="Recipient Name"
+                        formControlName="recipient_name"
+                        icon="person-outline"
+                        placeholder="Who should receive it?">
+                      </app-input>
+
+                      <app-input
+                        label="Recipient Phone"
+                        type="tel"
+                        formControlName="recipient_phone"
+                        icon="call-outline"
+                        placeholder="Recipient contact number">
+                      </app-input>
+                    </div>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label for="item_description" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Package Details
+                    </label>
+
+                    <textarea
+                      id="item_description"
+                      formControlName="item_description"
+                      placeholder="Describe the package, size, or handling notes."
+                      class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[90px] placeholder:text-slate-300 shadow-sm">
+                    </textarea>
+                  </div>
+
+                  <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                    <p class="text-sm leading-7 text-slate-700">
+                      Delivery requests are for parcels, documents, and small-to-medium items. For furniture or large items, use Van Moving.
+                    </p>
                   </div>
                 </div>
               }
@@ -635,18 +697,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
         </div>
       </div>
     </ion-content>
-  `,
-    standalone: true,
-    imports: [
-        IonicModule,
-        CommonModule,
-        FormsModule,
-        ReactiveFormsModule,
-        ButtonComponent,
-        InputComponent,
-        PriceDisplayComponent,
-        MapComponent
-    ]
+  `
 })
 export class BookingRequestPage implements OnInit, OnDestroy {
     @ViewChild('map') mapComponent!: MapComponent;
@@ -682,42 +733,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
     private fareCalculator = inject(FareCalculationService);
+    private supabase = inject(SupabaseService);
     private destroyRef = inject(DestroyRef);
-
-    constructor() {
-        addIcons({
-            chevronBackOutline,
-            navigate,
-            informationCircle,
-            locationOutline,
-            locate,
-            pinOutline,
-            peopleOutline,
-            cartOutline,
-            cashOutline,
-            constructOutline,
-            businessOutline,
-            shieldCheckmark,
-            carOutline,
-            cubeOutline,
-            busOutline,
-            helpCircleOutline,
-            searchOutline,
-            swapHorizontalOutline,
-            closeCircleOutline,
-            walletOutline,
-            alertCircle,
-            homeOutline,
-            storefrontOutline,
-            personOutline,
-            callOutline,
-            layersOutline
-        });
-    }
 
     ServiceTypeEnum = ServiceTypeEnum;
     type: ServiceTypeEnum = ServiceTypeEnum.RIDE;
     bookingForm!: FormGroup;
+
     estimatedPrice = signal(0);
     submitting = signal(false);
     cardError = signal<string | null>(null);
@@ -809,6 +831,86 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         { id: 'full-house', label: 'Full House', icon: 'storefront-outline' }
     ]);
 
+    private pickupSearch$ = new Subject<string>();
+    private dropoffSearch$ = new Subject<string>();
+    private lastBookingTime = 0;
+
+    constructor() {
+        addIcons({
+            chevronBackOutline,
+            navigate,
+            informationCircle,
+            locationOutline,
+            locate,
+            pinOutline,
+            peopleOutline,
+            cartOutline,
+            cashOutline,
+            constructOutline,
+            businessOutline,
+            shieldCheckmark,
+            carOutline,
+            cubeOutline,
+            busOutline,
+            helpCircleOutline,
+            searchOutline,
+            swapHorizontalOutline,
+            closeCircleOutline,
+            walletOutline,
+            alertCircle,
+            homeOutline,
+            storefrontOutline,
+            personOutline,
+            callOutline,
+            layersOutline
+        });
+    }
+
+    ngOnInit() {
+        const typeParam = this.route.snapshot.queryParams['type'];
+        this.type = this.normalizeTypeParam(typeParam);
+
+        this.initForm();
+        void this.loadPricing();
+
+        this.pickupSearch$
+            .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .subscribe(query => {
+                this.performSearch('pickup', query);
+            });
+
+        this.dropoffSearch$
+            .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .subscribe(query => {
+                this.performSearch('dropoff', query);
+            });
+    }
+
+    ngOnDestroy() {
+        this.cardReady.set(false);
+        this.cardComplete.set(false);
+        this.paymentProcessing.set(false);
+        this.cardMounted = false;
+
+        if (this.card) {
+            this.card.destroy();
+            this.card = null;
+        }
+
+        this.elements = null;
+        this.stripe = null;
+    }
+
+    private normalizeTypeParam(value: unknown): ServiceTypeEnum {
+        const raw = String(value || '').trim().toLowerCase();
+
+        if (raw === ServiceTypeEnum.ERRAND || raw === 'errand') return ServiceTypeEnum.ERRAND;
+        if (raw === ServiceTypeEnum.DELIVERY || raw === 'delivery' || raw === 'courier' || raw === 'parcel' || raw === 'package') return ServiceTypeEnum.DELIVERY;
+        if (raw === ServiceTypeEnum.VAN || raw === 'van' || raw === 'van-moving' || raw === 'moving') return ServiceTypeEnum.VAN;
+
+        return ServiceTypeEnum.RIDE;
+    }
+
     private isQuickBuyMode(mode: unknown): mode is ErrandMode {
         return mode === 'quick_buy' || mode === 'shop_deliver';
     }
@@ -851,45 +953,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
 
         return null;
-    }
-
-    private pickupSearch$ = new Subject<string>();
-    private dropoffSearch$ = new Subject<string>();
-    private lastBookingTime = 0;
-
-    ngOnInit() {
-        const typeParam = this.route.snapshot.queryParams['type'];
-        this.type = (typeParam as ServiceTypeEnum) || ServiceTypeEnum.RIDE;
-
-        this.initForm();
-        void this.loadPricing();
-
-        this.pickupSearch$
-            .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
-            .subscribe(query => {
-                this.performSearch('pickup', query);
-            });
-
-        this.dropoffSearch$
-            .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
-            .subscribe(query => {
-                this.performSearch('dropoff', query);
-            });
-    }
-
-    ngOnDestroy() {
-        this.cardReady.set(false);
-        this.cardComplete.set(false);
-        this.paymentProcessing.set(false);
-        this.cardMounted = false;
-
-        if (this.card) {
-            this.card.destroy();
-            this.card = null;
-        }
-
-        this.elements = null;
-        this.stripe = null;
     }
 
     private toMoney(value: unknown): number {
@@ -998,6 +1061,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         await loading.present();
 
         const pos = await this.locationService.getCurrentPosition();
+
         if (pos) {
             const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
 
@@ -1072,6 +1136,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     stairs_involved: [false],
                     fragile_items: [false],
                     packing_assistance: [false]
+                });
+                break;
+
+            default:
+                this.bookingForm = this.fb.group({
+                    ...baseFields,
+                    dropoff_address: ['', Validators.required]
                 });
                 break;
         }
@@ -1313,7 +1384,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     async loadPricing() {
         const types = await this.bookingService.getServiceTypes();
         const slug = this.getServiceSlug();
-        const selected = types.find((t: ServiceType) => t.slug === slug);
+
+        const selected = types.find((t: ServiceType) => {
+            const serviceSlug = String((t as any).slug || (t as any).name || '').toLowerCase();
+
+            if (serviceSlug === slug) return true;
+            if (slug === 'van-moving' && (serviceSlug === 'van' || serviceSlug === 'van moving')) return true;
+            if (slug === 'delivery' && ['courier', 'package', 'parcel', 'delivery'].includes(serviceSlug)) return true;
+
+            return false;
+        });
 
         console.log('AVAILABLE SERVICE TYPES', types);
         console.log('REQUESTED SLUG', slug);
@@ -1330,24 +1410,19 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const route = this.routeResult();
         const serviceSlug = this.getServiceSlug();
         const formVal = this.bookingForm?.getRawValue?.() || this.bookingForm?.value || {};
-        const pickup = this.pickupLocation;
 
-        let surge = 1.0;
-        let backendTotal = 0;
+        const distanceKm = this.toMoney((route?.distanceMeters || 0) / 1000);
+        const durationMinutes = this.toMoney((route?.durationSeconds || 0) / 60);
 
-        if (pickup.latitude && pickup.longitude) {
-            const dbPrice = await this.pricingService.calculatePrice(
-                this.serviceType()?.id || '',
-                serviceSlug as ServiceTypeEnum,
-                (route?.distanceMeters || 0) / 1000,
-                pickup.latitude,
-                pickup.longitude
+        let fixedFare = 0;
+
+        if (distanceKm > 0) {
+            fixedFare = await this.getFixedFareBandPrice(
+                serviceSlug,
+                distanceKm,
+                this.config.currentCountry()?.code || 'GB',
+                this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP'
             );
-
-            console.log('DB PRICING RESPONSE', dbPrice);
-
-            surge = this.pricingService.surgeMultiplier() || 1;
-            backendTotal = this.toMoney(dbPrice || 0);
         }
 
         const localEstimate = this.fareCalculator.calculateFare({
@@ -1355,7 +1430,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             distanceMeters: route?.distanceMeters || 0,
             durationSeconds: route?.durationSeconds || 0,
             basePriceOverride: this.serviceType()?.base_price,
-            surgeMultiplier: surge,
+            surgeMultiplier: 1,
             errandDetails: serviceSlug === 'errand'
                 ? { mode: formVal.errand_mode }
                 : null,
@@ -1370,8 +1445,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 : null
         });
 
-        const baseTotal = backendTotal > 0
-            ? backendTotal
+        const baseTotal = fixedFare > 0
+            ? fixedFare
             : this.toMoney(localEstimate.total);
 
         const baseServiceFee =
@@ -1399,11 +1474,60 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             ...localEstimate,
             subtotal,
             serviceFee,
-            total: finalTotal
+            total: finalTotal,
+            minimumFareApplied: localEstimate.minimumFareApplied || fixedFare > 0
         };
 
         this.fareEstimate.set(estimate);
         this.estimatedPrice.set(estimate.total);
+
+        console.log('[BookingRequest] fare estimate', {
+            serviceSlug,
+            distanceKm,
+            durationMinutes,
+            fixedFare,
+            subtotal,
+            serviceFee,
+            finalTotal
+        });
+    }
+
+    private async getFixedFareBandPrice(
+        serviceType: ServiceTypeSlug,
+        distanceKm: number,
+        countryCode: string,
+        currencyCode: string
+    ): Promise<number> {
+        if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
+
+        try {
+            const { data, error } = await this.supabase.client
+                .from('fixed_fare_bands')
+                .select('fare, flat_rate, min_distance_km, max_distance_km, priority')
+                .eq('country_code', countryCode)
+                .eq('currency_code', currencyCode)
+                .eq('service_type', serviceType)
+                .eq('is_active', true)
+                .lte('min_distance_km', distanceKm)
+                .gt('max_distance_km', distanceKm)
+                .order('priority', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (error) {
+                console.warn('[BookingRequest] fixed fare lookup failed', error);
+                return 0;
+            }
+
+            const price = Number(data?.flat_rate ?? data?.fare ?? 0);
+
+            if (!Number.isFinite(price) || price <= 0) return 0;
+
+            return this.toMoney(price);
+        } catch (error) {
+            console.warn('[BookingRequest] fixed fare lookup crashed', error);
+            return 0;
+        }
     }
 
     getValidationError(type: 'pickup' | 'dropoff'): string | null {
@@ -1532,7 +1656,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 pickup_address: formVal.pickup_address,
                 pickup_lat: this.pickupLocation.latitude || 0,
                 pickup_lng: this.pickupLocation.longitude || 0,
-                dropoff_address: formVal.dropoff_address || 'Errand Delivery',
+                dropoff_address: formVal.dropoff_address || 'Delivery Address',
                 dropoff_lat: this.dropoffLocation.latitude || 0,
                 dropoff_lng: this.dropoffLocation.longitude || 0,
 
@@ -1588,7 +1712,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             loading.message = this.type === ServiceTypeEnum.ERRAND
                 ? 'Activating errand...'
-                : 'Activating job...';
+                : this.type === ServiceTypeEnum.DELIVERY
+                    ? 'Activating delivery...'
+                    : 'Activating job...';
 
             await this.bookingService.confirmJobPayment(booking.id, paymentIntentId);
 
@@ -1671,6 +1797,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             };
         }
 
+        if (this.type === ServiceTypeEnum.DELIVERY) {
+            return {
+                delivery_details: {
+                    recipientName: formVal['recipient_name'],
+                    recipientPhone: formVal['recipient_phone'],
+                    itemDescription: formVal['item_description'],
+                    deliveryInstructions: formVal['notes']
+                }
+            };
+        }
+
         return undefined;
     }
 
@@ -1709,6 +1846,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return {
                     recipient_name: formVal['recipient_name'],
                     recipient_phone: formVal['recipient_phone'],
+                    item_description: formVal['item_description'],
+                    delivery_instructions: formVal['notes'],
                     notes: formVal['notes']
                 };
 
@@ -1716,6 +1855,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return {
                     helper_count: formVal['helper_count'],
                     has_elevator: formVal['has_elevator'],
+                    floor_number: formVal['floor_number'],
+                    stairs_involved: formVal['stairs_involved'],
+                    fragile_items: formVal['fragile_items'],
+                    packing_assistance: formVal['packing_assistance'],
                     notes: formVal['notes']
                 };
 

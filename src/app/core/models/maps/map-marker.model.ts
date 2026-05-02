@@ -1,4 +1,4 @@
-export type ServiceTypeSlug = 'ride' | 'errand' | 'van-moving' | 'delivery';
+export type ServiceTypeSlug = 'ride' | 'errand' | 'delivery' | 'van-moving';
 export type MarkerKind = 'pickup' | 'destination' | 'driver';
 
 export interface MarkerCoordinates {
