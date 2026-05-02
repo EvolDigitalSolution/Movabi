@@ -43,12 +43,7 @@ export const createStripeCheckoutSession = async (
 ) => {
   return stripe.checkout.sessions.create({
     payment_method_types: ['card'],
-    line_items: [
-      {
-        price: priceId,
-        quantity: 1
-      }
-    ],
+    line_items: [{ price: priceId, quantity: 1 }],
     mode: 'subscription',
     customer_email: userEmail,
     client_reference_id: userId,
@@ -111,13 +106,14 @@ export const getConnectAccountStatus = async (accountId: string) => {
 
   if (chargesEnabled && payoutsEnabled) {
     status = 'enabled';
-  } else if (detailsSubmitted) {
-    status = 'pending';
   } else if (
     account.requirements?.currently_due?.length ||
-    account.requirements?.past_due?.length
+    account.requirements?.past_due?.length ||
+    account.requirements?.disabled_reason
   ) {
     status = 'restricted';
+  } else if (detailsSubmitted) {
+    status = 'pending';
   }
 
   return {
