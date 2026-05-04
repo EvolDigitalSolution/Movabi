@@ -545,110 +545,131 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </textarea>
               </div>
 
-              @if (fareEstimate()) {
-                <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
-                  <app-price-display
-                    [total]="cardChargeRequired()"
-                    [fare]="fareEstimate()?.subtotal || 0"
-                    [serviceFee]="fareEstimate()?.serviceFee || 0"
-                    [itemBudget]="walletBudgetRequired()"
-                    [minimumFareApplied]="fareEstimate()?.minimumFareApplied || false">
-                  </app-price-display>
+                @if (fareEstimate()) {
+                  <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
 
-                  @if (type === ServiceTypeEnum.ERRAND) {
-                    <div class="grid gap-4">
-                      <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                        <p class="text-sm leading-8 text-slate-700">
-                          The <strong>Service Estimate</strong> is paid to the driver, and the <strong>Item Budget</strong> is available for them to spend on your behalf. This total will be reserved from your wallet now.
-                        </p>
+                    <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
+                      <div class="flex items-start justify-between gap-4">
+                        <div>
+                          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                            {{ type === ServiceTypeEnum.ERRAND ? 'Service Estimate' : 'Card Authorisation' }}
+                          </p>
+
+                          <h3 class="text-4xl font-display font-black text-blue-600 tracking-tight">
+                            {{ config.formatCurrency(cardChargeRequired()) }}
+                          </h3>
+                        </div>
+
+                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                          <ion-icon [name]="type === ServiceTypeEnum.ERRAND ? 'cart-outline' : 'shield-checkmark'" class="text-2xl"></ion-icon>
+                        </div>
                       </div>
 
-                      <div
-                        class="p-4 rounded-xl border transition-all"
-                        [class.bg-emerald-50]="!hasInsufficientFunds()"
-                        [class.border-emerald-100]="!hasInsufficientFunds()"
-                        [class.bg-rose-50]="hasInsufficientFunds()"
-                        [class.border-rose-100]="hasInsufficientFunds()">
+                      @if (type === ServiceTypeEnum.ERRAND) {
+                        <div class="mt-5 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                          <p class="text-sm leading-7 text-slate-700">
+                            The <strong>Service Estimate</strong> will be authorised on your card.
+                            You will only be charged once the errand service is completed.
+                          </p>
+                        </div>
+                      } @else {
+                        <div class="mt-5 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                          <p class="text-sm leading-7 text-slate-700">
+                            This amount will be securely authorised on your card.
+                            You will only be charged once the job is completed.
+                          </p>
+                        </div>
+                      }
 
-                        <div class="flex items-center justify-between mb-3">
-                          <div class="flex items-center gap-3">
-                            <div
-                              class="w-8 h-8 rounded-xl flex items-center justify-center"
-                              [class.bg-emerald-500]="!hasInsufficientFunds()"
-                              [class.bg-rose-500]="hasInsufficientFunds()">
-                              <ion-icon name="wallet-outline" class="text-white text-lg"></ion-icon>
+                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                              Fare
+                            </p>
+                            <p class="text-sm font-bold text-slate-900">
+                              Driver fare and platform fee
+                            </p>
+                          </div>
+                          <p class="text-lg font-display font-bold text-slate-900">
+                            {{ config.formatCurrency(cardChargeRequired()) }}
+                          </p>
+                        </div>
+                      </div>
+
+                      @if (fareEstimate()?.minimumFareApplied) {
+                        <div class="mt-4 px-4 py-2 bg-blue-50 border border-blue-100 rounded-xl">
+                          <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest text-center">
+                            Minimum fare applied
+                          </p>
+                        </div>
+                      }
+                    </div>
+
+                    @if (type === ServiceTypeEnum.ERRAND) {
+                      <div class="grid gap-4">
+                        <div
+                          class="p-4 rounded-xl border transition-all"
+                          [class.bg-emerald-50]="!hasInsufficientFunds()"
+                          [class.border-emerald-100]="!hasInsufficientFunds()"
+                          [class.bg-rose-50]="hasInsufficientFunds()"
+                          [class.border-rose-100]="hasInsufficientFunds()">
+
+                          <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                              <div
+                                class="w-8 h-8 rounded-xl flex items-center justify-center"
+                                [class.bg-emerald-500]="!hasInsufficientFunds()"
+                                [class.bg-rose-500]="hasInsufficientFunds()">
+                                <ion-icon name="wallet-outline" class="text-white text-lg"></ion-icon>
+                              </div>
+
+                              <div>
+                                <p
+                                  class="text-[10px] font-bold uppercase tracking-widest"
+                                  [class.text-emerald-600]="!hasInsufficientFunds()"
+                                  [class.text-rose-600]="hasInsufficientFunds()">
+                                  Wallet Item Budget
+                                </p>
+
+                                <p class="text-sm font-bold text-slate-900">
+                                  Balance: {{ config.formatCurrency(walletService.wallet()?.available_balance || 0) }}
+                                </p>
+
+                                <p class="text-xs text-slate-500 font-semibold">
+                                  Required: {{ config.formatCurrency(walletBudgetRequired()) }}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p
-                                class="text-[10px] font-bold uppercase tracking-widest"
-                                [class.text-emerald-600]="!hasInsufficientFunds()"
-                                [class.text-rose-600]="hasInsufficientFunds()">
-                                Wallet for Item Budget
-                              </p>
-                              <p class="text-sm font-bold text-slate-900">
-                                Balance: {{ config.formatCurrency(walletService.wallet()?.available_balance || 0) }}
-                              </p>
-                              <p class="text-xs text-slate-500 font-semibold">
-                                Required: {{ config.formatCurrency(walletBudgetRequired()) }}
-                              </p>
-                            </div>
+
+                            @if (hasInsufficientFunds()) {
+                              <app-button variant="secondary" size="sm" (click)="router.navigate(['/customer/wallet'])">
+                                Top Up
+                              </app-button>
+                            }
                           </div>
 
                           @if (hasInsufficientFunds()) {
-                            <app-button variant="secondary" size="sm" (click)="router.navigate(['/customer/wallet'])">
-                              Top Up
-                            </app-button>
+                            <div class="mt-4 p-4 bg-rose-100/60 rounded-2xl border border-rose-200">
+                              <p class="text-xs font-bold text-rose-700 flex items-center gap-2">
+                                <ion-icon name="alert-circle"></ion-icon>
+                                You need {{ config.formatCurrency(walletBudgetRequired() - (walletService.wallet()?.available_balance || 0)) }} more in your wallet.
+                              </p>
+                            </div>
+                          } @else {
+                            <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
+                              Item budget only is reserved from your wallet. Card payment is used for the service fee.
+                            </p>
                           }
                         </div>
-
-                        @if (hasInsufficientFunds()) {
-                          <div class="mt-4 p-4 bg-rose-100/60 rounded-2xl border border-rose-200">
-                            <p class="text-xs font-bold text-rose-700 flex items-center gap-2">
-                              <ion-icon name="alert-circle"></ion-icon>
-                              You need {{ config.formatCurrency(walletBudgetRequired() - (walletService.wallet()?.available_balance || 0)) }} more in your wallet.
-                            </p>
-                          </div>
-                        } @else {
-                          <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
-                            Item budget will be reserved from your wallet. Service fare and platform fee will be charged to your card.
-                          </p>
-                        }
                       </div>
+                    }
 
-                      <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
-                        <div class="flex items-center justify-between">
-                          <div>
-                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Service Estimate</p>
-                            <p class="text-sm font-bold text-slate-900">
-                              Fare & Platform Fee: {{ config.formatCurrency(cardChargeRequired()) }}
-                            </p>
-                          </div>
-                          <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">
-                            {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
-                          </span>
-                        </div>
-
-                        <div
-                          #cardElementContainer
-                          class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
-                        </div>
-
-                        @if (!cardReady() && !cardError()) {
-                          <p class="mt-2 text-xs text-slate-500 font-bold px-2">
-                            Loading card input...
-                          </p>
-                        }
-
-                        @if (cardError()) {
-                          <p class="mt-2 text-xs text-rose-600 font-bold px-2">
-                            {{ cardError() }}
-                          </p>
-                        }
-                      </div>
-                    </div>
-                  } @else {
                     <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
-                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Payment Method</p>
+                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                        Payment Method
+                      </p>
+
                       <div
                         #cardElementContainer
                         class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
@@ -666,9 +687,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                         </p>
                       }
                     </div>
-                  }
-                </div>
-              }
+                  </div>
+                }
 
               <div class="pt-4">
                 <app-button
@@ -676,14 +696,14 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   [disabled]="!canSubmit()"
                   size="lg"
                   class="w-full shadow-xl shadow-blue-200">
-                  {{
-                    submitting()
-                      ? 'Processing...'
-                      : (
-                          type === ServiceTypeEnum.ERRAND
-                            ? 'Reserve Budget & Pay Service Fee'
-                            : 'Confirm & Pay'
-                        )
+                 {{
+                  submitting()
+                    ? 'Processing...'
+                    : (
+                        type === ServiceTypeEnum.ERRAND
+                          ? 'Reserve Item Budget & Authorise Card'
+                          : 'Authorise Card'
+                      )
                   }}
                 </app-button>
 

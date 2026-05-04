@@ -78,17 +78,23 @@ export class JobService {
 
         return data as Job;
     }
-
     async getAvailableJobs(): Promise<Job[]> {
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*')
-            .eq('status', 'pending')
+            .is('driver_id', null)
+            .in('status', ['pending', 'requested', 'searching'])
+            .in('payment_status', ['pending', 'authorized', 'wallet_funded', 'paid'])
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            console.error('[JobService] getAvailableJobs failed:', error);
+            throw error;
+        }
 
-        return await this.attachProfiles(data || []);
+        console.log('[JobService] available jobs:', data);
+
+        return data as Job[];
     }
 
     async getDriverJobs(driverId: string): Promise<Job[]> {

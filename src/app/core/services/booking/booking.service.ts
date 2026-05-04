@@ -65,33 +65,52 @@ export class BookingService {
             ...normalizedDetails
         });
 
-        const pricing = await this.calculateRegionalPrice(bookingData, serviceSlug);
+        let pricing: any = null;
 
-        const totalPrice = Number(
-            pricing?.totalPrice ??
-            pricing?.basePrice ??
+        try {
+            pricing = await this.calculateRegionalPrice(bookingData, serviceSlug);
+        } catch (error) {
+            console.warn('[BookingService] Regional pricing failed, using app confirmed fare:', error);
+        }
+
+        const appConfirmedPrice = Number(
             bookingData.total_price ??
             bookingData.price ??
+            (bookingData as any).estimated_price ??
             0
         );
 
-        const safePrice = Number.isFinite(totalPrice) ? totalPrice : 0;
+        const regionalPrice = Number(
+            pricing?.totalPrice ??
+            pricing?.basePrice ??
+            0
+        );
+
+        const totalPrice =
+            Number.isFinite(appConfirmedPrice) && appConfirmedPrice > 0
+                ? appConfirmedPrice
+                : regionalPrice;
+
+        const safePrice = Number.isFinite(totalPrice) ? Number(totalPrice.toFixed(2)) : 0;
 
         const countryCode = String(
-            pricing?.countryCode ||
             (bookingData as any).country_code ||
+            pricing?.countryCode ||
             this.getCountryCode() ||
             'GB'
         ).toUpperCase();
 
         const currencyCode = String(
-            pricing?.currencyCode ||
             (bookingData as any).currency_code ||
+            pricing?.currencyCode ||
             this.getCurrencyCode() ||
             this.currencyFromCountry(countryCode)
         ).toUpperCase();
 
-        const currencySymbol = pricing?.currencySymbol || this.getCurrencySymbol(currencyCode);
+        const currencySymbol =
+            (bookingData as any).currency_symbol ||
+            pricing?.currencySymbol ||
+            this.getCurrencySymbol(currencyCode);
 
         const insertPayload: Record<string, unknown> = {
             customer_id: user.id,
@@ -107,6 +126,7 @@ export class BookingService {
             dropoff_lng: bookingData.dropoff_lng ?? null,
 
             price: safePrice,
+            total_price: safePrice,
             estimated_price: safePrice,
 
             country_code: countryCode,
@@ -128,9 +148,11 @@ export class BookingService {
 
             metadata: {
                 ...(bookingData.metadata || {}),
-                pricing_source: pricing?.pricingSource || pricing?.source || 'unknown',
+                pricing_source: pricing?.pricingSource || pricing?.source || 'app_confirmed_fare',
                 distance_km: this.getDistanceKm(bookingData),
+                app_confirmed_price: safePrice,
                 frontend_total_price: safePrice,
+                regional_price: Number.isFinite(regionalPrice) ? regionalPrice : 0,
                 service_slug: serviceSlug
             }
         };
