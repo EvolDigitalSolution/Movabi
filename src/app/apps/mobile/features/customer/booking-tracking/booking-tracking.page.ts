@@ -467,11 +467,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     showChat = signal(false);
     autoCancelling = signal(false);
 
-    searchCountdownSeconds = signal(90);
+    searchCountdownSeconds = signal(300);
 
     searchProgressPercent = computed(() => {
-        const val = Math.max(0, Math.min(90, this.searchCountdownSeconds()));
-        return (val / 90) * 100;
+        const val = Math.max(0, Math.min(300, this.searchCountdownSeconds()));
+        return (val / 300) * 100;
     });
 
     private channel?: RealtimeChannel;
