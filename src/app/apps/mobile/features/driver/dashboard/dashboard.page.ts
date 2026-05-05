@@ -34,6 +34,7 @@ import {
     personAddOutline,
     listOutline
 } from 'ionicons/icons';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
@@ -376,7 +377,7 @@ type MetricState = {
                   </h3>
 
                   <p class="text-sm text-slate-500 font-semibold leading-relaxed mt-1">
-                    Required for driver payouts and wallet-funded requests.
+                    Required for receiving payouts. You can still accept test/live requests while setup is pending.
                   </p>
 
                   <div class="mt-5">
@@ -458,6 +459,14 @@ type MetricState = {
                   </span>
                 </h3>
               </div>
+
+              <button
+                type="button"
+                (click)="refreshAvailableJobs()"
+                class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-widest shadow-sm active:scale-95 transition-all"
+              >
+                Refresh
+              </button>
             </div>
 
             @if (status() === 'offline') {
@@ -468,6 +477,16 @@ type MetricState = {
                   description="Go online to see nearby ride, errand, delivery, and moving requests."
                   actionLabel="Go Online"
                   (action)="goOnline()"
+                ></app-empty-state>
+              </div>
+            } @else if (!isAvailable()) {
+              <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden py-10">
+                <app-empty-state
+                  icon="time-outline"
+                  title="You are marked busy"
+                  description="Turn Free on to receive new available requests."
+                  actionLabel="Set Free"
+                  (action)="setAvailableNow()"
                 ></app-empty-state>
               </div>
             } @else if (jobs().length === 0) {
@@ -482,7 +501,7 @@ type MetricState = {
               <div class="space-y-5">
                 @for (job of jobs(); track job.id) {
                   <app-card [hoverable]="true" class="group overflow-hidden border-slate-100">
-                    <div class="flex justify-between items-start gap-4 mb-6">
+                    <div class="flex justify-between items-start gap-4 mb-5">
                       <div class="space-y-2 min-w-0">
                         <app-badge variant="primary">{{ getServiceName(job) }}</app-badge>
                         <div class="flex items-center gap-2 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
@@ -493,12 +512,64 @@ type MetricState = {
 
                       <div class="text-right shrink-0">
                         <span class="text-2xl font-display font-bold text-slate-950">
-                          {{ formatPrice(job.total_price || job.price || 0) }}
+                          {{ formatPrice(getDriverPayout(job)) }}
                         </span>
                         <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-1">
                           Est. Payout
                         </p>
                       </div>
+                    </div>
+
+                    <div class="space-y-4 mb-5">
+                      <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4 space-y-4">
+                        <div>
+                          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Pickup</p>
+                          <p class="text-sm font-bold text-slate-900 leading-snug">
+                            {{ job.pickup_address || 'Pickup address unavailable' }}
+                          </p>
+                        </div>
+
+                        <div class="h-px bg-slate-200/70"></div>
+
+                        <div>
+                          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dropoff</p>
+                          <p class="text-sm font-bold text-slate-900 leading-snug">
+                            {{ job.dropoff_address || 'Dropoff address unavailable' }}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-3 gap-2">
+                        <div class="rounded-2xl bg-blue-50 border border-blue-100 p-3">
+                          <p class="text-[8px] font-black text-blue-500 uppercase tracking-widest">Service</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1 truncate">
+                            {{ getServiceName(job) }}
+                          </p>
+                        </div>
+
+                        <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3">
+                          <p class="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Distance</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">
+                            {{ formatDistance(job.estimated_distance) }}
+                          </p>
+                        </div>
+
+                        <div class="rounded-2xl bg-amber-50 border border-amber-100 p-3">
+                          <p class="text-[8px] font-black text-amber-600 uppercase tracking-widest">Time</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">
+                            {{ formatJobTime(job.scheduled_time || job.created_at) }}
+                          </p>
+                        </div>
+                      </div>
+
+                      @if (getJobNotes(job)) {
+                        <div class="rounded-2xl bg-indigo-50 border border-indigo-100 p-4">
+                          <p class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">Notes</p>
+                          <p class="text-sm font-semibold text-slate-800 leading-snug">
+                            {{ getJobNotes(job) }}
+                          </p>
+                        </div>
+                      }
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
@@ -592,6 +663,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         chargesEnabled: false,
         payoutsEnabled: false
     });
+
+    private jobsChannel?: RealtimeChannel;
+    private jobsRefreshInterval?: ReturnType<typeof setInterval>;
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
         const profile = this.profileService.profile() as DriverProfile | null;
@@ -702,8 +776,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         await this.loadAvailability();
         await this.handleStripeReturn();
 
+        await this.driverService.fetchAvailableJobs();
+
+        this.subscribeToAvailableJobsRealtime();
+        this.startJobsAutoRefresh();
+
         if (this.isVerified()) {
-            await this.driverService.fetchAvailableJobs();
             this.checkTracking();
             await this.loadAvailability();
         }
@@ -711,15 +789,101 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.locationService.stopTracking();
+
+        if (this.jobsRefreshInterval) {
+            clearInterval(this.jobsRefreshInterval);
+            this.jobsRefreshInterval = undefined;
+        }
+
+        if (this.jobsChannel) {
+            this.supabase.client.removeChannel(this.jobsChannel);
+            this.jobsChannel = undefined;
+        }
     }
 
     formatPrice(amount: number | null | undefined) {
         return this.config.formatCurrency(Number(amount || 0));
     }
 
+    getDriverPayout(job: Booking): number {
+        const raw = job as any;
+
+        const explicitPayout = Number(raw.driver_payout);
+
+        if (Number.isFinite(explicitPayout) && explicitPayout > 0) {
+            return explicitPayout;
+        }
+
+        const total = Number(
+            raw.total_price ??
+            raw.price ??
+            raw.estimated_price ??
+            0
+        );
+
+        if (!Number.isFinite(total) || total <= 0) {
+            return 0;
+        }
+
+        // Temporary fallback until backend writes driver_payout correctly.
+        // 80% driver payout, rounded to 2 decimals.
+        return Math.round(total * 0.8 * 100) / 100;
+    }
+
     getServiceName(job: Booking): string {
-        const raw = String((job as any)?.service_type?.name || (job as any)?.service_type || (job as any)?.type || 'Request');
-        return raw.trim().replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+        const raw = String(
+            (job as any)?.service_type?.name ||
+            (job as any)?.service_type_name ||
+            (job as any)?.service_slug ||
+            (job as any)?.service_type ||
+            (job as any)?.type ||
+            'Request'
+        );
+
+        return raw
+            .trim()
+            .replace(/_/g, ' ')
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    formatDistance(distance: unknown): string {
+        const value = Number(distance || 0);
+
+        if (!Number.isFinite(value) || value <= 0) {
+            return 'N/A';
+        }
+
+        return `${value.toFixed(1)} km`;
+    }
+
+    formatJobTime(value: unknown): string {
+        if (!value) return 'ASAP';
+
+        const date = new Date(String(value));
+
+        if (Number.isNaN(date.getTime())) {
+            return 'ASAP';
+        }
+
+        return date.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    getJobNotes(job: Booking): string | null {
+        const raw = job as any;
+        const metadata = raw.metadata || {};
+
+        return (
+            raw.notes ||
+            raw.instructions ||
+            raw.customer_notes ||
+            metadata.notes ||
+            metadata.instructions ||
+            null
+        );
     }
 
     isProDriver(): boolean {
@@ -733,6 +897,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return Number.isFinite(parsed) ? parsed : null;
     }
 
+    async refreshAvailableJobs() {
+        await this.driverService.fetchAvailableJobs();
+        this.showToast('Requests refreshed.', 'success');
+    }
+
     async browseRequests() {
         if (this.status() !== 'online') {
             await this.goOnline();
@@ -742,6 +911,63 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         const section = document.querySelector('[data-section="available-requests"]');
         section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    async setAvailableNow() {
+        this.driverService.isAvailable.set(true);
+
+        const profile = this.profileService.profile();
+
+        if (profile) {
+            await this.safeUpdateProfile(profile.id, {
+                is_available: true,
+                last_active_at: new Date().toISOString()
+            });
+        }
+
+        await this.driverService.fetchAvailableJobs();
+    }
+
+    private subscribeToAvailableJobsRealtime(): void {
+        if (this.jobsChannel) return;
+
+        this.jobsChannel = this.supabase.client
+            .channel('driver-dashboard-jobs')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'jobs'
+                },
+                async (payload) => {
+                    const newStatus = String((payload.new as any)?.status || '');
+                    const oldStatus = String((payload.old as any)?.status || '');
+
+                    if (
+                        newStatus === 'searching' ||
+                        oldStatus === 'searching' ||
+                        newStatus === 'accepted' ||
+                        newStatus === 'assigned' ||
+                        newStatus === 'no_driver_found'
+                    ) {
+                        await this.driverService.fetchAvailableJobs();
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('[driver-dashboard] jobs realtime:', status);
+            });
+    }
+
+    private startJobsAutoRefresh(): void {
+        if (this.jobsRefreshInterval) return;
+
+        this.jobsRefreshInterval = setInterval(async () => {
+            if (this.status() === 'online' && this.isAvailable()) {
+                await this.driverService.fetchAvailableJobs();
+            }
+        }, 5000);
     }
 
     private async refreshStripeUiStateFromDb() {
@@ -869,10 +1095,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const profile = this.profileService.profile();
 
         this.driverService.onlineStatus.set('online');
+        this.driverService.isAvailable.set(true);
 
         if (profile) {
             await this.safeUpdateProfile(profile.id, {
                 is_online: true,
+                is_available: true,
                 last_active_at: new Date().toISOString()
             });
         }
@@ -893,6 +1121,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 is_available: available,
                 last_active_at: new Date().toISOString()
             });
+        }
+
+        if (available) {
+            await this.driverService.fetchAvailableJobs();
+        } else {
+            this.driverService.availableJobs.set([]);
         }
     }
 
@@ -918,8 +1152,26 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
-            await this.driverService.acceptJob(jobId);
+            const user = this.auth.currentUser();
+
+            if (!user?.id) {
+                throw new Error('Please sign in again.');
+            }
+
+            const { error } = await this.supabase.client.rpc('accept_searching_job', {
+                p_driver_id: user.id,
+                p_job_id: jobId
+            });
+
+            if (error) {
+                throw new Error(error.message || 'Request no longer available');
+            }
+
+            await this.driverService.fetchAvailableJobs();
+
             await loading.dismiss();
+            this.submitting.set(false);
+
             await this.router.navigate(['/driver/job-details', jobId]);
         } catch (e: unknown) {
             await loading.dismiss();
@@ -927,6 +1179,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
             const message = e instanceof Error ? e.message : 'Request no longer available';
             this.showToast(message, 'danger');
+
             await this.driverService.fetchAvailableJobs();
         }
     }

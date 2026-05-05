@@ -57,6 +57,8 @@ import {
 import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 
+const DRIVER_SEARCH_WINDOW_SECONDS = 300;
+
 @Component({
     selector: 'app-booking-tracking',
     standalone: true,
@@ -115,13 +117,9 @@ import { MapComponent } from '../../../../../shared/components/map/map.component
                     </div>
                   </div>
 
-                  @if (autoCancelling()) {
-                    <div class="mt-5 p-3 rounded-2xl bg-rose-50 border border-rose-100">
-                      <p class="text-xs font-bold text-rose-700 uppercase tracking-widest">
-                        Cancelling booking…
-                      </p>
-                    </div>
-                  }
+                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Dispatch is being managed securely
+                  </p>
                 </div>
               </div>
             }
@@ -454,6 +452,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
 
+    private localSearchFallbackExpiresAt: number | null = null;
+
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -465,13 +465,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     isLoading = signal(true);
     showChat = signal(false);
-    autoCancelling = signal(false);
 
-    searchCountdownSeconds = signal(300);
+    searchCountdownSeconds = signal(DRIVER_SEARCH_WINDOW_SECONDS);
 
     searchProgressPercent = computed(() => {
-        const val = Math.max(0, Math.min(300, this.searchCountdownSeconds()));
-        return (val / 300) * 100;
+        const val = Math.max(0, Math.min(DRIVER_SEARCH_WINDOW_SECONDS, this.searchCountdownSeconds()));
+        return (val / DRIVER_SEARCH_WINDOW_SECONDS) * 100;
     });
 
     private channel?: RealtimeChannel;
@@ -479,9 +478,6 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private pollingInterval?: ReturnType<typeof setInterval>;
     private countdownInterval?: ReturnType<typeof setInterval>;
-    private searchTimeoutHandle?: ReturnType<typeof setTimeout>;
-
-    private searchStartedAt: number | null = null;
 
     constructor() {
         addIcons({
@@ -547,6 +543,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             case 'settled':
                 return 'success';
             case 'cancelled':
+            case 'canceled':
                 return 'error';
             default:
                 return 'secondary';
@@ -557,6 +554,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const map: Record<string, string> = {
             searching: 'Searching for driver',
             accepted: 'Driver assigned',
+            assigned: 'Driver assigned',
             heading_to_pickup: 'Heading to pickup',
             arrived: 'Driver arrived',
             in_progress: 'Trip in progress',
@@ -568,6 +566,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             completed: 'Completed',
             settled: 'Settled',
             cancelled: 'Cancelled',
+            canceled: 'Cancelled',
             no_driver_found: 'No driver found'
         };
 
@@ -578,12 +577,19 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const map: Record<string, string> = {
             searching: 'Matching nearby drivers',
             accepted: 'Driver is coming',
+            assigned: 'Driver is coming',
             heading_to_pickup: 'Driver is on the way',
             arrived: 'Driver reached pickup',
             in_progress: 'Journey in progress',
-            completed: 'Trip completed',
+            arrived_at_store: 'Driver reached the store',
+            shopping_in_progress: 'Driver is shopping',
+            collected: 'Items have been collected',
+            en_route_to_customer: 'Driver is on the way',
             delivered: 'Delivery completed',
+            completed: 'Trip completed',
+            settled: 'Payment settled',
             cancelled: 'Booking cancelled',
+            canceled: 'Booking cancelled',
             no_driver_found: 'No available driver'
         };
 
@@ -599,6 +605,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         return ![
             'cancelled',
+            'canceled',
             'completed',
             'settled',
             'no_driver_found'
@@ -626,23 +633,52 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private startSearchCountdown(): void {
         this.stopSearchCountdown();
-
-        if (!this.searchStartedAt) {
-            this.searchStartedAt = Date.now();
-        }
+        this.updateSearchCountdownFromBooking();
 
         this.countdownInterval = setInterval(() => {
-            if (!this.searchStartedAt) return;
-
-            const elapsed = Math.floor((Date.now() - this.searchStartedAt) / 1000);
-            const remain = Math.max(0, 90 - elapsed);
-
-            this.searchCountdownSeconds.set(remain);
-
-            if (remain <= 0) {
-                this.stopSearchCountdown();
-            }
+            this.updateSearchCountdownFromBooking();
         }, 1000);
+    }
+
+  
+
+    private updateSearchCountdownFromBooking(): void {
+        const b: any = this.booking();
+
+        if (!b || b.status !== 'searching') {
+            this.localSearchFallbackExpiresAt = null;
+            this.searchCountdownSeconds.set(DRIVER_SEARCH_WINDOW_SECONDS);
+            return;
+        }
+
+        let expiresAt: number | null = null;
+
+        if (b.driver_search_expires_at) {
+            const parsed = new Date(b.driver_search_expires_at).getTime();
+
+            if (Number.isFinite(parsed)) {
+                expiresAt = parsed;
+                this.localSearchFallbackExpiresAt = parsed;
+            }
+        }
+
+        if (!expiresAt) {
+            if (!this.localSearchFallbackExpiresAt) {
+                this.localSearchFallbackExpiresAt = Date.now() + DRIVER_SEARCH_WINDOW_SECONDS * 1000;
+            }
+
+            expiresAt = this.localSearchFallbackExpiresAt;
+        }
+
+        const remain = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+
+        this.searchCountdownSeconds.set(
+            Math.min(DRIVER_SEARCH_WINDOW_SECONDS, remain)
+        );
+
+        if (remain <= 0) {
+            this.stopSearchCountdown();
+        }
     }
 
     private stopSearchCountdown(): void {
@@ -653,70 +689,27 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private resetSearchState(): void {
-        if (this.searchTimeoutHandle) {
-            clearTimeout(this.searchTimeoutHandle);
-            this.searchTimeoutHandle = undefined;
-        }
-
         this.stopSearchCountdown();
-
-        this.searchStartedAt = null;
-        this.searchCountdownSeconds.set(90);
-        this.autoCancelling.set(false);
+        this.searchCountdownSeconds.set(DRIVER_SEARCH_WINDOW_SECONDS);
+        this.mapComponent?.showSearchingOverlay?.set(false);
     }
 
-    private checkSearchTimeout(): void {
+    private syncSearchUiState(): void {
         const b = this.booking();
 
-        if (!b) return;
-
-        if (b.status === 'searching') {
+        if (b?.status === 'searching') {
             this.mapComponent?.showSearchingOverlay?.set(true);
 
-            if (!this.searchTimeoutHandle) {
-                this.searchStartedAt = Date.now();
+            if (!this.countdownInterval) {
                 this.startSearchCountdown();
-
-                this.searchTimeoutHandle = setTimeout(() => {
-                    void this.handleNoDriverFound();
-                }, 90000);
+            } else {
+                this.updateSearchCountdownFromBooking();
             }
-        } else {
-            this.mapComponent?.showSearchingOverlay?.set(false);
-            this.resetSearchState();
+
+            return;
         }
-    }
 
-    private async handleNoDriverFound(): Promise<void> {
-        const b = this.booking();
-
-        if (!b || b.status !== 'searching' || this.autoCancelling()) return;
-
-        this.autoCancelling.set(true);
-
-        try {
-            await this.bookingService.cancelBooking(
-                b.id,
-                'Auto cancelled - no driver found'
-            );
-
-            const alert = await this.alertCtrl.create({
-                header: 'No Driver Found',
-                message: 'We could not find an available driver in time.',
-                buttons: [
-                    {
-                        text: 'OK',
-                        handler: () => this.router.navigate(['/customer'])
-                    }
-                ]
-            });
-
-            await alert.present();
-        } catch (err) {
-            console.error('Auto cancel failed:', err);
-        } finally {
-            this.resetSearchState();
-        }
+        this.resetSearchState();
     }
 
     private startPolling(id: string): void {
@@ -737,7 +730,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
 
             this.bookingService.activeBooking.set(b);
-            this.checkSearchTimeout();
+            this.syncSearchUiState();
 
             const bookingDetails = await this.bookingService.getBookingDetails(
                 b.id,

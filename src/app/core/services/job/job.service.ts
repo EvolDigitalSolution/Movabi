@@ -85,6 +85,7 @@ export class JobService {
             .is('driver_id', null)
             .in('status', ['pending', 'requested', 'searching'])
             .in('payment_status', ['pending', 'authorized', 'wallet_funded', 'paid'])
+            .or(`driver_search_expires_at.is.null,driver_search_expires_at.gt.${new Date().toISOString()}`)
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -92,9 +93,7 @@ export class JobService {
             throw error;
         }
 
-        console.log('[JobService] available jobs:', data);
-
-        return data as Job[];
+        return await this.attachProfiles(data || []);
     }
 
     async getDriverJobs(driverId: string): Promise<Job[]> {
@@ -117,20 +116,19 @@ export class JobService {
                 driver_id: driverId
             })
             .eq('id', jobId)
-            .in('status', ['pending', 'searching', 'requested'])
+            .is('driver_id', null)
+            .in('status', ['pending', 'requested', 'searching'])
             .select('*')
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('[JobService] acceptJob failed:', error);
+            throw error;
+        }
 
-        await this.eventService.logEvent(
-            jobId,
-            'driver_accepted',
-            'Job accepted by driver'
-        );
+        await this.eventService.logEvent(jobId, 'driver_accepted', 'Job accepted by driver');
 
-        const [job] = await this.attachProfiles([data]);
-        return job;
+        return data as Job;
     }
 
     async updateJobStatus(jobId: string, status: JobStatus): Promise<Job> {
