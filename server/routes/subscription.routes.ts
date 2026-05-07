@@ -14,19 +14,34 @@ const router = Router();
 // Create checkout session
 router.post('/create-checkout-session', async (req: Request, res: Response) => {
   try {
-    const { userId, tenantId, userEmail, priceId, countryCode, currencyCode } = req.body;
+    const { userId, tenantId, userEmail, priceId, countryCode, currencyCode, returnUrl } = req.body;
 
-    if (!userId || !tenantId || !userEmail || !priceId) {
+    const configuredPriceId = process.env.STRIPE_PRO_WEEKLY_PRICE_ID;
+    const finalPriceId =
+      configuredPriceId && configuredPriceId.startsWith('price_')
+        ? configuredPriceId
+        : priceId;
+
+    if (!userId || !tenantId || !userEmail) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
+
+    if (!finalPriceId || !String(finalPriceId).startsWith('price_')) {
+      return res.status(500).json({
+        error: 'Stripe subscription price is not configured. Set STRIPE_PRO_WEEKLY_PRICE_ID.'
+      });
+    }
+
+    console.log('[Subscriptions] Creating checkout session with price:', finalPriceId);
 
     const session = await createStripeCheckoutSession(
       userId,
       tenantId,
       userEmail,
-      priceId,
-      countryCode,
-      currencyCode
+      finalPriceId,
+      countryCode || 'GB',
+      currencyCode || 'GBP',
+      returnUrl
     );
 
     return res.json({ sessionId: session.id, url: session.url });

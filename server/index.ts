@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { rateLimit } from 'express-rate-limit';
@@ -18,6 +17,33 @@ import { HealthService } from './services/health.service';
 dotenv.config();
 
 const app = express();
+
+app.use((req: any, res: any, next: any) => {
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:8100',
+    'https://movabi.apps.evolsolution.com',
+    'https://movabi-api.apps.evolsolution.com'
+  ];
+
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+
+  res.header('Vary', 'Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,apikey,x-client-info');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
+  next();
+});
+
 const PORT = Number(process.env['PORT'] || 3001);
 app.set('trust proxy', 1);
 
@@ -56,8 +82,8 @@ const bookingLimiter = rateLimit({
 });
 
 // CORS configuration
-app.use(cors());
-
+//
+// 🔥 CRITICAL for your error
 // Apply guards
 app.use(failsafeGuard);
 app.use('/api/', globalLimiter);

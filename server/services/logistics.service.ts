@@ -76,7 +76,7 @@ export class LogisticsService {
 
     const { data: locations, error } = await supabaseAdmin
       .from('driver_locations')
-      .select('*, driver:profiles(*)')
+      .select('*')
       .eq('tenant_id', tenantId)
       .gt('updated_at', fiveMinutesAgo);
 
@@ -132,60 +132,66 @@ export class LogisticsService {
    * Complete a job and finalize payout
    */
   static async completeJob(jobId: string) {
-    // 1. Fetch job details
-    const { data: job, error: jobError } = await supabaseAdmin
-      .from('jobs')
-      .select('*, service_type:service_types(*), driver:profiles(*)')
-      .eq('id', jobId)
-      .single();
+    const rawJobId = String(jobId || '').trim();
 
-    if (jobError || !job) throw new Error('Job not found');
+    if (!rawJobId) {
+      throw new Error('jobId required');
+    }
+
+    let jobQuery = supabaseAdmin
+      .from('jobs')
+      .select('*, service_type:service_types(*)');
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawJobId)) {
+      jobQuery = jobQuery.eq('id', rawJobId);
+    } else {
+      jobQuery = jobQuery.ilike('id', `${rawJobId}%`);
+    }
+
+    const { data: job, error: jobError } = await jobQuery.maybeSingle();
+
+    if (jobError || !job) {
+      console.error('[LogisticsService.completeJob] job lookup failed:', {
+        rawJobId,
+        error: jobError
+      });
+      throw new Error('Job not found');
+    }
+
     if (job.status === 'completed') return job;
 
-    // 2. Calculate payout
-    const breakdown = this.calculatePayout(
-      job.price,
-      job.driver?.pricing_plan || 'starter',
-      job.driver?.commission_rate || 15.00
+    const amountForPayout = Number(
+      job.total_price ??
+      job.price ??
+      job.estimated_price ??
+      0
     );
 
-    // 3. Update job status and payout info atomically
+    const breakdown = this.calculatePayout(
+      amountForPayout,
+      'starter',
+      15.0
+    );
+
     const { data: updatedJob, error: updateError } = await supabaseAdmin
       .from('jobs')
       .update({
         status: 'completed',
         driver_payout: breakdown.driver_payout,
         platform_fee: breakdown.platform_fee,
-        completed_at: new Date().toISOString()
+        commission_fee: breakdown.platform_fee,
+        updated_at: new Date().toISOString()
       })
-      .eq('id', jobId)
-      .neq('status', 'completed') // Prevent duplicate completion
-      .select()
+      .eq('id', job.id)
+      .select('*, service_type:service_types(*)')
       .single();
 
-    if (updateError) throw updateError;
-
-    // 4. Record driver earning
-    if (job.driver_id) {
-      await supabaseAdmin
-        .from('driver_earnings')
-        .upsert({
-          driver_id: job.driver_id,
-          job_id: jobId,
-          amount: breakdown.driver_payout,
-          gross_amount: breakdown.total_price,
-          platform_fee: breakdown.platform_fee,
-          net_amount: breakdown.driver_payout,
-          status: 'payable', // Ready for payout
-          metadata: breakdown
-        }, { onConflict: 'job_id' });
-
-      // 5. Update reliability stats
-      await this.updateDriverReliability(job.driver_id);
+    if (updateError) {
+      console.error('[LogisticsService.completeJob] update failed:', updateError);
+      throw new Error(updateError.message || 'Failed to complete job');
     }
 
-    // 6. Audit Log
-    await AuditService.logBooking(job.customer_id, 'job_completed', jobId, { breakdown });
+    await AuditService.logBooking(job.customer_id, 'job_completed', job.id, { breakdown });
 
     return updatedJob;
   }
