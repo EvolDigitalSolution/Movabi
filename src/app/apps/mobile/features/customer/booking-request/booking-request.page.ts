@@ -1087,7 +1087,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             this.geocoding.reverseGeocode(coords.lat, coords.lng).subscribe(address => {
                 void loading.dismiss();
-                const finalAddress = address || `Current Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`;
+                const finalAddress = address || `Current Location`;
 
                 if (type === 'pickup') {
                     this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);

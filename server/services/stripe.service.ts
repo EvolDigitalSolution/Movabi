@@ -39,7 +39,8 @@ export const createStripeCheckoutSession = async (
   userEmail: string,
   priceId: string,
   countryCode?: string,
-  currencyCode?: string
+  currencyCode?: string,
+  returnUrl?: string
 ) => {
   return stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -53,7 +54,7 @@ export const createStripeCheckoutSession = async (
       countryCode: countryCode || '',
       currencyCode: currencyCode || ''
     },
-    success_url: `${process.env.APP_URL}/driver/subscription?session_id={CHECKOUT_SESSION_ID}`,
+    success_url: `https://movabi.apps.evolsolution.com/driver/subscription?subscription=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.APP_URL}/driver/subscription`
   });
 };
