@@ -557,7 +557,7 @@ type MetricState = {
                         <div class="rounded-2xl bg-amber-50 border border-amber-100 p-3">
                           <p class="text-[8px] font-black text-amber-600 uppercase tracking-widest">Time</p>
                           <p class="text-xs font-bold text-slate-900 mt-1">
-                            {{ formatJobTime(job.scheduled_time || job.created_at) }}
+                            {{ formatSearchTimeLeft(job) }}
                           </p>
                         </div>
                       </div>
@@ -808,26 +808,51 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     getDriverPayout(job: Booking): number {
         const raw = job as any;
 
-        const explicitPayout = Number(raw.driver_payout);
+        const payout = Number(raw.driver_payout);
+        if (Number.isFinite(payout) && payout > 0) return payout;
 
-        if (Number.isFinite(explicitPayout) && explicitPayout > 0) {
-            return explicitPayout;
+        const total = Number(raw.total_price);
+        if (Number.isFinite(total) && total > 0) return total;
+
+        const estimated = Number(raw.estimated_price);
+        if (Number.isFinite(estimated) && estimated > 0) return estimated;
+
+        return 0;
+    }
+
+    formatJobTime(value: unknown): string {
+        if (!value) return 'ASAP';
+
+        const date = new Date(String(value));
+
+        if (Number.isNaN(date.getTime())) {
+            return 'ASAP';
         }
 
-        const total = Number(
-            raw.total_price ??
-            raw.price ??
-            raw.estimated_price ??
-            0
-        );
+        return date.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
 
-        if (!Number.isFinite(total) || total <= 0) {
-            return 0;
+    formatSearchTimeLeft(job: Booking): string {
+        const raw = job as any;
+
+        if (!raw.driver_search_expires_at) {
+            return '5:00';
         }
 
-        // Temporary fallback until backend writes driver_payout correctly.
-        // 80% driver payout, rounded to 2 decimals.
-        return Math.round(total * 0.8 * 100) / 100;
+        const expiresAt = new Date(raw.driver_search_expires_at).getTime();
+
+        if (!Number.isFinite(expiresAt)) {
+            return '5:00';
+        }
+
+        const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
     getServiceName(job: Booking): string {

@@ -1078,30 +1078,60 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             message: 'Locating...',
             spinner: 'crescent'
         });
+
         await loading.present();
 
-        const pos = await this.locationService.getCurrentPosition();
+        try {
+            const pos = await this.locationService.getCurrentPosition();
 
-        if (pos) {
-            const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            if (!pos) {
+                await loading.dismiss();
+                return;
+            }
 
-            this.geocoding.reverseGeocode(coords.lat, coords.lng).subscribe(address => {
-                void loading.dismiss();
-                const finalAddress = address || `Current Location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`;
+            const coords = {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude
+            };
 
-                if (type === 'pickup') {
-                    this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
-                    this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
-                    this.updateMarker('pickup');
-                } else {
-                    this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
-                    this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
-                    this.updateMarker('dropoff');
+            this.geocoding.reverseGeocode(coords.lat, coords.lng).subscribe({
+                next: address => {
+                    void loading.dismiss();
+
+                    const finalAddress = address || 'Current Location';
+
+                    if (type === 'pickup') {
+                        this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
+                        this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
+                        this.updateMarker('pickup');
+                    } else {
+                        this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
+                        this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
+                        this.updateMarker('dropoff');
+                    }
+
+                    this.updateRoute();
+                },
+                error: () => {
+                    void loading.dismiss();
+
+                    const finalAddress = 'Current Location';
+
+                    if (type === 'pickup') {
+                        this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
+                        this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
+                        this.updateMarker('pickup');
+                    } else {
+                        this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
+                        this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
+                        this.updateMarker('dropoff');
+                    }
+
+                    this.updateRoute();
                 }
-
-                this.updateRoute();
             });
-        } else {
+        } catch (error) {
+            console.error('[BookingRequest] useCurrentLocation failed:', error);
             await loading.dismiss();
         }
     }
