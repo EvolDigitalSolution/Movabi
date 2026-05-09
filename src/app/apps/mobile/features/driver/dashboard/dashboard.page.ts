@@ -882,20 +882,6 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return `${value.toFixed(1)} km`;
     }
 
-    formatJobTime(value: unknown): string {
-        if (!value) return 'ASAP';
-
-        const date = new Date(String(value));
-
-        if (Number.isNaN(date.getTime())) {
-            return 'ASAP';
-        }
-
-        return date.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    }
 
     getJobNotes(job: Booking): string | null {
         const raw = job as any;
