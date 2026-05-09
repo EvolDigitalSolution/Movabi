@@ -10,6 +10,7 @@ import bookingRoutes from './routes/booking.routes';
 import walletRoutes from './routes/wallet.routes';
 import adminRoutes from './routes/admin.routes';
 import webhookRoutes from './routes/webhook.routes';
+import stripeWebhookRoutes from './routes/stripe-webhook.routes';
 import { dispatchService } from './services/dispatch.service';
 
 import { HealthService } from './services/health.service';
@@ -91,7 +92,7 @@ app.use('/api/booking/create', bookingLimiter);
 
 // Stripe webhook needs raw body for signature verification
 app.use('/api/subscriptions/webhook', bodyParser.raw({ type: 'application/json' }));
-app.use('/api/webhook/stripe', bodyParser.raw({ type: 'application/json' }));
+app.use('/api/webhook/stripe', bodyParser.raw({ type: 'application/json' }), stripeWebhookRoutes);
 
 // Other routes use JSON body
 app.use(bodyParser.json());
