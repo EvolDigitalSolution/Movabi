@@ -24,7 +24,10 @@ import {
     timeOutline,
     checkmarkCircleOutline,
     cardOutline,
-    refreshOutline
+    refreshOutline,
+    chevronDownOutline,
+    chevronUpOutline,
+    openOutline
 } from 'ionicons/icons';
 
 import { DriverService } from '../../../../../core/services/driver/driver.service';
@@ -103,10 +106,11 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               <button
                 type="button"
                 (click)="withdrawFunds()"
-                class="h-12 rounded-2xl bg-white text-blue-700 font-black text-sm shadow-xl shadow-blue-950/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                [disabled]="withdrawLoading()"
+                class="h-12 rounded-2xl bg-white text-blue-700 font-black text-sm shadow-xl shadow-blue-950/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                Withdraw
-                <ion-icon name="arrow-forward"></ion-icon>
+                {{ withdrawLoading() ? 'Opening...' : 'Withdraw' }}
+                <ion-icon [name]="withdrawLoading() ? 'refresh-outline' : 'arrow-forward'" [class.animate-spin]="withdrawLoading()"></ion-icon>
               </button>
 
               <button
@@ -117,6 +121,12 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                 Dashboard
               </button>
             </div>
+
+            @if (withdrawError()) {
+              <p class="mt-3 text-xs font-bold text-red-100 bg-red-500/20 border border-red-200/20 rounded-2xl px-3 py-2">
+                {{ withdrawError() }}
+              </p>
+            }
           </div>
         </div>
 
@@ -236,8 +246,12 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             </div>
           } @else {
             <div class="space-y-3">
-              @for (earning of filteredEarnings(); track earning.id) {
-                <div class="bg-white rounded-[1.75rem] border border-slate-100 shadow-sm p-4">
+              @for (earning of filteredEarnings(); track getEarningKey(earning)) {
+                <button
+                  type="button"
+                  (click)="toggleEarning(earning)"
+                  class="w-full text-left bg-white rounded-[1.75rem] border border-slate-100 shadow-sm p-4 active:scale-[0.99] transition-all"
+                >
                   <div class="flex items-start gap-4">
                     <div
                       class="w-12 h-12 rounded-2xl flex items-center justify-center border shrink-0"
@@ -266,34 +280,43 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                           <p class="text-xl font-display font-black text-emerald-600">
                             +{{ formatPrice(toNumber(earning.amount)) }}
                           </p>
-                          <app-badge [variant]="getEarningStatus(earning) === 'paid' ? 'success' : 'warning'">
-                            {{ getEarningStatus(earning) }}
-                          </app-badge>
+
+                          <div class="flex items-center justify-end gap-2 mt-1">
+                            <app-badge [variant]="getEarningStatus(earning) === 'paid' ? 'success' : 'warning'">
+                              {{ getEarningStatus(earning) }}
+                            </app-badge>
+
+                            <ion-icon
+                              [name]="isSelected(earning) ? 'chevron-up-outline' : 'chevron-down-outline'"
+                              class="text-slate-400 text-lg"
+                            ></ion-icon>
+                          </div>
                         </div>
                       </div>
 
                       <div class="flex flex-wrap items-center gap-2 mt-3">
-                        <app-badge [variant]="earning.pricing_plan_used === 'pro' ? 'primary' : 'secondary'">
+                        <app-badge [variant]="formatPlan(earning.pricing_plan_used) === 'Pro' ? 'primary' : 'secondary'">
                           {{ formatPlan(earning.pricing_plan_used) }}
                         </app-badge>
 
-                        @if (toNumber(earning.commission_fee) > 0) {
+                        @if (getCommissionAmount(earning) > 0) {
                           <app-badge variant="warning">
-                            Fee {{ formatPrice(toNumber(earning.commission_fee)) }}
+                            Fee {{ formatPrice(getCommissionAmount(earning)) }}
                           </app-badge>
-                        } @else if (earning.pricing_plan_used === 'pro') {
+                        } @else if (formatPlan(earning.pricing_plan_used) === 'Pro') {
                           <app-badge variant="success">
                             0% commission
                           </app-badge>
                         }
                       </div>
 
-                      @if (toNumber(earning.commission_fee) > 0) {
+                      @if (getCommissionAmount(earning) > 0) {
                         <p class="text-xs text-slate-500 font-semibold mt-3">
                           Commission deducted:
                           <span class="font-black text-slate-700">
-                            {{ formatPrice(toNumber(earning.commission_fee)) }}
+                            {{ formatPrice(getCommissionAmount(earning)) }}
                           </span>
+
                           @if (earning.commission_rate_used !== null && earning.commission_rate_used !== undefined) {
                             <span>({{ earning.commission_rate_used }}%)</span>
                           }
@@ -301,7 +324,69 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                       }
                     </div>
                   </div>
-                </div>
+
+                  @if (isSelected(earning)) {
+                    <div class="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="rounded-2xl bg-slate-50 p-3">
+                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
+                            Status
+                          </p>
+                          <p class="text-sm font-black text-slate-950 uppercase">
+                            {{ getEarningStatus(earning) }}
+                          </p>
+                        </div>
+
+                        <div class="rounded-2xl bg-slate-50 p-3">
+                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
+                            Net payout
+                          </p>
+                          <p class="text-sm font-black text-emerald-600">
+                            {{ formatPrice(toNumber(earning.amount)) }}
+                          </p>
+                        </div>
+
+                        <div class="rounded-2xl bg-slate-50 p-3">
+                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
+                            Fee
+                          </p>
+                          <p class="text-sm font-black text-slate-950">
+                            {{ formatPrice(getCommissionAmount(earning)) }}
+                          </p>
+                        </div>
+
+                        <div class="rounded-2xl bg-slate-50 p-3">
+                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
+                            Gross
+                          </p>
+                          <p class="text-sm font-black text-slate-950">
+                            {{ formatPrice(getGrossAmount(earning)) }}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div class="rounded-2xl bg-slate-50 p-3 space-y-2">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-xs font-black text-slate-400">Date</span>
+                          <span class="text-xs font-bold text-slate-700">
+                            {{ earning.created_at | date:'medium' }}
+                          </span>
+                        </div>
+
+                        @if (earning.job_id) {
+                          <div class="pt-2 border-t border-slate-200">
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                              Job ID
+                            </p>
+                            <p class="text-[10px] font-semibold text-slate-500 break-all">
+                              {{ earning.job_id }}
+                            </p>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                </button>
               }
             </div>
           }
@@ -317,6 +402,9 @@ export class EarningsPage implements OnInit {
 
     earnings = this.driverService.earnings;
     loading = signal(false);
+    withdrawLoading = signal(false);
+    withdrawError = signal<string | null>(null);
+    selectedEarningId = signal<string | null>(null);
     period = signal<EarningsPeriod>('all');
 
     filteredEarnings = computed(() => {
@@ -352,7 +440,7 @@ export class EarningsPage implements OnInit {
 
     totalCommission = computed(() => {
         return this.earnings()
-            .reduce((sum: number, earning) => sum + this.toNumber(earning.commission_fee), 0);
+            .reduce((sum: number, earning) => sum + this.getCommissionAmount(earning), 0);
     });
 
     constructor() {
@@ -366,7 +454,10 @@ export class EarningsPage implements OnInit {
             timeOutline,
             checkmarkCircleOutline,
             cardOutline,
-            refreshOutline
+            refreshOutline,
+            chevronDownOutline,
+            chevronUpOutline,
+            openOutline
         });
     }
 
@@ -398,8 +489,90 @@ export class EarningsPage implements OnInit {
         }
     }
 
-    withdrawFunds() {
-        this.nav.navigateRoot('/driver');
+    async withdrawFunds() {
+        if (this.withdrawLoading()) return;
+
+        this.withdrawError.set(null);
+        this.withdrawLoading.set(true);
+
+        try {
+            const apiBase = this.getApiBaseUrl();
+            const token = this.getStoredAccessToken();
+
+            const endpoints = [
+                `${apiBase}/api/stripe/connect/dashboard-link`,
+                `${apiBase}/api/stripe/connect/login-link`,
+                `${apiBase}/api/connect/dashboard-link`,
+                `${apiBase}/api/connect/login-link`
+            ];
+
+            let lastError = '';
+
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { Authorization: `Bearer ${token}` } : {})
+                        }
+                    });
+
+                    const text = await response.text();
+                    let body: any = {};
+
+                    try {
+                        body = text ? JSON.parse(text) : {};
+                    } catch {
+                        body = { raw: text };
+                    }
+
+                    if (!response.ok) {
+                        lastError = body?.error || body?.message || `${response.status} ${response.statusText}`;
+                        continue;
+                    }
+
+                    const url =
+                        body?.url ||
+                        body?.login_url ||
+                        body?.dashboard_url ||
+                        body?.account_link?.url;
+
+                    if (url) {
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                        return;
+                    }
+
+                    lastError = 'Dashboard link response did not include a URL.';
+                } catch (error: any) {
+                    lastError = error?.message || 'Unable to open Stripe dashboard.';
+                }
+            }
+
+            this.withdrawError.set(
+                lastError ||
+                'Unable to open Stripe Express. Please make sure the driver Stripe Connect dashboard endpoint exists.'
+            );
+        } finally {
+            this.withdrawLoading.set(false);
+        }
+    }
+
+    toggleEarning(earning: any) {
+        const key = this.getEarningKey(earning);
+        if (!key) return;
+
+        this.selectedEarningId.set(
+            this.selectedEarningId() === key ? null : key
+        );
+    }
+
+    isSelected(earning: any): boolean {
+        return this.selectedEarningId() === this.getEarningKey(earning);
+    }
+
+    getEarningKey(earning: any): string {
+        return String(earning?.id || earning?.job_id || earning?.created_at || '');
     }
 
     formatPrice(amount: number | null | undefined) {
@@ -440,6 +613,62 @@ export class EarningsPage implements OnInit {
         }
 
         return 'paid';
+    }
+
+    getCommissionAmount(earning: any): number {
+        return this.toNumber(
+            earning?.commission_fee ??
+            earning?.platform_fee ??
+            earning?.fee ??
+            0
+        );
+    }
+
+    getGrossAmount(earning: any): number {
+        const explicitGross = this.toNumber(
+            earning?.gross_amount ??
+            earning?.total_price ??
+            earning?.job_total ??
+            0
+        );
+
+        if (explicitGross > 0) return explicitGross;
+
+        return this.toNumber(earning?.amount) + this.getCommissionAmount(earning);
+    }
+
+    private getApiBaseUrl(): string {
+        return 'https://movabi-api.apps.evolsolution.com';
+    }
+
+    private getStoredAccessToken(): string | null {
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key) continue;
+
+                const value = localStorage.getItem(key);
+                if (!value) continue;
+
+                if (key.includes('auth-token') || key.includes('supabase')) {
+                    try {
+                        const parsed = JSON.parse(value);
+                        const token =
+                            parsed?.access_token ||
+                            parsed?.currentSession?.access_token ||
+                            parsed?.session?.access_token;
+
+                        if (token) return token;
+                    } catch {
+                        // ignore non-json localStorage values
+                    }
+                }
+            }
+        } catch {
+            return null;
+        }
+
+        return null;
     }
 
     private titleCase(value: string): string {
