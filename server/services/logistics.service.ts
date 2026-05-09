@@ -295,6 +295,8 @@ export class LogisticsService {
           driver_id: driverId,
           job_id: job.id,
           amount: driverPayout,
+          platform_fee: platformFee,
+          gross_amount: totalPrice,
           status: 'paid',
           currency_code: job.currency_code || 'GBP',
           country_code: job.country_code || 'GB',

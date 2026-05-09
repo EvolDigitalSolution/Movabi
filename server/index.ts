@@ -105,6 +105,8 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/booking', bookingRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/stripe/connect', connectRoutes);
+app.use('/api/connect', connectRoutes);
 app.use('/api/webhook', webhookRoutes);
 
 // Start Background Jobs
