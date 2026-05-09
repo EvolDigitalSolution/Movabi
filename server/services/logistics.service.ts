@@ -139,9 +139,7 @@ export class LogisticsService {
       throw new Error('jobId required');
     }
 
-    let jobQuery = supabaseAdmin
-      .from('jobs')
-      .select('*');
+    let jobQuery = supabaseAdmin.from('jobs').select('*');
 
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawJobId)) {
       jobQuery = jobQuery.eq('id', rawJobId);
@@ -152,10 +150,7 @@ export class LogisticsService {
     const { data: job, error: jobError } = await jobQuery.maybeSingle();
 
     if (jobError || !job) {
-      console.error('[LogisticsService.completeJob] job lookup failed:', {
-        rawJobId,
-        error: jobError
-      });
+      console.error('[LogisticsService.completeJob] job lookup failed:', { rawJobId, error: jobError });
       throw new Error('Job not found');
     }
 
@@ -165,12 +160,7 @@ export class LogisticsService {
       throw new Error('Cannot complete job without an assigned driver');
     }
 
-    const totalPrice = Number(
-      job.total_price ??
-      job.price ??
-      job.estimated_price ??
-      0
-    );
+    const totalPrice = Number(job.total_price ?? job.price ?? job.estimated_price ?? 0);
 
     if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
       throw new Error('Invalid job amount');
@@ -178,27 +168,35 @@ export class LogisticsService {
 
     const { data: driverProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, pricing_plan, commission_rate')
+      .select('*')
       .eq('id', driverId)
       .maybeSingle();
 
-    const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
-    const commissionRate = plan === 'pro'
-      ? 0
-      : Number(driverProfile?.commission_rate ?? 15);
+    const stripeAccountId =
+      driverProfile?.stripe_account_id ||
+      driverProfile?.stripe_connect_account_id ||
+      driverProfile?.stripe_connected_account_id ||
+      driverProfile?.stripe_connect_id;
 
+    if (!stripeAccountId) {
+      throw new Error('Driver Stripe Connect account is missing');
+    }
+
+    const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
+    const commissionRate = plan === 'pro' ? 0 : Number(driverProfile?.commission_rate ?? 15);
     const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 15;
+
     const platformFee = this.roundMoney(totalPrice * (safeCommissionRate / 100));
     const driverPayout = this.roundMoney(Math.max(0, Math.min(totalPrice, totalPrice - platformFee)));
 
+    const payoutAmountInPence = Math.round(driverPayout * 100);
+
+    if (payoutAmountInPence <= 0) {
+      throw new Error('Invalid driver payout amount');
+    }
+
     let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
 
-    /**
-     * Idempotent rule:
-     * - If already paid, do not capture again.
-     * - If authorized, capture once.
-     * - If anything else, block completion.
-     */
     if (finalPaymentStatus === 'paid') {
       console.log('[LogisticsService.completeJob] Payment already paid, skipping capture:', job.id);
     } else if (finalPaymentStatus === 'authorized') {
@@ -209,9 +207,8 @@ export class LogisticsService {
       try {
         const captured = await stripe.paymentIntents.capture(
           job.payment_intent_id,
-          {
-            idempotencyKey: `capture-job-${job.id}`
-          } as any
+          {} as any,
+          { idempotencyKey: `capture-job-${job.id}` }
         );
 
         if (captured.status !== 'succeeded') {
@@ -222,11 +219,7 @@ export class LogisticsService {
       } catch (captureError: any) {
         const message = String(captureError?.message || '');
 
-        /**
-         * Stripe may say the PaymentIntent was already captured/succeeded.
-         * Treat that as idempotent success only if Stripe confirms succeeded.
-         */
-        if (message.toLowerCase().includes('has already been captured')) {
+        if (message.toLowerCase().includes('already been captured')) {
           finalPaymentStatus = 'paid';
         } else {
           console.error('[LogisticsService.completeJob] Stripe capture failed:', captureError);
@@ -235,6 +228,39 @@ export class LogisticsService {
       }
     } else {
       throw new Error(`Payment has not been authorized. Current status: ${finalPaymentStatus}`);
+    }
+
+    let stripeTransferId = job.stripe_transfer_id || null;
+
+    if (!stripeTransferId) {
+      try {
+        const transfer = await stripe.transfers.create(
+          {
+            amount: payoutAmountInPence,
+            currency: String(job.currency_code || 'gbp').toLowerCase(),
+            destination: stripeAccountId,
+            description: `Movabi driver payout for job ${job.id}`,
+            metadata: {
+              job_id: String(job.id),
+              driver_id: String(driverId),
+              total_price: String(totalPrice),
+              driver_payout: String(driverPayout),
+              platform_fee: String(platformFee),
+              plan
+            }
+          },
+          {
+            idempotencyKey: `transfer-job-${job.id}`
+          }
+        );
+
+        stripeTransferId = transfer.id;
+      } catch (transferError: any) {
+        console.error('[LogisticsService.completeJob] Stripe transfer failed:', transferError);
+        throw new Error(transferError?.message || 'Failed to transfer driver payout');
+      }
+    } else {
+      console.log('[LogisticsService.completeJob] Transfer already exists, skipping transfer:', stripeTransferId);
     }
 
     const now = new Date().toISOString();
@@ -247,6 +273,9 @@ export class LogisticsService {
         driver_id: driverId,
         driver_payout: driverPayout,
         platform_fee: platformFee,
+        stripe_transfer_id: stripeTransferId,
+        stripe_transfer_status: 'paid',
+        transferred_at: job.transferred_at || now,
         completed_at: job.completed_at || now,
         updated_at: now
       })
@@ -269,6 +298,7 @@ export class LogisticsService {
           status: 'paid',
           currency_code: job.currency_code || 'GBP',
           country_code: job.country_code || 'GB',
+          stripe_transfer_id: stripeTransferId,
           created_at: job.created_at || now
         },
         { onConflict: 'job_id' }
@@ -283,6 +313,7 @@ export class LogisticsService {
       total_price: totalPrice,
       driver_payout: driverPayout,
       platform_fee: platformFee,
+      stripe_transfer_id: stripeTransferId,
       pricing_plan_used: plan,
       commission_rate_used: safeCommissionRate
     });
