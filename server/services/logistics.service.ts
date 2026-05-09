@@ -1,3 +1,4 @@
+import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
 
@@ -140,7 +141,7 @@ export class LogisticsService {
 
     let jobQuery = supabaseAdmin
       .from('jobs')
-      .select('*, service_type:service_types(*)');
+      .select('*');
 
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawJobId)) {
       jobQuery = jobQuery.eq('id', rawJobId);
@@ -158,32 +159,99 @@ export class LogisticsService {
       throw new Error('Job not found');
     }
 
-    if (job.status === 'completed') return job;
+    const driverId = job.driver_id || job.accepted_driver_id;
 
-    const amountForPayout = Number(
+    if (!driverId) {
+      throw new Error('Cannot complete job without an assigned driver');
+    }
+
+    const totalPrice = Number(
       job.total_price ??
       job.price ??
       job.estimated_price ??
       0
     );
 
-    const breakdown = this.calculatePayout(
-      amountForPayout,
-      'starter',
-      15.0
-    );
+    if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+      throw new Error('Invalid job amount');
+    }
+
+    const { data: driverProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, pricing_plan, commission_rate')
+      .eq('id', driverId)
+      .maybeSingle();
+
+    const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
+    const commissionRate = plan === 'pro'
+      ? 0
+      : Number(driverProfile?.commission_rate ?? 15);
+
+    const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 15;
+    const platformFee = this.roundMoney(totalPrice * (safeCommissionRate / 100));
+    const driverPayout = this.roundMoney(Math.max(0, Math.min(totalPrice, totalPrice - platformFee)));
+
+    let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
+
+    /**
+     * Idempotent rule:
+     * - If already paid, do not capture again.
+     * - If authorized, capture once.
+     * - If anything else, block completion.
+     */
+    if (finalPaymentStatus === 'paid') {
+      console.log('[LogisticsService.completeJob] Payment already paid, skipping capture:', job.id);
+    } else if (finalPaymentStatus === 'authorized') {
+      if (!job.payment_intent_id) {
+        throw new Error('Payment is authorized but payment_intent_id is missing');
+      }
+
+      try {
+        const captured = await stripe.paymentIntents.capture(
+          job.payment_intent_id,
+          {
+            idempotencyKey: `capture-job-${job.id}`
+          } as any
+        );
+
+        if (captured.status !== 'succeeded') {
+          throw new Error(`Stripe capture returned status: ${captured.status}`);
+        }
+
+        finalPaymentStatus = 'paid';
+      } catch (captureError: any) {
+        const message = String(captureError?.message || '');
+
+        /**
+         * Stripe may say the PaymentIntent was already captured/succeeded.
+         * Treat that as idempotent success only if Stripe confirms succeeded.
+         */
+        if (message.toLowerCase().includes('has already been captured')) {
+          finalPaymentStatus = 'paid';
+        } else {
+          console.error('[LogisticsService.completeJob] Stripe capture failed:', captureError);
+          throw new Error(message || 'Failed to capture customer payment');
+        }
+      }
+    } else {
+      throw new Error(`Payment has not been authorized. Current status: ${finalPaymentStatus}`);
+    }
+
+    const now = new Date().toISOString();
 
     const { data: updatedJob, error: updateError } = await supabaseAdmin
       .from('jobs')
       .update({
         status: 'completed',
-        driver_payout: breakdown.driver_payout,
-        platform_fee: breakdown.platform_fee,
-        commission_fee: breakdown.platform_fee,
-        updated_at: new Date().toISOString()
+        payment_status: 'paid',
+        driver_id: driverId,
+        driver_payout: driverPayout,
+        platform_fee: platformFee,
+        completed_at: job.completed_at || now,
+        updated_at: now
       })
       .eq('id', job.id)
-      .select('*, service_type:service_types(*)')
+      .select('*')
       .single();
 
     if (updateError) {
@@ -191,9 +259,39 @@ export class LogisticsService {
       throw new Error(updateError.message || 'Failed to complete job');
     }
 
-    await AuditService.logBooking(job.customer_id, 'job_completed', job.id, { breakdown });
+    const { error: earningError } = await supabaseAdmin
+      .from('driver_earnings')
+      .upsert(
+        {
+          driver_id: driverId,
+          job_id: job.id,
+          amount: driverPayout,
+          status: 'paid',
+          currency_code: job.currency_code || 'GBP',
+          country_code: job.country_code || 'GB',
+          created_at: job.created_at || now
+        },
+        { onConflict: 'job_id' }
+      );
+
+    if (earningError) {
+      console.error('[LogisticsService.completeJob] earning upsert failed:', earningError);
+      throw new Error(earningError.message || 'Failed to sync driver earnings');
+    }
+
+    await AuditService.logBooking(job.customer_id, 'job_completed', job.id, {
+      total_price: totalPrice,
+      driver_payout: driverPayout,
+      platform_fee: platformFee,
+      pricing_plan_used: plan,
+      commission_rate_used: safeCommissionRate
+    });
 
     return updatedJob;
+  }
+
+  private static roundMoney(value: number): number {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
   }
 
   /**
