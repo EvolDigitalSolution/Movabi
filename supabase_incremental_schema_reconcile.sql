@@ -309,6 +309,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Errand Funding RPCs
+DROP FUNCTION IF EXISTS reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC);
+
 CREATE OR REPLACE FUNCTION reserve_errand_funds(
   p_job_id UUID,
   p_customer_id UUID,
