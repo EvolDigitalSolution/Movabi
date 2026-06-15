@@ -220,9 +220,14 @@ type WalletTransaction = Record<string, unknown>;
                 </ion-label>
               </ion-item>
             } @empty {
-              <div class="text-center py-8 text-slate-400">
-                <ion-icon name="receipt-outline" class="text-4xl mb-2"></ion-icon>
-                <p>No transactions yet</p>
+              <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                  <ion-icon name="receipt-outline" class="text-xl"></ion-icon>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-sm font-black text-slate-900">No transactions yet</p>
+                  <p class="text-xs font-semibold text-slate-500 truncate">Top-ups and wallet payments will appear here.</p>
+                </div>
               </div>
             }
           </ion-list>

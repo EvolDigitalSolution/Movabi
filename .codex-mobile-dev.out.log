@@ -659,3 +659,47 @@ Page reload sent to client(s).
 Application bundle generation complete. [1.476 seconds] - 2026-06-15T19:53:05.656Z
 
 Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m     [2m | [22m[36m264.23 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mchunk-IDHLXJ5B.js[39m  [2m | [22m[2mhome-page[22m[2m | [22m [36m35.19 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.391 seconds] - 2026-06-15T20:00:40.223Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m        [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m         [2m | [22m[36m264.23 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m        [2m | [22m [1mRaw size[22m
+[32mchunk-HRA5OO6E.js[39m  [2m | [22m[2mactivity-page[22m[2m | [22m [36m23.73 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.265 seconds] - 2026-06-15T20:00:58.610Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m      [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m       [2m | [22m[36m264.23 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m      [2m | [22m [1mRaw size[22m
+[32mchunk-X2PKPMLI.js[39m  [2m | [22m[2mwallet-page[22m[2m | [22m [36m29.62 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.359 seconds] - 2026-06-15T20:02:18.589Z
+
+Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m     [2m | [22m[36m264.23 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mchunk-LY567QF5.js[39m  [2m | [22m[2mhome-page[22m[2m | [22m [36m35.66 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.070 seconds] - 2026-06-15T20:02:27.295Z
+
+Page reload sent to client(s).

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -26,7 +26,7 @@ import {
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { WalletService } from '../../../../core/services/wallet/wallet.service';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
-import { EmptyStateComponent } from '../../../../shared/ui';
+import { BookingService } from '../../../../core/services/booking/booking.service';
 
 @Component({
     selector: 'app-customer-home',
@@ -39,7 +39,6 @@ import { EmptyStateComponent } from '../../../../shared/ui';
         IonButtons,
         IonContent,
         IonIcon,
-        EmptyStateComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -248,15 +247,41 @@ import { EmptyStateComponent } from '../../../../shared/ui';
             </button>
           </div>
 
-          <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-            <app-empty-state
-              icon="receipt-outline"
-              title="No recent activity"
-              description="Your trips and errands will appear here once you start using Movabi."
-              actionLabel="Book your first ride"
-              (action)="goToBooking('ride')"
-            ></app-empty-state>
-          </div>
+          @if (recentBookings().length === 0) {
+            <button
+              type="button"
+              (click)="goToBooking('ride')"
+              class="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+            >
+              <div class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                <ion-icon name="receipt-outline" class="text-xl"></ion-icon>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-black text-slate-900">No recent activity</p>
+                <p class="text-xs font-semibold text-slate-500 truncate">Your latest trips will appear here.</p>
+              </div>
+              <ion-icon name="chevron-forward" class="text-slate-300 text-lg shrink-0"></ion-icon>
+            </button>
+          } @else {
+            <div class="space-y-3">
+              @for (booking of recentBookings(); track booking.id) {
+                <button
+                  type="button"
+                  (click)="router.navigate(['/customer/tracking', booking.id])"
+                  class="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                >
+                  <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                    <p class="text-xs font-semibold text-slate-500 truncate">{{ formatStatus(booking.status) }} · {{ booking.created_at | date:'mediumDate' }}</p>
+                  </div>
+                  <p class="text-sm font-black text-slate-900 shrink-0">{{ formatCurrency(booking.total_price || booking.price || 0) }}</p>
+                </button>
+              }
+            </div>
+          }
         </div>
       </div>
     </ion-content>
@@ -268,10 +293,31 @@ export class HomePage implements OnInit {
     public walletService = inject(WalletService);
 
     private config = inject(AppConfigService);
+    private bookingService = inject(BookingService);
     private toastCtrl = inject(ToastController);
 
     signingOut = signal(false);
-    activeTrips = signal(0);
+    recentBookings = computed(() => this.bookingService.bookingHistory().slice(0, 2));
+    activeTrips = computed(() => {
+        const activeStatuses = new Set([
+            'requested',
+            'searching',
+            'assigned',
+            'accepted',
+            'heading_to_pickup',
+            'arrived',
+            'in_progress',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered'
+        ]);
+
+        return this.bookingService.bookingHistory()
+            .filter(booking => activeStatuses.has(String(booking.status || '').toLowerCase()))
+            .length;
+    });
 
     constructor() {
         addIcons({
@@ -289,6 +335,7 @@ export class HomePage implements OnInit {
 
     ngOnInit(): void {
         void this.walletService.fetchWallet();
+        void this.bookingService.getHistory();
     }
 
     displayName(): string {
@@ -300,6 +347,35 @@ export class HomePage implements OnInit {
 
     formatCurrency(amount: number): string {
         return this.config.formatCurrency(Number(amount || 0));
+    }
+
+    getServiceName(booking: any): string {
+        const raw = String(
+            booking?.service_slug ||
+            booking?.service_type?.slug ||
+            booking?.service_type?.name ||
+            booking?.type ||
+            'Booking'
+        ).toLowerCase();
+
+        if (raw.includes('ride')) return 'Ride';
+        if (raw.includes('errand')) return 'Errand';
+        if (raw.includes('delivery')) return 'Delivery';
+        if (raw.includes('van') || raw.includes('moving')) return 'Van Moving';
+        return 'Booking';
+    }
+
+    getServiceIcon(booking: any): string {
+        const name = this.getServiceName(booking);
+        if (name === 'Errand') return 'cart';
+        if (name === 'Van Moving') return 'bus';
+        return 'car';
+    }
+
+    formatStatus(status: string): string {
+        return String(status || 'pending')
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, char => char.toUpperCase());
     }
 
     goAdmin(): void {

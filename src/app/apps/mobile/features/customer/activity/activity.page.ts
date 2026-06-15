@@ -15,12 +15,12 @@ import { Router } from '@angular/router';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
-import { CardComponent, BadgeComponent, EmptyStateComponent } from '../../../../../shared/ui';
+import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
 
 @Component({
     selector: 'app-activity',
     standalone: true,
-    imports: [IonicModule, CommonModule, CardComponent, BadgeComponent, EmptyStateComponent],
+    imports: [IonicModule, CommonModule, CardComponent, BadgeComponent],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-6 bg-slate-50">
@@ -43,15 +43,19 @@ import { CardComponent, BadgeComponent, EmptyStateComponent } from '../../../../
     <ion-content class="bg-slate-50">
       <div class="max-w-xl mx-auto p-5 space-y-8 pb-16">
         @if (history().length === 0) {
-          <div class="bg-white rounded-[2.25rem] border border-slate-100 shadow-sm overflow-hidden py-12">
-            <app-empty-state
-              icon="calendar-clear-outline"
-              title="No bookings yet"
-              description="Your ride, errand, delivery, and moving history will appear here."
-              actionLabel="Book a Service"
-              (action)="router.navigate(['/customer/request'])"
-            ></app-empty-state>
-          </div>
+          <button
+            type="button"
+            (click)="router.navigate(['/customer/request'])"
+            class="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+          >
+            <div class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+              <ion-icon name="calendar-clear-outline" class="text-xl"></ion-icon>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-black text-slate-900">No bookings yet</p>
+              <p class="text-xs font-semibold text-slate-500 truncate">Ride, errand, delivery, and moving history will appear here.</p>
+            </div>
+          </button>
         }
 
         <div class="space-y-5">
