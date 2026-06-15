@@ -272,10 +272,8 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                             {{ getEarningTitle(earning) }}
                           </h4>
                          <p class="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                          {{ earning.created_at | date:'mediumDate' }}
-                          <span class="mx-1">•</span>
-                          {{ earning.created_at | date:'shortTime' }}
-                        </p>
+                          {{ earning.created_at | date:'mediumDate' }} - {{ earning.created_at | date:'shortTime' }}
+                     </p>
                         </div>
 
                         <div class="text-right shrink-0">
