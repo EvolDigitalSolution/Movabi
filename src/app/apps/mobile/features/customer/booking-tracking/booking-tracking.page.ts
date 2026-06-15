@@ -249,11 +249,11 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   </div>
 
                   <div class="grid grid-cols-2 gap-2">
-                    <app-button variant="secondary" size="sm" (onClick)="rejectOverBudget()">
+                    <app-button variant="secondary" size="sm" (clicked)="rejectOverBudget()">
                       Reject
                     </app-button>
 
-                    <app-button variant="primary" size="sm" (onClick)="approveOverBudget()">
+                    <app-button variant="primary" size="sm" (clicked)="approveOverBudget()">
                       Approve
                     </app-button>
                   </div>
@@ -277,7 +277,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
                   @if (booking()?.driver?.phone) {
                     <div class="flex gap-2 shrink-0">
-                      <app-button variant="secondary" size="sm" [fullWidth]="false" class="h-11 w-11 rounded-xl" (onClick)="callDriver()">
+                      <app-button variant="secondary" size="sm" [fullWidth]="false" class="h-11 w-11 rounded-xl" (clicked)="callDriver()">
                         <ion-icon name="call" slot="icon-only" class="text-lg"></ion-icon>
                       </app-button>
                     </div>
@@ -289,7 +289,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="pt-2">
                   <app-button
                     [variant]="showChat() ? 'outline' : 'secondary'"
-                    (onClick)="showChat.set(!showChat())"
+                    (clicked)="showChat.set(!showChat())"
                     class="w-full"
                   >
                     <ion-icon [name]="showChat() ? 'chevron-down' : 'chatbubbles'" class="mr-2 text-xl"></ion-icon>
@@ -404,7 +404,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       </div>
 
                       @if (details()?.['receipt_url']) {
-                        <app-button variant="secondary" size="sm" class="w-full" (onClick)="viewReceipt(details()?.['receipt_url']?.toString())">
+                        <app-button variant="secondary" size="sm" class="w-full" (clicked)="viewReceipt(details()?.['receipt_url']?.toString())">
                           <ion-icon name="receipt-outline" slot="start" class="mr-2"></ion-icon>
                           View Receipt
                         </app-button>
@@ -417,12 +417,12 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
             <div class="pt-4 space-y-4">
               @if (booking()?.status === 'completed') {
-                <app-button variant="primary" size="lg" (onClick)="showRating()" class="w-full">
+                <app-button variant="primary" size="lg" (clicked)="showRating()" class="w-full">
                   <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
                   Rate Experience
                 </app-button>
               } @else if (canManuallyCancel()) {
-                <app-button variant="outline" color="error" size="lg" (onClick)="cancelBooking()" class="w-full">
+                <app-button variant="outline" color="error" size="lg" (clicked)="cancelBooking()" class="w-full">
                   <ion-icon name="close-circle-outline" slot="start" class="mr-2"></ion-icon>
                   Cancel Booking
                 </app-button>
@@ -450,7 +450,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 We couldn't find this booking. It may have been completed or cancelled.
               </p>
             </div>
-            <app-button variant="secondary" size="lg" (onClick)="router.navigate(['/customer'])" class="w-full">
+            <app-button variant="secondary" size="lg" (clicked)="router.navigate(['/customer'])" class="w-full">
               Back to Home
             </app-button>
           }

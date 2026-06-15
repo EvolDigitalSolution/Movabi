@@ -1753,6 +1753,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         let booking: { id: string } | null = null;
         let paymentIntentId: string | null = null;
+        let walletReserved = false;
 
         try {
             const formVal = this.bookingForm.getRawValue();
@@ -1809,6 +1810,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                         itemBudget,
                         serviceCharge
                     );
+                    walletReserved = true;
                 } else {
                     loading.message = 'Reserving wallet payment...';
                     await this.walletService.payJobFromWallet(
@@ -1816,9 +1818,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                         serviceCharge,
                         currencyCode
                     );
+                    walletReserved = true;
                 }
-
-                paymentIntentId = 'wallet_funded';
             } else {
                 loading.message = 'Initializing card payment...';
                 const { clientSecret } = await this.paymentService.createPaymentIntent(
@@ -1840,7 +1841,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     ? 'Activating delivery...'
                     : 'Activating job...';
 
-            await this.bookingService.confirmJobPayment(booking.id, paymentIntentId);
+            const confirmationPaymentId = walletWillCover ? 'wallet_funded' : paymentIntentId;
+
+            if (!confirmationPaymentId) {
+                throw new Error('Payment confirmation did not complete.');
+            }
+
+            await this.bookingService.confirmJobPayment(booking.id, confirmationPaymentId);
+            if (walletWillCover) {
+                paymentIntentId = 'wallet_funded';
+            }
 
             this.analytics.track('booking_created', {
                 job_id: booking.id,
@@ -1860,13 +1870,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             const message = e instanceof Error ? e.message : 'An error occurred';
 
-            if (booking?.id && !paymentIntentId) {
+            if (booking?.id && (!paymentIntentId || walletReserved)) {
                 try {
-                    await this.bookingService.updateBookingStatus(
-                        booking.id,
-                        'cancelled',
-                        `Auto-cancelled after checkout failure: ${message}`
-                    );
+                    if (walletReserved) {
+                        await this.bookingService.cancelBooking(
+                            booking.id,
+                            `Auto-cancelled after wallet checkout failure: ${message}`
+                        );
+                    } else {
+                        await this.bookingService.updateBookingStatus(
+                            booking.id,
+                            'cancelled',
+                            `Auto-cancelled after checkout failure: ${message}`
+                        );
+                    }
                 } catch (cancelError) {
                     console.error('[BookingRequest] booking auto-cancel failed', cancelError);
                 }

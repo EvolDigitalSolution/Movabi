@@ -343,6 +343,8 @@ DECLARE
   v_wallet_id UUID;
   v_job RECORD;
   v_amount NUMERIC := ROUND(COALESCE(p_amount, 0)::NUMERIC, 2);
+  v_tx_type_col TEXT;
+  v_has_wallet_id BOOLEAN;
 BEGIN
   IF v_amount <= 0 THEN
     RAISE EXCEPTION 'Wallet payment amount must be greater than zero';
@@ -383,19 +385,59 @@ BEGIN
       updated_at = NOW()
   WHERE id = v_wallet_id;
 
-  INSERT INTO wallet_transactions (user_id, job_id, amount, type, description, metadata)
-  VALUES (
-    p_customer_id,
-    p_job_id,
-    v_amount,
-    'reservation',
-    'Job payment reserved from wallet',
-    jsonb_build_object(
-      'currency_code', COALESCE(p_currency_code, 'GBP'),
-      'tenant_id', p_tenant_id,
-      'payment_method', 'wallet'
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'wallet_transactions'
+        AND column_name = 'transaction_type'
+    ) THEN 'transaction_type'
+    ELSE 'type'
+  END INTO v_tx_type_col;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'wallet_transactions'
+      AND column_name = 'wallet_id'
+  ) INTO v_has_wallet_id;
+
+  IF v_has_wallet_id THEN
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (wallet_id, user_id, job_id, amount, %I, description, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      v_tx_type_col
     )
-  );
+    USING
+      v_wallet_id,
+      p_customer_id,
+      p_job_id,
+      v_amount,
+      'reservation',
+      'Job payment reserved from wallet',
+      jsonb_build_object(
+        'currency_code', COALESCE(p_currency_code, 'GBP'),
+        'tenant_id', p_tenant_id,
+        'payment_method', 'wallet'
+      );
+  ELSE
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (user_id, job_id, amount, %I, description, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6)',
+      v_tx_type_col
+    )
+    USING
+      p_customer_id,
+      p_job_id,
+      v_amount,
+      'reservation',
+      'Job payment reserved from wallet',
+      jsonb_build_object(
+        'currency_code', COALESCE(p_currency_code, 'GBP'),
+        'tenant_id', p_tenant_id,
+        'payment_method', 'wallet'
+      );
+  END IF;
 
   UPDATE jobs
   SET payment_status = 'wallet_funded',
@@ -411,6 +453,154 @@ BEGIN
     'job_id', p_job_id,
     'amount', v_amount,
     'payment_method', 'wallet'
+  );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Release a wallet reservation when no driver is found or the customer cancels before completion.
+CREATE OR REPLACE FUNCTION release_job_wallet_reservation(
+  p_job_id UUID,
+  p_reason TEXT DEFAULT 'Wallet reservation released'
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_job RECORD;
+  v_wallet_id UUID;
+  v_tx_type_col TEXT;
+  v_has_wallet_id BOOLEAN;
+  v_tx_reserved NUMERIC := 0;
+  v_errand_reserved NUMERIC := 0;
+  v_release_amount NUMERIC := 0;
+BEGIN
+  SELECT *
+  INTO v_job
+  FROM jobs
+  WHERE id = p_job_id
+  FOR UPDATE;
+
+  IF v_job IS NULL THEN
+    RAISE EXCEPTION 'Job not found for wallet release';
+  END IF;
+
+  IF v_job.payment_status NOT IN ('wallet_funded', 'paid') AND COALESCE(v_job.payment_method, '') <> 'wallet' THEN
+    RETURN jsonb_build_object('released', false, 'reason', 'Job is not wallet-funded');
+  END IF;
+
+  SELECT id
+  INTO v_wallet_id
+  FROM wallets
+  WHERE user_id = v_job.customer_id
+  FOR UPDATE;
+
+  IF v_wallet_id IS NULL THEN
+    RETURN jsonb_build_object('released', false, 'reason', 'Wallet not found');
+  END IF;
+
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'wallet_transactions'
+        AND column_name = 'transaction_type'
+    ) THEN 'transaction_type'
+    ELSE 'type'
+  END INTO v_tx_type_col;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'wallet_transactions'
+      AND column_name = 'wallet_id'
+  ) INTO v_has_wallet_id;
+
+  EXECUTE format(
+    'SELECT COALESCE(SUM(CASE
+       WHEN %I = ''reservation'' THEN amount
+       WHEN %I = ''release'' THEN -amount
+       ELSE 0
+     END), 0)
+     FROM wallet_transactions
+     WHERE job_id = $1 AND user_id = $2',
+    v_tx_type_col,
+    v_tx_type_col
+  )
+  INTO v_tx_reserved
+  USING p_job_id, v_job.customer_id;
+
+  SELECT COALESCE(amount_reserved, 0)
+  INTO v_errand_reserved
+  FROM errand_funding
+  WHERE job_id = p_job_id
+    AND status IN ('reserved', 'approved', 'over_budget_requested')
+  LIMIT 1;
+
+  v_release_amount := GREATEST(COALESCE(v_tx_reserved, 0), COALESCE(v_errand_reserved, 0));
+
+  IF v_release_amount <= 0 THEN
+    UPDATE jobs
+    SET payment_status = 'cancelled',
+        updated_at = NOW()
+    WHERE id = p_job_id;
+
+    RETURN jsonb_build_object('released', false, 'reason', 'No active wallet reservation');
+  END IF;
+
+  UPDATE wallets
+  SET available_balance = COALESCE(available_balance, 0) + v_release_amount,
+      reserved_balance = GREATEST(COALESCE(reserved_balance, 0) - v_release_amount, 0),
+      updated_at = NOW()
+  WHERE id = v_wallet_id;
+
+  IF v_has_wallet_id THEN
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (wallet_id, user_id, job_id, amount, %I, description, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      v_tx_type_col
+    )
+    USING
+      v_wallet_id,
+      v_job.customer_id,
+      p_job_id,
+      v_release_amount,
+      'release',
+      p_reason,
+      jsonb_build_object('payment_method', 'wallet', 'released_from_status', v_job.status);
+  ELSE
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (user_id, job_id, amount, %I, description, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6)',
+      v_tx_type_col
+    )
+    USING
+      v_job.customer_id,
+      p_job_id,
+      v_release_amount,
+      'release',
+      p_reason,
+      jsonb_build_object('payment_method', 'wallet', 'released_from_status', v_job.status);
+  END IF;
+
+  UPDATE errand_funding
+  SET status = 'cancelled',
+      metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+        'released_amount', v_release_amount,
+        'release_reason', p_reason
+      ),
+      updated_at = NOW()
+  WHERE job_id = p_job_id
+    AND status IN ('reserved', 'approved', 'over_budget_requested');
+
+  UPDATE jobs
+  SET payment_status = 'cancelled',
+      payment_intent_id = NULL,
+      updated_at = NOW()
+  WHERE id = p_job_id;
+
+  RETURN jsonb_build_object(
+    'released', true,
+    'job_id', p_job_id,
+    'amount', v_release_amount,
+    'reason', p_reason
   );
 END;
 $$ LANGUAGE plpgsql;

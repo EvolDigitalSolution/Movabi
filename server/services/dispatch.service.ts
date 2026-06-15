@@ -196,6 +196,22 @@ export class DispatchService {
 
         if (!job) return;
 
+        const { error: releaseError } = await this.supabase.rpc('release_job_wallet_reservation', {
+            p_job_id: job.id,
+            p_reason: 'No driver found before completion'
+        });
+
+        if (releaseError) {
+            console.error(`[DispatchService] Wallet release failed for ${jobId}:`, releaseError);
+            await this.supabase
+                .from('jobs')
+                .update({
+                    payment_status: 'requires_review',
+                    updated_at: nowIso()
+                })
+                .eq('id', jobId);
+        }
+
         await EventService.logEvent(
             'no_driver_found',
             { jobId },

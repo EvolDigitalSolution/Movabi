@@ -73,6 +73,21 @@ async function captureJobPaymentOnlyWhenCompleted(jobId: string) {
     return captured;
 }
 
+async function releaseWalletReservation(jobId: string, reason: string) {
+    const { error } = await supabaseAdmin.rpc('release_job_wallet_reservation', {
+        p_job_id: jobId,
+        p_reason: reason
+    });
+
+    if (error) {
+        console.error(`[BookingRoutes] Wallet release failed for ${jobId}:`, error);
+        await supabaseAdmin
+            .from('jobs')
+            .update({ payment_status: 'requires_review' })
+            .eq('id', jobId);
+    }
+}
+
 /**
  * Accept/assign a job.
  * Payment is NOT captured here.
@@ -303,6 +318,8 @@ router.post('/cancel', async (req: Request, res: Response) => {
                     .update({ payment_status: 'requires_review' })
                     .eq('id', jobId);
             }
+        } else if (job.payment_method === 'wallet' || job.payment_status === 'wallet_funded') {
+            await releaseWalletReservation(jobId, reason || 'Booking cancelled before completion');
         } else {
             await supabaseAdmin
                 .from('jobs')
