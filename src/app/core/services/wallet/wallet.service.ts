@@ -189,21 +189,31 @@ export class WalletService {
       throw new Error('Wallet payment amount must be greater than zero');
     }
 
-    const response = await firstValueFrom(
-      this.http.post<WalletJobPaymentResponse>(
-        `${this.walletApiUrl}/pay-job`,
-        {
-          userId: user.id,
-          jobId,
-          amount,
-          currency: currencyCode || this.auth.profileService.profile()?.currency_code || 'GBP',
-          tenantId: this.auth.tenantId()
-        }
-      )
-    );
+    try {
+      const response = await firstValueFrom(
+        this.http.post<WalletJobPaymentResponse>(
+          `${this.walletApiUrl}/pay-job`,
+          {
+            userId: user.id,
+            jobId,
+            amount,
+            currency: currencyCode || this.auth.profileService.profile()?.currency_code || 'GBP',
+            tenantId: this.auth.tenantId()
+          }
+        )
+      );
 
-    await this.fetchWallet();
-    return response;
+      await this.fetchWallet();
+      return response;
+    } catch (error: any) {
+      console.error('[WalletService] payJobFromWallet failed:', error);
+      const message =
+        error?.error?.error ||
+        error?.error?.message ||
+        error?.message ||
+        'Wallet payment failed';
+      throw new Error(message);
+    }
   }
 
   async refreshWalletAfterTopup(): Promise<Wallet | null> {

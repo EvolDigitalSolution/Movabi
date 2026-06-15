@@ -80,8 +80,14 @@ router.post('/pay-job', async (req: Request, res: Response) => {
     });
 
     if (error) {
+      console.error('[WalletRoutes] pay-job RPC failed:', error);
       const status = /insufficient/i.test(error.message) ? 402 : 400;
-      return res.status(status).json({ error: error.message });
+      return res.status(status).json({
+        error: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
     }
 
     res.json({
