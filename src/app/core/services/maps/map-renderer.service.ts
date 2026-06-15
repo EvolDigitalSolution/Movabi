@@ -177,11 +177,23 @@ export class MapRendererService {
     });
 
     if (route.bounds) {
-      this.map.fitBounds(route.bounds, {
-        padding: { top: 80, bottom: 320, left: 60, right: 60 },
-        maxZoom: 15,
-        duration: 1000
-      });
+      const container = this.map.getContainer();
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const bottomPadding = height > 520 ? 320 : Math.max(80, Math.floor(height * 0.28));
+      const horizontalPadding = width > 420 ? 60 : 32;
+
+      if (width > 120 && height > 120) {
+        try {
+          this.map.fitBounds(route.bounds, {
+            padding: { top: 80, bottom: bottomPadding, left: horizontalPadding, right: horizontalPadding },
+            maxZoom: 15,
+            duration: 1000
+          });
+        } catch (error) {
+          console.warn('[MapRenderer] Route bounds could not fit current map viewport.', error);
+        }
+      }
     }
   }
 

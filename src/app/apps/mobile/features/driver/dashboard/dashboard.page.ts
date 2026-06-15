@@ -401,10 +401,10 @@ type MetricState = {
 
                       <div class="text-right shrink-0">
                         <span class="text-2xl font-display font-bold text-slate-950">
-                          {{ formatPrice(getDriverPayout(job)) }}
+                          {{ formatPrice(getRequestFare(job)) }}
                         </span>
-                        <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-1">
-                          Est. Payout
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">
+                          Request Fare
                         </p>
                       </div>
                     </div>
@@ -439,14 +439,30 @@ type MetricState = {
                         <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3">
                           <p class="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Distance</p>
                           <p class="text-xs font-bold text-slate-900 mt-1">
-                            {{ formatDistance(job.estimated_distance) }}
+                            {{ formatJobDistance(job) }}
                           </p>
                         </div>
 
                         <div class="rounded-2xl bg-amber-50 border border-amber-100 p-3">
                           <p class="text-[8px] font-black text-amber-600 uppercase tracking-widest">Time</p>
                           <p class="text-xs font-bold text-slate-900 mt-1">
+                            {{ formatJobDuration(job) }}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-2">
+                        <div class="rounded-2xl bg-white border border-slate-100 p-3">
+                          <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Search Window</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">
                             {{ formatSearchTimeLeft(job) }}
+                          </p>
+                        </div>
+
+                        <div class="rounded-2xl bg-white border border-slate-100 p-3">
+                          <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Payment</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">
+                            {{ getPaymentLabel(job) }}
                           </p>
                         </div>
                       </div>
@@ -805,19 +821,33 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return this.config.formatCurrency(Number(amount || 0));
     }
 
-    getDriverPayout(job: Booking): number {
+    getRequestFare(job: Booking): number {
         const raw = job as any;
-
-        const payout = Number(raw.driver_payout);
-        if (Number.isFinite(payout) && payout > 0) return payout;
 
         const total = Number(raw.total_price);
         if (Number.isFinite(total) && total > 0) return total;
 
+        const price = Number(raw.price);
+        if (Number.isFinite(price) && price > 0) return price;
+
         const estimated = Number(raw.estimated_price);
         if (Number.isFinite(estimated) && estimated > 0) return estimated;
 
+        const frontendTotal = Number(raw.metadata?.frontend_total_price);
+        if (Number.isFinite(frontendTotal) && frontendTotal > 0) return frontendTotal;
+
         return 0;
+    }
+
+    getDriverPayout(job: Booking): number {
+        const raw = job as any;
+        const payout = Number(raw.driver_payout);
+
+        if (Number.isFinite(payout) && payout > 0) {
+            return payout;
+        }
+
+        return this.getRequestFare(job);
     }
 
     formatJobTime(value: unknown): string {
@@ -839,20 +869,25 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const raw = job as any;
 
         if (!raw.driver_search_expires_at) {
-            return '5:00';
+            return 'Open now';
         }
 
         const expiresAt = new Date(raw.driver_search_expires_at).getTime();
 
         if (!Number.isFinite(expiresAt)) {
-            return '5:00';
+            return 'Open now';
         }
 
         const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+
+        if (seconds === 0) {
+            return 'Expiring';
+        }
+
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
 
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+        return `${mins}m ${secs.toString().padStart(2, '0')}s`;
     }
 
     getServiceName(job: Booking): string {
@@ -872,14 +907,89 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             .replace(/\b\w/g, char => char.toUpperCase());
     }
 
+    formatJobDistance(job: Booking): string {
+        const raw = job as any;
+        const metadata = raw.metadata || {};
+        const km = this.firstPositiveNumber(
+            raw.estimated_distance_km,
+            raw.distance_km,
+            raw.estimated_distance,
+            metadata.distance_km,
+            metadata.estimated_distance_km
+        );
+
+        if (km !== null) {
+            return this.formatDistance(km);
+        }
+
+        const meters = this.firstPositiveNumber(raw.distance_meters, metadata.distance_meters);
+        if (meters !== null) {
+            return this.formatDistance(meters / 1000);
+        }
+
+        return 'Not set';
+    }
+
+    formatJobDuration(job: Booking): string {
+        const raw = job as any;
+        const metadata = raw.metadata || {};
+        const seconds = this.firstPositiveNumber(
+            raw.duration_seconds,
+            raw.estimated_duration_seconds,
+            metadata.duration_seconds
+        );
+
+        if (seconds !== null) {
+            const mins = Math.max(1, Math.round(seconds / 60));
+            return `${mins} min`;
+        }
+
+        const minutes = this.firstPositiveNumber(
+            raw.duration_minutes,
+            raw.estimated_duration_minutes,
+            metadata.duration_minutes
+        );
+
+        if (minutes !== null) {
+            return `${Math.max(1, Math.round(minutes))} min`;
+        }
+
+        return 'ASAP';
+    }
+
+    getPaymentLabel(job: Booking): string {
+        const status = String((job as any).payment_status || '').replace(/_/g, ' ');
+
+        if (!status) {
+            return 'Pending';
+        }
+
+        return status.replace(/\b\w/g, char => char.toUpperCase());
+    }
+
     formatDistance(distance: unknown): string {
         const value = Number(distance || 0);
 
         if (!Number.isFinite(value) || value <= 0) {
-            return 'N/A';
+            return 'Not set';
+        }
+
+        if (value < 1) {
+            return `${Math.round(value * 1000)} m`;
         }
 
         return `${value.toFixed(1)} km`;
+    }
+
+    private firstPositiveNumber(...values: unknown[]): number | null {
+        for (const value of values) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                return parsed;
+            }
+        }
+
+        return null;
     }
 
 

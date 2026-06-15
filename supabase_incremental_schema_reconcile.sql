@@ -162,9 +162,29 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'tenant_id') THEN
-        ALTER TABLE jobs ADD COLUMN tenant_id UUID;
-    END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'tenant_id') THEN
+            ALTER TABLE jobs ADD COLUMN tenant_id UUID;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'estimated_distance') THEN
+            ALTER TABLE jobs ADD COLUMN estimated_distance NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'estimated_distance_km') THEN
+            ALTER TABLE jobs ADD COLUMN estimated_distance_km NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'distance_km') THEN
+            ALTER TABLE jobs ADD COLUMN distance_km NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'distance_meters') THEN
+            ALTER TABLE jobs ADD COLUMN distance_meters NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'duration_seconds') THEN
+            ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER;
+        END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS job_service_details (

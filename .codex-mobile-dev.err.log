@@ -300,3 +300,31 @@ websocket connection issues.
           ╵       [32m~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getRequestFare' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:404:41:
+[37m      404 │                           {{ formatPrice([32mgetRequestFare[37m(job)) }}
+          ╵                                          [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'formatJobDistance' does not exist on type 'DriverDashboardPage'. Did you mean 'formatDistance'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:442:31:
+[37m      442 │                             {{ [32mformatJobDistance[37m(job) }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'formatJobDuration' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:449:31:
+[37m      449 │                             {{ [32mformatJobDuration[37m(job) }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getPaymentLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:465:31:
+[37m      465 │                             {{ [32mgetPaymentLabel[37m(job) }}
+          ╵                                [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m

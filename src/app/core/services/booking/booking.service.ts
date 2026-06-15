@@ -112,6 +112,10 @@ export class BookingService {
             pricing?.currencySymbol ||
             this.getCurrencySymbol(currencyCode);
 
+        const distanceKm = this.getDistanceKm(bookingData);
+        const distanceMeters = Number((bookingData as any).distance_meters || 0);
+        const durationSeconds = Number((bookingData as any).duration_seconds || 0);
+
         const insertPayload: Record<string, unknown> = {
             customer_id: user.id,
             service_type_id: bookingData.service_type_id || null,
@@ -128,6 +132,15 @@ export class BookingService {
             price: safePrice,
             total_price: safePrice,
             estimated_price: safePrice,
+            estimated_distance: distanceKm,
+            estimated_distance_km: distanceKm,
+            distance_km: distanceKm,
+            distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
+                ? distanceMeters
+                : Math.round(distanceKm * 1000),
+            duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? durationSeconds
+                : null,
 
             country_code: countryCode,
             currency_code: currencyCode,
@@ -149,7 +162,13 @@ export class BookingService {
             metadata: {
                 ...(bookingData.metadata || {}),
                 pricing_source: pricing?.pricingSource || pricing?.source || 'app_confirmed_fare',
-                distance_km: this.getDistanceKm(bookingData),
+                distance_km: distanceKm,
+                distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
+                    ? distanceMeters
+                    : Math.round(distanceKm * 1000),
+                duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+                    ? durationSeconds
+                    : null,
                 app_confirmed_price: safePrice,
                 frontend_total_price: safePrice,
                 regional_price: Number.isFinite(regionalPrice) ? regionalPrice : 0,
