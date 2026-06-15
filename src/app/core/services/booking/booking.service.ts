@@ -765,16 +765,33 @@ export class BookingService {
     }
 
     async rateBooking(bookingId: string, score: number, comment: string): Promise<void> {
+        const payload = {
+            customer_id: this.auth.currentUser()?.id,
+            score,
+            comment
+        };
+
         const { error } = await this.supabase
             .from('ratings')
             .insert({
+                ...payload,
                 booking_id: bookingId,
-                customer_id: this.auth.currentUser()?.id,
-                score,
-                comment
             });
 
-        if (error) throw error;
+        if (!error) return;
+
+        if (error.code !== '42703' || !String(error.message || '').includes('booking_id')) {
+            throw error;
+        }
+
+        const retry = await this.supabase
+            .from('ratings')
+            .insert({
+                ...payload,
+                job_id: bookingId
+            });
+
+        if (retry.error) throw retry.error;
     }
 
     async cancelBooking(bookingId: string, reason: string): Promise<any> {

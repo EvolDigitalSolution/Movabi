@@ -162,44 +162,44 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 DO $$
 BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'tenant_id') THEN
-            ALTER TABLE jobs ADD COLUMN tenant_id UUID;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'tenant_id') THEN
+            ALTER TABLE public.jobs ADD COLUMN tenant_id UUID;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'estimated_distance') THEN
-            ALTER TABLE jobs ADD COLUMN estimated_distance NUMERIC DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'estimated_distance') THEN
+            ALTER TABLE public.jobs ADD COLUMN estimated_distance NUMERIC DEFAULT 0;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'estimated_distance_km') THEN
-            ALTER TABLE jobs ADD COLUMN estimated_distance_km NUMERIC DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'estimated_distance_km') THEN
+            ALTER TABLE public.jobs ADD COLUMN estimated_distance_km NUMERIC DEFAULT 0;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'distance_km') THEN
-            ALTER TABLE jobs ADD COLUMN distance_km NUMERIC DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'distance_km') THEN
+            ALTER TABLE public.jobs ADD COLUMN distance_km NUMERIC DEFAULT 0;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'distance_meters') THEN
-            ALTER TABLE jobs ADD COLUMN distance_meters NUMERIC DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'distance_meters') THEN
+            ALTER TABLE public.jobs ADD COLUMN distance_meters NUMERIC DEFAULT 0;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'duration_seconds') THEN
-            ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'duration_seconds') THEN
+            ALTER TABLE public.jobs ADD COLUMN duration_seconds INTEGER;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'dispatch_started_at') THEN
-            ALTER TABLE jobs ADD COLUMN dispatch_started_at TIMESTAMPTZ;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'dispatch_started_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN dispatch_started_at TIMESTAMPTZ;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'driver_search_expires_at') THEN
-            ALTER TABLE jobs ADD COLUMN driver_search_expires_at TIMESTAMPTZ;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'driver_search_expires_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN driver_search_expires_at TIMESTAMPTZ;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'dispatch_attempts') THEN
-            ALTER TABLE jobs ADD COLUMN dispatch_attempts INTEGER DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'dispatch_attempts') THEN
+            ALTER TABLE public.jobs ADD COLUMN dispatch_attempts INTEGER DEFAULT 0;
         END IF;
 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'no_driver_reason') THEN
-            ALTER TABLE jobs ADD COLUMN no_driver_reason TEXT;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'no_driver_reason') THEN
+            ALTER TABLE public.jobs ADD COLUMN no_driver_reason TEXT;
         END IF;
 END $$;
 
@@ -260,6 +260,48 @@ CREATE TABLE IF NOT EXISTS stripe_events (
 );
 
 -- PART 10 — Errand Funding
+CREATE TABLE IF NOT EXISTS ratings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+    booking_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+    customer_id UUID,
+    driver_id UUID,
+    score INTEGER,
+    comment TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'job_id') THEN
+        ALTER TABLE public.ratings ADD COLUMN job_id UUID REFERENCES public.jobs(id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'booking_id') THEN
+        ALTER TABLE public.ratings ADD COLUMN booking_id UUID REFERENCES public.jobs(id) ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'customer_id') THEN
+        ALTER TABLE public.ratings ADD COLUMN customer_id UUID;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'driver_id') THEN
+        ALTER TABLE public.ratings ADD COLUMN driver_id UUID;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'score') THEN
+        ALTER TABLE public.ratings ADD COLUMN score INTEGER;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'comment') THEN
+        ALTER TABLE public.ratings ADD COLUMN comment TEXT;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'created_at') THEN
+        ALTER TABLE public.ratings ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS errand_funding (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID UNIQUE NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -705,7 +747,7 @@ DECLARE
 BEGIN
   FOR v_job IN
     SELECT id
-    FROM jobs
+    FROM public.jobs
     WHERE status = 'searching'
       AND driver_id IS NULL
       AND driver_search_expires_at IS NULL
@@ -715,7 +757,7 @@ BEGIN
         OR COALESCE(payment_method, '') = 'wallet'
       )
   LOOP
-    UPDATE jobs
+    UPDATE public.jobs
     SET status = 'no_driver_found',
         no_driver_reason = 'No available driver after search window',
         updated_at = NOW()
