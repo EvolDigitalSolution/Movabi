@@ -336,3 +336,73 @@ websocket connection issues.
            ╵                                                   [32m~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'rideVehicleLabel' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:248:74:
+[37m      248 │ ...xt-sm font-bold text-slate-900 mt-1">{{ [32mrideVehicleLabel[37m() }}</p>
+          ╵                                            [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerOptions' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:256:35:
+[37m      256 │                     @for (count of [32mpassengerOptions[37m; track count) {
+          ╵                                    [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'setPassengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:259:33:
+[37m      259 │                         (click)="[32msetPassengerCount[37m(count)"
+          ╵                                  [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:260:45:
+[37m      260 │ ...                 [class.bg-blue-600]="[32mpassengerCount[37m() === count"
+          ╵                                          [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:261:44:
+[37m      261 │ ...                  [class.text-white]="[32mpassengerCount[37m() === count"
+          ╵                                          [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:262:49:
+[37m      262 │ ...             [class.border-blue-600]="[32mpassengerCount[37m() === count"
+          ╵                                          [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:263:42:
+[37m      263 │ ...                    [class.bg-white]="[32mpassengerCount[37m() !== count"
+          ╵                                          [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:264:48:
+[37m      264 │ ...              [class.text-slate-700]="[32mpassengerCount[37m() !== count"
+          ╵                                          [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'passengerCount' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:271:23:
+[37m      271 │                   @if ([32mpassengerCount[37m() > 4) {
+          ╵                        [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'largeRideSurcharge' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:274:87:
+[37m      274 │ ...config.formatCurrency([32mlargeRideSurcharge[37m()) }} XL charge is ad...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

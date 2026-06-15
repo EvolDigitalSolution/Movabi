@@ -69,6 +69,11 @@ type MetricState = {
     isNew: boolean;
 };
 
+type PassedJob = {
+    id: string;
+    passedAt: number;
+};
+
 @Component({
     selector: 'app-driver-dashboard',
     standalone: true,
@@ -379,12 +384,14 @@ type MetricState = {
                 ></app-empty-state>
               </div>
             } @else if (jobs().length === 0) {
-              <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden py-10">
-                <app-empty-state
-                  icon="search-outline"
-                  title="Searching for requests"
-                  description="New ride, errand, delivery, and moving requests will appear here automatically."
-                ></app-empty-state>
+              <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                  <ion-icon name="search-outline" class="text-xl"></ion-icon>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-sm font-black text-slate-900">No requests right now</p>
+                  <p class="text-xs font-semibold text-slate-500 truncate">New nearby requests will expand this section automatically.</p>
+                </div>
               </div>
             } @else {
               <div class="space-y-5">
@@ -665,7 +672,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
-    jobs = this.driverService.availableJobs;
+    private readonly passedJobsStorageKey = 'movabi_driver_passed_jobs';
+    passedJobIds = signal<Set<string>>(new Set());
+    jobs = computed(() => {
+        const passed = this.passedJobIds();
+        return this.driverService.availableJobs().filter(job => !passed.has(job.id));
+    });
     locationError = this.locationService.locationError;
 
     submitting = signal(false);
@@ -788,6 +800,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     async ngOnInit() {
         if (!this.supabase.isConfigured) return;
 
+        this.loadPassedJobs();
         await this.refreshStripeUiStateFromDb();
         await this.loadAvailability();
         await this.handleStripeReturn();
@@ -972,10 +985,6 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         if (!Number.isFinite(value) || value <= 0) {
             return 'Not set';
-        }
-
-        if (value < 1) {
-            return `${Math.round(value * 1000)} m`;
         }
 
         return `${value.toFixed(1)} km`;
@@ -1306,9 +1315,37 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     reject(jobId: string) {
+        this.rememberPassedJob(jobId);
         this.driverService.availableJobs.update((jobs: Booking[]) =>
             jobs.filter((job: Booking) => job.id !== jobId)
         );
+    }
+
+    private loadPassedJobs() {
+        try {
+            const maxAgeMs = 60 * 60 * 1000;
+            const parsed = JSON.parse(localStorage.getItem(this.passedJobsStorageKey) || '[]') as PassedJob[];
+            const now = Date.now();
+            const fresh = parsed.filter(item => item?.id && now - Number(item.passedAt || 0) < maxAgeMs);
+            this.passedJobIds.set(new Set(fresh.map(item => item.id)));
+            localStorage.setItem(this.passedJobsStorageKey, JSON.stringify(fresh));
+        } catch {
+            this.passedJobIds.set(new Set());
+        }
+    }
+
+    private rememberPassedJob(jobId: string) {
+        const now = Date.now();
+        const next = new Set(this.passedJobIds());
+        next.add(jobId);
+        this.passedJobIds.set(next);
+
+        const items = Array.from(next).map(id => ({
+            id,
+            passedAt: id === jobId ? now : now
+        }));
+
+        localStorage.setItem(this.passedJobsStorageKey, JSON.stringify(items));
     }
 
     getMetricLabel(value: number): string {

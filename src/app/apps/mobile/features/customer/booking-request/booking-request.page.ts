@@ -241,13 +241,44 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               </div>
 
               @if (type === ServiceTypeEnum.RIDE) {
-                <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                  <app-input
-                    label="Number of Passengers"
-                    type="number"
-                    formControlName="passenger_count"
-                    icon="people-outline">
-                  </app-input>
+                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Passengers</p>
+                      <p class="text-sm font-bold text-slate-900 mt-1">{{ rideVehicleLabel() }}</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-200">
+                      <ion-icon name="people-outline" class="text-xl"></ion-icon>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-7 gap-2">
+                    @for (count of passengerOptions; track count) {
+                      <button
+                        type="button"
+                        (click)="setPassengerCount(count)"
+                        [class.bg-blue-600]="passengerCount() === count"
+                        [class.text-white]="passengerCount() === count"
+                        [class.border-blue-600]="passengerCount() === count"
+                        [class.bg-white]="passengerCount() !== count"
+                        [class.text-slate-700]="passengerCount() !== count"
+                        class="h-11 rounded-xl border border-slate-200 text-sm font-black transition-all active:scale-95">
+                        {{ count }}
+                      </button>
+                    }
+                  </div>
+
+                  @if (passengerCount() > 4) {
+                    <div class="p-3 rounded-2xl bg-amber-50 border border-amber-100">
+                      <p class="text-xs font-bold text-amber-700 leading-relaxed">
+                        5-7 passengers need a larger vehicle. {{ config.formatCurrency(largeRideSurcharge()) }} XL charge is added.
+                      </p>
+                    </div>
+                  } @else {
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                      Standard cars can carry up to 4 passengers.
+                    </p>
+                  }
                 </div>
               }
 
@@ -880,6 +911,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private pickupSearch$ = new Subject<string>();
     private dropoffSearch$ = new Subject<string>();
     private lastBookingTime = 0;
+    readonly passengerOptions = [1, 2, 3, 4, 5, 6, 7];
 
     constructor() {
         addIcons({
@@ -1048,6 +1080,25 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             : 'Secure card fallback via Movabi Pay';
     }
 
+    passengerCount(): number {
+        return Number(this.bookingForm?.get('passenger_count')?.value || 1);
+    }
+
+    setPassengerCount(count: number) {
+        const next = Math.max(1, Math.min(7, Math.round(Number(count) || 1)));
+        this.bookingForm.get('passenger_count')?.setValue(next, { emitEvent: true });
+        void this.recalculateFare();
+    }
+
+    rideVehicleLabel(): string {
+        const count = this.passengerCount();
+        return count > 4 ? 'XL ride, up to 7 passengers' : 'Standard ride, up to 4 passengers';
+    }
+
+    largeRideSurcharge(): number {
+        return this.passengerCount() > 4 ? 4 : 0;
+    }
+
     onBudgetInput(value: unknown) {
         if (!this.usesBudgetMode()) return;
 
@@ -1210,7 +1261,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
-                    passenger_count: [1, [Validators.required, Validators.min(1)]]
+                    passenger_count: [1, [Validators.required, Validators.min(1), Validators.max(7)]]
                 });
                 break;
 
@@ -1579,7 +1630,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ? this.platformItemCharge()
                 : 0;
 
-        const subtotal = this.toMoney(baseFare + extraDriverCharge);
+        const rideSurcharge = serviceSlug === 'ride' ? this.largeRideSurcharge() : 0;
+        const subtotal = this.toMoney(baseFare + extraDriverCharge + rideSurcharge);
         const serviceFee = this.toMoney(baseServiceFee + extraPlatformCharge);
         const finalTotal = this.toMoney(subtotal + serviceFee);
 
@@ -1599,6 +1651,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             distanceKm,
             durationMinutes,
             fixedFare,
+            rideSurcharge,
+            passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
             subtotal,
             serviceFee,
             finalTotal
@@ -1964,6 +2018,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             case ServiceTypeEnum.RIDE:
                 return {
                     passenger_count: formVal['passenger_count'],
+                    vehicle_class: this.passengerCount() > 4 ? 'xl' : 'standard',
+                    passenger_surcharge: this.largeRideSurcharge(),
                     notes: formVal['notes']
                 };
 
