@@ -10,12 +10,14 @@ COPY . .
 ARG PROJECT_NAME=admin
 
 # Build Angular app (adjust if needed)
-RUN npm run build -- --configuration production
+RUN npx ng build ${PROJECT_NAME} --configuration production
 
 FROM nginx:stable-alpine
 
+ARG PROJECT_NAME=admin
+
 # Copy built app
-COPY --from=builder /app/dist/admin/browser /usr/share/nginx/html
+COPY --from=builder /app/dist/${PROJECT_NAME}/browser /usr/share/nginx/html
 COPY docker/frontend/default.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

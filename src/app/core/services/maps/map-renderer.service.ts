@@ -219,7 +219,6 @@ export class MapRendererService {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         features: features as any[]
       }
     });
@@ -255,7 +254,6 @@ export class MapRendererService {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       this.map.fitBounds(bounds, options as Record<string, any>);
     } catch (e) {
       console.warn('[MapRenderer] fitBounds failed', e);

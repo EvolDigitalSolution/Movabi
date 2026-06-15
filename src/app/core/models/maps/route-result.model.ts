@@ -1,7 +1,6 @@
 export interface RouteSummary {
   distanceMeters: number;
   durationSeconds: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   geometry?: any; // GeoJSON geometry
   bounds?: [[number, number], [number, number]]; // [sw, ne]
   legs?: {

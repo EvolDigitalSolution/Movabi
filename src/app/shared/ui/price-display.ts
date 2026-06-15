@@ -94,7 +94,6 @@ export class PriceDisplayComponent {
   @Input() showBreakdown = true;
   @Input() minimumFareApplied = false;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   formatPrice(amount: any): string {
     const numericAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
     if (isNaN(numericAmount)) return this.config.formatCurrency(0);

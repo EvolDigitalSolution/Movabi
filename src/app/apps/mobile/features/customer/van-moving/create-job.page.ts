@@ -69,7 +69,6 @@ import { MapComponent } from '@shared/components/map/map.component';
 
 import {
     ButtonComponent,
-    CardComponent,
     PriceDisplayComponent,
     InputComponent
 } from '@shared/ui';
@@ -84,7 +83,6 @@ type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
         CommonModule,
         FormsModule,
         ButtonComponent,
-        CardComponent,
         PriceDisplayComponent,
         MapComponent,
         InputComponent

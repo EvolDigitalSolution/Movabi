@@ -1,4 +1,4 @@
-import {
+﻿import {
     Component,
     inject,
     OnInit,
@@ -49,7 +49,6 @@ import {
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
 import {
-    CardComponent,
     ButtonComponent,
     BadgeComponent
 } from '../../../../../shared/ui';
@@ -65,7 +64,6 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
     imports: [
         CommonModule,
         IonicModule,
-        CardComponent,
         ButtonComponent,
         BadgeComponent,
         CommunicationPanelComponent,
@@ -97,7 +95,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   <div class="space-y-2 mb-5">
                     <h2 class="text-xl font-display font-bold text-slate-900 tracking-tight">Finding your driver</h2>
                     <p class="text-sm text-slate-500 font-medium leading-relaxed">
-                      We�re matching you with the nearest available driver.
+                      We’re matching you with the nearest available driver.
                     </p>
                   </div>
 

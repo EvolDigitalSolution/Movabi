@@ -73,8 +73,7 @@ import {
 
 import {
     ButtonComponent,
-    InputComponent,
-    PriceDisplayComponent
+    InputComponent
 } from '../../../../../shared/ui';
 
 import { MapComponent } from '../../../../../shared/components/map/map.component';
@@ -99,7 +98,6 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
         ReactiveFormsModule,
         ButtonComponent,
         InputComponent,
-        PriceDisplayComponent,
         MapComponent
     ],
     template: `

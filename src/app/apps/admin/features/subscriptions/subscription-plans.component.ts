@@ -5,7 +5,6 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { AdminService } from '../../services/admin.service';
 
 import { BadgeComponent } from '../../../../shared/ui/badge';
-import { ButtonComponent } from '../../../../shared/ui/button';
 
 interface SubscriptionPlan {
   id: string;
@@ -25,7 +24,7 @@ interface SubscriptionPlan {
 @Component({
   selector: 'app-subscription-plans',
   standalone: true,
-  imports: [CommonModule, IonicModule, ReactiveFormsModule, BadgeComponent, ButtonComponent],
+  imports: [CommonModule, IonicModule, ReactiveFormsModule, BadgeComponent],
   template: `
   <div class="bg-white rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden">
 

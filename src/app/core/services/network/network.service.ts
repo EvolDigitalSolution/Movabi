@@ -28,7 +28,6 @@ export class NetworkService {
    * Helper to normalize network/API errors
    */
   normalizeError(error: unknown): string {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const err = error as any;
     if (!navigator.onLine) {
       return 'No internet connection. Please reconnect and try again.';

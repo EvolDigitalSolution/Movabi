@@ -122,13 +122,13 @@ import { CardComponent, BadgeComponent, EmptyStateComponent } from '../../../../
                 @if (booking.driver) {
                   <div class="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-2xl border border-slate-100 min-w-0">
                     <div class="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-xs font-black text-slate-900 border border-slate-200 shadow-sm shrink-0">
-                      {{ getInitial(booking.driver?.first_name) }}
+                      {{ getInitial(booking.driver.first_name) }}
                     </div>
 
                     <div class="text-left min-w-0">
                       <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Driver</p>
                       <span class="text-xs font-bold text-slate-900 truncate block">
-                        {{ booking.driver?.first_name || 'Driver' }}
+                        {{ booking.driver.first_name || 'Driver' }}
                       </span>
                     </div>
                   </div>

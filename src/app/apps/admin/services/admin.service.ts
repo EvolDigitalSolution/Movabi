@@ -321,7 +321,8 @@ export class AdminService {
       .update({
         account_status: status,
         moderation_reason: reason,
-        moderated_at: new Date().toISOString()
+        moderated_at: new Date().toISOString(),
+        moderated_by: adminId
       })
       .eq('id', userId);
 

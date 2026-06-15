@@ -30,6 +30,9 @@
             "outputPath": "dist/mobile",
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
+            "allowedCommonJsDependencies": [
+              "maplibre-gl"
+            ],
             "assets": [
               {
                 "glob": "**/*",
@@ -109,6 +112,9 @@
             "outputPath": "dist/admin",
             "browser": "src/main.admin.ts",
             "tsConfig": "tsconfig.app.json",
+            "allowedCommonJsDependencies": [
+              "maplibre-gl"
+            ],
             "assets": [
               {
                 "glob": "**/*",

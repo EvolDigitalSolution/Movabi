@@ -4,7 +4,7 @@ import { IonicModule } from '@ionic/angular';
 import { RouterModule } from '@angular/router';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { AdminService, FailedBooking, WalletTransaction } from '../../services/admin.service';
-import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
+import { BadgeComponent } from '../../../../shared/ui';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Job, Profile } from '../../../../shared/models/booking.model';
@@ -49,7 +49,7 @@ interface AdminEvent {
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, IonicModule, RouterModule, CardComponent, ButtonComponent, BadgeComponent, MapComponent],
+  imports: [CommonModule, IonicModule, RouterModule, BadgeComponent, MapComponent],
   template: `
     <div class="space-y-6 container-padding pb-12 bg-slate-50 min-h-screen">
       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pt-6">

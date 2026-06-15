@@ -14,14 +14,13 @@ import {
 } from 'ionicons/icons';
 import { SystemConfigService } from '../../../../core/services/config/system-config.service';
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
-import { CardComponent, ButtonComponent, InputComponent } from '../../../../shared/ui';
 
 type SettingsTab = 'general' | 'countries';
 
 @Component({
   selector: 'app-admin-settings',
   standalone: true,
-  imports: [CommonModule, IonicModule, FormsModule, CardComponent, ButtonComponent, InputComponent],
+  imports: [CommonModule, IonicModule, FormsModule],
   template: `
     <div class="w-full min-h-screen bg-slate-50 overflow-y-auto">
       <div class="max-w-6xl mx-auto p-5 md:p-8 space-y-6 pb-12">

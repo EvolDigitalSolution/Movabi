@@ -12,7 +12,7 @@ import {
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { closeOutline, checkmarkCircle, closeCircle, bulbOutline } from 'ionicons/icons';
-import { ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
+import { ButtonComponent } from '../../../../../shared/ui';
 import { AppConfigService } from '@core/services/config/app-config.service';
 import { SubscriptionPlan } from '@shared/models/booking.model';
 
@@ -28,8 +28,7 @@ import { SubscriptionPlan } from '@shared/models/booking.model';
     IonButton, 
     IonIcon, 
     IonContent, 
-    ButtonComponent, 
-    BadgeComponent
+    ButtonComponent
   ],
   template: `
     <ion-header class="ion-no-border">

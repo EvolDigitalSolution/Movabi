@@ -6,13 +6,10 @@ import {
   IonHeader, 
   IonTitle, 
   IonToolbar, 
-  IonButton, 
   IonCard, 
-  IonCardHeader, 
   IonCardTitle, 
   IonCardContent,
   IonIcon,
-  IonText,
   LoadingController
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
@@ -29,13 +26,10 @@ import { AuthService } from '@core/services/auth/auth.service';
     IonHeader,
     IonTitle,
     IonToolbar,
-    IonButton,
     IonCard,
-    IonCardHeader,
     IonCardTitle,
     IonCardContent,
-    IonIcon,
-    IonText
+    IonIcon
   ],
   template: `
     <ion-header [translucent]="true" class="ion-no-border">

@@ -3,7 +3,7 @@ import { AdminService } from '../../services/admin.service';
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
-import { BadgeComponent, ButtonComponent, RatingComponent, EmptyStateComponent } from '../../../../shared/ui';
+import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 
 type AdminDriver = DriverProfile & {
@@ -38,7 +38,6 @@ type AdminDriver = DriverProfile & {
         IonicModule,
         BadgeComponent,
         ButtonComponent,
-        RatingComponent,
         EmptyStateComponent
     ],
     template: `

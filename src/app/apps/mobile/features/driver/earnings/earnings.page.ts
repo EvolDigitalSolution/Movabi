@@ -33,7 +33,6 @@ import {
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import {
-    ButtonComponent,
     EmptyStateComponent,
     BadgeComponent
 } from '../../../../../shared/ui';
@@ -54,7 +53,6 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
         IonIcon,
         IonRefresher,
         IonRefresherContent,
-        ButtonComponent,
         EmptyStateComponent,
         BadgeComponent
     ],

@@ -378,15 +378,14 @@ export class JobService {
     }
 
     private toJobsPayload(job: Partial<Job> & Record<string, any>): Record<string, any> {
-        const {
-            total_price,
-            customer,
-            driver,
-            service_type,
-            errand_details,
-            errand_funding,
-            ...rest
-        } = job;
+        const total_price = job.total_price;
+        const rest = { ...job };
+        delete rest.total_price;
+        delete rest.customer;
+        delete rest.driver;
+        delete rest.service_type;
+        delete rest.errand_details;
+        delete rest.errand_funding;
 
         const price = Number(
             job.price ??

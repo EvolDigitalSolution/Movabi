@@ -14,7 +14,6 @@ import {
     IonLabel,
     IonRefresher,
     IonRefresherContent,
-    IonSpinner,
     LoadingController,
     ToastController,
     RefresherCustomEvent
@@ -64,7 +63,6 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
         IonLabel,
         IonRefresher,
         IonRefresherContent,
-        IonSpinner,
         ButtonComponent,
         BadgeComponent,
         EmptyStateComponent
