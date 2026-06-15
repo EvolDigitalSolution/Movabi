@@ -659,13 +659,19 @@ export class BookingService {
 
     async confirmJobPayment(jobId: string, paymentIntentId: string): Promise<Booking> {
         const isWallet = paymentIntentId === 'wallet_funded';
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
 
         const { data, error } = await this.supabase
             .from('jobs')
             .update({
                 payment_status: isWallet ? 'wallet_funded' : 'authorized',
                 payment_intent_id: isWallet ? null : paymentIntentId,
-                status: 'searching'
+                status: 'searching',
+                dispatch_started_at: now.toISOString(),
+                driver_search_expires_at: expiresAt,
+                dispatch_attempts: 1,
+                no_driver_reason: null
             })
             .eq('id', jobId)
             .select('*, service_type:service_types(*)')

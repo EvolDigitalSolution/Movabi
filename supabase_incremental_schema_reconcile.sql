@@ -185,6 +185,22 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'duration_seconds') THEN
             ALTER TABLE jobs ADD COLUMN duration_seconds INTEGER;
         END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'dispatch_started_at') THEN
+            ALTER TABLE jobs ADD COLUMN dispatch_started_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'driver_search_expires_at') THEN
+            ALTER TABLE jobs ADD COLUMN driver_search_expires_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'dispatch_attempts') THEN
+            ALTER TABLE jobs ADD COLUMN dispatch_attempts INTEGER DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'no_driver_reason') THEN
+            ALTER TABLE jobs ADD COLUMN no_driver_reason TEXT;
+        END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS job_service_details (
@@ -604,6 +620,37 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql;
+
+DO $$
+DECLARE
+  v_job RECORD;
+BEGIN
+  FOR v_job IN
+    SELECT id
+    FROM jobs
+    WHERE status = 'searching'
+      AND driver_id IS NULL
+      AND driver_search_expires_at IS NULL
+      AND created_at < NOW() - INTERVAL '5 minutes'
+      AND (
+        payment_status = 'wallet_funded'
+        OR COALESCE(payment_method, '') = 'wallet'
+      )
+  LOOP
+    UPDATE jobs
+    SET status = 'no_driver_found',
+        no_driver_reason = 'No available driver after search window',
+        updated_at = NOW()
+    WHERE id = v_job.id
+      AND status = 'searching'
+      AND driver_id IS NULL;
+
+    PERFORM release_job_wallet_reservation(
+      v_job.id,
+      'Auto release for stale searching wallet request'
+    );
+  END LOOP;
+END $$;
 
 -- Assign Driver Safely
 CREATE OR REPLACE FUNCTION assign_driver_to_job(

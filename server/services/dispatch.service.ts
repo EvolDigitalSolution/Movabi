@@ -52,6 +52,7 @@ export class DispatchService {
     async runDispatchEngine() {
         try {
             await this.cleanupExpiredSearchingJobs();
+            await this.cleanupStaleOpenSearchingJobs();
             await this.refreshWaitingQueueItems();
         } catch (error) {
             console.error('[DispatchService] Engine error:', error);
@@ -81,6 +82,28 @@ export class DispatchService {
             } else {
                 await this.markNoDriverFound(job.id, job.tenant_id);
             }
+        }
+    }
+
+    private async cleanupStaleOpenSearchingJobs() {
+        const staleBefore = new Date(Date.now() - SEARCH_WINDOW_SECONDS * 1000).toISOString();
+
+        const { data: jobs, error } = await this.supabase
+            .from('jobs')
+            .select('id, tenant_id, city_id, status, created_at, updated_at')
+            .eq('status', 'searching')
+            .is('driver_id', null)
+            .is('driver_search_expires_at', null)
+            .lt('created_at', staleBefore)
+            .limit(100);
+
+        if (error) {
+            console.error('[DispatchService] Failed to fetch stale open searching jobs:', error);
+            return;
+        }
+
+        for (const job of jobs || []) {
+            await this.markNoDriverFound(job.id, job.tenant_id);
         }
     }
 
