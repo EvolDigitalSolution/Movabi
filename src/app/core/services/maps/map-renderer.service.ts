@@ -266,7 +266,27 @@ export class MapRendererService {
         return;
       }
 
-      this.map.fitBounds(bounds, options as Record<string, any>);
+      const container = this.map.getContainer();
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      if (width <= 120 || height <= 120) {
+        return;
+      }
+
+      const nextOptions = { ...((options as Record<string, any>) || {}) };
+      const padding = nextOptions['padding'];
+
+      if (typeof padding === 'object' && padding !== null) {
+        nextOptions['padding'] = {
+          top: Math.min(Number(padding['top'] || 0), Math.max(24, Math.floor(height * 0.22))),
+          bottom: Math.min(Number(padding['bottom'] || 0), Math.max(24, Math.floor(height * 0.28))),
+          left: Math.min(Number(padding['left'] || 0), Math.max(24, Math.floor(width * 0.16))),
+          right: Math.min(Number(padding['right'] || 0), Math.max(24, Math.floor(width * 0.16)))
+        };
+      }
+
+      this.map.fitBounds(bounds, nextOptions);
     } catch (e) {
       console.warn('[MapRenderer] fitBounds failed', e);
     }

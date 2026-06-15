@@ -132,15 +132,6 @@ export class BookingService {
             price: safePrice,
             total_price: safePrice,
             estimated_price: safePrice,
-            estimated_distance: distanceKm,
-            estimated_distance_km: distanceKm,
-            distance_km: distanceKm,
-            distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
-                ? distanceMeters
-                : Math.round(distanceKm * 1000),
-            duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
-                ? durationSeconds
-                : null,
 
             country_code: countryCode,
             currency_code: currencyCode,
