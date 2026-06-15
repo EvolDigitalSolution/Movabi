@@ -83,7 +83,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="flex items-start justify-between gap-4 mb-8">
               <div>
                 <p class="text-blue-100/80 text-[10px] font-black mb-2 uppercase tracking-[0.22em]">
-                  Available Balance
+                  Transferred to Stripe
                 </p>
 
                 <h2 class="text-5xl font-display font-black tracking-tighter leading-none">
@@ -91,7 +91,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                 </h2>
 
                 <p class="text-sm text-blue-100/80 font-semibold mt-3">
-                  From completed and settled requests.
+                  Completed request payouts sent to your Stripe Express account.
                 </p>
               </div>
 
@@ -107,7 +107,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                 [disabled]="withdrawLoading()"
                 class="h-12 rounded-2xl bg-white text-blue-700 font-black text-sm shadow-xl shadow-blue-950/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {{ withdrawLoading() ? 'Opening...' : 'Withdraw' }}
+                {{ withdrawLoading() ? 'Opening...' : 'Open Stripe' }}
                 <ion-icon [name]="withdrawLoading() ? 'refresh-outline' : 'arrow-forward'" [class.animate-spin]="withdrawLoading()"></ion-icon>
               </button>
 
@@ -328,10 +328,10 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                       <div class="grid grid-cols-2 gap-3">
                         <div class="rounded-2xl bg-slate-50 p-3">
                           <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Status
+                            Stripe status
                           </p>
                           <p class="text-sm font-black text-slate-950 uppercase">
-                            {{ getEarningStatus(earning) }}
+                            {{ getStripePayoutLabel(earning) }}
                           </p>
                         </div>
 
@@ -378,6 +378,17 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                             </p>
                             <p class="text-[10px] font-semibold text-slate-500 break-all">
                               {{ earning.job_id }}
+                            </p>
+                          </div>
+                        }
+
+                        @if ($any(earning).stripe_transfer_id) {
+                          <div class="pt-2 border-t border-slate-200">
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                              Stripe transfer
+                            </p>
+                            <p class="text-[10px] font-semibold text-emerald-700 break-all">
+                              {{ $any(earning).stripe_transfer_id }}
                             </p>
                           </div>
                         }
@@ -611,6 +622,16 @@ export class EarningsPage implements OnInit {
         }
 
         return 'paid';
+    }
+
+    getStripePayoutLabel(earning: any): string {
+        if (earning?.stripe_transfer_id) {
+            return 'Transferred to Stripe';
+        }
+
+        return this.getEarningStatus(earning) === 'paid'
+            ? 'Paid'
+            : 'Pending transfer';
     }
 
     getCommissionAmount(earning: any): number {

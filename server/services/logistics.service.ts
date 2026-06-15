@@ -199,6 +199,9 @@ export class LogisticsService {
 
     if (finalPaymentStatus === 'paid') {
       console.log('[LogisticsService.completeJob] Payment already paid, skipping capture:', job.id);
+    } else if (finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet') {
+      await this.settleWalletJobReservation(job, totalPrice);
+      finalPaymentStatus = 'paid';
     } else if (finalPaymentStatus === 'authorized') {
       if (!job.payment_intent_id) {
         throw new Error('Payment is authorized but payment_intent_id is missing');
@@ -321,6 +324,90 @@ export class LogisticsService {
     });
 
     return updatedJob;
+  }
+
+  private static async settleWalletJobReservation(job: any, amount: number): Promise<void> {
+    const wallet = await supabaseAdmin
+      .from('wallets')
+      .select('id, reserved_balance')
+      .eq('user_id', job.customer_id)
+      .maybeSingle();
+
+    if (wallet.error || !wallet.data) {
+      throw new Error('Customer wallet reservation could not be found');
+    }
+
+    const settlementAmount = this.roundMoney(Math.min(
+      Math.max(0, Number(wallet.data.reserved_balance || 0)),
+      Math.max(0, amount)
+    ));
+
+    if (settlementAmount <= 0) {
+      throw new Error('Customer wallet reservation is empty');
+    }
+
+    const updatedWallet = await supabaseAdmin
+      .from('wallets')
+      .update({
+        reserved_balance: this.roundMoney(Math.max(0, Number(wallet.data.reserved_balance || 0) - settlementAmount)),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', wallet.data.id);
+
+    if (updatedWallet.error) {
+      throw new Error(updatedWallet.error.message || 'Failed to settle wallet reservation');
+    }
+
+    await this.insertWalletSettlementTransaction(job, wallet.data.id, settlementAmount);
+  }
+
+  private static async insertWalletSettlementTransaction(
+    job: any,
+    walletId: string,
+    amount: number
+  ): Promise<void> {
+    const basePayload: Record<string, unknown> = {
+      user_id: job.customer_id,
+      job_id: job.id,
+      amount,
+      description: 'Job payment settled from wallet reservation',
+      metadata: {
+        payment_method: 'wallet',
+        currency_code: job.currency_code || 'GBP',
+        settled_at: new Date().toISOString()
+      }
+    };
+
+    const withWalletId = {
+      ...basePayload,
+      wallet_id: walletId,
+      transaction_type: 'settlement'
+    };
+
+    let insert = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert(withWalletId);
+
+    if (!insert.error) return;
+
+    const message = `${insert.error.code || ''} ${insert.error.message || ''}`.toLowerCase();
+
+    if (!message.includes('transaction_type') && !message.includes('wallet_id')) {
+      throw new Error(insert.error.message || 'Failed to record wallet settlement');
+    }
+
+    const fallbackPayload = {
+      ...basePayload,
+      type: 'settlement'
+    };
+
+    insert = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert(fallbackPayload);
+
+    if (insert.error) {
+      throw new Error(insert.error.message || 'Failed to record wallet settlement');
+    }
   }
 
   private static roundMoney(value: number): number {

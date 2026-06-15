@@ -110,13 +110,13 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                     {{ formatStatus(job()?.status) }}
                   </h2>
 
-                  <p class="text-blue-100/80 font-bold mt-1 text-[10px] uppercase tracking-[0.2em]">
+                  <p class="text-blue-100/85 font-semibold mt-1 text-xs">
                     ID: {{ shortId(job()?.id) }}
                   </p>
                 </div>
 
                 <div class="text-right shrink-0">
-                  <p class="text-[10px] uppercase tracking-[0.2em] text-blue-100/80 font-black mb-1">
+                  <p class="text-xs text-blue-100/85 font-semibold mb-1">
                     Payout
                   </p>
                   <span class="text-3xl font-display font-black">
@@ -150,7 +150,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
           <app-card class="overflow-hidden">
             <div class="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-1">Pickup navigation</p>
+                <p class="text-xs text-slate-500 font-semibold mb-1">Pickup navigation</p>
                 <h3 class="text-base font-display font-black text-slate-950">{{ pickupMapTitle() }}</h3>
                 <p class="text-xs text-slate-500 font-semibold mt-1">{{ pickupMapSubtitle() }}</p>
               </div>
@@ -182,7 +182,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                   <h4 class="text-lg font-display font-black text-slate-950 truncate">
                     {{ customerName() }}
                   </h4>
-                  <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">
+                  <p class="text-xs text-slate-500 font-semibold">
                     Customer
                   </p>
                 </div>
@@ -204,13 +204,13 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 
               <div class="relative">
                 <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
-                <p class="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Pickup</p>
+                <p class="text-xs text-slate-500 font-semibold mb-1">Pickup</p>
                 <p class="font-bold text-slate-950 leading-snug">{{ job()?.pickup_address || 'Pickup unavailable' }}</p>
               </div>
 
               <div class="relative">
                 <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
-                <p class="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Destination</p>
+                <p class="text-xs text-slate-500 font-semibold mb-1">Destination</p>
                 <p class="font-bold text-slate-950 leading-snug">{{ job()?.dropoff_address || 'Destination unavailable' }}</p>
               </div>
             </div>
@@ -223,7 +223,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
               </div>
               <div>
                 <h3 class="font-display font-black text-slate-950">Service Requirements</h3>
-                <p class="text-[11px] text-slate-400 font-bold uppercase tracking-widest">
+                <p class="text-xs text-slate-500 font-semibold">
                   {{ serviceName() }}
                 </p>
               </div>
@@ -239,7 +239,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 
                   @if (anyDetails()?.notes) {
                     <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                      <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">Customer Notes</p>
+                      <p class="text-xs font-semibold text-blue-700 mb-2">Customer notes</p>
                       <p class="text-sm text-slate-700 leading-relaxed">{{ anyDetails()?.notes }}</p>
                     </div>
                   }
@@ -393,7 +393,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
               <div class="bg-white/95 backdrop-blur rounded-[1.5rem] border border-slate-100 shadow-xl shadow-slate-200/60 p-4 mb-3">
                 <div class="flex items-start justify-between gap-4 mb-3">
                   <div class="min-w-0">
-                    <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-1">Next step</p>
+                    <p class="text-xs text-slate-500 font-semibold mb-1">Next step</p>
                     <h3 class="text-base font-display font-black text-slate-950">{{ actionTitle() }}</h3>
                   </div>
                   <app-badge [variant]="actionBadgeVariant()">{{ formatStatus(job()?.status) }}</app-badge>

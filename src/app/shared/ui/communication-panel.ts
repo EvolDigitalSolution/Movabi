@@ -22,7 +22,7 @@ import { Subscription } from 'rxjs';
           </div>
           <div>
             <h3 class="text-sm font-bold text-text-primary tracking-tight">Communication</h3>
-            <p class="text-[10px] text-text-secondary uppercase font-bold tracking-widest">Active Job</p>
+            <p class="text-xs text-slate-500 font-semibold">Active job</p>
           </div>
         </div>
         

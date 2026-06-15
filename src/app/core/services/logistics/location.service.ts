@@ -267,6 +267,23 @@ export class LocationService {
             .subscribe();
     }
 
+    async getLatestDriverLocation(driverId: string): Promise<DriverLocation | null> {
+        const { data, error } = await this.supabase
+            .from('driver_locations')
+            .select('*')
+            .eq('driver_id', driverId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (error) {
+            console.error('Failed to fetch latest driver location:', error);
+            return null;
+        }
+
+        return data as DriverLocation | null;
+    }
+
     subscribeToAllTenantLocations(
         tenantId: string,
         callback: (location: DriverLocation) => void

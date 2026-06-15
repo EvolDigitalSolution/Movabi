@@ -101,7 +101,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
                   <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-left mb-4">
                     <div class="flex items-center justify-between mb-2">
-                      <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">Search timer</span>
+                      <span class="text-xs font-semibold text-blue-700">Search timer</span>
                       <span class="text-base font-display font-bold text-slate-900">
                         {{ searchCountdownLabel() }}
                       </span>
@@ -115,7 +115,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     </div>
                   </div>
 
-                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <p class="text-xs font-semibold text-slate-500">
                     Dispatch is being managed securely
                   </p>
                 </div>
@@ -132,7 +132,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       </div>
 
                       <div class="min-w-0">
-                        <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-1">Live driver</p>
+                        <p class="text-xs text-slate-500 font-semibold mb-1">Live driver</p>
                         <h3 class="text-base font-display font-black text-slate-950">{{ driverLiveLabel() }}</h3>
                         <p class="text-xs text-slate-500 font-semibold mt-1">{{ driverLiveSubtext() }}</p>
                       </div>
@@ -159,11 +159,11 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     Booking Details
                   </h2>
 
-                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                  <p class="text-xs font-semibold text-slate-500 mt-1">
                     {{ getStatusHint(booking()?.status || '') }}
                   </p>
 
-                  <p class="text-[9px] font-bold text-slate-300 uppercase tracking-widest mt-2">
+                  <p class="text-[11px] font-semibold text-slate-400 mt-2">
                     ID: {{ booking()?.id?.slice(0, 8) }}
                   </p>
                 </div>
@@ -172,7 +172,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   <p class="text-3xl font-display font-bold text-slate-900">
                     {{ getDisplayedTotal() }}
                   </p>
-                  <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mt-1">
+                  <p class="text-[11px] font-semibold text-emerald-700 mt-1">
                     {{ booking()?.service_slug === ServiceTypeEnum.ERRAND ? 'Total Reserved' : 'Fixed Price' }}
                   </p>
                 </div>
@@ -183,7 +183,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="timer-outline" class="text-blue-600"></ion-icon>
-                      <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Time left</p>
+                      <p class="text-xs font-semibold text-blue-700">Time left</p>
                     </div>
                     <p class="text-lg font-display font-bold text-slate-900">
                       {{ searchCountdownLabel() }}
@@ -193,7 +193,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="refresh-outline" class="text-slate-500"></ion-icon>
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Search status</p>
+                      <p class="text-xs font-semibold text-slate-500">Search status</p>
                     </div>
                     <p class="text-sm font-bold text-slate-900">Looking nearby</p>
                   </div>
@@ -316,7 +316,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 </div>
                 <div>
                   <h3 class="text-base font-display font-bold text-slate-900">Trip Route</h3>
-                  <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Live journey details</p>
+                  <p class="text-xs font-semibold text-slate-500">Live journey details</p>
                 </div>
               </div>
 
@@ -326,7 +326,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="relative">
                   <div class="absolute -left-[31px] top-1 w-5 h-5 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
                   <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pickup Location</p>
+                    <p class="text-xs font-semibold text-slate-500 mb-1">Pickup location</p>
                     <h3 class="text-sm font-bold text-slate-900 leading-snug">
                       {{ booking()?.pickup_address }}
                     </h3>
@@ -336,7 +336,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="relative">
                   <div class="absolute -left-[31px] top-1 w-5 h-5 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
                   <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Destination</p>
+                    <p class="text-xs font-semibold text-slate-500 mb-1">Destination</p>
                     <h3 class="text-sm font-bold text-slate-900 leading-snug">
                       {{ booking()?.dropoff_address }}
                     </h3>
@@ -353,14 +353,14 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   </div>
                   <div>
                     <h3 class="text-base font-display font-bold text-slate-900">Service Details</h3>
-                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Extra information</p>
+                    <p class="text-xs font-semibold text-slate-500">Extra information</p>
                   </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
                   @if (booking()?.service_slug === ServiceTypeEnum.RIDE) {
                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Passengers</p>
+                      <p class="text-xs font-semibold text-slate-500 mb-1">Passengers</p>
                       <p class="text-xl font-display font-bold text-slate-900">
                         {{ details()?.['passenger_count'] || 1 }}
                       </p>
@@ -369,7 +369,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
                   @if (booking()?.service_slug === ServiceTypeEnum.VAN) {
                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Helpers</p>
+                      <p class="text-xs font-semibold text-slate-500 mb-1">Helpers</p>
                       <p class="text-xl font-display font-bold text-slate-900">
                         {{ details()?.['helper_count'] || 0 }}
                       </p>
@@ -626,13 +626,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     canManuallyCancel(): boolean {
         const status = this.booking()?.status || '';
 
-        return ![
-            'cancelled',
-            'canceled',
-            'completed',
-            'settled',
-            'no_driver_found'
-        ].includes(status);
+        return ['requested', 'searching'].includes(status);
     }
 
     getDisplayedTotal(): string {
@@ -838,6 +832,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private subscribeToDriverLocation(driverId: string): void {
         this.locationSubscription?.unsubscribe();
+
+        void this.locationService.getLatestDriverLocation(driverId).then((location) => {
+            if (location) {
+                this.updateDriverMarker(location);
+            }
+        });
 
         this.locationSubscription = this.locationService.subscribeToDriverLocation(
             driverId,
