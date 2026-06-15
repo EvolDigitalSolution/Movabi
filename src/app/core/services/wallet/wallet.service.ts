@@ -16,6 +16,12 @@ export interface CreateWalletTopupIntentResponse {
   paymentIntentId: string;
 }
 
+export interface WalletJobPaymentResponse {
+  success: boolean;
+  paymentMethod: 'wallet';
+  amount: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -26,6 +32,7 @@ export class WalletService {
   private apiUrlService = inject(ApiUrlService);
 
   private readonly paymentApiUrl = this.apiUrlService.getApiUrl('/api/payment');
+  private readonly walletApiUrl = this.apiUrlService.getApiUrl('/api/wallet');
 
   wallet = signal<Wallet | null>(null);
 
@@ -162,6 +169,41 @@ export class WalletService {
         }
       )
     );
+  }
+
+  async payJobFromWallet(
+    jobId: string,
+    amount: number,
+    currencyCode?: string
+  ): Promise<WalletJobPaymentResponse> {
+    const user = this.auth.currentUser();
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
+
+    if (!jobId?.trim()) {
+      throw new Error('jobId is required');
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Wallet payment amount must be greater than zero');
+    }
+
+    const response = await firstValueFrom(
+      this.http.post<WalletJobPaymentResponse>(
+        `${this.walletApiUrl}/pay-job`,
+        {
+          userId: user.id,
+          jobId,
+          amount,
+          currency: currencyCode || this.auth.profileService.profile()?.currency_code || 'GBP',
+          tenantId: this.auth.tenantId()
+        }
+      )
+    );
+
+    await this.fetchWallet();
+    return response;
   }
 
   async refreshWalletAfterTopup(): Promise<Wallet | null> {

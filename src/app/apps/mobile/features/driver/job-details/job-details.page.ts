@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, ViewChild, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -42,6 +42,8 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
+import { LocationService } from '../../../../../core/services/logistics/location.service';
+import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import {
     Booking,
     BookingStatus,
@@ -54,6 +56,8 @@ import {
 } from '../../../../../shared/models/booking.model';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
+import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
 type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 
@@ -72,7 +76,8 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
         IonSpinner,
         CardComponent,
         ButtonComponent,
-        BadgeComponent
+        BadgeComponent,
+        MapComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -141,6 +146,28 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
               </div>
             </div>
           </div>
+
+          <app-card class="overflow-hidden">
+            <div class="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-1">Pickup navigation</p>
+                <h3 class="text-base font-display font-black text-slate-950">{{ pickupMapTitle() }}</h3>
+                <p class="text-xs text-slate-500 font-semibold mt-1">{{ pickupMapSubtitle() }}</p>
+              </div>
+
+              <button
+                type="button"
+                (click)="openMap(job()?.pickup_address)"
+                class="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center active:scale-95 transition-all shrink-0"
+              >
+                <ion-icon name="navigate"></ion-icon>
+              </button>
+            </div>
+
+            <div class="h-72 bg-slate-50">
+              <app-map #pickupMap></app-map>
+            </div>
+          </app-card>
 
           <app-card class="p-5">
             <div class="flex items-center justify-between gap-4 mb-8">
@@ -362,6 +389,29 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
           </app-card>
 
           <div class="sticky bottom-3 z-20">
+            @if (job()?.status !== 'completed') {
+              <div class="bg-white/95 backdrop-blur rounded-[1.5rem] border border-slate-100 shadow-xl shadow-slate-200/60 p-4 mb-3">
+                <div class="flex items-start justify-between gap-4 mb-3">
+                  <div class="min-w-0">
+                    <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-1">Next step</p>
+                    <h3 class="text-base font-display font-black text-slate-950">{{ actionTitle() }}</h3>
+                  </div>
+                  <app-badge [variant]="actionBadgeVariant()">{{ formatStatus(job()?.status) }}</app-badge>
+                </div>
+
+                <div class="h-2 rounded-full bg-slate-100 overflow-hidden mb-3">
+                  <div
+                    class="h-full rounded-full bg-blue-600 transition-all duration-300"
+                    [style.width.%]="actionProgress()"
+                  ></div>
+                </div>
+
+                <p class="text-xs text-slate-500 font-semibold leading-relaxed">
+                  {{ actionHint() }}
+                </p>
+              </div>
+            }
+
             @switch (job()?.status) {
               @case ('accepted') {
                 <app-button variant="primary" size="lg" class="w-full h-16 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">
@@ -462,6 +512,8 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
   `
 })
 export class JobDetailsPage implements OnInit, OnDestroy {
+    @ViewChild('pickupMap') pickupMap?: MapComponent;
+
     private route = inject(ActivatedRoute);
     private driverService = inject(DriverService);
     private loadingCtrl = inject(LoadingController);
@@ -469,6 +521,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private alertCtrl = inject(AlertController);
     public nav = inject(NavController);
     private bookingService = inject(BookingService);
+    private locationService = inject(LocationService);
+    private routing = inject(RoutingService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -479,6 +533,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     errandDetails = computed(() => this.details() as ErrandDetails | null);
     funding = signal<ErrandFunding | null>(null);
     isLoading = signal(true);
+    driverPickupDistance = signal<number | null>(null);
+    driverPickupDuration = signal<number | null>(null);
+    pickupMapReady = signal(false);
 
     itemsList = computed((): string[] => {
         const details = this.details() as any;
@@ -549,6 +606,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         void this.channel?.unsubscribe();
+        this.locationService.stopTracking();
     }
 
     async loadJob(id: string) {
@@ -585,6 +643,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             } else {
                 this.funding.set(null);
             }
+
+            this.ensureLiveLocationTracking(currentJob as Booking);
+            void this.renderPickupRoute();
         } catch (error) {
             console.error('Failed to load request details:', error);
             this.driverService.activeJob.set(null);
@@ -608,6 +669,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             const updated = await this.driverService.updateJobStatus(currentJob.id, status);
             this.driverService.activeJob.set(updated as Booking);
             await this.loadJob(currentJob.id);
+            void this.renderPickupRoute();
             await this.showToast('Status updated.', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Update failed';
@@ -891,6 +953,110 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeAddress)}`, '_blank');
     }
 
+    private async renderPickupRoute(): Promise<void> {
+        const currentJob = this.job();
+
+        if (!currentJob || !this.pickupMap) {
+            setTimeout(() => void this.renderPickupRoute(), 350);
+            return;
+        }
+
+        const pickupLat = Number((currentJob as any).pickup_lat);
+        const pickupLng = Number((currentJob as any).pickup_lng);
+
+        if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) {
+            this.pickupMapReady.set(false);
+            return;
+        }
+
+        this.pickupMap.addOrUpdateMarker({
+            id: 'pickup',
+            coordinates: { lat: pickupLat, lng: pickupLng },
+            kind: 'pickup',
+            serviceType: currentJob.service_slug as ServiceTypeSlug,
+            label: 'PICKUP'
+        });
+
+        const position = await this.locationService.getCurrentPosition();
+
+        if (!position) {
+            this.pickupMap.setCenter(pickupLng, pickupLat, 14);
+            this.pickupMapReady.set(true);
+            return;
+        }
+
+        const driverPosition = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+        };
+
+        this.pickupMap.addOrUpdateMarker({
+            id: 'driver-current',
+            coordinates: driverPosition,
+            kind: 'driver',
+            serviceType: currentJob.service_slug as ServiceTypeSlug,
+            heading: Number(position.coords.heading || 0),
+            label: 'YOU'
+        });
+
+        this.routing
+            .getRoute(driverPosition, { lat: pickupLat, lng: pickupLng })
+            .subscribe({
+                next: (route) => {
+                    if (route) {
+                        this.driverPickupDistance.set(route.distanceMeters);
+                        this.driverPickupDuration.set(route.durationSeconds);
+                        this.pickupMap?.drawRoute(route);
+
+                        if (route.bounds) {
+                            this.pickupMap?.fitBounds(route.bounds, {
+                                padding: { top: 60, bottom: 60, left: 45, right: 45 },
+                                maxZoom: 15,
+                                duration: 700
+                            });
+                        }
+                    } else {
+                        this.driverPickupDistance.set(null);
+                        this.driverPickupDuration.set(null);
+                        this.pickupMap?.setCenter(pickupLng, pickupLat, 14);
+                    }
+
+                    this.pickupMapReady.set(true);
+                },
+                error: (error) => {
+                    console.warn('Pickup route draw failed:', error);
+                    this.driverPickupDistance.set(null);
+                    this.driverPickupDuration.set(null);
+                    this.pickupMapReady.set(true);
+                }
+            });
+    }
+
+    private ensureLiveLocationTracking(currentJob: Booking): void {
+        const tenantId = (currentJob as any).tenant_id;
+        const status = String(currentJob.status || '');
+
+        if (tenantId && status !== 'completed' && status !== 'cancelled') {
+            this.locationService.startTracking(tenantId);
+        }
+    }
+
+    pickupMapTitle(): string {
+        if (this.driverPickupDuration() !== null) {
+            return `${this.formatDuration(this.driverPickupDuration())} to pickup`;
+        }
+
+        return 'Route to pickup';
+    }
+
+    pickupMapSubtitle(): string {
+        if (this.driverPickupDistance() !== null) {
+            return `${this.formatDistanceMeters(this.driverPickupDistance())} from your current location.`;
+        }
+
+        return 'Shows pickup location and route when GPS is available.';
+    }
+
     customerName(): string {
         const customer = (this.job() as any)?.customer;
         const first = String(customer?.first_name || '').trim();
@@ -932,6 +1098,87 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return this.titleCase(status);
     }
 
+    actionTitle(): string {
+        switch (this.job()?.status) {
+            case 'accepted':
+                return 'Go to pickup';
+            case 'arrived':
+                return this.job()?.service_slug === ServiceTypeEnum.ERRAND ? 'Confirm store arrival' : 'Start the request';
+            case 'arrived_at_store':
+                return 'Start shopping';
+            case 'shopping_in_progress':
+                return 'Collect all items';
+            case 'collected':
+                return 'Head to customer';
+            case 'en_route_to_customer':
+            case 'in_progress':
+            case 'delivered':
+                return 'Complete the request';
+            default:
+                return 'Review request details';
+        }
+    }
+
+    actionHint(): string {
+        switch (this.job()?.status) {
+            case 'accepted':
+                return 'Open the pickup location, contact the customer if needed, then mark yourself arrived.';
+            case 'arrived':
+                return 'Only start once you are ready to begin the ride, delivery, errand, or moving work.';
+            case 'arrived_at_store':
+                return 'Begin shopping after confirming the store and customer notes.';
+            case 'shopping_in_progress':
+                return 'Record spending and upload a receipt before completing an errand.';
+            case 'collected':
+                return 'Items are collected. Navigate to the customer and keep the request moving.';
+            case 'en_route_to_customer':
+            case 'in_progress':
+            case 'delivered':
+                return 'Confirm the work is fully done before completing the request.';
+            default:
+                return 'Check route, customer details, and service requirements before taking action.';
+        }
+    }
+
+    actionProgress(): number {
+        switch (this.job()?.status) {
+            case 'accepted':
+                return 20;
+            case 'arrived':
+            case 'arrived_at_store':
+                return 40;
+            case 'shopping_in_progress':
+            case 'in_progress':
+                return 65;
+            case 'collected':
+            case 'en_route_to_customer':
+            case 'delivered':
+                return 85;
+            case 'completed':
+                return 100;
+            default:
+                return 10;
+        }
+    }
+
+    actionBadgeVariant(): 'success' | 'warning' | 'error' | 'info' | 'secondary' | 'primary' {
+        switch (this.job()?.status) {
+            case 'completed':
+                return 'success';
+            case 'accepted':
+            case 'arrived':
+                return 'primary';
+            case 'in_progress':
+            case 'shopping_in_progress':
+            case 'en_route_to_customer':
+                return 'info';
+            case 'cancelled':
+                return 'error';
+            default:
+                return 'secondary';
+        }
+    }
+
     shortId(id?: string | null): string {
         return String(id || '').slice(0, 8) || 'N/A';
     }
@@ -943,6 +1190,22 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     toNumber(value: unknown): number {
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    private isValidCoordinate(value: number): boolean {
+        return Number.isFinite(value) && Math.abs(value) > 0.000001;
+    }
+
+    private formatDuration(seconds: number | null): string {
+        if (!seconds || !Number.isFinite(seconds)) return 'ETA unavailable';
+        const minutes = Math.max(1, Math.round(seconds / 60));
+        return `${minutes} min`;
+    }
+
+    private formatDistanceMeters(meters: number | null): string {
+        if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
+        if (meters < 1000) return `${Math.round(meters)} m`;
+        return `${(meters / 1000).toFixed(1)} km`;
     }
 
     private titleCase(value: string): string {

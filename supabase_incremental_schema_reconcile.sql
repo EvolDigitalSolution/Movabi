@@ -309,6 +309,92 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Wallet-first Job Payment RPC
+CREATE OR REPLACE FUNCTION pay_job_from_wallet(
+  p_job_id UUID,
+  p_customer_id UUID,
+  p_amount NUMERIC,
+  p_currency_code TEXT DEFAULT 'GBP',
+  p_tenant_id UUID DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_available NUMERIC;
+  v_wallet_id UUID;
+  v_job RECORD;
+  v_amount NUMERIC := ROUND(COALESCE(p_amount, 0)::NUMERIC, 2);
+BEGIN
+  IF v_amount <= 0 THEN
+    RAISE EXCEPTION 'Wallet payment amount must be greater than zero';
+  END IF;
+
+  SELECT *
+  INTO v_job
+  FROM jobs
+  WHERE id = p_job_id
+    AND customer_id = p_customer_id
+  FOR UPDATE;
+
+  IF v_job IS NULL THEN
+    RAISE EXCEPTION 'Job not found for wallet payment';
+  END IF;
+
+  IF v_job.status IN ('cancelled', 'completed') THEN
+    RAISE EXCEPTION 'Wallet payment is not available for this job status';
+  END IF;
+
+  INSERT INTO wallets (user_id, currency_code)
+  VALUES (p_customer_id, COALESCE(p_currency_code, 'GBP'))
+  ON CONFLICT (user_id) DO NOTHING;
+
+  SELECT id, available_balance
+  INTO v_wallet_id, v_available
+  FROM wallets
+  WHERE user_id = p_customer_id
+  FOR UPDATE;
+
+  IF v_available IS NULL OR v_available < v_amount THEN
+    RAISE EXCEPTION 'Insufficient wallet balance. Required: %, Available: %', v_amount, COALESCE(v_available, 0);
+  END IF;
+
+  UPDATE wallets
+  SET available_balance = available_balance - v_amount,
+      reserved_balance = COALESCE(reserved_balance, 0) + v_amount,
+      updated_at = NOW()
+  WHERE id = v_wallet_id;
+
+  INSERT INTO wallet_transactions (user_id, job_id, amount, type, description, metadata)
+  VALUES (
+    p_customer_id,
+    p_job_id,
+    v_amount,
+    'reservation',
+    'Job payment reserved from wallet',
+    jsonb_build_object(
+      'currency_code', COALESCE(p_currency_code, 'GBP'),
+      'tenant_id', p_tenant_id,
+      'payment_method', 'wallet'
+    )
+  );
+
+  UPDATE jobs
+  SET payment_status = 'wallet_funded',
+      payment_method = 'wallet',
+      payment_intent_id = NULL,
+      total_price = v_amount,
+      price = COALESCE(price, v_amount),
+      confirmed_at = NOW(),
+      updated_at = NOW()
+  WHERE id = p_job_id;
+
+  RETURN jsonb_build_object(
+    'job_id', p_job_id,
+    'amount', v_amount,
+    'payment_method', 'wallet'
+  );
+END;
+$$ LANGUAGE plpgsql;
+
 -- Assign Driver Safely
 CREATE OR REPLACE FUNCTION assign_driver_to_job(
   p_job_id UUID,

@@ -55,4 +55,45 @@ router.get('/balance', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Reserve/pay a job from wallet balance through a trusted database function.
+ */
+router.post('/pay-job', async (req: Request, res: Response) => {
+  try {
+    const { userId, jobId, amount, currency, tenantId } = req.body || {};
+    const paymentAmount = Number(amount);
+
+    if (!userId || !jobId) {
+      return res.status(400).json({ error: 'userId and jobId are required' });
+    }
+
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+      return res.status(400).json({ error: 'amount must be greater than zero' });
+    }
+
+    const { data, error } = await supabaseAdmin.rpc('pay_job_from_wallet', {
+      p_job_id: jobId,
+      p_customer_id: userId,
+      p_amount: Math.round((paymentAmount + Number.EPSILON) * 100) / 100,
+      p_currency_code: currency || 'GBP',
+      p_tenant_id: tenantId || null
+    });
+
+    if (error) {
+      const status = /insufficient/i.test(error.message) ? 402 : 400;
+      return res.status(status).json({ error: error.message });
+    }
+
+    res.json({
+      success: true,
+      paymentMethod: 'wallet',
+      amount: paymentAmount,
+      data
+    });
+  } catch (error: any) {
+    console.error('Error paying job from wallet:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

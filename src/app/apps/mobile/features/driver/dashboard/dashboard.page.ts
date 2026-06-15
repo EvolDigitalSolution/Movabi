@@ -1,4 +1,4 @@
-import { Component, inject, computed, OnInit, OnDestroy, signal } from '@angular/core';
+﻿import { Component, inject, computed, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -337,117 +337,6 @@ type MetricState = {
             </div>
           </div>
 
-          <div class="space-y-4">
-            <div class="flex items-center justify-between px-1 gap-3">
-              <div class="flex items-center gap-3 min-w-0">
-                <div
-                  class="w-1.5 h-6 rounded-full shadow-lg shrink-0"
-                  [class.bg-emerald-500]="isStripeReady()"
-                  [class.bg-rose-500]="getStripeBadgeText() === 'Action Required'"
-                  [class.bg-amber-500]="!isStripeReady() && getStripeBadgeText() !== 'Action Required'"
-                ></div>
-
-                <div class="min-w-0">
-                  <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.18em]">
-                    Payouts
-                  </h3>
-                  <p class="text-[11px] text-slate-400 font-semibold mt-0.5">
-                    Stripe Connect
-                  </p>
-                </div>
-              </div>
-
-              <app-badge [variant]="getStripeBadgeVariant()">
-                {{ getStripeBadgeText() }}
-              </app-badge>
-            </div>
-
-            <div class="relative overflow-hidden rounded-[1.85rem] border p-5 shadow-lg bg-white">
-              <div class="relative flex items-start gap-4">
-                <div class="w-14 h-14 rounded-[1.25rem] flex items-center justify-center border shadow-sm shrink-0 bg-emerald-50 text-emerald-700 border-emerald-100">
-                  <ion-icon
-                    [name]="isStripeReady() ? 'checkmark-circle-outline' : 'cash-outline'"
-                    class="text-3xl"
-                  ></ion-icon>
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  <h3 class="font-display font-black text-slate-950 text-xl tracking-tight">
-                    Stripe Connect
-                  </h3>
-
-                  <p class="text-sm text-slate-500 font-semibold leading-relaxed mt-1">
-                    Required for receiving payouts. You can still accept test/live requests while setup is pending.
-                  </p>
-
-                  <div class="mt-5">
-                    @if (isStripeReady()) {
-                      <app-button variant="secondary" class="w-full" (clicked)="openStripeDashboard()">
-                        Open Stripe Dashboard
-                      </app-button>
-                    } @else {
-                      <app-button variant="primary" class="w-full" (clicked)="setupPayouts()">
-                        {{ isStripePending() ? 'Continue Stripe Setup' : 'Start Stripe Setup' }}
-                      </app-button>
-                    }
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="flex items-center gap-3 ml-1">
-              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.18em]">Performance Metrics</h3>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm">
-                <div class="flex items-center justify-between gap-3 mb-4">
-                  <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm shrink-0">
-                      <ion-icon name="checkmark-done-outline"></ion-icon>
-                    </div>
-                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Acceptance</span>
-                  </div>
-
-                  <app-badge [variant]="acceptanceMetric().isNew ? 'secondary' : getMetricVariant(acceptanceMetric().value || 0)">
-                    {{ acceptanceMetric().isNew ? 'New' : getMetricLabel(acceptanceMetric().value || 0) }}
-                  </app-badge>
-                </div>
-
-                <p class="text-3xl font-display font-bold text-slate-950">{{ acceptanceMetric().display }}</p>
-                <p class="text-sm text-slate-500 font-medium mt-1">{{ acceptanceMetric().label }}</p>
-              </div>
-
-              <div class="bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm">
-                <div class="flex items-center justify-between gap-3 mb-4">
-                  <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm shrink-0">
-                      <ion-icon name="star-outline"></ion-icon>
-                    </div>
-                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Rating</span>
-                  </div>
-
-                  <app-badge [variant]="ratingMetric().isNew ? 'secondary' : 'success'">
-                    {{ ratingMetric().isNew ? 'New' : 'Live' }}
-                  </app-badge>
-                </div>
-
-                @if (ratingMetric().isNew) {
-                  <p class="text-3xl font-display font-bold text-slate-950">New</p>
-                  <p class="text-sm text-slate-500 font-medium mt-1">
-                    Rating will appear after your first customer review.
-                  </p>
-                } @else {
-                  <p class="text-3xl font-display font-bold text-slate-950">{{ ratingMetric().display }}</p>
-                  <app-rating [rating]="ratingMetric().value || 0"></app-rating>
-                }
-              </div>
-            </div>
-          </div>
-
           <div class="space-y-4" data-section="available-requests">
             <div class="flex items-center justify-between px-1 gap-3">
               <div class="flex items-center gap-3 min-w-0">
@@ -585,6 +474,117 @@ type MetricState = {
                 }
               </div>
             }
+          </div>
+
+          <div class="space-y-4">
+            <div class="flex items-center justify-between px-1 gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <div
+                  class="w-1.5 h-6 rounded-full shadow-lg shrink-0"
+                  [class.bg-emerald-500]="isStripeReady()"
+                  [class.bg-rose-500]="getStripeBadgeText() === 'Action Required'"
+                  [class.bg-amber-500]="!isStripeReady() && getStripeBadgeText() !== 'Action Required'"
+                ></div>
+
+                <div class="min-w-0">
+                  <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.18em]">
+                    Payouts
+                  </h3>
+                  <p class="text-[11px] text-slate-400 font-semibold mt-0.5">
+                    Stripe Connect
+                  </p>
+                </div>
+              </div>
+
+              <app-badge [variant]="getStripeBadgeVariant()">
+                {{ getStripeBadgeText() }}
+              </app-badge>
+            </div>
+
+            <div class="relative overflow-hidden rounded-[1.85rem] border p-5 shadow-lg bg-white">
+              <div class="relative flex items-start gap-4">
+                <div class="w-14 h-14 rounded-[1.25rem] flex items-center justify-center border shadow-sm shrink-0 bg-emerald-50 text-emerald-700 border-emerald-100">
+                  <ion-icon
+                    [name]="isStripeReady() ? 'checkmark-circle-outline' : 'cash-outline'"
+                    class="text-3xl"
+                  ></ion-icon>
+                </div>
+
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-display font-black text-slate-950 text-xl tracking-tight">
+                    Stripe Connect
+                  </h3>
+
+                  <p class="text-sm text-slate-500 font-semibold leading-relaxed mt-1">
+                    Required for receiving payouts. You can still accept test/live requests while setup is pending.
+                  </p>
+
+                  <div class="mt-5">
+                    @if (isStripeReady()) {
+                      <app-button variant="secondary" class="w-full" (clicked)="openStripeDashboard()">
+                        Open Stripe Dashboard
+                      </app-button>
+                    } @else {
+                      <app-button variant="primary" class="w-full" (clicked)="setupPayouts()">
+                        {{ isStripePending() ? 'Continue Stripe Setup' : 'Start Stripe Setup' }}
+                      </app-button>
+                    }
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="flex items-center gap-3 ml-1">
+              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.18em]">Performance Metrics</h3>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm shrink-0">
+                      <ion-icon name="checkmark-done-outline"></ion-icon>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Acceptance</span>
+                  </div>
+
+                  <app-badge [variant]="acceptanceMetric().isNew ? 'secondary' : getMetricVariant(acceptanceMetric().value || 0)">
+                    {{ acceptanceMetric().isNew ? 'New' : getMetricLabel(acceptanceMetric().value || 0) }}
+                  </app-badge>
+                </div>
+
+                <p class="text-3xl font-display font-bold text-slate-950">{{ acceptanceMetric().display }}</p>
+                <p class="text-sm text-slate-500 font-medium mt-1">{{ acceptanceMetric().label }}</p>
+              </div>
+
+              <div class="bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm shrink-0">
+                      <ion-icon name="star-outline"></ion-icon>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Rating</span>
+                  </div>
+
+                  <app-badge [variant]="ratingMetric().isNew ? 'secondary' : 'success'">
+                    {{ ratingMetric().isNew ? 'New' : 'Live' }}
+                  </app-badge>
+                </div>
+
+                @if (ratingMetric().isNew) {
+                  <p class="text-3xl font-display font-bold text-slate-950">New</p>
+                  <p class="text-sm text-slate-500 font-medium mt-1">
+                    Rating will appear after your first customer review.
+                  </p>
+                } @else {
+                  <p class="text-3xl font-display font-bold text-slate-950">{{ ratingMetric().display }}</p>
+                  <app-rating [rating]="ratingMetric().value || 0"></app-rating>
+                }
+              </div>
+            </div>
           </div>
 
           <div class="space-y-4">

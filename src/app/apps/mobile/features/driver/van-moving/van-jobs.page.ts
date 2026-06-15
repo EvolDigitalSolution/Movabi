@@ -97,37 +97,41 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
       </ion-refresher>
 
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-20 overflow-x-hidden">
-        <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-600 via-blue-700 to-slate-950 p-6 text-white shadow-2xl shadow-blue-600/20">
-          <div class="absolute -right-12 -bottom-16 w-48 h-48 rounded-full bg-white/10 blur-2xl"></div>
-          <ion-icon name="bus-outline" class="absolute -right-8 -bottom-8 text-[10rem] text-white/10 rotate-12"></ion-icon>
+        <div class="relative overflow-hidden rounded-[1.75rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-900/15">
+          <ion-icon name="bus-outline" class="absolute -right-8 -bottom-8 text-[9rem] text-white/10 rotate-12"></ion-icon>
 
           <div class="relative z-10">
-            <div class="flex items-start justify-between gap-4 mb-8">
+            <div class="flex items-start justify-between gap-4 mb-6">
               <div>
                 <p class="text-white/70 text-[10px] font-black mb-2 uppercase tracking-[0.22em]">
                   Van & Moving
                 </p>
 
-                <h1 class="text-4xl font-display font-black tracking-tight leading-none">
+                <h1 class="text-3xl font-display font-black tracking-tight leading-none">
                   {{ segment() === 'available' ? 'Available Moves' : 'My Moves' }}
                 </h1>
 
-                <p class="text-sm text-white/80 font-semibold mt-3 max-w-xs leading-relaxed">
+                <p class="text-sm text-white/75 font-semibold mt-3 max-w-xs leading-relaxed">
                   {{ segment() === 'available'
-                    ? 'Browse moving requests near you and accept the right job.'
-                    : 'Track and manage moving jobs you have accepted.' }}
+                    ? 'Choose requests by payout, timing, and pickup distance.'
+                    : 'Follow the next action for each accepted move.' }}
                 </p>
               </div>
 
-              <div class="w-14 h-14 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+              <div class="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
                 <ion-icon name="cube-outline" class="text-3xl"></ion-icon>
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-3 gap-2">
               <div class="rounded-2xl bg-white/10 border border-white/10 p-3">
-                <p class="text-[9px] text-white/60 font-black uppercase tracking-widest mb-1">Jobs</p>
-                <p class="text-2xl font-display font-black">{{ jobs().length }}</p>
+                <p class="text-[9px] text-white/60 font-black uppercase tracking-widest mb-1">Shown</p>
+                <p class="text-2xl font-display font-black">{{ filteredJobs().length }}</p>
+              </div>
+
+              <div class="rounded-2xl bg-white/10 border border-white/10 p-3">
+                <p class="text-[9px] text-white/60 font-black uppercase tracking-widest mb-1">Today</p>
+                <p class="text-2xl font-display font-black">{{ todayCount() }}</p>
               </div>
 
               <div class="rounded-2xl bg-white/10 border border-white/10 p-3">
@@ -177,6 +181,29 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
           </ion-segment>
         </div>
 
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-white rounded-[1.25rem] border border-slate-100 p-4 shadow-sm">
+            <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Potential payout</p>
+            <p class="text-xl font-display font-black text-slate-950">{{ formatPrice(totalVisiblePayout()) }}</p>
+          </div>
+
+          <div class="bg-white rounded-[1.25rem] border border-slate-100 p-4 shadow-sm">
+            <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Nearest pickup</p>
+            <p class="text-xl font-display font-black text-slate-950">{{ nearestPickupLabel() }}</p>
+          </div>
+        </div>
+
+        <div class="relative">
+          <ion-icon name="search-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg z-10"></ion-icon>
+          <input
+            type="search"
+            [ngModel]="searchTerm()"
+            (ngModelChange)="searchTerm.set($event)"
+            placeholder="Search pickup, dropoff, or status"
+            class="w-full h-12 rounded-2xl bg-white border border-slate-100 pl-11 pr-4 text-sm font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-200 focus:ring-4 focus:ring-blue-50"
+          >
+        </div>
+
         <div class="space-y-4">
           <div class="flex items-center justify-between px-1">
             <div class="flex items-center gap-3">
@@ -186,7 +213,7 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                   {{ segment() === 'available' ? 'Open Moving Requests' : 'Accepted Moving Requests' }}
                 </h3>
                 <p class="text-[11px] text-slate-400 font-semibold mt-0.5">
-                  {{ jobs().length }} request{{ jobs().length === 1 ? '' : 's' }}
+                  {{ filteredJobs().length }} of {{ jobs().length }} request{{ jobs().length === 1 ? '' : 's' }}
                 </p>
               </div>
             </div>
@@ -198,21 +225,23 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
               <div class="h-24 bg-slate-100 rounded-2xl animate-pulse"></div>
               <div class="h-24 bg-slate-100 rounded-2xl animate-pulse"></div>
             </div>
-          } @else if (jobs().length === 0) {
+          } @else if (filteredJobs().length === 0) {
             <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden py-10">
               <app-empty-state
                 [icon]="segment() === 'available' ? 'search-outline' : 'bus-outline'"
-                [title]="segment() === 'available' ? 'No moving requests yet' : 'No accepted moves yet'"
-                [description]="segment() === 'available'
+                [title]="searchTerm() ? 'No matching requests' : (segment() === 'available' ? 'No moving requests yet' : 'No accepted moves yet')"
+                [description]="searchTerm()
+                  ? 'Try a different address, status, or clear the search field.'
+                  : (segment() === 'available'
                   ? 'New van and moving requests will appear here when customers create them.'
-                  : 'Accepted moving jobs will appear here once you take a request.'"
-                [actionLabel]="segment() === 'available' ? 'Refresh' : 'Browse Available'"
+                  : 'Accepted moving jobs will appear here once you take a request.')"
+                [actionLabel]="searchTerm() ? 'Clear Search' : (segment() === 'available' ? 'Refresh' : 'Browse Available')"
                 (action)="emptyAction()"
               ></app-empty-state>
             </div>
           } @else {
             <div class="space-y-4">
-              @for (job of jobs(); track job.id) {
+              @for (job of filteredJobs(); track job.id) {
                 <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                   <div class="p-5">
                     <div class="flex justify-between items-start gap-4 mb-5">
@@ -256,7 +285,8 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                         </p>
 
                         @if (distanceFromPickup(job) !== null) {
-                          <p class="text-xs text-blue-600 font-black mt-1">
+                          <p class="text-xs text-blue-600 font-black mt-1 flex items-center gap-1">
+                            <ion-icon name="location-outline"></ion-icon>
                             {{ distanceFromPickup(job) }} km away
                           </p>
                         }
@@ -270,10 +300,26 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                         </p>
 
                         @if (job.estimated_distance) {
-                          <p class="text-xs text-slate-500 font-semibold mt-1">
+                          <p class="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                            <ion-icon name="flag-outline"></ion-icon>
                             {{ job.estimated_distance }} km trip
                           </p>
                         }
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 mb-4">
+                      <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+                        <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">When</p>
+                        <p class="text-xs font-black text-slate-800">{{ scheduleShort(job.scheduled_time) }}</p>
+                      </div>
+                      <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+                        <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Pickup</p>
+                        <p class="text-xs font-black text-slate-800">{{ distanceFromPickup(job) ? distanceFromPickup(job) + ' km' : 'Check' }}</p>
+                      </div>
+                      <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+                        <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Trip</p>
+                        <p class="text-xs font-black text-slate-800">{{ job.estimated_distance ? job.estimated_distance + ' km' : 'TBC' }}</p>
                       </div>
                     </div>
 
@@ -282,10 +328,11 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                         variant="primary"
                         size="lg"
                         class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20"
-                        [disabled]="submitting()"
+                        [loading]="activeJobId() === job.id"
+                        [disabled]="submitting() && activeJobId() !== job.id"
                         (clicked)="acceptJob(job.id)"
                       >
-                        {{ submitting() ? 'Accepting...' : 'Accept Move' }}
+                        Accept Move
                       </app-button>
                     } @else {
                       <div class="grid grid-cols-2 gap-3">
@@ -293,7 +340,8 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                           <app-button
                             variant="primary"
                             class="w-full"
-                            [disabled]="submitting()"
+                            [loading]="activeJobId() === job.id"
+                            [disabled]="submitting() && activeJobId() !== job.id"
                             (clicked)="updateStatus(job.id, 'in_progress')"
                           >
                             Start
@@ -302,7 +350,8 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                           <app-button
                             variant="primary"
                             class="w-full"
-                            [disabled]="submitting()"
+                            [loading]="activeJobId() === job.id"
+                            [disabled]="submitting() && activeJobId() !== job.id"
                             (clicked)="updateStatus(job.id, 'completed')"
                           >
                             Complete
@@ -347,13 +396,34 @@ export class VanJobsPage implements OnInit, OnDestroy {
 
     segment = signal<VanJobSegment>('available');
     jobs = signal<Job[]>([]);
+    searchTerm = signal('');
     currentPos = signal<{ lat: number; lng: number } | null>(null);
     loading = signal(false);
     submitting = signal(false);
+    activeJobId = signal<string | null>(null);
 
     private channel?: RealtimeChannel;
 
     hasLocation = computed(() => !!this.currentPos());
+    filteredJobs = computed(() => {
+        const term = this.searchTerm().trim().toLowerCase();
+        const jobs = this.jobs();
+
+        if (!term) return jobs;
+
+        return jobs.filter(job => [
+            job.pickup_address,
+            job.dropoff_address,
+            job.status,
+            job.service_slug,
+            this.formatPrice(job.price || job.total_price || 0)
+        ].some(value => String(value || '').toLowerCase().includes(term)));
+    });
+    todayCount = computed(() => this.filteredJobs().filter(job => this.isToday(job.scheduled_time)).length);
+    totalVisiblePayout = computed(() => this.filteredJobs().reduce(
+        (sum, job) => sum + Number(job.price || job.total_price || 0),
+        0
+    ));
 
     constructor() {
         addIcons({
@@ -408,6 +478,11 @@ export class VanJobsPage implements OnInit, OnDestroy {
     }
 
     async emptyAction() {
+        if (this.searchTerm()) {
+            this.searchTerm.set('');
+            return;
+        }
+
         if (this.segment() === 'available') {
             await this.refreshJobs();
             return;
@@ -488,6 +563,7 @@ export class VanJobsPage implements OnInit, OnDestroy {
 
         if (this.submitting()) return;
         this.submitting.set(true);
+        this.activeJobId.set(jobId);
 
         const loading = await this.loadingCtrl.create({ message: 'Accepting move...' });
         await loading.present();
@@ -507,6 +583,7 @@ export class VanJobsPage implements OnInit, OnDestroy {
             await this.loadJobs();
         } finally {
             this.submitting.set(false);
+            this.activeJobId.set(null);
             await loading.dismiss();
         }
     }
@@ -514,6 +591,7 @@ export class VanJobsPage implements OnInit, OnDestroy {
     async updateStatus(jobId: string, status: DriverJobStatus) {
         if (this.submitting()) return;
         this.submitting.set(true);
+        this.activeJobId.set(jobId);
 
         const loading = await this.loadingCtrl.create({ message: 'Updating move...' });
         await loading.present();
@@ -533,6 +611,7 @@ export class VanJobsPage implements OnInit, OnDestroy {
             await this.showToast(message, 'danger');
         } finally {
             this.submitting.set(false);
+            this.activeJobId.set(null);
             await loading.dismiss();
         }
     }
@@ -571,6 +650,20 @@ export class VanJobsPage implements OnInit, OnDestroy {
         });
     }
 
+    scheduleShort(value: string | Date | null | undefined): string {
+        if (!value) return 'Flexible';
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) return 'Flexible';
+
+        if (this.isToday(value)) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+    }
+
     isToday(value: string | Date | null | undefined): boolean {
         if (!value) return false;
 
@@ -598,6 +691,19 @@ export class VanJobsPage implements OnInit, OnDestroy {
             default:
                 return 'secondary';
         }
+    }
+
+    nearestPickupLabel(): string {
+        const distances = this.filteredJobs()
+            .map(job => {
+                const value = this.distanceFromPickup(job);
+                return value === null ? null : Number(value);
+            })
+            .filter((value): value is number => value !== null && Number.isFinite(value));
+
+        if (!distances.length) return this.currentPos() ? 'TBC' : 'GPS off';
+
+        return `${Math.min(...distances).toFixed(1)} km`;
     }
 
     private sortJobs(jobs: Job[]): Job[] {

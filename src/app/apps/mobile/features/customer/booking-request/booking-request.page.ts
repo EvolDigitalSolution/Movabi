@@ -604,87 +604,105 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                       }
                     </div>
 
-                    @if (type === ServiceTypeEnum.ERRAND) {
-                      <div class="grid gap-4">
+                    <div class="p-4 bg-slate-950 text-white rounded-2xl shadow-xl shadow-slate-200 space-y-4">
+                      <div class="flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                            Payment
+                          </p>
+                          <h3 class="mt-1 text-xl font-display font-bold">
+                            {{ paymentPlanLabel() }}
+                          </h3>
+                          <p class="mt-1 text-xs font-semibold text-slate-300 leading-relaxed">
+                            {{ paymentPlanDescription() }}
+                          </p>
+                        </div>
+
                         <div
-                          class="p-4 rounded-xl border transition-all"
-                          [class.bg-emerald-50]="!hasInsufficientFunds()"
-                          [class.border-emerald-100]="!hasInsufficientFunds()"
-                          [class.bg-rose-50]="hasInsufficientFunds()"
-                          [class.border-rose-100]="hasInsufficientFunds()">
-
-                          <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-3">
-                              <div
-                                class="w-8 h-8 rounded-xl flex items-center justify-center"
-                                [class.bg-emerald-500]="!hasInsufficientFunds()"
-                                [class.bg-rose-500]="hasInsufficientFunds()">
-                                <ion-icon name="wallet-outline" class="text-white text-lg"></ion-icon>
-                              </div>
-
-                              <div>
-                                <p
-                                  class="text-[10px] font-bold uppercase tracking-widest"
-                                  [class.text-emerald-600]="!hasInsufficientFunds()"
-                                  [class.text-rose-600]="hasInsufficientFunds()">
-                                  Wallet Item Budget
-                                </p>
-
-                                <p class="text-sm font-bold text-slate-900">
-                                  Balance: {{ config.formatCurrency(walletService.wallet()?.available_balance || 0) }}
-                                </p>
-
-                                <p class="text-xs text-slate-500 font-semibold">
-                                  Required: {{ config.formatCurrency(walletBudgetRequired()) }}
-                                </p>
-                              </div>
-                            </div>
-
-                            @if (hasInsufficientFunds()) {
-                              <app-button variant="secondary" size="sm" (click)="router.navigate(['/customer/wallet'])">
-                                Top Up
-                              </app-button>
-                            }
-                          </div>
-
-                          @if (hasInsufficientFunds()) {
-                            <div class="mt-4 p-4 bg-rose-100/60 rounded-2xl border border-rose-200">
-                              <p class="text-xs font-bold text-rose-700 flex items-center gap-2">
-                                <ion-icon name="alert-circle"></ion-icon>
-                                You need {{ config.formatCurrency(walletBudgetRequired() - (walletService.wallet()?.available_balance || 0)) }} more in your wallet.
-                              </p>
-                            </div>
-                          } @else {
-                            <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-relaxed">
-                              Item budget only is reserved from your wallet. Card payment is used for the service fee.
-                            </p>
-                          }
+                          class="shrink-0 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest"
+                          [class.bg-emerald-400]="walletCoversPayment()"
+                          [class.text-slate-950]="walletCoversPayment()"
+                          [class.bg-white]="!walletCoversPayment()"
+                          [class.text-slate-900]="!walletCoversPayment()">
+                          {{ walletCoversPayment() ? 'Wallet' : 'Card' }}
                         </div>
                       </div>
-                    }
 
-                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
-                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                        Payment Method
-                      </p>
+                      <div class="grid grid-cols-3 gap-2">
+                        <div class="p-3 bg-white/10 rounded-xl border border-white/10">
+                          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                            Wallet
+                          </p>
+                          <p class="mt-1 text-sm font-bold">
+                            {{ config.formatCurrency(walletBalance()) }}
+                          </p>
+                        </div>
 
-                      <div
-                        #cardElementContainer
-                        class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
+                        <div class="p-3 bg-white/10 rounded-xl border border-white/10">
+                          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                            Total
+                          </p>
+                          <p class="mt-1 text-sm font-bold">
+                            {{ config.formatCurrency(walletPaymentRequired()) }}
+                          </p>
+                        </div>
+
+                        <div class="p-3 bg-white/10 rounded-xl border border-white/10">
+                          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                            Card
+                          </p>
+                          <p class="mt-1 text-sm font-bold">
+                            {{ config.formatCurrency(cardFallbackAmount()) }}
+                          </p>
+                        </div>
                       </div>
 
-                      @if (!cardReady() && !cardError()) {
-                        <p class="mt-2 text-xs text-slate-500 font-bold px-2">
-                          Loading card input...
-                        </p>
-                      }
-
-                      @if (cardError()) {
-                        <p class="mt-2 text-xs text-rose-600 font-bold px-2">
-                          {{ cardError() }}
-                        </p>
+                      @if (walletShortfall() > 0) {
+                        <div class="p-3 bg-amber-400/15 rounded-xl border border-amber-300/30">
+                          <p class="text-xs font-bold text-amber-100 flex items-center gap-2">
+                            <ion-icon name="alert-circle"></ion-icon>
+                            Wallet is short by {{ config.formatCurrency(walletShortfall()) }}. We will use your card for this request.
+                          </p>
+                        </div>
+                      } @else {
+                        <div class="p-3 bg-emerald-400/15 rounded-xl border border-emerald-300/30">
+                          <p class="text-xs font-bold text-emerald-100 flex items-center gap-2">
+                            <ion-icon name="wallet-outline"></ion-icon>
+                            Your wallet covers this request. No card authorization needed.
+                          </p>
+                        </div>
                       }
                     </div>
+
+                    @if (cardFallbackRequired()) {
+                      <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                        <div class="flex items-center justify-between">
+                          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                            Card Fallback
+                          </p>
+                          <p class="text-xs font-bold text-slate-700">
+                            {{ config.formatCurrency(cardFallbackAmount()) }}
+                          </p>
+                        </div>
+
+                        <div
+                          #cardElementContainer
+                          class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
+                        </div>
+
+                        @if (!cardReady() && !cardError()) {
+                          <p class="mt-2 text-xs text-slate-500 font-bold px-2">
+                            Loading card input...
+                          </p>
+                        }
+
+                        @if (cardError()) {
+                          <p class="mt-2 text-xs text-rose-600 font-bold px-2">
+                            {{ cardError() }}
+                          </p>
+                        }
+                      </div>
+                    }
                   </div>
                 }
 
@@ -694,20 +712,12 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   [disabled]="!canSubmit()"
                   size="lg"
                   class="w-full shadow-xl shadow-blue-200">
-                 {{
-                  submitting()
-                    ? 'Processing...'
-                    : (
-                        type === ServiceTypeEnum.ERRAND
-                          ? 'Reserve Item Budget & Authorise Card'
-                          : 'Authorise Card'
-                      )
-                  }}
+                 {{ checkoutButtonLabel() }}
                 </app-button>
 
                 <p class="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-6 flex items-center justify-center gap-2">
                   <ion-icon name="shield-checkmark" class="text-emerald-500 text-sm"></ion-icon>
-                  Secure payment via Movabi Pay
+                  {{ paymentSecurityLabel() }}
                 </p>
               </div>
             </form>
@@ -823,11 +833,29 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return this.toMoney(this.fareEstimate()?.total || 0);
     });
 
-    hasInsufficientFunds = computed(() => {
-        if (this.type !== ServiceTypeEnum.ERRAND) return false;
-        const budgetRequired = this.walletBudgetRequired();
-        const balance = this.toMoney(this.walletService.wallet()?.available_balance || 0);
-        return balance < budgetRequired;
+    walletBalance = computed(() => {
+        return this.toMoney(this.walletService.wallet()?.available_balance || 0);
+    });
+
+    walletPaymentRequired = computed(() => {
+        return this.toMoney(this.cardChargeRequired() + this.walletBudgetRequired());
+    });
+
+    walletCoversPayment = computed(() => {
+        const required = this.walletPaymentRequired();
+        return required > 0 && this.walletBalance() >= required;
+    });
+
+    walletShortfall = computed(() => {
+        return this.toMoney(Math.max(0, this.walletPaymentRequired() - this.walletBalance()));
+    });
+
+    cardFallbackRequired = computed(() => {
+        return this.walletPaymentRequired() > 0 && !this.walletCoversPayment();
+    });
+
+    cardFallbackAmount = computed(() => {
+        return this.cardFallbackRequired() ? this.walletPaymentRequired() : 0;
     });
 
     canSubmit = computed(() => {
@@ -835,11 +863,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return false;
         }
 
-        if (this.type === ServiceTypeEnum.ERRAND) {
-            return !this.hasInsufficientFunds() && this.cardReady() && this.cardComplete();
+        if (this.cardFallbackRequired()) {
+            return this.cardReady() && this.cardComplete();
         }
 
-        return this.cardReady() && this.cardComplete();
+        return this.walletPaymentRequired() > 0;
     });
 
     moveSizes = signal([
@@ -890,6 +918,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         this.initForm();
         void this.loadPricing();
+        void this.walletService.fetchWallet();
 
         this.pickupSearch$
             .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
@@ -981,6 +1010,42 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     displayBudgetValue(): string {
         const value = this.budgetValue();
         return value ? String(value) : '';
+    }
+
+    paymentPlanLabel(): string {
+        if (this.walletCoversPayment()) {
+            return 'Wallet covers this request';
+        }
+
+        return 'Card fallback ready';
+    }
+
+    paymentPlanDescription(): string {
+        if (this.walletCoversPayment()) {
+            if (this.type === ServiceTypeEnum.ERRAND && this.walletBudgetRequired() > 0) {
+                return 'Your item budget and service estimate will be reserved from wallet before matching a driver.';
+            }
+
+            return 'Movabi will reserve the request amount from wallet before matching a driver.';
+        }
+
+        return 'Movabi checks wallet first. Because the balance is lower than this request, card payment is used instead.';
+    }
+
+    checkoutButtonLabel(): string {
+        if (this.submitting()) {
+            return 'Processing...';
+        }
+
+        return this.walletCoversPayment()
+            ? 'Request with Wallet'
+            : 'Request & Pay by Card';
+    }
+
+    paymentSecurityLabel(): string {
+        return this.walletCoversPayment()
+            ? 'Secure wallet reservation via Movabi Pay'
+            : 'Secure card fallback via Movabi Pay';
     }
 
     onBudgetInput(value: unknown) {
@@ -1635,20 +1700,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return errandSubmissionError;
         }
 
-        if (!this.card || !this.cardMounted || !this.cardReady()) {
-            return 'Card input is still loading. Please wait a moment.';
-        }
+        const wallet = await this.walletService.fetchWallet();
+        const required = this.walletPaymentRequired();
+        const walletBalance = this.toMoney(wallet?.available_balance || 0);
+        const needsCardFallback = required > 0 && walletBalance < required;
 
-        if (!this.cardComplete()) {
-            return 'Please enter your card details before continuing.';
-        }
+        if (needsCardFallback) {
+            if (!this.card || !this.cardMounted || !this.cardReady()) {
+                return 'Card input is still loading. Please wait a moment.';
+            }
 
-        if (this.type === ServiceTypeEnum.ERRAND) {
-            const wallet = await this.walletService.fetchWallet();
-            const itemBudget = this.walletBudgetRequired();
-
-            if (!wallet || this.toMoney(wallet.available_balance) < itemBudget) {
-                return `Insufficient wallet balance for item budget. You need ${this.config.formatCurrency(itemBudget)} in your wallet.`;
+            if (!this.cardComplete()) {
+                return 'Please enter your card details before continuing.';
             }
         }
 
@@ -1694,7 +1757,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         try {
             const formVal = this.bookingForm.getRawValue();
             const itemBudget = this.walletBudgetRequired();
-            const cardCharge = this.cardChargeRequired();
+            const serviceCharge = this.cardChargeRequired();
+            const totalDue = this.walletPaymentRequired();
+            const walletWillCover = this.walletCoversPayment();
 
             const countryCode = this.config.currentCountry()?.code || 'GB';
             const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
@@ -1709,7 +1774,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 dropoff_lng: this.dropoffLocation.longitude || 0,
 
                 service_type_id: this.serviceType()?.id,
-                total_price: cardCharge,
+                total_price: totalDue,
 
                 distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
                 estimated_distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
@@ -1736,27 +1801,38 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             booking = await this.bookingService.createBooking(bookingData, details, this.type);
             this.lastBookingTime = Date.now();
 
-            if (this.type === ServiceTypeEnum.ERRAND && itemBudget > 0) {
-                loading.message = 'Reserving item budget from wallet...';
-                await this.walletService.reserveErrandFunds(
+            if (walletWillCover) {
+                if (this.type === ServiceTypeEnum.ERRAND && itemBudget > 0) {
+                    loading.message = 'Reserving wallet funds...';
+                    await this.walletService.reserveErrandFunds(
+                        booking.id,
+                        itemBudget,
+                        serviceCharge
+                    );
+                } else {
+                    loading.message = 'Reserving wallet payment...';
+                    await this.walletService.payJobFromWallet(
+                        booking.id,
+                        serviceCharge,
+                        currencyCode
+                    );
+                }
+
+                paymentIntentId = 'wallet_funded';
+            } else {
+                loading.message = 'Initializing card payment...';
+                const { clientSecret } = await this.paymentService.createPaymentIntent(
                     booking.id,
-                    itemBudget,
-                    0
+                    totalDue,
+                    currencyCode,
+                    this.auth.tenantId() || '',
+                    this.pricingService.surgeMultiplier()
                 );
+
+                loading.message = 'Charging card...';
+                const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card!);
+                paymentIntentId = paymentIntent.id;
             }
-
-            loading.message = 'Initializing card payment...';
-            const { clientSecret } = await this.paymentService.createPaymentIntent(
-                booking.id,
-                cardCharge,
-                currencyCode,
-                this.auth.tenantId() || '',
-                this.pricingService.surgeMultiplier()
-            );
-
-            loading.message = 'Charging card...';
-            const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card!);
-            paymentIntentId = paymentIntent.id;
 
             loading.message = this.type === ServiceTypeEnum.ERRAND
                 ? 'Activating errand...'
@@ -1772,7 +1848,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 pickup_source: this.pickupLocation.source,
                 distance_km: ((bookingData.distance_meters || 0) / 1000).toFixed(2),
                 item_budget: itemBudget,
-                card_charge: cardCharge
+                wallet_charge: walletWillCover ? totalDue : 0,
+                card_charge: walletWillCover ? 0 : totalDue,
+                payment_method: walletWillCover ? 'wallet' : 'card'
             });
 
             await loading.dismiss();
@@ -1839,8 +1917,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     ...(isShoppingMode ? { items, budget } : {})
                 },
                 payment_split: {
-                    wallet_budget: budget,
-                    card_service_charge: this.cardChargeRequired()
+                    wallet_budget: this.walletCoversPayment() ? this.walletPaymentRequired() : 0,
+                    card_service_charge: this.walletCoversPayment() ? 0 : this.walletPaymentRequired(),
+                    item_budget: budget,
+                    service_charge: this.cardChargeRequired(),
+                    payment_method: this.walletCoversPayment() ? 'wallet' : 'card'
                 }
             };
         }

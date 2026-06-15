@@ -121,6 +121,28 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 </div>
               </div>
             }
+
+            @if (booking()?.driver_id && driverLiveLabel()) {
+              <div class="absolute left-3 right-3 bottom-3 z-20">
+                <div class="bg-white/95 backdrop-blur rounded-[1.5rem] border border-white/70 shadow-2xl shadow-slate-900/15 p-4">
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="flex items-start gap-3 min-w-0">
+                      <div class="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                        <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
+                      </div>
+
+                      <div class="min-w-0">
+                        <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-1">Live driver</p>
+                        <h3 class="text-base font-display font-black text-slate-950">{{ driverLiveLabel() }}</h3>
+                        <p class="text-xs text-slate-500 font-semibold mt-1">{{ driverLiveSubtext() }}</p>
+                      </div>
+                    </div>
+
+                    <app-badge variant="success">{{ driverLastSeenLabel() }}</app-badge>
+                  </div>
+                </div>
+              </div>
+            }
           </div>
 
           <div class="bg-white rounded-t-[2.5rem] shadow-2xl p-6 space-y-6 -mt-10 relative z-10 max-h-[72%] overflow-y-auto border-t border-slate-100">
@@ -463,6 +485,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     isLoading = signal(true);
     showChat = signal(false);
+    driverDistanceToPickup = signal<number | null>(null);
+    driverEtaToPickup = signal<number | null>(null);
+    driverLastSeenAt = signal<Date | null>(null);
 
     searchCountdownSeconds = signal(DRIVER_SEARCH_WINDOW_SECONDS);
 
@@ -839,6 +864,78 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             serviceType: b.service_slug as ServiceTypeSlug,
             heading: Number(location.heading || 0)
         });
+
+        this.driverLastSeenAt.set(new Date());
+
+        const pickupLat = Number(b.pickup_lat);
+        const pickupLng = Number(b.pickup_lng);
+
+        if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) return;
+
+        this.routing
+            .getRoute({ lat, lng }, { lat: pickupLat, lng: pickupLng })
+            .subscribe({
+                next: (route) => {
+                    if (!route) return;
+
+                    this.driverDistanceToPickup.set(route.distanceMeters);
+                    this.driverEtaToPickup.set(route.durationSeconds);
+
+                    if (['accepted', 'arrived', 'heading_to_pickup'].includes(String(b.status))) {
+                        this.mapComponent?.drawRoute(route);
+                    }
+                },
+                error: (error) => console.warn('Driver live route failed:', error)
+            });
+    }
+
+    driverLiveLabel(): string {
+        const eta = this.driverEtaToPickup();
+
+        if (eta !== null) {
+            return `${this.formatDuration(eta)} away`;
+        }
+
+        if (this.driverLastSeenAt()) {
+            return 'Driver location updating';
+        }
+
+        return '';
+    }
+
+    driverLiveSubtext(): string {
+        const distance = this.driverDistanceToPickup();
+
+        if (distance !== null) {
+            return `${this.formatDistanceMeters(distance)} from pickup. The marker moves as the driver updates.`;
+        }
+
+        return 'Waiting for the driver GPS update.';
+    }
+
+    driverLastSeenLabel(): string {
+        const lastSeen = this.driverLastSeenAt();
+
+        if (!lastSeen) return 'Live';
+
+        const seconds = Math.max(0, Math.round((Date.now() - lastSeen.getTime()) / 1000));
+
+        if (seconds < 10) return 'Now';
+        if (seconds < 60) return `${seconds}s`;
+
+        return `${Math.round(seconds / 60)}m`;
+    }
+
+    private formatDuration(seconds: number | null): string {
+        if (!seconds || !Number.isFinite(seconds)) return 'ETA unavailable';
+        const minutes = Math.max(1, Math.round(seconds / 60));
+        return `${minutes} min`;
+    }
+
+    private formatDistanceMeters(meters: number | null): string {
+        if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
+        if (meters < 1000) return `${Math.round(meters)} m`;
+        return `${(meters / 1000).toFixed(1)} km`;
     }
 
     async cancelBooking(): Promise<void> {
