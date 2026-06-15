@@ -1958,6 +1958,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private getMetadataPayload(formVal: Record<string, unknown>) {
+        if (this.type === ServiceTypeEnum.RIDE) {
+            const passengerCount = this.passengerCount();
+
+            return {
+                ride_details: {
+                    passenger_count: passengerCount,
+                    vehicle_class: passengerCount > 4 ? 'xl' : 'standard',
+                    passenger_surcharge: this.largeRideSurcharge()
+                }
+            };
+        }
+
         if (this.type === ServiceTypeEnum.VAN) {
             return {
                 move_details: {
@@ -2018,8 +2030,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             case ServiceTypeEnum.RIDE:
                 return {
                     passenger_count: formVal['passenger_count'],
-                    vehicle_class: this.passengerCount() > 4 ? 'xl' : 'standard',
-                    passenger_surcharge: this.largeRideSurcharge(),
                     notes: formVal['notes']
                 };
 

@@ -703,3 +703,14 @@ Component update sent to client(s).
 Application bundle generation complete. [1.070 seconds] - 2026-06-15T20:02:27.295Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m               [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                [2m | [22m[36m264.23 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m               [2m | [22m [1mRaw size[22m
+[32mchunk-7BUKGZ65.js[39m  [2m | [22m[2mbooking-request-page[22m[2m | [22m[36m142.93 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.197 seconds] - 2026-06-15T20:14:20.338Z
+
+Page reload sent to client(s).
