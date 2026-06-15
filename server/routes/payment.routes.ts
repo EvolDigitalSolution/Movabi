@@ -219,6 +219,72 @@ router.post('/create-wallet-topup-intent', async (req: Request, res: Response) =
   }
 });
 
+router.post('/confirm-wallet-topup', async (req: Request, res: Response) => {
+  try {
+    const { paymentIntentId, userId, amount } = req.body || {};
+    const requestedAmount = money(amount);
+
+    if (!paymentIntentId || !userId || !requestedAmount) {
+      return res.status(400).json({ error: 'paymentIntentId, userId and positive amount are required' });
+    }
+
+    const pi = await stripe.paymentIntents.retrieve(String(paymentIntentId));
+    const metadataUserId = String(pi.metadata?.userId || '');
+    const metadataType = String(pi.metadata?.type || pi.metadata?.purpose || '');
+    const stripeAmount = money((pi.amount_received || pi.amount) / 100);
+
+    if (pi.status !== 'succeeded') {
+      return res.status(402).json({ error: `Stripe payment is not complete. Current status: ${pi.status}` });
+    }
+
+    if (metadataType !== 'wallet_topup') {
+      return res.status(400).json({ error: 'PaymentIntent is not a wallet top-up' });
+    }
+
+    if (metadataUserId !== String(userId)) {
+      return res.status(403).json({ error: 'PaymentIntent does not belong to this user' });
+    }
+
+    if (stripeAmount < requestedAmount) {
+      return res.status(400).json({ error: 'Stripe amount is lower than requested wallet top-up amount' });
+    }
+
+    const { data, error } = await supabaseAdmin.rpc('finalize_wallet_topup', {
+      p_user_id: userId,
+      p_amount: stripeAmount,
+      p_payment_intent_id: pi.id,
+      p_description: 'Wallet top-up (Stripe verified)'
+    });
+
+    if (error) {
+      console.error('[PaymentRoutes] confirm-wallet-topup RPC failed:', error);
+      return res.status(400).json({
+        error: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+    }
+
+    const { data: wallet } = await supabaseAdmin
+      .from('wallets')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    return res.json({
+      success: true,
+      paymentIntentId: pi.id,
+      amount: stripeAmount,
+      wallet,
+      processed: data
+    });
+  } catch (error: any) {
+    console.error('[PaymentRoutes] confirm-wallet-topup failed:', error);
+    return res.status(500).json({ error: error.message || 'Failed to confirm wallet top-up' });
+  }
+});
+
 router.post('/refund', async (req: Request, res: Response) => {
   try {
     const { paymentIntentId, amount, jobId } = req.body;

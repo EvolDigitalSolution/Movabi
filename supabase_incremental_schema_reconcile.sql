@@ -285,24 +285,100 @@ CREATE OR REPLACE FUNCTION finalize_wallet_topup(
 RETURNS BOOLEAN AS $$
 DECLARE
   already_exists BOOLEAN;
+  v_wallet_id UUID;
+  v_tx_type_col TEXT;
+  v_has_wallet_id BOOLEAN;
+  v_has_stripe_payment_intent_id BOOLEAN;
+  v_amount NUMERIC := ROUND(COALESCE(p_amount, 0)::NUMERIC, 2);
 BEGIN
+  IF v_amount <= 0 THEN
+    RAISE EXCEPTION 'Wallet top-up amount must be greater than zero';
+  END IF;
+
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'wallet_transactions'
+        AND column_name = 'transaction_type'
+    ) THEN 'transaction_type'
+    ELSE 'type'
+  END INTO v_tx_type_col;
+
   SELECT EXISTS (
-    SELECT 1 FROM wallet_transactions WHERE payment_intent_id = p_payment_intent_id
-  ) INTO already_exists;
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'wallet_transactions'
+      AND column_name = 'wallet_id'
+  ) INTO v_has_wallet_id;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'wallet_transactions'
+      AND column_name = 'stripe_payment_intent_id'
+  ) INTO v_has_stripe_payment_intent_id;
+
+  IF v_has_stripe_payment_intent_id THEN
+    EXECUTE
+      'SELECT EXISTS (
+         SELECT 1
+         FROM wallet_transactions
+         WHERE payment_intent_id = $1 OR stripe_payment_intent_id = $1
+       )'
+    INTO already_exists
+    USING p_payment_intent_id;
+  ELSE
+    SELECT EXISTS (
+      SELECT 1 FROM wallet_transactions WHERE payment_intent_id = p_payment_intent_id
+    ) INTO already_exists;
+  END IF;
 
   IF already_exists THEN
     RETURN FALSE;
   END IF;
 
-  INSERT INTO wallet_transactions (user_id, amount, type, payment_intent_id, description)
-  VALUES (p_user_id, p_amount, 'credit', p_payment_intent_id, p_description);
-
   INSERT INTO wallets (user_id, balance, available_balance)
-  VALUES (p_user_id, p_amount, p_amount)
+  VALUES (p_user_id, v_amount, v_amount)
   ON CONFLICT (user_id) DO UPDATE
-  SET balance = wallets.balance + p_amount,
-      available_balance = wallets.available_balance + p_amount,
+  SET balance = COALESCE(wallets.balance, 0) + v_amount,
+      available_balance = COALESCE(wallets.available_balance, 0) + v_amount,
       updated_at = NOW();
+
+  SELECT id
+  INTO v_wallet_id
+  FROM wallets
+  WHERE user_id = p_user_id;
+
+  IF v_has_wallet_id AND v_has_stripe_payment_intent_id THEN
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (wallet_id, user_id, amount, %I, payment_intent_id, stripe_payment_intent_id, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      v_tx_type_col
+    )
+    USING v_wallet_id, p_user_id, v_amount, 'topup', p_payment_intent_id, p_payment_intent_id, p_description;
+  ELSIF v_has_wallet_id THEN
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (wallet_id, user_id, amount, %I, payment_intent_id, description)
+       VALUES ($1, $2, $3, $4, $5, $6)',
+      v_tx_type_col
+    )
+    USING v_wallet_id, p_user_id, v_amount, 'topup', p_payment_intent_id, p_description;
+  ELSIF v_has_stripe_payment_intent_id THEN
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (user_id, amount, %I, payment_intent_id, stripe_payment_intent_id, description)
+       VALUES ($1, $2, $3, $4, $5, $6)',
+      v_tx_type_col
+    )
+    USING p_user_id, v_amount, 'topup', p_payment_intent_id, p_payment_intent_id, p_description;
+  ELSE
+    EXECUTE format(
+      'INSERT INTO wallet_transactions (user_id, amount, %I, payment_intent_id, description)
+       VALUES ($1, $2, $3, $4, $5)',
+      v_tx_type_col
+    )
+    USING p_user_id, v_amount, 'topup', p_payment_intent_id, p_description;
+  END IF;
 
   RETURN TRUE;
 END;

@@ -95,9 +95,9 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
     <ion-content class="bg-slate-50">
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24 overflow-x-hidden">
         @if (job()) {
-          <div class="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-slate-950 rounded-[2rem] p-6 text-white shadow-2xl shadow-blue-600/20">
-            <div class="absolute -right-12 -bottom-16 w-48 h-48 rounded-full bg-white/10 blur-2xl"></div>
-            <ion-icon name="navigate" class="absolute -right-8 -bottom-8 text-[10rem] text-white/10 rotate-12"></ion-icon>
+          <div class="relative overflow-hidden bg-slate-950 rounded-[2rem] p-6 text-white shadow-2xl shadow-slate-900/20">
+            <div class="absolute inset-x-0 top-0 h-1 bg-blue-500"></div>
+            <ion-icon name="navigate" class="absolute -right-8 -bottom-8 text-[10rem] text-white/[0.06] rotate-12"></ion-icon>
 
             <div class="relative z-10">
               <div class="flex items-start justify-between gap-4 mb-8">
@@ -110,13 +110,13 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                     {{ formatStatus(job()?.status) }}
                   </h2>
 
-                  <p class="text-blue-100/85 font-semibold mt-1 text-xs">
+                  <p class="text-white/85 font-semibold mt-1 text-xs">
                     ID: {{ shortId(job()?.id) }}
                   </p>
                 </div>
 
                 <div class="text-right shrink-0">
-                  <p class="text-xs text-blue-100/85 font-semibold mb-1">
+                  <p class="text-xs text-white/85 font-semibold mb-1">
                     Payout
                   </p>
                   <span class="text-3xl font-display font-black">
@@ -129,7 +129,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                 <button
                   type="button"
                   (click)="openMap(job()?.pickup_address)"
-                  class="h-12 rounded-2xl bg-white text-blue-700 font-black text-sm shadow-xl shadow-blue-950/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  class="h-12 rounded-2xl bg-white text-slate-950 font-black text-sm shadow-xl shadow-slate-950/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
                   <ion-icon name="location-outline"></ion-icon>
                   Pickup
@@ -138,7 +138,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                 <button
                   type="button"
                   (click)="openMap(job()?.dropoff_address)"
-                  class="h-12 rounded-2xl bg-white/10 border border-white/15 text-white font-black text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  class="h-12 rounded-2xl bg-white/12 border border-white/25 text-white font-black text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
                   <ion-icon name="flag-outline"></ion-icon>
                   Destination

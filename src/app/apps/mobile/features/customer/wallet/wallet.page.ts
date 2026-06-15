@@ -89,13 +89,12 @@ type WalletTransaction = Record<string, unknown>;
 
       <ion-card
         class="m-0 mb-6 shadow-lg rounded-[2rem] overflow-hidden"
-        style="--background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); --color: #ffffff;"
+        style="--background: #0f172a; --color: #ffffff;"
       >
         <ion-card-content class="py-10 text-center relative">
-          <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-          <div class="absolute bottom-0 left-0 w-24 h-24 bg-indigo-400/20 rounded-full -ml-12 -mb-12 blur-xl"></div>
+          <div class="absolute inset-x-0 top-0 h-1 bg-blue-500"></div>
 
-          <p class="text-white/80 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">
+          <p class="text-white/90 text-xs font-bold mb-3">
             Available Balance
           </p>
 
@@ -184,7 +183,7 @@ type WalletTransaction = Record<string, unknown>;
         <div class="bg-blue-50 p-4 rounded-xl flex gap-3 items-start">
           <ion-icon name="information-circle-outline" class="text-blue-600 text-xl"></ion-icon>
           <p class="text-sm text-blue-800">
-            Funds in your wallet can be used for errands, service fees and item budgets.
+            Wallet balance is credited only after Stripe confirms the top-up, then refreshed from the server.
           </p>
         </div>
 

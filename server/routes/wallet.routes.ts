@@ -42,9 +42,9 @@ router.get('/balance', async (req: Request, res: Response) => {
 
     const { data, error } = await supabaseAdmin
       .from('wallets')
-      .select('balance')
+      .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
 
