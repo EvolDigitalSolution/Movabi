@@ -12,7 +12,7 @@ export class MarkerFactoryService {
     
     const icon = this.getServiceIcon(serviceType, kind);
     const labelHtml = label ? `<div class="movabi-marker__label">${label}</div>` : '';
-    const pulseHtml = kind === 'pickup' ? '<div class="movabi-marker__pulse"></div>' : '';
+    const pulseHtml = kind === 'pickup' || kind === 'driver' ? '<div class="movabi-marker__pulse"></div>' : '';
     
     el.innerHTML = `
       <div class="movabi-marker__wrapper">

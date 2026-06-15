@@ -111,14 +111,24 @@ import { RouteSummary } from '../../../core/models/maps/route-result.model';
     ::ng-deep .movabi-marker--van-moving { --marker-color: #f59e0b; }
     
     ::ng-deep .movabi-marker--driver .movabi-marker__pin {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      background: #0f172a;
+      border: 3px solid white;
+      box-shadow: 0 14px 26px -10px rgb(15 23 42 / 0.55);
       transform: none;
+      transition: transform 0.45s ease, box-shadow 0.25s ease;
     }
     
     ::ng-deep .movabi-marker--driver .movabi-marker__icon {
       transform: none;
+      color: white;
+    }
+
+    ::ng-deep .movabi-marker--driver .movabi-marker__icon svg {
+      width: 22px;
+      height: 22px;
     }
     
     ::ng-deep .movabi-marker__pulse {

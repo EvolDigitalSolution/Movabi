@@ -41,6 +41,7 @@ import { WalletService } from '../../../../../core/services/wallet/wallet.servic
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
 import {
+    Booking,
     ServiceTypeEnum,
     DriverLocation,
     ErrandFunding
@@ -82,7 +83,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
     <ion-content class="bg-slate-50">
       @if (booking()) {
         <div class="flex flex-col h-full">
-          <div class="flex-1 bg-slate-100 relative overflow-hidden min-h-[300px]">
+          <div class="flex-1 bg-slate-100 relative overflow-hidden min-h-[58vh]">
             <app-map #map></app-map>
 
             @if (booking()?.status === 'searching') {
@@ -123,18 +124,18 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
             }
 
             @if (booking()?.driver_id && driverLiveLabel()) {
-              <div class="absolute left-3 right-3 bottom-3 z-20">
-                <div class="bg-white/95 backdrop-blur rounded-[1.5rem] border border-white/70 shadow-2xl shadow-slate-900/15 p-4">
-                  <div class="flex items-start justify-between gap-4">
-                    <div class="flex items-start gap-3 min-w-0">
-                      <div class="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+              <div class="absolute left-3 right-3 bottom-4 z-20 pointer-events-none">
+                <div class="max-w-[22rem] bg-white/92 backdrop-blur rounded-2xl border border-white/70 shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
                         <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
                       </div>
 
                       <div class="min-w-0">
-                        <p class="text-xs text-slate-500 font-semibold mb-1">Live driver</p>
-                        <h3 class="text-base font-display font-black text-slate-950">{{ driverLiveLabel() }}</h3>
-                        <p class="text-xs text-slate-500 font-semibold mt-1">{{ driverLiveSubtext() }}</p>
+                        <p class="text-[11px] text-slate-500 font-semibold">Live driver</p>
+                        <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ driverLiveLabel() }}</h3>
+                        <p class="text-[11px] text-slate-500 font-semibold truncate">{{ driverLiveSubtext() }}</p>
                       </div>
                     </div>
 
@@ -145,7 +146,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
             }
           </div>
 
-          <div class="bg-white rounded-t-[2.5rem] shadow-2xl p-6 space-y-6 -mt-10 relative z-10 max-h-[72%] overflow-y-auto border-t border-slate-100">
+          <div class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-6 relative z-10 max-h-[46%] overflow-y-auto border-t border-slate-100">
             <div class="w-12 h-1 bg-slate-100 rounded-full mx-auto"></div>
 
             <div class="p-5 rounded-[2rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
@@ -826,7 +827,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     });
             }
 
-            this.mapComponent?.setCenter(pickupLng, pickupLat, 14);
+            this.fitTrackingBounds();
         }, 300);
     }
 
@@ -867,13 +868,14 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.driverLastSeenAt.set(new Date());
 
-        const pickupLat = Number(b.pickup_lat);
-        const pickupLng = Number(b.pickup_lng);
+        this.fitTrackingBounds({ lat, lng });
 
-        if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) return;
+        const routeTarget = this.getDriverRouteTarget(b);
+
+        if (!routeTarget) return;
 
         this.routing
-            .getRoute({ lat, lng }, { lat: pickupLat, lng: pickupLng })
+            .getRoute({ lat, lng }, routeTarget)
             .subscribe({
                 next: (route) => {
                     if (!route) return;
@@ -881,12 +883,105 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     this.driverDistanceToPickup.set(route.distanceMeters);
                     this.driverEtaToPickup.set(route.durationSeconds);
 
-                    if (['accepted', 'arrived', 'heading_to_pickup'].includes(String(b.status))) {
+                    if (this.shouldShowLiveDriverRoute(String(b.status))) {
                         this.mapComponent?.drawRoute(route);
+                        this.fitTrackingBounds({ lat, lng }, route.bounds);
                     }
                 },
                 error: (error) => console.warn('Driver live route failed:', error)
             });
+    }
+
+    private getDriverRouteTarget(booking: Booking): { lat: number; lng: number } | null {
+        const status = String(booking.status || '');
+        const dropLat = Number(booking.dropoff_lat);
+        const dropLng = Number(booking.dropoff_lng);
+
+        if (
+            ['in_progress', 'en_route_to_customer', 'collected'].includes(status) &&
+            this.isValidCoordinate(dropLat) &&
+            this.isValidCoordinate(dropLng)
+        ) {
+            return { lat: dropLat, lng: dropLng };
+        }
+
+        const pickupLat = Number(booking.pickup_lat);
+        const pickupLng = Number(booking.pickup_lng);
+
+        if (this.isValidCoordinate(pickupLat) && this.isValidCoordinate(pickupLng)) {
+            return { lat: pickupLat, lng: pickupLng };
+        }
+
+        return null;
+    }
+
+    private shouldShowLiveDriverRoute(status: string): boolean {
+        return [
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'in_progress',
+            'en_route_to_customer',
+            'collected'
+        ].includes(status);
+    }
+
+    private fitTrackingBounds(
+        driver?: { lat: number; lng: number },
+        routeBounds?: [[number, number], [number, number]]
+    ): void {
+        if (!this.mapComponent) return;
+
+        if (routeBounds) {
+            this.mapComponent.fitBounds(routeBounds, {
+                padding: { top: 56, bottom: 92, left: 42, right: 42 },
+                maxZoom: 16,
+                duration: 700
+            });
+            return;
+        }
+
+        const b = this.booking();
+        if (!b) return;
+
+        const points: Array<{ lat: number; lng: number }> = [];
+        const pickup = { lat: Number(b.pickup_lat), lng: Number(b.pickup_lng) };
+        const dropoff = { lat: Number(b.dropoff_lat), lng: Number(b.dropoff_lng) };
+
+        if (this.isValidCoordinate(pickup.lat) && this.isValidCoordinate(pickup.lng)) {
+            points.push(pickup);
+        }
+
+        if (this.isValidCoordinate(dropoff.lat) && this.isValidCoordinate(dropoff.lng)) {
+            points.push(dropoff);
+        }
+
+        if (driver && this.isValidCoordinate(driver.lat) && this.isValidCoordinate(driver.lng)) {
+            points.push(driver);
+        }
+
+        if (points.length === 0) return;
+
+        if (points.length === 1) {
+            this.mapComponent.setCenter(points[0].lng, points[0].lat, driver ? 15 : 14);
+            return;
+        }
+
+        const lngs = points.map((point) => point.lng);
+        const lats = points.map((point) => point.lat);
+
+        this.mapComponent.fitBounds(
+            [
+                [Math.min(...lngs), Math.min(...lats)],
+                [Math.max(...lngs), Math.max(...lats)]
+            ],
+            {
+                padding: { top: 60, bottom: 96, left: 42, right: 42 },
+                maxZoom: 16,
+                duration: 700
+            }
+        );
     }
 
     driverLiveLabel(): string {

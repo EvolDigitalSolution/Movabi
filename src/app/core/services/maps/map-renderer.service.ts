@@ -180,8 +180,8 @@ export class MapRendererService {
       const container = this.map.getContainer();
       const width = container.clientWidth;
       const height = container.clientHeight;
-      const bottomPadding = height > 520 ? 320 : Math.max(80, Math.floor(height * 0.28));
-      const horizontalPadding = width > 420 ? 60 : 32;
+      const bottomPadding = height > 520 ? Math.floor(height * 0.18) : Math.max(56, Math.floor(height * 0.18));
+      const horizontalPadding = width > 420 ? 56 : 28;
 
       if (width > 120 && height > 120) {
         try {
