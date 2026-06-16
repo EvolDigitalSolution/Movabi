@@ -765,33 +765,20 @@ export class BookingService {
     }
 
     async rateBooking(bookingId: string, score: number, comment: string): Promise<void> {
-        const payload = {
-            customer_id: this.auth.currentUser()?.id,
-            score,
-            comment
-        };
+        const user = this.auth.currentUser();
 
-        const { error } = await this.supabase
-            .from('ratings')
-            .insert({
-                ...payload,
-                booking_id: bookingId,
-            });
-
-        if (!error) return;
-
-        if (error.code !== '42703' || !String(error.message || '').includes('booking_id')) {
-            throw error;
+        if (!user?.id) {
+            throw new Error('Please sign in again before rating this booking.');
         }
 
-        const retry = await this.supabase
-            .from('ratings')
-            .insert({
-                ...payload,
-                job_id: bookingId
-            });
-
-        if (retry.error) throw retry.error;
+        await firstValueFrom(
+            this.http.post(this.apiUrlService.getApiUrl('/api/booking/rate'), {
+                jobId: bookingId,
+                customerId: user.id,
+                score,
+                comment
+            })
+        );
     }
 
     async cancelBooking(bookingId: string, reason: string): Promise<any> {

@@ -302,6 +302,14 @@ BEGIN
     END IF;
 END $$;
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_job_customer
+ON public.ratings(job_id, customer_id)
+WHERE job_id IS NOT NULL AND customer_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_booking_customer
+ON public.ratings(booking_id, customer_id)
+WHERE booking_id IS NOT NULL AND customer_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS errand_funding (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID UNIQUE NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

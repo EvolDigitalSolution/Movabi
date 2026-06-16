@@ -342,4 +342,104 @@ router.post('/cancel', async (req: Request, res: Response) => {
     }
 });
 
+router.post('/rate', async (req: Request, res: Response) => {
+    try {
+        const { jobId, customerId, score, comment } = req.body || {};
+        const ratingScore = Number(score);
+
+        if (!jobId || !customerId) {
+            return res.status(400).json({ error: 'jobId and customerId required' });
+        }
+
+        if (!Number.isInteger(ratingScore) || ratingScore < 1 || ratingScore > 5) {
+            return res.status(400).json({ error: 'score must be an integer between 1 and 5' });
+        }
+
+        const job = await getJob(jobId);
+
+        if (job.customer_id !== customerId) {
+            return res.status(403).json({ error: 'You can only rate your own completed booking' });
+        }
+
+        if (job.status !== 'completed') {
+            return res.status(400).json({ error: 'Only completed bookings can be rated' });
+        }
+
+        const basePayload = {
+            customer_id: customerId,
+            driver_id: job.driver_id || null,
+            score: ratingScore,
+            comment: String(comment || '').trim() || null
+        };
+
+        const saveRating = async (
+            payload: Record<string, unknown>,
+            keyColumn: 'job_id' | 'booking_id'
+        ) => {
+            const existing = await supabaseAdmin
+                .from('ratings')
+                .select('id')
+                .eq(keyColumn, jobId)
+                .eq('customer_id', customerId)
+                .maybeSingle();
+
+            if (existing.error && existing.error.code !== 'PGRST116') {
+                return { data: null, error: existing.error };
+            }
+
+            if (existing.data?.id) {
+                return await supabaseAdmin
+                    .from('ratings')
+                    .update(payload)
+                    .eq('id', existing.data.id)
+                    .select('*')
+                    .single();
+            }
+
+            return await supabaseAdmin
+                .from('ratings')
+                .insert(payload)
+                .select('*')
+                .single();
+        };
+
+        let result = await saveRating({
+            ...basePayload,
+            job_id: jobId,
+            booking_id: jobId
+        }, 'job_id');
+
+        if (result.error) {
+            const message = String(result.error.message || '');
+
+            if (result.error.code === '42703' && message.includes('booking_id')) {
+                result = await saveRating({
+                    ...basePayload,
+                    job_id: jobId,
+                }, 'job_id');
+            } else if (result.error.code === '42703' && message.includes('job_id')) {
+                result = await saveRating({
+                    ...basePayload,
+                    booking_id: jobId,
+                }, 'booking_id');
+            }
+        }
+
+        if (result.error) {
+            console.error('[BookingRoutes] rate failed:', result.error);
+            return res.status(400).json({
+                error: result.error.message,
+                code: result.error.code,
+                details: result.error.details,
+                hint: result.error.hint
+            });
+        }
+
+        return res.json({ success: true, rating: result.data });
+    } catch (error: any) {
+        console.error('Rate booking error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to rate booking' });
+    }
+});
+
 export default router;
