@@ -343,14 +343,16 @@ export class AdminService {
   }
 
   async manualAssignDriver(bookingId: string, driverId: string) {
-    return await this.bookingService.updateBookingStatus(
-      bookingId,
-      'assigned',
-      'Admin manually assigned driver',
-      { driver_id: driverId },
-      undefined,
-      true
-    );
+    const { data, error } = await this.supabase.client.rpc('assign_driver_to_job', {
+      p_job_id: bookingId,
+      p_driver_id: driverId
+    });
+
+    if (error || data !== true) {
+      throw new Error(error?.message || 'Driver could not be assigned to this booking.');
+    }
+
+    return this.bookingService.getBooking(bookingId);
   }
 
   async getDriverSubscriptions() {

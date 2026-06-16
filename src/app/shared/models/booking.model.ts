@@ -53,7 +53,7 @@ export interface Vehicle {
     license_plate: string;
     color: string;
     is_verified: boolean;
-    type: 'car' | 'van' | 'motorcycle';
+    type: 'bike' | 'car' | 'standard' | 'xl' | 'small_van' | 'large_van' | 'minibus' | 'van' | 'motorcycle';
     capacity?: string;
 }
 

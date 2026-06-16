@@ -76,6 +76,7 @@ import {
 } from '@shared/ui';
 
 type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
+type MovingVehicleClass = 'small_van' | 'large_van';
 
 @Component({
     selector: 'app-create-job',
@@ -300,6 +301,27 @@ type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
                     </div>
                   </div>
 
+                  <div class="space-y-3">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Van Size</p>
+                    <div class="grid grid-cols-2 gap-3">
+                      @for (option of movingVehicleOptions; track option.id) {
+                        <button
+                          type="button"
+                          (click)="setMovingVehicleClass(option.id)"
+                          [class.bg-blue-600]="moveDetails.vehicleClass === option.id"
+                          [class.text-white]="moveDetails.vehicleClass === option.id"
+                          [class.bg-white]="moveDetails.vehicleClass !== option.id"
+                          [class.text-slate-600]="moveDetails.vehicleClass !== option.id"
+                          class="flex flex-col items-center gap-2 p-4 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95"
+                        >
+                          <ion-icon name="bus-outline" class="text-xl"></ion-icon>
+                          <span class="text-xs font-black">{{ option.label }}</span>
+                          <span class="text-[10px] font-bold opacity-80 text-center">{{ option.helper }}</span>
+                        </button>
+                      }
+                    </div>
+                  </div>
+
                   <div class="grid grid-cols-2 gap-4">
                     <app-input
                       label="Helpers"
@@ -454,6 +476,7 @@ export class CreateJobPage implements AfterViewInit {
         packingAssistance: boolean;
         itemSummary: string;
         notes: string;
+        vehicleClass: MovingVehicleClass;
     } = {
             size: 'small',
             helperCount: 1,
@@ -463,7 +486,8 @@ export class CreateJobPage implements AfterViewInit {
             fragileItems: false,
             packingAssistance: false,
             itemSummary: '',
-            notes: ''
+            notes: '',
+            vehicleClass: 'small_van'
         };
 
     moveSizes: Array<{ id: MoveSize; label: string; icon: string }> = [
@@ -471,6 +495,11 @@ export class CreateJobPage implements AfterViewInit {
         { id: 'medium', label: 'Medium (1-2 rooms)', icon: 'business-outline' },
         { id: 'large', label: 'Large (3-4 rooms)', icon: 'home-outline' },
         { id: 'full-house', label: 'Full House', icon: 'storefront-outline' }
+    ];
+
+    movingVehicleOptions: Array<{ id: MovingVehicleClass; label: string; helper: string }> = [
+        { id: 'small_van', label: 'Small Van', helper: 'Boxes and a few items' },
+        { id: 'large_van', label: 'Large Van', helper: 'Rooms, furniture, full moves' }
     ];
 
     pickupResults = signal<AutocompleteResult[]>([]);
@@ -720,6 +749,14 @@ export class CreateJobPage implements AfterViewInit {
 
     setMoveSize(size: MoveSize): void {
         this.moveDetails.size = size;
+        if ((size === 'large' || size === 'full-house') && this.moveDetails.vehicleClass === 'small_van') {
+            this.moveDetails.vehicleClass = 'large_van';
+        }
+        void this.calculateRouteAndPrice();
+    }
+
+    setMovingVehicleClass(value: MovingVehicleClass): void {
+        this.moveDetails.vehicleClass = value;
         void this.calculateRouteAndPrice();
     }
 
@@ -893,9 +930,10 @@ export class CreateJobPage implements AfterViewInit {
                     fragileItems: !!this.moveDetails.fragileItems
                 }
             });
+            const vehicleSurcharge = this.moveDetails.vehicleClass === 'large_van' ? 12 : 0;
 
             this.estimate = {
-                estimated_price: Number(fare.total || 0),
+                estimated_price: Number(fare.total || 0) + vehicleSurcharge,
                 estimated_distance: distanceKm,
                 estimated_duration: durationSec / 60,
                 pickup_lat: Number(this.pickupLocation.latitude),
@@ -968,6 +1006,8 @@ export class CreateJobPage implements AfterViewInit {
                 city_id: this.selectedCityId || undefined,
                 metadata: {
                     service_type: 'van-moving',
+                    service_vehicle_class: this.moveDetails.vehicleClass,
+                    service_option_surcharge: this.moveDetails.vehicleClass === 'large_van' ? 12 : 0,
                     move_details: {
                         ...this.moveDetails,
                         helperCount: Number(this.moveDetails.helperCount || 0),

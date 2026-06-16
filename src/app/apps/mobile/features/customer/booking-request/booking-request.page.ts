@@ -88,7 +88,7 @@ import { FareEstimate } from '../../../../../core/models/maps/fare-estimate.mode
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
-type VehicleClass = 'bike' | 'standard' | 'xl' | 'car' | 'van';
+type VehicleClass = 'bike' | 'standard' | 'xl' | 'car' | 'small_van' | 'large_van' | 'minibus';
 type PackageSize = 'small' | 'medium' | 'large';
 
 @Component({
@@ -1169,8 +1169,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     rideVehicleLabel(): string {
         const vehicle = this.vehicleClass();
-        if (vehicle === 'xl') return 'XL ride, up to 7 passengers';
-        if (vehicle === 'van') return 'Van ride for extra space';
+        if (vehicle === 'xl' || vehicle === 'minibus') return 'XL ride, up to 7 passengers';
 
         const count = this.passengerCount();
         return count > 4 ? 'XL ride, up to 7 passengers' : 'Standard ride, up to 4 passengers';
@@ -1178,7 +1177,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     largeRideSurcharge(): number {
         const vehicle = this.vehicleClass();
-        if (vehicle === 'van') return 8;
+        if (vehicle === 'minibus') return 6;
         if (vehicle === 'xl') return 4;
         return this.passengerCount() > 4 ? 4 : 0;
     }
@@ -1197,19 +1196,19 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return [
                     { id: 'standard', label: 'Car', helper: '1-4 people', icon: 'car-outline' },
                     { id: 'xl', label: 'XL', helper: '5-7 people', icon: 'people-outline' },
-                    { id: 'van', label: 'Van', helper: 'More space', icon: 'bus-outline' }
+                    { id: 'minibus', label: '7 Seater', helper: 'Group ride', icon: 'bus-outline' }
                 ];
             case ServiceTypeEnum.DELIVERY:
                 return [
                     { id: 'bike', label: 'Bike', helper: 'Fast & small', icon: 'navigate' },
                     { id: 'car', label: 'Car', helper: 'Medium items', icon: 'car-outline' },
-                    { id: 'van', label: 'Van', helper: 'Bulky items', icon: 'bus-outline' }
+                    { id: 'small_van', label: 'Small Van', helper: 'Bulky items', icon: 'bus-outline' }
                 ];
             case ServiceTypeEnum.ERRAND:
                 return [
                     { id: 'bike', label: 'Bike', helper: 'Small errands', icon: 'navigate' },
                     { id: 'car', label: 'Car', helper: 'More bags', icon: 'car-outline' },
-                    { id: 'van', label: 'Van', helper: 'Large pickup', icon: 'bus-outline' }
+                    { id: 'small_van', label: 'Small Van', helper: 'Large pickup', icon: 'bus-outline' }
                 ];
             default:
                 return [];
@@ -1229,7 +1228,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         if (this.type === ServiceTypeEnum.RIDE) {
             const count = this.passengerCount();
-            if ((value === 'xl' || value === 'van') && count < 5) {
+            if ((value === 'xl' || value === 'minibus') && count < 5) {
                 this.bookingForm.get('passenger_count')?.setValue(5, { emitEvent: true });
             }
 
@@ -1249,7 +1248,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private defaultVehicleClass(): VehicleClass {
         if (this.type === ServiceTypeEnum.RIDE) return 'standard';
         if (this.type === ServiceTypeEnum.DELIVERY || this.type === ServiceTypeEnum.ERRAND) return 'bike';
-        return 'van';
+        return 'small_van';
     }
 
     private vehicleSurcharge(serviceSlug = this.getServiceSlug()): number {
@@ -1259,12 +1258,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         if (serviceSlug === 'delivery') {
             const packageSurcharge = this.packageSize() === 'large' ? 3 : this.packageSize() === 'medium' ? 1 : 0;
-            const vehicleSurcharge = vehicle === 'van' ? 6 : vehicle === 'car' ? 1.5 : 0;
+            const vehicleSurcharge = vehicle === 'large_van' ? 9 : vehicle === 'small_van' ? 6 : vehicle === 'car' ? 1.5 : 0;
             return this.toMoney(packageSurcharge + vehicleSurcharge);
         }
 
         if (serviceSlug === 'errand') {
-            return vehicle === 'van' ? 5 : vehicle === 'car' ? 1.5 : 0;
+            return vehicle === 'small_van' || vehicle === 'large_van' ? 5 : vehicle === 'car' ? 1.5 : 0;
         }
 
         return 0;
@@ -1468,7 +1467,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
-                    vehicle_class: ['van', Validators.required],
+                    vehicle_class: ['small_van', Validators.required],
                     size: ['small', Validators.required],
                     helper_count: [1, [Validators.required, Validators.min(0)]],
                     floor_number: [0],

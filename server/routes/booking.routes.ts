@@ -59,7 +59,7 @@ function parseMetadata(value: unknown): Record<string, any> {
     return {};
 }
 
-function requiredVehicleClass(job: any): 'bike' | 'standard' | 'xl' | 'car' | 'van' {
+function requiredVehicleClass(job: any): 'bike' | 'standard' | 'xl' | 'car' | 'small_van' | 'large_van' | 'minibus' {
     const metadata = parseMetadata(job?.metadata);
     const serviceSlug = normalise(job?.service_slug || job?.service_type?.slug);
     const raw = normalise(
@@ -72,11 +72,13 @@ function requiredVehicleClass(job: any): 'bike' | 'standard' | 'xl' | 'car' | 'v
     );
 
     if (raw.includes('bike') || raw.includes('motorcycle') || raw.includes('scooter')) return 'bike';
-    if (raw.includes('van')) return 'van';
+    if (raw.includes('minibus') || raw.includes('7 seater') || raw.includes('7-seater')) return 'minibus';
     if (raw.includes('xl') || raw.includes('7')) return 'xl';
+    if (raw.includes('large_van') || raw.includes('large van') || raw.includes('luton')) return 'large_van';
+    if (raw.includes('small_van') || raw.includes('small van') || raw.includes('van')) return 'small_van';
     if (raw.includes('standard')) return 'standard';
     if (raw.includes('car')) return 'car';
-    if (serviceSlug.includes('van') || serviceSlug.includes('moving')) return 'van';
+    if (serviceSlug.includes('van') || serviceSlug.includes('moving')) return 'small_van';
     if (serviceSlug.includes('delivery') || serviceSlug.includes('errand')) return 'car';
     return 'standard';
 }
@@ -87,8 +89,9 @@ function driverCapabilities(vehicle: any): string[] {
     const combined = normalise(`${vehicle.type || ''} ${vehicle.capacity || ''} ${vehicle.service_class || ''}`);
 
     if (combined.includes('bike') || combined.includes('motorcycle') || combined.includes('scooter')) return ['bike'];
-    if (combined.includes('van')) return ['standard', 'xl', 'car', 'van'];
-    if (combined.includes('xl') || combined.includes('7')) return ['standard', 'xl', 'car'];
+    if (combined.includes('minibus') || combined.includes('7 seater') || combined.includes('7-seater') || combined.includes('xl') || combined.includes('7')) return ['standard', 'xl', 'minibus', 'car'];
+    if (combined.includes('large_van') || combined.includes('large van') || combined.includes('luton')) return ['standard', 'xl', 'car', 'small_van', 'large_van'];
+    if (combined.includes('small_van') || combined.includes('small van') || combined.includes('van')) return ['standard', 'car', 'small_van'];
     return ['standard', 'car'];
 }
 
@@ -98,8 +101,12 @@ function vehicleLabel(value: string): string {
             return 'Bike';
         case 'xl':
             return 'XL car';
-        case 'van':
-            return 'Van';
+        case 'minibus':
+            return '7 seater';
+        case 'small_van':
+            return 'Small van';
+        case 'large_van':
+            return 'Large van';
         case 'car':
         case 'standard':
             return 'Car';

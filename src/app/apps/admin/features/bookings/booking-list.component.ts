@@ -3,6 +3,7 @@ import { AdminService } from '../../services/admin.service';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { Job, ServiceTypeEnum, BookingStatus, DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { BookingService } from '../../../../core/services/booking/booking.service';
+import { VehicleCompatibilityService } from '../../../../core/services/driver/vehicle-compatibility.service';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { BadgeComponent } from '../../../../shared/ui/badge';
@@ -61,7 +62,7 @@ import { CardComponent } from '../../../../shared/ui/card';
       </div>
 
       <div class="overflow-x-auto max-w-full">
-        <table class="w-full text-left border-collapse min-w-[980px]">
+        <table class="w-full text-left border-collapse min-w-[1120px]">
           <thead>
             <tr class="bg-slate-50/70">
               <th class="th-cell">Booking</th>
@@ -138,9 +139,14 @@ import { CardComponent } from '../../../../shared/ui/card';
                 </td>
 
                 <td class="px-4 py-4">
-                  <span class="text-sm font-bold text-slate-900">
-                    {{ getCurrency(booking) }}{{ toMoney(booking.price) }}
-                  </span>
+                  <div class="min-w-[120px]">
+                    <span class="text-sm font-bold text-slate-900">
+                      {{ getCurrency(booking) }}{{ toMoney(booking.price) }}
+                    </span>
+                    <p class="text-[11px] text-slate-500 font-semibold mt-1">
+                      {{ formatStatus(paymentStatus(booking)) }}
+                    </p>
+                  </div>
                 </td>
 
                 <td class="px-4 py-4">
@@ -299,8 +305,13 @@ import { CardComponent } from '../../../../shared/ui/card';
                     >
                       <option value="" class="bg-slate-900">Select a driver...</option>
                       @for (driver of drivers(); track driver.id) {
-                        <option [value]="driver.id" [selected]="driver.id === selectedBooking()!.driver_id" class="bg-slate-900">
-                          {{ getPersonName(driver, 'Driver') }} — {{ driver.status || 'unknown' }}
+                        <option
+                          [value]="driver.id"
+                          [selected]="driver.id === selectedBooking()!.driver_id"
+                          [disabled]="!isDriverCompatible(selectedBooking(), driver)"
+                          class="bg-slate-900"
+                        >
+                          {{ getPersonName(driver, 'Driver') }} - {{ getDriverVehicleLabel(driver) }} - {{ isDriverCompatible(selectedBooking(), driver) ? (driver.status || 'unknown') : 'not suitable' }}
                         </option>
                       }
                     </select>
@@ -356,13 +367,19 @@ import { CardComponent } from '../../../../shared/ui/card';
                   <p class="text-3xl font-display font-bold tracking-tight">
                     {{ getCurrency(selectedBooking()) }}{{ toMoney(selectedBooking()!.price) }}
                   </p>
+                  <p class="text-sm text-white/85 font-semibold mt-2">
+                    Payment: {{ formatStatus(paymentStatus(selectedBooking())) }}
+                  </p>
                 </div>
 
-                <div class="text-right">
+                <div class="text-right space-y-2">
                   <p class="text-blue-100/80 text-[10px] font-bold uppercase tracking-widest mb-1">Service Type</p>
                   <app-badge variant="primary" class="bg-white/20 text-white border-white/30">
                     {{ selectedBooking()!.service_slug || 'booking' }}
                   </app-badge>
+                  <p class="text-sm text-white/85 font-semibold">
+                    Needs {{ getRequiredVehicleLabel(selectedBooking()) }}
+                  </p>
                 </div>
               </div>
 
@@ -536,6 +553,7 @@ export class BookingListComponent implements OnInit {
     private adminService = inject(AdminService);
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
+    private vehicleCompatibility = inject(VehicleCompatibilityService);
 
     ServiceTypeEnum = ServiceTypeEnum;
 
@@ -599,7 +617,9 @@ export class BookingListComponent implements OnInit {
                 booking.driver?.first_name,
                 booking.driver?.last_name,
                 booking.driver?.email,
-                booking.driver?.phone
+                booking.driver?.phone,
+                this.paymentStatus(booking),
+                this.getRequiredVehicleLabel(booking)
             ].filter(Boolean).join(' ').toLowerCase();
 
             const matchesSearch = !term || searchText.includes(term);
@@ -826,6 +846,32 @@ export class BookingListComponent implements OnInit {
 
     toMoney(value: unknown): string {
         return Number(value || 0).toFixed(2);
+    }
+
+    paymentStatus(booking: any): string {
+        return String(booking?.payment_status || 'pending');
+    }
+
+    getRequiredVehicleLabel(booking: Job | null | undefined): string {
+        return this.vehicleCompatibility.getRequiredLabel(booking as any);
+    }
+
+    getDriverVehicle(driver: (DriverProfile & { vehicles?: Vehicle[] }) | null | undefined): Vehicle | null {
+        if (!driver) return null;
+        return Array.isArray((driver as any).vehicles)
+            ? ((driver as any).vehicles[0] || null)
+            : ((driver as any).vehicle || null);
+    }
+
+    getDriverVehicleLabel(driver: (DriverProfile & { vehicles?: Vehicle[] }) | null | undefined): string {
+        return this.vehicleCompatibility.getVehicleLabel(this.getDriverVehicle(driver));
+    }
+
+    isDriverCompatible(
+        booking: Job | null | undefined,
+        driver: (DriverProfile & { vehicles?: Vehicle[] }) | null | undefined
+    ): boolean {
+        return this.vehicleCompatibility.isCompatible(booking as any, this.getDriverVehicle(driver));
     }
 
     asStringArray(value: unknown): string[] {

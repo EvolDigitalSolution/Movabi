@@ -45,7 +45,7 @@ import { ButtonComponent, BadgeComponent } from '@shared/ui';
 
 type DocumentType = 'license' | 'insurance';
 type StripeMessageType = 'success' | 'warning';
-type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'van';
+type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'small_van' | 'large_van';
 
 type DriverOnboardingDraft = {
     form?: Record<string, unknown>;
@@ -534,8 +534,9 @@ export class OnboardingPage implements OnInit {
     vehicleClassOptions: Array<{ id: DriverVehicleClass; label: string; helper: string; icon: string }> = [
         { id: 'bike', label: 'Bike', helper: 'Small delivery and errands', icon: 'bicycle-outline' },
         { id: 'standard', label: 'Car', helper: 'Ride, errands, package delivery', icon: 'car-sport-outline' },
-        { id: 'xl', label: 'XL car', helper: 'Standard plus 5-7 passengers', icon: 'people-outline' },
-        { id: 'van', label: 'Van', helper: 'Moving, bulky jobs, large packages', icon: 'bus-outline' }
+        { id: 'xl', label: 'XL / 7 Seater', helper: 'Standard plus 5-7 passengers', icon: 'people-outline' },
+        { id: 'small_van', label: 'Small Van', helper: 'Bulky delivery and small moves', icon: 'bus-outline' },
+        { id: 'large_van', label: 'Large Van', helper: 'Furniture and full moves', icon: 'bus-outline' }
     ];
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
@@ -784,14 +785,15 @@ export class OnboardingPage implements OnInit {
         const capacity = String((vehicle as any)?.capacity || '').toLowerCase();
 
         if (type.includes('motorcycle') || type.includes('bike') || capacity.includes('bike')) return 'bike';
-        if (type.includes('van') || capacity.includes('van')) return 'van';
+        if (capacity.includes('large_van') || capacity.includes('large van')) return 'large_van';
+        if (type.includes('van') || capacity.includes('small_van') || capacity.includes('van')) return 'small_van';
         if (capacity.includes('xl') || capacity.includes('7')) return 'xl';
         return 'standard';
     }
 
     private vehicleTypeFromClass(value: DriverVehicleClass): 'car' | 'van' | 'motorcycle' {
         if (value === 'bike') return 'motorcycle';
-        if (value === 'van') return 'van';
+        if (value === 'small_van' || value === 'large_van') return 'van';
         return 'car';
     }
 

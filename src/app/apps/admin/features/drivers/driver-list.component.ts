@@ -149,8 +149,13 @@ type AdminDriver = DriverProfile & {
 
                       <div class="flex gap-2 mt-1">
                         <span class="mini-line">{{ getVehiclePlate(driver) }}</span>
-                        <span class="mini-line">•</span>
+                        <span class="mini-line">-</span>
                         <span class="mini-line">{{ getVehicleColor(driver) }}</span>
+                      </div>
+
+                      <div class="flex flex-wrap gap-1.5 mt-2">
+                        <span class="vehicle-chip">{{ getVehicleClassLabel(driver) }}</span>
+                        <span class="vehicle-chip">{{ getVehicleCapacityLabel(driver) }}</span>
                       </div>
                     </div>
                   } @else {
@@ -361,6 +366,21 @@ type AdminDriver = DriverProfile & {
                     <span class="detail-muted">Year:</span>
                     <span class="detail-value">{{ getVehicle(selectedDriver())?.year || 'Missing' }}</span>
                   </div>
+
+                  <div>
+                    <span class="detail-muted">Class:</span>
+                    <span class="detail-value">{{ getVehicleClassLabel(selectedDriver()) }}</span>
+                  </div>
+
+                  <div>
+                    <span class="detail-muted">Capacity:</span>
+                    <span class="detail-value">{{ getVehicleCapacityLabel(selectedDriver()) }}</span>
+                  </div>
+
+                  <div class="sm:col-span-2">
+                    <span class="detail-muted">Can Handle:</span>
+                    <span class="detail-value">{{ getVehicleCapabilitySummary(selectedDriver()) }}</span>
+                  </div>
                 </div>
               } @else {
                 <p class="text-sm text-rose-500 font-semibold mt-2">No vehicle details found.</p>
@@ -546,6 +566,19 @@ type AdminDriver = DriverProfile & {
       color: rgb(100 116 139);
     }
 
+    .vehicle-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: rgb(239 246 255);
+      color: rgb(37 99 235);
+      border: 1px solid rgb(219 234 254);
+      padding: 0.2rem 0.5rem;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
     .doc-pill {
       font-size: 0.75rem;
       font-weight: 700;
@@ -715,7 +748,11 @@ export class DriverListComponent implements OnInit {
                 this.getVehiclePlate(driver),
                 vehicle?.make,
                 vehicle?.model,
-                vehicle?.color
+                vehicle?.color,
+                vehicle?.type,
+                vehicle?.capacity,
+                this.getVehicleClassLabel(driver),
+                this.getVehicleCapacityLabel(driver)
             ]
                 .map((item) => this.safeLower(item))
                 .join(' ');
@@ -856,6 +893,50 @@ export class DriverListComponent implements OnInit {
     getVehicleColor(driver: any): string {
         const vehicle = this.getVehicle(driver);
         return vehicle?.color || 'No colour';
+    }
+
+    getVehicleClassLabel(driver: any): string {
+        const vehicle = this.getVehicle(driver);
+        const raw = this.safeLower(vehicle?.type || vehicle?.service_class || vehicle?.capacity);
+
+        if (!vehicle) return 'No class';
+        if (raw.includes('bike') || raw.includes('motorcycle') || raw.includes('scooter')) return 'Bike';
+        if (raw.includes('large_van') || raw.includes('large van') || raw.includes('luton')) return 'Large van';
+        if (raw.includes('small_van') || raw.includes('small van')) return 'Small van';
+        if (raw.includes('minibus') || raw.includes('7') || raw.includes('xl')) return 'XL / 7 seater';
+        if (raw.includes('van')) return 'Small van';
+        return 'Car';
+    }
+
+    getVehicleCapacityLabel(driver: any): string {
+        const vehicle = this.getVehicle(driver);
+        const raw = String(vehicle?.capacity || '').trim();
+
+        if (!vehicle) return 'Capacity missing';
+        if (!raw) return this.getVehicleClassLabel(driver) === 'XL / 7 seater' ? 'Up to 7 seats' : 'Up to 4 seats';
+
+        return raw
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    getVehicleCapabilitySummary(driver: any): string {
+        const label = this.getVehicleClassLabel(driver);
+
+        switch (label) {
+            case 'Bike':
+                return 'Small delivery requests';
+            case 'Small van':
+                return 'Car, delivery, errand and small van moves';
+            case 'Large van':
+                return 'Car, XL, delivery, errand and all van moves';
+            case 'XL / 7 seater':
+                return 'Car, XL and 7 seater ride requests';
+            case 'Car':
+                return 'Standard ride, errand and car delivery';
+            default:
+                return 'Vehicle capabilities need review';
+        }
     }
 
     formatDate(value: string | null | undefined): string {

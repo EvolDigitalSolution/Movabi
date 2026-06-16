@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { Booking, ServiceTypeEnum, Vehicle } from '@shared/models/booking.model';
 
-type RequiredVehicleClass = 'bike' | 'standard' | 'xl' | 'car' | 'van';
-type DriverCapability = 'bike' | 'standard' | 'xl' | 'car' | 'van';
+type RequiredVehicleClass = 'bike' | 'standard' | 'xl' | 'car' | 'small_van' | 'large_van' | 'minibus';
+type DriverCapability = 'bike' | 'standard' | 'xl' | 'car' | 'small_van' | 'large_van' | 'minibus';
 
 @Injectable({
     providedIn: 'root'
@@ -34,7 +34,7 @@ export class VehicleCompatibilityService {
         if (normalized) return normalized;
 
         if (serviceSlug === ServiceTypeEnum.VAN || serviceSlug.includes('van') || serviceSlug.includes('moving')) {
-            return 'van';
+            return 'small_van';
         }
 
         if (serviceSlug === ServiceTypeEnum.RIDE || serviceSlug.includes('ride')) {
@@ -64,12 +64,16 @@ export class VehicleCompatibilityService {
             return ['bike'];
         }
 
-        if (combined.includes('van')) {
-            return ['standard', 'xl', 'car', 'van'];
+        if (combined.includes('minibus') || combined.includes('7 seater') || combined.includes('7-seater') || combined.includes('xl') || combined.includes('7')) {
+            return ['standard', 'xl', 'minibus', 'car'];
         }
 
-        if (combined.includes('xl') || combined.includes('7')) {
-            return ['standard', 'xl', 'car'];
+        if (combined.includes('large_van') || combined.includes('large van') || combined.includes('luton')) {
+            return ['standard', 'xl', 'car', 'small_van', 'large_van'];
+        }
+
+        if (combined.includes('small_van') || combined.includes('small van') || combined.includes('van')) {
+            return ['standard', 'car', 'small_van'];
         }
 
         return ['standard', 'car'];
@@ -85,8 +89,12 @@ export class VehicleCompatibilityService {
                 return 'XL car';
             case 'car':
                 return 'Car';
-            case 'van':
-                return 'Van';
+            case 'minibus':
+                return '7 seater';
+            case 'small_van':
+                return 'Small van';
+            case 'large_van':
+                return 'Large van';
             default:
                 return 'Vehicle';
         }
@@ -95,7 +103,9 @@ export class VehicleCompatibilityService {
     getVehicleLabel(vehicle: Vehicle | null | undefined): string {
         const capabilities = this.getDriverCapabilities(vehicle);
 
-        if (capabilities.includes('van')) return 'Van';
+        if (capabilities.includes('large_van')) return 'Large van';
+        if (capabilities.includes('small_van')) return 'Small van';
+        if (capabilities.includes('minibus')) return '7 seater';
         if (capabilities.includes('xl')) return 'XL car';
         if (capabilities.includes('bike')) return 'Bike';
         if (capabilities.includes('car')) return 'Car';
@@ -106,8 +116,10 @@ export class VehicleCompatibilityService {
     private normalizeRequired(value: string): RequiredVehicleClass | null {
         if (!value) return null;
         if (value.includes('bike') || value.includes('motorcycle') || value.includes('scooter')) return 'bike';
-        if (value.includes('van')) return 'van';
+        if (value.includes('minibus') || value.includes('7 seater') || value.includes('7-seater')) return 'minibus';
         if (value.includes('xl') || value.includes('7')) return 'xl';
+        if (value.includes('large_van') || value.includes('large van') || value.includes('luton')) return 'large_van';
+        if (value.includes('small_van') || value.includes('small van') || value.includes('van')) return 'small_van';
         if (value.includes('standard')) return 'standard';
         if (value.includes('car')) return 'car';
         return null;

@@ -123,7 +123,7 @@ BEGIN
 
         UPDATE public.vehicles
         SET type = COALESCE(NULLIF(type, ''), 'car'),
-            capacity = COALESCE(NULLIF(capacity, ''), CASE WHEN type = 'van' THEN 'van' ELSE 'standard' END)
+            capacity = COALESCE(NULLIF(capacity, ''), CASE WHEN type = 'van' THEN 'small_van' ELSE 'standard' END)
         WHERE type IS NULL
            OR type = ''
            OR capacity IS NULL
@@ -847,16 +847,20 @@ BEGIN
 
   IF v_required LIKE '%bike%' OR v_required LIKE '%motorcycle%' OR v_required LIKE '%scooter%' THEN
     v_required := 'bike';
-  ELSIF v_required LIKE '%van%' THEN
-    v_required := 'van';
+  ELSIF v_required LIKE '%minibus%' OR v_required LIKE '%7 seater%' OR v_required LIKE '%7-seater%' THEN
+    v_required := 'minibus';
   ELSIF v_required LIKE '%xl%' OR v_required LIKE '%7%' THEN
     v_required := 'xl';
+  ELSIF v_required LIKE '%large_van%' OR v_required LIKE '%large van%' OR v_required LIKE '%luton%' THEN
+    v_required := 'large_van';
+  ELSIF v_required LIKE '%small_van%' OR v_required LIKE '%small van%' OR v_required LIKE '%van%' THEN
+    v_required := 'small_van';
   ELSIF v_required LIKE '%standard%' THEN
     v_required := 'standard';
   ELSIF v_required LIKE '%car%' THEN
     v_required := 'car';
   ELSIF LOWER(v_service_slug) LIKE '%van%' OR LOWER(v_service_slug) LIKE '%moving%' THEN
-    v_required := 'van';
+    v_required := 'small_van';
   ELSIF LOWER(v_service_slug) LIKE '%delivery%' OR LOWER(v_service_slug) LIKE '%errand%' THEN
     v_required := 'car';
   ELSE
@@ -883,12 +887,16 @@ BEGIN
     RETURN v_required = 'bike';
   END IF;
 
-  IF v_vehicle_text LIKE '%van%' THEN
-    RETURN v_required IN ('standard', 'xl', 'car', 'van');
+  IF v_vehicle_text LIKE '%minibus%' OR v_vehicle_text LIKE '%7 seater%' OR v_vehicle_text LIKE '%7-seater%' OR v_vehicle_text LIKE '%xl%' OR v_vehicle_text LIKE '%7%' THEN
+    RETURN v_required IN ('standard', 'xl', 'minibus', 'car');
   END IF;
 
-  IF v_vehicle_text LIKE '%xl%' OR v_vehicle_text LIKE '%7%' THEN
-    RETURN v_required IN ('standard', 'xl', 'car');
+  IF v_vehicle_text LIKE '%large_van%' OR v_vehicle_text LIKE '%large van%' OR v_vehicle_text LIKE '%luton%' THEN
+    RETURN v_required IN ('standard', 'xl', 'car', 'small_van', 'large_van');
+  END IF;
+
+  IF v_vehicle_text LIKE '%small_van%' OR v_vehicle_text LIKE '%small van%' OR v_vehicle_text LIKE '%van%' THEN
+    RETURN v_required IN ('standard', 'car', 'small_van');
   END IF;
 
   RETURN v_required IN ('standard', 'car');

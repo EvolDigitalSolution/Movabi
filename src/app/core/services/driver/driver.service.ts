@@ -477,7 +477,10 @@ export class DriverService {
 
     private defaultCapacityForType(value: unknown): string {
         const type = this.normalizeVehicleType(value);
-        if (type === 'van') return 'van';
+        if (type === 'van') {
+            const raw = String(value || '').toLowerCase();
+            return raw.includes('large') || raw.includes('luton') ? 'large_van' : 'small_van';
+        }
         if (type === 'motorcycle') return 'bike';
         return 'standard';
     }
