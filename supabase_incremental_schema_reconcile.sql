@@ -109,6 +109,28 @@ BEGIN
 END $$;
 
 -- PART 6 — Wallets & Transactions
+-- PART 5B - Driver Vehicle Capability Hardening
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vehicles') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'type') THEN
+            ALTER TABLE public.vehicles ADD COLUMN type TEXT DEFAULT 'car';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'capacity') THEN
+            ALTER TABLE public.vehicles ADD COLUMN capacity TEXT DEFAULT 'standard';
+        END IF;
+
+        UPDATE public.vehicles
+        SET type = COALESCE(NULLIF(type, ''), 'car'),
+            capacity = COALESCE(NULLIF(capacity, ''), CASE WHEN type = 'van' THEN 'van' ELSE 'standard' END)
+        WHERE type IS NULL
+           OR type = ''
+           OR capacity IS NULL
+           OR capacity = '';
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID UNIQUE NOT NULL,
@@ -200,6 +222,14 @@ BEGIN
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'no_driver_reason') THEN
             ALTER TABLE public.jobs ADD COLUMN no_driver_reason TEXT;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'accepted_driver_id') THEN
+            ALTER TABLE public.jobs ADD COLUMN accepted_driver_id UUID;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'accepted_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN accepted_at TIMESTAMPTZ;
         END IF;
 END $$;
 
@@ -780,6 +810,91 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Driver Vehicle Compatibility
+CREATE OR REPLACE FUNCTION driver_vehicle_can_accept_job(
+  p_job_id UUID,
+  p_driver_id UUID
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_required TEXT;
+  v_service_slug TEXT;
+  v_metadata JSONB;
+  v_vehicle RECORD;
+  v_vehicle_text TEXT;
+BEGIN
+  SELECT
+    COALESCE(st.slug::TEXT, st.name::TEXT, j.metadata->>'service_slug', ''),
+    COALESCE(j.metadata, '{}'::jsonb)
+  INTO v_service_slug, v_metadata
+  FROM jobs j
+  LEFT JOIN service_types st ON st.id = j.service_type_id
+  WHERE j.id = p_job_id;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  v_required := LOWER(COALESCE(
+    v_metadata->>'service_vehicle_class',
+    v_metadata->>'vehicle_class',
+    v_metadata->>'vehicleClass',
+    v_metadata #>> '{ride_details,vehicle_class}',
+    v_metadata #>> '{delivery_details,vehicleClass}',
+    v_metadata #>> '{errand_details,vehicleClass}',
+    ''
+  ));
+
+  IF v_required LIKE '%bike%' OR v_required LIKE '%motorcycle%' OR v_required LIKE '%scooter%' THEN
+    v_required := 'bike';
+  ELSIF v_required LIKE '%van%' THEN
+    v_required := 'van';
+  ELSIF v_required LIKE '%xl%' OR v_required LIKE '%7%' THEN
+    v_required := 'xl';
+  ELSIF v_required LIKE '%standard%' THEN
+    v_required := 'standard';
+  ELSIF v_required LIKE '%car%' THEN
+    v_required := 'car';
+  ELSIF LOWER(v_service_slug) LIKE '%van%' OR LOWER(v_service_slug) LIKE '%moving%' THEN
+    v_required := 'van';
+  ELSIF LOWER(v_service_slug) LIKE '%delivery%' OR LOWER(v_service_slug) LIKE '%errand%' THEN
+    v_required := 'car';
+  ELSE
+    v_required := 'standard';
+  END IF;
+
+  SELECT *
+  INTO v_vehicle
+  FROM vehicles
+  WHERE user_id = p_driver_id
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  v_vehicle_text := LOWER(
+    COALESCE(to_jsonb(v_vehicle)->>'type', '') || ' ' ||
+    COALESCE(to_jsonb(v_vehicle)->>'capacity', '') || ' ' ||
+    COALESCE(to_jsonb(v_vehicle)->>'service_class', '')
+  );
+
+  IF v_vehicle_text LIKE '%bike%' OR v_vehicle_text LIKE '%motorcycle%' OR v_vehicle_text LIKE '%scooter%' THEN
+    RETURN v_required = 'bike';
+  END IF;
+
+  IF v_vehicle_text LIKE '%van%' THEN
+    RETURN v_required IN ('standard', 'xl', 'car', 'van');
+  END IF;
+
+  IF v_vehicle_text LIKE '%xl%' OR v_vehicle_text LIKE '%7%' THEN
+    RETURN v_required IN ('standard', 'xl', 'car');
+  END IF;
+
+  RETURN v_required IN ('standard', 'car');
+END;
+$$ LANGUAGE plpgsql;
+
 -- Assign Driver Safely
 CREATE OR REPLACE FUNCTION assign_driver_to_job(
   p_job_id UUID,
@@ -787,12 +902,40 @@ CREATE OR REPLACE FUNCTION assign_driver_to_job(
 )
 RETURNS BOOLEAN AS $$
 BEGIN
+  IF NOT driver_vehicle_can_accept_job(p_job_id, p_driver_id) THEN
+    RAISE EXCEPTION 'Driver vehicle is not compatible with this request';
+  END IF;
+
   UPDATE jobs
   SET driver_id = p_driver_id,
       status = 'assigned',
       updated_at = NOW()
   WHERE id = p_job_id
-    AND status = 'searching'
+    AND status IN ('pending', 'requested', 'searching')
+    AND driver_id IS NULL;
+
+  RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION accept_searching_job(
+  p_job_id UUID,
+  p_driver_id UUID
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+  IF NOT driver_vehicle_can_accept_job(p_job_id, p_driver_id) THEN
+    RAISE EXCEPTION 'Driver vehicle is not compatible with this request';
+  END IF;
+
+  UPDATE jobs
+  SET driver_id = p_driver_id,
+      accepted_driver_id = p_driver_id,
+      status = 'accepted',
+      accepted_at = NOW(),
+      updated_at = NOW()
+  WHERE id = p_job_id
+    AND status IN ('pending', 'requested', 'searching')
     AND driver_id IS NULL;
 
   RETURN FOUND;

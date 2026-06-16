@@ -420,3 +420,234 @@ websocket connection issues.
           ╵                                          [32m~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'displayPickupResults' does not exist on type 'CreateJobPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/van-moving/create-job.page.ts:189:48:
+[37m      189 │ ... @if (showPickupResults() && [32mdisplayPickupResults[37m().length > 0) {
+          ╵                                 [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'displayPickupResults' does not exist on type 'CreateJobPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/van-moving/create-job.page.ts:191:40:
+[37m      191 │ ...     @for (result of [32mdisplayPickupResults[37m(); track result.labe...
+          ╵                         [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'displayDropoffResults' does not exist on type 'CreateJobPage'. Did you mean 'dropoffResults'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/van-moving/create-job.page.ts:221:49:
+[37m      221 │ ...if (showDropoffResults() && [32mdisplayDropoffResults[37m().length > 0) {
+          ╵                                [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'displayDropoffResults' does not exist on type 'CreateJobPage'. Did you mean 'dropoffResults'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/van-moving/create-job.page.ts:223:40:
+[37m      223 │ ...     @for (result of [32mdisplayDropoffResults[37m(); track result.lab...
+          ╵                         [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'recentLocationResults' does not exist on type 'CreateJobPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/van-moving/create-job.page.ts:484:19:
+[37m      484 │             : this.[32mrecentLocationResults[37m('pickup');
+          ╵                    [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'recentLocationResults' does not exist on type 'CreateJobPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/van-moving/create-job.page.ts:490:19:
+[37m      490 │             : this.[32mrecentLocationResults[37m('dropoff');
+          ╵                    [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'selectedVehicleLabel' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:251:74:
+[37m      251 │ ...m font-bold text-slate-900 mt-1">{{ [32mselectedVehicleLabel[37m() }}</p>
+          ╵                                        [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'selectedVehicleIcon' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:254:40:
+[37m      254 │ ...    <ion-icon [name]="[32mselectedVehicleIcon[37m()" class="text-xl"><...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleOptions' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:259:36:
+[37m      259 │ ...             @for (option of [32mvehicleOptions[37m(); track option.id) {
+          ╵                                 [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'setVehicleClass' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:262:33:
+[37m      262 │                         (click)="[32msetVehicleClass[37m(option.id)"
+          ╵                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClass' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:263:45:
+[37m      263 │ ...               [class.bg-blue-600]="[32mvehicleClass[37m() === option.id"
+          ╵                                        [32m~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClass' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:264:44:
+[37m      264 │ ...                [class.text-white]="[32mvehicleClass[37m() === option.id"
+          ╵                                        [32m~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClass' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:265:49:
+[37m      265 │ ...           [class.border-blue-600]="[32mvehicleClass[37m() === option.id"
+          ╵                                        [32m~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClass' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:266:42:
+[37m      266 │ ...                  [class.bg-white]="[32mvehicleClass[37m() !== option.id"
+          ╵                                        [32m~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClass' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:267:48:
+[37m      267 │ ...            [class.text-slate-700]="[32mvehicleClass[37m() !== option.id"
+          ╵                                        [32m~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSizeOptions' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:492:36:
+[37m      492 │ ...               @for (size of [32mpackageSizeOptions[37m; track size.id) {
+          ╵                                 [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'setPackageSize' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:495:35:
+[37m      495 │                           (click)="[32msetPackageSize[37m(size.id)"
+          ╵                                    [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSize' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:496:47:
+[37m      496 │ ...                  [class.bg-blue-600]="[32mpackageSize[37m() === size.id"
+          ╵                                           [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSize' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:497:46:
+[37m      497 │ ...                   [class.text-white]="[32mpackageSize[37m() === size.id"
+          ╵                                           [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSize' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:498:51:
+[37m      498 │ ...              [class.border-blue-600]="[32mpackageSize[37m() === size.id"
+          ╵                                           [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSize' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:499:44:
+[37m      499 │ ...                     [class.bg-white]="[32mpackageSize[37m() !== size.id"
+          ╵                                           [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSize' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:500:50:
+[37m      500 │ ...               [class.text-slate-700]="[32mpackageSize[37m() !== size.id"
+          ╵                                           [32m~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceVehicleLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:233:19:
+[37m      233 │               @if ([32mserviceVehicleLabel[37m()) {
+          ╵                    [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceVehicleLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:236:69:
+[37m      236 │ ...-sm font-black text-slate-950">{{ [32mserviceVehicleLabel[37m() }}</span>
+          ╵                                      [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSizeLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:263:23:
+[37m      263 │                   @if ([32mpackageSizeLabel[37m()) {
+          ╵                        [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'packageSizeLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:266:73:
+[37m      266 │ ...ext-sm font-black text-slate-950">{{ [32mpackageSizeLabel[37m() }}</span>
+          ╵                                         [32m~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'jobMetadata' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:587:30:
+[37m      587 │         const metadata = this.[32mjobMetadata[37m();
+          ╵                               [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'jobMetadata' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:616:30:
+[37m      616 │         const metadata = this.[32mjobMetadata[37m();
+          ╵                               [32m~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'setVehicleClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:326:33:
+[37m      326 │                         (click)="[32msetVehicleClass[37m(option.id)"
+          ╵                                  [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'setVehicleClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:327:33:
+[37m      327 │                         (click)="[32msetVehicleClass[37m(option.id)"
+          ╵                                  [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClassFromVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:735:40:
+[37m      735 │ ...             vehicle_class: this.[32mvehicleClassFromVehicle[37m(vehicle)
+          ╵                                     [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleClassFromVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:735:40:
+[37m      735 │ ...             vehicle_class: this.[32mvehicleClassFromVehicle[37m(vehicle)
+          ╵                                     [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleTypeFromClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:941:27:
+[37m      941 │ ...          type: this.[32mvehicleTypeFromClass[37m(String(raw.vehicle_c...
+          ╵                         [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

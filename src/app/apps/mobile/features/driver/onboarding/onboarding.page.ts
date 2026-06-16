@@ -22,6 +22,9 @@ import {
     shieldCheckmarkOutline,
     chevronBackOutline,
     carSportOutline,
+    bicycleOutline,
+    busOutline,
+    peopleOutline,
     checkmarkCircleOutline,
     sparklesOutline,
     cashOutline,
@@ -42,6 +45,7 @@ import { ButtonComponent, BadgeComponent } from '@shared/ui';
 
 type DocumentType = 'license' | 'insurance';
 type StripeMessageType = 'success' | 'warning';
+type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'van';
 
 type DriverOnboardingDraft = {
     form?: Record<string, unknown>;
@@ -309,6 +313,37 @@ type DriverOnboardingDraft = {
                   <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">License Plate</label>
                   <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
                 </div>
+
+                <div class="p-4 space-y-3">
+                  <div>
+                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Class</p>
+                    <p class="text-xs font-semibold text-slate-500">This controls which requests you can receive.</p>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    @for (option of vehicleClassOptions; track option.id) {
+                      <button
+                        type="button"
+                        (click)="setVehicleClass(option.id)"
+                        [disabled]="isReadOnly()"
+                        [class.bg-blue-600]="onboardingForm.get('vehicle_class')?.value === option.id"
+                        [class.text-white]="onboardingForm.get('vehicle_class')?.value === option.id"
+                        [class.border-blue-600]="onboardingForm.get('vehicle_class')?.value === option.id"
+                        [class.bg-slate-50]="onboardingForm.get('vehicle_class')?.value !== option.id"
+                        [class.text-slate-700]="onboardingForm.get('vehicle_class')?.value !== option.id"
+                        class="min-h-[92px] rounded-2xl border border-slate-100 p-3 text-left transition-all active:scale-95 disabled:opacity-60"
+                      >
+                        <div class="flex items-center gap-3">
+                          <ion-icon [name]="option.icon" class="text-xl shrink-0"></ion-icon>
+                          <div class="min-w-0">
+                            <p class="text-sm font-black">{{ option.label }}</p>
+                            <p class="text-[10px] font-bold opacity-80 leading-tight">{{ option.helper }}</p>
+                          </div>
+                        </div>
+                      </button>
+                    }
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -496,6 +531,13 @@ export class OnboardingPage implements OnInit {
     profile = this.profileService.profile;
     vehicle = this.driverService.vehicle;
 
+    vehicleClassOptions: Array<{ id: DriverVehicleClass; label: string; helper: string; icon: string }> = [
+        { id: 'bike', label: 'Bike', helper: 'Small delivery and errands', icon: 'bicycle-outline' },
+        { id: 'standard', label: 'Car', helper: 'Ride, errands, package delivery', icon: 'car-sport-outline' },
+        { id: 'xl', label: 'XL car', helper: 'Standard plus 5-7 passengers', icon: 'people-outline' },
+        { id: 'van', label: 'Van', helper: 'Moving, bulky jobs, large packages', icon: 'bus-outline' }
+    ];
+
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
         const profile = this.profile() as DriverProfile | null;
 
@@ -567,6 +609,9 @@ export class OnboardingPage implements OnInit {
             shieldCheckmarkOutline,
             chevronBackOutline,
             carSportOutline,
+            bicycleOutline,
+            busOutline,
+            peopleOutline,
             checkmarkCircleOutline,
             sparklesOutline,
             cashOutline,
@@ -586,6 +631,7 @@ export class OnboardingPage implements OnInit {
                 [Validators.required, Validators.min(1900), Validators.max(new Date().getFullYear() + 1)]
             ],
             license_plate: ['', [Validators.required, Validators.minLength(2)]],
+            vehicle_class: ['standard', Validators.required],
             council_name: ['', [Validators.required, Validators.minLength(2)]],
             council_license_number: ['', [Validators.required, Validators.minLength(2)]],
             taxi_badge_number: ['', [Validators.required, Validators.minLength(2)]],
@@ -651,6 +697,7 @@ export class OnboardingPage implements OnInit {
                         model: draft.form['model'] ?? '',
                         year: draft.form['year'] ?? new Date().getFullYear(),
                         license_plate: draft.form['license_plate'] ?? '',
+                        vehicle_class: draft.form['vehicle_class'] ?? 'standard',
                         council_name: draft.form['council_name'] ?? '',
                         council_license_number: draft.form['council_license_number'] ?? '',
                         taxi_badge_number: draft.form['taxi_badge_number'] ?? '',
@@ -684,7 +731,8 @@ export class OnboardingPage implements OnInit {
                     make: vehicle.make ?? '',
                     model: vehicle.model ?? '',
                     year: vehicle.year ?? new Date().getFullYear(),
-                    license_plate: vehicle.license_plate ?? ''
+                    license_plate: vehicle.license_plate ?? '',
+                    vehicle_class: this.vehicleClassFromVehicle(vehicle)
                 },
                 { emitEvent: false }
             );
@@ -731,12 +779,33 @@ export class OnboardingPage implements OnInit {
         return {};
     }
 
+    private vehicleClassFromVehicle(vehicle: Vehicle | null): DriverVehicleClass {
+        const type = String((vehicle as any)?.type || '').toLowerCase();
+        const capacity = String((vehicle as any)?.capacity || '').toLowerCase();
+
+        if (type.includes('motorcycle') || type.includes('bike') || capacity.includes('bike')) return 'bike';
+        if (type.includes('van') || capacity.includes('van')) return 'van';
+        if (capacity.includes('xl') || capacity.includes('7')) return 'xl';
+        return 'standard';
+    }
+
+    private vehicleTypeFromClass(value: DriverVehicleClass): 'car' | 'van' | 'motorcycle' {
+        if (value === 'bike') return 'motorcycle';
+        if (value === 'van') return 'van';
+        return 'car';
+    }
+
     private applyReadOnlyState() {
         if (this.isReadOnly()) {
             this.onboardingForm.disable({ emitEvent: false });
         } else {
             this.onboardingForm.enable({ emitEvent: false });
         }
+    }
+
+    setVehicleClass(value: DriverVehicleClass) {
+        if (this.isReadOnly()) return;
+        this.onboardingForm.get('vehicle_class')?.setValue(value, { emitEvent: true });
     }
 
     handleDocumentClick(type: DocumentType) {
@@ -884,7 +953,9 @@ export class OnboardingPage implements OnInit {
                 make: String(raw.make || '').trim(),
                 model: String(raw.model || '').trim(),
                 year: Number(raw.year),
-                license_plate: String(raw.license_plate || '').trim().toUpperCase()
+                license_plate: String(raw.license_plate || '').trim().toUpperCase(),
+                type: this.vehicleTypeFromClass(String(raw.vehicle_class || 'standard') as DriverVehicleClass),
+                capacity: String(raw.vehicle_class || 'standard')
             });
 
             await this.updateProfileSafely(user.id, {

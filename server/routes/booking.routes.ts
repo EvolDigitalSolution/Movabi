@@ -28,6 +28,86 @@ async function getJob(jobId: string) {
     return data;
 }
 
+async function getDriverVehicle(driverId: string) {
+    const { data, error } = await supabaseAdmin
+        .from('vehicles')
+        .select('*')
+        .eq('user_id', driverId)
+        .maybeSingle();
+
+    if (error) {
+        console.error('[BookingRoutes] vehicle lookup failed:', error);
+        return null;
+    }
+
+    return data;
+}
+
+function parseMetadata(value: unknown): Record<string, any> {
+    if (!value) return {};
+    if (typeof value === 'object') return value as Record<string, any>;
+
+    if (typeof value === 'string') {
+        try {
+            const parsed = JSON.parse(value);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
+
+    return {};
+}
+
+function requiredVehicleClass(job: any): 'bike' | 'standard' | 'xl' | 'car' | 'van' {
+    const metadata = parseMetadata(job?.metadata);
+    const serviceSlug = normalise(job?.service_slug || job?.service_type?.slug);
+    const raw = normalise(
+        metadata.service_vehicle_class ||
+        metadata.vehicle_class ||
+        metadata.vehicleClass ||
+        metadata.ride_details?.vehicle_class ||
+        metadata.delivery_details?.vehicleClass ||
+        metadata.errand_details?.vehicleClass
+    );
+
+    if (raw.includes('bike') || raw.includes('motorcycle') || raw.includes('scooter')) return 'bike';
+    if (raw.includes('van')) return 'van';
+    if (raw.includes('xl') || raw.includes('7')) return 'xl';
+    if (raw.includes('standard')) return 'standard';
+    if (raw.includes('car')) return 'car';
+    if (serviceSlug.includes('van') || serviceSlug.includes('moving')) return 'van';
+    if (serviceSlug.includes('delivery') || serviceSlug.includes('errand')) return 'car';
+    return 'standard';
+}
+
+function driverCapabilities(vehicle: any): string[] {
+    if (!vehicle) return [];
+
+    const combined = normalise(`${vehicle.type || ''} ${vehicle.capacity || ''} ${vehicle.service_class || ''}`);
+
+    if (combined.includes('bike') || combined.includes('motorcycle') || combined.includes('scooter')) return ['bike'];
+    if (combined.includes('van')) return ['standard', 'xl', 'car', 'van'];
+    if (combined.includes('xl') || combined.includes('7')) return ['standard', 'xl', 'car'];
+    return ['standard', 'car'];
+}
+
+function vehicleLabel(value: string): string {
+    switch (value) {
+        case 'bike':
+            return 'Bike';
+        case 'xl':
+            return 'XL car';
+        case 'van':
+            return 'Van';
+        case 'car':
+        case 'standard':
+            return 'Car';
+        default:
+            return 'Vehicle';
+    }
+}
+
 async function captureJobPaymentOnlyWhenCompleted(jobId: string) {
     const job = await getJob(jobId);
 
@@ -101,6 +181,15 @@ router.post('/accept', async (req: Request, res: Response) => {
         }
 
         const job = await getJob(jobId);
+        const vehicle = await getDriverVehicle(driverId);
+        const required = requiredVehicleClass(job);
+        const capabilities = driverCapabilities(vehicle);
+
+        if (!capabilities.includes(required)) {
+            return res.status(400).json({
+                error: `This request needs ${vehicleLabel(required)}. Please update your saved vehicle before accepting.`
+            });
+        }
 
         if (!LogisticsService.isValidBookingTransition(job.status, 'assigned')) {
             return res.status(400).json({

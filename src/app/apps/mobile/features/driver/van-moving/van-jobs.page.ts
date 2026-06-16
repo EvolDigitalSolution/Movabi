@@ -36,6 +36,8 @@ import {
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { JobService } from '@core/services/job/job.service';
+import { DriverService } from '@core/services/driver/driver.service';
+import { VehicleCompatibilityService } from '@core/services/driver/vehicle-compatibility.service';
 import { AuthService } from '@core/services/auth/auth.service';
 import { LocationService } from '@core/services/logistics/location.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
@@ -387,6 +389,8 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
 })
 export class VanJobsPage implements OnInit, OnDestroy {
     private jobService = inject(JobService);
+    private driverService = inject(DriverService);
+    private vehicleCompatibility = inject(VehicleCompatibilityService);
     private auth = inject(AuthService);
     public locationService = inject(LocationService);
     private loadingCtrl = inject(LoadingController);
@@ -531,7 +535,11 @@ export class VanJobsPage implements OnInit, OnDestroy {
         try {
             if (this.segment() === 'available') {
                 const available = await this.jobService.getAvailableJobs();
-                this.jobs.set(this.sortJobs(available || []));
+                const vehicle = this.driverService.vehicle() || await this.driverService.fetchVehicle();
+                const compatible = (available || []).filter(job =>
+                    this.vehicleCompatibility.isCompatible(job as any, vehicle)
+                );
+                this.jobs.set(this.sortJobs(compatible));
                 return;
             }
 

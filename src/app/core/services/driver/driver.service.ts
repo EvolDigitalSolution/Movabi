@@ -22,6 +22,7 @@ import { ConnectService } from '../stripe/connect.service';
 import { JobEventService } from '../job/job-event.service';
 import { NotificationService } from '../notification.service';
 import { ApiUrlService } from '../api-url.service';
+import { VehicleCompatibilityService } from './vehicle-compatibility.service';
 
 @Injectable({
     providedIn: 'root'
@@ -36,6 +37,7 @@ export class DriverService {
     private notificationService = inject(NotificationService);
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
+    private vehicleCompatibility = inject(VehicleCompatibilityService);
 
     onlineStatus = signal<DriverStatus>('offline');
     isAvailable = signal<boolean>(true);
@@ -145,6 +147,9 @@ export class DriverService {
                         try {
                             const newJob = await this.bookingService.getBooking(rawJob['id']);
 
+                            const vehicle = this.vehicle() || await this.fetchVehicle();
+                            if (!this.vehicleCompatibility.isCompatible(newJob, vehicle)) return;
+
                             this.availableJobs.update((jobs) => {
                                 const exists = jobs.find((job) => job.id === newJob.id);
                                 return exists ? jobs : [newJob, ...jobs];
@@ -232,7 +237,10 @@ export class DriverService {
 
         if (error) throw error;
 
-        const bookings = (data || []).map((job) => this.bookingService.mapJobToBooking(job));
+        const vehicle = this.vehicle() || await this.fetchVehicle();
+        const bookings = (data || [])
+            .map((job) => this.bookingService.mapJobToBooking(job))
+            .filter((job) => this.vehicleCompatibility.isCompatible(job, vehicle));
         this.availableJobs.set(bookings);
     }
 
@@ -251,6 +259,13 @@ export class DriverService {
         }
 
         const job = await this.bookingService.getBooking(bookingId);
+        const vehicle = this.vehicle() || await this.fetchVehicle();
+
+        if (!this.vehicleCompatibility.isCompatible(job, vehicle)) {
+            throw new Error(
+                `This request needs ${this.vehicleCompatibility.getRequiredLabel(job)}. Your saved vehicle is ${this.vehicleCompatibility.getVehicleLabel(vehicle)}.`
+            );
+        }
 
         if (job.service_slug === 'errand' && job.errand_funding) {
             const account = await this.fetchStripeAccount();
@@ -426,7 +441,9 @@ export class DriverService {
             make: String(vehicleData.make ?? '').trim(),
             model: String(vehicleData.model ?? '').trim(),
             year: Number(vehicleData.year),
-            license_plate: String(vehicleData.license_plate ?? '').trim()
+            license_plate: String(vehicleData.license_plate ?? '').trim(),
+            type: this.normalizeVehicleType((vehicleData as any).type),
+            capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim()
         };
 
         if (!payload.make || !payload.model || !payload.license_plate) {
@@ -449,6 +466,20 @@ export class DriverService {
         }
 
         this.vehicle.set(data as Vehicle);
+    }
+
+    private normalizeVehicleType(value: unknown): 'car' | 'van' | 'motorcycle' {
+        const raw = String(value || '').toLowerCase();
+        if (raw.includes('van')) return 'van';
+        if (raw.includes('bike') || raw.includes('motorcycle') || raw.includes('scooter')) return 'motorcycle';
+        return 'car';
+    }
+
+    private defaultCapacityForType(value: unknown): string {
+        const type = this.normalizeVehicleType(value);
+        if (type === 'van') return 'van';
+        if (type === 'motorcycle') return 'bike';
+        return 'standard';
     }
 
     async uploadDocument(file: File, type: string) {

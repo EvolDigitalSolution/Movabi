@@ -230,6 +230,13 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
             </div>
 
             @if (details()) {
+              @if (serviceVehicleLabel()) {
+                <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex justify-between items-center mb-3">
+                  <span class="text-sm font-bold text-blue-700">Vehicle needed</span>
+                  <span class="text-sm font-black text-slate-950">{{ serviceVehicleLabel() }}</span>
+                </div>
+              }
+
               @if (job()?.service_slug === ServiceTypeEnum.RIDE) {
                 <div class="space-y-3">
                   <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
@@ -250,8 +257,15 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                 <div class="space-y-3">
                   <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Package</p>
-                    <p class="text-sm font-bold text-slate-800">{{ anyDetails()?.package_description || 'Package details not provided' }}</p>
+                    <p class="text-sm font-bold text-slate-800">{{ anyDetails()?.item_description || anyDetails()?.package_description || 'Package details not provided' }}</p>
                   </div>
+
+                  @if (packageSizeLabel()) {
+                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                      <span class="text-sm font-bold text-slate-600">Package size</span>
+                      <span class="text-sm font-black text-slate-950">{{ packageSizeLabel() }}</span>
+                    </div>
+                  }
 
                   @if (anyDetails()?.recipient_phone) {
                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
@@ -569,7 +583,72 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return this.titleCase(String(raw));
     });
 
+    serviceVehicleLabel = computed(() => {
+        const metadata = this.jobMetadata();
+        const details = this.anyDetails() || {};
+        const raw = String(
+            metadata['service_vehicle_class'] ||
+            metadata['vehicleClass'] ||
+            metadata['vehicle_class'] ||
+            metadata['ride_details']?.vehicle_class ||
+            metadata['delivery_details']?.vehicleClass ||
+            metadata['errand_details']?.vehicleClass ||
+            details?.vehicle_class ||
+            ''
+        ).toLowerCase();
+
+        switch (raw) {
+            case 'bike':
+                return 'Bike';
+            case 'standard':
+            case 'car':
+                return 'Car';
+            case 'xl':
+                return 'XL car';
+            case 'van':
+                return 'Van';
+            default:
+                return '';
+        }
+    });
+
+    packageSizeLabel = computed(() => {
+        const metadata = this.jobMetadata();
+        const raw = String(
+            metadata['package_size'] ||
+            metadata['delivery_details']?.packageSize ||
+            this.anyDetails()?.package_size ||
+            ''
+        ).toLowerCase();
+
+        switch (raw) {
+            case 'small':
+                return 'Small';
+            case 'medium':
+                return 'Medium';
+            case 'large':
+                return 'Large';
+            default:
+                return '';
+        }
+    });
+
     private channel?: RealtimeChannel;
+
+    private jobMetadata(): Record<string, any> {
+        const raw = (this.job() as any)?.metadata || {};
+
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch {
+                return {};
+            }
+        }
+
+        return raw && typeof raw === 'object' ? raw : {};
+    }
 
     constructor() {
         addIcons({

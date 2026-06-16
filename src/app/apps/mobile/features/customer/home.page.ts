@@ -18,6 +18,7 @@ import {
     car,
     cart,
     bus,
+    cube,
     chevronForward,
     receiptOutline,
     walletOutline
@@ -88,7 +89,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
 
     <ion-content class="bg-slate-50">
       <div class="max-w-2xl mx-auto p-6 space-y-10 pb-12">
-        <div class="relative bg-slate-900 rounded-[2.5rem] p-10 shadow-2xl shadow-slate-900/20 overflow-hidden group min-h-[320px] flex items-center">
+        <div class="relative bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 shadow-2xl shadow-slate-900/20 overflow-hidden group min-h-[320px] flex items-center">
           <div class="absolute inset-0">
             <img
               src="https://picsum.photos/seed/customer/1920/1080?blur=4"
@@ -98,10 +99,10 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             />
           </div>
 
-          <div class="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent"></div>
+          <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/90 to-slate-900/60"></div>
 
           <div class="relative z-10 w-full">
-            <p class="text-blue-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-4">
+            <p class="text-white/85 font-bold text-xs mb-3">
               Welcome Back
             </p>
 
@@ -109,20 +110,20 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
               Hello, {{ displayName() }}!
             </h1>
 
-            <p class="text-slate-300 font-medium text-lg">
+            <p class="text-white/85 font-medium text-base sm:text-lg">
               Where can we take you today?
             </p>
 
-            <div class="mt-10 grid grid-cols-2 gap-4">
+            <div class="mt-8 sm:mt-10 grid grid-cols-2 gap-4">
               <button
                 type="button"
                 (click)="router.navigate(['/customer/wallet'])"
-                class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="bg-white/15 backdrop-blur-md rounded-3xl p-5 sm:p-6 border border-white/20 group-hover:border-white/30 cursor-pointer active:scale-95 transition-all text-left w-full"
               >
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                <p class="text-xs font-bold text-white/80 mb-2">
                   Wallet Balance
                 </p>
-                <p class="text-2xl font-display font-bold text-white">
+                <p class="text-xl sm:text-2xl font-display font-bold text-white">
                   {{ formatCurrency(walletService.wallet()?.available_balance || 0) }}
                 </p>
               </button>
@@ -130,12 +131,12 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
               <button
                 type="button"
                 (click)="router.navigate(['/customer/activity'])"
-                class="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/10 group-hover:border-white/20 cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="bg-white/15 backdrop-blur-md rounded-3xl p-5 sm:p-6 border border-white/20 group-hover:border-white/30 cursor-pointer active:scale-95 transition-all text-left w-full"
               >
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                <p class="text-xs font-bold text-white/80 mb-2">
                   Active Trips
                 </p>
-                <p class="text-2xl font-display font-bold text-white">
+                <p class="text-xl sm:text-2xl font-display font-bold text-white">
                   {{ activeTrips() }}
                 </p>
               </button>
@@ -146,7 +147,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
         <div class="space-y-6">
           <div class="flex items-center gap-3 ml-1">
             <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
+            <h3 class="text-sm font-black text-slate-700">
               Our Premium Services
             </h3>
           </div>
@@ -204,6 +205,31 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
 
             <button
               type="button"
+              (click)="goToBooking('delivery')"
+              class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-amber-500/10 hover:-translate-y-1 transition-all duration-500"
+            >
+              <div class="flex items-center gap-6">
+                <div class="w-20 h-20 bg-amber-500 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-amber-500/20 group-hover:rotate-6 transition-transform">
+                  <ion-icon name="cube" class="text-4xl"></ion-icon>
+                </div>
+
+                <div class="flex-1 min-w-0">
+                  <h2 class="text-2xl font-display font-bold text-slate-900 mb-1">
+                    Send a Package
+                  </h2>
+                  <p class="text-slate-500 text-sm font-medium">
+                    Bike, car, or van delivery.
+                  </p>
+                </div>
+
+                <div class="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
               (click)="router.navigate(['/customer/van-moving/create'])"
               class="w-full text-left group relative overflow-hidden bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-indigo-600/10 hover:-translate-y-1 transition-all duration-500"
             >
@@ -233,7 +259,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
           <div class="flex items-center justify-between px-1">
             <div class="flex items-center gap-3">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h3 class="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
+              <h3 class="text-sm font-black text-slate-700">
                 Recent Activity
               </h3>
             </div>
@@ -241,7 +267,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             <button
               type="button"
               (click)="router.navigate(['/customer/activity'])"
-              class="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 transition-colors"
+              class="text-xs font-black text-blue-600 hover:text-blue-700 transition-colors"
             >
               View All
             </button>
@@ -327,6 +353,7 @@ export class HomePage implements OnInit {
             car,
             cart,
             bus,
+            cube,
             chevronForward,
             receiptOutline,
             walletOutline

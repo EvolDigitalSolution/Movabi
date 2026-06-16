@@ -109,24 +109,25 @@ export class JobService {
     }
 
     async acceptJob(jobId: string, driverId: string): Promise<Job> {
-        const { data, error } = await this.supabase
-            .from('jobs')
-            .update({
-                status: 'accepted',
-                driver_id: driverId
-            })
-            .eq('id', jobId)
-            .is('driver_id', null)
-            .in('status', ['pending', 'requested', 'searching'])
-            .select('*')
-            .single();
+        const { data: accepted, error } = await this.supabase.client.rpc('accept_searching_job', {
+            p_job_id: jobId,
+            p_driver_id: driverId
+        });
 
-        if (error) {
+        if (error || !accepted) {
             console.error('[JobService] acceptJob failed:', error);
-            throw error;
+            throw error || new Error('Request no longer available');
         }
 
         await this.eventService.logEvent(jobId, 'driver_accepted', 'Job accepted by driver');
+
+        const { data, error: fetchError } = await this.supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', jobId)
+            .single();
+
+        if (fetchError) throw fetchError;
 
         return data as Job;
     }

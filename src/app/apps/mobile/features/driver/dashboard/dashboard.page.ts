@@ -42,6 +42,7 @@ import { LocationService } from '../../../../../core/services/logistics/location
 import { ProfileService } from '../../../../../core/services/profile/profile.service';
 import { ConnectService } from '../../../../../core/services/stripe/connect.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
+import { VehicleCompatibilityService } from '../../../../../core/services/driver/vehicle-compatibility.service';
 import {
     CardComponent,
     ButtonComponent,
@@ -666,6 +667,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     public profileService = inject(ProfileService);
     private connectService = inject(ConnectService);
     private supabase = inject(SupabaseService);
+    private vehicleCompatibility = inject(VehicleCompatibilityService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private config = inject(AppConfigService);
@@ -1286,6 +1288,15 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
             if (!user?.id) {
                 throw new Error('Please sign in again.');
+            }
+
+            const job = this.driverService.availableJobs().find(item => item.id === jobId);
+            const vehicle = this.driverService.vehicle() || await this.driverService.fetchVehicle();
+
+            if (job && !this.vehicleCompatibility.isCompatible(job, vehicle)) {
+                throw new Error(
+                    `This request needs ${this.vehicleCompatibility.getRequiredLabel(job)}. Your saved vehicle is ${this.vehicleCompatibility.getVehicleLabel(vehicle)}.`
+                );
             }
 
             const { error } = await this.supabase.client.rpc('accept_searching_job', {

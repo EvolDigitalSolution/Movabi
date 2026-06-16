@@ -87,22 +87,17 @@ type WalletTransaction = Record<string, unknown>;
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <ion-card
-        class="m-0 mb-6 shadow-lg rounded-[2rem] overflow-hidden"
-        style="--background: #0f172a; --color: #ffffff;"
-      >
-        <ion-card-content class="py-10 text-center relative">
-          <div class="absolute inset-x-0 top-0 h-1 bg-blue-500"></div>
+      <div class="relative mb-6 overflow-hidden rounded-[2rem] bg-slate-950 text-white px-6 py-10 text-center shadow-lg shadow-slate-900/20">
+        <div class="absolute inset-x-0 top-0 h-1 bg-blue-500"></div>
 
-          <p class="text-white/90 text-xs font-bold mb-3">
-            Available Balance
-          </p>
+        <p class="relative text-white text-sm font-bold mb-3">
+          Available Balance
+        </p>
 
-          <h1 class="text-white text-5xl font-display font-bold tracking-tight">
-            {{ appConfig.formatCurrency(walletService.wallet()?.available_balance || 0) }}
-          </h1>
-        </ion-card-content>
-      </ion-card>
+        <h1 class="relative text-white text-5xl font-display font-bold tracking-tight">
+          {{ appConfig.formatCurrency(walletService.wallet()?.available_balance || 0) }}
+        </h1>
+      </div>
 
       <div class="space-y-6">
         <div class="flex justify-between items-center px-1">
@@ -112,7 +107,7 @@ type WalletTransaction = Record<string, unknown>;
         <ion-card class="m-0 shadow-xl shadow-slate-200/50 rounded-[2rem] border border-slate-100">
           <ion-card-content class="p-6">
             <div class="bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100">
-              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+              <p class="text-xs font-bold text-slate-700 mb-1">
                 Amount to Add
               </p>
 
@@ -142,7 +137,7 @@ type WalletTransaction = Record<string, unknown>;
             </div>
 
             <div class="mb-8">
-              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+              <p class="text-xs font-bold text-slate-700 mb-3">
                 Card Details
               </p>
 

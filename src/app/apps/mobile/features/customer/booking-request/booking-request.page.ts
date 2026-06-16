@@ -66,6 +66,7 @@ import { FareCalculationService } from '../../../../../core/services/maps/fare-c
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 
 import {
+    Booking,
     ServiceType,
     ServiceTypeEnum,
     UnifiedLocation
@@ -87,6 +88,8 @@ import { FareEstimate } from '../../../../../core/models/maps/fare-estimate.mode
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
+type VehicleClass = 'bike' | 'standard' | 'xl' | 'car' | 'van';
+type PackageSize = 'small' | 'medium' | 'large';
 
 @Component({
     selector: 'app-booking-request',
@@ -171,9 +174,9 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     (focus)="showPickupResults.set(true)"
                     (blur)="hideResults('pickup')">
 
-                    @if (showPickupResults() && pickupResults().length > 0) {
+                    @if (showPickupResults() && displayPickupResults().length > 0) {
                       <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of pickupResults(); track result.label) {
+                        @for (result of displayPickupResults(); track result.label) {
                           <button
                             type="button"
                             (mousedown)="selectResult('pickup', result)"
@@ -183,7 +186,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                             </div>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-400 truncate uppercase tracking-widest font-bold">Select Location</p>
+                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
                             </div>
                           </button>
                         }
@@ -210,9 +213,9 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     (focus)="showDropoffResults.set(true)"
                     (blur)="hideResults('dropoff')">
 
-                    @if (showDropoffResults() && dropoffResults().length > 0) {
+                    @if (showDropoffResults() && displayDropoffResults().length > 0) {
                       <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of dropoffResults(); track result.label) {
+                        @for (result of displayDropoffResults(); track result.label) {
                           <button
                             type="button"
                             (mousedown)="selectResult('dropoff', result)"
@@ -222,7 +225,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                             </div>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-400 truncate uppercase tracking-widest font-bold">Select Destination</p>
+                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ dropoffResults().length > 0 ? 'Select destination' : 'Recent destination' }}</p>
                             </div>
                           </button>
                         }
@@ -239,6 +242,38 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   </button>
                 </div>
               </div>
+
+              @if (type !== ServiceTypeEnum.VAN) {
+                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-xs font-black text-slate-700">Choose vehicle</p>
+                      <p class="text-sm font-bold text-slate-900 mt-1">{{ selectedVehicleLabel() }}</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-200">
+                      <ion-icon [name]="selectedVehicleIcon()" class="text-xl"></ion-icon>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-3 gap-3">
+                    @for (option of vehicleOptions(); track option.id) {
+                      <button
+                        type="button"
+                        (click)="setVehicleClass(option.id)"
+                        [class.bg-blue-600]="vehicleClass() === option.id"
+                        [class.text-white]="vehicleClass() === option.id"
+                        [class.border-blue-600]="vehicleClass() === option.id"
+                        [class.bg-white]="vehicleClass() !== option.id"
+                        [class.text-slate-700]="vehicleClass() !== option.id"
+                        class="min-h-[92px] rounded-2xl border border-slate-100 shadow-sm p-3 text-center transition-all active:scale-95 flex flex-col items-center justify-center gap-2">
+                        <ion-icon [name]="option.icon" class="text-xl"></ion-icon>
+                        <span class="text-xs font-black leading-tight">{{ option.label }}</span>
+                        <span class="text-[10px] font-bold leading-tight opacity-80">{{ option.helper }}</span>
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
 
               @if (type === ServiceTypeEnum.RIDE) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
@@ -451,6 +486,26 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
               @if (type === ServiceTypeEnum.DELIVERY) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div class="space-y-3">
+                    <p class="text-xs font-black text-slate-700 ml-1">Package size</p>
+                    <div class="grid grid-cols-3 gap-3">
+                      @for (size of packageSizeOptions; track size.id) {
+                        <button
+                          type="button"
+                          (click)="setPackageSize(size.id)"
+                          [class.bg-blue-600]="packageSize() === size.id"
+                          [class.text-white]="packageSize() === size.id"
+                          [class.border-blue-600]="packageSize() === size.id"
+                          [class.bg-white]="packageSize() !== size.id"
+                          [class.text-slate-700]="packageSize() !== size.id"
+                          class="min-h-[82px] rounded-2xl border border-slate-100 shadow-sm p-3 text-center transition-all active:scale-95 flex flex-col items-center justify-center gap-1">
+                          <span class="text-xs font-black">{{ size.label }}</span>
+                          <span class="text-[10px] font-bold leading-tight opacity-80">{{ size.helper }}</span>
+                        </button>
+                      }
+                    </div>
+                  </div>
+
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
                     <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
                       Delivery Contact
@@ -821,10 +876,26 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     pickupLocation: UnifiedLocation = { source: 'manual', address: '' };
     dropoffLocation: UnifiedLocation = { source: 'manual', address: '' };
 
+    packageSizeOptions: Array<{ id: PackageSize; label: string; helper: string }> = [
+        { id: 'small', label: 'Small', helper: 'Envelope or small bag' },
+        { id: 'medium', label: 'Medium', helper: 'Box or shopping bag' },
+        { id: 'large', label: 'Large', helper: 'Bulky parcel' }
+    ];
+
     pickupResults = signal<AutocompleteResult[]>([]);
     dropoffResults = signal<AutocompleteResult[]>([]);
     showPickupResults = signal(false);
     showDropoffResults = signal(false);
+
+    displayPickupResults = computed(() => this.pickupResults().length > 0
+        ? this.pickupResults()
+        : this.recentLocationResults('pickup')
+    );
+
+    displayDropoffResults = computed(() => this.dropoffResults().length > 0
+        ? this.dropoffResults()
+        : this.recentLocationResults('dropoff')
+    );
 
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
@@ -951,6 +1022,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.initForm();
         void this.loadPricing();
         void this.walletService.fetchWallet();
+        void this.bookingService.getHistory();
 
         this.pickupSearch$
             .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
@@ -1087,16 +1159,115 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     setPassengerCount(count: number) {
         const next = Math.max(1, Math.min(7, Math.round(Number(count) || 1)));
         this.bookingForm.get('passenger_count')?.setValue(next, { emitEvent: true });
+
+        if (next > 4 && this.vehicleClass() === 'standard') {
+            this.bookingForm.get('vehicle_class')?.setValue('xl', { emitEvent: true });
+        }
+
         void this.recalculateFare();
     }
 
     rideVehicleLabel(): string {
+        const vehicle = this.vehicleClass();
+        if (vehicle === 'xl') return 'XL ride, up to 7 passengers';
+        if (vehicle === 'van') return 'Van ride for extra space';
+
         const count = this.passengerCount();
         return count > 4 ? 'XL ride, up to 7 passengers' : 'Standard ride, up to 4 passengers';
     }
 
     largeRideSurcharge(): number {
+        const vehicle = this.vehicleClass();
+        if (vehicle === 'van') return 8;
+        if (vehicle === 'xl') return 4;
         return this.passengerCount() > 4 ? 4 : 0;
+    }
+
+    vehicleClass(): VehicleClass {
+        return String(this.bookingForm?.get('vehicle_class')?.value || this.defaultVehicleClass()) as VehicleClass;
+    }
+
+    packageSize(): PackageSize {
+        return String(this.bookingForm?.get('package_size')?.value || 'small') as PackageSize;
+    }
+
+    vehicleOptions(): Array<{ id: VehicleClass; label: string; helper: string; icon: string }> {
+        switch (this.type) {
+            case ServiceTypeEnum.RIDE:
+                return [
+                    { id: 'standard', label: 'Car', helper: '1-4 people', icon: 'car-outline' },
+                    { id: 'xl', label: 'XL', helper: '5-7 people', icon: 'people-outline' },
+                    { id: 'van', label: 'Van', helper: 'More space', icon: 'bus-outline' }
+                ];
+            case ServiceTypeEnum.DELIVERY:
+                return [
+                    { id: 'bike', label: 'Bike', helper: 'Fast & small', icon: 'navigate' },
+                    { id: 'car', label: 'Car', helper: 'Medium items', icon: 'car-outline' },
+                    { id: 'van', label: 'Van', helper: 'Bulky items', icon: 'bus-outline' }
+                ];
+            case ServiceTypeEnum.ERRAND:
+                return [
+                    { id: 'bike', label: 'Bike', helper: 'Small errands', icon: 'navigate' },
+                    { id: 'car', label: 'Car', helper: 'More bags', icon: 'car-outline' },
+                    { id: 'van', label: 'Van', helper: 'Large pickup', icon: 'bus-outline' }
+                ];
+            default:
+                return [];
+        }
+    }
+
+    selectedVehicleLabel(): string {
+        return this.vehicleOptions().find(option => option.id === this.vehicleClass())?.helper || 'Best vehicle for the job';
+    }
+
+    selectedVehicleIcon(): string {
+        return this.vehicleOptions().find(option => option.id === this.vehicleClass())?.icon || 'car-outline';
+    }
+
+    setVehicleClass(value: VehicleClass) {
+        this.bookingForm.get('vehicle_class')?.setValue(value, { emitEvent: true });
+
+        if (this.type === ServiceTypeEnum.RIDE) {
+            const count = this.passengerCount();
+            if ((value === 'xl' || value === 'van') && count < 5) {
+                this.bookingForm.get('passenger_count')?.setValue(5, { emitEvent: true });
+            }
+
+            if (value === 'standard' && count > 4) {
+                this.bookingForm.get('passenger_count')?.setValue(4, { emitEvent: true });
+            }
+        }
+
+        void this.recalculateFare();
+    }
+
+    setPackageSize(size: PackageSize) {
+        this.bookingForm.get('package_size')?.setValue(size, { emitEvent: true });
+        void this.recalculateFare();
+    }
+
+    private defaultVehicleClass(): VehicleClass {
+        if (this.type === ServiceTypeEnum.RIDE) return 'standard';
+        if (this.type === ServiceTypeEnum.DELIVERY || this.type === ServiceTypeEnum.ERRAND) return 'bike';
+        return 'van';
+    }
+
+    private vehicleSurcharge(serviceSlug = this.getServiceSlug()): number {
+        const vehicle = this.vehicleClass();
+
+        if (serviceSlug === 'ride') return this.largeRideSurcharge();
+
+        if (serviceSlug === 'delivery') {
+            const packageSurcharge = this.packageSize() === 'large' ? 3 : this.packageSize() === 'medium' ? 1 : 0;
+            const vehicleSurcharge = vehicle === 'van' ? 6 : vehicle === 'car' ? 1.5 : 0;
+            return this.toMoney(packageSurcharge + vehicleSurcharge);
+        }
+
+        if (serviceSlug === 'errand') {
+            return vehicle === 'van' ? 5 : vehicle === 'car' ? 1.5 : 0;
+        }
+
+        return 0;
     }
 
     onBudgetInput(value: unknown) {
@@ -1261,6 +1432,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
+                    vehicle_class: ['standard', Validators.required],
                     passenger_count: [1, [Validators.required, Validators.min(1), Validators.max(7)]]
                 });
                 break;
@@ -1272,6 +1444,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     items_list: [''],
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
+                    vehicle_class: ['bike', Validators.required],
                     customer_phone: [this.auth.currentUser()?.phone || '', Validators.required],
                     recipient_phone: [''],
                     recipient_name: [''],
@@ -1283,9 +1456,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
+                    vehicle_class: ['bike', Validators.required],
+                    package_size: ['small', Validators.required],
                     recipient_name: ['', Validators.required],
                     recipient_phone: ['', Validators.required],
-                    item_description: ['']
+                    item_description: ['', Validators.required]
                 });
                 break;
 
@@ -1293,6 +1468,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
+                    vehicle_class: ['van', Validators.required],
                     size: ['small', Validators.required],
                     helper_count: [1, [Validators.required, Validators.min(0)]],
                     floor_number: [0],
@@ -1410,10 +1586,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (!query || query.length < 3) {
             if (type === 'pickup') {
                 this.pickupResults.set([]);
-                this.showPickupResults.set(false);
+                this.showPickupResults.set(this.recentLocationResults('pickup').length > 0);
             } else {
                 this.dropoffResults.set([]);
-                this.showDropoffResults.set(false);
+                this.showDropoffResults.set(this.recentLocationResults('dropoff').length > 0);
             }
             return;
         }
@@ -1460,6 +1636,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.updateMarker('dropoff');
         }
 
+        this.fitMapToSelectedLocations();
         this.updateRoute();
     }
 
@@ -1476,10 +1653,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             });
 
             if (!this.pickupLocation.latitude || !this.dropoffLocation.latitude) {
-                this.mapComponent.setCenter(loc.longitude, loc.latitude, 16);
+                this.mapComponent.setCenter(loc.longitude, loc.latitude, 15);
             } else {
                 setTimeout(() => this.updateRoute(), 80);
             }
+        }
+    }
+
+    private fitMapToSelectedLocations() {
+        const pickupReady = this.pickupLocation.latitude && this.pickupLocation.longitude;
+        const dropoffReady = this.dropoffLocation.latitude && this.dropoffLocation.longitude;
+
+        if (pickupReady && dropoffReady) {
+            this.mapComponent?.fitBounds(
+                [
+                    [Number(this.pickupLocation.longitude), Number(this.pickupLocation.latitude)],
+                    [Number(this.dropoffLocation.longitude), Number(this.dropoffLocation.latitude)]
+                ],
+                { padding: { top: 80, bottom: 170, left: 44, right: 44 } }
+            );
+            return;
+        }
+
+        const single = pickupReady ? this.pickupLocation : dropoffReady ? this.dropoffLocation : null;
+
+        if (single?.latitude && single.longitude) {
+            this.mapComponent?.setCenter(single.longitude, single.latitude, 15);
         }
     }
 
@@ -1522,10 +1721,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                             ],
                             {
                                 padding: {
-                                    top: 70,
-                                    bottom: 240,
-                                    left: 50,
-                                    right: 50
+                                    top: 80,
+                                    bottom: 170,
+                                    left: 44,
+                                    right: 44
                                 }
                             }
                         );
@@ -1543,6 +1742,31 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.fareEstimate.set(null);
             this.mapComponent.clearRoute();
         }
+    }
+
+    private recentLocationResults(type: 'pickup' | 'dropoff'): AutocompleteResult[] {
+        const key = type === 'pickup' ? 'pickup_address' : 'dropoff_address';
+        const latKey = type === 'pickup' ? 'pickup_latitude' : 'dropoff_latitude';
+        const lngKey = type === 'pickup' ? 'pickup_longitude' : 'dropoff_longitude';
+        const seen = new Set<string>();
+
+        return this.bookingService.bookingHistory()
+            .map((booking: Booking) => {
+                const record = booking as unknown as Record<string, unknown>;
+                const label = String(record[key] || '').trim();
+                const lat = Number(record[latKey]);
+                const lng = Number(record[lngKey]);
+
+                if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+                const uniqueKey = label.toLowerCase();
+                if (seen.has(uniqueKey)) return null;
+                seen.add(uniqueKey);
+
+                return { label, lat, lng };
+            })
+            .filter((result): result is AutocompleteResult => !!result)
+            .slice(0, 5);
     }
 
     async loadPricing() {
@@ -1630,8 +1854,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ? this.platformItemCharge()
                 : 0;
 
-        const rideSurcharge = serviceSlug === 'ride' ? this.largeRideSurcharge() : 0;
-        const subtotal = this.toMoney(baseFare + extraDriverCharge + rideSurcharge);
+        const serviceOptionSurcharge = this.vehicleSurcharge(serviceSlug);
+        const subtotal = this.toMoney(baseFare + extraDriverCharge + serviceOptionSurcharge);
         const serviceFee = this.toMoney(baseServiceFee + extraPlatformCharge);
         const finalTotal = this.toMoney(subtotal + serviceFee);
 
@@ -1651,8 +1875,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             distanceKm,
             durationMinutes,
             fixedFare,
-            rideSurcharge,
+            serviceOptionSurcharge,
             passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
+            vehicleClass: this.vehicleClass(),
+            packageSize: serviceSlug === 'delivery' ? this.packageSize() : undefined,
             subtotal,
             serviceFee,
             finalTotal
@@ -1846,7 +2072,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     country_code: countryCode,
                     currency_code: currencyCode,
                     currency_symbol: currencySymbol,
-                    pricing_plan: 'starter'
+                    pricing_plan: 'starter',
+                    service_vehicle_class: this.vehicleClass(),
+                    service_option_surcharge: this.vehicleSurcharge(),
+                    ...(this.type === ServiceTypeEnum.DELIVERY ? { package_size: this.packageSize() } : {})
                 }
             };
 
@@ -1960,11 +2189,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private getMetadataPayload(formVal: Record<string, unknown>) {
         if (this.type === ServiceTypeEnum.RIDE) {
             const passengerCount = this.passengerCount();
+            const vehicleClass = this.vehicleClass();
 
             return {
                 ride_details: {
                     passenger_count: passengerCount,
-                    vehicle_class: passengerCount > 4 ? 'xl' : 'standard',
+                    vehicle_class: vehicleClass,
                     passenger_surcharge: this.largeRideSurcharge()
                 }
             };
@@ -1996,6 +2226,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return {
                 errand_details: {
                     mode,
+                    vehicleClass: this.vehicleClass(),
                     itemCount: items.length,
                     ...(isShoppingMode ? { items, budget } : {})
                 },
@@ -2015,7 +2246,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     recipientName: formVal['recipient_name'],
                     recipientPhone: formVal['recipient_phone'],
                     itemDescription: formVal['item_description'],
-                    deliveryInstructions: formVal['notes']
+                    deliveryInstructions: formVal['notes'],
+                    vehicleClass: this.vehicleClass(),
+                    packageSize: this.packageSize()
                 }
             };
         }

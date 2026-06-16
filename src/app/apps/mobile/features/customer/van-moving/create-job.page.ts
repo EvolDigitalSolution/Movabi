@@ -57,8 +57,10 @@ import { AnalyticsService } from '@core/services/analytics/analytics.service';
 import { GeocodingService } from '@core/services/maps/geocoding.service';
 import { RoutingService } from '@core/services/maps/routing.service';
 import { FareCalculationService } from '@core/services/maps/fare-calculation.service';
+import { BookingService } from '@core/services/booking/booking.service';
 
 import {
+    Booking,
     JobEstimate,
     City,
     UnifiedLocation,
@@ -184,9 +186,9 @@ type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
                       </button>
                     </div>
 
-                    @if (showPickupResults() && pickupResults().length > 0) {
+                    @if (showPickupResults() && displayPickupResults().length > 0) {
                       <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px]">
-                        @for (result of pickupResults(); track result.label) {
+                        @for (result of displayPickupResults(); track result.label) {
                           <button
                             type="button"
                             (mousedown)="selectResult('pickup', result)"
@@ -197,7 +199,7 @@ type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
                             </div>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-400 truncate uppercase tracking-widest font-bold">Select Location</p>
+                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
                             </div>
                           </button>
                         }
@@ -216,9 +218,9 @@ type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
                     (focus)="showDropoffResults.set(true)"
                     (blur)="hideResults('dropoff')"
                   >
-                    @if (showDropoffResults() && dropoffResults().length > 0) {
+                    @if (showDropoffResults() && displayDropoffResults().length > 0) {
                       <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px]">
-                        @for (result of dropoffResults(); track result.label) {
+                        @for (result of displayDropoffResults(); track result.label) {
                           <button
                             type="button"
                             (mousedown)="selectResult('dropoff', result)"
@@ -229,7 +231,7 @@ type MoveSize = 'small' | 'medium' | 'large' | 'full-house';
                             </div>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-400 truncate uppercase tracking-widest font-bold">Select Destination</p>
+                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ dropoffResults().length > 0 ? 'Select destination' : 'Recent destination' }}</p>
                             </div>
                           </button>
                         }
@@ -426,6 +428,7 @@ export class CreateJobPage implements AfterViewInit {
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
     private fareCalculator = inject(FareCalculationService);
+    private bookingService = inject(BookingService);
     private destroyRef = inject(DestroyRef);
 
     private pickupSearch$ = new Subject<string>();
@@ -475,6 +478,18 @@ export class CreateJobPage implements AfterViewInit {
     showPickupResults = signal(false);
     showDropoffResults = signal(false);
 
+    displayPickupResults(): AutocompleteResult[] {
+        return this.pickupResults().length > 0
+            ? this.pickupResults()
+            : this.recentLocationResults('pickup');
+    }
+
+    displayDropoffResults(): AutocompleteResult[] {
+        return this.dropoffResults().length > 0
+            ? this.dropoffResults()
+            : this.recentLocationResults('dropoff');
+    }
+
     constructor() {
         addIcons({
             busOutline,
@@ -521,6 +536,7 @@ export class CreateJobPage implements AfterViewInit {
 
     async ngAfterViewInit(): Promise<void> {
         await this.loadCities();
+        void this.bookingService.getHistory();
         setTimeout(() => void this.trySetInitialView(), 300);
     }
 
@@ -645,10 +661,10 @@ export class CreateJobPage implements AfterViewInit {
         if (!query || query.length < 3) {
             if (type === 'pickup') {
                 this.pickupResults.set([]);
-                this.showPickupResults.set(false);
+                this.showPickupResults.set(this.recentLocationResults('pickup').length > 0);
             } else {
                 this.dropoffResults.set([]);
-                this.showDropoffResults.set(false);
+                this.showDropoffResults.set(this.recentLocationResults('dropoff').length > 0);
             }
             return;
         }
@@ -691,6 +707,7 @@ export class CreateJobPage implements AfterViewInit {
         }
 
         this.updateMarker(type);
+        this.fitMapToSelectedLocations();
         void this.calculateRouteAndPrice();
     }
 
@@ -722,7 +739,31 @@ export class CreateJobPage implements AfterViewInit {
             label: type === 'pickup' ? 'PICKUP' : 'DROPOFF'
         });
 
-        this.mapComponent?.setCenter(lng, lat, 14);
+        if (!this.hasValidCoords(type === 'pickup' ? this.dropoffLocation : this.pickupLocation)) {
+            this.mapComponent?.setCenter(lng, lat, 14);
+        }
+    }
+
+    private fitMapToSelectedLocations(): void {
+        const pickupReady = this.hasValidCoords(this.pickupLocation);
+        const dropoffReady = this.hasValidCoords(this.dropoffLocation);
+
+        if (pickupReady && dropoffReady) {
+            this.mapComponent?.fitBounds(
+                [
+                    [Number(this.pickupLocation.longitude), Number(this.pickupLocation.latitude)],
+                    [Number(this.dropoffLocation.longitude), Number(this.dropoffLocation.latitude)]
+                ],
+                { padding: { top: 90, bottom: 190, left: 48, right: 48 } }
+            );
+            return;
+        }
+
+        const single = pickupReady ? this.pickupLocation : dropoffReady ? this.dropoffLocation : null;
+
+        if (single?.latitude && single.longitude) {
+            this.mapComponent?.setCenter(Number(single.longitude), Number(single.latitude), 14);
+        }
     }
 
     async calculateRouteAndPrice(): Promise<void> {
@@ -759,7 +800,7 @@ export class CreateJobPage implements AfterViewInit {
                             [pickup.lng, pickup.lat],
                             [dropoff.lng, dropoff.lat]
                         ],
-                        { padding: { top: 80, bottom: 320, left: 50, right: 50 } }
+                        { padding: { top: 90, bottom: 190, left: 48, right: 48 } }
                     );
 
                     this.calculatePrice(route.distanceMeters / 1000, route.durationSeconds);
@@ -790,9 +831,35 @@ export class CreateJobPage implements AfterViewInit {
             loc.source = 'manual';
 
             this.updateMarker(type);
+            this.fitMapToSelectedLocations();
         } catch (error) {
             console.error(`Failed to resolve ${type} address:`, error);
         }
+    }
+
+    private recentLocationResults(type: 'pickup' | 'dropoff'): AutocompleteResult[] {
+        const key = type === 'pickup' ? 'pickup_address' : 'dropoff_address';
+        const latKey = type === 'pickup' ? 'pickup_latitude' : 'dropoff_latitude';
+        const lngKey = type === 'pickup' ? 'pickup_longitude' : 'dropoff_longitude';
+        const seen = new Set<string>();
+
+        return this.bookingService.bookingHistory()
+            .map((booking: Booking) => {
+                const record = booking as unknown as Record<string, unknown>;
+                const label = String(record[key] || '').trim();
+                const lat = Number(record[latKey]);
+                const lng = Number(record[lngKey]);
+
+                if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+                const uniqueKey = label.toLowerCase();
+                if (seen.has(uniqueKey)) return null;
+                seen.add(uniqueKey);
+
+                return { label, lat, lng };
+            })
+            .filter((result): result is AutocompleteResult => !!result)
+            .slice(0, 5);
     }
 
     private fallbackEstimate(
