@@ -1,16 +1,18 @@
 ﻿import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AdminService } from '../../services/admin.service';
+import { AdminPricingRule, AdminService } from '../../services/admin.service';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
-import { ServiceType } from '../../../../shared/models/booking.model';
 import { ButtonComponent } from '../../../../shared/ui/button';
 
-type PricingServiceType = ServiceType & {
+type PricingServiceType = AdminPricingRule & {
     price_per_km?: number | string | null;
     currency_code?: string | null;
     currency_symbol?: string | null;
     is_active?: boolean | null;
+    per_min?: number | string | null;
+    service_fee?: number | string | null;
+    minimum_fare?: number | string | null;
 };
 
 @Component({
@@ -82,6 +84,22 @@ type PricingServiceType = ServiceType & {
                 <div class="flex items-baseline gap-1">
                   <span class="text-xs font-bold text-slate-400">{{ getCurrencySymbol(service) }}</span>
                   <span class="text-xl font-display font-bold text-slate-900">{{ toMoney(service.price_per_km) }}</span>
+                </div>
+              </div>
+
+              <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Minimum</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-xs font-bold text-slate-400">{{ getCurrencySymbol(service) }}</span>
+                  <span class="text-xl font-display font-bold text-slate-900">{{ toMoney(service.minimum_fare) }}</span>
+                </div>
+              </div>
+
+              <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Service Fee</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-xs font-bold text-slate-400">{{ getCurrencySymbol(service) }}</span>
+                  <span class="text-xl font-display font-bold text-slate-900">{{ toMoney(service.service_fee) }}</span>
                 </div>
               </div>
             </div>
@@ -191,6 +209,53 @@ type PricingServiceType = ServiceType & {
                       type="number"
                       step="0.01"
                       formControlName="price_per_km"
+                      class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                    >
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid md:grid-cols-3 gap-5">
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Per Minute</label>
+                  <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                      {{ editForm.value.currency_symbol || symbolFromCode(editForm.value.currency_code) }}
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      formControlName="per_min"
+                      class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                    >
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Service Fee</label>
+                  <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                      {{ editForm.value.currency_symbol || symbolFromCode(editForm.value.currency_code) }}
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      formControlName="service_fee"
+                      class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                    >
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Minimum Fare</label>
+                  <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                      {{ editForm.value.currency_symbol || symbolFromCode(editForm.value.currency_code) }}
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      formControlName="minimum_fare"
                       class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
                     >
                   </div>
@@ -342,6 +407,9 @@ export class PricingRulesComponent implements OnInit {
         icon: ['cube'],
         base_price: [0, [Validators.required, Validators.min(0)]],
         price_per_km: [0, [Validators.required, Validators.min(0)]],
+        per_min: [0, [Validators.required, Validators.min(0)]],
+        service_fee: [0, [Validators.required, Validators.min(0)]],
+        minimum_fare: [0, [Validators.required, Validators.min(0)]],
         currency_code: ['GBP', Validators.required],
         currency_symbol: ['£', Validators.required],
         is_active: [true]
@@ -369,6 +437,9 @@ export class PricingRulesComponent implements OnInit {
             icon: 'cube',
             base_price: 0,
             price_per_km: 0,
+            per_min: 0,
+            service_fee: 0,
+            minimum_fare: 0,
             currency_code: 'GBP',
             currency_symbol: '£',
             is_active: true
@@ -388,6 +459,9 @@ export class PricingRulesComponent implements OnInit {
             icon: service.icon || 'cube',
             base_price: Number(service.base_price || 0),
             price_per_km: Number(service.price_per_km || 0),
+            per_min: Number(service.per_min || 0),
+            service_fee: Number(service.service_fee || 0),
+            minimum_fare: Number(service.minimum_fare || service.base_price || 0),
             currency_code: currencyCode,
             currency_symbol: service.currency_symbol || this.symbolFromCode(currencyCode),
             is_active: service.is_active ?? true
@@ -419,6 +493,9 @@ export class PricingRulesComponent implements OnInit {
             icon: String(this.editForm.value.icon || 'cube').trim(),
             base_price: Number(this.editForm.value.base_price || 0),
             price_per_km: Number(this.editForm.value.price_per_km || 0),
+            per_min: Number(this.editForm.value.per_min || 0),
+            service_fee: Number(this.editForm.value.service_fee || 0),
+            minimum_fare: Number(this.editForm.value.minimum_fare || 0),
             currency_code: String(this.editForm.value.currency_code || 'GBP').trim().toUpperCase(),
             currency_symbol: String(this.editForm.value.currency_symbol || this.symbolFromCode(this.editForm.value.currency_code)).trim(),
             is_active: this.editForm.value.is_active === true
@@ -521,7 +598,10 @@ export class PricingRulesComponent implements OnInit {
     estimate(service: PricingServiceType): string {
         const base = Number(service.base_price || 0);
         const perKm = Number(service.price_per_km || 0);
-        return (base + perKm * 5).toFixed(2);
+        const perMin = Number(service.per_min || 0);
+        const serviceFee = Number(service.service_fee || 0);
+        const minimumFare = Number(service.minimum_fare || 0);
+        return Math.max(minimumFare, base + perKm * 5 + perMin * 12 + serviceFee).toFixed(2);
     }
 
 

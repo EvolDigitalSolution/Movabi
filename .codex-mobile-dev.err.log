@@ -924,3 +924,400 @@ websocket connection issues.
           ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2430: Interface 'AdminPricingRule' incorrectly extends interface 'ServiceType'.
+  Types of property 'is_active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean'.
+      Type 'undefined' is not assignable to type 'boolean'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:31:17:
+[37m      31 │ export interface [32mAdminPricingRule[37m extends ServiceType {
+         ╵                  [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "symbolFromCode" in class body[0m [duplicate-class-member]
+
+    src/app/apps/admin/services/admin.service.ts:573:4:
+[37m      573 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+  The original member "symbolFromCode" is here:
+
+    src/app/apps/admin/services/admin.service.ts:483:4:
+[37m      483 │     [32msymbolFromCode[37m(code) {
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:631:10:
+[37m      631 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2393: Duplicate function implementation.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/services/admin.service.ts:739:10:
+[37m      739 │   private [32msymbolFromCode[37m(code?: string | null): string {
+          ╵           [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m

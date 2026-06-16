@@ -23,11 +23,11 @@ export class PricingConfigService {
         },
 
         delivery: {
-            baseFare: 3.5,
-            distanceRatePerKm: 0.85,
+            baseFare: 2.75,
+            distanceRatePerKm: 0.75,
             timeRatePerMinute: 0.08,
-            serviceFee: 0.25,
-            minimumFare: 4.5,
+            serviceFee: 0.2,
+            minimumFare: 3.99,
             label: 'Delivery'
         },
 

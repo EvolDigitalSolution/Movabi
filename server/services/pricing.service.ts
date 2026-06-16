@@ -6,6 +6,7 @@ export interface PricingOptions {
     lng: number;
     serviceSlug?: string;
     distanceKm?: number;
+    durationMinutes?: number;
     basePrice?: number;
     countryCode?: string;
     currencyCode?: string;
@@ -37,6 +38,7 @@ export class PricingService {
         const {
             serviceSlug = 'ride',
             distanceKm = 0,
+            durationMinutes = 0,
             basePrice: legacyBasePrice,
             city,
             pricingPlan = 'starter'
@@ -59,21 +61,54 @@ export class PricingService {
         let pricePerKmUsed = 0;
 
         try {
-            // 0. New multi-region pricing engine
-            const { data: regionalRule, error: regionalError } = await supabaseAdmin
-                .from('regional_pricing_rules')
+            // Admin-managed pricing_config is the operational source of truth for
+            // simple per-service pricing. Regional rules remain as fallback.
+            const { data: configRule, error: configError } = await supabaseAdmin
+                .from('pricing_config')
                 .select('*')
-                .eq('country_code', countryCode)
-                .eq('service_slug', serviceSlug)
-                .eq('pricing_plan', pricingPlan)
+                .eq('service_type', serviceSlug)
                 .eq('is_active', true)
                 .maybeSingle();
+
+            if (configError) {
+                console.warn('[PricingService] Pricing config lookup failed:', configError.message);
+            }
+
+            if (configRule) {
+                const baseFare = Number(configRule.base_fare || 0);
+                const perKm = Number(configRule.per_km || 0);
+                const perMin = Number(configRule.per_min || 0);
+                const serviceFee = Number(configRule.service_fee || 0);
+                const minimumFare = Number(configRule.minimum_fare || 0);
+
+                resolvedBasePrice = this.roundMoney(Math.max(minimumFare, baseFare + distanceKm * perKm + durationMinutes * perMin + serviceFee));
+                resolvedCurrencyCode = configRule.currency_code || this.currencyFromCountry(countryCode);
+                currencySymbol = this.symbolFromCurrency(resolvedCurrencyCode);
+                commissionRateUsed = 15;
+                platformFee = this.roundMoney(resolvedBasePrice * (commissionRateUsed / 100));
+                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
+                baseFareUsed = baseFare;
+                pricePerKmUsed = perKm;
+                source = 'pricing_config';
+            }
+
+            // 0. New multi-region pricing engine
+            const { data: regionalRule, error: regionalError } = source === 'legacy_fallback'
+                ? await supabaseAdmin
+                    .from('regional_pricing_rules')
+                    .select('*')
+                    .eq('country_code', countryCode)
+                    .eq('service_slug', serviceSlug)
+                    .eq('pricing_plan', pricingPlan)
+                    .eq('is_active', true)
+                    .maybeSingle()
+                : { data: null, error: null } as any;
 
             if (regionalError) {
                 console.warn('[PricingService] Regional rule lookup failed:', regionalError.message);
             }
 
-            if (regionalRule) {
+            if (regionalRule && source === 'legacy_fallback') {
                 const baseFare = Number(regionalRule.base_fare || 0);
                 const perKm = Number(regionalRule.price_per_km || 0);
                 const minimumFare = Number(regionalRule.minimum_fare || 0);

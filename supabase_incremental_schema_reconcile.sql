@@ -999,3 +999,84 @@ CREATE INDEX IF NOT EXISTS idx_profiles_location ON profiles(lat, lng) WHERE lat
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user ON wallet_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_driver_earnings_status ON driver_earnings(status);
 CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active) WHERE is_active = TRUE;
+
+-- Keep short package delivery competitive. Bike/small package delivery should
+-- not inherit ride or van-style minimums for sub-1km local jobs.
+CREATE TABLE IF NOT EXISTS pricing_config (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_type TEXT NOT NULL UNIQUE,
+    base_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
+    per_km NUMERIC(10,2) NOT NULL DEFAULT 0,
+    per_min NUMERIC(10,2) NOT NULL DEFAULT 0,
+    service_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
+    minimum_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
+    currency_code TEXT NOT NULL DEFAULT 'GBP',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE pricing_config ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    ALTER TABLE pricing_config DROP CONSTRAINT IF EXISTS service_type_check;
+    ALTER TABLE pricing_config
+        ADD CONSTRAINT service_type_check
+        CHECK (service_type IN ('ride', 'errand', 'delivery', 'van-moving'));
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'pricing_config'
+          AND policyname = 'Allow active pricing read'
+    ) THEN
+        CREATE POLICY "Allow active pricing read" ON pricing_config
+            FOR SELECT USING (is_active = TRUE);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'pricing_config'
+          AND policyname = 'Allow admin pricing management'
+    ) THEN
+        CREATE POLICY "Allow admin pricing management" ON pricing_config
+            FOR ALL
+            USING (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+            WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+    END IF;
+
+    INSERT INTO pricing_config (service_type, base_fare, per_km, per_min, service_fee, minimum_fare, currency_code, is_active)
+    VALUES ('delivery', 2.75, 0.75, 0.08, 0.20, 3.99, 'GBP', TRUE)
+    ON CONFLICT (service_type) DO UPDATE SET
+        base_fare = EXCLUDED.base_fare,
+        per_km = EXCLUDED.per_km,
+        per_min = EXCLUDED.per_min,
+        service_fee = EXCLUDED.service_fee,
+        minimum_fare = EXCLUDED.minimum_fare,
+        currency_code = EXCLUDED.currency_code,
+        is_active = TRUE,
+        updated_at = NOW();
+
+    INSERT INTO pricing_rules (service_type_id, currency_code, country_code, base_fare, per_km_rate, minimum_fare)
+    SELECT id, 'GBP', 'GB', 2.75, 0.75, 3.99
+    FROM service_types
+    WHERE slug = 'delivery'
+    ON CONFLICT (service_type_id, currency_code, country_code) DO UPDATE SET
+        base_fare = EXCLUDED.base_fare,
+        per_km_rate = EXCLUDED.per_km_rate,
+        minimum_fare = EXCLUDED.minimum_fare;
+
+    IF to_regclass('public.regional_pricing_rules') IS NOT NULL THEN
+        EXECUTE $sql$
+            UPDATE regional_pricing_rules
+            SET base_fare = 2.75,
+                price_per_km = 0.75,
+                minimum_fare = 3.99
+            WHERE country_code = 'GB'
+              AND service_slug = 'delivery'
+              AND pricing_plan IN ('starter', 'pro')
+        $sql$;
+    END IF;
+END $$;

@@ -224,6 +224,7 @@ export class BookingService {
         const pickupLat = Number(bookingData.pickup_lat || 0);
         const pickupLng = Number(bookingData.pickup_lng || 0);
         const distanceKm = this.getDistanceKm(bookingData);
+        const durationSeconds = Number((bookingData as any).duration_seconds || 0);
 
         const countryCode = String(
             (bookingData as any).country_code ||
@@ -245,6 +246,7 @@ export class BookingService {
                 lng: pickupLng,
                 basePrice: bookingData.total_price || bookingData.price || 0,
                 distanceKm,
+                durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined,
                 serviceSlug,
                 serviceType: serviceSlug,
                 countryCode,

@@ -28,6 +28,16 @@ export interface WalletTransaction {
   created_at: string;
 }
 
+export interface AdminPricingRule extends ServiceType {
+  pricing_config_id?: string | null;
+  currency_code?: string | null;
+  currency_symbol?: string | null;
+  is_active: boolean;
+  per_min?: number | string | null;
+  service_fee?: number | string | null;
+  minimum_fare?: number | string | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -329,13 +339,42 @@ export class AdminService {
     if (error) throw error;
   }
 
-  async getServiceTypes() {
+  async getServiceTypes(): Promise<AdminPricingRule[]> {
     const { data, error } = await this.supabase
       .from('service_types')
       .select('*');
 
     if (error) throw error;
-    return data as ServiceType[];
+
+    const services = (data || []) as ServiceType[];
+    const slugs = services.map((service: any) => service.slug).filter(Boolean);
+
+    const { data: configs } = slugs.length
+      ? await this.supabase
+        .from('pricing_config')
+        .select('*')
+        .in('service_type', slugs)
+      : { data: [] as any[] };
+
+    const configsByService = new Map<string, any>();
+    (configs || []).forEach((config: any) => configsByService.set(String(config.service_type), config));
+
+    return services.map((service: any) => {
+      const config = configsByService.get(String(service.slug));
+
+      return {
+        ...service,
+        pricing_config_id: config?.id || null,
+        base_price: config?.base_fare ?? service.base_price,
+        price_per_km: config?.per_km ?? service.price_per_km,
+        per_min: config?.per_min ?? 0,
+        service_fee: config?.service_fee ?? 0,
+        minimum_fare: config?.minimum_fare ?? service.base_price,
+        currency_code: config?.currency_code ?? service.currency_code ?? 'GBP',
+        currency_symbol: service.currency_symbol ?? this.symbolFromCode(config?.currency_code || service.currency_code || 'GBP'),
+        is_active: config?.is_active ?? service.is_active ?? true
+      } as AdminPricingRule;
+    });
   }
 
   async updateBookingStatus(bookingId: string, status: BookingStatus, notes: string) {
@@ -523,25 +562,29 @@ export class AdminService {
   }
 
   async createServiceType(payload: any) {
+    const servicePayload = this.cleanServiceTypePayload(payload);
     const { data, error } = await this.supabase
       .from('service_types')
-      .insert(payload)
+      .insert(servicePayload)
       .select()
       .single();
 
     if (error) throw error;
+    await this.upsertPricingConfig(data.slug, payload);
     return data;
   }
 
   async updateServiceType(id: string, payload: any) {
+    const servicePayload = this.cleanServiceTypePayload(payload);
     const { data, error } = await this.supabase
       .from('service_types')
-      .update(payload)
+      .update(servicePayload)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
+    await this.upsertPricingConfig(data.slug, payload);
     return data;
   }
 
@@ -552,6 +595,49 @@ export class AdminService {
       .eq('id', id);
 
     if (error) throw error;
+  }
+
+  private cleanServiceTypePayload(payload: any) {
+    return {
+      name: String(payload?.name || '').trim(),
+      slug: String(payload?.slug || '').trim(),
+      description: String(payload?.description || '').trim(),
+      icon: String(payload?.icon || 'cube').trim(),
+      base_price: Number(payload?.base_price || 0),
+      price_per_km: Number(payload?.price_per_km || 0)
+    };
+  }
+
+  private async upsertPricingConfig(serviceType: string, payload: any) {
+    const cleanPayload = {
+      service_type: String(serviceType || payload?.slug || '').trim(),
+      base_fare: Number(payload?.base_price || 0),
+      per_km: Number(payload?.price_per_km || 0),
+      per_min: Number(payload?.per_min || 0),
+      service_fee: Number(payload?.service_fee || 0),
+      minimum_fare: Number(payload?.minimum_fare || payload?.base_price || 0),
+      currency_code: String(payload?.currency_code || 'GBP').trim().toUpperCase(),
+      is_active: payload?.is_active === true,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await this.supabase
+      .from('pricing_config')
+      .upsert(cleanPayload, { onConflict: 'service_type' });
+
+    if (error) throw error;
+  }
+
+  private legacyPricingSymbolFromCode(code?: string | null): string {
+    switch (String(code || '').toUpperCase()) {
+      case 'GBP': return '£';
+      case 'USD': return '$';
+      case 'EUR': return '€';
+      case 'NGN': return '₦';
+      case 'CAD': return '$';
+      case 'AUD': return '$';
+      default: return '£';
+    }
   }
 
   async createSubscriptionPlan(payload: any) {

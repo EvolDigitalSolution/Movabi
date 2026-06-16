@@ -24,6 +24,8 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       lng,
       basePrice,
       distanceKm,
+      durationMinutes,
+      durationSeconds,
       serviceType,
       serviceSlug,
       countryCode,
@@ -42,6 +44,9 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       lng: Number(lng),
       basePrice: basePrice !== undefined ? Number(basePrice) : undefined,
       distanceKm: distanceKm !== undefined ? Number(distanceKm) : undefined,
+      durationMinutes: durationMinutes !== undefined
+        ? Number(durationMinutes)
+        : (durationSeconds !== undefined ? Number(durationSeconds) / 60 : undefined),
       serviceSlug: serviceSlug || serviceType || 'ride',
       countryCode: countryCode || (city as any)?.country_code || (city as any)?.country || 'GB',
       currencyCode,
