@@ -325,10 +325,11 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                       <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Spent</p>
                       <p
                         class="text-lg font-display font-black"
-                        [class.text-emerald-600]="toNumber(errandDetails()?.actual_spending) <= toNumber(errandDetails()?.estimated_budget)"
-                        [class.text-rose-600]="toNumber(errandDetails()?.actual_spending) > toNumber(errandDetails()?.estimated_budget)"
+                        [class.text-amber-600]="!hasRecordedErrandSpend()"
+                        [class.text-emerald-600]="hasRecordedErrandSpend() && toNumber(errandDetails()?.actual_spending) <= toNumber(errandDetails()?.estimated_budget)"
+                        [class.text-rose-600]="hasRecordedErrandSpend() && toNumber(errandDetails()?.actual_spending) > toNumber(errandDetails()?.estimated_budget)"
                       >
-                        {{ formatPrice(errandDetails()?.actual_spending || 0) }}
+                        {{ hasRecordedErrandSpend() ? formatPrice(errandDetails()?.actual_spending || 0) : 'Not recorded' }}
                       </p>
                     </div>
                   </div>
@@ -354,10 +355,10 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                     </div>
                   }
 
-                  @if (job()?.status === 'in_progress') {
+                  @if (showErrandSpendTools()) {
                     <div class="grid grid-cols-2 gap-3 pt-2">
                       <app-button variant="secondary" size="sm" (clicked)="recordSpending()">
-                        Record Spend
+                        {{ hasRecordedErrandSpend() ? 'Update Spend' : 'Record Spend' }}
                       </app-button>
 
                       <app-button variant="secondary" size="sm" (clicked)="requestOverBudget()">
@@ -1264,6 +1265,24 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     formatPrice(amount: number | null | undefined) {
         return this.config.formatCurrency(this.toNumber(amount));
+    }
+
+    hasRecordedErrandSpend(): boolean {
+        const amount = this.toNumber(this.errandDetails()?.actual_spending);
+        return amount > 0;
+    }
+
+    showErrandSpendTools(): boolean {
+        if (this.job()?.service_slug !== ServiceTypeEnum.ERRAND) return false;
+
+        return [
+            'in_progress',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered'
+        ].includes(this.job()?.status || '');
     }
 
     toNumber(value: unknown): number {

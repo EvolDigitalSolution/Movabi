@@ -1406,3 +1406,45 @@ websocket connection issues.
           ╵                   [32m~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasRecordedErrandSpend' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:328:49:
+[37m      328 │ ...               [class.text-amber-600]="![32mhasRecordedErrandSpend[37m()"
+          ╵                                            [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasRecordedErrandSpend' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:329:50:
+[37m      329 │ ....text-emerald-600]="[32mhasRecordedErrandSpend[37m() && toNumber(erran...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasRecordedErrandSpend' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:330:47:
+[37m      330 │ ...ass.text-rose-600]="[32mhasRecordedErrandSpend[37m() && toNumber(erran...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasRecordedErrandSpend' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:332:27:
+[37m      332 │ ...                 {{ [32mhasRecordedErrandSpend[37m() ? formatPrice(err...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'showErrandSpendTools' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:358:23:
+[37m      358 │                   @if ([32mshowErrandSpendTools[37m()) {
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasRecordedErrandSpend' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:361:27:
+[37m      361 │ ...                 {{ [32mhasRecordedErrandSpend[37m() ? 'Update Spend' ...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
