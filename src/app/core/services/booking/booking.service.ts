@@ -176,6 +176,10 @@ export class BookingService {
         if (bError) throw bError;
 
         const detailsTable = this.getDetailsTable(serviceSlug);
+        if (!detailsTable) {
+            throw new Error(`Unsupported service type: ${serviceSlug}`);
+        }
+
         let detailsInsert: Record<string, unknown>;
 
         switch (serviceSlug) {
@@ -417,18 +421,22 @@ export class BookingService {
         }
     }
 
-    private getDetailsTable(serviceCode: ServiceTypeEnum): string {
+    private getDetailsTable(serviceCode?: ServiceTypeEnum | string | null): string | null {
         switch (serviceCode) {
             case ServiceTypeEnum.RIDE:
+            case 'ride':
                 return 'ride_details';
             case ServiceTypeEnum.ERRAND:
+            case 'errand':
                 return 'errand_details';
             case ServiceTypeEnum.DELIVERY:
+            case 'delivery':
                 return 'delivery_details';
             case ServiceTypeEnum.VAN:
+            case 'van-moving':
                 return 'van_details';
             default:
-                throw new Error(`Unsupported service type: ${serviceCode}`);
+                return null;
         }
     }
 
@@ -625,6 +633,7 @@ export class BookingService {
 
     public mapJobToBooking(job: any): Booking {
         const price = Number(job?.price ?? job?.estimated_price ?? job?.metadata?.frontend_total_price ?? 0);
+        const serviceSlug = this.resolveServiceSlug(job);
 
         return {
             ...job,
@@ -632,7 +641,7 @@ export class BookingService {
             customer_id: job.customer_id,
             driver_id: job.driver_id,
             service_type_id: job.service_type_id,
-            service_slug: job.service_type?.slug || job.service_slug || job.metadata?.service_slug,
+            service_slug: serviceSlug,
             status: job.status as BookingStatus,
             price,
             total_price: price,
@@ -662,6 +671,28 @@ export class BookingService {
             tax_amount: job.tax_amount,
             surge_multiplier: job.surge_multiplier
         } as Booking;
+    }
+
+    private resolveServiceSlug(job: any): ServiceTypeEnum | string {
+        const metadata = job?.metadata || {};
+        const candidates = [
+            job?.service_type?.slug,
+            job?.service_slug,
+            metadata?.service_slug,
+            metadata?.serviceType,
+            metadata?.service_type,
+            metadata?.service,
+            metadata?.ride_details ? ServiceTypeEnum.RIDE : null,
+            metadata?.errand_details ? ServiceTypeEnum.ERRAND : null,
+            metadata?.delivery_details ? ServiceTypeEnum.DELIVERY : null,
+            metadata?.van_details || metadata?.moving_details ? ServiceTypeEnum.VAN : null
+        ];
+
+        const found = candidates
+            .map((value) => String(value || '').trim())
+            .find(Boolean);
+
+        return found || ServiceTypeEnum.RIDE;
     }
 
     async confirmJobPayment(jobId: string, paymentIntentId: string): Promise<Booking> {
@@ -719,14 +750,19 @@ export class BookingService {
             });
     }
 
-    async getBookingDetails(bookingId: string, serviceCode: ServiceTypeEnum): Promise<unknown> {
+    async getBookingDetails(bookingId: string, serviceCode?: ServiceTypeEnum | string | null): Promise<unknown | null> {
         const table = this.getDetailsTable(serviceCode);
+
+        if (!table) {
+            console.warn('[BookingService] Skipping booking details load for unsupported service type:', serviceCode);
+            return null;
+        }
 
         const { data, error } = await this.supabase
             .from(table)
             .select('*')
             .eq('job_id', bookingId)
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
         return data;

@@ -1398,3 +1398,11 @@ websocket connection issues.
           ╵                                           [32m~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type 'string | null' is not assignable to parameter of type 'string'.
+  Type 'null' is not assignable to type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/booking/booking.service.ts:206:18:
+[37m      206 │             .from([32mdetailsTable[37m)
+          ╵                   [32m~~~~~~~~~~~~[0m
+
+[39m[22m
