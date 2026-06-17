@@ -251,24 +251,23 @@ type PassedJob = {
             </div>
           }
 
-          <div class="relative overflow-hidden rounded-[2rem] p-5 shadow-2xl shadow-slate-900/20">
-            <div class="absolute inset-0 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900"></div>
-            <div class="absolute -top-20 -right-10 w-48 h-48 rounded-full bg-blue-500/20 blur-3xl"></div>
+          <div class="relative overflow-hidden rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-900/10 border border-slate-200">
+            <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
 
             <div class="relative z-10">
               <div class="flex flex-col gap-5 mb-6">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/10 text-white/90 text-[9px] font-bold uppercase tracking-[0.18em] mb-4">
+                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-slate-700 text-[9px] font-black uppercase tracking-[0.18em] mb-4">
                       <ion-icon name="radio-outline" class="text-sm"></ion-icon>
                       Live status
                     </div>
 
-                    <h2 class="text-3xl font-display font-bold text-white tracking-tight leading-none">
+                    <h2 class="text-3xl font-display font-black text-slate-950 tracking-tight leading-none">
                       {{ status() === 'online' ? (isAvailable() ? 'Active' : 'Busy') : 'Offline' }}
                     </h2>
 
-                    <p class="text-slate-300 font-medium text-sm mt-3 leading-relaxed max-w-[14rem]">
+                    <p class="text-slate-600 font-semibold text-sm mt-3 leading-relaxed max-w-[14rem]">
                       @if (status() === 'offline') {
                         Go online to receive nearby ride, errand, delivery, and moving requests.
                       } @else if (!isAvailable()) {
@@ -279,10 +278,10 @@ type PassedJob = {
                     </p>
                   </div>
 
-                  <div class="rounded-[1.5rem] border border-white/10 bg-white/10 p-3 shadow-xl shrink-0">
+                  <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-3 shadow-sm shrink-0">
                     <div class="grid grid-cols-2 gap-3">
                       <div class="flex flex-col items-center">
-                        <span class="text-[7px] uppercase text-slate-300 font-bold mb-2 tracking-widest">Online</span>
+                        <span class="text-[7px] uppercase text-slate-600 font-black mb-2 tracking-widest">Online</span>
                         <ion-toggle
                           [checked]="status() === 'online'"
                           (ionChange)="toggleStatus($event)"
@@ -291,7 +290,7 @@ type PassedJob = {
                       </div>
 
                       <div class="flex flex-col items-center">
-                        <span class="text-[7px] uppercase text-slate-300 font-bold mb-2 tracking-widest">Free</span>
+                        <span class="text-[7px] uppercase text-slate-600 font-black mb-2 tracking-widest">Free</span>
                         <ion-toggle
                           [checked]="isAvailable()"
                           (ionChange)="toggleAvailability($event)"
@@ -322,22 +321,22 @@ type PassedJob = {
               </div>
 
               <div class="grid grid-cols-3 gap-2">
-                <div class="rounded-2xl bg-white/10 border border-white/10 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-bold text-slate-300 mb-1 truncate">Today</p>
-                  <p class="text-lg font-display font-bold text-white">{{ jobs().length }}</p>
-                  <p class="text-[9px] text-slate-300 font-medium leading-snug">Open requests</p>
+                <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
+                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Today</p>
+                  <p class="text-lg font-display font-black text-slate-950">{{ jobs().length }}</p>
+                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">Open requests</p>
                 </div>
 
-                <div class="rounded-2xl bg-white/10 border border-white/10 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-bold text-slate-300 mb-1 truncate">Acceptance</p>
-                  <p class="text-lg font-display font-bold text-white">{{ acceptanceMetric().display }}</p>
-                  <p class="text-[9px] text-slate-300 font-medium leading-snug">{{ acceptanceMetric().label }}</p>
+                <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
+                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Acceptance</p>
+                  <p class="text-lg font-display font-black text-slate-950">{{ acceptanceMetric().display }}</p>
+                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ acceptanceMetric().label }}</p>
                 </div>
 
-                <div class="rounded-2xl bg-white/10 border border-white/10 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-bold text-slate-300 mb-1 truncate">Rating</p>
-                  <p class="text-lg font-display font-bold text-white">{{ ratingMetric().display }}</p>
-                  <p class="text-[9px] text-slate-300 font-medium leading-snug">{{ ratingMetric().label }}</p>
+                <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
+                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Rating</p>
+                  <p class="text-lg font-display font-black text-slate-950">{{ ratingMetric().display }}</p>
+                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ ratingMetric().label }}</p>
                 </div>
               </div>
             </div>

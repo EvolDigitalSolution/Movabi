@@ -2113,3 +2113,25 @@ Application bundle generation complete. [4.607 seconds] - 2026-06-17T09:22:21.38
 
 Stylesheet update sent to client(s).
 Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m      [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m       [2m | [22m[36m282.93 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m      [2m | [22m [1mRaw size[22m
+[32mchunk-PZELMXRE.js[39m  [2m | [22m[2mwallet-page[22m[2m | [22m [36m28.95 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.805 seconds] - 2026-06-17T09:30:21.750Z
+
+Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m          [2m | [22m[36m282.93 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mchunk-3VDYJKWD.js[39m  [2m | [22m[2mdashboard-page[22m[2m | [22m[36m107.59 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.481 seconds] - 2026-06-17T09:33:07.349Z
+
+Component update sent to client(s).

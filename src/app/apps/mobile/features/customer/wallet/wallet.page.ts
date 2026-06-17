@@ -87,14 +87,14 @@ type WalletTransaction = Record<string, unknown>;
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <div class="relative mb-6 overflow-hidden rounded-[2rem] bg-slate-950 text-white px-6 py-10 text-center shadow-lg shadow-slate-900/20">
-        <div class="absolute inset-x-0 top-0 h-1 bg-blue-500"></div>
+      <div class="relative mb-6 overflow-hidden rounded-[2rem] bg-white px-6 py-8 text-center shadow-lg shadow-slate-900/10 border border-slate-200">
+        <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
 
-        <p class="relative text-white text-sm font-bold mb-3">
+        <p class="relative text-slate-600 text-sm font-black mb-3">
           Available Balance
         </p>
 
-        <h1 class="relative text-white text-5xl font-display font-bold tracking-tight">
+        <h1 class="relative text-slate-950 text-5xl font-display font-black tracking-tight">
           {{ appConfig.formatCurrency(walletService.wallet()?.available_balance || 0) }}
         </h1>
       </div>
