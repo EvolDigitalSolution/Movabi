@@ -603,7 +603,21 @@ export class BookingService {
                 .eq('id', data.driver_id)
                 .single();
 
-            data.driver = driver;
+            if (driver) {
+                const { data: vehicles } = await this.supabase
+                    .from('vehicles')
+                    .select('*')
+                    .eq('driver_id', data.driver_id)
+                    .order('is_verified', { ascending: false })
+                    .order('created_at', { ascending: false })
+                    .limit(3);
+
+                data.driver = {
+                    ...driver,
+                    vehicles: vehicles || [],
+                    vehicle: vehicles?.[0] || null
+                };
+            }
         }
 
         return this.mapJobToBooking(data);
@@ -819,8 +833,12 @@ export class BookingService {
             let message = 'Unable to cancel booking right now. Please try again.';
 
             if (typeof error === 'object' && error !== null && 'error' in error) {
-                const apiError = error as { error?: { message?: string; error?: string } };
-                message = apiError.error?.message || apiError.error?.error || message;
+                const apiError = error as { error?: { message?: string; error?: string } | string };
+                if (typeof apiError.error === 'string') {
+                    message = apiError.error || message;
+                } else {
+                    message = apiError.error?.message || apiError.error?.error || message;
+                }
             } else if (error instanceof Error && error.message) {
                 message = error.message;
             }

@@ -951,16 +951,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Cancel Job Safely
+DROP FUNCTION IF EXISTS cancel_job_safely(UUID);
 CREATE OR REPLACE FUNCTION cancel_job_safely(
-  p_job_id UUID
+  p_job_id UUID,
+  p_reason TEXT DEFAULT 'User cancelled'
 )
 RETURNS BOOLEAN AS $$
 BEGIN
   UPDATE jobs
   SET status = 'cancelled',
+      metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+        'cancellation_reason', p_reason,
+        'cancelled_at', NOW()
+      ),
       updated_at = NOW()
   WHERE id = p_job_id
-    AND status IN ('requested', 'searching', 'assigned');
+    AND status IN ('requested', 'searching', 'assigned', 'accepted', 'heading_to_pickup');
 
   RETURN FOUND;
 END;

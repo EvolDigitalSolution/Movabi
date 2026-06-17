@@ -72,6 +72,8 @@ export interface DriverProfile extends Profile {
     completion_rate?: number;
     on_time_performance?: number;
     total_earnings?: number;
+    vehicle?: Vehicle | null;
+    vehicles?: Vehicle[];
 }
 
 export interface DriverSubscription {
@@ -223,7 +225,7 @@ export interface Job {
     completed_at?: string | null;
 
     customer?: Profile;
-    driver?: Profile;
+    driver?: (Profile & { vehicle?: Vehicle | null; vehicles?: Vehicle[] });
     service_type?: ServiceType;
     service_type_id?: string;
     service_slug?: ServiceTypeEnum | string;
@@ -291,7 +293,7 @@ export interface DriverLocation {
     heading?: number;
     speed?: number;
     updated_at: string;
-    driver?: Profile;
+    driver?: (Profile & { vehicle?: Vehicle | null; vehicles?: Vehicle[] });
 }
 
 export interface DispatchCandidate extends DriverLocation {
@@ -474,7 +476,7 @@ export interface Booking {
     payment_method?: string | null;
 
     service_type?: ServiceType;
-    driver?: Profile;
+    driver?: (Profile & { vehicle?: Vehicle | null; vehicles?: Vehicle[] });
     customer?: Profile;
     metadata?: Record<string, unknown>;
 

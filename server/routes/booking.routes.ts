@@ -349,8 +349,12 @@ router.post('/cancel', async (req: Request, res: Response) => {
         });
 
         if (rpcError || !cancelled) {
+            if (rpcError) {
+                console.error('[BookingRoutes] cancel_job_safely failed:', rpcError);
+            }
+
             return res.status(400).json({
-                error: 'Failed to cancel job. It may have already been completed or cancelled.'
+                error: rpcError?.message || 'Failed to cancel job. It may have already been completed or cancelled.'
             });
         }
 

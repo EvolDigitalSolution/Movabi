@@ -44,7 +44,8 @@ import {
     Booking,
     ServiceTypeEnum,
     DriverLocation,
-    ErrandFunding
+    ErrandFunding,
+    Vehicle
 } from '../../../../../shared/models/booking.model';
 
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
@@ -83,42 +84,36 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
     <ion-content class="bg-slate-50">
       @if (booking()) {
         <div class="flex flex-col h-full">
-          <div class="flex-1 bg-slate-100 relative overflow-hidden min-h-[58vh]">
+          <div class="bg-slate-100 relative overflow-hidden h-[60vh] min-h-[390px]">
             <app-map #map></app-map>
 
             @if (booking()?.status === 'searching') {
-              <div class="absolute inset-0 bg-slate-950/45 backdrop-blur-md flex items-center justify-center p-6 z-20">
-                <div class="max-w-sm w-full bg-white/95 border border-white/60 rounded-[2rem] shadow-2xl p-6 text-center">
-                  <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-5 border border-blue-100 shadow-lg shadow-blue-100">
+              <div class="absolute left-3 right-3 top-3 z-20 pointer-events-none">
+                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-2xl shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
+                  <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
                     <ion-spinner name="crescent" color="primary"></ion-spinner>
-                  </div>
-
-                  <div class="space-y-2 mb-5">
-                    <h2 class="text-xl font-display font-bold text-slate-900 tracking-tight">Finding your driver</h2>
-                    <p class="text-sm text-slate-500 font-medium leading-relaxed">
-                      We’re matching you with the nearest available driver.
-                    </p>
-                  </div>
-
-                  <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-left mb-4">
-                    <div class="flex items-center justify-between mb-2">
-                      <span class="text-xs font-semibold text-blue-700">Search timer</span>
-                      <span class="text-base font-display font-bold text-slate-900">
-                        {{ searchCountdownLabel() }}
-                      </span>
                     </div>
 
-                    <div class="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
-                      <div
-                        class="h-full bg-blue-600 rounded-full transition-all duration-1000"
-                        [style.width.%]="searchProgressPercent()"
-                      ></div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                          <h2 class="text-sm font-display font-black text-slate-950 truncate">Finding your driver</h2>
+                          <p class="text-[11px] text-slate-500 font-semibold truncate">Contacting nearby drivers</p>
+                        </div>
+                        <span class="text-sm font-display font-black text-blue-700 shrink-0">
+                          {{ searchCountdownLabel() }}
+                        </span>
+                      </div>
+
+                      <div class="mt-2 w-full h-1.5 bg-blue-100 rounded-full overflow-hidden">
+                        <div
+                          class="h-full bg-blue-600 rounded-full transition-all duration-1000"
+                          [style.width.%]="searchProgressPercent()"
+                        ></div>
+                      </div>
                     </div>
                   </div>
-
-                  <p class="text-xs font-semibold text-slate-500">
-                    Dispatch is being managed securely
-                  </p>
                 </div>
               </div>
             }
@@ -146,8 +141,18 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
             }
           </div>
 
-          <div class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-6 relative z-10 max-h-[46%] overflow-y-auto border-t border-slate-100">
-            <div class="w-12 h-1 bg-slate-100 rounded-full mx-auto"></div>
+          <div
+            class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
+            [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[40vh]'"
+          >
+            <button
+              type="button"
+              class="w-full flex items-center justify-center py-1"
+              (click)="detailsExpanded.set(!detailsExpanded())"
+              [attr.aria-label]="detailsExpanded() ? 'Collapse details' : 'Expand details'"
+            >
+              <span class="w-12 h-1 bg-slate-200 rounded-full"></span>
+            </button>
 
             <div class="p-5 rounded-[2rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
               <div class="flex justify-between items-start gap-4">
@@ -262,18 +267,26 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               }
 
               <div class="p-4 bg-white rounded-[2rem] border border-slate-100 shadow-sm">
-                <div class="flex items-center gap-4">
+                <div class="flex items-start gap-4">
                   <div class="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white shadow-md shrink-0">
                     <img src="https://picsum.photos/seed/driver/200" alt="Driver profile" class="w-full h-full object-cover" />
                   </div>
 
                   <div class="flex-1 min-w-0">
                     <h3 class="text-base font-bold text-slate-900 truncate">
-                      {{ booking()?.driver?.first_name || 'Driver' }} {{ booking()?.driver?.last_name || '' }}
+                      {{ getDriverName() }}
                     </h3>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 truncate">
                       {{ getDriverStatusText() }}
                     </p>
+
+                    <div class="mt-3 grid grid-cols-1 gap-2">
+                      <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2">
+                        <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Transport</p>
+                        <p class="text-sm text-slate-900 font-black truncate">{{ getDriverVehicleSummary() }}</p>
+                        <p class="text-[11px] text-slate-500 font-semibold truncate">{{ getDriverVehicleMeta() }}</p>
+                      </div>
+                    </div>
                   </div>
 
                   @if (booking()?.driver?.phone) {
@@ -486,6 +499,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     isLoading = signal(true);
     showChat = signal(false);
+    detailsExpanded = signal(false);
     driverDistanceToPickup = signal<number | null>(null);
     driverEtaToPickup = signal<number | null>(null);
     driverLastSeenAt = signal<Date | null>(null);
@@ -624,6 +638,56 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return this.getStatusHint(this.booking()?.status || '');
     }
 
+    getDriverName(): string {
+        const driver = this.booking()?.driver;
+        const name = [driver?.first_name, driver?.last_name]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join(' ');
+
+        return name || 'Your driver';
+    }
+
+    getDriverVehicleSummary(): string {
+        const vehicle = this.getDriverVehicle();
+        if (!vehicle) return 'Vehicle details pending';
+
+        const makeModel = [vehicle.make, vehicle.model]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join(' ');
+
+        return makeModel || this.getDriverTransportLabel(vehicle);
+    }
+
+    getDriverVehicleMeta(): string {
+        const vehicle = this.getDriverVehicle();
+        if (!vehicle) return 'We will show transport details as soon as they are confirmed.';
+
+        const parts = [
+            this.getDriverTransportLabel(vehicle),
+            vehicle.color,
+            vehicle.license_plate
+        ]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean);
+
+        return parts.length ? parts.join(' • ') : 'Transport confirmed';
+    }
+
+    private getDriverVehicle(): Vehicle | null {
+        const driver = this.booking()?.driver as ({ vehicle?: Vehicle | null; vehicles?: Vehicle[] } | undefined);
+        return driver?.vehicle || driver?.vehicles?.[0] || null;
+    }
+
+    private getDriverTransportLabel(vehicle: Vehicle): string {
+        const type = String(vehicle.type || '').replace(/_/g, ' ').trim();
+        const capacity = String(vehicle.capacity || '').trim();
+        const label = type ? type.replace(/\b\w/g, (char) => char.toUpperCase()) : 'Vehicle';
+
+        return capacity ? `${label} • ${capacity}` : label;
+    }
+
     canManuallyCancel(): boolean {
         const status = this.booking()?.status || '';
 
@@ -716,7 +780,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const b = this.booking();
 
         if (b?.status === 'searching') {
-            this.mapComponent?.showSearchingOverlay?.set(true);
+            this.mapComponent?.showSearchingOverlay?.set(false);
 
             if (!this.countdownInterval) {
                 this.startSearchCountdown();
@@ -1056,12 +1120,23 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     text: 'Yes, Cancel',
                     role: 'destructive',
                     handler: async (data) => {
-                        await this.bookingService.cancelBooking(
-                            b.id,
-                            data?.reason || 'Customer cancelled'
-                        );
+                        try {
+                            await this.bookingService.cancelBooking(
+                                b.id,
+                                data?.reason || 'Customer cancelled'
+                            );
 
-                        await this.router.navigate(['/customer']);
+                            await this.router.navigate(['/customer']);
+                        } catch (error: any) {
+                            await this.loadBookingAndDetails(b.id, false);
+                            const errorAlert = await this.alertCtrl.create({
+                                header: 'Could not cancel',
+                                message: error?.message || 'This booking could not be cancelled. It may have already changed status.',
+                                buttons: ['OK']
+                            });
+
+                            await errorAlert.present();
+                        }
                     }
                 }
             ]
