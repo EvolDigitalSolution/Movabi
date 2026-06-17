@@ -2100,3 +2100,16 @@ Component update sent to client(s).
 Application bundle generation complete. [1.503 seconds] - 2026-06-17T09:10:36.602Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m     [2m | [22m[36m282.93 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m   [2m | [22m[36m244.18 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mchunk-NVBSSWQ3.js[39m  [2m | [22m[2mhome-page[22m[2m | [22m [36m37.66 kB[39m[2m | [22m
+
+Application bundle generation complete. [4.607 seconds] - 2026-06-17T09:22:21.385Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).
