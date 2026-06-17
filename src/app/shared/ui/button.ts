@@ -43,7 +43,7 @@ export class ButtonComponent {
     const base = 'inline-flex items-center justify-center rounded-2xl font-black transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none focus:outline-none focus:ring-4';
 
     const variants = {
-      primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-xl shadow-blue-600/25 focus:ring-blue-500/20',
+      primary: 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-xl shadow-amber-500/25 focus:ring-amber-400/20',
       secondary: 'bg-white text-slate-950 border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-md shadow-slate-200/60 focus:ring-slate-200/50',
       error: 'bg-red-600 text-white hover:bg-red-700 shadow-xl shadow-red-600/25 focus:ring-red-500/20',
       ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 focus:ring-slate-100',
