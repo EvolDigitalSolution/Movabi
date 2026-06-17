@@ -85,12 +85,20 @@ router.post('/enqueue', async (req: Request, res: Response) => {
     }
 
     const { data, error } = await dispatchService.enqueueJob(jobId, tenantId, cityId);
-    if (error) throw error;
+    if (error) {
+      console.error('[LogisticsRoutes] enqueue dispatch error:', error);
+      return res.status(500).json({
+        error: error.message || error.details || 'Failed to enqueue job',
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+    }
 
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Enqueue job error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to enqueue job' });
   }
 });
 

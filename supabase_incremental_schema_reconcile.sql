@@ -248,6 +248,60 @@ CREATE TABLE IF NOT EXISTS job_service_details (
 );
 
 -- PART 8 — Driver Earnings & Payouts
+CREATE TABLE IF NOT EXISTS job_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    tenant_id UUID,
+    city_id UUID,
+    status TEXT NOT NULL DEFAULT 'waiting',
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '5 minutes',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT job_queue_job_id_key UNIQUE (job_id)
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'job_queue' AND column_name = 'tenant_id') THEN
+        ALTER TABLE public.job_queue ADD COLUMN tenant_id UUID;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'job_queue' AND column_name = 'city_id') THEN
+        ALTER TABLE public.job_queue ADD COLUMN city_id UUID;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'job_queue' AND column_name = 'updated_at') THEN
+        ALTER TABLE public.job_queue ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    END IF;
+
+    ALTER TABLE public.job_queue DROP CONSTRAINT IF EXISTS job_queue_status_check;
+    ALTER TABLE public.job_queue
+        ADD CONSTRAINT job_queue_status_check
+        CHECK (status IN ('waiting', 'broadcasting', 'assigned', 'expired', 'ignored'));
+END $$;
+
+DELETE FROM job_queue a
+USING job_queue b
+WHERE a.job_id = b.job_id
+  AND (
+    a.created_at < b.created_at
+    OR (a.created_at = b.created_at AND a.id::text < b.id::text)
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_job_queue_job_id_unique ON job_queue(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_queue_status_expires ON job_queue(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS dispatch_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    driver_id UUID,
+    accepted BOOLEAN DEFAULT FALSE,
+    distance NUMERIC,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_dispatch_logs_job_driver ON dispatch_logs(job_id, driver_id);
+
 CREATE TABLE IF NOT EXISTS payout_batches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     total_amount NUMERIC DEFAULT 0,

@@ -212,7 +212,16 @@ export class JobService {
         });
 
         if (!response.ok) {
-            throw new Error('Failed to enqueue job');
+            let message = 'Failed to enqueue job';
+
+            try {
+                const body = await response.json();
+                message = body?.error || body?.message || message;
+            } catch {
+                // Keep the default message when the API does not return JSON.
+            }
+
+            throw new Error(message);
         }
 
         await this.eventService.logEvent(
