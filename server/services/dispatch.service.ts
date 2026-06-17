@@ -379,13 +379,40 @@ export class DispatchService {
             return { data: null, error: jobError };
         }
 
+        let dispatchJob = job as Job | null;
+
+        if (!dispatchJob) {
+            const { data: existingJob, error: fetchError } = await this.supabase
+                .from('jobs')
+                .select('*')
+                .eq('id', jobId)
+                .maybeSingle();
+
+            if (fetchError) {
+                console.error(`[DispatchService] Failed to reload job ${jobId} for dispatch:`, fetchError);
+                return { data: null, error: fetchError };
+            }
+
+            dispatchJob = existingJob as Job | null;
+        }
+
+        if (!dispatchJob) {
+            return {
+                data: null,
+                error: {
+                    message: 'Job not found or is no longer dispatchable.',
+                    code: 'JOB_NOT_DISPATCHABLE'
+                }
+            };
+        }
+
         const result = await this.supabase
             .from('job_queue')
             .upsert(
                 {
                     job_id: jobId,
                     tenant_id: tenantId,
-                    city_id: cityId || job?.city_id || null,
+                    city_id: cityId || (dispatchJob as any).city_id || null,
                     status: 'broadcasting',
                     expires_at: expires,
                     updated_at: nowIso()
@@ -397,14 +424,39 @@ export class DispatchService {
             .select('*')
             .maybeSingle();
 
-        if (!result.error && job) {
+        if (result.error) {
+            console.warn(`[DispatchService] Queue insert failed for ${jobId}; continuing with live search.`, result.error);
+
+            try {
+                await this.notifyNearbyDrivers(dispatchJob, tenantId, cityId || (dispatchJob as any).city_id);
+            } catch (notifyError) {
+                console.warn(`[DispatchService] Driver notification fallback failed for ${jobId}:`, notifyError);
+            }
+
+            return {
+                data: {
+                    job_id: jobId,
+                    queued: false,
+                    warning: result.error.message || 'Dispatch queue unavailable; job remains searchable.'
+                },
+                error: null
+            };
+        }
+
+        try {
             await EventService.logEvent(
                 'job_enqueued',
-                { jobId, cityId: cityId || job.city_id, tenantId },
+                { jobId, cityId: cityId || (dispatchJob as any).city_id, tenantId },
                 tenantId
             );
+        } catch (eventError) {
+            console.warn(`[DispatchService] Failed to log enqueue event for ${jobId}:`, eventError);
+        }
 
-            await this.notifyNearbyDrivers(job as Job, tenantId, cityId || job.city_id);
+        try {
+            await this.notifyNearbyDrivers(dispatchJob, tenantId, cityId || (dispatchJob as any).city_id);
+        } catch (notifyError) {
+            console.warn(`[DispatchService] Failed notifying nearby drivers for ${jobId}:`, notifyError);
         }
 
         return result;
