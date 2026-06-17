@@ -2084,7 +2084,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 dropoff_lng: this.dropoffLocation.longitude || 0,
 
                 service_type_id: this.serviceType()?.id,
-                total_price: totalDue,
+                total_price: serviceCharge,
 
                 distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
                 estimated_distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
@@ -2261,7 +2261,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 },
                 payment_split: {
                     wallet_budget: this.walletCoversPayment() ? this.walletPaymentRequired() : 0,
-                    card_service_charge: this.walletCoversPayment() ? 0 : this.walletPaymentRequired(),
+                    card_service_charge: this.walletCoversPayment() ? 0 : this.cardChargeRequired(),
+                    card_total_authorization: this.walletCoversPayment() ? 0 : this.walletPaymentRequired(),
                     item_budget: budget,
                     service_charge: this.cardChargeRequired(),
                     payment_method: this.walletCoversPayment() ? 'wallet' : 'card'

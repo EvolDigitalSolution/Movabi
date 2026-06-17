@@ -2935,3 +2935,36 @@ Application bundle generation complete. [1.475 seconds] - 2026-06-17T20:42:01.91
 
 Application bundle generation complete. [1.428 seconds] - 2026-06-17T20:45:36.384Z
 
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m               [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m               [2m | [22m [1mRaw size[22m
+[32mchunk-WLLYH3S7.js[39m  [2m | [22m[2mbooking-request-page[22m[2m | [22m[36m160.39 kB[39m[2m | [22m
+
+Application bundle generation complete. [18.434 seconds] - 2026-06-17T21:50:19.490Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-EO3YBM7V.js[39m  [2m | [22m[2mbooking-tracking-page[22m[2m | [22m[36m109.59 kB[39m[2m | [22m
+
+Application bundle generation complete. [6.575 seconds] - 2026-06-17T21:52:32.075Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-2SHBU6SP.js[39m  [2m | [22m[2mbooking-tracking-page[22m[2m | [22m[36m109.69 kB[39m[2m | [22m
+
+Application bundle generation complete. [7.937 seconds] - 2026-06-17T21:52:49.531Z
+
+Page reload sent to client(s).

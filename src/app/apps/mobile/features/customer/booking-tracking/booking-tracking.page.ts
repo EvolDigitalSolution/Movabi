@@ -212,14 +212,14 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
                   <p class="text-lg font-display font-bold text-slate-900">
-                    {{ config.formatCurrency(booking()?.total_price || 0) }}
+                    {{ config.formatCurrency(getErrandServiceFee()) }}
                   </p>
                 </div>
 
                 <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
                   <p class="text-lg font-display font-bold text-slate-900">
-                    {{ config.formatCurrency(errandFunding()?.amount_reserved || 0) }}
+                    {{ config.formatCurrency(getErrandItemBudget()) }}
                   </p>
                 </div>
               </div>
@@ -696,13 +696,66 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     getDisplayedTotal(): string {
         const bookingTotal = Number(this.booking()?.total_price || 0);
-        const reserve = Number(this.errandFunding()?.amount_reserved || 0);
 
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            return this.config.formatCurrency(bookingTotal + reserve);
+            return this.config.formatCurrency(this.getErrandTotalReserved());
         }
 
         return this.config.formatCurrency(bookingTotal);
+    }
+
+    getErrandItemBudget(): number {
+        const details = this.details() || {};
+        const metadata = (this.booking() as any)?.metadata || {};
+        const paymentSplit = metadata?.payment_split || {};
+        const errandDetails = metadata?.errand_details || {};
+
+        return this.toMoney(
+            details['estimated_budget'] ||
+            paymentSplit['item_budget'] ||
+            errandDetails['budget'] ||
+            0
+        );
+    }
+
+    getErrandTotalReserved(): number {
+        const reserved = this.toMoney(this.errandFunding()?.amount_reserved || 0);
+        const itemBudget = this.getErrandItemBudget();
+        const bookingTotal = this.toMoney(this.booking()?.total_price || 0);
+
+        return Math.max(reserved, itemBudget + this.getErrandServiceFee(), bookingTotal);
+    }
+
+    getErrandServiceFee(): number {
+        const bookingTotal = this.toMoney(this.booking()?.total_price || 0);
+        const reserved = this.toMoney(this.errandFunding()?.amount_reserved || 0);
+        const itemBudget = this.getErrandItemBudget();
+        const metadata = (this.booking() as any)?.metadata || {};
+        const paymentSplit = metadata?.payment_split || {};
+        const explicitServiceCharge = this.toMoney(paymentSplit['service_charge'] || 0);
+
+        if (explicitServiceCharge > 0) {
+            return explicitServiceCharge;
+        }
+
+        if (reserved > itemBudget) {
+            return this.toMoney(reserved - itemBudget);
+        }
+
+        if (itemBudget > 0 && bookingTotal > itemBudget) {
+            return this.toMoney(bookingTotal - itemBudget);
+        }
+
+        if (itemBudget > 0 && reserved <= itemBudget && bookingTotal <= itemBudget) {
+            return 0;
+        }
+
+        return bookingTotal;
+    }
+
+    private toMoney(value: unknown): number {
+        const n = Number(value);
+        return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
     }
 
     searchCountdownLabel(): string {
