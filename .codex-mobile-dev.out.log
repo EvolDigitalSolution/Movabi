@@ -3059,3 +3059,19 @@ Application bundle generation failed. [5.247 seconds] - 2026-06-17T23:27:46.854Z
 Application bundle generation complete. [2.612 seconds] - 2026-06-17T23:27:56.310Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m            [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mchunk-UR5TJR5Y.js[39m  [2m | [22m[2mdashboard-page[22m  [2m | [22m[36m108.14 kB[39m[2m | [22m
+[32mchunk-H4YK6ZCO.js[39m  [2m | [22m[2mjob-details-page[22m[2m | [22m [36m95.66 kB[39m[2m | [22m
+[32mchunk-H7D7CQEU.js[39m  [2m | [22m[2monboarding-page[22m [2m | [22m [36m85.31 kB[39m[2m | [22m
+[32mchunk-CNRU6X3V.js[39m  [2m | [22m[2mvan-jobs-page[22m   [2m | [22m [36m56.74 kB[39m[2m | [22m
+[32mchunk-UFH3JNTT.js[39m  [2m | [22m[2mearnings-page[22m   [2m | [22m [36m54.72 kB[39m[2m | [22m
+[32mchunk-RQKWREUA.js[39m  [2m | [22m[2m-[22m               [2m | [22m [36m23.66 kB[39m[2m | [22m
+
+Application bundle generation complete. [9.554 seconds] - 2026-06-17T23:39:09.822Z
+
+Page reload sent to client(s).

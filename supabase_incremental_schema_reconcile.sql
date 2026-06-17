@@ -251,6 +251,28 @@ BEGIN
         END IF;
 END $$;
 
+-- PART 7B - Errand Detail Hardening
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_details') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_details' AND column_name = 'actual_spending') THEN
+            ALTER TABLE public.errand_details ADD COLUMN actual_spending NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_details' AND column_name = 'spending_notes') THEN
+            ALTER TABLE public.errand_details ADD COLUMN spending_notes TEXT;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_details' AND column_name = 'receipt_url') THEN
+            ALTER TABLE public.errand_details ADD COLUMN receipt_url TEXT;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_details' AND column_name = 'updated_at') THEN
+            ALTER TABLE public.errand_details ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+        END IF;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS job_service_details (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

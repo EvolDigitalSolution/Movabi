@@ -414,13 +414,25 @@ export class DriverService {
     }
 
     async recordErrandSpending(jobId: string, amount: number, notes?: string) {
-        const { error } = await this.supabase
+        const payload: Record<string, unknown> = {
+            actual_spending: amount,
+            spending_notes: notes,
+            updated_at: new Date().toISOString()
+        };
+
+        let { error } = await this.supabase
             .from('errand_details')
-            .update({
-                actual_spending: amount,
-                spending_notes: notes
-            })
+            .update(payload)
             .eq('job_id', jobId);
+
+        if (error?.code === '42703') {
+            const { error: fallbackError } = await this.supabase
+                .from('errand_details')
+                .update({ actual_spending: amount })
+                .eq('job_id', jobId);
+
+            error = fallbackError;
+        }
 
         if (error) throw error;
 
