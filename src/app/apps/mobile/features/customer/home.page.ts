@@ -88,42 +88,42 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
     </ion-header>
 
     <ion-content class="bg-slate-50">
-      <div class="max-w-2xl mx-auto p-6 space-y-10 pb-12">
-        <div class="relative bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 shadow-2xl shadow-slate-900/20 overflow-hidden group min-h-[320px] flex items-center">
+      <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-7 pb-12">
+        <div class="relative bg-slate-950 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-7 shadow-xl shadow-slate-900/15 overflow-hidden group min-h-[230px] flex items-center">
           <div class="absolute inset-0">
             <img
               src="https://picsum.photos/seed/customer/1920/1080?blur=4"
               alt="Movabi Services"
-              class="w-full h-full object-cover opacity-40 group-hover:scale-105 transition-transform duration-1000"
+              class="w-full h-full object-cover opacity-25 group-hover:scale-105 transition-transform duration-1000"
               referrerpolicy="no-referrer"
             />
           </div>
 
-          <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/90 to-slate-900/60"></div>
+          <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/95 to-slate-900/80"></div>
 
           <div class="relative z-10 w-full">
-            <p class="text-white/85 font-bold text-xs mb-3">
+            <p class="text-white font-black text-[10px] uppercase tracking-[0.16em] mb-2">
               Welcome Back
             </p>
 
-            <h1 class="text-4xl font-display font-bold text-white mb-3 tracking-tight">
+            <h1 class="text-2xl sm:text-3xl font-display font-black text-white mb-2 tracking-tight leading-tight">
               Hello, {{ displayName() }}!
             </h1>
 
-            <p class="text-white/85 font-medium text-base sm:text-lg">
+            <p class="text-slate-100 font-semibold text-sm sm:text-base">
               Where can we take you today?
             </p>
 
-            <div class="mt-8 sm:mt-10 grid grid-cols-2 gap-4">
+            <div class="mt-5 grid grid-cols-2 gap-3">
               <button
                 type="button"
                 (click)="router.navigate(['/customer/wallet'])"
-                class="bg-white/15 backdrop-blur-md rounded-3xl p-5 sm:p-6 border border-white/20 group-hover:border-white/30 cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="bg-white/12 backdrop-blur-md rounded-2xl p-4 border border-white/20 group-hover:border-white/30 cursor-pointer active:scale-95 transition-all text-left w-full"
               >
-                <p class="text-xs font-bold text-white/80 mb-2">
+                <p class="text-[10px] font-black text-white uppercase tracking-[0.12em] mb-1">
                   Wallet Balance
                 </p>
-                <p class="text-xl sm:text-2xl font-display font-bold text-white">
+                <p class="text-lg sm:text-xl font-display font-black text-white">
                   {{ formatCurrency(walletService.wallet()?.available_balance || 0) }}
                 </p>
               </button>
@@ -131,12 +131,12 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
               <button
                 type="button"
                 (click)="router.navigate(['/customer/activity'])"
-                class="bg-white/15 backdrop-blur-md rounded-3xl p-5 sm:p-6 border border-white/20 group-hover:border-white/30 cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="bg-white/12 backdrop-blur-md rounded-2xl p-4 border border-white/20 group-hover:border-white/30 cursor-pointer active:scale-95 transition-all text-left w-full"
               >
-                <p class="text-xs font-bold text-white/80 mb-2">
+                <p class="text-[10px] font-black text-white uppercase tracking-[0.12em] mb-1">
                   Active Trips
                 </p>
-                <p class="text-xl sm:text-2xl font-display font-bold text-white">
+                <p class="text-lg sm:text-xl font-display font-black text-white">
                   {{ activeTrips() }}
                 </p>
               </button>

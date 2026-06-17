@@ -1048,7 +1048,7 @@ BEGIN
     END IF;
 
     INSERT INTO pricing_config (service_type, base_fare, per_km, per_min, service_fee, minimum_fare, currency_code, is_active)
-    VALUES ('delivery', 2.75, 0.75, 0.08, 0.20, 3.99, 'GBP', TRUE)
+    VALUES ('delivery', 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', TRUE)
     ON CONFLICT (service_type) DO UPDATE SET
         base_fare = EXCLUDED.base_fare,
         per_km = EXCLUDED.per_km,
@@ -1060,7 +1060,7 @@ BEGIN
         updated_at = NOW();
 
     INSERT INTO pricing_rules (service_type_id, currency_code, country_code, base_fare, per_km_rate, minimum_fare)
-    SELECT id, 'GBP', 'GB', 2.75, 0.75, 3.99
+    SELECT id, 'GBP', 'GB', 2.25, 0.55, 2.99
     FROM service_types
     WHERE slug = 'delivery'
     ON CONFLICT (service_type_id, currency_code, country_code) DO UPDATE SET
@@ -1071,9 +1071,9 @@ BEGIN
     IF to_regclass('public.regional_pricing_rules') IS NOT NULL THEN
         EXECUTE $sql$
             UPDATE regional_pricing_rules
-            SET base_fare = 2.75,
-                price_per_km = 0.75,
-                minimum_fare = 3.99
+            SET base_fare = 2.25,
+                price_per_km = 0.55,
+                minimum_fare = 2.99
             WHERE country_code = 'GB'
               AND service_slug = 'delivery'
               AND pricing_plan IN ('starter', 'pro')

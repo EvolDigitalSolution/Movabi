@@ -1257,8 +1257,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (serviceSlug === 'ride') return this.largeRideSurcharge();
 
         if (serviceSlug === 'delivery') {
-            const packageSurcharge = this.packageSize() === 'large' ? 3 : this.packageSize() === 'medium' ? 1 : 0;
-            const vehicleSurcharge = vehicle === 'large_van' ? 9 : vehicle === 'small_van' ? 6 : vehicle === 'car' ? 1.5 : 0;
+            const packageSurcharge = this.packageSize() === 'large' ? 2 : this.packageSize() === 'medium' ? 0.75 : 0;
+            const vehicleSurcharge = vehicle === 'large_van' ? 5 : vehicle === 'small_van' ? 3.5 : vehicle === 'car' ? 0.75 : 0;
             return this.toMoney(packageSurcharge + vehicleSurcharge);
         }
 
@@ -1574,11 +1574,19 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
         if (type === 'pickup') {
             this.pickupLocation.address = query;
+            this.pickupLocation.latitude = undefined;
+            this.pickupLocation.longitude = undefined;
+            this.mapComponent?.removeMarker('pickup');
             this.pickupSearch$.next(query);
         } else {
             this.dropoffLocation.address = query;
+            this.dropoffLocation.latitude = undefined;
+            this.dropoffLocation.longitude = undefined;
+            this.mapComponent?.removeMarker('dropoff');
             this.dropoffSearch$.next(query);
         }
+
+        this.clearRouteAndFare();
     }
 
     private performSearch(type: 'pickup' | 'dropoff', query: string) {
@@ -1737,10 +1745,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 }
             });
         } else {
-            this.routeResult.set(null);
-            this.fareEstimate.set(null);
+            this.clearRouteAndFare();
             this.mapComponent.clearRoute();
         }
+    }
+
+    private clearRouteAndFare() {
+        this.routeResult.set(null);
+        this.fareEstimate.set(null);
+        this.estimatedPrice.set(0);
+        this.mapComponent?.clearRoute();
     }
 
     private recentLocationResults(type: 'pickup' | 'dropoff'): AutocompleteResult[] {
@@ -1797,6 +1811,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const route = this.routeResult();
         const serviceSlug = this.getServiceSlug();
         const formVal = this.bookingForm?.getRawValue?.() || this.bookingForm?.value || {};
+
+        if (!this.hasConfirmedRoute(route)) {
+            this.fareEstimate.set(null);
+            this.estimatedPrice.set(0);
+            return;
+        }
 
         const distanceKm = this.toMoney((route?.distanceMeters || 0) / 1000);
         const durationMinutes = this.toMoney((route?.durationSeconds || 0) / 60);
@@ -1995,6 +2015,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
 
         return null;
+    }
+
+    private hasConfirmedRoute(route: RouteSummary | null): route is RouteSummary {
+        return !!route &&
+            Number(route.distanceMeters) > 0 &&
+            Number(route.durationSeconds) > 0 &&
+            Number.isFinite(Number(this.pickupLocation.latitude)) &&
+            Number.isFinite(Number(this.pickupLocation.longitude)) &&
+            Number.isFinite(Number(this.dropoffLocation.latitude)) &&
+            Number.isFinite(Number(this.dropoffLocation.longitude));
     }
 
     async submit() {
