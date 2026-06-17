@@ -75,27 +75,27 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
       </ion-refresher>
 
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-20 overflow-x-hidden">
-        <div class="relative overflow-hidden bg-slate-950 rounded-[2rem] p-6 text-white shadow-2xl shadow-slate-900/20">
-          <div class="absolute inset-x-0 top-0 h-1 bg-blue-500"></div>
-          <ion-icon name="wallet" class="absolute -right-8 -bottom-8 text-[10rem] text-white/[0.06] rotate-12"></ion-icon>
+        <div class="relative overflow-hidden bg-white rounded-[2rem] p-6 shadow-xl shadow-slate-900/10 border border-slate-200">
+          <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
+          <ion-icon name="wallet" class="absolute -right-8 -bottom-8 text-[10rem] text-slate-900/[0.04] rotate-12"></ion-icon>
 
           <div class="relative z-10">
             <div class="flex items-start justify-between gap-4 mb-8">
               <div>
-                <p class="text-white/90 text-xs font-bold mb-2">
+                <p class="text-slate-600 text-xs font-black mb-2">
                   Transferred to Stripe
                 </p>
 
-                <h2 class="text-5xl font-display font-black tracking-tighter leading-none">
+                <h2 class="text-5xl font-display font-black tracking-tighter leading-none text-slate-950">
                   {{ formatPrice(totalBalance()) }}
                 </h2>
 
-                <p class="text-sm text-white/85 font-semibold mt-3 leading-relaxed max-w-[16rem]">
+                <p class="text-sm text-slate-600 font-semibold mt-3 leading-relaxed max-w-[16rem]">
                   Completed request payouts sent to your Stripe Express account.
                 </p>
               </div>
 
-              <div class="w-14 h-14 bg-white/12 border border-white/20 rounded-2xl flex items-center justify-center shrink-0 text-white">
+              <div class="w-14 h-14 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center shrink-0 text-slate-700">
                 <ion-icon name="wallet-outline" class="text-3xl"></ion-icon>
               </div>
             </div>
@@ -105,7 +105,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                 type="button"
                 (click)="withdrawFunds()"
                 [disabled]="withdrawLoading()"
-                class="h-12 rounded-2xl bg-white text-slate-950 font-black text-sm shadow-xl shadow-slate-950/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                class="h-12 rounded-2xl bg-blue-600 text-white font-black text-sm shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
                 {{ withdrawLoading() ? 'Opening...' : 'Open Stripe' }}
                 <ion-icon [name]="withdrawLoading() ? 'refresh-outline' : 'arrow-forward'" [class.animate-spin]="withdrawLoading()"></ion-icon>
@@ -114,14 +114,14 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               <button
                 type="button"
                 (click)="nav.navigateRoot('/driver')"
-                class="h-12 rounded-2xl bg-white/12 border border-white/25 text-white font-black text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                class="h-12 rounded-2xl bg-slate-50 border border-slate-200 text-slate-900 font-black text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
               >
                 Dashboard
               </button>
             </div>
 
             @if (withdrawError()) {
-              <p class="mt-3 text-xs font-bold text-red-100 bg-red-500/20 border border-red-200/20 rounded-2xl px-3 py-2">
+              <p class="mt-3 text-xs font-bold text-red-700 bg-red-50 border border-red-100 rounded-2xl px-3 py-2">
                 {{ withdrawError() }}
               </p>
             }
