@@ -616,39 +616,39 @@ type PassedJob = {
               <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.18em]">Quick Actions</h3>
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
-              <button type="button" (click)="router.navigate(['/driver/earnings'])" class="relative min-h-[9.25rem] overflow-hidden flex flex-col items-start p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-left">
-                <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-4 border border-blue-100">
-                  <ion-icon name="stats-chart" class="text-2xl"></ion-icon>
+            <div class="grid grid-cols-1 min-[430px]:grid-cols-2 gap-3">
+              <button type="button" (click)="router.navigate(['/driver/earnings'])" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-20 h-20 bg-blue-50 rounded-[1.75rem] flex items-center justify-center text-blue-600 mb-5 border border-blue-100 shadow-lg shadow-blue-600/10">
+                  <ion-icon name="stats-chart" class="text-5xl"></ion-icon>
                 </div>
-                <h4 class="font-display font-bold text-slate-950 text-base mb-1">Earnings</h4>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-snug">View income</p>
+                <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Earnings</h4>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">View income</p>
               </button>
 
-              <button type="button" (click)="router.navigate(['/driver/subscription'])" class="relative min-h-[9.25rem] overflow-hidden flex flex-col items-start p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-left">
-                <div class="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 mb-4 border border-amber-100">
-                  <ion-icon name="star" class="text-2xl"></ion-icon>
+              <button type="button" (click)="router.navigate(['/driver/subscription'])" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-20 h-20 bg-amber-50 rounded-[1.75rem] flex items-center justify-center text-amber-600 mb-5 border border-amber-100 shadow-lg shadow-amber-500/10">
+                  <ion-icon name="star" class="text-5xl"></ion-icon>
                 </div>
-                <h4 class="font-display font-bold text-slate-950 text-base mb-1">Subscription</h4>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-snug">
+                <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Subscription</h4>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">
                   {{ isProDriver() ? 'Pro plan active' : 'Starter plan' }}
                 </p>
               </button>
 
-              <button type="button" (click)="browseRequests()" class="relative min-h-[9.25rem] overflow-hidden flex flex-col items-start p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-left">
-                <div class="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-4 border border-indigo-100">
-                  <ion-icon name="list-outline" class="text-2xl"></ion-icon>
+              <button type="button" (click)="browseRequests()" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-20 h-20 bg-indigo-50 rounded-[1.75rem] flex items-center justify-center text-indigo-600 mb-5 border border-indigo-100 shadow-lg shadow-indigo-600/10">
+                  <ion-icon name="list-outline" class="text-5xl"></ion-icon>
                 </div>
-                <h4 class="font-display font-bold text-slate-950 text-base mb-1">Requests</h4>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-snug">Ride, errand & moving</p>
+                <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Requests</h4>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">Ride, errand & moving</p>
               </button>
 
-              <button type="button" (click)="setupPayouts()" class="relative min-h-[9.25rem] overflow-hidden flex flex-col items-start p-4 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-left">
-                <div class="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mb-4 border border-emerald-100">
-                  <ion-icon name="card" class="text-2xl"></ion-icon>
+              <button type="button" (click)="setupPayouts()" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-20 h-20 bg-emerald-50 rounded-[1.75rem] flex items-center justify-center text-emerald-600 mb-5 border border-emerald-100 shadow-lg shadow-emerald-600/10">
+                  <ion-icon name="card" class="text-5xl"></ion-icon>
                 </div>
-                <h4 class="font-display font-bold text-slate-950 text-base mb-1">Payouts</h4>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-snug">Stripe Connect</p>
+                <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Payouts</h4>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">Stripe Connect</p>
               </button>
             </div>
           </div>

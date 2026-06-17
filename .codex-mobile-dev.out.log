@@ -2580,3 +2580,16 @@ Component update sent to client(s).
 Application bundle generation complete. [2.247 seconds] - 2026-06-17T19:50:06.588Z
 
 Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m          [2m | [22m[36m287.93 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m        [2m | [22m[36m246.40 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mchunk-XKHN2NYD.js[39m  [2m | [22m[2mdashboard-page[22m[2m | [22m[36m108.14 kB[39m[2m | [22m
+
+Application bundle generation complete. [7.003 seconds] - 2026-06-17T19:57:35.663Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).
