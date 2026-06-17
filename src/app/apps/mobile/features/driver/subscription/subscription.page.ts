@@ -81,31 +81,30 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
 
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-20 overflow-x-hidden">
         <div
-          class="relative overflow-hidden rounded-[2rem] p-6 text-white shadow-2xl"
-          [class.bg-gradient-to-br]="true"
-          [class.from-emerald-600]="isProActive()"
-          [class.via-emerald-700]="isProActive()"
-          [class.to-slate-950]="isProActive()"
-          [class.shadow-emerald-600/20]="isProActive()"
-          [class.from-blue-600]="!isProActive()"
-          [class.via-blue-700]="!isProActive()"
-          [class.shadow-blue-600/20]="!isProActive()"
+          class="relative overflow-hidden rounded-[2rem] bg-white p-6 shadow-xl shadow-slate-900/10 border border-slate-200"
         >
-          <div class="absolute -right-12 -bottom-16 w-48 h-48 rounded-full bg-white/10 blur-2xl"></div>
-          <ion-icon [name]="isProActive() ? 'star' : 'wallet-outline'" class="absolute -right-8 -bottom-8 text-[10rem] text-white/10 rotate-12"></ion-icon>
+          <div
+            class="absolute inset-x-0 top-0 h-1.5"
+            [class.bg-emerald-600]="isProActive()"
+            [class.bg-blue-600]="!isProActive()"
+          ></div>
+          <ion-icon
+            [name]="isProActive() ? 'star' : 'wallet-outline'"
+            class="absolute -right-8 -bottom-8 text-[10rem] text-slate-900/[0.04] rotate-12"
+          ></ion-icon>
 
           <div class="relative z-10">
             <div class="flex items-start justify-between gap-4 mb-8">
               <div>
-                <p class="text-white/70 text-[10px] font-black mb-2 uppercase tracking-[0.22em]">
+                <p class="text-slate-600 text-[10px] font-black mb-2 uppercase tracking-[0.22em]">
                   Current Plan
                 </p>
 
-                <h2 class="text-4xl font-display font-black tracking-tight leading-none">
+                <h2 class="text-4xl font-display font-black tracking-tight leading-none text-slate-950">
                   {{ currentPlanName() }}
                 </h2>
 
-                <p class="text-sm text-white/80 font-semibold mt-3 max-w-xs leading-relaxed">
+                <p class="text-sm text-slate-600 font-semibold mt-3 max-w-xs leading-relaxed">
                   {{ currentPlanDescription() }}
                 </p>
               </div>
@@ -116,12 +115,12 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
             </div>
 
             @if (isProActive() && activeSub()?.current_period_end) {
-              <div class="inline-flex items-center px-4 py-2 bg-white/10 rounded-full text-xs font-bold border border-white/20">
+              <div class="inline-flex items-center px-4 py-2 bg-emerald-50 text-emerald-700 rounded-full text-xs font-black border border-emerald-100">
                 <ion-icon name="calendar-outline" class="mr-2"></ion-icon>
                 Renews {{ activeSub()?.current_period_end | date:'mediumDate' }}
               </div>
             } @else {
-              <div class="inline-flex items-center px-4 py-2 bg-white/10 rounded-full text-xs font-bold border border-white/20">
+              <div class="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-xs font-black border border-blue-100">
                 <ion-icon name="shield-checkmark-outline" class="mr-2"></ion-icon>
                 No monthly commitment
               </div>

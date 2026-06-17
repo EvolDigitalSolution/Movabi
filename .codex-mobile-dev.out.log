@@ -2148,3 +2148,14 @@ Application bundle generation complete. [2.546 seconds] - 2026-06-17T09:38:40.08
 
 Stylesheet update sent to client(s).
 Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m             [2m | [22m[36m283.56 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m            [2m | [22m [1mRaw size[22m
+[32mchunk-XCT6KKFE.js[39m  [2m | [22m[2msubscription-page[22m[2m | [22m [36m64.33 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.587 seconds] - 2026-06-17T10:14:51.368Z
+
+Component update sent to client(s).
