@@ -2543,3 +2543,29 @@ Application bundle generation failed. [5.745 seconds] - 2026-06-17T15:56:25.252Z
 Application bundle generation complete. [1.759 seconds] - 2026-06-17T15:58:03.455Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m     [2m | [22m[36m285.02 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m   [2m | [22m[36m245.07 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mchunk-K7IXHP4P.js[39m  [2m | [22m[2mhome-page[22m[2m | [22m [36m37.96 kB[39m[2m | [22m
+
+Application bundle generation complete. [7.643 seconds] - 2026-06-17T19:45:05.871Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m     [2m | [22m[36m285.31 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m   [2m | [22m[36m245.20 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mchunk-V6W4WSIA.js[39m  [2m | [22m[2mhome-page[22m[2m | [22m [36m38.01 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.206 seconds] - 2026-06-17T19:46:34.464Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).
