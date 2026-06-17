@@ -600,9 +600,10 @@ BEGIN
 
   RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
 
 ALTER FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) OWNER TO postgres;
+ALTER FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) SET row_security = off;
 GRANT EXECUTE ON FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) TO authenticated;
 
 -- Wallet-first Job Payment RPC
