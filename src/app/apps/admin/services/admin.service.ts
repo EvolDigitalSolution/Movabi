@@ -5,6 +5,7 @@ import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { Profile, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
 import { BookingService } from '@core/services/booking/booking.service';
 import { ApiUrlService } from '@core/services/api-url.service';
+import { cleanServiceTypePayload } from './admin-pricing-payload';
 
 export interface FailedBooking {
   id: string;
@@ -598,14 +599,7 @@ export class AdminService {
   }
 
   private cleanServiceTypePayload(payload: any) {
-    return {
-      name: String(payload?.name || '').trim(),
-      slug: String(payload?.slug || '').trim(),
-      description: String(payload?.description || '').trim(),
-      icon: String(payload?.icon || 'cube').trim(),
-      base_price: Number(payload?.base_price || 0),
-      price_per_km: Number(payload?.price_per_km || 0)
-    };
+    return cleanServiceTypePayload(payload);
   }
 
   private async upsertPricingConfig(serviceType: string, payload: any) {

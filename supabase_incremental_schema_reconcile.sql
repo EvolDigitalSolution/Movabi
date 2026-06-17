@@ -529,21 +529,60 @@ CREATE OR REPLACE FUNCTION reserve_errand_funds(
 )
 RETURNS BOOLEAN AS $$
 DECLARE
-  v_total_needed NUMERIC := p_item_budget + p_service_estimate;
+  v_total_needed NUMERIC := ROUND((COALESCE(p_item_budget, 0) + COALESCE(p_service_estimate, 0))::NUMERIC, 2);
   v_available NUMERIC;
+  v_wallet_id UUID;
+  v_existing_reserved NUMERIC := 0;
+  v_delta NUMERIC;
+  v_job RECORD;
 BEGIN
-  SELECT available_balance INTO v_available FROM wallets WHERE user_id = p_customer_id;
-  
-  IF v_available < v_total_needed THEN
-    RAISE EXCEPTION 'Insufficient funds';
+  IF v_total_needed <= 0 THEN
+    RAISE EXCEPTION 'Errand reservation amount must be greater than zero';
+  END IF;
+
+  SELECT *
+  INTO v_job
+  FROM jobs
+  WHERE id = p_job_id
+    AND customer_id = p_customer_id
+  FOR UPDATE;
+
+  IF v_job IS NULL THEN
+    RAISE EXCEPTION 'Job not found for errand reservation';
+  END IF;
+
+  IF v_job.status IN ('cancelled', 'completed') THEN
+    RAISE EXCEPTION 'Errand reservation is not available for this job status';
+  END IF;
+
+  INSERT INTO wallets (user_id, currency_code)
+  VALUES (p_customer_id, COALESCE(v_job.currency_code, 'GBP'))
+  ON CONFLICT (user_id) DO NOTHING;
+
+  SELECT id, COALESCE(available_balance, 0)
+  INTO v_wallet_id, v_available
+  FROM wallets
+  WHERE user_id = p_customer_id
+  FOR UPDATE;
+
+  SELECT COALESCE(amount_reserved, 0)
+  INTO v_existing_reserved
+  FROM errand_funding
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  v_delta := ROUND((v_total_needed - COALESCE(v_existing_reserved, 0))::NUMERIC, 2);
+
+  IF v_delta > 0 AND v_available < v_delta THEN
+    RAISE EXCEPTION 'Insufficient funds. Required: %, Available: %', v_total_needed, v_available;
   END IF;
 
   -- Reserve in wallet
   UPDATE wallets
-  SET available_balance = available_balance - v_total_needed,
-      reserved_balance = reserved_balance + v_total_needed,
+  SET available_balance = COALESCE(available_balance, 0) - v_delta,
+      reserved_balance = COALESCE(reserved_balance, 0) + v_delta,
       updated_at = NOW()
-  WHERE user_id = p_customer_id;
+  WHERE id = v_wallet_id;
 
   -- Record in errand_funding
   INSERT INTO errand_funding (job_id, customer_id, amount_reserved, status)
@@ -553,9 +592,17 @@ BEGIN
       status = 'reserved',
       updated_at = NOW();
 
+  UPDATE jobs
+  SET payment_status = 'wallet_funded',
+      payment_method = 'wallet',
+      updated_at = NOW()
+  WHERE id = p_job_id;
+
   RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) TO authenticated;
 
 -- Wallet-first Job Payment RPC
 CREATE OR REPLACE FUNCTION pay_job_from_wallet(
