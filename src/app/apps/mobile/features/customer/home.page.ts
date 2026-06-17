@@ -146,14 +146,14 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             <button
               type="button"
               (click)="goToBooking('ride')"
-              class="w-full min-h-[190px] text-left group relative overflow-hidden bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
-              <div class="flex h-full flex-col">
-                <div class="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 transition-transform">
-                  <ion-icon name="car" class="text-3xl"></ion-icon>
+              <div class="flex h-full flex-col items-center justify-center">
+                <div class="w-20 h-20 bg-blue-600 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="car" class="text-5xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 flex-1 min-w-0">
+                <div class="mt-5 min-w-0">
                   <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
                     Book a Ride
                   </h2>
@@ -162,7 +162,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
+                <div class="mt-5 w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
@@ -171,14 +171,14 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             <button
               type="button"
               (click)="goToBooking('errand')"
-              class="w-full min-h-[190px] text-left group relative overflow-hidden bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
-              <div class="flex h-full flex-col">
-                <div class="w-14 h-14 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 transition-transform">
-                  <ion-icon name="cart" class="text-3xl"></ion-icon>
+              <div class="flex h-full flex-col items-center justify-center">
+                <div class="w-20 h-20 bg-emerald-600 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="cart" class="text-5xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 flex-1 min-w-0">
+                <div class="mt-5 min-w-0">
                   <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
                     Run an Errand
                   </h2>
@@ -187,7 +187,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
+                <div class="mt-5 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
@@ -196,14 +196,14 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             <button
               type="button"
               (click)="goToBooking('delivery')"
-              class="w-full min-h-[190px] text-left group relative overflow-hidden bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
             >
-              <div class="flex h-full flex-col">
-                <div class="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 transition-transform">
-                  <ion-icon name="cube" class="text-3xl"></ion-icon>
+              <div class="flex h-full flex-col items-center justify-center">
+                <div class="w-20 h-20 bg-amber-500 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="cube" class="text-5xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 flex-1 min-w-0">
+                <div class="mt-5 min-w-0">
                   <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
                     Send a Package
                   </h2>
@@ -212,7 +212,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
+                <div class="mt-5 w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
@@ -221,14 +221,14 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             <button
               type="button"
               (click)="router.navigate(['/customer/van-moving/create'])"
-              class="w-full min-h-[190px] text-left group relative overflow-hidden bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
-              <div class="flex h-full flex-col">
-                <div class="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 transition-transform">
-                  <ion-icon name="bus" class="text-3xl"></ion-icon>
+              <div class="flex h-full flex-col items-center justify-center">
+                <div class="w-20 h-20 bg-indigo-600 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="bus" class="text-5xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 flex-1 min-w-0">
+                <div class="mt-5 min-w-0">
                   <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
                     Van Moving
                   </h2>
@@ -237,7 +237,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
+                <div class="mt-5 w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
                   <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
                 </div>
               </div>
