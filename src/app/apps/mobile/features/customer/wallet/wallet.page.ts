@@ -163,7 +163,7 @@ type WalletTransaction = Record<string, unknown>;
               type="button"
               (click)="handleTopUp()"
               [disabled]="!canSubmitTopUp"
-              class="h-14 font-bold text-lg rounded-2xl shadow-lg shadow-indigo-200"
+              class="h-16 font-black text-lg rounded-2xl shadow-xl shadow-indigo-200"
             >
               @if (loading()) {
                 <ion-spinner name="crescent" class="mr-2"></ion-spinner>

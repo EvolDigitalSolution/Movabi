@@ -254,12 +254,12 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     </div>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-2">
-                    <app-button variant="secondary" size="sm" (clicked)="rejectOverBudget()">
+                  <div class="grid grid-cols-2 gap-3">
+                    <app-button variant="secondary" color="error" size="md" (clicked)="rejectOverBudget()">
                       Reject
                     </app-button>
 
-                    <app-button variant="primary" size="sm" (clicked)="approveOverBudget()">
+                    <app-button variant="primary" color="success" size="md" (clicked)="approveOverBudget()">
                       Approve
                     </app-button>
                   </div>
