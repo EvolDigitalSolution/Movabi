@@ -1055,11 +1055,14 @@ $$ LANGUAGE plpgsql;
 
 -- Cancel Job Safely
 DROP FUNCTION IF EXISTS cancel_job_safely(UUID);
+DROP FUNCTION IF EXISTS cancel_job_safely(UUID, TEXT);
 CREATE OR REPLACE FUNCTION cancel_job_safely(
   p_job_id UUID,
   p_reason TEXT DEFAULT 'User cancelled'
 )
 RETURNS BOOLEAN AS $$
+DECLARE
+  v_cancelled BOOLEAN;
 BEGIN
   UPDATE jobs
   SET status = 'cancelled',
@@ -1071,9 +1074,28 @@ BEGIN
   WHERE id = p_job_id
     AND status IN ('requested', 'searching', 'assigned', 'accepted', 'heading_to_pickup');
 
-  RETURN FOUND;
+  v_cancelled := FOUND;
+
+  IF v_cancelled THEN
+    PERFORM release_job_wallet_reservation(p_job_id, p_reason);
+  END IF;
+
+  RETURN v_cancelled;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
+
+ALTER FUNCTION cancel_job_safely(UUID, TEXT) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION cancel_job_safely(UUID, TEXT) TO authenticated;
+
+CREATE OR REPLACE FUNCTION cancel_job_safely(p_job_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN cancel_job_safely(p_job_id, 'User cancelled');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
+
+ALTER FUNCTION cancel_job_safely(UUID) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION cancel_job_safely(UUID) TO authenticated;
 
 -- Process Payout Batch
 CREATE OR REPLACE FUNCTION process_payout_batch()
