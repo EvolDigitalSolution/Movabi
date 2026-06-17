@@ -615,8 +615,7 @@ export class BookingService {
                 const { data: vehicles } = await this.supabase
                     .from('vehicles')
                     .select('*')
-                    .eq('driver_id', data.driver_id)
-                    .order('created_at', { ascending: false })
+                    .eq('user_id', data.driver_id)
                     .limit(3);
 
                 data.driver = {

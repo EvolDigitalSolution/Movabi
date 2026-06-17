@@ -125,15 +125,27 @@ BEGIN
             ALTER TABLE public.vehicles ADD COLUMN is_verified BOOLEAN DEFAULT FALSE;
         END IF;
 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'driver_id') THEN
+            ALTER TABLE public.vehicles ADD COLUMN driver_id UUID;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'created_at') THEN
+            ALTER TABLE public.vehicles ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW();
+        END IF;
+
         UPDATE public.vehicles
         SET type = COALESCE(NULLIF(type, ''), 'car'),
             capacity = COALESCE(NULLIF(capacity, ''), CASE WHEN type = 'van' THEN 'small_van' ELSE 'standard' END),
-            is_verified = COALESCE(is_verified, FALSE)
+            is_verified = COALESCE(is_verified, FALSE),
+            driver_id = COALESCE(driver_id, user_id),
+            created_at = COALESCE(created_at, NOW())
         WHERE type IS NULL
            OR type = ''
            OR capacity IS NULL
            OR capacity = ''
-           OR is_verified IS NULL;
+           OR is_verified IS NULL
+           OR driver_id IS NULL
+           OR created_at IS NULL;
     END IF;
 END $$;
 

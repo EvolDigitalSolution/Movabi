@@ -2994,3 +2994,29 @@ Page reload sent to client(s).
 Application bundle generation complete. [8.122 seconds] - 2026-06-17T22:54:45.140Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                    [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mchunk-DOM22KZP.js[39m  [2m | [22m[2mbooking-request-page[22m    [2m | [22m[36m160.39 kB[39m[2m | [22m
+[32mchunk-WUPIYHXR.js[39m  [2m | [22m[2mbooking-tracking-page[22m   [2m | [22m[36m109.69 kB[39m[2m | [22m
+[32mchunk-H7G2IFKK.js[39m  [2m | [22m[2mdashboard-page[22m          [2m | [22m[36m108.14 kB[39m[2m | [22m
+[32mchunk-O2NXZKZ3.js[39m  [2m | [22m[2mjob-details-page[22m        [2m | [22m [36m94.76 kB[39m[2m | [22m
+[32mchunk-3ITMZ6SD.js[39m  [2m | [22m[2mdriver-list-component[22m   [2m | [22m [36m94.30 kB[39m[2m | [22m
+[32mchunk-JP3MZION.js[39m  [2m | [22m[2mjob-monitoring-component[22m[2m | [22m [36m87.07 kB[39m[2m | [22m
+[32mchunk-BTYLN2U7.js[39m  [2m | [22m[2monboarding-page[22m         [2m | [22m [36m85.31 kB[39m[2m | [22m
+[32mchunk-TYKCFB6L.js[39m  [2m | [22m[2mbooking-list-component[22m  [2m | [22m [36m78.64 kB[39m[2m | [22m
+[32mchunk-H2QCI5JS.js[39m  [2m | [22m[2mcreate-job-page[22m         [2m | [22m [36m77.82 kB[39m[2m | [22m
+[32mchunk-L2QL4GSH.js[39m  [2m | [22m[2mvan-jobs-page[22m           [2m | [22m [36m56.74 kB[39m[2m | [22m
+[32mchunk-OZDU6VPS.js[39m  [2m | [22m[2mpricing-rules-component[22m [2m | [22m [36m55.40 kB[39m[2m | [22m
+[32mchunk-ROANX65K.js[39m  [2m | [22m[2mdashboard-component[22m     [2m | [22m [36m54.81 kB[39m[2m | [22m
+[32mchunk-ULIRKZR4.js[39m  [2m | [22m[2mearnings-page[22m           [2m | [22m [36m54.72 kB[39m[2m | [22m
+[32mchunk-B2KU3QCG.js[39m  [2m | [22m[2mhome-page[22m               [2m | [22m [36m38.37 kB[39m[2m | [22m
+[32mchunk-6DN4GCTK.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m33.86 kB[39m[2m | [22m
+[2m...and 9 more lazy chunks files. Use "--verbose" to show all the files.[22m
+
+Application bundle generation complete. [4.635 seconds] - 2026-06-17T23:16:41.558Z
+
+Page reload sent to client(s).
