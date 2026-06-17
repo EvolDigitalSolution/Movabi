@@ -616,7 +616,6 @@ export class BookingService {
                     .from('vehicles')
                     .select('*')
                     .eq('driver_id', data.driver_id)
-                    .order('is_verified', { ascending: false })
                     .order('created_at', { ascending: false })
                     .limit(3);
 

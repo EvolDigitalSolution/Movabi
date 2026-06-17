@@ -121,13 +121,19 @@ BEGIN
             ALTER TABLE public.vehicles ADD COLUMN capacity TEXT DEFAULT 'standard';
         END IF;
 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'is_verified') THEN
+            ALTER TABLE public.vehicles ADD COLUMN is_verified BOOLEAN DEFAULT FALSE;
+        END IF;
+
         UPDATE public.vehicles
         SET type = COALESCE(NULLIF(type, ''), 'car'),
-            capacity = COALESCE(NULLIF(capacity, ''), CASE WHEN type = 'van' THEN 'small_van' ELSE 'standard' END)
+            capacity = COALESCE(NULLIF(capacity, ''), CASE WHEN type = 'van' THEN 'small_van' ELSE 'standard' END),
+            is_verified = COALESCE(is_verified, FALSE)
         WHERE type IS NULL
            OR type = ''
            OR capacity IS NULL
-           OR capacity = '';
+           OR capacity = ''
+           OR is_verified IS NULL;
     END IF;
 END $$;
 
