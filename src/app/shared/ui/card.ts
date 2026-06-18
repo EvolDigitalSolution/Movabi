@@ -7,7 +7,7 @@ import { CommonModule } from '@angular/common';
   imports: [CommonModule],
   template: `
     <div 
-      class="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-slate-100 transition-all duration-500"
+      class="bg-white rounded-3xl p-6 md:p-8 shadow-md shadow-slate-900/7 border border-slate-200 transition-all duration-500"
       [class.hover:shadow-xl]="hoverable"
       [class.hover:shadow-blue-600/5]="hoverable"
       [class.hover:-translate-y-1]="hoverable"

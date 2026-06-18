@@ -32,7 +32,8 @@ import {
     cashOutline,
     checkmarkCircleOutline,
     personAddOutline,
-    listOutline
+    listOutline,
+    navigate
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -249,6 +250,42 @@ type PassedJob = {
               <ion-icon name="location-outline" class="text-xl shrink-0"></ion-icon>
               <p class="font-medium">{{ locationError() }}</p>
             </div>
+          }
+
+          @if (activeJob()) {
+            <button
+              type="button"
+              (click)="resumeActiveJob()"
+              class="w-full text-left relative overflow-hidden rounded-[1.75rem] bg-white p-5 shadow-xl shadow-slate-900/10 border border-slate-200 active:scale-[0.99] transition-all"
+            >
+              <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
+              <div class="relative flex items-start justify-between gap-4">
+                <div class="flex items-start gap-4 min-w-0">
+                  <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                    <ion-icon name="navigate" class="text-2xl"></ion-icon>
+                  </div>
+
+                  <div class="min-w-0">
+                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
+                      Continue active request
+                    </p>
+                    <h3 class="font-display font-black text-slate-950 text-xl leading-tight">
+                      {{ activeJobTitle() }}
+                    </h3>
+                    <p class="text-sm text-slate-600 font-semibold mt-2 leading-snug line-clamp-2">
+                      {{ activeJobRouteLabel() }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="text-right shrink-0">
+                  <span class="inline-flex px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700">
+                    {{ activeJobStatusLabel() }}
+                  </span>
+                  <p class="text-amber-600 text-xs font-black mt-4">Resume</p>
+                </div>
+              </div>
+            </button>
           }
 
           <div class="relative overflow-hidden rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-900/10 border border-slate-200">
@@ -673,6 +710,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
+    activeJob = this.driverService.activeJob;
     private readonly passedJobsStorageKey = 'movabi_driver_passed_jobs';
     passedJobIds = signal<Set<string>>(new Set());
     jobs = computed(() => {
@@ -794,7 +832,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             cashOutline,
             checkmarkCircleOutline,
             personAddOutline,
-            listOutline
+            listOutline,
+            navigate
         });
     }
 
@@ -806,6 +845,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         await this.loadAvailability();
         await this.handleStripeReturn();
 
+        await this.refreshActiveJob();
         await this.driverService.fetchAvailableJobs();
 
         this.subscribeToAvailableJobsRealtime();
@@ -833,6 +873,57 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     formatPrice(amount: number | null | undefined) {
         return this.config.formatCurrency(Number(amount || 0));
+    }
+
+    async refreshActiveJob(): Promise<void> {
+        try {
+            await this.driverService.fetchActiveJob();
+        } catch (error) {
+            console.warn('[driver-dashboard] Failed to refresh active job', error);
+        }
+    }
+
+    async resumeActiveJob(): Promise<void> {
+        const active = this.activeJob();
+
+        if (!active?.id) {
+            await this.refreshActiveJob();
+        }
+
+        const jobId = this.activeJob()?.id;
+
+        if (!jobId) {
+            this.showToast('No active request to resume.', 'warning');
+            return;
+        }
+
+        await this.router.navigate(['/driver/job-details', jobId]);
+    }
+
+    activeJobTitle(): string {
+        const job = this.activeJob();
+        if (!job) return 'Active request';
+
+        return `${this.getServiceName(job)} in progress`;
+    }
+
+    activeJobStatusLabel(): string {
+        const status = this.activeJob()?.status;
+        if (!status) return 'Active';
+
+        return String(status)
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    activeJobRouteLabel(): string {
+        const job = this.activeJob();
+        if (!job) return 'Tap to continue the request.';
+
+        const origin = job.pickup_address || this.requestOriginUnavailableLabel(job);
+        const destination = job.dropoff_address || this.requestDestinationUnavailableLabel(job);
+
+        return `${this.requestOriginLabel(job)}: ${origin} -> ${this.requestDestinationLabel(job)}: ${destination}`;
     }
 
     getRequestFare(job: Booking): number {
@@ -1108,14 +1199,30 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 async (payload) => {
                     const newStatus = String((payload.new as any)?.status || '');
                     const oldStatus = String((payload.old as any)?.status || '');
+                    const activeStatuses = [
+                        'assigned',
+                        'accepted',
+                        'heading_to_pickup',
+                        'arrived',
+                        'arrived_at_store',
+                        'shopping_in_progress',
+                        'collected',
+                        'en_route_to_customer',
+                        'in_progress',
+                        'delivered',
+                        'over_budget_requested'
+                    ];
 
                     if (
                         newStatus === 'searching' ||
                         oldStatus === 'searching' ||
-                        newStatus === 'accepted' ||
-                        newStatus === 'assigned' ||
+                        activeStatuses.includes(newStatus) ||
+                        activeStatuses.includes(oldStatus) ||
+                        newStatus === 'completed' ||
+                        newStatus === 'cancelled' ||
                         newStatus === 'no_driver_found'
                     ) {
+                        await this.refreshActiveJob();
                         await this.driverService.fetchAvailableJobs();
                     }
                 }
@@ -1129,6 +1236,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         if (this.jobsRefreshInterval) return;
 
         this.jobsRefreshInterval = setInterval(async () => {
+            await this.refreshActiveJob();
+
             if (this.status() === 'online' && this.isAvailable()) {
                 await this.driverService.fetchAvailableJobs();
             }

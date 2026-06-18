@@ -244,6 +244,55 @@ export class DriverService {
         this.availableJobs.set(bookings);
     }
 
+    async fetchActiveJob(): Promise<Booking | null> {
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            this.activeJob.set(null);
+            return null;
+        }
+
+        const activeStatuses = [
+            'assigned',
+            'accepted',
+            'heading_to_pickup',
+            'arrived',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'in_progress',
+            'delivered',
+            'over_budget_requested'
+        ];
+
+        const { data, error } = await this.supabase
+            .from('jobs')
+            .select('id')
+            .eq('driver_id', user.id)
+            .in('status', activeStatuses)
+            .order('updated_at', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (error) {
+            console.error('Error fetching active driver job:', error);
+            throw error;
+        }
+
+        if (!data?.id) {
+            this.activeJob.set(null);
+            return null;
+        }
+
+        const booking = await this.bookingService.getBooking(data.id);
+        this.activeJob.set(booking);
+        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== booking.id));
+
+        return booking;
+    }
+
     async acceptJob(bookingId: string) {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
