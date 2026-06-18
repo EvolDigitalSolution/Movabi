@@ -734,6 +734,22 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
     }
 
+    private patchErrandDetails(updatedDetails: Partial<ErrandDetails> | null | undefined) {
+        if (!updatedDetails) return;
+
+        this.details.update((current) => ({
+            ...((current || {}) as ErrandDetails),
+            ...updatedDetails
+        }) as JobDetails);
+    }
+
+    private patchErrandFunding(partial: Record<string, unknown>) {
+        this.funding.update((current) => ({
+            ...((current || {}) as ErrandFunding),
+            ...partial
+        }) as ErrandFunding);
+    }
+
     async updateStatus(status: BookingStatus) {
         const currentJob = this.job();
 
@@ -893,7 +909,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
-            await this.driverService.recordErrandSpending(jobId, amount, notes);
+            const updatedDetails = await this.driverService.recordErrandSpending(jobId, amount, notes);
+            this.patchErrandDetails(updatedDetails);
             await this.loadJob(jobId);
             await this.showToast('Spending recorded.', 'success');
         } catch (error: unknown) {
@@ -962,6 +979,14 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         try {
             await this.driverService.requestOverBudget(jobId, amount, reason);
+            this.patchErrandFunding({
+                over_budget_status: 'requested',
+                over_budget_amount: amount,
+                requested_over_budget_amount: amount,
+                over_budget_reason: reason,
+                status: 'over_budget_requested',
+                updated_at: new Date().toISOString()
+            });
             await this.loadJob(jobId);
             await this.showToast('Extra budget request sent.', 'success');
         } catch (error: unknown) {
@@ -999,7 +1024,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
-            await this.driverService.uploadErrandReceipt(currentJob.id, file);
+            const updatedDetails = await this.driverService.uploadErrandReceipt(currentJob.id, file);
+            this.patchErrandDetails(updatedDetails);
             await this.loadJob(currentJob.id);
             await this.showToast('Receipt uploaded.', 'success');
         } catch (error: unknown) {

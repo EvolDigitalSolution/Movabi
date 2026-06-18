@@ -275,6 +275,91 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_details') THEN
+        ALTER TABLE public.errand_details ENABLE ROW LEVEL SECURITY;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'errand_details'
+              AND policyname = 'Job participants can read errand details'
+        ) THEN
+            CREATE POLICY "Job participants can read errand details"
+            ON public.errand_details
+            FOR SELECT
+            TO authenticated
+            USING (
+                EXISTS (
+                    SELECT 1
+                    FROM public.jobs j
+                    WHERE j.id = errand_details.job_id
+                      AND (j.customer_id = auth.uid() OR j.driver_id = auth.uid() OR j.accepted_driver_id = auth.uid())
+                )
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'errand_details'
+              AND policyname = 'Assigned drivers can update errand spend details'
+        ) THEN
+            CREATE POLICY "Assigned drivers can update errand spend details"
+            ON public.errand_details
+            FOR UPDATE
+            TO authenticated
+            USING (
+                EXISTS (
+                    SELECT 1
+                    FROM public.jobs j
+                    WHERE j.id = errand_details.job_id
+                      AND (j.driver_id = auth.uid() OR j.accepted_driver_id = auth.uid())
+                      AND j.status NOT IN ('completed', 'cancelled')
+                )
+            )
+            WITH CHECK (
+                EXISTS (
+                    SELECT 1
+                    FROM public.jobs j
+                    WHERE j.id = errand_details.job_id
+                      AND (j.driver_id = auth.uid() OR j.accepted_driver_id = auth.uid())
+                      AND j.status NOT IN ('completed', 'cancelled')
+                )
+            );
+        END IF;
+
+        GRANT SELECT, UPDATE ON public.errand_details TO authenticated;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_funding') THEN
+        ALTER TABLE public.errand_funding ENABLE ROW LEVEL SECURITY;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'errand_funding'
+              AND policyname = 'Job participants can read errand funding'
+        ) THEN
+            CREATE POLICY "Job participants can read errand funding"
+            ON public.errand_funding
+            FOR SELECT
+            TO authenticated
+            USING (
+                EXISTS (
+                    SELECT 1
+                    FROM public.jobs j
+                    WHERE j.id = errand_funding.job_id
+                      AND (j.customer_id = auth.uid() OR j.driver_id = auth.uid() OR j.accepted_driver_id = auth.uid())
+                )
+            );
+        END IF;
+
+        GRANT SELECT ON public.errand_funding TO authenticated;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS job_service_details (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

@@ -1782,3 +1782,36 @@ websocket connection issues.
           ╵                        [32m~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'patchErrandDetails' does not exist on type 'JobDetailsPage'. Did you mean 'errandDetails'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:897:17:
+[37m      897 │             this.[32mpatchErrandDetails[37m(updatedDetails);
+          ╵                  [32m~~~~~~~~~~~~~~~~~~[0m
+
+  'errandDetails' is declared here.
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:548:4:
+[37m      548 │     [32merrandDetails[37m = computed(() => this.details() as ErrandDetail...
+          ╵     [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'patchErrandFunding' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:966:17:
+[37m      966 │             this.[32mpatchErrandFunding[37m({
+          ╵                  [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'patchErrandDetails' does not exist on type 'JobDetailsPage'. Did you mean 'errandDetails'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1012:17:
+[37m      1012 │             this.[32mpatchErrandDetails[37m(updatedDetails);
+           ╵                  [32m~~~~~~~~~~~~~~~~~~[0m
+
+  'errandDetails' is declared here.
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:548:4:
+[37m      548 │     [32merrandDetails[37m = computed(() => this.details() as ErrandDetail...
+          ╵     [32m~~~~~~~~~~~~~[0m
+
+[39m[22m

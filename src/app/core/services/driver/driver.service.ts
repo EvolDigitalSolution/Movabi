@@ -469,21 +469,29 @@ export class DriverService {
             updated_at: new Date().toISOString()
         };
 
-        let { error } = await this.supabase
+        let { data, error } = await this.supabase
             .from('errand_details')
             .update(payload)
-            .eq('job_id', jobId);
+            .eq('job_id', jobId)
+            .select('*')
+            .maybeSingle();
 
         if (error?.code === '42703') {
-            const { error: fallbackError } = await this.supabase
+            const { data: fallbackData, error: fallbackError } = await this.supabase
                 .from('errand_details')
                 .update({ actual_spending: amount })
-                .eq('job_id', jobId);
+                .eq('job_id', jobId)
+                .select('*')
+                .maybeSingle();
 
+            data = fallbackData;
             error = fallbackError;
         }
 
         if (error) throw error;
+        if (!data) {
+            throw new Error('Errand details were not updated. Please refresh and try again.');
+        }
 
         await this.eventService.logEvent(
             jobId,
@@ -491,6 +499,8 @@ export class DriverService {
             `Driver recorded spending of £${amount.toFixed(2)}`,
             { amount, notes }
         );
+
+        return data;
     }
 
     async updateVehicle(vehicleData: Partial<Vehicle>) {
@@ -575,18 +585,23 @@ export class DriverService {
 
         if (error) throw error;
 
-        const { error: updateError } = await this.supabase
+        const { data: updatedDetails, error: updateError } = await this.supabase
             .from('errand_details')
-            .update({ receipt_url: data.path })
-            .eq('job_id', jobId);
+            .update({ receipt_url: data.path, updated_at: new Date().toISOString() })
+            .eq('job_id', jobId)
+            .select('*')
+            .maybeSingle();
 
         if (updateError) throw updateError;
+        if (!updatedDetails) {
+            throw new Error('Receipt uploaded, but the errand details row was not updated.');
+        }
 
         await this.eventService.logEvent(jobId, 'errand_receipt_uploaded', 'Driver uploaded a receipt', {
             path: data.path
         });
 
-        return data.path;
+        return updatedDetails;
     }
 
     async requestOverBudget(jobId: string, amount: number, reason: string) {
