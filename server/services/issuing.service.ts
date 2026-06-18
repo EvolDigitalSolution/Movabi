@@ -57,30 +57,35 @@ const defaultBilling = () => ({
   }
 });
 
-const getIssuingCardType = (): 'virtual' | 'physical' => {
-  return process.env.STRIPE_ISSUING_CARD_TYPE === 'physical' ? 'physical' : 'virtual';
-};
+export class IssuingService {
+  static async ensureDriverVirtualCard(driverId: string, tenantId?: string | null): Promise<IssuingStatus> {
+    if (!isIssuingEnabled()) {
+      return {
+        enabled: false,
+        status: 'not_configured',
+        message: 'Movabi Pay virtual cards are not enabled yet.',
+        jobId: '',
+        driverId,
+        currency: 'GBP'
+      };
+    }
 
-const getPhysicalShipping = (name: string) => {
-  const line1 = process.env.STRIPE_ISSUING_SHIPPING_LINE1;
+    const card = await this.ensureDriverCard(driverId, tenantId || undefined);
 
-  if (!line1) {
-    return undefined;
+    return {
+      enabled: true,
+      status: 'ready',
+      message: 'Movabi Pay virtual card is ready for errand purchases.',
+      jobId: '',
+      driverId,
+      cardId: card.stripe_card_id,
+      cardholderId: card.stripe_cardholder_id,
+      currency: card.currency_code || 'GBP',
+      last4: card.last4 || null,
+      cardStatus: card.status || null
+    };
   }
 
-  return {
-    name,
-    service: process.env.STRIPE_ISSUING_SHIPPING_SERVICE || 'standard',
-    address: {
-      line1,
-      city: process.env.STRIPE_ISSUING_SHIPPING_CITY || process.env.STRIPE_ISSUING_BILLING_CITY || 'London',
-      country: process.env.STRIPE_ISSUING_SHIPPING_COUNTRY || process.env.STRIPE_ISSUING_BILLING_COUNTRY || 'GB',
-      postal_code: process.env.STRIPE_ISSUING_SHIPPING_POSTAL_CODE || process.env.STRIPE_ISSUING_BILLING_POSTAL_CODE || 'SW1A 1AA'
-    }
-  };
-};
-
-export class IssuingService {
   static async getErrandCardStatus(jobId: string): Promise<IssuingStatus> {
     const job = await this.getJob(jobId);
 
@@ -120,7 +125,7 @@ export class IssuingService {
       return {
         enabled: true,
         status: 'needs_cardholder',
-        message: 'Driver needs a Movabi Pay card before shop purchases.',
+        message: 'Driver needs a Movabi Pay virtual card before shop purchases.',
         jobId,
         driverId: job.driver_id,
         budgetLimit,
@@ -132,8 +137,8 @@ export class IssuingService {
       enabled: true,
       status: existing?.status === 'active' ? 'active' : 'ready',
       message: existing?.status === 'active'
-        ? 'Movabi Pay card is active for this errand budget.'
-        : 'Movabi Pay card is ready. Activate it before the driver shops.',
+        ? 'Movabi Pay virtual card is active for this errand budget.'
+        : 'Movabi Pay virtual card is ready. Activate it before the driver shops.',
       jobId,
       driverId: job.driver_id,
       cardId: card.stripe_card_id,
@@ -488,12 +493,10 @@ export class IssuingService {
 
     const cardholderRecord = await this.ensureCardholder(driverId, tenantId, profile as Record<string, any>);
 
-    const driverName = getName(profile as Record<string, any>);
-    const cardType = getIssuingCardType();
     const cardParams: Record<string, any> = {
       cardholder: cardholderRecord.stripe_cardholder_id,
       currency: 'gbp',
-      type: cardType,
+      type: 'virtual',
       status: 'inactive',
       spending_controls: {
         spending_limits: [
@@ -509,13 +512,6 @@ export class IssuingService {
         purpose: 'movabi_errand_budget'
       }
     };
-
-    if (cardType === 'physical') {
-      const shipping = getPhysicalShipping(driverName);
-      if (shipping) {
-        cardParams['shipping'] = shipping;
-      }
-    }
 
     const card = await stripe.issuing.cards.create(cardParams as any);
 

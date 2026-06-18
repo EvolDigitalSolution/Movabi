@@ -691,6 +691,11 @@ ON public.job_issuing_authorizations(job_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_job_issuing_transactions_job
 ON public.job_issuing_transactions(job_id, created_at);
 
+UPDATE public.driver_issuing_cards
+SET card_type = 'virtual',
+    updated_at = NOW()
+WHERE card_type IS DISTINCT FROM 'virtual';
+
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN

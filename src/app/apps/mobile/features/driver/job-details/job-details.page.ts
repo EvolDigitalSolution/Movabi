@@ -362,7 +362,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                       <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                           <p class="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2">
-                            Movabi Pay card
+                            Movabi Pay virtual card
                           </p>
                           <h4 class="text-base font-display font-black text-slate-950">
                             {{ issuingCardTitle() }}
@@ -815,11 +815,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         switch (status?.status) {
             case 'active':
-                return 'Card ready for the shop';
+                return 'Virtual card ready for the shop';
             case 'ready':
-                return 'Card can be activated';
+                return 'Virtual card can be activated';
             case 'needs_cardholder':
-                return 'Driver card setup needed';
+                return 'Virtual card setup needed';
             case 'not_configured':
                 return 'Receipt flow active';
             case 'error':
@@ -837,7 +837,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (status.status === 'active') {
-            return 'Use the Movabi card only for this customer shop. The card is capped to the approved item budget.';
+            return 'Use the Movabi virtual card only for this customer shop. The card is capped to the approved item budget.';
         }
 
         return status.message || 'Movabi protects the customer budget and records card spend against this errand.';
@@ -872,15 +872,15 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        const loading = await this.loadingCtrl.create({ message: 'Activating Movabi Pay card...' });
+        const loading = await this.loadingCtrl.create({ message: 'Activating Movabi Pay virtual card...' });
         await loading.present();
 
         try {
             const status = await this.driverService.activateErrandIssuingCard(currentJob.id);
             this.issuingCardStatus.set(status);
-            await this.showToast('Movabi Pay card is ready for this shop.', 'success');
+            await this.showToast('Movabi Pay virtual card is ready for this shop.', 'success');
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'Could not activate Movabi Pay card.';
+            const message = error instanceof Error ? error.message : 'Could not activate Movabi Pay virtual card.';
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();

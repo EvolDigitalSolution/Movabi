@@ -982,6 +982,12 @@ export class OnboardingPage implements OnInit {
                 await (this.profileService as any).fetchProfile();
             }
 
+            try {
+                await this.driverService.ensureMovabiPayVirtualCard();
+            } catch (error) {
+                console.warn('[DriverOnboarding] Movabi Pay virtual card setup deferred:', error);
+            }
+
             this.authService.onboardingCompleted.set(true);
             this.authService.userRole.set('driver');
 

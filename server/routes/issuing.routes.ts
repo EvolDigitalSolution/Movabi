@@ -42,6 +42,29 @@ const assertJobParticipant = async (jobId: string, userId: string) => {
   }
 };
 
+const getProfileTenant = async (userId: string): Promise<string | null> => {
+  const { data } = await supabaseAdmin
+    .from('profiles')
+    .select('tenant_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  return (data as any)?.tenant_id || null;
+};
+
+router.post('/driver-card/ensure', async (req: Request, res: Response) => {
+  try {
+    const user = await requireUser(req);
+    const tenantId = await getProfileTenant(user.id);
+    const status = await IssuingService.ensureDriverVirtualCard(user.id, tenantId);
+
+    return res.json(status);
+  } catch (error: any) {
+    const status = /auth|session/i.test(error.message) ? 401 : 400;
+    return res.status(status).json({ error: error.message || 'Failed to prepare Movabi Pay virtual card' });
+  }
+});
+
 router.get('/errand-card/:jobId/status', async (req: Request, res: Response) => {
   try {
     const user = await requireUser(req);

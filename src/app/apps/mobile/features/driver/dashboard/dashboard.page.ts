@@ -886,6 +886,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         this.loadPassedJobs();
         await this.refreshStripeUiStateFromDb();
+        await this.ensureMovabiPayVirtualCard();
         await this.loadAvailability();
         await this.handleStripeReturn();
 
@@ -925,6 +926,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             await this.driverService.fetchActiveJob();
         } catch (error) {
             console.warn('[driver-dashboard] Failed to refresh active job', error);
+        }
+    }
+
+    private async ensureMovabiPayVirtualCard(): Promise<void> {
+        try {
+            await this.driverService.ensureMovabiPayVirtualCard();
+        } catch (error) {
+            console.warn('[driver-dashboard] Movabi Pay virtual card setup deferred', error);
         }
     }
 

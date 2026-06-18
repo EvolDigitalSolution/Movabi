@@ -635,6 +635,19 @@ export class DriverService {
         );
     }
 
+    async ensureMovabiPayVirtualCard(): Promise<ErrandIssuingCardStatus | null> {
+        const token = await this.getAccessToken();
+        if (!token) return null;
+
+        return firstValueFrom(
+            this.http.post<ErrandIssuingCardStatus>(
+                this.apiUrlService.getApiUrl('/api/issuing/driver-card/ensure'),
+                {},
+                { headers: { Authorization: `Bearer ${token}` } }
+            )
+        );
+    }
+
     private async getAccessToken(): Promise<string | null> {
         const { data } = await this.supabase.auth.getSession();
         return data.session?.access_token || null;
