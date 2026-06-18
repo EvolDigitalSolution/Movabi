@@ -253,6 +253,17 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       </span>
                     </div>
 
+                    @if (getOverBudgetReason()) {
+                      <div class="p-3 bg-white rounded-xl border border-rose-100">
+                        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+                          Driver message
+                        </p>
+                        <p class="text-sm font-semibold text-slate-800 leading-relaxed">
+                          {{ getOverBudgetReason() }}
+                        </p>
+                      </div>
+                    }
+
                     @if (getExtraBudgetShortfall() > 0) {
                       <div class="p-3 bg-amber-50 rounded-xl border border-amber-200">
                         <p class="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">
@@ -1472,6 +1483,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (!Number.isFinite(available)) return requested;
 
         return Math.max(0, Number((requested - available).toFixed(2)));
+    }
+
+    getOverBudgetReason(): string {
+        return String(this.errandFunding()?.over_budget_reason || '').trim();
     }
 
     private async showWalletShortfallAlert(shortfall: number): Promise<void> {

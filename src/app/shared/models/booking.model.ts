@@ -404,6 +404,8 @@ export interface ErrandFunding {
     status: 'pending' | 'reserved' | 'approved' | 'settled' | 'cancelled';
     over_budget_status: 'none' | 'requested' | 'approved' | 'rejected';
     over_budget_amount: number;
+    requested_over_budget_amount?: number;
+    over_budget_reason?: string | null;
     metadata: Record<string, unknown>;
     created_at: string;
     updated_at: string;
