@@ -53,7 +53,8 @@ import {
     RideDetails,
     DeliveryDetails,
     VanDetails,
-    ErrandFunding
+    ErrandFunding,
+    ErrandIssuingCardStatus
 } from '../../../../../shared/models/booking.model';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../../shared/ui';
@@ -356,6 +357,42 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                     </div>
                   }
 
+                  @if (issuingCardStatus()) {
+                    <div class="p-4 rounded-2xl border border-amber-100 bg-amber-50">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2">
+                            Movabi Pay card
+                          </p>
+                          <h4 class="text-base font-display font-black text-slate-950">
+                            {{ issuingCardTitle() }}
+                          </h4>
+                          <p class="text-sm font-semibold text-slate-600 mt-1 leading-relaxed">
+                            {{ issuingCardMessage() }}
+                          </p>
+                        </div>
+                        <div class="text-right shrink-0">
+                          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Limit</p>
+                          <p class="text-lg font-display font-black text-slate-950">
+                            {{ formatPrice(issuingCardStatus()?.budgetLimit || funding()?.amount_reserved || 0) }}
+                          </p>
+                        </div>
+                      </div>
+
+                      @if (issuingCardStatus()?.last4) {
+                        <p class="mt-3 text-xs font-bold text-slate-500">
+                          Card ending {{ issuingCardStatus()?.last4 }}
+                        </p>
+                      }
+
+                      @if (canActivateIssuingCard()) {
+                        <app-button variant="primary" size="sm" class="w-full mt-4" (clicked)="activateIssuingCard()">
+                          Activate card for this shop
+                        </app-button>
+                      }
+                    </div>
+                  }
+
                   @if (showErrandSpendTools()) {
                     <div class="grid grid-cols-2 gap-3 pt-2">
                       <app-button variant="secondary" size="sm" (clicked)="recordSpending()">
@@ -549,6 +586,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     anyDetails = computed(() => this.details() as any);
     errandDetails = computed(() => this.details() as ErrandDetails | null);
     funding = signal<ErrandFunding | null>(null);
+    issuingCardStatus = signal<ErrandIssuingCardStatus | null>(null);
     isLoading = signal(true);
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
@@ -725,8 +763,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             if (currentJob.service_slug === ServiceTypeEnum.ERRAND) {
                 const funding = await this.bookingService.getErrandFunding(currentJob.id);
                 this.funding.set(funding);
+                await this.loadIssuingCardStatus(currentJob.id);
             } else {
                 this.funding.set(null);
+                this.issuingCardStatus.set(null);
             }
 
             this.ensureLiveLocationTracking(currentJob as Booking);
@@ -755,6 +795,82 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }) as ErrandFunding);
     }
 
+    private async loadIssuingCardStatus(jobId: string): Promise<void> {
+        try {
+            const status = await this.driverService.getErrandIssuingCardStatus(jobId);
+            this.issuingCardStatus.set(status);
+        } catch (error) {
+            console.error('Failed to load Movabi Pay card status:', error);
+            this.issuingCardStatus.set({
+                enabled: false,
+                status: 'error',
+                message: 'Movabi Pay card status is unavailable. Use receipt upload for this errand.',
+                jobId
+            });
+        }
+    }
+
+    issuingCardTitle(): string {
+        const status = this.issuingCardStatus();
+
+        switch (status?.status) {
+            case 'active':
+                return 'Card ready for the shop';
+            case 'ready':
+                return 'Card can be activated';
+            case 'needs_cardholder':
+                return 'Driver card setup needed';
+            case 'not_configured':
+                return 'Receipt flow active';
+            case 'error':
+                return 'Card status unavailable';
+            default:
+                return 'Movabi Pay protected';
+        }
+    }
+
+    issuingCardMessage(): string {
+        const status = this.issuingCardStatus();
+
+        if (!status) {
+            return '';
+        }
+
+        if (status.status === 'active') {
+            return 'Use the Movabi card only for this customer shop. The card is capped to the approved item budget.';
+        }
+
+        return status.message || 'Movabi protects the customer budget and records card spend against this errand.';
+    }
+
+    canActivateIssuingCard(): boolean {
+        const status = this.issuingCardStatus();
+        return status?.enabled === true && status.status === 'ready';
+    }
+
+    async activateIssuingCard(): Promise<void> {
+        const currentJob = this.job();
+
+        if (!currentJob?.id) {
+            await this.showToast('Request not found.', 'danger');
+            return;
+        }
+
+        const loading = await this.loadingCtrl.create({ message: 'Activating Movabi Pay card...' });
+        await loading.present();
+
+        try {
+            const status = await this.driverService.activateErrandIssuingCard(currentJob.id);
+            this.issuingCardStatus.set(status);
+            await this.showToast('Movabi Pay card is ready for this shop.', 'success');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Could not activate Movabi Pay card.';
+            await this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+        }
+    }
+
     private subscribeToErrandFunding(id: string): void {
         void this.errandFundingChannel?.unsubscribe();
 
@@ -775,6 +891,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                         this.funding.set(nextFunding);
                     }
 
+                    await this.loadIssuingCardStatus(id);
                     await this.loadJob(id);
                 }
             )

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import { IssuingService } from '../services/issuing.service';
 
 const router = Router();
 
@@ -39,6 +40,30 @@ router.post('/', async (req: Request, res: Response) => {
     console.log('[Stripe webhook] Received:', event.type);
 
     switch (event.type) {
+      case 'issuing_authorization.request': {
+        const authorization = event.data.object as Stripe.Issuing.Authorization;
+        const decision = await IssuingService.handleAuthorizationRequest(authorization);
+
+        return res
+          .status(200)
+          .set('Stripe-Version', '2023-10-16')
+          .json(decision);
+      }
+
+      case 'issuing_authorization.created':
+      case 'issuing_authorization.updated': {
+        const authorization = event.data.object as Stripe.Issuing.Authorization;
+        await IssuingService.syncAuthorization(authorization);
+        break;
+      }
+
+      case 'issuing_transaction.created':
+      case 'issuing_transaction.updated': {
+        const transaction = event.data.object as Stripe.Issuing.Transaction;
+        await IssuingService.syncTransaction(transaction);
+        break;
+      }
+
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
 

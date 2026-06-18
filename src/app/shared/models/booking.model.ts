@@ -411,6 +411,20 @@ export interface ErrandFunding {
     updated_at: string;
 }
 
+export interface ErrandIssuingCardStatus {
+    enabled: boolean;
+    status: 'not_configured' | 'needs_driver_profile' | 'needs_cardholder' | 'ready' | 'active' | 'disabled' | 'error';
+    message: string;
+    jobId: string;
+    driverId?: string | null;
+    cardId?: string | null;
+    cardholderId?: string | null;
+    budgetLimit?: number;
+    currency?: string;
+    last4?: string | null;
+    cardStatus?: string | null;
+}
+
 export interface ServiceType {
     id: string;
     name: string;

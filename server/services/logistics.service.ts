@@ -2,6 +2,7 @@ import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
 import { calculatePayoutBreakdown } from './payout-calculator';
+import { IssuingService } from './issuing.service';
 
 export class LogisticsService {
   private static readonly EARTH_RADIUS_KM = 6371;
@@ -302,6 +303,22 @@ export class LogisticsService {
       pricing_plan_used: plan,
       commission_rate_used: safeCommissionRate
     });
+
+    if (String(job.service_slug || '').toLowerCase() === 'errand' && driverId) {
+      try {
+        await IssuingService.freezeDriverCard(driverId, `Errand ${job.id} completed`);
+        await supabaseAdmin
+          .from('job_issuing_spend_controls')
+          .update({
+            status: 'completed',
+            deactivated_at: now,
+            updated_at: now
+          })
+          .eq('job_id', job.id);
+      } catch (error) {
+        console.error('[LogisticsService.completeJob] issuing card deactivation failed:', error);
+      }
+    }
 
     return updatedJob;
   }

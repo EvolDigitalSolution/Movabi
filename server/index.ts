@@ -12,6 +12,7 @@ import adminRoutes from './routes/admin.routes';
 import webhookRoutes from './routes/webhook.routes';
 import stripeWebhookRoutes from './routes/stripe-webhook.routes';
 import communicationRoutes from './routes/communication.routes';
+import issuingRoutes from './routes/issuing.routes';
 import { dispatchService } from './services/dispatch.service';
 
 import { HealthService } from './services/health.service';
@@ -106,6 +107,7 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/booking', bookingRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/communication', communicationRoutes);
+app.use('/api/issuing', issuingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/stripe/connect', connectRoutes);
 app.use('/api/connect', connectRoutes);

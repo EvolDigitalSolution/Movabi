@@ -2690,3 +2690,128 @@ websocket connection issues.
         ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardStatus' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:360:23:
+[37m      360 │                   @if ([32missuingCardStatus[37m()) {
+          ╵                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardTitle' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:368:31:
+[37m      368 │                             {{ [32missuingCardTitle[37m() }}
+          ╵                                [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardMessage' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:371:31:
+[37m      371 │                             {{ [32missuingCardMessage[37m() }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardStatus' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:377:43:
+[37m      377 │ ...        {{ formatPrice([32missuingCardStatus[37m()?.budgetLimit || fun...
+          ╵                           [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardStatus' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:382:27:
+[37m      382 │                       @if ([32missuingCardStatus[37m()?.last4) {
+          ╵                            [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardStatus' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:384:41:
+[37m      384 │ ...                     Card ending {{ [32missuingCardStatus[37m()?.last4 }}
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'canActivateIssuingCard' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:388:27:
+[37m      388 │                       @if ([32mcanActivateIssuingCard[37m()) {
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'activateIssuingCard' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:389:95:
+[37m      389 │ ... size="sm" class="w-full mt-4" (clicked)="[32mactivateIssuingCard[37m()">
+          ╵                                              [32m~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardTitle' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:368:31:
+[37m      368 │                             {{ [32missuingCardTitle[37m() }}
+          ╵                                [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardMessage' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:371:31:
+[37m      371 │                             {{ [32missuingCardMessage[37m() }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'canActivateIssuingCard' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:388:27:
+[37m      388 │                       @if ([32mcanActivateIssuingCard[37m()) {
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'activateIssuingCard' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:389:95:
+[37m      389 │ ... size="sm" class="w-full mt-4" (clicked)="[32mactivateIssuingCard[37m()">
+          ╵                                              [32m~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardTitle' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:368:31:
+[37m      368 │                             {{ [32missuingCardTitle[37m() }}
+          ╵                                [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'issuingCardMessage' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:371:31:
+[37m      371 │                             {{ [32missuingCardMessage[37m() }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'canActivateIssuingCard' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:388:27:
+[37m      388 │                       @if ([32mcanActivateIssuingCard[37m()) {
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'activateIssuingCard' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:389:95:
+[37m      389 │ ... size="sm" class="w-full mt-4" (clicked)="[32mactivateIssuingCard[37m()">
+          ╵                                              [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'loadIssuingCardStatus' does not exist on type 'JobDetailsPage'. Did you mean 'issuingCardStatus'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:766:27:
+[37m      766 │                 await this.[32mloadIssuingCardStatus[37m(currentJob.id);
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+  'issuingCardStatus' is declared here.
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:589:4:
+[37m      589 │     [32missuingCardStatus[37m = signal<ErrandIssuingCardStatus | null>(nu...
+          ╵     [32m~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

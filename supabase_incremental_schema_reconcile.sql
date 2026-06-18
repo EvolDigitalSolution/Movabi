@@ -598,6 +598,220 @@ BEGIN
     END IF;
 END $$;
 
+CREATE TABLE IF NOT EXISTS public.driver_issuing_cardholders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    driver_id UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
+    tenant_id UUID,
+    stripe_cardholder_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'active',
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.driver_issuing_cards (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    tenant_id UUID,
+    stripe_cardholder_id TEXT NOT NULL,
+    stripe_card_id TEXT NOT NULL UNIQUE,
+    card_type TEXT NOT NULL DEFAULT 'physical',
+    currency_code TEXT NOT NULL DEFAULT 'GBP',
+    last4 TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.job_issuing_spend_controls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL UNIQUE REFERENCES public.jobs(id) ON DELETE CASCADE,
+    driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    tenant_id UUID,
+    stripe_card_id TEXT NOT NULL,
+    amount_limit NUMERIC NOT NULL DEFAULT 0,
+    amount_authorized NUMERIC NOT NULL DEFAULT 0,
+    amount_captured NUMERIC NOT NULL DEFAULT 0,
+    currency_code TEXT NOT NULL DEFAULT 'GBP',
+    status TEXT NOT NULL DEFAULT 'pending',
+    metadata JSONB DEFAULT '{}'::jsonb,
+    activated_at TIMESTAMPTZ,
+    deactivated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.job_issuing_authorizations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stripe_authorization_id TEXT NOT NULL UNIQUE,
+    job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL,
+    driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    stripe_card_id TEXT,
+    amount NUMERIC NOT NULL DEFAULT 0,
+    currency_code TEXT NOT NULL DEFAULT 'GBP',
+    approved BOOLEAN NOT NULL DEFAULT FALSE,
+    merchant_name TEXT,
+    merchant_category TEXT,
+    status TEXT,
+    raw_event JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.job_issuing_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stripe_transaction_id TEXT NOT NULL UNIQUE,
+    stripe_authorization_id TEXT,
+    job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL,
+    driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    stripe_card_id TEXT,
+    amount NUMERIC NOT NULL DEFAULT 0,
+    currency_code TEXT NOT NULL DEFAULT 'GBP',
+    merchant_name TEXT,
+    status TEXT,
+    raw_event JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_issuing_cards_driver
+ON public.driver_issuing_cards(driver_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_job_issuing_spend_controls_driver
+ON public.job_issuing_spend_controls(driver_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_job_issuing_spend_controls_card
+ON public.job_issuing_spend_controls(stripe_card_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_job_issuing_authorizations_job
+ON public.job_issuing_authorizations(job_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_job_issuing_transactions_job
+ON public.job_issuing_transactions(job_id, created_at);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.job_issuing_spend_controls;
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+            WHEN undefined_table THEN NULL;
+        END;
+
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.job_issuing_authorizations;
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+            WHEN undefined_table THEN NULL;
+        END;
+
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.job_issuing_transactions;
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+            WHEN undefined_table THEN NULL;
+        END;
+    END IF;
+END $$;
+
+ALTER TABLE public.driver_issuing_cardholders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.driver_issuing_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_issuing_spend_controls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_issuing_authorizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_issuing_transactions ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'driver_issuing_cards'
+          AND policyname = 'Drivers can read their issuing cards'
+    ) THEN
+        CREATE POLICY "Drivers can read their issuing cards"
+        ON public.driver_issuing_cards
+        FOR SELECT
+        USING (driver_id = auth.uid());
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'driver_issuing_cardholders'
+          AND policyname = 'Drivers can read their issuing cardholder'
+    ) THEN
+        CREATE POLICY "Drivers can read their issuing cardholder"
+        ON public.driver_issuing_cardholders
+        FOR SELECT
+        USING (driver_id = auth.uid());
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'job_issuing_spend_controls'
+          AND policyname = 'Job participants can read issuing spend controls'
+    ) THEN
+        CREATE POLICY "Job participants can read issuing spend controls"
+        ON public.job_issuing_spend_controls
+        FOR SELECT
+        USING (
+            customer_id = auth.uid()
+            OR driver_id = auth.uid()
+            OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'job_issuing_authorizations'
+          AND policyname = 'Job participants can read issuing authorizations'
+    ) THEN
+        CREATE POLICY "Job participants can read issuing authorizations"
+        ON public.job_issuing_authorizations
+        FOR SELECT
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM public.jobs
+                WHERE jobs.id = job_issuing_authorizations.job_id
+                  AND (jobs.customer_id = auth.uid() OR jobs.driver_id = auth.uid())
+            )
+            OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'job_issuing_transactions'
+          AND policyname = 'Job participants can read issuing transactions'
+    ) THEN
+        CREATE POLICY "Job participants can read issuing transactions"
+        ON public.job_issuing_transactions
+        FOR SELECT
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM public.jobs
+                WHERE jobs.id = job_issuing_transactions.job_id
+                  AND (jobs.customer_id = auth.uid() OR jobs.driver_id = auth.uid())
+            )
+            OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+        );
+    END IF;
+END $$;
+
+GRANT SELECT ON public.driver_issuing_cardholders TO authenticated;
+GRANT SELECT ON public.driver_issuing_cards TO authenticated;
+GRANT SELECT ON public.job_issuing_spend_controls TO authenticated;
+GRANT SELECT ON public.job_issuing_authorizations TO authenticated;
+GRANT SELECT ON public.job_issuing_transactions TO authenticated;
+
 CREATE TABLE IF NOT EXISTS job_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID,

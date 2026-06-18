@@ -13,7 +13,8 @@ import {
     JobEventType,
     DriverAccount,
     ServiceTypeEnum,
-    ErrandDetails
+    ErrandDetails,
+    ErrandIssuingCardStatus
 } from '@shared/models/booking.model';
 import { AuthService } from '../auth/auth.service';
 import { BookingService } from '../booking/booking.service';
@@ -607,6 +608,36 @@ export class DriverService {
     async requestOverBudget(jobId: string, amount: number, reason: string) {
         await this.walletService.requestErrandOverBudget(jobId, amount, reason);
         await this.eventService.logEvent(jobId, 'over_budget_requested', `Driver requested £${amount} extra for: ${reason}`);
+    }
+
+    async getErrandIssuingCardStatus(jobId: string): Promise<ErrandIssuingCardStatus | null> {
+        const token = await this.getAccessToken();
+        if (!token) return null;
+
+        return firstValueFrom(
+            this.http.get<ErrandIssuingCardStatus>(
+                this.apiUrlService.getApiUrl(`/api/issuing/errand-card/${jobId}/status`),
+                { headers: { Authorization: `Bearer ${token}` } }
+            )
+        );
+    }
+
+    async activateErrandIssuingCard(jobId: string): Promise<ErrandIssuingCardStatus> {
+        const token = await this.getAccessToken();
+        if (!token) throw new Error('Not authenticated');
+
+        return firstValueFrom(
+            this.http.post<ErrandIssuingCardStatus>(
+                this.apiUrlService.getApiUrl('/api/issuing/errand-card/activate'),
+                { jobId },
+                { headers: { Authorization: `Bearer ${token}` } }
+            )
+        );
+    }
+
+    private async getAccessToken(): Promise<string | null> {
+        const { data } = await this.supabase.auth.getSession();
+        return data.session?.access_token || null;
     }
 
     async fetchStripeAccount() {
