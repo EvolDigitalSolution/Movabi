@@ -48,13 +48,9 @@ export class NotificationService {
   payload.userId
 );
 
-      // 3. TODO: Integrate with Push Provider (FCM/OneSignal)
-      // Example:
-      // await fcm.send({
-      //   token: userPushToken,
-      //   notification: { title: payload.title, body: payload.body },
-      //   data: payload.data
-      // });
+      // 3. Optional native push. OneSignal uses the app user id as external_id,
+      // so the same call works for customer and driver devices after app login.
+      await this.sendOneSignalPush(payload);
 
       console.log(`[Notification] To: ${payload.userId} | Title: ${payload.title} | Body: ${payload.body}`);
       
@@ -62,6 +58,41 @@ export class NotificationService {
     } catch (error: any) {
       console.error('Error sending notification:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  private static async sendOneSignalPush(payload: NotificationPayload): Promise<void> {
+    const appId = process.env.ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    if (!appId || !apiKey) {
+      return;
+    }
+
+    try {
+      const response = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${apiKey}`
+        },
+        body: JSON.stringify({
+          app_id: appId,
+          include_external_user_ids: [payload.userId],
+          channel_for_external_user_ids: 'push',
+          headings: { en: payload.title },
+          contents: { en: payload.body },
+          data: payload.data || {},
+          android_channel_id: process.env.ONESIGNAL_ANDROID_CHANNEL_ID || undefined
+        })
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.warn('[Notification] OneSignal push failed:', response.status, text);
+      }
+    } catch (error: any) {
+      console.warn('[Notification] OneSignal push error:', error?.message || error);
     }
   }
 
@@ -102,6 +133,18 @@ export class NotificationService {
       body,
       type: 'booking_update',
       data: { jobId, status }
+    });
+  }
+
+  static async notifyChatMessage(userId: string, jobId: string, senderId: string, message: string) {
+    const preview = message.length > 90 ? `${message.slice(0, 87)}...` : message;
+
+    return this.sendNotification({
+      userId,
+      title: 'New message',
+      body: preview || 'You have a new message.',
+      type: 'chat_message',
+      data: { jobId, senderId, action: 'open_chat' }
     });
   }
 }

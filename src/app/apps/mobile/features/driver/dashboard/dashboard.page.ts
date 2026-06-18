@@ -543,7 +543,12 @@ type PassedJob = {
           </div>
 
           <div class="space-y-4">
-            <div class="flex items-center justify-between px-1 gap-3">
+            <button
+              type="button"
+              class="w-full flex items-center justify-between px-1 gap-3 text-left"
+              [attr.aria-expanded]="isPayoutPanelOpen()"
+              (click)="togglePayoutPanel()"
+            >
               <div class="flex items-center gap-3 min-w-0">
                 <div
                   class="w-1.5 h-6 rounded-full shadow-lg shrink-0"
@@ -556,17 +561,26 @@ type PassedJob = {
                   <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.18em]">
                     Payouts
                   </h3>
-                  <p class="text-[11px] text-slate-400 font-semibold mt-0.5">
-                    Stripe Connect
+                  <p class="text-[11px] text-slate-400 font-semibold mt-0.5 truncate">
+                    {{ isPayoutPanelOpen() ? 'Stripe Connect' : getStripeCompactSummary() }}
                   </p>
                 </div>
               </div>
 
-              <app-badge [variant]="getStripeBadgeVariant()">
-                {{ getStripeBadgeText() }}
-              </app-badge>
-            </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <app-badge [variant]="getStripeBadgeVariant()">
+                  {{ getStripeBadgeText() }}
+                </app-badge>
 
+                <ion-icon
+                  name="chevron-down-outline"
+                  class="text-xl text-slate-400 transition-transform duration-200"
+                  [class.rotate-180]="isPayoutPanelOpen()"
+                ></ion-icon>
+              </div>
+            </button>
+
+            @if (isPayoutPanelOpen()) {
             <div class="relative overflow-hidden rounded-[1.85rem] border p-5 shadow-lg bg-white">
               <div class="relative flex items-start gap-4">
                 <div class="w-14 h-14 rounded-[1.25rem] flex items-center justify-center border shadow-sm shrink-0 bg-emerald-50 text-emerald-700 border-emerald-100">
@@ -599,6 +613,7 @@ type PassedJob = {
                 </div>
               </div>
             </div>
+            }
           </div>
 
           <div class="space-y-4">
@@ -741,6 +756,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         chargesEnabled: false,
         payoutsEnabled: false
     });
+    payoutPanelOpen = signal(false);
 
     private jobsChannel?: RealtimeChannel;
     private jobsRefreshInterval?: ReturnType<typeof setInterval>;
@@ -830,6 +846,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         if (!state.accountId) return false;
         return state.chargesEnabled === true && state.payoutsEnabled === true;
     });
+
+    isPayoutPanelOpen = computed(() => this.payoutPanelOpen() || !this.isStripeReady());
 
     isStripePending = computed(() => {
         if (this.isStripeReady()) return false;
@@ -1675,6 +1693,21 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         return 'Your Stripe account has started onboarding, but payouts are not fully enabled yet.';
+    }
+
+    togglePayoutPanel(): void {
+        if (!this.isStripeReady()) {
+            this.payoutPanelOpen.set(true);
+            return;
+        }
+
+        this.payoutPanelOpen.update(open => !open);
+    }
+
+    getStripeCompactSummary(): string {
+        if (this.isStripeReady()) return 'Payouts connected';
+        if (this.isStripePending()) return 'Setup needs attention';
+        return 'Setup required';
     }
 
     async openStripeDashboard() {

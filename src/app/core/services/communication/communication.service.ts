@@ -1,8 +1,11 @@
 import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
+import { ApiUrlService } from '../api-url.service';
 import { JobMessage, JobMessageType } from '@shared/models/communication.model';
 import { BehaviorSubject } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 @Injectable({
@@ -11,6 +14,8 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 export class CommunicationService {
   private supabase = inject(SupabaseService);
   private auth = inject(AuthService);
+  private http = inject(HttpClient);
+  private apiUrlService = inject(ApiUrlService);
   
   private messagesSubject = new BehaviorSubject<JobMessage[]>([]);
   public messages$ = this.messagesSubject.asObservable();
@@ -34,16 +39,36 @@ export class CommunicationService {
   async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text') {
     const user = this.auth.currentUser();
     if (!user) throw new Error('Not authenticated');
+    const { data: { session } } = await this.supabase.auth.getSession();
+    const token = session?.access_token;
 
-    const { data, error } = await this.supabase.rpc('send_job_message', {
-      p_job_id: jobId,
-      p_receiver_id: receiverId,
-      p_message: message,
-      p_message_type: type
-    });
+    if (!token) {
+      throw new Error('Please sign in again before sending a message.');
+    }
 
-    if (error) throw error;
-    return data as JobMessage;
+    const response = await firstValueFrom(this.http.post<{ message: JobMessage }>(
+      this.apiUrlService.getApiUrl('/api/communication/messages'),
+      {
+        jobId,
+        receiverId,
+        message,
+        messageType: type
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    ));
+
+    if (!response?.message) {
+      throw new Error('Message was not sent.');
+    }
+
+    const currentMessages = this.messagesSubject.value;
+    if (!currentMessages.find(m => m.id === response.message.id)) {
+      this.messagesSubject.next([...currentMessages, response.message]);
+    }
+
+    return response.message;
   }
 
   async sendQuickMessage(jobId: string, receiverId: string, message: string) {

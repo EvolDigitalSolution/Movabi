@@ -1920,3 +1920,773 @@ websocket connection issues.
            ╵                  [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:90:8:
+[37m      90 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:91:8:
+[37m      91 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:92:8:
+[37m      92 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:93:8:
+[37m      93 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:94:8:
+[37m      94 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:95:8:
+[37m      95 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToggle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:96:8:
+[37m      96 │         [32mIonToggle[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: CardComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:97:8:
+[37m      97 │         [32mCardComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:98:8:
+[37m      98 │         [32mButtonComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: BadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:99:8:
+[37m      99 │         [32mBadgeComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RatingComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:100:8:
+[37m      100 │         [32mRatingComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: EmptyStateComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:101:8:
+[37m      101 │         [32mEmptyStateComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: PerformanceBadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:102:8:
+[37m      102 │         [32mPerformanceBadgeComponent[37m
+          ╵         [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:12:
+[37m      412 │             [32m</div>[37m
+          ╵             [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:548:10:
+[37m      548 │           [32m</div>[37m
+          ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "button". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:581:12:
+[37m      581 │             [32m</button>[37m
+          ╵             [32m~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing block. The block may have been closed earlier. If you meant to write the `}` character, you should use the "&#125;" HTML entity instead.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:713:8:
+[37m      713 │         [32m}[37m
+          ╵         [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:90:8:
+[37m      90 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:91:8:
+[37m      91 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:92:8:
+[37m      92 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:93:8:
+[37m      93 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:94:8:
+[37m      94 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:95:8:
+[37m      95 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToggle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:96:8:
+[37m      96 │         [32mIonToggle[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: CardComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:97:8:
+[37m      97 │         [32mCardComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:98:8:
+[37m      98 │         [32mButtonComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: BadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:99:8:
+[37m      99 │         [32mBadgeComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RatingComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:100:8:
+[37m      100 │         [32mRatingComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: EmptyStateComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:101:8:
+[37m      101 │         [32mEmptyStateComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: PerformanceBadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:102:8:
+[37m      102 │         [32mPerformanceBadgeComponent[37m
+          ╵         [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:12:
+[37m      412 │             [32m</div>[37m
+          ╵             [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:548:10:
+[37m      548 │           [32m</div>[37m
+          ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "button". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:581:12:
+[37m      581 │             [32m</button>[37m
+          ╵             [32m~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing block. The block may have been closed earlier. If you meant to write the `}` character, you should use the "&#125;" HTML entity instead.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:713:8:
+[37m      713 │         [32m}[37m
+          ╵         [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:90:8:
+[37m      90 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:91:8:
+[37m      91 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:92:8:
+[37m      92 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:93:8:
+[37m      93 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:94:8:
+[37m      94 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:95:8:
+[37m      95 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToggle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:96:8:
+[37m      96 │         [32mIonToggle[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: CardComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:97:8:
+[37m      97 │         [32mCardComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:98:8:
+[37m      98 │         [32mButtonComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: BadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:99:8:
+[37m      99 │         [32mBadgeComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RatingComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:100:8:
+[37m      100 │         [32mRatingComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: EmptyStateComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:101:8:
+[37m      101 │         [32mEmptyStateComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: PerformanceBadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:102:8:
+[37m      102 │         [32mPerformanceBadgeComponent[37m
+          ╵         [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:12:
+[37m      412 │             [32m</div>[37m
+          ╵             [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:548:10:
+[37m      548 │           [32m</div>[37m
+          ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "button". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:581:12:
+[37m      581 │             [32m</button>[37m
+          ╵             [32m~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing block. The block may have been closed earlier. If you meant to write the `}` character, you should use the "&#125;" HTML entity instead.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:713:8:
+[37m      713 │         [32m}[37m
+          ╵         [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:90:8:
+[37m      90 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:91:8:
+[37m      91 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:92:8:
+[37m      92 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:93:8:
+[37m      93 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:94:8:
+[37m      94 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:95:8:
+[37m      95 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToggle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:96:8:
+[37m      96 │         [32mIonToggle[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: CardComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:97:8:
+[37m      97 │         [32mCardComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:98:8:
+[37m      98 │         [32mButtonComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: BadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:99:8:
+[37m      99 │         [32mBadgeComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RatingComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:100:8:
+[37m      100 │         [32mRatingComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: EmptyStateComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:101:8:
+[37m      101 │         [32mEmptyStateComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: PerformanceBadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:102:8:
+[37m      102 │         [32mPerformanceBadgeComponent[37m
+          ╵         [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "button". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:576:12:
+[37m      576 │             [32m</button>[37m
+          ╵             [32m~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing block. The block may have been closed earlier. Did you forget to close the <div> element? If you meant to write the `}` character, you should use the "&#125;" HTML entity instead.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:708:8:
+[37m      708 │         [32m}[37m
+          ╵         [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:90:8:
+[37m      90 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:91:8:
+[37m      91 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:92:8:
+[37m      92 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:93:8:
+[37m      93 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:94:8:
+[37m      94 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:95:8:
+[37m      95 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToggle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:96:8:
+[37m      96 │         [32mIonToggle[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: CardComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:97:8:
+[37m      97 │         [32mCardComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:98:8:
+[37m      98 │         [32mButtonComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: BadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:99:8:
+[37m      99 │         [32mBadgeComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RatingComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:100:8:
+[37m      100 │         [32mRatingComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: EmptyStateComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:101:8:
+[37m      101 │         [32mEmptyStateComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: PerformanceBadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:102:8:
+[37m      102 │         [32mPerformanceBadgeComponent[37m
+          ╵         [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:12:
+[37m      412 │             [32m</div>[37m
+          ╵             [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:548:10:
+[37m      548 │           [32m</div>[37m
+          ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "button". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:581:12:
+[37m      581 │             [32m</button>[37m
+          ╵             [32m~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing block. The block may have been closed earlier. If you meant to write the `}` character, you should use the "&#125;" HTML entity instead.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:713:8:
+[37m      713 │         [32m}[37m
+          ╵         [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:90:8:
+[37m      90 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:91:8:
+[37m      91 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:92:8:
+[37m      92 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:93:8:
+[37m      93 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:94:8:
+[37m      94 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:95:8:
+[37m      95 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToggle is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:96:8:
+[37m      96 │         [32mIonToggle[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: CardComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:97:8:
+[37m      97 │         [32mCardComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:98:8:
+[37m      98 │         [32mButtonComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: BadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:99:8:
+[37m      99 │         [32mBadgeComponent[37m,
+         ╵         [32m~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RatingComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:100:8:
+[37m      100 │         [32mRatingComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: EmptyStateComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:101:8:
+[37m      101 │         [32mEmptyStateComponent[37m,
+          ╵         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: PerformanceBadgeComponent is not used within the template of DriverDashboardPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:102:8:
+[37m      102 │         [32mPerformanceBadgeComponent[37m
+          ╵         [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "button". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:576:12:
+[37m      576 │             [32m</button>[37m
+          ╵             [32m~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing block. The block may have been closed earlier. Did you forget to close the <div> element? If you meant to write the `}` character, you should use the "&#125;" HTML entity instead.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:708:8:
+[37m      708 │         [32m}[37m
+          ╵         [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2307: Cannot find module '../config/api-url.service' or its corresponding type declarations.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2571: Object is of type 'unknown'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:44:6:
+[37m      44 │       [32mthis.apiUrlService[37m.getApiUrl('/api/communication/messages'),
+         ╵       [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mCould not resolve "../config/api-url.service"[0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2307: Cannot find module '../config/api-url.service' or its corresponding type declarations.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2571: Object is of type 'unknown'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:44:6:
+[37m      44 │       [32mthis.apiUrlService[37m.getApiUrl('/api/communication/messages'),
+         ╵       [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mCould not resolve "../config/api-url.service"[0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2307: Cannot find module '../config/api-url.service' or its corresponding type declarations.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2571: Object is of type 'unknown'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:44:6:
+[37m      44 │       [32mthis.apiUrlService[37m.getApiUrl('/api/communication/messages'),
+         ╵       [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mCould not resolve "../config/api-url.service"[0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2307: Cannot find module '../config/api-url.service' or its corresponding type declarations.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2571: Object is of type 'unknown'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/communication/communication.service.ts:50:6:
+[37m      50 │       [32mthis.apiUrlService[37m.getApiUrl('/api/communication/messages'),
+         ╵       [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mCould not resolve "../config/api-url.service"[0m
+
+    src/app/core/services/communication/communication.service.ts:5:30:
+[37m      5 │ import { ApiUrlService } from [32m'../config/api-url.service'[37m;
+        ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
