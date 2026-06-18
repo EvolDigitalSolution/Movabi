@@ -86,6 +86,46 @@ export class IssuingService {
     };
   }
 
+  static async createCardDetailsEphemeralKey(
+    driverId: string,
+    cardId: string,
+    nonce: string
+  ): Promise<{ ephemeralKeySecret: string }> {
+    if (!isIssuingEnabled()) {
+      throw new Error('Movabi Pay virtual cards are not enabled yet.');
+    }
+
+    if (!cardId || !nonce) {
+      throw new Error('cardId and nonce are required.');
+    }
+
+    const { data: card, error } = await supabaseAdmin
+      .from('driver_issuing_cards')
+      .select('stripe_card_id')
+      .eq('driver_id', driverId)
+      .eq('stripe_card_id', cardId)
+      .eq('card_type', 'virtual')
+      .maybeSingle();
+
+    if (error || !card) {
+      throw new Error('Movabi Pay virtual card not found for this driver.');
+    }
+
+    const ephemeralKey = await (stripe.ephemeralKeys as any).create(
+      {
+        nonce,
+        issuing_card: cardId
+      },
+      {
+        apiVersion: '2023-10-16'
+      }
+    );
+
+    return {
+      ephemeralKeySecret: ephemeralKey.secret
+    };
+  }
+
   static async getErrandCardStatus(jobId: string): Promise<IssuingStatus> {
     const job = await this.getJob(jobId);
 

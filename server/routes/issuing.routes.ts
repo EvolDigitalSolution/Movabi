@@ -65,6 +65,24 @@ router.post('/driver-card/ensure', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/card-details/ephemeral-key', async (req: Request, res: Response) => {
+  try {
+    const user = await requireUser(req);
+    const cardId = String(req.body?.cardId || '').trim();
+    const nonce = String(req.body?.nonce || '').trim();
+
+    if (!cardId || !nonce) {
+      return res.status(400).json({ error: 'cardId and nonce required' });
+    }
+
+    const result = await IssuingService.createCardDetailsEphemeralKey(user.id, cardId, nonce);
+    return res.json(result);
+  } catch (error: any) {
+    const status = /auth|session/i.test(error.message) ? 401 : 400;
+    return res.status(status).json({ error: error.message || 'Failed to create secure card details session' });
+  }
+});
+
 router.get('/errand-card/:jobId/status', async (req: Request, res: Response) => {
   try {
     const user = await requireUser(req);

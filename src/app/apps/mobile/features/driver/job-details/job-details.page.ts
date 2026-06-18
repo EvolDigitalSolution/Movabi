@@ -358,32 +358,63 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                   }
 
                   @if (issuingCardStatus()) {
-                    <div class="p-4 rounded-2xl border border-amber-100 bg-amber-50">
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2">
-                            Movabi Pay virtual card
-                          </p>
-                          <h4 class="text-base font-display font-black text-slate-950">
-                            {{ issuingCardTitle() }}
-                          </h4>
-                          <p class="text-sm font-semibold text-slate-600 mt-1 leading-relaxed">
-                            {{ issuingCardMessage() }}
-                          </p>
-                        </div>
-                        <div class="text-right shrink-0">
-                          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Limit</p>
-                          <p class="text-lg font-display font-black text-slate-950">
-                            {{ formatPrice(issuingCardBudgetLimit()) }}
-                          </p>
+                    <div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 space-y-4">
+                      <div class="relative overflow-hidden rounded-[1.65rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-950/20">
+                        <div class="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-amber-400/20"></div>
+                        <div class="absolute -bottom-12 left-20 h-32 w-32 rounded-full bg-emerald-400/10"></div>
+
+                        <div class="relative z-10 space-y-7">
+                          <div class="flex items-start justify-between gap-3">
+                            <div>
+                              <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">
+                                Movabi Pay
+                              </p>
+                              <h4 class="mt-1 text-lg font-display font-black">
+                                Virtual Card
+                              </h4>
+                            </div>
+                            <div class="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/80">
+                              {{ issuingCardStatus()?.status === 'active' ? 'Active' : 'Locked' }}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p class="text-[10px] font-black uppercase tracking-widest text-white/45 mb-2">
+                              Card number
+                            </p>
+                            <p class="font-mono text-xl font-black tracking-[0.18em] text-white">
+                              {{ virtualCardDisplayNumber() }}
+                            </p>
+                          </div>
+
+                          <div class="grid grid-cols-3 gap-3 text-xs">
+                            <div>
+                              <p class="font-black uppercase tracking-widest text-white/40">Limit</p>
+                              <p class="mt-1 font-display text-base font-black">{{ formatPrice(issuingCardBudgetLimit()) }}</p>
+                            </div>
+                            <div>
+                              <p class="font-black uppercase tracking-widest text-white/40">Use for</p>
+                              <p class="mt-1 font-black">Errand</p>
+                            </div>
+                            <div>
+                              <p class="font-black uppercase tracking-widest text-white/40">Spend</p>
+                              <p class="mt-1 font-black">Online</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
-                      @if (issuingCardStatus()?.last4) {
-                        <p class="mt-3 text-xs font-bold text-slate-500">
-                          Card ending {{ issuingCardStatus()?.last4 }}
+                      <div class="space-y-2">
+                        <h4 class="text-base font-display font-black text-slate-950">
+                          {{ issuingCardTitle() }}
+                        </h4>
+                        <p class="text-sm font-semibold text-slate-600 leading-relaxed">
+                          {{ issuingCardMessage() }}
                         </p>
-                      }
+                        <p class="text-xs font-bold text-slate-500 leading-relaxed">
+                          Use it for online checkout, a merchant payment link, or phone payment. For tap-to-pay, add the virtual card to a supported mobile wallet when enabled.
+                        </p>
+                      </div>
 
                       @if (canActivateIssuingCard()) {
                         <app-button variant="primary" size="sm" class="w-full mt-4" (clicked)="activateIssuingCard()">
@@ -857,6 +888,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             errandMetadata?.wallet_budget,
             paymentSplit?.item_budget
         );
+    }
+
+    virtualCardDisplayNumber(): string {
+        const last4 = String(this.issuingCardStatus()?.last4 || '').trim();
+        return last4 ? `•••• •••• •••• ${last4}` : '•••• •••• •••• ••••';
     }
 
     canActivateIssuingCard(): boolean {
