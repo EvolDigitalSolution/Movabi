@@ -28,6 +28,54 @@ async function getJob(jobId: string) {
     return data;
 }
 
+async function refreshDriverRating(driverId: string | null | undefined) {
+    if (!driverId) return null;
+
+    const { data: ratings, error } = await supabaseAdmin
+        .from('ratings')
+        .select('score')
+        .eq('driver_id', driverId);
+
+    if (error) {
+        console.error('[BookingRoutes] rating aggregate failed:', error);
+        return null;
+    }
+
+    const scores = (ratings || [])
+        .map((row: any) => Number(row.score))
+        .filter((score: number) => Number.isFinite(score) && score >= 1 && score <= 5);
+
+    if (!scores.length) return null;
+
+    const average = Math.round((scores.reduce((sum: number, score: number) => sum + score, 0) / scores.length) * 10) / 10;
+    const updatedAt = new Date().toISOString();
+    const payloads: Record<string, unknown>[] = [
+        { rating: average, driver_rating: average, review_count: scores.length, updated_at: updatedAt },
+        { rating: average, driver_rating: average, updated_at: updatedAt },
+        { rating: average, review_count: scores.length, updated_at: updatedAt },
+        { rating: average, updated_at: updatedAt },
+        { driver_rating: average, updated_at: updatedAt }
+    ];
+
+    for (const payload of payloads) {
+        const { error: updateError } = await supabaseAdmin
+            .from('profiles')
+            .update(payload)
+            .eq('id', driverId);
+
+        if (!updateError) {
+            return { average, count: scores.length };
+        }
+
+        if (updateError.code !== '42703') {
+            console.error('[BookingRoutes] driver rating update failed:', updateError);
+            return null;
+        }
+    }
+
+    return null;
+}
+
 async function getDriverVehicle(driverId: string) {
     const { data, error } = await supabaseAdmin
         .from('vehicles')
@@ -461,7 +509,7 @@ router.post('/rate', async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'You can only rate your own completed booking' });
         }
 
-        if (job.status !== 'completed') {
+        if (!['completed', 'settled'].includes(job.status)) {
             return res.status(400).json({ error: 'Only completed bookings can be rated' });
         }
 
@@ -535,7 +583,9 @@ router.post('/rate', async (req: Request, res: Response) => {
             });
         }
 
-        return res.json({ success: true, rating: result.data });
+        const driverRating = await refreshDriverRating(job.driver_id);
+
+        return res.json({ success: true, rating: result.data, driverRating });
     } catch (error: any) {
         console.error('Rate booking error:', error);
         return res.status(500).json({ error: error.message || 'Failed to rate booking' });

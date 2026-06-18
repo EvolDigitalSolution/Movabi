@@ -521,6 +521,38 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_booking_customer
 ON public.ratings(booking_id, customer_id)
 WHERE booking_id IS NOT NULL AND customer_id IS NOT NULL;
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'profiles') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'rating') THEN
+            ALTER TABLE public.profiles ADD COLUMN rating NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'driver_rating') THEN
+            ALTER TABLE public.profiles ADD COLUMN driver_rating NUMERIC DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'review_count') THEN
+            ALTER TABLE public.profiles ADD COLUMN review_count INTEGER DEFAULT 0;
+        END IF;
+    END IF;
+END $$;
+
+UPDATE public.profiles p
+SET rating = r.average_score,
+    driver_rating = r.average_score,
+    review_count = r.rating_count
+FROM (
+    SELECT driver_id,
+           ROUND(AVG(score)::NUMERIC, 1) AS average_score,
+           COUNT(*)::INTEGER AS rating_count
+    FROM public.ratings
+    WHERE driver_id IS NOT NULL
+      AND score BETWEEN 1 AND 5
+    GROUP BY driver_id
+) r
+WHERE p.id = r.driver_id;
+
 CREATE TABLE IF NOT EXISTS errand_funding (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID UNIQUE NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
