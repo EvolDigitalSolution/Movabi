@@ -1815,3 +1815,31 @@ websocket connection issues.
           ╵     [32m~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getExtraBudgetShortfall' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:256:25:
+[37m      256 │                     @if ([32mgetExtraBudgetShortfall[37m() > 0) {
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getExtraBudgetShortfall' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:262:55:
+[37m      262 │ ...nfig.formatCurrency([32mgetExtraBudgetShortfall[37m()) }} to approve t...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getExtraBudgetShortfall' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:256:25:
+[37m      256 │                     @if ([32mgetExtraBudgetShortfall[37m() > 0) {
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getExtraBudgetShortfall' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:262:55:
+[37m      262 │ ...nfig.formatCurrency([32mgetExtraBudgetShortfall[37m()) }} to approve t...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

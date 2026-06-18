@@ -252,6 +252,17 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                         {{ config.formatCurrency(errandFunding()?.over_budget_amount || 0) }}
                       </span>
                     </div>
+
+                    @if (getExtraBudgetShortfall() > 0) {
+                      <div class="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                        <p class="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">
+                          Wallet top-up needed
+                        </p>
+                        <p class="text-sm font-semibold text-slate-700 leading-snug">
+                          Add {{ config.formatCurrency(getExtraBudgetShortfall()) }} to approve this extra budget.
+                        </p>
+                      </div>
+                    }
                   </div>
 
                   <div class="grid grid-cols-2 gap-3">
@@ -548,6 +559,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.channel = this.bookingService.subscribeToBooking(id);
 
+        await this.walletService.fetchWallet();
         await this.loadBookingAndDetails(id, true);
         this.startPolling(id);
     }
@@ -1021,6 +1033,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             if (b.service_slug === ServiceTypeEnum.ERRAND) {
                 const funding = await this.bookingService.getErrandFunding(b.id);
                 this.errandFunding.set(funding);
+                void this.walletService.fetchWallet();
             } else {
                 this.errandFunding.set(null);
             }
@@ -1424,16 +1437,70 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const b = this.booking();
         if (!b) return;
 
-        await this.walletService.approveErrandOverBudget(b.id);
-        await this.loadBookingAndDetails(b.id, false);
+        const shortfall = this.getExtraBudgetShortfall();
+
+        if (shortfall > 0) {
+            await this.showWalletShortfallAlert(shortfall);
+            return;
+        }
+
+        try {
+            await this.walletService.approveErrandOverBudget(b.id);
+            await this.loadBookingAndDetails(b.id, false);
+        } catch (error: unknown) {
+            await this.showOverBudgetError(error, 'Could not approve extra budget.');
+        }
     }
 
     async rejectOverBudget(): Promise<void> {
         const b = this.booking();
         if (!b) return;
 
-        await this.walletService.rejectErrandOverBudget(b.id);
-        await this.loadBookingAndDetails(b.id, false);
+        try {
+            await this.walletService.rejectErrandOverBudget(b.id);
+            await this.loadBookingAndDetails(b.id, false);
+        } catch (error: unknown) {
+            await this.showOverBudgetError(error, 'Could not reject extra budget.');
+        }
+    }
+
+    getExtraBudgetShortfall(): number {
+        const requested = Number(this.errandFunding()?.over_budget_amount || 0);
+        const available = Number(this.walletService.wallet()?.available_balance || 0);
+
+        if (!Number.isFinite(requested) || requested <= 0) return 0;
+        if (!Number.isFinite(available)) return requested;
+
+        return Math.max(0, Number((requested - available).toFixed(2)));
+    }
+
+    private async showWalletShortfallAlert(shortfall: number): Promise<void> {
+        const alert = await this.alertCtrl.create({
+            header: 'Wallet top-up needed',
+            message: `Add ${this.config.formatCurrency(shortfall)} to your wallet before approving this extra budget.`,
+            buttons: [
+                { text: 'Not now', role: 'cancel' },
+                {
+                    text: 'Top up wallet',
+                    handler: () => {
+                        void this.router.navigate(['/customer/wallet']);
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    private async showOverBudgetError(error: unknown, fallback: string): Promise<void> {
+        const message = error instanceof Error && error.message ? error.message : fallback;
+        const alert = await this.alertCtrl.create({
+            header: fallback,
+            message,
+            buttons: ['OK']
+        });
+
+        await alert.present();
     }
 
     viewReceipt(path?: string | null): void {
