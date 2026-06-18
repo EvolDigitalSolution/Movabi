@@ -842,41 +842,90 @@ ALTER FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) SET search
 ALTER FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) SET row_security = off;
 GRANT EXECUTE ON FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) TO authenticated;
 
-DROP FUNCTION IF EXISTS approve_errand_over_budget(UUID);
-CREATE OR REPLACE FUNCTION approve_errand_over_budget(p_job_id UUID)
+DROP FUNCTION IF EXISTS public.approve_errand_over_budget(UUID);
+CREATE OR REPLACE FUNCTION public.approve_errand_over_budget(p_job_id UUID)
 RETURNS BOOLEAN AS $$
+DECLARE
+  v_customer_id UUID;
+  v_wallet_id UUID;
+  v_available NUMERIC;
+  v_extra_amount NUMERIC;
 BEGIN
-  UPDATE errand_funding
+  SELECT customer_id,
+         ROUND(COALESCE(requested_over_budget_amount, over_budget_amount, 0)::NUMERIC, 2)
+  INTO v_customer_id, v_extra_amount
+  FROM public.errand_funding
+  WHERE job_id = p_job_id
+    AND over_budget_status = 'requested'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No pending extra budget request was found';
+  END IF;
+
+  IF v_extra_amount <= 0 THEN
+    RAISE EXCEPTION 'Extra budget amount must be greater than zero';
+  END IF;
+
+  SELECT id, COALESCE(available_balance, 0)
+  INTO v_wallet_id, v_available
+  FROM public.wallets
+  WHERE user_id = v_customer_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Customer wallet not found';
+  END IF;
+
+  IF v_available < v_extra_amount THEN
+    RAISE EXCEPTION 'Insufficient wallet balance for extra budget. Required: %, Available: %', v_extra_amount, v_available;
+  END IF;
+
+  UPDATE public.wallets
+  SET available_balance = COALESCE(available_balance, 0) - v_extra_amount,
+      reserved_balance = COALESCE(reserved_balance, 0) + v_extra_amount,
+      updated_at = NOW()
+  WHERE id = v_wallet_id;
+
+  UPDATE public.errand_funding
   SET over_budget_status = 'approved',
-      status = 'approved',
-      amount_reserved = GREATEST(COALESCE(amount_reserved, 0), COALESCE(over_budget_amount, 0)),
+      status = 'reserved',
+      amount_reserved = COALESCE(amount_reserved, 0) + v_extra_amount,
       updated_at = NOW()
-  WHERE job_id = p_job_id
-    AND over_budget_status = 'requested';
+  WHERE job_id = p_job_id;
 
-  RETURN FOUND;
+  RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
 
-ALTER FUNCTION approve_errand_over_budget(UUID) OWNER TO postgres;
-GRANT EXECUTE ON FUNCTION approve_errand_over_budget(UUID) TO authenticated;
+ALTER FUNCTION public.approve_errand_over_budget(UUID) OWNER TO postgres;
+ALTER FUNCTION public.approve_errand_over_budget(UUID) SET search_path = public;
+ALTER FUNCTION public.approve_errand_over_budget(UUID) SET row_security = off;
+GRANT EXECUTE ON FUNCTION public.approve_errand_over_budget(UUID) TO authenticated;
 
-DROP FUNCTION IF EXISTS reject_errand_over_budget(UUID);
-CREATE OR REPLACE FUNCTION reject_errand_over_budget(p_job_id UUID)
+DROP FUNCTION IF EXISTS public.reject_errand_over_budget(UUID);
+CREATE OR REPLACE FUNCTION public.reject_errand_over_budget(p_job_id UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
-  UPDATE errand_funding
+  UPDATE public.errand_funding
   SET over_budget_status = 'rejected',
+      status = CASE WHEN status = 'over_budget_requested' THEN 'reserved' ELSE status END,
       updated_at = NOW()
   WHERE job_id = p_job_id
     AND over_budget_status = 'requested';
 
-  RETURN FOUND;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No pending extra budget request was found';
+  END IF;
+
+  RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
 
-ALTER FUNCTION reject_errand_over_budget(UUID) OWNER TO postgres;
-GRANT EXECUTE ON FUNCTION reject_errand_over_budget(UUID) TO authenticated;
+ALTER FUNCTION public.reject_errand_over_budget(UUID) OWNER TO postgres;
+ALTER FUNCTION public.reject_errand_over_budget(UUID) SET search_path = public;
+ALTER FUNCTION public.reject_errand_over_budget(UUID) SET row_security = off;
+GRANT EXECUTE ON FUNCTION public.reject_errand_over_budget(UUID) TO authenticated;
 
 DROP FUNCTION IF EXISTS send_job_message(UUID, UUID, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION send_job_message(
