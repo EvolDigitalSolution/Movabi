@@ -5092,3 +5092,16 @@ Application bundle generation complete. [9.385 seconds] - 2026-06-18T23:12:07.28
 Page reload sent to client(s).
 [2m00:12:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32m✨ new dependencies optimized: [33m@capacitor/core[32m[39m
 [2m00:12:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32m✨ optimized dependencies changed. reloading[39m
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m            [2m | [22m[36m274.17 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m          [2m | [22m[36m243.15 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mchunk-QNCJFLO5.js[39m  [2m | [22m[2mjob-details-page[22m[2m | [22m[36m123.03 kB[39m[2m | [22m
+
+Application bundle generation complete. [8.143 seconds] - 2026-06-18T23:20:01.373Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).

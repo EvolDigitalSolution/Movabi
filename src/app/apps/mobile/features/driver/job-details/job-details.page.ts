@@ -375,7 +375,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                               </h4>
                             </div>
                             <div class="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/80">
-                              {{ issuingCardStatus()?.status === 'active' ? 'Active' : 'Locked' }}
+                              {{ issuingCardStatus()?.status === 'active' ? 'Ready' : 'Not ready' }}
                             </div>
                           </div>
 
@@ -413,22 +413,22 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                           {{ issuingCardMessage() }}
                         </p>
                         <p class="text-xs font-bold text-slate-500 leading-relaxed">
-                          Add the virtual card to Apple Pay or Google Wallet, then tap your phone at checkout. If the shop cannot accept phone wallet payments, use the secure card details for online, link, or phone payment.
+                          When this card is ready, add it to Apple Pay or Google Wallet and tap your phone at checkout. If the shop cannot accept phone wallet payment, use the secure card details for online, link, or phone payment.
                         </p>
                       </div>
 
-                      <div class="grid grid-cols-3 gap-2 text-center text-[11px] font-black text-slate-700">
-                        <div class="rounded-2xl border border-white bg-white/80 px-2 py-3 shadow-sm">
-                          <p class="text-amber-600">1</p>
-                          <p class="mt-1">Unlock card</p>
+                      <div class="rounded-2xl border border-amber-100 bg-white/85 p-3 space-y-2 text-sm font-bold text-slate-700">
+                        <div class="flex items-center justify-between gap-3">
+                          <span>Card status</span>
+                          <span class="text-amber-700">{{ issuingCardStatus()?.status === 'active' ? 'Ready to use' : 'Activate before shopping' }}</span>
                         </div>
-                        <div class="rounded-2xl border border-white bg-white/80 px-2 py-3 shadow-sm">
-                          <p class="text-amber-600">2</p>
-                          <p class="mt-1">Add to wallet</p>
+                        <div class="flex items-center justify-between gap-3">
+                          <span>At checkout</span>
+                          <span class="text-slate-950">Tap phone</span>
                         </div>
-                        <div class="rounded-2xl border border-white bg-white/80 px-2 py-3 shadow-sm">
-                          <p class="text-amber-600">3</p>
-                          <p class="mt-1">Tap phone</p>
+                        <div class="flex items-center justify-between gap-3">
+                          <span>Backup</span>
+                          <span class="text-slate-950">Card details</span>
                         </div>
                       </div>
 
