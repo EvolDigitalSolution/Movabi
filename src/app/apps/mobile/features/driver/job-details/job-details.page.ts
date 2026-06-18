@@ -132,7 +132,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                   class="h-12 rounded-2xl bg-white text-slate-950 font-black text-sm shadow-xl shadow-slate-950/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
                   <ion-icon name="location-outline"></ion-icon>
-                  Pickup
+                  {{ originActionLabel() }}
                 </button>
 
                 <button
@@ -141,7 +141,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                   class="h-12 rounded-2xl bg-white/12 border border-white/25 text-white font-black text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
                   <ion-icon name="flag-outline"></ion-icon>
-                  Destination
+                  {{ destinationActionLabel() }}
                 </button>
               </div>
             </div>
@@ -150,7 +150,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
           <app-card class="overflow-hidden">
             <div class="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-xs text-slate-500 font-semibold mb-1">Pickup navigation</p>
+                <p class="text-xs text-slate-500 font-semibold mb-1">{{ navigationSectionLabel() }}</p>
                 <h3 class="text-base font-display font-black text-slate-950">{{ pickupMapTitle() }}</h3>
                 <p class="text-xs text-slate-500 font-semibold mt-1">{{ pickupMapSubtitle() }}</p>
               </div>
@@ -204,14 +204,14 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 
               <div class="relative">
                 <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
-                <p class="text-xs text-slate-500 font-semibold mb-1">Pickup</p>
-                <p class="font-bold text-slate-950 leading-snug">{{ job()?.pickup_address || 'Pickup unavailable' }}</p>
+                <p class="text-xs text-slate-500 font-semibold mb-1">{{ originLabel() }}</p>
+                <p class="font-bold text-slate-950 leading-snug">{{ job()?.pickup_address || originUnavailableLabel() }}</p>
               </div>
 
               <div class="relative">
                 <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
-                <p class="text-xs text-slate-500 font-semibold mb-1">Destination</p>
-                <p class="font-bold text-slate-950 leading-snug">{{ job()?.dropoff_address || 'Destination unavailable' }}</p>
+                <p class="text-xs text-slate-500 font-semibold mb-1">{{ destinationLabel() }}</p>
+                <p class="font-bold text-slate-950 leading-snug">{{ job()?.dropoff_address || destinationUnavailableLabel() }}</p>
               </div>
             </div>
           </app-card>
@@ -1054,7 +1054,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             coordinates: { lat: pickupLat, lng: pickupLng },
             kind: 'pickup',
             serviceType: currentJob.service_slug as ServiceTypeSlug,
-            label: 'PICKUP'
+            label: this.mapOriginMarkerLabel()
         });
 
         const position = await this.locationService.getCurrentPosition();
@@ -1123,10 +1123,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     pickupMapTitle(): string {
         if (this.driverPickupDuration() !== null) {
-            return `${this.formatDuration(this.driverPickupDuration())} to pickup`;
+            return `${this.formatDuration(this.driverPickupDuration())} to ${this.originTargetLabel()}`;
         }
 
-        return 'Route to pickup';
+        return `Route to ${this.originTargetLabel()}`;
     }
 
     pickupMapSubtitle(): string {
@@ -1134,7 +1134,106 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return `${this.formatDistanceMeters(this.driverPickupDistance())} from your current location.`;
         }
 
-        return 'Shows pickup location and route when GPS is available.';
+        return `Shows the ${this.originTargetLabel()} and route when GPS is available.`;
+    }
+
+    navigationSectionLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Store navigation';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collection navigation';
+            case ServiceTypeEnum.VAN:
+                return 'Move pickup navigation';
+            default:
+                return 'Pickup navigation';
+        }
+    }
+
+    originActionLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Store';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collect';
+            case ServiceTypeEnum.VAN:
+                return 'From';
+            default:
+                return 'Pickup';
+        }
+    }
+
+    destinationActionLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Customer';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Recipient';
+            case ServiceTypeEnum.VAN:
+                return 'To';
+            default:
+                return 'Destination';
+        }
+    }
+
+    originLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Store / pickup point';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collection point';
+            case ServiceTypeEnum.VAN:
+                return 'Moving from';
+            default:
+                return 'Pickup';
+        }
+    }
+
+    destinationLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Customer delivery address';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Recipient address';
+            case ServiceTypeEnum.VAN:
+                return 'Moving to';
+            default:
+                return 'Destination';
+        }
+    }
+
+    originUnavailableLabel(): string {
+        return `${this.originLabel()} unavailable`;
+    }
+
+    destinationUnavailableLabel(): string {
+        return `${this.destinationLabel()} unavailable`;
+    }
+
+    private originTargetLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'store';
+            case ServiceTypeEnum.DELIVERY:
+                return 'collection point';
+            case ServiceTypeEnum.VAN:
+                return 'move pickup';
+            default:
+                return 'pickup';
+        }
+    }
+
+    private mapOriginMarkerLabel(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'STORE';
+            case ServiceTypeEnum.DELIVERY:
+                return 'COLLECT';
+            case ServiceTypeEnum.VAN:
+                return 'FROM';
+            default:
+                return 'PICKUP';
+        }
     }
 
     customerName(): string {
@@ -1181,9 +1280,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     actionTitle(): string {
         switch (this.job()?.status) {
             case 'accepted':
-                return 'Go to pickup';
+                return `Go to ${this.originTargetLabel()}`;
             case 'arrived':
-                return this.job()?.service_slug === ServiceTypeEnum.ERRAND ? 'Confirm store arrival' : 'Start the request';
+                if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) return 'Confirm store arrival';
+                if (this.job()?.service_slug === ServiceTypeEnum.DELIVERY) return 'Confirm collection arrival';
+                if (this.job()?.service_slug === ServiceTypeEnum.VAN) return 'Start the move';
+                return 'Start the ride';
             case 'arrived_at_store':
                 return 'Start shopping';
             case 'shopping_in_progress':
@@ -1202,9 +1304,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     actionHint(): string {
         switch (this.job()?.status) {
             case 'accepted':
-                return 'Open the pickup location, contact the customer if needed, then mark yourself arrived.';
+                return `Open the ${this.originTargetLabel()}, contact the customer if needed, then mark yourself arrived.`;
             case 'arrived':
-                return 'Only start once you are ready to begin the ride, delivery, errand, or moving work.';
+                if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
+                    return 'Confirm you are at the correct store before shopping for the customer.';
+                }
+                if (this.job()?.service_slug === ServiceTypeEnum.DELIVERY) {
+                    return 'Confirm you are at the collection point before collecting the package.';
+                }
+                if (this.job()?.service_slug === ServiceTypeEnum.VAN) {
+                    return 'Confirm you are at the move pickup before starting loading.';
+                }
+                return 'Only start once the customer is ready for the ride.';
             case 'arrived_at_store':
                 return 'Begin shopping after confirming the store and customer notes.';
             case 'shopping_in_progress':

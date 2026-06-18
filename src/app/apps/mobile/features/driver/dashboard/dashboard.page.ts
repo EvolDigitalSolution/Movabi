@@ -51,7 +51,7 @@ import {
     EmptyStateComponent,
     PerformanceBadgeComponent
 } from '../../../../../shared/ui';
-import { Booking, DriverProfile } from '../../../../../shared/models/booking.model';
+import { Booking, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
 type ToastColor = 'success' | 'danger' | 'warning';
@@ -419,18 +419,18 @@ type PassedJob = {
                     <div class="space-y-4 mb-5">
                       <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4 space-y-4">
                         <div>
-                          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Pickup</p>
+                          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ requestOriginLabel(job) }}</p>
                           <p class="text-sm font-bold text-slate-900 leading-snug">
-                            {{ job.pickup_address || 'Pickup address unavailable' }}
+                            {{ job.pickup_address || requestOriginUnavailableLabel(job) }}
                           </p>
                         </div>
 
                         <div class="h-px bg-slate-200/70"></div>
 
                         <div>
-                          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dropoff</p>
+                          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ requestDestinationLabel(job) }}</p>
                           <p class="text-sm font-bold text-slate-900 leading-snug">
-                            {{ job.dropoff_address || 'Dropoff address unavailable' }}
+                            {{ job.dropoff_address || requestDestinationUnavailableLabel(job) }}
                           </p>
                         </div>
                       </div>
@@ -919,6 +919,40 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             .replace(/_/g, ' ')
             .replace(/-/g, ' ')
             .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    requestOriginLabel(job: Booking): string {
+        switch ((job as any)?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Store';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collect from';
+            case ServiceTypeEnum.VAN:
+                return 'Moving from';
+            default:
+                return 'Pickup';
+        }
+    }
+
+    requestDestinationLabel(job: Booking): string {
+        switch ((job as any)?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Deliver to';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Recipient';
+            case ServiceTypeEnum.VAN:
+                return 'Moving to';
+            default:
+                return 'Dropoff';
+        }
+    }
+
+    requestOriginUnavailableLabel(job: Booking): string {
+        return `${this.requestOriginLabel(job)} unavailable`;
+    }
+
+    requestDestinationUnavailableLabel(job: Booking): string {
+        return `${this.requestDestinationLabel(job)} unavailable`;
     }
 
     formatJobDistance(job: Booking): string {

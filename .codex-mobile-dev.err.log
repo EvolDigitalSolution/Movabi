@@ -1497,3 +1497,101 @@ websocket connection issues.
            ╵                                 [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'originActionLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:135:21:
+[37m      135 │                   {{ [32moriginActionLabel[37m() }}
+          ╵                      [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'destinationActionLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:144:21:
+[37m      144 │                   {{ [32mdestinationActionLabel[37m() }}
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'navigationSectionLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:153:72:
+[37m      153 │ ...-slate-500 font-semibold mb-1">{{ [32mnavigationSectionLabel[37m() }}</p>
+          ╵                                      [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'originLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:207:72:
+[37m      207 │ ...ext-xs text-slate-500 font-semibold mb-1">{{ [32moriginLabel[37m() }}</p>
+          ╵                                                 [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'originUnavailableLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:208:93:
+[37m      208 │ ...snug">{{ job()?.pickup_address || [32moriginUnavailableLabel[37m() }}</p>
+          ╵                                      [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'destinationLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:213:72:
+[37m      213 │ ...s text-slate-500 font-semibold mb-1">{{ [32mdestinationLabel[37m() }}</p>
+          ╵                                            [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'destinationUnavailableLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:214:94:
+[37m      214 │ ...{{ job()?.dropoff_address || [32mdestinationUnavailableLabel[37m() }}</p>
+          ╵                                 [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'mapOriginMarkerLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1057:24:
+[37m      1057 │             label: this.[32mmapOriginMarkerLabel[37m()
+           ╵                         [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestOriginLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:422:108:
+[37m      422 │ ...uppercase tracking-widest mb-1">{{ [32mrequestOriginLabel[37m(job) }}</p>
+          ╵                                       [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestOriginUnavailableLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:424:53:
+[37m      424 │ ...   {{ job.pickup_address || [32mrequestOriginUnavailableLabel[37m(job) }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestDestinationLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:431:108:
+[37m      431 │ ...case tracking-widest mb-1">{{ [32mrequestDestinationLabel[37m(job) }}</p>
+          ╵                                  [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestDestinationUnavailableLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:433:54:
+[37m      433 │ ...job.dropoff_address || [32mrequestDestinationUnavailableLabel[37m(job) }}
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'mapOriginMarkerLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1057:24:
+[37m      1057 │             label: this.[32mmapOriginMarkerLabel[37m()
+           ╵                         [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'mapOriginMarkerLabel' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1057:24:
+[37m      1057 │             label: this.[32mmapOriginMarkerLabel[37m()
+           ╵                         [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

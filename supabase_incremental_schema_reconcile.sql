@@ -54,6 +54,8 @@ BEGIN
     END IF;
 END $$;
 
+
+
 -- PART 4 — Pricing Rules & Fixed Fare Bands
 CREATE TABLE IF NOT EXISTS pricing_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -718,8 +720,8 @@ ALTER FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) OWNER TO postg
 ALTER FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) SET row_security = off;
 GRANT EXECUTE ON FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) TO authenticated;
 
-DROP FUNCTION IF EXISTS request_errand_over_budget(UUID, NUMERIC, TEXT);
-CREATE OR REPLACE FUNCTION request_errand_over_budget(
+DROP FUNCTION IF EXISTS public.request_errand_over_budget(UUID, NUMERIC, TEXT);
+CREATE OR REPLACE FUNCTION public.request_errand_over_budget(
   p_job_id UUID,
   p_amount NUMERIC,
   p_reason TEXT DEFAULT NULL
@@ -732,7 +734,7 @@ BEGIN
     RAISE EXCEPTION 'Extra budget amount must be greater than zero';
   END IF;
 
-  UPDATE errand_funding
+  UPDATE public.errand_funding
   SET over_budget_status = 'requested',
       over_budget_amount = v_amount,
       requested_over_budget_amount = v_amount,
@@ -750,8 +752,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
 
-ALTER FUNCTION request_errand_over_budget(UUID, NUMERIC, TEXT) OWNER TO postgres;
-GRANT EXECUTE ON FUNCTION request_errand_over_budget(UUID, NUMERIC, TEXT) TO authenticated;
+ALTER FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) OWNER TO postgres;
+ALTER FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) SET search_path = public;
+ALTER FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) SET row_security = off;
+GRANT EXECUTE ON FUNCTION public.request_errand_over_budget(UUID, NUMERIC, TEXT) TO authenticated;
 
 DROP FUNCTION IF EXISTS approve_errand_over_budget(UUID);
 CREATE OR REPLACE FUNCTION approve_errand_over_budget(p_job_id UUID)
@@ -1451,3 +1455,5 @@ BEGIN
         $sql$;
     END IF;
 END $$;
+
+NOTIFY pgrst, 'reload schema';
