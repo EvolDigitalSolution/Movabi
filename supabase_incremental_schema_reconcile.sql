@@ -578,6 +578,18 @@ CREATE TABLE IF NOT EXISTS job_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.job_messages;
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+            WHEN undefined_table THEN NULL;
+        END;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_job_messages_job_created
 ON public.job_messages(job_id, created_at);
 
@@ -948,8 +960,8 @@ ALTER FUNCTION public.reject_errand_over_budget(UUID) SET search_path = public;
 ALTER FUNCTION public.reject_errand_over_budget(UUID) SET row_security = off;
 GRANT EXECUTE ON FUNCTION public.reject_errand_over_budget(UUID) TO authenticated;
 
-DROP FUNCTION IF EXISTS send_job_message(UUID, UUID, TEXT, TEXT);
-CREATE OR REPLACE FUNCTION send_job_message(
+DROP FUNCTION IF EXISTS public.send_job_message(UUID, UUID, TEXT, TEXT);
+CREATE OR REPLACE FUNCTION public.send_job_message(
   p_job_id UUID,
   p_receiver_id UUID,
   p_message TEXT,
@@ -1002,8 +1014,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
 
-ALTER FUNCTION send_job_message(UUID, UUID, TEXT, TEXT) OWNER TO postgres;
-GRANT EXECUTE ON FUNCTION send_job_message(UUID, UUID, TEXT, TEXT) TO authenticated;
+ALTER FUNCTION public.send_job_message(UUID, UUID, TEXT, TEXT) OWNER TO postgres;
+ALTER FUNCTION public.send_job_message(UUID, UUID, TEXT, TEXT) SET search_path = public;
+ALTER FUNCTION public.send_job_message(UUID, UUID, TEXT, TEXT) SET row_security = off;
+GRANT EXECUTE ON FUNCTION public.send_job_message(UUID, UUID, TEXT, TEXT) TO authenticated;
 
 -- Wallet-first Job Payment RPC
 CREATE OR REPLACE FUNCTION pay_job_from_wallet(

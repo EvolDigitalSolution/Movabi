@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { CommunicationService } from '@core/services/communication/communication.service';
@@ -76,10 +76,14 @@ import { Subscription } from 'rxjs';
       <div class="p-4 bg-white border-t border-gray-100">
         <div class="flex items-center gap-2 bg-gray-100 rounded-2xl px-4 py-2 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
           <input 
+            #messageInput
             type="text" 
             [(ngModel)]="textMessage" 
             (keyup.enter)="sendText()"
+            (focus)="keepComposerVisible()"
             placeholder="Type a message..." 
+            autocomplete="off"
+            enterkeyhint="send"
             class="flex-1 bg-transparent border-none focus:outline-none text-sm text-text-primary py-2"
           />
           <button 
@@ -103,7 +107,10 @@ import { Subscription } from 'rxjs';
     }
   `]
 })
-export class CommunicationPanelComponent implements OnInit, OnDestroy {
+export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('messageInput') messageInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('scrollContainer') scrollContainer?: ElementRef<HTMLDivElement>;
+
   @Input({ required: true }) jobId!: string;
   @Input({ required: true }) receiverId!: string;
   @Input() receiverPhone?: string;
@@ -130,6 +137,13 @@ export class CommunicationPanelComponent implements OnInit, OnDestroy {
     });
   }
 
+  ngAfterViewInit() {
+    setTimeout(() => {
+      this.messageInput?.nativeElement.focus();
+      this.keepComposerVisible();
+    }, 250);
+  }
+
   ngOnDestroy() {
     this.commService.unsubscribeFromJobMessages();
     this.messagesSub?.unsubscribe();
@@ -142,6 +156,7 @@ export class CommunicationPanelComponent implements OnInit, OnDestroy {
   async sendQuick(message: string) {
     try {
       await this.commService.sendQuickMessage(this.jobId, this.receiverId, message);
+      this.keepComposerVisible();
     } catch (e) {
       console.error('Failed to send quick message', e);
     }
@@ -154,8 +169,11 @@ export class CommunicationPanelComponent implements OnInit, OnDestroy {
     
     try {
       await this.commService.sendMessage(this.jobId, this.receiverId, msg);
+      setTimeout(() => this.messageInput?.nativeElement.focus(), 50);
+      this.keepComposerVisible();
     } catch (e) {
       console.error('Failed to send text message', e);
+      this.textMessage = msg;
     }
   }
 
@@ -166,9 +184,20 @@ export class CommunicationPanelComponent implements OnInit, OnDestroy {
   }
 
   private scrollToBottom() {
-    const container = document.querySelector('.overflow-y-auto');
+    const container = this.scrollContainer?.nativeElement;
     if (container) {
       container.scrollTop = container.scrollHeight;
     }
+  }
+
+  keepComposerVisible() {
+    setTimeout(() => {
+      this.scrollToBottom();
+      this.messageInput?.nativeElement.scrollIntoView({
+        block: 'nearest',
+        inline: 'nearest',
+        behavior: 'smooth'
+      });
+    }, 120);
   }
 }
