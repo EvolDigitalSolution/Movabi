@@ -536,6 +536,27 @@ CREATE TABLE IF NOT EXISTS errand_funding (
 
 DO $$
 BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.errand_funding;
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+            WHEN undefined_table THEN NULL;
+        END;
+
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_details') THEN
+            BEGIN
+                ALTER PUBLICATION supabase_realtime ADD TABLE public.errand_details;
+            EXCEPTION
+                WHEN duplicate_object THEN NULL;
+                WHEN undefined_table THEN NULL;
+            END;
+        END IF;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_funding' AND column_name = 'requested_over_budget_amount') THEN
         ALTER TABLE public.errand_funding ADD COLUMN requested_over_budget_amount NUMERIC DEFAULT 0;
     END IF;

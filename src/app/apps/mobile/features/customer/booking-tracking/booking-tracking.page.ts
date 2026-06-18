@@ -35,7 +35,6 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
-import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
@@ -504,7 +503,6 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
     private alertCtrl = inject(AlertController);
-    private routing = inject(RoutingService);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
 
@@ -534,6 +532,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     });
 
     private channel?: RealtimeChannel;
+    private errandFundingChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
 
     private pollingInterval?: ReturnType<typeof setInterval>;
@@ -569,6 +568,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         this.channel = this.bookingService.subscribeToBooking(id);
+        this.subscribeToErrandFunding(id);
 
         await this.walletService.fetchWallet();
         await this.loadBookingAndDetails(id, true);
@@ -584,6 +584,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         this.channel?.unsubscribe();
+        this.errandFundingChannel?.unsubscribe();
         this.locationSubscription?.unsubscribe();
     }
 
@@ -1020,6 +1021,35 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }, 5000);
     }
 
+    private subscribeToErrandFunding(id: string): void {
+        this.errandFundingChannel?.unsubscribe();
+
+        this.errandFundingChannel = this.supabase
+            .channel(`errand-funding-${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'errand_funding',
+                    filter: `job_id=eq.${id}`
+                },
+                async (payload) => {
+                    const nextFunding = (payload.new || null) as ErrandFunding | null;
+
+                    if (nextFunding?.job_id === id) {
+                        this.errandFunding.set(nextFunding);
+                        await this.walletService.fetchWallet();
+                    } else {
+                        await this.loadBookingAndDetails(id, false);
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('[booking-tracking] errand funding realtime:', status);
+            });
+    }
+
     async loadBookingAndDetails(id: string, showLoading = true): Promise<void> {
         if (showLoading) this.isLoading.set(true);
 
@@ -1097,19 +1127,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     label: this.mapDestinationMarkerLabel()
                 });
 
-                this.routing
-                    .getRoute(
-                        { lat: pickupLat, lng: pickupLng },
-                        { lat: dropLat, lng: dropLng }
-                    )
-                    .subscribe({
-                        next: (route: any) => {
-                            if (route) {
-                                this.mapComponent?.drawRoute(route);
-                            }
-                        },
-                        error: (error) => console.warn('Route draw failed:', error)
-                    });
+                this.fitTrackingBounds({ lat: pickupLat, lng: pickupLng }, [
+                    [Math.min(pickupLng, dropLng), Math.min(pickupLat, dropLat)],
+                    [Math.max(pickupLng, dropLng), Math.max(pickupLat, dropLat)]
+                ]);
             }
 
             this.fitTrackingBounds();
@@ -1159,22 +1180,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (!routeTarget) return;
 
-        this.routing
-            .getRoute({ lat, lng }, routeTarget)
-            .subscribe({
-                next: (route) => {
-                    if (!route) return;
+        this.updateDriverDistanceEstimate({ lat, lng }, routeTarget);
+    }
 
-                    this.driverDistanceToPickup.set(route.distanceMeters);
-                    this.driverEtaToPickup.set(route.durationSeconds);
+    private updateDriverDistanceEstimate(
+        driverLocation: { lat: number; lng: number },
+        target: { lat: number; lng: number }
+    ): void {
+        const distanceKm = this.locationService.calculateDistance(
+            driverLocation.lat,
+            driverLocation.lng,
+            target.lat,
+            target.lng
+        );
+        const distanceMeters = Math.max(0, distanceKm * 1000);
+        const urbanMetersPerSecond = 8.3; // roughly 30 km/h in city traffic
 
-                    if (this.shouldShowLiveDriverRoute(String(b.status))) {
-                        this.mapComponent?.drawRoute(route);
-                        this.fitTrackingBounds({ lat, lng }, route.bounds);
-                    }
-                },
-                error: (error) => console.warn('Driver live route failed:', error)
-            });
+        this.driverDistanceToPickup.set(distanceMeters);
+        this.driverEtaToPickup.set(Math.max(60, Math.round(distanceMeters / urbanMetersPerSecond)));
     }
 
     private getDriverRouteTarget(booking: Booking): { lat: number; lng: number } | null {

@@ -44,6 +44,7 @@ import { DriverService } from '../../../../../core/services/driver/driver.servic
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
+import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import {
     Booking,
     BookingStatus,
@@ -538,6 +539,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private bookingService = inject(BookingService);
     private locationService = inject(LocationService);
     private routing = inject(RoutingService);
+    private supabase = inject(SupabaseService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -635,6 +637,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     });
 
     private channel?: RealtimeChannel;
+    private errandFundingChannel?: RealtimeChannel;
 
     private jobMetadata(): Record<string, any> {
         const raw = (this.job() as any)?.metadata || {};
@@ -681,11 +684,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         if (id) {
             this.channel = this.bookingService.subscribeToBooking(id);
+            this.subscribeToErrandFunding(id);
         }
     }
 
     ngOnDestroy() {
         void this.channel?.unsubscribe();
+        void this.errandFundingChannel?.unsubscribe();
         this.locationService.stopTracking();
     }
 
@@ -748,6 +753,34 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             ...((current || {}) as ErrandFunding),
             ...partial
         }) as ErrandFunding);
+    }
+
+    private subscribeToErrandFunding(id: string): void {
+        void this.errandFundingChannel?.unsubscribe();
+
+        this.errandFundingChannel = this.supabase
+            .channel(`driver-errand-funding-${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'errand_funding',
+                    filter: `job_id=eq.${id}`
+                },
+                async (payload) => {
+                    const nextFunding = (payload.new || null) as ErrandFunding | null;
+
+                    if (nextFunding?.job_id === id) {
+                        this.funding.set(nextFunding);
+                    }
+
+                    await this.loadJob(id);
+                }
+            )
+            .subscribe((status) => {
+                console.log('[driver-job-details] errand funding realtime:', status);
+            });
     }
 
     async updateStatus(status: BookingStatus) {
