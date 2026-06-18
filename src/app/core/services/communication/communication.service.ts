@@ -33,21 +33,14 @@ export class CommunicationService {
 
   async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text') {
     const user = this.auth.currentUser();
-    const tenantId = this.auth.tenantId();
     if (!user) throw new Error('Not authenticated');
 
-    const { data, error } = await this.supabase
-      .from('job_messages')
-      .insert({
-        job_id: jobId,
-        tenant_id: tenantId,
-        sender_id: user.id,
-        receiver_id: receiverId,
-        message,
-        message_type: type
-      })
-      .select()
-      .single();
+    const { data, error } = await this.supabase.rpc('send_job_message', {
+      p_job_id: jobId,
+      p_receiver_id: receiverId,
+      p_message: message,
+      p_message_type: type
+    });
 
     if (error) throw error;
     return data as JobMessage;

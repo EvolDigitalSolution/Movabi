@@ -120,8 +120,8 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
             @if (booking()?.driver_id && driverLiveLabel()) {
               <div class="absolute left-3 right-3 bottom-4 z-20 pointer-events-none">
-                <div class="max-w-[22rem] bg-white/92 backdrop-blur rounded-2xl border border-white/70 shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
-                  <div class="flex items-center justify-between gap-3">
+                <div class="max-w-[24rem] bg-white/92 backdrop-blur rounded-2xl border border-white/70 shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
+                  <div class="flex items-start justify-between gap-3">
                     <div class="flex items-center gap-2.5 min-w-0">
                       <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
                         <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
@@ -130,11 +130,11 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       <div class="min-w-0">
                         <p class="text-[11px] text-slate-500 font-semibold">Live driver</p>
                         <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ driverLiveLabel() }}</h3>
-                        <p class="text-[11px] text-slate-500 font-semibold truncate">{{ driverLiveSubtext() }}</p>
+                        <p class="text-[11px] text-slate-500 font-semibold leading-snug line-clamp-2">{{ driverLiveSubtext() }}</p>
                       </div>
                     </div>
 
-                    <app-badge variant="success">{{ driverLastSeenLabel() }}</app-badge>
+                    <app-badge variant="success" class="shrink-0">{{ driverLastSeenLabel() }}</app-badge>
                   </div>
                 </div>
               </div>

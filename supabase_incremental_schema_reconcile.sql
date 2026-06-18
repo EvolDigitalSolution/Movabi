@@ -447,6 +447,78 @@ CREATE TABLE IF NOT EXISTS errand_funding (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_funding' AND column_name = 'requested_over_budget_amount') THEN
+        ALTER TABLE public.errand_funding ADD COLUMN requested_over_budget_amount NUMERIC DEFAULT 0;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_funding' AND column_name = 'over_budget_reason') THEN
+        ALTER TABLE public.errand_funding ADD COLUMN over_budget_reason TEXT;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS job_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID,
+    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    sender_id UUID NOT NULL,
+    receiver_id UUID NOT NULL,
+    message TEXT NOT NULL,
+    message_type TEXT NOT NULL DEFAULT 'text',
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_messages_job_created
+ON public.job_messages(job_id, created_at);
+
+ALTER TABLE public.job_messages ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'job_messages'
+          AND policyname = 'Job participants can read messages'
+    ) THEN
+        CREATE POLICY "Job participants can read messages"
+        ON public.job_messages
+        FOR SELECT
+        USING (
+            auth.uid() IN (sender_id, receiver_id)
+            OR EXISTS (
+                SELECT 1
+                FROM public.jobs j
+                WHERE j.id = job_messages.job_id
+                  AND auth.uid() IN (j.customer_id, j.driver_id)
+            )
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'job_messages'
+          AND policyname = 'Job participants can insert messages'
+    ) THEN
+        CREATE POLICY "Job participants can insert messages"
+        ON public.job_messages
+        FOR INSERT
+        WITH CHECK (
+            auth.uid() = sender_id
+            AND EXISTS (
+                SELECT 1
+                FROM public.jobs j
+                WHERE j.id = job_messages.job_id
+                  AND auth.uid() IN (j.customer_id, j.driver_id)
+                  AND receiver_id IN (j.customer_id, j.driver_id)
+            )
+        );
+    END IF;
+END $$;
+
 -- PART 11 — RPC Functions (Idempotent)
 
 -- Finalize Wallet Top-up
@@ -645,6 +717,134 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security =
 ALTER FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) OWNER TO postgres;
 ALTER FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) SET row_security = off;
 GRANT EXECUTE ON FUNCTION reserve_errand_funds(UUID, UUID, NUMERIC, NUMERIC) TO authenticated;
+
+DROP FUNCTION IF EXISTS request_errand_over_budget(UUID, NUMERIC, TEXT);
+CREATE OR REPLACE FUNCTION request_errand_over_budget(
+  p_job_id UUID,
+  p_amount NUMERIC,
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_amount NUMERIC := ROUND(COALESCE(p_amount, 0)::NUMERIC, 2);
+BEGIN
+  IF v_amount <= 0 THEN
+    RAISE EXCEPTION 'Extra budget amount must be greater than zero';
+  END IF;
+
+  UPDATE errand_funding
+  SET over_budget_status = 'requested',
+      over_budget_amount = v_amount,
+      requested_over_budget_amount = v_amount,
+      over_budget_reason = p_reason,
+      status = CASE WHEN status = 'settled' THEN status ELSE 'over_budget_requested' END,
+      updated_at = NOW()
+  WHERE job_id = p_job_id
+    AND status <> 'settled';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Errand funding not found or already settled';
+  END IF;
+
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
+
+ALTER FUNCTION request_errand_over_budget(UUID, NUMERIC, TEXT) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION request_errand_over_budget(UUID, NUMERIC, TEXT) TO authenticated;
+
+DROP FUNCTION IF EXISTS approve_errand_over_budget(UUID);
+CREATE OR REPLACE FUNCTION approve_errand_over_budget(p_job_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  UPDATE errand_funding
+  SET over_budget_status = 'approved',
+      status = 'approved',
+      amount_reserved = GREATEST(COALESCE(amount_reserved, 0), COALESCE(over_budget_amount, 0)),
+      updated_at = NOW()
+  WHERE job_id = p_job_id
+    AND over_budget_status = 'requested';
+
+  RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
+
+ALTER FUNCTION approve_errand_over_budget(UUID) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION approve_errand_over_budget(UUID) TO authenticated;
+
+DROP FUNCTION IF EXISTS reject_errand_over_budget(UUID);
+CREATE OR REPLACE FUNCTION reject_errand_over_budget(p_job_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  UPDATE errand_funding
+  SET over_budget_status = 'rejected',
+      updated_at = NOW()
+  WHERE job_id = p_job_id
+    AND over_budget_status = 'requested';
+
+  RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
+
+ALTER FUNCTION reject_errand_over_budget(UUID) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION reject_errand_over_budget(UUID) TO authenticated;
+
+DROP FUNCTION IF EXISTS send_job_message(UUID, UUID, TEXT, TEXT);
+CREATE OR REPLACE FUNCTION send_job_message(
+  p_job_id UUID,
+  p_receiver_id UUID,
+  p_message TEXT,
+  p_message_type TEXT DEFAULT 'text'
+)
+RETURNS job_messages AS $$
+DECLARE
+  v_sender_id UUID := auth.uid();
+  v_job RECORD;
+  v_message job_messages;
+BEGIN
+  IF v_sender_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  IF NULLIF(TRIM(COALESCE(p_message, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'Message cannot be empty';
+  END IF;
+
+  SELECT *
+  INTO v_job
+  FROM jobs
+  WHERE id = p_job_id
+    AND v_sender_id IN (customer_id, driver_id)
+    AND p_receiver_id IN (customer_id, driver_id);
+
+  IF v_job IS NULL THEN
+    RAISE EXCEPTION 'You can only message participants on this job';
+  END IF;
+
+  INSERT INTO job_messages (
+    tenant_id,
+    job_id,
+    sender_id,
+    receiver_id,
+    message,
+    message_type
+  )
+  VALUES (
+    NULLIF(to_jsonb(v_job)->>'tenant_id', '')::UUID,
+    p_job_id,
+    v_sender_id,
+    p_receiver_id,
+    TRIM(p_message),
+    COALESCE(NULLIF(p_message_type, ''), 'text')
+  )
+  RETURNING * INTO v_message;
+
+  RETURN v_message;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public SET row_security = off;
+
+ALTER FUNCTION send_job_message(UUID, UUID, TEXT, TEXT) OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION send_job_message(UUID, UUID, TEXT, TEXT) TO authenticated;
 
 -- Wallet-first Job Payment RPC
 CREATE OR REPLACE FUNCTION pay_job_from_wallet(

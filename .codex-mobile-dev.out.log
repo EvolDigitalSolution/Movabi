@@ -3075,3 +3075,38 @@ Page reload sent to client(s).
 Application bundle generation complete. [9.554 seconds] - 2026-06-17T23:39:09.822Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-NRGJZCX2.js[39m  [2m | [22m[2mbooking-tracking-page[22m[2m | [22m[36m109.64 kB[39m[2m | [22m
+
+Application bundle generation complete. [5.364 seconds] - 2026-06-18T07:34:56.505Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m296.12 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-Y23D4KXD.js[39m  [2m | [22m[2mbooking-tracking-page[22m[2m | [22m[36m109.59 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.432 seconds] - 2026-06-18T07:35:05.216Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m296.54 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m               [2m | [22m[36m239.71 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-WNOXLCBG.js[39m  [2m | [22m[2mbooking-tracking-page[22m[2m | [22m[36m109.81 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.739 seconds] - 2026-06-18T07:35:28.138Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).
