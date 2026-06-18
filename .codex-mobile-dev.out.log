@@ -4664,3 +4664,14 @@ Page reload sent to client(s).
 
 Application bundle generation complete. [2.165 seconds] - 2026-06-18T20:56:48.140Z
 
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m          [2m | [22m[36m269.80 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mchunk-GSNP4RRD.js[39m  [2m | [22m[2mdashboard-page[22m[2m | [22m[36m122.31 kB[39m[2m | [22m
+
+Application bundle generation complete. [9.067 seconds] - 2026-06-18T21:43:16.077Z
+
+Page reload sent to client(s).

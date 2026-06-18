@@ -33,7 +33,8 @@ import {
     checkmarkCircleOutline,
     personAddOutline,
     listOutline,
-    navigate
+    navigate,
+    chevronDownOutline
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -875,7 +876,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             checkmarkCircleOutline,
             personAddOutline,
             listOutline,
-            navigate
+            navigate,
+            chevronDownOutline
         });
     }
 
