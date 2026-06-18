@@ -837,7 +837,7 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
         const first = String(customer?.first_name || '').trim();
         const last = String(customer?.last_name || '').trim();
 
-        return `${first} ${last}`.trim() || 'Customer';
+        return first || last || 'Customer';
     }
 
     customerInitial(): string {

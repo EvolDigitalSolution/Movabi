@@ -1240,9 +1240,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         const customer = (this.job() as any)?.customer;
         const first = String(customer?.first_name || '').trim();
         const last = String(customer?.last_name || '').trim();
-        const full = `${first} ${last}`.trim();
 
-        return full || 'Customer';
+        return first || last || 'Customer';
     }
 
     customerInitial(): string {
