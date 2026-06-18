@@ -1714,3 +1714,71 @@ websocket connection issues.
            ╵                        [32m~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'todayMetric' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:369:79:
+[37m      369 │ ...isplay font-black text-slate-950">{{ [32mtodayMetric[37m().display }}</p>
+          ╵                                         [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'todayMetric' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:370:85:
+[37m      370 │ ...ate-600 font-semibold leading-snug">{{ [32mtodayMetric[37m().label }}</p>
+          ╵                                           [32m~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'loadDashboardStats' does not exist on type 'DriverDashboardPage'. Did you mean 'dashboardStats'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:872:19:
+[37m      872 │         await this.[32mloadDashboardStats[37m();
+          ╵                    [32m~~~~~~~~~~~~~~~~~~[0m
+
+  'dashboardStats' is declared here.
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:732:4:
+[37m      732 │     [32mdashboardStats[37m = signal<DriverDashboardStats>({
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'loadDashboardStats' does not exist on type 'DriverDashboardPage'. Did you mean 'dashboardStats'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:1264:23:
+[37m      1264 │             await this.[32mloadDashboardStats[37m();
+           ╵                        [32m~~~~~~~~~~~~~~~~~~[0m
+
+  'dashboardStats' is declared here.
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:732:4:
+[37m      732 │     [32mdashboardStats[37m = signal<DriverDashboardStats>({
+          ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasAcceptanceRate' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:356:23:
+[37m      356 │                   @if ([32mhasAcceptanceRate[37m() && (acceptanceMetric()...
+          ╵                        [32m~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'hasAcceptanceRate' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:356:23:
+[37m      356 │                   @if ([32mhasAcceptanceRate[37m() && (acceptanceMetric()...
+          ╵                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'acceptanceBadgeVariant' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:620:40:
+[37m      620 │                   <app-badge [variant]="[32macceptanceBadgeVariant[37m()">
+          ╵                                         [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'acceptanceBadgeLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:621:23:
+[37m      621 │                     {{ [32macceptanceBadgeLabel[37m() }}
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

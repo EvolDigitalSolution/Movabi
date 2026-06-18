@@ -71,6 +71,12 @@ type MetricState = {
     isNew: boolean;
 };
 
+type DriverDashboardStats = {
+    todayJobs: number;
+    acceptedJobs: number;
+    completedJobs: number;
+};
+
 type PassedJob = {
     id: string;
     passedAt: number;
@@ -347,7 +353,7 @@ type PassedJob = {
                     <app-performance-badge type="top-rated"></app-performance-badge>
                   }
 
-                  @if (!acceptanceMetric().isNew && (acceptanceMetric().value || 0) >= 95) {
+                  @if (hasAcceptanceRate() && (acceptanceMetric().value || 0) >= 95) {
                     <app-performance-badge type="reliable"></app-performance-badge>
                   }
 
@@ -360,8 +366,8 @@ type PassedJob = {
               <div class="grid grid-cols-3 gap-2">
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
                   <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Today</p>
-                  <p class="text-lg font-display font-black text-slate-950">{{ jobs().length }}</p>
-                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">Open requests</p>
+                  <p class="text-lg font-display font-black text-slate-950">{{ todayMetric().display }}</p>
+                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ todayMetric().label }}</p>
                 </div>
 
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
@@ -611,8 +617,8 @@ type PassedJob = {
                     <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Acceptance</span>
                   </div>
 
-                  <app-badge [variant]="acceptanceMetric().isNew ? 'secondary' : getMetricVariant(acceptanceMetric().value || 0)">
-                    {{ acceptanceMetric().isNew ? 'New' : getMetricLabel(acceptanceMetric().value || 0) }}
+                  <app-badge [variant]="acceptanceBadgeVariant()">
+                    {{ acceptanceBadgeLabel() }}
                   </app-badge>
                 </div>
 
@@ -723,6 +729,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     toastVisible = signal(false);
     toastMessage = signal('');
     toastColor = signal<ToastColor>('success');
+    dashboardStats = signal<DriverDashboardStats>({
+        todayJobs: 0,
+        acceptedJobs: 0,
+        completedJobs: 0
+    });
 
     stripeUiState = signal<StripeUiState>({
         accountId: null,
@@ -755,16 +766,29 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     isUnderReview = computed(() => this.verificationStatus() === 'under_review');
     isActionRequired = computed(() => this.verificationStatus() === 'action_required');
 
+    todayMetric = computed<MetricState>(() => {
+        const count = this.dashboardStats().todayJobs;
+
+        return {
+            value: count,
+            label: count === 1 ? 'Job today' : 'Jobs today',
+            display: String(count),
+            isNew: count === 0
+        };
+    });
+
     acceptanceMetric = computed<MetricState>(() => {
         const profile = this.profileService.profile() as any;
         const value = this.toNullableNumber(profile?.acceptance_rate ?? null);
 
         if (value === null || value <= 0) {
+            const acceptedJobs = this.dashboardStats().acceptedJobs;
+
             return {
-                value: null,
-                label: 'No accepted requests yet',
-                display: 'New',
-                isNew: true
+                value: acceptedJobs,
+                label: acceptedJobs === 1 ? 'Accepted request' : 'Accepted requests',
+                display: String(acceptedJobs),
+                isNew: acceptedJobs === 0
             };
         }
 
@@ -784,9 +808,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         if (value === null || value <= 0) {
             return {
-                value: null,
+                value: 0,
                 label: 'No reviews yet',
-                display: 'New',
+                display: '0.0',
                 isNew: true
             };
         }
@@ -845,6 +869,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         await this.loadAvailability();
         await this.handleStripeReturn();
 
+        await this.loadDashboardStats();
         await this.refreshActiveJob();
         await this.driverService.fetchAvailableJobs();
 
@@ -880,6 +905,74 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             await this.driverService.fetchActiveJob();
         } catch (error) {
             console.warn('[driver-dashboard] Failed to refresh active job', error);
+        }
+    }
+
+    async loadDashboardStats(): Promise<void> {
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            this.dashboardStats.set({ todayJobs: 0, acceptedJobs: 0, completedJobs: 0 });
+            return;
+        }
+
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const activeAndDoneStatuses = [
+            'assigned',
+            'accepted',
+            'heading_to_pickup',
+            'arrived',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'in_progress',
+            'delivered',
+            'completed',
+            'settled',
+            'over_budget_requested'
+        ];
+
+        try {
+            const [todayResult, acceptedResult, completedResult] = await Promise.all([
+                this.supabase.client
+                    .from('jobs')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('driver_id', user.id)
+                    .in('status', activeAndDoneStatuses)
+                    .gte('updated_at', startOfToday.toISOString()),
+                this.supabase.client
+                    .from('jobs')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('driver_id', user.id)
+                    .in('status', activeAndDoneStatuses),
+                this.supabase.client
+                    .from('jobs')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('driver_id', user.id)
+                    .in('status', ['completed', 'settled'])
+            ]);
+
+            if (todayResult.error || acceptedResult.error || completedResult.error) {
+                throw todayResult.error || acceptedResult.error || completedResult.error;
+            }
+
+            this.dashboardStats.set({
+                todayJobs: todayResult.count ?? 0,
+                acceptedJobs: acceptedResult.count ?? 0,
+                completedJobs: completedResult.count ?? 0
+            });
+        } catch (error) {
+            console.warn('[driver-dashboard] Failed to load dashboard stats', error);
+
+            const profile = this.profileService.profile() as DriverProfile | null;
+            this.dashboardStats.set({
+                todayJobs: this.activeJob() ? 1 : 0,
+                acceptedJobs: Number(profile?.completed_jobs || profile?.total_trips || 0),
+                completedJobs: Number(profile?.completed_jobs || profile?.total_trips || 0)
+            });
         }
     }
 
@@ -1044,6 +1137,32 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     requestDestinationUnavailableLabel(job: Booking): string {
         return `${this.requestDestinationLabel(job)} unavailable`;
+    }
+
+    hasAcceptanceRate(): boolean {
+        const profile = this.profileService.profile() as any;
+        const value = this.toNullableNumber(profile?.acceptance_rate ?? null);
+        return value !== null && value > 0;
+    }
+
+    acceptanceBadgeLabel(): string {
+        const metric = this.acceptanceMetric();
+
+        if (this.hasAcceptanceRate()) {
+            return this.getMetricLabel(metric.value || 0);
+        }
+
+        return metric.isNew ? 'New' : 'Accepted';
+    }
+
+    acceptanceBadgeVariant(): 'success' | 'warning' | 'error' | 'info' | 'secondary' {
+        const metric = this.acceptanceMetric();
+
+        if (this.hasAcceptanceRate()) {
+            return this.getMetricVariant(metric.value || 0);
+        }
+
+        return metric.isNew ? 'secondary' : 'info';
     }
 
     formatJobDistance(job: Booking): string {
@@ -1236,6 +1355,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         if (this.jobsRefreshInterval) return;
 
         this.jobsRefreshInterval = setInterval(async () => {
+            await this.loadDashboardStats();
             await this.refreshActiveJob();
 
             if (this.status() === 'online' && this.isAvailable()) {
