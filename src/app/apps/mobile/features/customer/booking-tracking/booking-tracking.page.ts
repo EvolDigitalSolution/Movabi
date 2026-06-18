@@ -128,8 +128,8 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       </div>
 
                       <div class="min-w-0">
-                        <p class="text-[11px] text-slate-500 font-semibold">Live driver</p>
-                        <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ driverLiveLabel() }}</h3>
+                        <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
+                        <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ getDriverName() }}</h3>
                         <p class="text-[11px] text-slate-500 font-semibold leading-snug line-clamp-2">{{ driverLiveSubtext() }}</p>
                       </div>
                     </div>
@@ -665,14 +665,23 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (!vehicle) return 'We will show transport details as soon as they are confirmed.';
 
         const parts = [
+            this.getVehicleColorLabel(vehicle),
             this.getDriverTransportLabel(vehicle),
-            vehicle.color,
             vehicle.license_plate
         ]
             .map((part) => String(part || '').trim())
             .filter(Boolean);
 
         return parts.length ? parts.join(' • ') : 'Transport confirmed';
+    }
+
+    private getVehicleColorLabel(vehicle: Vehicle): string {
+        const raw = String((vehicle as Vehicle & { colour?: string }).color || (vehicle as Vehicle & { colour?: string }).colour || '').trim();
+        if (!raw) return '';
+
+        return raw
+            .replace(/[_-]/g, ' ')
+            .replace(/\b\w/g, (char) => char.toUpperCase());
     }
 
     private getDriverVehicle(): Vehicle | null {
@@ -1119,7 +1128,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const distance = this.driverDistanceToPickup();
 
         if (distance !== null) {
-            return `${this.formatDistanceMeters(distance)} from pickup. The marker moves as the driver updates.`;
+            return `${this.formatDistanceMeters(distance)} from pickup`;
         }
 
         return 'Waiting for the driver GPS update.';
@@ -1146,7 +1155,6 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private formatDistanceMeters(meters: number | null): string {
         if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
-        if (meters < 1000) return `${Math.round(meters)} m`;
         return `${(meters / 1000).toFixed(1)} km`;
     }
 
