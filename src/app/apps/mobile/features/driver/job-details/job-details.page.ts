@@ -438,6 +438,19 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                         </app-button>
                       }
 
+                      @if (canSetupIssuingCard()) {
+                        <app-button
+                          variant="primary"
+                          size="sm"
+                          class="w-full mt-4"
+                          [loading]="isSettingUpIssuingCard()"
+                          [disabled]="isSettingUpIssuingCard()"
+                          (clicked)="setupIssuingCard()"
+                        >
+                          Set up Movabi Pay card
+                        </app-button>
+                      }
+
                       @if (canProvisionIssuingCard()) {
                         <app-button
                           variant="primary"
@@ -648,6 +661,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     errandDetails = computed(() => this.details() as ErrandDetails | null);
     funding = signal<ErrandFunding | null>(null);
     issuingCardStatus = signal<ErrandIssuingCardStatus | null>(null);
+    isSettingUpIssuingCard = signal(false);
     isProvisioningToWallet = signal(false);
     isLoading = signal(true);
     driverPickupDistance = signal<number | null>(null);
@@ -934,7 +948,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         if (status === 'active') return `Add to ${this.phoneWalletName()}`;
         if (status === 'ready') return 'Tap Activate card now';
-        if (status === 'needs_cardholder' || status === 'needs_driver_profile') return 'Complete driver setup';
+        if (status === 'needs_cardholder' || status === 'needs_driver_profile') return 'Tap Set up Movabi Pay card';
         if (status === 'not_configured') return 'Upload receipt after purchase';
         if (status === 'disabled') return 'Use receipt flow';
         if (status === 'error') return 'Refresh or use receipt flow';
@@ -953,7 +967,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (status === 'needs_cardholder' || status === 'needs_driver_profile') {
-            return 'Finish driver card setup before using Movabi Pay. You can still upload a receipt if card setup is not ready.';
+            return 'Tap Set up Movabi Pay card. Movabi will prepare a driver virtual card, then you can activate it for this errand budget.';
         }
 
         return 'Movabi Pay is not available for this errand yet. Use receipt upload so the spend can still be recorded.';
@@ -985,6 +999,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return status?.enabled === true && status.status === 'ready';
     }
 
+    canSetupIssuingCard(): boolean {
+        const status = this.issuingCardStatus();
+        return status?.enabled === true && ['needs_cardholder', 'needs_driver_profile'].includes(status.status);
+    }
+
     canProvisionIssuingCard(): boolean {
         const status = this.issuingCardStatus();
         return status?.enabled === true && status.status === 'active' && !!status.cardId;
@@ -1014,6 +1033,28 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();
+        }
+    }
+
+    async setupIssuingCard(): Promise<void> {
+        const currentJob = this.job();
+
+        if (!currentJob?.id) {
+            await this.showToast('Request not found.', 'danger');
+            return;
+        }
+
+        this.isSettingUpIssuingCard.set(true);
+
+        try {
+            await this.driverService.ensureMovabiPayVirtualCard();
+            await this.loadIssuingCardStatus(currentJob.id);
+            await this.showToast('Movabi Pay card setup started. You can activate it once it is ready.', 'success');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Could not set up Movabi Pay card.';
+            await this.showToast(message, 'danger');
+        } finally {
+            this.isSettingUpIssuingCard.set(false);
         }
     }
 
