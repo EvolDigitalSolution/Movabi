@@ -1015,6 +1015,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.resetSearchState();
     }
 
+    private syncDriverLiveState(booking: Booking): void {
+        if (this.isTerminalTrackingStatus(String(booking.status || ''))) {
+            this.clearDriverLiveState();
+        }
+    }
+
+    private clearDriverLiveState(): void {
+        this.driverDistanceToPickup.set(null);
+        this.driverEtaToPickup.set(null);
+        this.driverLastSeenAt.set(null);
+        this.locationSubscription?.unsubscribe();
+        this.locationSubscription = undefined;
+    }
+
+    private isTerminalTrackingStatus(status: string): boolean {
+        return ['completed', 'settled', 'cancelled', 'canceled', 'no_driver_found', 'delivered'].includes(status);
+    }
+
     private startPolling(id: string): void {
         this.pollingInterval = setInterval(() => {
             void this.loadBookingAndDetails(id, false);
@@ -1063,6 +1081,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
             this.bookingService.activeBooking.set(b);
             this.syncSearchUiState();
+            this.syncDriverLiveState(b);
 
             const bookingDetails = await this.bookingService.getBookingDetails(
                 b.id,
@@ -1081,11 +1100,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
             this.initMap();
 
-            if (b.driver_id) {
+            if (b.driver_id && !this.isTerminalTrackingStatus(String(b.status || ''))) {
                 this.subscribeToDriverLocation(b.driver_id);
             } else {
-                this.locationSubscription?.unsubscribe();
-                this.locationSubscription = undefined;
+                this.clearDriverLiveState();
             }
         } catch (err) {
             console.error('Load booking failed', err);
@@ -1158,6 +1176,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const b = this.booking();
 
         if (!b || !this.mapComponent) return;
+        if (this.isTerminalTrackingStatus(String(b.status || ''))) {
+            this.clearDriverLiveState();
+            return;
+        }
 
         const lat = Number(location.lat);
         const lng = Number(location.lng);
@@ -1293,6 +1315,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     driverLiveLabel(): string {
+        if (this.isTerminalTrackingStatus(String(this.booking()?.status || ''))) {
+            return '';
+        }
+
         const eta = this.driverEtaToPickup();
 
         if (eta !== null) {
@@ -1307,6 +1333,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     driverLiveSubtext(): string {
+        if (this.isTerminalTrackingStatus(String(this.booking()?.status || ''))) {
+            return this.getStatusHint(this.booking()?.status || '');
+        }
+
         const distance = this.driverDistanceToPickup();
         const target = this.activeTrackingTargetLabel();
 

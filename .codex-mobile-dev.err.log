@@ -1885,3 +1885,38 @@ websocket connection issues.
           ╵                  [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'syncDriverLiveState' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1066:17:
+[37m      1066 │             this.[32msyncDriverLiveState[37m(b);
+           ╵                  [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isTerminalTrackingStatus' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1162:17:
+[37m      1162 │         if (this.[32misTerminalTrackingStatus[37m(String(b.status || '')...
+           ╵                  [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'clearDriverLiveState' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1163:17:
+[37m      1163 │             this.[32mclearDriverLiveState[37m();
+           ╵                  [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isTerminalTrackingStatus' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1301:17:
+[37m      1301 │         if (this.[32misTerminalTrackingStatus[37m(String(this.booking()?...
+           ╵                  [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isTerminalTrackingStatus' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1319:17:
+[37m      1319 │         if (this.[32misTerminalTrackingStatus[37m(String(this.booking()?...
+           ╵                  [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
