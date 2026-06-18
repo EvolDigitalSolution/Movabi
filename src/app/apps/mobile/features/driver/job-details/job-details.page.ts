@@ -374,7 +374,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                         <div class="text-right shrink-0">
                           <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Limit</p>
                           <p class="text-lg font-display font-black text-slate-950">
-                            {{ formatPrice(issuingCardStatus()?.budgetLimit || funding()?.amount_reserved || 0) }}
+                            {{ formatPrice(issuingCardBudgetLimit()) }}
                           </p>
                         </div>
                       </div>
@@ -841,6 +841,22 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         return status.message || 'Movabi protects the customer budget and records card spend against this errand.';
+    }
+
+    issuingCardBudgetLimit(): number {
+        const metadata = this.jobMetadata();
+        const errandMetadata = metadata['errand_details'] || {};
+        const paymentSplit = metadata['payment_split'] || {};
+
+        return this.firstPositiveMoney(
+            this.issuingCardStatus()?.budgetLimit,
+            this.funding()?.amount_reserved,
+            this.errandDetails()?.estimated_budget,
+            errandMetadata?.budget,
+            errandMetadata?.estimated_budget,
+            errandMetadata?.wallet_budget,
+            paymentSplit?.item_budget
+        );
     }
 
     canActivateIssuingCard(): boolean {
@@ -1574,6 +1590,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     toNumber(value: unknown): number {
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    private firstPositiveMoney(...values: unknown[]): number {
+        for (const value of values) {
+            const amount = this.toNumber(value);
+
+            if (amount > 0) {
+                return amount;
+            }
+        }
+
+        return 0;
     }
 
     private isValidCoordinate(value: number): boolean {
