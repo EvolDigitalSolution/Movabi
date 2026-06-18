@@ -3776,3 +3776,14 @@ Application bundle generation failed. [2.522 seconds] - 2026-06-18T11:57:28.517Z
 Application bundle generation complete. [1.235 seconds] - 2026-06-18T11:57:49.033Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m          [2m | [22m[36m269.59 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m         [2m | [22m [1mRaw size[22m
+[32mchunk-NQGHSAXI.js[39m  [2m | [22m[2mdashboard-page[22m[2m | [22m[36m119.40 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.217 seconds] - 2026-06-18T12:01:30.858Z
+
+Page reload sent to client(s).

@@ -939,20 +939,23 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             const [todayResult, acceptedResult, completedResult] = await Promise.all([
                 this.supabase.client
                     .from('jobs')
-                    .select('id', { count: 'exact', head: true })
+                    .select('id')
                     .eq('driver_id', user.id)
                     .in('status', activeAndDoneStatuses)
-                    .gte('updated_at', startOfToday.toISOString()),
+                    .gte('updated_at', startOfToday.toISOString())
+                    .limit(1000),
                 this.supabase.client
                     .from('jobs')
-                    .select('id', { count: 'exact', head: true })
+                    .select('id')
                     .eq('driver_id', user.id)
-                    .in('status', activeAndDoneStatuses),
+                    .in('status', activeAndDoneStatuses)
+                    .limit(1000),
                 this.supabase.client
                     .from('jobs')
-                    .select('id', { count: 'exact', head: true })
+                    .select('id')
                     .eq('driver_id', user.id)
                     .in('status', ['completed', 'settled'])
+                    .limit(1000)
             ]);
 
             if (todayResult.error || acceptedResult.error || completedResult.error) {
@@ -960,9 +963,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             }
 
             this.dashboardStats.set({
-                todayJobs: todayResult.count ?? 0,
-                acceptedJobs: acceptedResult.count ?? 0,
-                completedJobs: completedResult.count ?? 0
+                todayJobs: todayResult.data?.length ?? 0,
+                acceptedJobs: acceptedResult.data?.length ?? 0,
+                completedJobs: completedResult.data?.length ?? 0
             });
         } catch (error) {
             console.warn('[driver-dashboard] Failed to load dashboard stats', error);
