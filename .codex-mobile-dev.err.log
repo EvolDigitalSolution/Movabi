@@ -2836,3 +2836,31 @@ websocket connection issues.
           ╵                                  [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'issuingCardBadgeText' does not exist on type 'JobDetailsPage'. Did you mean 'issuingCardBudgetLimit'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:378:33:
+[37m      378 │                               {{ [32missuingCardBadgeText[37m() }}
+          ╵                                  [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'issuingCardNextStep' does not exist on type 'JobDetailsPage'. Did you mean 'issuingCardTitle'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:416:29:
+[37m      416 │                           {{ [32missuingCardNextStep[37m() }}
+          ╵                              [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'issuingCardStatusLabel' does not exist on type 'JobDetailsPage'. Did you mean 'issuingCardStatus'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:423:58:
+[37m      423 │ ...span class="text-amber-700">{{ [32missuingCardStatusLabel[37m() }}</span>
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'issuingCardActionLabel' does not exist on type 'JobDetailsPage'. Did you mean 'issuingCardTitle'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:427:69:
+[37m      427 │ ..."text-slate-950 text-right">{{ [32missuingCardActionLabel[37m() }}</span>
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

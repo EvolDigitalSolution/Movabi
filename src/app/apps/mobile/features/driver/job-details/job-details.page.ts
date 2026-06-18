@@ -375,7 +375,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                               </h4>
                             </div>
                             <div class="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/80">
-                              {{ issuingCardStatus()?.status === 'active' ? 'Ready' : 'Not ready' }}
+                              {{ issuingCardBadgeText() }}
                             </div>
                           </div>
 
@@ -413,28 +413,28 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                           {{ issuingCardMessage() }}
                         </p>
                         <p class="text-xs font-bold text-slate-500 leading-relaxed">
-                          When this card is ready, add it to Apple Pay or Google Wallet and tap your phone at checkout. If the shop cannot accept phone wallet payment, use the secure card details for online, link, or phone payment.
+                          {{ issuingCardNextStep() }}
                         </p>
                       </div>
 
                       <div class="rounded-2xl border border-amber-100 bg-white/85 p-3 space-y-2 text-sm font-bold text-slate-700">
                         <div class="flex items-center justify-between gap-3">
                           <span>Card status</span>
-                          <span class="text-amber-700">{{ issuingCardStatus()?.status === 'active' ? 'Ready to use' : 'Activate before shopping' }}</span>
+                          <span class="text-amber-700">{{ issuingCardStatusLabel() }}</span>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                          <span>At checkout</span>
-                          <span class="text-slate-950">Tap phone</span>
+                          <span>Next step</span>
+                          <span class="text-slate-950 text-right">{{ issuingCardActionLabel() }}</span>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                          <span>Backup</span>
-                          <span class="text-slate-950">Card details</span>
+                          <span>Checkout</span>
+                          <span class="text-slate-950">Tap phone or use card details</span>
                         </div>
                       </div>
 
                       @if (canActivateIssuingCard()) {
                         <app-button variant="primary" size="sm" class="w-full mt-4" (clicked)="activateIssuingCard()">
-                          Activate card for this shop
+                          Activate card now
                         </app-button>
                       }
 
@@ -903,6 +903,60 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         return status.message || 'Movabi protects the customer budget and records card spend against this errand.';
+    }
+
+    issuingCardBadgeText(): string {
+        const status = this.issuingCardStatus()?.status;
+
+        if (status === 'active') return 'Ready';
+        if (status === 'ready') return 'Action needed';
+        if (status === 'needs_cardholder' || status === 'needs_driver_profile') return 'Setup needed';
+        if (status === 'disabled') return 'Disabled';
+        if (status === 'error') return 'Check needed';
+        return 'Unavailable';
+    }
+
+    issuingCardStatusLabel(): string {
+        const status = this.issuingCardStatus()?.status;
+
+        if (status === 'active') return 'Ready to use';
+        if (status === 'ready') return 'Waiting for driver activation';
+        if (status === 'needs_cardholder') return 'Driver card setup needed';
+        if (status === 'needs_driver_profile') return 'Driver profile missing';
+        if (status === 'not_configured') return 'Receipt flow only';
+        if (status === 'disabled') return 'Disabled for this errand';
+        if (status === 'error') return 'Status unavailable';
+        return 'Not available';
+    }
+
+    issuingCardActionLabel(): string {
+        const status = this.issuingCardStatus()?.status;
+
+        if (status === 'active') return `Add to ${this.phoneWalletName()}`;
+        if (status === 'ready') return 'Tap Activate card now';
+        if (status === 'needs_cardholder' || status === 'needs_driver_profile') return 'Complete driver setup';
+        if (status === 'not_configured') return 'Upload receipt after purchase';
+        if (status === 'disabled') return 'Use receipt flow';
+        if (status === 'error') return 'Refresh or use receipt flow';
+        return 'Wait for card setup';
+    }
+
+    issuingCardNextStep(): string {
+        const status = this.issuingCardStatus()?.status;
+
+        if (status === 'active') {
+            return `Add the card to ${this.phoneWalletName()} and tap your phone at checkout. If the shop cannot accept phone wallet payment, use the secure card details.`;
+        }
+
+        if (status === 'ready') {
+            return 'Tap Activate card now before shopping. Movabi will unlock this card only for the approved customer item budget.';
+        }
+
+        if (status === 'needs_cardholder' || status === 'needs_driver_profile') {
+            return 'Finish driver card setup before using Movabi Pay. You can still upload a receipt if card setup is not ready.';
+        }
+
+        return 'Movabi Pay is not available for this errand yet. Use receipt upload so the spend can still be recorded.';
     }
 
     issuingCardBudgetLimit(): number {
