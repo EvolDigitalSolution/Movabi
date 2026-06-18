@@ -385,13 +385,65 @@ export class IssuingService {
   }
 
   private static async getReservedBudget(jobId: string): Promise<number> {
-    const { data } = await supabaseAdmin
-      .from('errand_funding')
-      .select('amount_reserved')
-      .eq('job_id', jobId)
-      .maybeSingle();
+    const [{ data: funding }, { data: details }, { data: job }] = await Promise.all([
+      supabaseAdmin
+        .from('errand_funding')
+        .select('amount_reserved')
+        .eq('job_id', jobId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('errand_details')
+        .select('estimated_budget')
+        .eq('job_id', jobId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('jobs')
+        .select('metadata')
+        .eq('id', jobId)
+        .maybeSingle()
+    ]);
 
-    return parseMoney((data as any)?.amount_reserved);
+    const metadata = this.parseMetadata((job as any)?.metadata);
+    const errandMetadata = this.parseMetadata(metadata['errand_details']);
+    const paymentSplit = this.parseMetadata(metadata['payment_split']);
+
+    return this.firstPositiveMoney(
+      (funding as any)?.amount_reserved,
+      (details as any)?.estimated_budget,
+      errandMetadata['budget'],
+      errandMetadata['estimated_budget'],
+      errandMetadata['wallet_budget'],
+      paymentSplit['item_budget']
+    );
+  }
+
+  private static firstPositiveMoney(...values: unknown[]): number {
+    for (const value of values) {
+      const amount = parseMoney(value);
+
+      if (amount > 0) {
+        return amount;
+      }
+    }
+
+    return 0;
+  }
+
+  private static parseMetadata(value: unknown): Record<string, any> {
+    if (!value) {
+      return {};
+    }
+
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' ? parsed as Record<string, any> : {};
+      } catch {
+        return {};
+      }
+    }
+
+    return typeof value === 'object' ? value as Record<string, any> : {};
   }
 
   private static async getJobSpendControl(jobId: string): Promise<Record<string, any> | null> {
