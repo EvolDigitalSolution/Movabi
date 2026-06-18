@@ -133,9 +133,9 @@ export class LogisticsService {
       throw new Error('Cannot complete job without an assigned driver');
     }
 
-    const totalPrice = Number(job.total_price ?? job.price ?? job.estimated_price ?? 0);
+    const requestedTotalPrice = Number(job.total_price ?? job.price ?? job.estimated_price ?? 0);
 
-    if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+    if (!Number.isFinite(requestedTotalPrice) || requestedTotalPrice <= 0) {
       throw new Error('Invalid job amount');
     }
 
@@ -159,6 +159,12 @@ export class LogisticsService {
     const commissionRate = plan === 'pro' ? 0 : Number(driverProfile?.commission_rate ?? 15);
     const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 15;
 
+    let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
+    const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';
+    const totalPrice = isWalletPayment
+      ? await this.resolveWalletSettlementAmount(job, requestedTotalPrice)
+      : requestedTotalPrice;
+
     const platformFee = this.roundMoney(totalPrice * (safeCommissionRate / 100));
     const driverPayout = this.roundMoney(Math.max(0, Math.min(totalPrice, totalPrice - platformFee)));
 
@@ -168,11 +174,9 @@ export class LogisticsService {
       throw new Error('Invalid driver payout amount');
     }
 
-    let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
-
     if (finalPaymentStatus === 'paid') {
       console.log('[LogisticsService.completeJob] Payment already paid, skipping capture:', job.id);
-    } else if (finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet') {
+    } else if (isWalletPayment) {
       await this.settleWalletJobReservation(job, totalPrice);
       finalPaymentStatus = 'paid';
     } else if (finalPaymentStatus === 'authorized') {
@@ -247,6 +251,8 @@ export class LogisticsService {
         status: 'completed',
         payment_status: 'paid',
         driver_id: driverId,
+        price: totalPrice,
+        total_price: totalPrice,
         driver_payout: driverPayout,
         platform_fee: platformFee,
         stripe_transfer_id: stripeTransferId,
@@ -289,6 +295,7 @@ export class LogisticsService {
 
     await AuditService.logBooking(job.customer_id, 'job_completed', job.id, {
       total_price: totalPrice,
+      reserved_price: requestedTotalPrice,
       driver_payout: driverPayout,
       platform_fee: platformFee,
       stripe_transfer_id: stripeTransferId,
@@ -299,10 +306,38 @@ export class LogisticsService {
     return updatedJob;
   }
 
+  private static async resolveWalletSettlementAmount(job: any, fallbackAmount: number): Promise<number> {
+    if (String(job.service_slug || '').toLowerCase() !== 'errand') {
+      return this.roundMoney(fallbackAmount);
+    }
+
+    const [{ data: details }, { data: funding }] = await Promise.all([
+      supabaseAdmin
+        .from('errand_details')
+        .select('actual_spending')
+        .eq('job_id', job.id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('errand_funding')
+        .select('amount_reserved')
+        .eq('job_id', job.id)
+        .maybeSingle()
+    ]);
+
+    const actualSpending = this.roundMoney(Number(details?.actual_spending || 0));
+    const reservedAmount = this.roundMoney(Number(funding?.amount_reserved || fallbackAmount));
+
+    if (actualSpending <= 0) {
+      return this.roundMoney(fallbackAmount);
+    }
+
+    return this.roundMoney(Math.min(reservedAmount, actualSpending));
+  }
+
   private static async settleWalletJobReservation(job: any, amount: number): Promise<void> {
     const wallet = await supabaseAdmin
       .from('wallets')
-      .select('id, reserved_balance')
+      .select('id, available_balance, reserved_balance')
       .eq('user_id', job.customer_id)
       .maybeSingle();
 
@@ -310,10 +345,12 @@ export class LogisticsService {
       throw new Error('Customer wallet reservation could not be found');
     }
 
-    const settlementAmount = this.roundMoney(Math.min(
-      Math.max(0, Number(wallet.data.reserved_balance || 0)),
-      Math.max(0, amount)
-    ));
+    const reservedBalance = this.roundMoney(Math.max(0, Number(wallet.data.reserved_balance || 0)));
+    const availableBalance = this.roundMoney(Math.max(0, Number(wallet.data.available_balance || 0)));
+    const jobReservedAmount = await this.resolveWalletReservedAmount(job, amount);
+    const reservationAmount = this.roundMoney(Math.min(reservedBalance, jobReservedAmount));
+    const settlementAmount = this.roundMoney(Math.min(reservationAmount, Math.max(0, amount)));
+    const refundAmount = this.roundMoney(Math.max(0, reservationAmount - settlementAmount));
 
     if (settlementAmount <= 0) {
       throw new Error('Customer wallet reservation is empty');
@@ -322,7 +359,8 @@ export class LogisticsService {
     const updatedWallet = await supabaseAdmin
       .from('wallets')
       .update({
-        reserved_balance: this.roundMoney(Math.max(0, Number(wallet.data.reserved_balance || 0) - settlementAmount)),
+        available_balance: this.roundMoney(availableBalance + refundAmount),
+        reserved_balance: this.roundMoney(Math.max(0, reservedBalance - reservationAmount)),
         updated_at: new Date().toISOString()
       })
       .eq('id', wallet.data.id);
@@ -332,6 +370,48 @@ export class LogisticsService {
     }
 
     await this.insertWalletSettlementTransaction(job, wallet.data.id, settlementAmount);
+
+    if (refundAmount > 0) {
+      await this.insertWalletReleaseTransaction(job, wallet.data.id, refundAmount);
+    }
+
+    if (String(job.service_slug || '').toLowerCase() === 'errand') {
+      const { data: fundingRow } = await supabaseAdmin
+        .from('errand_funding')
+        .select('metadata')
+        .eq('job_id', job.id)
+        .maybeSingle();
+
+      await supabaseAdmin
+        .from('errand_funding')
+        .update({
+          status: 'settled',
+          metadata: {
+            ...((fundingRow?.metadata as Record<string, unknown>) || {}),
+            settlement: {
+              amount_settled: settlementAmount,
+              amount_released: refundAmount,
+              settled_at: new Date().toISOString()
+            }
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('job_id', job.id);
+    }
+  }
+
+  private static async resolveWalletReservedAmount(job: any, fallbackAmount: number): Promise<number> {
+    if (String(job.service_slug || '').toLowerCase() !== 'errand') {
+      return this.roundMoney(fallbackAmount);
+    }
+
+    const { data } = await supabaseAdmin
+      .from('errand_funding')
+      .select('amount_reserved')
+      .eq('job_id', job.id)
+      .maybeSingle();
+
+    return this.roundMoney(Number(data?.amount_reserved || fallbackAmount));
   }
 
   private static async insertWalletSettlementTransaction(
@@ -380,6 +460,56 @@ export class LogisticsService {
 
     if (insert.error) {
       throw new Error(insert.error.message || 'Failed to record wallet settlement');
+    }
+  }
+
+  private static async insertWalletReleaseTransaction(
+    job: any,
+    walletId: string,
+    amount: number
+  ): Promise<void> {
+    const basePayload: Record<string, unknown> = {
+      user_id: job.customer_id,
+      job_id: job.id,
+      amount,
+      description: 'Unused errand wallet reservation returned',
+      metadata: {
+        payment_method: 'wallet',
+        currency_code: job.currency_code || 'GBP',
+        released_at: new Date().toISOString(),
+        reason: 'actual_spending_below_reserved_amount'
+      }
+    };
+
+    const withWalletId = {
+      ...basePayload,
+      wallet_id: walletId,
+      transaction_type: 'release'
+    };
+
+    let insert = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert(withWalletId);
+
+    if (!insert.error) return;
+
+    const message = `${insert.error.code || ''} ${insert.error.message || ''}`.toLowerCase();
+
+    if (!message.includes('transaction_type') && !message.includes('wallet_id')) {
+      throw new Error(insert.error.message || 'Failed to record wallet release');
+    }
+
+    const fallbackPayload = {
+      ...basePayload,
+      type: 'release'
+    };
+
+    insert = await supabaseAdmin
+      .from('wallet_transactions')
+      .insert(fallbackPayload);
+
+    if (insert.error) {
+      throw new Error(insert.error.message || 'Failed to record wallet release');
     }
   }
 

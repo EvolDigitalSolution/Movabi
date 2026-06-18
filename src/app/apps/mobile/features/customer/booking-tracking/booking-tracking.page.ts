@@ -221,6 +221,15 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     {{ config.formatCurrency(getErrandItemBudget()) }}
                   </p>
                 </div>
+
+                @if (getErrandReleasedAmount() > 0) {
+                  <div class="col-span-2 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                    <p class="text-[9px] font-bold text-emerald-700 uppercase tracking-widest mb-1">Returned to wallet</p>
+                    <p class="text-lg font-display font-bold text-emerald-700">
+                      {{ config.formatCurrency(getErrandReleasedAmount()) }}
+                    </p>
+                  </div>
+                }
               </div>
             }
 
@@ -919,6 +928,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         return bookingTotal;
+    }
+
+    getErrandReleasedAmount(): number {
+        const metadata = this.errandFunding()?.metadata || {};
+        const settlement = metadata['settlement'] as Record<string, unknown> | undefined;
+
+        return this.toMoney(settlement?.['amount_released'] || 0);
     }
 
     private toMoney(value: unknown): number {
