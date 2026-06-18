@@ -2878,3 +2878,51 @@ websocket connection issues.
           ╵                                      [32m~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'error' does not exist on type 'string | { error?: string | undefined; message?: string | undefined; }'.
+  Property 'error' does not exist on type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1817:37:
+[37m      1817 │ ...f (typeof httpError?.error?.[32merror[37m === 'string' && httpError.e...
+           ╵                                [32m~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'error' does not exist on type 'string | { error?: string | undefined; message?: string | undefined; }'.
+  Property 'error' does not exist on type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1817:75:
+[37m      1817 │ ...or?.error?.error === 'string' && httpError.error.[32merror[37m.trim()) {
+           ╵                                                     [32m~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'error' does not exist on type 'string | { error?: string | undefined; message?: string | undefined; }'.
+  Property 'error' does not exist on type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1818:35:
+[37m      1818 │             return httpError.error.[32merror[37m;
+           ╵                                    [32m~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'message' does not exist on type 'string | { error?: string | undefined; message?: string | undefined; }'.
+  Property 'message' does not exist on type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1821:37:
+[37m      1821 │ ... (typeof httpError?.error?.[32mmessage[37m === 'string' && httpError....
+           ╵                               [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'message' does not exist on type 'string | { error?: string | undefined; message?: string | undefined; }'.
+  Property 'message' does not exist on type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1821:77:
+[37m      1821 │ ...error?.message === 'string' && httpError.error.[32mmessage[37m.trim()) {
+           ╵                                                   [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'message' does not exist on type 'string | { error?: string | undefined; message?: string | undefined; }'.
+  Property 'message' does not exist on type 'string'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:1822:35:
+[37m      1822 │             return httpError.error.[32mmessage[37m;
+           ╵                                    [32m~~~~~~~[0m
+
+[39m[22m

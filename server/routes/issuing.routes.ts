@@ -60,6 +60,14 @@ router.post('/driver-card/ensure', async (req: Request, res: Response) => {
 
     return res.json(status);
   } catch (error: any) {
+    console.error('[IssuingRoutes] driver-card ensure failed:', {
+      message: error?.message,
+      type: error?.type,
+      code: error?.code,
+      statusCode: error?.statusCode,
+      detail: error?.details || error?.detail
+    });
+
     const status = /auth|session/i.test(error.message) ? 401 : 400;
     return res.status(status).json({ error: error.message || 'Failed to prepare Movabi Pay virtual card' });
   }

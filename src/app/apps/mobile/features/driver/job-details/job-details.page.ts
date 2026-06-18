@@ -1051,7 +1051,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             await this.loadIssuingCardStatus(currentJob.id);
             await this.showToast('Movabi Pay card setup started. You can activate it once it is ready.', 'success');
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'Could not set up Movabi Pay card.';
+            const message = this.getErrorMessage(error, 'Could not set up Movabi Pay card.');
             await this.showToast(message, 'danger');
         } finally {
             this.isSettingUpIssuingCard.set(false);
@@ -1805,6 +1805,33 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         return 0;
+    }
+
+    private getErrorMessage(error: unknown, fallback: string): string {
+        const httpError = error as { error?: unknown; message?: string };
+        const body = httpError?.error;
+
+        if (typeof body === 'string' && body.trim()) {
+            return body;
+        }
+
+        if (body && typeof body === 'object') {
+            const apiError = body as { error?: unknown; message?: unknown };
+
+            if (typeof apiError.error === 'string' && apiError.error.trim()) {
+                return apiError.error;
+            }
+
+            if (typeof apiError.message === 'string' && apiError.message.trim()) {
+                return apiError.message;
+            }
+        }
+
+        if (typeof httpError?.message === 'string' && httpError.message.trim()) {
+            return httpError.message;
+        }
+
+        return fallback;
     }
 
     private isValidCoordinate(value: number): boolean {
