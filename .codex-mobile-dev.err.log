@@ -1448,3 +1448,52 @@ websocket connection issues.
           ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'trackingTitle' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:80:68:
+[37m      80 │ ...isplay font-bold text-slate-900">{{ [32mtrackingTitle[37m() }}</ion-title>
+         ╵                                        [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'routeCardTitle' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:332:81:
+[37m      332 │ ...ont-display font-bold text-slate-900">{{ [32mrouteCardTitle[37m() }}</h3>
+          ╵                                             [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'routeCardSubtitle' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:333:69:
+[37m      333 │ ...xt-xs font-semibold text-slate-500">{{ [32mrouteCardSubtitle[37m() }}</p>
+          ╵                                           [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'originLabel' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:343:76:
+[37m      343 │ ...ext-xs font-semibold text-slate-500 mb-1">{{ [32moriginLabel[37m() }}</p>
+          ╵                                                 [32m~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'destinationLabel' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:353:76:
+[37m      353 │ ...s font-semibold text-slate-500 mb-1">{{ [32mdestinationLabel[37m() }}</p>
+          ╵                                            [32m~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'mapOriginMarkerLabel' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1038:28:
+[37m      1038 │                 label: this.[32mmapOriginMarkerLabel[37m()
+           ╵                             [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'mapDestinationMarkerLabel' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1047:32:
+[37m      1047 │                     label: this.[32mmapDestinationMarkerLabel[37m()
+           ╵                                 [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

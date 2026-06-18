@@ -77,7 +77,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/customer" text="" icon="chevron-back-outline"></ion-back-button>
         </ion-buttons>
-        <ion-title class="font-display font-bold text-slate-900">Live Tracking</ion-title>
+        <ion-title class="font-display font-bold text-slate-900">{{ trackingTitle() }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -329,8 +329,8 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   <ion-icon name="navigate" class="text-xl"></ion-icon>
                 </div>
                 <div>
-                  <h3 class="text-base font-display font-bold text-slate-900">Trip Route</h3>
-                  <p class="text-xs font-semibold text-slate-500">Live journey details</p>
+                  <h3 class="text-base font-display font-bold text-slate-900">{{ routeCardTitle() }}</h3>
+                  <p class="text-xs font-semibold text-slate-500">{{ routeCardSubtitle() }}</p>
                 </div>
               </div>
 
@@ -340,7 +340,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="relative">
                   <div class="absolute -left-[31px] top-1 w-5 h-5 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
                   <div>
-                    <p class="text-xs font-semibold text-slate-500 mb-1">Pickup location</p>
+                    <p class="text-xs font-semibold text-slate-500 mb-1">{{ originLabel() }}</p>
                     <h3 class="text-sm font-bold text-slate-900 leading-snug">
                       {{ booking()?.pickup_address }}
                     </h3>
@@ -350,7 +350,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="relative">
                   <div class="absolute -left-[31px] top-1 w-5 h-5 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
                   <div>
-                    <p class="text-xs font-semibold text-slate-500 mb-1">Destination</p>
+                    <p class="text-xs font-semibold text-slate-500 mb-1">{{ destinationLabel() }}</p>
                     <h3 class="text-sm font-bold text-slate-900 leading-snug">
                       {{ booking()?.dropoff_address }}
                     </h3>
@@ -589,6 +589,28 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getStatusLabel(status: string): string {
+        if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
+            const errandMap: Record<string, string> = {
+                searching: 'Finding errand driver',
+                accepted: 'Driver assigned',
+                assigned: 'Driver assigned',
+                heading_to_pickup: 'Heading to store',
+                arrived: 'Driver arrived',
+                arrived_at_store: 'At the store',
+                shopping_in_progress: 'Shopping now',
+                collected: 'Items collected',
+                en_route_to_customer: 'Delivering to you',
+                delivered: 'Delivered',
+                completed: 'Errand complete',
+                settled: 'Errand settled',
+                cancelled: 'Errand cancelled',
+                canceled: 'Errand cancelled',
+                no_driver_found: 'No driver found'
+            };
+
+            if (errandMap[status]) return errandMap[status];
+        }
+
         const map: Record<string, string> = {
             searching: 'Searching for driver',
             accepted: 'Driver assigned',
@@ -612,6 +634,28 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getStatusHint(status: string): string {
+        if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
+            const errandMap: Record<string, string> = {
+                searching: 'Matching someone to shop and deliver',
+                accepted: 'Driver is heading to the store',
+                assigned: 'Driver is heading to the store',
+                heading_to_pickup: 'Driver is going to the store',
+                arrived: 'Driver reached the store area',
+                arrived_at_store: 'Driver is ready to shop',
+                shopping_in_progress: 'Driver is shopping for your items',
+                collected: 'Items are collected and ready for delivery',
+                en_route_to_customer: 'Driver is bringing your items',
+                delivered: 'Items have been delivered',
+                completed: 'Errand is complete',
+                settled: 'Wallet funds have been settled',
+                cancelled: 'Errand cancelled',
+                canceled: 'Errand cancelled',
+                no_driver_found: 'No available errand driver'
+            };
+
+            if (errandMap[status]) return errandMap[status];
+        }
+
         const map: Record<string, string> = {
             searching: 'Matching nearby drivers',
             accepted: 'Driver is coming',
@@ -632,6 +676,97 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         };
 
         return map[status] ?? 'Live updates available';
+    }
+
+    trackingTitle(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Errand Tracking';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Delivery Tracking';
+            case ServiceTypeEnum.VAN:
+                return 'Move Tracking';
+            default:
+                return 'Live Tracking';
+        }
+    }
+
+    routeCardTitle(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Errand Route';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Delivery Route';
+            case ServiceTypeEnum.VAN:
+                return 'Move Route';
+            default:
+                return 'Trip Route';
+        }
+    }
+
+    routeCardSubtitle(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Store, shopping, and delivery';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collection and recipient details';
+            case ServiceTypeEnum.VAN:
+                return 'Moving journey details';
+            default:
+                return 'Live journey details';
+        }
+    }
+
+    originLabel(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Store / pickup point';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collection point';
+            case ServiceTypeEnum.VAN:
+                return 'Moving from';
+            default:
+                return 'Pickup location';
+        }
+    }
+
+    destinationLabel(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Delivery address';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Recipient address';
+            case ServiceTypeEnum.VAN:
+                return 'Moving to';
+            default:
+                return 'Destination';
+        }
+    }
+
+    private mapOriginMarkerLabel(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'STORE';
+            case ServiceTypeEnum.DELIVERY:
+                return 'COLLECT';
+            case ServiceTypeEnum.VAN:
+                return 'FROM';
+            default:
+                return 'PICKUP';
+        }
+    }
+
+    private mapDestinationMarkerLabel(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'DELIVER';
+            case ServiceTypeEnum.DELIVERY:
+                return 'RECIPIENT';
+            case ServiceTypeEnum.VAN:
+                return 'TO';
+            default:
+                return 'DROPOFF';
+        }
     }
 
     getDriverStatusText(): string {
@@ -926,7 +1061,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 coordinates: { lat: pickupLat, lng: pickupLng },
                 kind: 'pickup',
                 serviceType: b.service_slug as ServiceTypeSlug,
-                label: 'PICKUP'
+                label: this.mapOriginMarkerLabel()
             });
 
             if (this.isValidCoordinate(dropLat) && this.isValidCoordinate(dropLng)) {
@@ -935,7 +1070,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     coordinates: { lat: dropLat, lng: dropLng },
                     kind: 'destination',
                     serviceType: b.service_slug as ServiceTypeSlug,
-                    label: 'DROPOFF'
+                    label: this.mapDestinationMarkerLabel()
                 });
 
                 this.routing
@@ -1126,12 +1261,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     driverLiveSubtext(): string {
         const distance = this.driverDistanceToPickup();
+        const target = this.activeTrackingTargetLabel();
 
         if (distance !== null) {
-            return `${this.formatDistanceMeters(distance)} from pickup`;
+            return `${this.formatDistanceMeters(distance)} to ${target}`;
         }
 
-        return 'Waiting for the driver GPS update.';
+        return `Waiting for the driver GPS update to ${target}.`;
     }
 
     driverLastSeenLabel(): string {
@@ -1156,6 +1292,32 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private formatDistanceMeters(meters: number | null): string {
         if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
         return `${(meters / 1000).toFixed(1)} km`;
+    }
+
+    private activeTrackingTargetLabel(): string {
+        const status = this.booking()?.status || '';
+        const service = this.booking()?.service_slug;
+        const isHeadingToDestination = [
+            'in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered',
+            'completed'
+        ].includes(status);
+
+        if (service === ServiceTypeEnum.ERRAND) {
+            return isHeadingToDestination ? 'delivery address' : 'store';
+        }
+
+        if (service === ServiceTypeEnum.DELIVERY) {
+            return isHeadingToDestination ? 'recipient' : 'collection point';
+        }
+
+        if (service === ServiceTypeEnum.VAN) {
+            return isHeadingToDestination ? 'new address' : 'pickup address';
+        }
+
+        return isHeadingToDestination ? 'destination' : 'pickup';
     }
 
     async cancelBooking(): Promise<void> {
