@@ -48,6 +48,38 @@ const getName = (profile: Record<string, any>): string => {
   return [first, last].filter(Boolean).join(' ') || full || 'Movabi Driver';
 };
 
+const normalizePhone = (profile: Record<string, any>): string | null => {
+  const raw = String(
+    profile['phone'] ||
+    profile['phone_number'] ||
+    profile['mobile'] ||
+    profile['contact_phone'] ||
+    ''
+  ).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  const cleaned = raw.replace(/[^\d+]/g, '');
+
+  if (cleaned.startsWith('+')) {
+    return cleaned.length >= 8 ? cleaned : null;
+  }
+
+  const country = String(profile['country_code'] || profile['country'] || 'GB').toUpperCase();
+
+  if ((country === 'GB' || country === 'UK') && cleaned.startsWith('0')) {
+    return `+44${cleaned.slice(1)}`;
+  }
+
+  if (country === 'NG' && cleaned.startsWith('0')) {
+    return `+234${cleaned.slice(1)}`;
+  }
+
+  return cleaned.length >= 10 ? `+${cleaned}` : null;
+};
+
 const defaultBilling = () => ({
   address: {
     line1: process.env.STRIPE_ISSUING_BILLING_LINE1 || 'Movabi Driver Card',
@@ -591,14 +623,38 @@ export class IssuingService {
       .select('*')
       .eq('driver_id', driverId)
       .maybeSingle();
+    const phoneNumber = normalizePhone(profile);
+
+    if (!phoneNumber) {
+      throw new Error('Driver phone number is required before creating a Movabi Pay virtual card.');
+    }
 
     if (existing?.stripe_cardholder_id) {
+      const metadata = this.parseMetadata(existing['metadata']);
+
+      if (!metadata['phone_number']) {
+        const updatedCardholder = await stripe.issuing.cardholders.update(
+          existing.stripe_cardholder_id,
+          { phone_number: phoneNumber } as any
+        );
+
+        await supabaseAdmin
+          .from('driver_issuing_cardholders')
+          .update({
+            status: updatedCardholder.status || existing['status'] || 'active',
+            metadata: updatedCardholder as any,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing['id']);
+      }
+
       return existing as Record<string, any>;
     }
 
     const cardholder = await stripe.issuing.cardholders.create({
       name: getName(profile),
       email: getEmail(profile, driverId),
+      phone_number: phoneNumber,
       type: 'individual',
       status: 'active',
       billing: defaultBilling(),
