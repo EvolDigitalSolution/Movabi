@@ -45,6 +45,7 @@ import { BookingService } from '../../../../../core/services/booking/booking.ser
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
+import { WalletProvisioningService } from '../../../../../core/services/issuing/wallet-provisioning.service';
 import {
     Booking,
     BookingStatus,
@@ -398,7 +399,7 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                             </div>
                             <div>
                               <p class="font-black uppercase tracking-widest text-white/40">Spend</p>
-                              <p class="mt-1 font-black">Online</p>
+                              <p class="mt-1 font-black">Phone wallet</p>
                             </div>
                           </div>
                         </div>
@@ -412,13 +413,41 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                           {{ issuingCardMessage() }}
                         </p>
                         <p class="text-xs font-bold text-slate-500 leading-relaxed">
-                          Use it for online checkout, a merchant payment link, or phone payment. For tap-to-pay, add the virtual card to a supported mobile wallet when enabled.
+                          Add the virtual card to Apple Pay or Google Wallet, then tap your phone at checkout. If the shop cannot accept phone wallet payments, use the secure card details for online, link, or phone payment.
                         </p>
+                      </div>
+
+                      <div class="grid grid-cols-3 gap-2 text-center text-[11px] font-black text-slate-700">
+                        <div class="rounded-2xl border border-white bg-white/80 px-2 py-3 shadow-sm">
+                          <p class="text-amber-600">1</p>
+                          <p class="mt-1">Unlock card</p>
+                        </div>
+                        <div class="rounded-2xl border border-white bg-white/80 px-2 py-3 shadow-sm">
+                          <p class="text-amber-600">2</p>
+                          <p class="mt-1">Add to wallet</p>
+                        </div>
+                        <div class="rounded-2xl border border-white bg-white/80 px-2 py-3 shadow-sm">
+                          <p class="text-amber-600">3</p>
+                          <p class="mt-1">Tap phone</p>
+                        </div>
                       </div>
 
                       @if (canActivateIssuingCard()) {
                         <app-button variant="primary" size="sm" class="w-full mt-4" (clicked)="activateIssuingCard()">
                           Activate card for this shop
+                        </app-button>
+                      }
+
+                      @if (canProvisionIssuingCard()) {
+                        <app-button
+                          variant="primary"
+                          size="sm"
+                          class="w-full mt-4"
+                          [loading]="isProvisioningToWallet()"
+                          [disabled]="isProvisioningToWallet()"
+                          (clicked)="addIssuingCardToWallet()"
+                        >
+                          Add to {{ phoneWalletName() }}
                         </app-button>
                       }
                     </div>
@@ -608,6 +637,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private locationService = inject(LocationService);
     private routing = inject(RoutingService);
     private supabase = inject(SupabaseService);
+    private walletProvisioning = inject(WalletProvisioningService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -618,6 +648,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     errandDetails = computed(() => this.details() as ErrandDetails | null);
     funding = signal<ErrandFunding | null>(null);
     issuingCardStatus = signal<ErrandIssuingCardStatus | null>(null);
+    isProvisioningToWallet = signal(false);
     isLoading = signal(true);
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
@@ -900,6 +931,15 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return status?.enabled === true && status.status === 'ready';
     }
 
+    canProvisionIssuingCard(): boolean {
+        const status = this.issuingCardStatus();
+        return status?.enabled === true && status.status === 'active' && !!status.cardId;
+    }
+
+    phoneWalletName(): string {
+        return this.walletProvisioning.getWalletName();
+    }
+
     async activateIssuingCard(): Promise<void> {
         const currentJob = this.job();
 
@@ -920,6 +960,38 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();
+        }
+    }
+
+    async addIssuingCardToWallet(): Promise<void> {
+        const status = this.issuingCardStatus();
+
+        if (!status?.cardId) {
+            await this.showToast('Movabi Pay virtual card is not ready yet.', 'warning');
+            return;
+        }
+
+        this.isProvisioningToWallet.set(true);
+
+        try {
+            const result = await this.walletProvisioning.provisionCard({
+                cardId: status.cardId,
+                cardholderId: status.cardholderId,
+                last4: status.last4,
+                currency: status.currency || 'GBP',
+                spendLimit: this.issuingCardBudgetLimit(),
+                displayName: 'Movabi Pay',
+                description: 'Movabi Pay errand virtual card'
+            });
+
+            if (result.success) {
+                await this.showToast(result.message || `Movabi Pay card added to ${result.walletName || this.phoneWalletName()}.`, 'success');
+                return;
+            }
+
+            await this.showToast(result.message || `${result.walletName || this.phoneWalletName()} is not available yet.`, 'warning');
+        } finally {
+            this.isProvisioningToWallet.set(false);
         }
     }
 

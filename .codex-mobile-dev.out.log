@@ -5055,3 +5055,40 @@ Application bundle generation failed. [1.781 seconds] - 2026-06-18T22:41:36.793Z
 Application bundle generation complete. [1.318 seconds] - 2026-06-18T22:41:55.426Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m            [2m | [22m[36m273.06 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mchunk-TQSEQ4YR.js[39m  [2m | [22m[2mjob-details-page[22m[2m | [22m[36m113.98 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.394 seconds] - 2026-06-18T22:49:24.881Z
+
+Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m            [2m | [22m[36m273.61 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m          [2m | [22m[36m242.90 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mchunk-6ZJUXMYR.js[39m  [2m | [22m[2mjob-details-page[22m[2m | [22m[36m115.91 kB[39m[2m | [22m
+
+Application bundle generation complete. [2.625 seconds] - 2026-06-18T22:53:55.060Z
+
+Stylesheet update sent to client(s).
+Component update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m            [2m | [22m[36m273.61 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mchunk-GV2UXOAN.js[39m  [2m | [22m[2mjob-details-page[22m[2m | [22m[36m122.72 kB[39m[2m | [22m
+
+Application bundle generation complete. [9.385 seconds] - 2026-06-18T23:12:07.285Z
+
+Page reload sent to client(s).
+[2m00:12:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32m✨ new dependencies optimized: [33m@capacitor/core[32m[39m
+[2m00:12:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32m✨ optimized dependencies changed. reloading[39m
