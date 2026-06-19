@@ -615,13 +615,6 @@ export class IssuingService {
   }
 
   private static async ensureDriverCard(driverId: string, tenantId?: string): Promise<Record<string, any>> {
-    const existing = await this.getDriverCard(driverId);
-
-    if (existing) {
-      await this.assertCardholderCanUseCard(existing.stripe_cardholder_id);
-      return existing;
-    }
-
     const { data: profile, error } = await supabaseAdmin
       .from('profiles')
       .select('*')
@@ -630,6 +623,30 @@ export class IssuingService {
 
     if (error || !profile) {
       throw new Error('Driver profile was not found for Issuing card setup.');
+    }
+
+    const existing = await this.getDriverCard(driverId);
+
+    if (existing) {
+      const cardholderRecord = await this.ensureCardholder(driverId, tenantId, profile as Record<string, any>);
+      await this.assertCardholderCanUseCard(cardholderRecord.stripe_cardholder_id);
+
+      if (existing.stripe_cardholder_id !== cardholderRecord.stripe_cardholder_id) {
+        await supabaseAdmin
+          .from('driver_issuing_cards')
+          .update({
+            stripe_cardholder_id: cardholderRecord.stripe_cardholder_id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing['id']);
+
+        return {
+          ...existing,
+          stripe_cardholder_id: cardholderRecord.stripe_cardholder_id
+        };
+      }
+
+      return existing;
     }
 
     const cardholderRecord = await this.ensureCardholder(driverId, tenantId, profile as Record<string, any>);
