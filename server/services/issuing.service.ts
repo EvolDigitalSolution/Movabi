@@ -50,6 +50,37 @@ const getName = (profile: Record<string, any>): string => {
   return [first, last].filter(Boolean).join(' ') || full || 'Movabi Driver';
 };
 
+const sanitizePersonName = (value: string): string => {
+  return value
+    .replace(/[^a-zA-Z\s.,'-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const getNameParts = (profile: Record<string, any>): { firstName: string; lastName: string } => {
+  const first = sanitizePersonName(String(profile['first_name'] || profile['firstName'] || '').trim());
+  const last = sanitizePersonName(String(profile['last_name'] || profile['lastName'] || '').trim());
+
+  if (first && last) {
+    return { firstName: first, lastName: last };
+  }
+
+  const full = sanitizePersonName(String(profile['full_name'] || profile['name'] || getName(profile)).trim());
+  const parts = full.split(' ').filter(Boolean);
+
+  if (parts.length >= 2) {
+    return {
+      firstName: parts[0],
+      lastName: parts.slice(1).join(' ')
+    };
+  }
+
+  return {
+    firstName: first || parts[0] || 'Movabi',
+    lastName: last || 'Driver'
+  };
+};
+
 const normalizePhone = (profile: Record<string, any>): string | null => {
   const raw = String(
     profile['phone'] ||
@@ -669,7 +700,7 @@ export class IssuingService {
     }
 
     if (existing?.stripe_cardholder_id) {
-      const cardholder = await this.refreshCardholderRecord(existing as StoredIssuingRecord, phoneNumber);
+      const cardholder = await this.refreshCardholderRecord(existing as StoredIssuingRecord, phoneNumber, profile);
 
       return {
         ...(existing as StoredIssuingRecord),
@@ -678,11 +709,16 @@ export class IssuingService {
       };
     }
 
+    const nameParts = getNameParts(profile);
     const cardholder = await stripe.issuing.cardholders.create({
       name: getName(profile),
       email: getEmail(profile, driverId),
       phone_number: phoneNumber,
       type: 'individual',
+      individual: {
+        first_name: nameParts.firstName,
+        last_name: nameParts.lastName
+      },
       status: 'active',
       billing: defaultBilling(),
       metadata: {
@@ -735,15 +771,32 @@ export class IssuingService {
 
   private static async refreshCardholderRecord(
     existing: StoredIssuingRecord,
-    phoneNumber: string
+    phoneNumber: string,
+    profile: Record<string, any>
   ): Promise<Record<string, any>> {
     const cardholder = await stripe.issuing.cardholders.retrieve(existing.stripe_cardholder_id);
     const currentPhone = String((cardholder as any).phone_number || '').trim();
-    const nextCardholder = currentPhone
+    const individual = this.parseMetadata((cardholder as any).individual);
+    const nameParts = getNameParts(profile);
+    const needsName = !String(individual['first_name'] || '').trim() || !String(individual['last_name'] || '').trim();
+    const updateParams: Record<string, any> = {};
+
+    if (!currentPhone) {
+      updateParams.phone_number = phoneNumber;
+    }
+
+    if (needsName) {
+      updateParams.individual = {
+        first_name: nameParts.firstName,
+        last_name: nameParts.lastName
+      };
+    }
+
+    const nextCardholder = Object.keys(updateParams).length === 0
       ? cardholder
       : await stripe.issuing.cardholders.update(
         existing.stripe_cardholder_id,
-        { phone_number: phoneNumber } as any
+        updateParams as any
       );
 
     await supabaseAdmin
