@@ -124,6 +124,14 @@ router.post('/errand-card/activate', async (req: Request, res: Response) => {
     const status = await IssuingService.activateErrandCard(jobId);
     return res.json(status);
   } catch (error: any) {
+    console.error('[IssuingRoutes] errand-card activate failed:', {
+      message: error?.message,
+      type: error?.type,
+      code: error?.code,
+      statusCode: error?.statusCode,
+      detail: error?.details || error?.detail
+    });
+
     const status = /auth|session/i.test(error.message) ? 401 : 400;
     return res.status(status).json({ error: error.message || 'Failed to activate Movabi Pay card' });
   }

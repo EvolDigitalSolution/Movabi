@@ -233,7 +233,9 @@ export class IssuingService {
       throw new Error('Request not found');
     }
 
-    if (job.service_slug !== 'errand') {
+    const isErrand = await this.isErrandJob(job);
+
+    if (!isErrand) {
       throw new Error('Movabi Pay card is only used for errand item budgets.');
     }
 
@@ -259,8 +261,7 @@ export class IssuingService {
             amount: limitAmount,
             interval: 'per_authorization'
           }
-        ],
-        blocked_card_presences: ['online']
+        ]
       },
       metadata: {
         active_job_id: jobId,
@@ -450,7 +451,7 @@ export class IssuingService {
   private static async getJob(jobId: string): Promise<Record<string, any> | null> {
     const { data, error } = await supabaseAdmin
       .from('jobs')
-      .select('*')
+      .select('*, service_type:service_types(slug, name)')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -459,6 +460,38 @@ export class IssuingService {
     }
 
     return data as Record<string, any> | null;
+  }
+
+  private static async isErrandJob(job: Record<string, any>): Promise<boolean> {
+    const metadata = this.parseMetadata(job['metadata']);
+    const serviceType = this.parseMetadata(job['service_type']);
+    const candidates = [
+      job['service_slug'],
+      job['service_type'],
+      serviceType['slug'],
+      serviceType['name'],
+      metadata['service_slug'],
+      metadata['service_type']
+    ]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    if (candidates.some((value) => value === 'errand' || value.includes('errand'))) {
+      return true;
+    }
+
+    if (metadata['errand_details']) {
+      return true;
+    }
+
+    const { data } = await supabaseAdmin
+      .from('errand_details')
+      .select('id')
+      .eq('job_id', job['id'])
+      .limit(1)
+      .maybeSingle();
+
+    return !!data;
   }
 
   private static async getReservedBudget(jobId: string): Promise<number> {

@@ -1029,7 +1029,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             this.issuingCardStatus.set(status);
             await this.showToast('Movabi Pay virtual card is ready for this shop.', 'success');
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'Could not activate Movabi Pay virtual card.';
+            const message = this.getErrorMessage(error, 'Could not activate Movabi Pay virtual card.');
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();

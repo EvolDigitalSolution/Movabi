@@ -107,6 +107,10 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'tenant_id') THEN
             ALTER TABLE profiles ADD COLUMN tenant_id UUID;
         END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'phone') THEN
+            ALTER TABLE profiles ADD COLUMN phone TEXT;
+        END IF;
     END IF;
 END $$;
 

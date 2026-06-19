@@ -277,6 +277,35 @@ type DriverOnboardingDraft = {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Contact Details</h2>
+            </div>
+
+            <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div class="p-5 border-b border-slate-50">
+                <div class="flex items-center gap-3">
+                  <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+                    <ion-icon name="card-outline" class="text-2xl"></ion-icon>
+                  </div>
+                  <div>
+                    <h3 class="font-display font-black text-slate-950">Movabi Pay contact</h3>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Required for virtual card security</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-4">
+                <label for="phone" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mobile Number</label>
+                <input id="phone" type="tel" formControlName="phone" placeholder="e.g. 07898 473 840" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                <p class="mt-2 text-xs font-semibold text-slate-500">
+                  Stripe requires this for Movabi Pay virtual card verification.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-4">
+            <div class="flex items-center gap-3 ml-1">
+              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Vehicle Details</h2>
             </div>
 
@@ -625,6 +654,7 @@ export class OnboardingPage implements OnInit {
         });
 
         this.onboardingForm = this.fb.group({
+            phone: ['', [Validators.required, Validators.minLength(8)]],
             make: ['', [Validators.required, Validators.minLength(2)]],
             model: ['', [Validators.required, Validators.minLength(1)]],
             year: [
@@ -702,7 +732,8 @@ export class OnboardingPage implements OnInit {
                         council_name: draft.form['council_name'] ?? '',
                         council_license_number: draft.form['council_license_number'] ?? '',
                         taxi_badge_number: draft.form['taxi_badge_number'] ?? '',
-                        taxi_license_expiry: draft.form['taxi_license_expiry'] ?? ''
+                        taxi_license_expiry: draft.form['taxi_license_expiry'] ?? '',
+                        phone: draft.form['phone'] ?? ''
                     },
                     { emitEvent: false }
                 );
@@ -749,7 +780,8 @@ export class OnboardingPage implements OnInit {
                     council_name: verificationItems['council_name'] ?? profile.council_name ?? '',
                     council_license_number: verificationItems['council_license_number'] ?? profile.council_license_number ?? '',
                     taxi_badge_number: verificationItems['taxi_badge_number'] ?? profile.taxi_badge_number ?? '',
-                    taxi_license_expiry: verificationItems['taxi_license_expiry'] ?? profile.taxi_license_expiry ?? ''
+                    taxi_license_expiry: verificationItems['taxi_license_expiry'] ?? profile.taxi_license_expiry ?? '',
+                    phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? ''
                 },
                 { emitEvent: false }
             );
@@ -965,6 +997,7 @@ export class OnboardingPage implements OnInit {
                 role: 'driver',
                 pricing_plan: 'starter',
                 subscription_status: 'inactive',
+                phone: String(raw.phone || '').trim(),
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
                 verification_status: 'under_review',
