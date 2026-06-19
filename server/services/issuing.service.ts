@@ -25,6 +25,8 @@ interface IssuingStatus {
   cardStatus?: string | null;
 }
 
+type StoredIssuingRecord = Record<string, any>;
+
 const isIssuingEnabled = () => process.env.STRIPE_ISSUING_ENABLED === 'true';
 
 const moneyToMinor = (amount: number): number => {
@@ -250,6 +252,8 @@ export class IssuingService {
     }
 
     const card = await this.ensureDriverCard(job.driver_id, job.tenant_id);
+    await this.assertCardholderCanUseCard(card.stripe_cardholder_id);
+
     const currency = String(job.currency_code || 'GBP').toLowerCase();
     const limitAmount = moneyToMinor(budget);
 
@@ -583,6 +587,7 @@ export class IssuingService {
     const existing = await this.getDriverCard(driverId);
 
     if (existing) {
+      await this.assertCardholderCanUseCard(existing.stripe_cardholder_id);
       return existing;
     }
 
@@ -597,6 +602,7 @@ export class IssuingService {
     }
 
     const cardholderRecord = await this.ensureCardholder(driverId, tenantId, profile as Record<string, any>);
+    await this.assertCardholderCanUseCard(cardholderRecord.stripe_cardholder_id);
 
     const cardParams: Record<string, any> = {
       cardholder: cardholderRecord.stripe_cardholder_id,
@@ -625,7 +631,7 @@ export class IssuingService {
       tenant_id: tenantId || null,
       stripe_cardholder_id: cardholderRecord.stripe_cardholder_id,
       stripe_card_id: card.id,
-      card_type: card.type || 'physical',
+      card_type: card.type || 'virtual',
       currency_code: String(card.currency || 'gbp').toUpperCase(),
       last4: (card as any).last4 || null,
       status: 'active',
@@ -663,25 +669,13 @@ export class IssuingService {
     }
 
     if (existing?.stripe_cardholder_id) {
-      const metadata = this.parseMetadata(existing['metadata']);
+      const cardholder = await this.refreshCardholderRecord(existing as StoredIssuingRecord, phoneNumber);
 
-      if (!metadata['phone_number']) {
-        const updatedCardholder = await stripe.issuing.cardholders.update(
-          existing.stripe_cardholder_id,
-          { phone_number: phoneNumber } as any
-        );
-
-        await supabaseAdmin
-          .from('driver_issuing_cardholders')
-          .update({
-            status: updatedCardholder.status || existing['status'] || 'active',
-            metadata: updatedCardholder as any,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing['id']);
-      }
-
-      return existing as Record<string, any>;
+      return {
+        ...(existing as StoredIssuingRecord),
+        status: cardholder.status || existing['status'] || 'active',
+        metadata: cardholder as any
+      };
     }
 
     const cardholder = await stripe.issuing.cardholders.create({
@@ -715,5 +709,77 @@ export class IssuingService {
     }
 
     return data as Record<string, any>;
+  }
+
+  private static async assertCardholderCanUseCard(cardholderId?: string | null): Promise<void> {
+    if (!cardholderId) {
+      throw new Error('Driver Movabi Pay cardholder is missing. Complete driver card setup first.');
+    }
+
+    const cardholder = await stripe.issuing.cardholders.retrieve(cardholderId);
+    const blocker = this.cardholderRequirementMessage(cardholder as any);
+
+    if (blocker) {
+      await supabaseAdmin
+        .from('driver_issuing_cardholders')
+        .update({
+          status: cardholder.status || 'requirements_due',
+          metadata: cardholder as any,
+          updated_at: new Date().toISOString()
+        })
+        .eq('stripe_cardholder_id', cardholderId);
+
+      throw new Error(blocker);
+    }
+  }
+
+  private static async refreshCardholderRecord(
+    existing: StoredIssuingRecord,
+    phoneNumber: string
+  ): Promise<Record<string, any>> {
+    const cardholder = await stripe.issuing.cardholders.retrieve(existing.stripe_cardholder_id);
+    const currentPhone = String((cardholder as any).phone_number || '').trim();
+    const nextCardholder = currentPhone
+      ? cardholder
+      : await stripe.issuing.cardholders.update(
+        existing.stripe_cardholder_id,
+        { phone_number: phoneNumber } as any
+      );
+
+    await supabaseAdmin
+      .from('driver_issuing_cardholders')
+      .update({
+        status: nextCardholder.status || existing['status'] || 'active',
+        metadata: nextCardholder as any,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', existing['id']);
+
+    return nextCardholder as any;
+  }
+
+  private static cardholderRequirementMessage(cardholder: Record<string, any>): string | null {
+    const requirements = this.parseMetadata(cardholder['requirements']);
+    const dueFields = [
+      ...this.arrayStrings(requirements['currently_due']),
+      ...this.arrayStrings(requirements['past_due'])
+    ];
+    const disabledReason = String(requirements['disabled_reason'] || '').trim();
+    const uniqueDueFields = [...new Set(dueFields)].filter(Boolean);
+
+    if (!disabledReason && uniqueDueFields.length === 0) {
+      return null;
+    }
+
+    const readableFields = uniqueDueFields.length
+      ? uniqueDueFields.map((field) => field.replace(/^individual\./, '').replace(/_/g, ' ')).join(', ')
+      : 'Stripe Issuing verification';
+    const reason = disabledReason ? ` Stripe reason: ${disabledReason}.` : '';
+
+    return `Movabi Pay virtual card cannot be activated yet. Stripe needs: ${readableFields}.${reason} Complete the driver Issuing requirements in Stripe, then retry card setup.`;
+  }
+
+  private static arrayStrings(value: unknown): string[] {
+    return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
   }
 }
