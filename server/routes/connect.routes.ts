@@ -82,6 +82,132 @@ function mapStripeStatus(account: any) {
   };
 }
 
+async function updateProfileStripeStatus(userId: string, accountId: string, mapped: ReturnType<typeof mapStripeStatus>) {
+  const { error } = await supabaseAdmin
+    .from('profiles')
+    .update({
+      stripe_account_id: accountId,
+      stripe_connect_status: mapped.status,
+      charges_enabled: mapped.charges_enabled,
+      payouts_enabled: mapped.payouts_enabled,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('[Connect] profile Stripe status update failed:', error.message);
+  }
+}
+
+router.post('/create-account', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromRequest(req);
+    const email = String(req.body?.email || '').trim();
+    const tenantId = String(req.body?.tenantId || '').trim() || null;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const existingAccountId = await getStripeAccountId(req, userId);
+
+    if (existingAccountId) {
+      const account = await stripe.accounts.retrieve(existingAccountId);
+      const mapped = mapStripeStatus(account);
+      await updateProfileStripeStatus(userId, existingAccountId, mapped);
+
+      return res.json({
+        stripe_account_id: existingAccountId,
+        status: mapped
+      });
+    }
+
+    const account = await stripe.accounts.create({
+      type: 'express',
+      country: 'GB',
+      email: email || undefined,
+      capabilities: {
+        card_payments: { requested: true },
+        transfers: { requested: true }
+      },
+      business_type: 'individual',
+      metadata: {
+        user_id: userId,
+        tenant_id: tenantId || ''
+      }
+    });
+
+    const mapped = mapStripeStatus(account);
+    await updateProfileStripeStatus(userId, account.id, mapped);
+
+    return res.json({
+      stripe_account_id: account.id,
+      status: mapped
+    });
+  } catch (error: any) {
+    console.error('[Connect] create-account failed:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to create Stripe Connect account'
+    });
+  }
+});
+
+router.post('/onboarding-link', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromRequest(req);
+    const accountId = await getStripeAccountId(req, userId);
+    const returnUrl = String(req.body?.returnUrl || '').trim();
+    const refreshUrl = String(req.body?.refreshUrl || '').trim();
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'Stripe Connect account not found' });
+    }
+
+    if (!returnUrl || !refreshUrl) {
+      return res.status(400).json({ error: 'Stripe onboarding return and refresh URLs are required' });
+    }
+
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: 'account_onboarding'
+    });
+
+    return res.json({ url: accountLink.url });
+  } catch (error: any) {
+    console.error('[Connect] onboarding-link failed:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to create Stripe onboarding link'
+    });
+  }
+});
+
+router.get('/account-status/:accountId', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromRequest(req);
+    const accountId = String(req.params.accountId || '').trim();
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'Stripe account not found' });
+    }
+
+    const account = await stripe.accounts.retrieve(accountId);
+    const mapped = mapStripeStatus(account);
+
+    if (userId) {
+      await updateProfileStripeStatus(userId, accountId, mapped);
+    }
+
+    return res.json(mapped);
+  } catch (error: any) {
+    console.error('[Connect] account-status failed:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to read Stripe account status'
+    });
+  }
+});
+
 router.post('/refresh-account-status', async (req: Request, res: Response) => {
   try {
     const userId = await getUserIdFromRequest(req);
@@ -97,16 +223,7 @@ router.post('/refresh-account-status', async (req: Request, res: Response) => {
     const mapped = mapStripeStatus(account);
 
     if (userId) {
-      await supabaseAdmin
-        .from('profiles')
-        .update({
-          stripe_account_id: accountId,
-          stripe_connect_status: mapped.status,
-          charges_enabled: mapped.charges_enabled,
-          payouts_enabled: mapped.payouts_enabled,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      await updateProfileStripeStatus(userId, accountId, mapped);
     }
 
     return res.json(mapped);

@@ -9,6 +9,99 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- PART 1B — Storage Buckets & Policies
+INSERT INTO storage.buckets (id, name, public)
+VALUES
+    ('profiles', 'profiles', TRUE),
+    ('driver-docs', 'driver-docs', FALSE)
+ON CONFLICT (id) DO UPDATE
+SET public = EXCLUDED.public;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'storage'
+              AND tablename = 'objects'
+              AND policyname = 'profiles_avatar_public_read'
+        ) THEN
+            CREATE POLICY profiles_avatar_public_read
+            ON storage.objects
+            FOR SELECT
+            USING (bucket_id = 'profiles');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'storage'
+              AND tablename = 'objects'
+              AND policyname = 'profiles_avatar_owner_insert'
+        ) THEN
+            CREATE POLICY profiles_avatar_owner_insert
+            ON storage.objects
+            FOR INSERT
+            WITH CHECK (
+                bucket_id = 'profiles'
+                AND name LIKE ('avatars/' || auth.uid()::TEXT || '/%')
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'storage'
+              AND tablename = 'objects'
+              AND policyname = 'profiles_avatar_owner_update'
+        ) THEN
+            CREATE POLICY profiles_avatar_owner_update
+            ON storage.objects
+            FOR UPDATE
+            USING (
+                bucket_id = 'profiles'
+                AND name LIKE ('avatars/' || auth.uid()::TEXT || '/%')
+            )
+            WITH CHECK (
+                bucket_id = 'profiles'
+                AND name LIKE ('avatars/' || auth.uid()::TEXT || '/%')
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'storage'
+              AND tablename = 'objects'
+              AND policyname = 'profiles_avatar_owner_delete'
+        ) THEN
+            CREATE POLICY profiles_avatar_owner_delete
+            ON storage.objects
+            FOR DELETE
+            USING (
+                bucket_id = 'profiles'
+                AND name LIKE ('avatars/' || auth.uid()::TEXT || '/%')
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'storage'
+              AND tablename = 'objects'
+              AND policyname = 'driver_docs_owner_access'
+        ) THEN
+            CREATE POLICY driver_docs_owner_access
+            ON storage.objects
+            FOR ALL
+            USING (
+                bucket_id = 'driver-docs'
+                AND name LIKE ('documents/' || auth.uid()::TEXT || '/%')
+            )
+            WITH CHECK (
+                bucket_id = 'driver-docs'
+                AND name LIKE ('documents/' || auth.uid()::TEXT || '/%')
+            );
+        END IF;
+    END IF;
+END $$;
+
 -- PART 2 — Service Types
 CREATE TABLE IF NOT EXISTS service_types (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -122,6 +215,22 @@ BEGIN
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'avatar_url') THEN
             ALTER TABLE profiles ADD COLUMN avatar_url TEXT;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'stripe_account_id') THEN
+            ALTER TABLE profiles ADD COLUMN stripe_account_id TEXT;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'stripe_connect_status') THEN
+            ALTER TABLE profiles ADD COLUMN stripe_connect_status TEXT DEFAULT 'not_started';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'charges_enabled') THEN
+            ALTER TABLE profiles ADD COLUMN charges_enabled BOOLEAN DEFAULT FALSE;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'payouts_enabled') THEN
+            ALTER TABLE profiles ADD COLUMN payouts_enabled BOOLEAN DEFAULT FALSE;
         END IF;
     END IF;
 END $$;

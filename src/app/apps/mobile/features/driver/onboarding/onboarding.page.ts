@@ -1065,8 +1065,9 @@ export class OnboardingPage implements OnInit {
 
                 await this.updateProfileSafely(user.id, { avatar_url: publicUrl });
                 await this.showToast('Driver photo uploaded.', 'success');
-            } catch {
-                await this.showToast('Driver photo upload failed.', 'danger');
+            } catch (error: any) {
+                console.error('[DriverOnboarding] Driver photo upload failed:', error);
+                await this.showToast(error?.message || 'Driver photo upload failed.', 'danger');
             } finally {
                 target.value = '';
                 await loading.dismiss();
