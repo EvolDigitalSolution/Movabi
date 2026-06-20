@@ -377,27 +377,43 @@ type DriverOnboardingDraft = {
                   <input id="year" type="number" formControlName="year" placeholder="e.g. 2022" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
                 </div>
 
-                <div class="p-4">
-                  <div class="flex items-center justify-between gap-3 mb-1">
-                    <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">License Plate</label>
+                @if (!isBikeVehicle()) {
+                  <div class="p-4">
+                    <div class="flex items-center justify-between gap-3 mb-1">
+                      <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">License Plate</label>
+                      @if (appConfig.vehiclePlateLookupEnabled()) {
+                        <button
+                          type="button"
+                          (click)="lookupVehicleByPlate()"
+                          [disabled]="isReadOnly()"
+                          class="text-[10px] font-black uppercase tracking-widest text-amber-600 disabled:text-slate-300"
+                        >
+                          Find details
+                        </button>
+                      }
+                    </div>
+                    <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" (blur)="normalizePlate()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
                     @if (appConfig.vehiclePlateLookupEnabled()) {
-                      <button
-                        type="button"
-                        (click)="lookupVehicleByPlate()"
-                        [disabled]="isReadOnly()"
-                        class="text-[10px] font-black uppercase tracking-widest text-amber-600 disabled:text-slate-300"
-                      >
-                        Find details
-                      </button>
+                      <p class="mt-2 text-xs font-semibold text-slate-500">
+                        Use your plate to help confirm make, colour, and model where lookup is configured.
+                      </p>
                     }
                   </div>
-                  <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" (blur)="normalizePlate()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
-                  @if (appConfig.vehiclePlateLookupEnabled()) {
-                    <p class="mt-2 text-xs font-semibold text-slate-500">
-                      Use your plate to help confirm make, colour, and model where lookup is configured.
-                    </p>
-                  }
-                </div>
+                } @else {
+                  <div class="p-4 bg-amber-50 border-y border-amber-100">
+                    <div class="flex items-start gap-3">
+                      <div class="w-10 h-10 rounded-xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+                        <ion-icon name="bicycle-outline"></ion-icon>
+                      </div>
+                      <div>
+                        <p class="text-sm font-black text-slate-950">Bike courier checks</p>
+                        <p class="mt-1 text-xs font-semibold text-slate-600 leading-relaxed">
+                          Bikes do not need a plate number. Movabi verifies your profile photo, mobile number, photo ID, payout setup, and bike details before approval.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                }
 
                 <div class="p-4 space-y-3">
                   <div>
@@ -433,6 +449,7 @@ type DriverOnboardingDraft = {
             </div>
           </section>
 
+          @if (!isBikeVehicle()) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -475,6 +492,7 @@ type DriverOnboardingDraft = {
               </div>
             </div>
           </section>
+          }
 
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
@@ -491,7 +509,7 @@ type DriverOnboardingDraft = {
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                   {{ isReadOnly() ? 'View' : 'Upload' }}
                 </p>
-                <h4 class="font-display font-black text-slate-950 text-sm mb-3">Driver Licence</h4>
+                <h4 class="font-display font-black text-slate-950 text-sm mb-3">{{ primaryDocumentLabel() }}</h4>
 
                 @if (docs().license) {
                   <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge>
@@ -508,12 +526,12 @@ type DriverOnboardingDraft = {
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                   {{ isReadOnly() ? 'View' : 'Upload' }}
                 </p>
-                <h4 class="font-display font-black text-slate-950 text-sm mb-3">Insurance</h4>
+                <h4 class="font-display font-black text-slate-950 text-sm mb-3">{{ secondaryDocumentLabel() }}</h4>
 
                 @if (docs().insurance) {
                   <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge>
                 } @else {
-                  <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p>
+                  <p class="text-xs text-slate-500 font-semibold">{{ secondaryDocumentPendingLabel() }}</p>
                 }
               </button>
             </div>
@@ -527,23 +545,23 @@ type DriverOnboardingDraft = {
 
             <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm p-5 space-y-4">
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-slate-700">Vehicle and council details</span>
+                <span class="text-sm font-semibold text-slate-700">{{ vehicleChecklistLabel() }}</span>
                 <app-badge [variant]="onboardingForm.valid ? 'success' : 'warning'">
                   {{ onboardingForm.valid ? 'Ready' : 'Pending' }}
                 </app-badge>
               </div>
 
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-slate-700">Driver licence uploaded</span>
+                <span class="text-sm font-semibold text-slate-700">{{ primaryDocumentLabel() }} uploaded</span>
                 <app-badge [variant]="docs().license ? 'success' : 'warning'">
                   {{ docs().license ? 'Uploaded' : 'Pending' }}
                 </app-badge>
               </div>
 
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-slate-700">Insurance uploaded</span>
-                <app-badge [variant]="docs().insurance ? 'success' : 'warning'">
-                  {{ docs().insurance ? 'Uploaded' : 'Pending' }}
+                <span class="text-sm font-semibold text-slate-700">{{ secondaryDocumentLabel() }}</span>
+                <app-badge [variant]="secondaryDocumentReady() ? 'success' : 'warning'">
+                  {{ secondaryDocumentReady() ? secondaryDocumentReadyLabel() : secondaryDocumentPendingLabel() }}
                 </app-badge>
               </div>
 
@@ -669,7 +687,7 @@ export class OnboardingPage implements OnInit {
         return (
             this.onboardingForm.valid &&
             !!this.docs().license &&
-            !!this.docs().insurance &&
+            this.secondaryDocumentReady() &&
             this.isStripeReady() &&
             !this.isReadOnly() &&
             !this.submitting()
@@ -732,6 +750,8 @@ export class OnboardingPage implements OnInit {
             taxi_badge_number: ['', [Validators.required, Validators.minLength(2)]],
             taxi_license_expiry: ['', Validators.required]
         });
+
+        this.applyVehicleClassRules('standard');
     }
 
     async ngOnInit() {
@@ -744,6 +764,8 @@ export class OnboardingPage implements OnInit {
         await this.handleStripeReturn();
 
         this.applyReadOnlyState();
+        this.applyVehicleClassRules(this.selectedVehicleClass());
+        this.watchVehicleClassChanges();
         this.watchDraftChanges();
     }
 
@@ -765,6 +787,12 @@ export class OnboardingPage implements OnInit {
             .subscribe(() => {
                 if (!this.isReadOnly()) this.saveDraft();
             });
+    }
+
+    private watchVehicleClassChanges() {
+        this.onboardingForm.get('vehicle_class')?.valueChanges
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe((value) => this.applyVehicleClassRules(String(value || 'standard') as DriverVehicleClass));
     }
 
     private saveDraft() {
@@ -857,6 +885,69 @@ export class OnboardingPage implements OnInit {
                 insurance: profile.insurance_url ?? this.docs().insurance
             });
         }
+    }
+
+    selectedVehicleClass(): DriverVehicleClass {
+        const value = String(this.onboardingForm.get('vehicle_class')?.value || 'standard') as DriverVehicleClass;
+        return this.vehicleClassOptions.some(option => option.id === value) ? value : 'standard';
+    }
+
+    isBikeVehicle(): boolean {
+        return this.selectedVehicleClass() === 'bike';
+    }
+
+    primaryDocumentLabel(): string {
+        return this.isBikeVehicle() ? 'Photo ID' : 'Driver Licence';
+    }
+
+    secondaryDocumentLabel(): string {
+        return this.isBikeVehicle() ? 'Courier insurance' : 'Insurance';
+    }
+
+    secondaryDocumentReady(): boolean {
+        return this.isBikeVehicle() || !!this.docs().insurance;
+    }
+
+    secondaryDocumentReadyLabel(): string {
+        if (this.isBikeVehicle() && !this.docs().insurance) return 'Optional';
+        return 'Uploaded';
+    }
+
+    secondaryDocumentPendingLabel(): string {
+        if (this.isBikeVehicle()) return this.isReadOnly() ? 'Not saved' : 'Optional';
+        return this.isReadOnly() ? 'Not saved' : 'Tap to select';
+    }
+
+    vehicleChecklistLabel(): string {
+        return this.isBikeVehicle() ? 'Bike details and ID checks' : 'Vehicle and council details';
+    }
+
+    private applyVehicleClassRules(value: DriverVehicleClass) {
+        const plate = this.onboardingForm.get('license_plate');
+        const councilName = this.onboardingForm.get('council_name');
+        const councilNumber = this.onboardingForm.get('council_license_number');
+        const taxiBadge = this.onboardingForm.get('taxi_badge_number');
+        const taxiExpiry = this.onboardingForm.get('taxi_license_expiry');
+        const isBike = value === 'bike';
+
+        if (isBike) {
+            plate?.clearValidators();
+            councilName?.clearValidators();
+            councilNumber?.clearValidators();
+            taxiBadge?.clearValidators();
+            taxiExpiry?.clearValidators();
+            plate?.setValue('', { emitEvent: false });
+        } else {
+            plate?.setValidators([Validators.required, Validators.minLength(2)]);
+            councilName?.setValidators([Validators.required, Validators.minLength(2)]);
+            councilNumber?.setValidators([Validators.required, Validators.minLength(2)]);
+            taxiBadge?.setValidators([Validators.required, Validators.minLength(2)]);
+            taxiExpiry?.setValidators(Validators.required);
+        }
+
+        [plate, councilName, councilNumber, taxiBadge, taxiExpiry].forEach(control => {
+            control?.updateValueAndValidity({ emitEvent: false });
+        });
     }
 
     private parseVerificationItems(value: unknown): Record<string, string> {

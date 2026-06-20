@@ -405,3 +405,289 @@ websocket connection issues.
           ╵                                [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isBikeVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:380:22:
+[37m      380 │                 @if (![32misBikeVehicle[37m()) {
+          ╵                       [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isBikeVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:452:16:
+[37m      452 │           @if (![32misBikeVehicle[37m()) {
+          ╵                 [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'primaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:512:83:
+[37m      512 │ ...ck text-slate-950 text-sm mb-3">{{ [32mprimaryDocumentLabel[37m() }}</h4>
+          ╵                                       [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:529:83:
+[37m      529 │ ... text-slate-950 text-sm mb-3">{{ [32msecondaryDocumentLabel[37m() }}</h4>
+          ╵                                     [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleChecklistLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:548:70:
+[37m      548 │ ...ont-semibold text-slate-700">{{ [32mvehicleChecklistLabel[37m() }}</span>
+          ╵                                    [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'primaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:555:70:
+[37m      555 │ ...bold text-slate-700">{{ [32mprimaryDocumentLabel[37m() }} uploaded</span>
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:562:70:
+[37m      562 │ ...nt-semibold text-slate-700">{{ [32msecondaryDocumentLabel[37m() }}</span>
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:563:38:
+[37m      563 │ ...pp-badge [variant]="[32msecondaryDocumentReady[37m() ? 'success' : 'wa...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:21:
+[37m      564 │                   {{ [32msecondaryDocumentReady[37m() ? secondaryDocument...
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReadyLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:48:
+[37m      564 │ ...DocumentReady() ? [32msecondaryDocumentReadyLabel[37m() : secondaryDoc...
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentPendingLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:80:
+[37m      564 │ ...econdaryDocumentReadyLabel() : [32msecondaryDocumentPendingLabel[37m() }}
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isBikeVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:380:22:
+[37m      380 │                 @if (![32misBikeVehicle[37m()) {
+          ╵                       [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isBikeVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:452:16:
+[37m      452 │           @if (![32misBikeVehicle[37m()) {
+          ╵                 [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'primaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:512:83:
+[37m      512 │ ...ck text-slate-950 text-sm mb-3">{{ [32mprimaryDocumentLabel[37m() }}</h4>
+          ╵                                       [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:529:83:
+[37m      529 │ ... text-slate-950 text-sm mb-3">{{ [32msecondaryDocumentLabel[37m() }}</h4>
+          ╵                                     [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentPendingLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:534:69:
+[37m      534 │ ...late-500 font-semibold">{{ [32msecondaryDocumentPendingLabel[37m() }}</p>
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleChecklistLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:548:70:
+[37m      548 │ ...ont-semibold text-slate-700">{{ [32mvehicleChecklistLabel[37m() }}</span>
+          ╵                                    [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'primaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:555:70:
+[37m      555 │ ...bold text-slate-700">{{ [32mprimaryDocumentLabel[37m() }} uploaded</span>
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:562:70:
+[37m      562 │ ...nt-semibold text-slate-700">{{ [32msecondaryDocumentLabel[37m() }}</span>
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:563:38:
+[37m      563 │ ...pp-badge [variant]="[32msecondaryDocumentReady[37m() ? 'success' : 'wa...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:21:
+[37m      564 │                   {{ [32msecondaryDocumentReady[37m() ? secondaryDocument...
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReadyLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:48:
+[37m      564 │ ...DocumentReady() ? [32msecondaryDocumentReadyLabel[37m() : secondaryDoc...
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentPendingLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:80:
+[37m      564 │ ...econdaryDocumentReadyLabel() : [32msecondaryDocumentPendingLabel[37m() }}
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isBikeVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:380:22:
+[37m      380 │                 @if (![32misBikeVehicle[37m()) {
+          ╵                       [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isBikeVehicle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:452:16:
+[37m      452 │           @if (![32misBikeVehicle[37m()) {
+          ╵                 [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'primaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:512:83:
+[37m      512 │ ...ck text-slate-950 text-sm mb-3">{{ [32mprimaryDocumentLabel[37m() }}</h4>
+          ╵                                       [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:529:83:
+[37m      529 │ ... text-slate-950 text-sm mb-3">{{ [32msecondaryDocumentLabel[37m() }}</h4>
+          ╵                                     [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentPendingLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:534:69:
+[37m      534 │ ...late-500 font-semibold">{{ [32msecondaryDocumentPendingLabel[37m() }}</p>
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleChecklistLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:548:70:
+[37m      548 │ ...ont-semibold text-slate-700">{{ [32mvehicleChecklistLabel[37m() }}</span>
+          ╵                                    [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'primaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:555:70:
+[37m      555 │ ...bold text-slate-700">{{ [32mprimaryDocumentLabel[37m() }} uploaded</span>
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:562:70:
+[37m      562 │ ...nt-semibold text-slate-700">{{ [32msecondaryDocumentLabel[37m() }}</span>
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:563:38:
+[37m      563 │ ...pp-badge [variant]="[32msecondaryDocumentReady[37m() ? 'success' : 'wa...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:21:
+[37m      564 │                   {{ [32msecondaryDocumentReady[37m() ? secondaryDocument...
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReadyLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:48:
+[37m      564 │ ...DocumentReady() ? [32msecondaryDocumentReadyLabel[37m() : secondaryDoc...
+          ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentPendingLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:564:80:
+[37m      564 │ ...econdaryDocumentReadyLabel() : [32msecondaryDocumentPendingLabel[37m() }}
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'secondaryDocumentReady' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:690:17:
+[37m      690 │             this.[32msecondaryDocumentReady[37m() &&
+          ╵                  [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'applyVehicleClassRules' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:754:13:
+[37m      754 │         this.[32mapplyVehicleClassRules[37m('standard');
+          ╵              [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'applyVehicleClassRules' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:767:13:
+[37m      767 │         this.[32mapplyVehicleClassRules[37m(this.selectedVehicleClass());
+          ╵              [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'selectedVehicleClass' does not exist on type 'OnboardingPage'. Did you mean 'setVehicleClass'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:767:41:
+[37m      767 │         this.applyVehicleClassRules(this.[32mselectedVehicleClass[37m());
+          ╵                                          [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+  'setVehicleClass' is declared here.
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:928:4:
+[37m      928 │     [32msetVehicleClass[37m(value: DriverVehicleClass) {
+          ╵     [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'watchVehicleClassChanges' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:768:13:
+[37m      768 │         this.[32mwatchVehicleClassChanges[37m();
+          ╵              [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

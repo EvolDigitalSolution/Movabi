@@ -541,7 +541,9 @@ export class DriverService {
             capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim()
         };
 
-        if (!payload.make || !payload.model || !payload.license_plate || !payload.color) {
+        const requiresPlate = payload.type !== 'motorcycle';
+
+        if (!payload.make || !payload.model || !payload.color || (requiresPlate && !payload.license_plate)) {
             throw new Error('Missing vehicle fields');
         }
 
