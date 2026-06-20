@@ -838,3 +838,10 @@ websocket connection issues.
           ╵                                                  [32m~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'buildVerificationItems' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:1378:41:
+[37m      1378 │ ...           verification_items: this.[32mbuildVerificationItems[37m(raw),
+           ╵                                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

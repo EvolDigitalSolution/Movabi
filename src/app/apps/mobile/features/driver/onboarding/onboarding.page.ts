@@ -1081,6 +1081,19 @@ export class OnboardingPage implements OnInit {
     private parseVerificationItems(value: unknown): Record<string, string> {
         if (!value) return {};
 
+        if (Array.isArray(value)) {
+            return value.reduce<Record<string, string>>((items, entry) => {
+                if (!entry || typeof entry !== 'object') return items;
+
+                const record = entry as Record<string, unknown>;
+                const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+                const rawValue = record['value'] ?? record['label'] ?? '';
+
+                if (key) items[key] = String(rawValue);
+                return items;
+            }, {});
+        }
+
         if (typeof value === 'object') {
             return value as Record<string, string>;
         }
@@ -1095,6 +1108,24 @@ export class OnboardingPage implements OnInit {
         }
 
         return {};
+    }
+
+    private buildVerificationItems(raw: Record<string, unknown>): Array<{ key: string; value: string }> {
+        const items: Array<{ key: string; value: string }> = [
+            { key: 'vehicle_class', value: String(raw['vehicle_class'] || 'standard').trim() },
+            { key: 'vehicle_type', value: this.vehicleTypeFromClass(String(raw['vehicle_class'] || 'standard') as DriverVehicleClass) }
+        ];
+
+        if (this.requiresTaxiLicence()) {
+            items.push(
+                { key: 'council_name', value: String(raw['council_name'] || '').trim() },
+                { key: 'council_license_number', value: String(raw['council_license_number'] || '').trim() },
+                { key: 'taxi_badge_number', value: String(raw['taxi_badge_number'] || '').trim() },
+                { key: 'taxi_license_expiry', value: String(raw['taxi_license_expiry'] || '').trim() }
+            );
+        }
+
+        return items.filter(item => item.value.length > 0);
     }
 
     private vehicleClassFromVehicle(vehicle: Vehicle | null): DriverVehicleClass {
@@ -1362,12 +1393,7 @@ export class OnboardingPage implements OnInit {
                 insurance_url: this.docs().insurance || null,
                 verification_status: 'under_review',
                 verification_notes: null,
-                verification_items: {
-                    council_name: String(raw.council_name || '').trim(),
-                    council_license_number: String(raw.council_license_number || '').trim(),
-                    taxi_badge_number: String(raw.taxi_badge_number || '').trim(),
-                    taxi_license_expiry: String(raw.taxi_license_expiry || '').trim()
-                },
+                verification_items: this.buildVerificationItems(raw),
                 is_verified: false
             });
 
