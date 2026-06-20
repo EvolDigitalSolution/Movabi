@@ -50,6 +50,10 @@ export class MapProviderService {
     return environment.openRouteServiceApiKey || '';
   }
 
+  getMapTilerApiKey(): string {
+    return environment.mapApiKey || '';
+  }
+
   getDriverLiveUpdateIntervalMs(): number {
     return (environment as Record<string, unknown>)['driverLiveUpdateIntervalMs'] as number || 4000;
   }

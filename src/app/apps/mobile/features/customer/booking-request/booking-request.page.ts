@@ -49,7 +49,7 @@ import {
     layersOutline
 } from 'ionicons/icons';
 import { Router, ActivatedRoute } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged, firstValueFrom } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
@@ -1619,6 +1619,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             } else {
                 this.showDropoffResults.set(false);
             }
+
+            void this.resolveTypedAddress(type);
         }, 250);
     }
 
@@ -1645,6 +1647,50 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         this.fitMapToSelectedLocations();
         this.updateRoute();
+    }
+
+    private async resolveTypedAddress(type: 'pickup' | 'dropoff'): Promise<void> {
+        const loc = type === 'pickup' ? this.pickupLocation : this.dropoffLocation;
+
+        if (loc.latitude && loc.longitude) return;
+
+        const controlName = type === 'pickup' ? 'pickup_address' : 'dropoff_address';
+        const query = String(this.bookingForm.get(controlName)?.value || loc.address || '').trim();
+
+        if (query.length < 3) return;
+
+        try {
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(query));
+            const result = results?.[0];
+
+            if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
+                return;
+            }
+
+            const normalized = this.locationService.normalizeLocation(
+                'map',
+                { lat: Number(result.lat), lng: Number(result.lng) },
+                result.label || query
+            );
+
+            if (type === 'pickup') {
+                this.pickupLocation = normalized;
+                this.pickupResults.set([]);
+                this.showPickupResults.set(false);
+                this.bookingForm.patchValue({ pickup_address: normalized.address }, { emitEvent: false });
+            } else {
+                this.dropoffLocation = normalized;
+                this.dropoffResults.set([]);
+                this.showDropoffResults.set(false);
+                this.bookingForm.patchValue({ dropoff_address: normalized.address }, { emitEvent: false });
+            }
+
+            this.updateMarker(type);
+            this.fitMapToSelectedLocations();
+            this.updateRoute();
+        } catch (error) {
+            console.warn(`[BookingRequest] Failed to resolve ${type} address`, error);
+        }
     }
 
     private updateMarker(kind: 'pickup' | 'dropoff') {
@@ -1978,6 +2024,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private async validateBeforeSubmit(): Promise<string | null> {
+        await Promise.all([
+            this.resolveTypedAddress('pickup'),
+            this.resolveTypedAddress('dropoff')
+        ]);
+
         if (
             !this.locationService.isLocationValidForBooking(this.pickupLocation) ||
             !this.locationService.isLocationValidForBooking(this.dropoffLocation)

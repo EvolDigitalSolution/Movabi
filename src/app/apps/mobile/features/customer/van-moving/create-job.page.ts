@@ -744,6 +744,8 @@ export class CreateJobPage implements AfterViewInit {
         setTimeout(() => {
             if (type === 'pickup') this.showPickupResults.set(false);
             else this.showDropoffResults.set(false);
+
+            void this.resolveCoordinatesFromAddress(type, true);
         }, 250);
     }
 
@@ -846,13 +848,13 @@ export class CreateJobPage implements AfterViewInit {
             });
     }
 
-    private async resolveCoordinatesFromAddress(type: 'pickup' | 'dropoff'): Promise<void> {
+    private async resolveCoordinatesFromAddress(type: 'pickup' | 'dropoff', shouldRecalculate = false): Promise<void> {
         const loc = type === 'pickup' ? this.pickupLocation : this.dropoffLocation;
 
         if (!loc.address || this.hasValidCoords(loc)) return;
 
         try {
-            const results = await firstValueFrom(this.geocoding.autocomplete(loc.address));
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(loc.address));
 
             if (!results?.length) return;
 
@@ -869,6 +871,10 @@ export class CreateJobPage implements AfterViewInit {
 
             this.updateMarker(type);
             this.fitMapToSelectedLocations();
+
+            if (shouldRecalculate) {
+                void this.calculateRouteAndPrice();
+            }
         } catch (error) {
             console.error(`Failed to resolve ${type} address:`, error);
         }
@@ -961,6 +967,11 @@ export class CreateJobPage implements AfterViewInit {
 
     async createJob(): Promise<void> {
         if (this.submitting()) return;
+
+        await Promise.all([
+            this.resolveCoordinatesFromAddress('pickup'),
+            this.resolveCoordinatesFromAddress('dropoff')
+        ]);
 
         if (!this.isFormValid()) {
             await this.showToast('Please provide valid pickup and dropoff locations.', 'warning');
