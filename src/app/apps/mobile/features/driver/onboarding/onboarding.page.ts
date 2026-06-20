@@ -357,6 +357,37 @@ type DriverOnboardingDraft = {
               </div>
 
               <div class="divide-y divide-slate-50">
+                <div class="p-4 space-y-3">
+                  <div>
+                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Class</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose this first so Movabi shows the right setup fields.</p>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    @for (option of vehicleClassOptions; track option.id) {
+                      <button
+                        type="button"
+                        (click)="setVehicleClass(option.id)"
+                        [disabled]="isReadOnly()"
+                        [class.bg-blue-600]="onboardingForm.get('vehicle_class')?.value === option.id"
+                        [class.text-white]="onboardingForm.get('vehicle_class')?.value === option.id"
+                        [class.border-blue-600]="onboardingForm.get('vehicle_class')?.value === option.id"
+                        [class.bg-slate-50]="onboardingForm.get('vehicle_class')?.value !== option.id"
+                        [class.text-slate-700]="onboardingForm.get('vehicle_class')?.value !== option.id"
+                        class="min-h-[92px] rounded-2xl border border-slate-100 p-3 text-left transition-all active:scale-95 disabled:opacity-60"
+                      >
+                        <div class="flex items-center gap-3">
+                          <ion-icon [name]="option.icon" class="text-xl shrink-0"></ion-icon>
+                          <div class="min-w-0">
+                            <p class="text-sm font-black">{{ option.label }}</p>
+                            <p class="text-[10px] font-bold opacity-80 leading-tight">{{ option.helper }}</p>
+                          </div>
+                        </div>
+                      </button>
+                    }
+                  </div>
+                </div>
+
                 <div class="p-4">
                   <label for="make" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Make</label>
                   <input id="make" formControlName="make" placeholder="e.g. Toyota" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
@@ -415,36 +446,6 @@ type DriverOnboardingDraft = {
                   </div>
                 }
 
-                <div class="p-4 space-y-3">
-                  <div>
-                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Class</p>
-                    <p class="text-xs font-semibold text-slate-500">This controls which requests you can receive.</p>
-                  </div>
-
-                  <div class="grid grid-cols-2 gap-3">
-                    @for (option of vehicleClassOptions; track option.id) {
-                      <button
-                        type="button"
-                        (click)="setVehicleClass(option.id)"
-                        [disabled]="isReadOnly()"
-                        [class.bg-blue-600]="onboardingForm.get('vehicle_class')?.value === option.id"
-                        [class.text-white]="onboardingForm.get('vehicle_class')?.value === option.id"
-                        [class.border-blue-600]="onboardingForm.get('vehicle_class')?.value === option.id"
-                        [class.bg-slate-50]="onboardingForm.get('vehicle_class')?.value !== option.id"
-                        [class.text-slate-700]="onboardingForm.get('vehicle_class')?.value !== option.id"
-                        class="min-h-[92px] rounded-2xl border border-slate-100 p-3 text-left transition-all active:scale-95 disabled:opacity-60"
-                      >
-                        <div class="flex items-center gap-3">
-                          <ion-icon [name]="option.icon" class="text-xl shrink-0"></ion-icon>
-                          <div class="min-w-0">
-                            <p class="text-sm font-black">{{ option.label }}</p>
-                            <p class="text-[10px] font-bold opacity-80 leading-tight">{{ option.helper }}</p>
-                          </div>
-                        </div>
-                      </button>
-                    }
-                  </div>
-                </div>
               </div>
             </div>
           </section>
