@@ -47,6 +47,7 @@ import { RoutingService } from '../../../../../core/services/maps/routing.servic
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { WalletProvisioningService } from '../../../../../core/services/issuing/wallet-provisioning.service';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
+import { ProfileService } from '../../../../../core/services/profile/profile.service';
 import {
     Booking,
     BookingStatus,
@@ -372,8 +373,11 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                                 Movabi Pay
                               </p>
                               <h4 class="mt-1 text-lg font-display font-black">
-                                Virtual Card
+                                {{ virtualCardOwnerLabel() }}
                               </h4>
+                              <p class="mt-1 text-[10px] font-black uppercase tracking-widest text-white/45">
+                                Driver virtual card
+                              </p>
                             </div>
                             <div class="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/80">
                               {{ issuingCardBadgeText() }}
@@ -386,6 +390,15 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                             </p>
                             <p class="font-mono text-xl font-black tracking-[0.18em] text-white">
                               {{ virtualCardDisplayNumber() }}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p class="text-[10px] font-black uppercase tracking-widest text-white/40">
+                              Cardholder
+                            </p>
+                            <p class="mt-1 text-base font-display font-black uppercase tracking-[0.08em] text-white truncate">
+                              {{ virtualCardDriverName() }}
                             </p>
                           </div>
 
@@ -718,6 +731,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private supabase = inject(SupabaseService);
     private walletProvisioning = inject(WalletProvisioningService);
     private paymentService = inject(PaymentService);
+    private profileService = inject(ProfileService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -1067,6 +1081,35 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     virtualCardDisplayNumber(): string {
         const last4 = String(this.issuingCardStatus()?.last4 || '').trim();
         return last4 ? `•••• •••• •••• ${last4}` : '•••• •••• •••• ••••';
+    }
+
+    virtualCardOwnerLabel(): string {
+        const firstName = this.virtualCardDriverName().split(' ')[0];
+
+        return firstName && firstName !== 'DRIVER'
+            ? `${this.toTitleCase(firstName)}'s Card`
+            : 'Driver Card';
+    }
+
+    virtualCardDriverName(): string {
+        const profile = this.profileService.profile() as any;
+        const fullName = String(profile?.full_name || profile?.display_name || profile?.name || '').trim();
+        const firstLast = [profile?.first_name, profile?.last_name]
+            .map((part: unknown) => String(part || '').trim())
+            .filter(Boolean)
+            .join(' ');
+        const emailName = String(profile?.email || '')
+            .split('@')[0]
+            .replace(/[._-]+/g, ' ')
+            .trim();
+
+        return this.toTitleCase(fullName || firstLast || emailName || 'Driver');
+    }
+
+    private toTitleCase(value: string): string {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/\b(\p{L}|\p{N})/gu, match => match.toUpperCase());
     }
 
     canActivateIssuingCard(): boolean {
