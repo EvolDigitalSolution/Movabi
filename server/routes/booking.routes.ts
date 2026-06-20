@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../services/supabase.service';
 import { FraudService } from '../services/fraud.service';
 import { NotificationService } from '../services/notification.service';
 import { LogisticsService } from '../services/logistics.service';
+import { IssuingService } from '../services/issuing.service';
 import { stripe } from '../services/stripe.service';
 
 const router = Router();
@@ -220,6 +221,43 @@ async function releaseWalletReservation(jobId: string, reason: string) {
             .from('jobs')
             .update({ payment_status: 'requires_review' })
             .eq('id', jobId);
+    }
+}
+
+async function hasProtectedErrandSpend(jobId: string): Promise<boolean> {
+    const [{ data: details }, { data: spendControl }] = await Promise.all([
+        supabaseAdmin
+            .from('errand_details')
+            .select('actual_spending, receipt_url')
+            .eq('job_id', jobId)
+            .maybeSingle(),
+        supabaseAdmin
+            .from('job_issuing_spend_controls')
+            .select('amount_authorized, amount_captured, status')
+            .eq('job_id', jobId)
+            .maybeSingle()
+    ]);
+
+    return Number((details as any)?.actual_spending || 0) > 0 ||
+        !!(details as any)?.receipt_url ||
+        Number((spendControl as any)?.amount_authorized || 0) > 0 ||
+        Number((spendControl as any)?.amount_captured || 0) > 0;
+}
+
+async function logJobEvent(jobId: string, eventType: string, actorId: string | null, notes: string, metadata: Record<string, unknown>) {
+    const { error } = await supabaseAdmin
+        .from('job_events')
+        .insert({
+            job_id: jobId,
+            event_type: eventType,
+            actor_id: actorId,
+            actor_role: actorId ? 'driver' : 'system',
+            notes,
+            metadata
+        });
+
+    if (error) {
+        console.warn('[BookingRoutes] failed to log job event:', error);
     }
 }
 
@@ -487,6 +525,120 @@ router.post('/cancel', async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('Cancel booking error:', error);
         return res.status(500).json({ error: error.message || 'Failed to cancel booking' });
+    }
+});
+
+/**
+ * Driver cannot continue.
+ * If no protected spend exists, put the job back into driver search without releasing customer funds.
+ * If spend/card activity exists, keep the assignment trail and move it to review for admin handoff.
+ */
+router.post('/driver-unable', async (req: Request, res: Response) => {
+    try {
+        const { jobId, driverId, reason } = req.body || {};
+
+        if (!jobId || !driverId) {
+            return res.status(400).json({ error: 'jobId and driverId required' });
+        }
+
+        const job = await getJob(jobId);
+
+        if (job.driver_id !== driverId) {
+            return res.status(403).json({ error: 'This driver is not assigned to the job' });
+        }
+
+        if (['completed', 'settled', 'cancelled'].includes(normalise(job.status))) {
+            return res.status(400).json({ error: `Cannot hand off a job in status: ${job.status}` });
+        }
+
+        const reasonText = String(reason || 'Driver cannot continue').trim().slice(0, 500);
+        const hasSpend = await hasProtectedErrandSpend(jobId);
+        const metadata = parseMetadata(job.metadata);
+        const handoffHistory = Array.isArray(metadata.driver_handoff_history)
+            ? metadata.driver_handoff_history
+            : [];
+        const handoffEntry = {
+            driver_id: driverId,
+            reason: reasonText,
+            previous_status: job.status,
+            created_at: new Date().toISOString()
+        };
+        const nextMetadata = {
+            ...metadata,
+            driver_handoff_history: [handoffEntry, ...handoffHistory].slice(0, 10),
+            last_driver_handoff: handoffEntry
+        };
+
+        try {
+            await IssuingService.freezeDriverCard(driverId, `Driver handoff: ${reasonText}`);
+        } catch (freezeError) {
+            console.warn('[BookingRoutes] failed to freeze issuing card during handoff:', freezeError);
+        }
+
+        if (hasSpend) {
+            const { error } = await supabaseAdmin
+                .from('jobs')
+                .update({
+                    status: 'requires_review',
+                    no_driver_reason: `Driver cannot continue after spend/card activity: ${reasonText}`,
+                    metadata: nextMetadata,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', jobId);
+
+            if (error) throw error;
+
+            await logJobEvent(jobId, 'driver_handoff_review_required', driverId, reasonText, {
+                previous_status: job.status,
+                has_protected_spend: true
+            });
+
+            if (job.customer_id) {
+                await NotificationService.notifyJobStatusUpdate(job.customer_id, jobId, 'requires_review');
+            }
+
+            return res.json({
+                success: true,
+                mode: 'review',
+                message: 'This request has spend activity, so Movabi support will review and hand it off safely.'
+            });
+        }
+
+        const { error } = await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: 'searching',
+                driver_id: null,
+                accepted_driver_id: null,
+                accepted_at: null,
+                dispatch_started_at: new Date().toISOString(),
+                driver_search_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+                dispatch_attempts: Number(job.dispatch_attempts || 0) + 1,
+                no_driver_reason: `Previous driver could not continue: ${reasonText}`,
+                metadata: nextMetadata,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        if (error) throw error;
+
+        await logJobEvent(jobId, 'driver_handoff_requeued', driverId, reasonText, {
+            previous_status: job.status,
+            has_protected_spend: false
+        });
+
+        if (job.customer_id) {
+            await NotificationService.notifyJobStatusUpdate(job.customer_id, jobId, 'searching');
+        }
+
+        return res.json({
+            success: true,
+            mode: 'requeued',
+            message: 'The request has been returned to nearby drivers.'
+        });
+    } catch (error: any) {
+        console.error('Driver unable handoff error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to hand off request' });
     }
 });
 

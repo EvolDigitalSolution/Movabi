@@ -463,6 +463,28 @@ export class DriverService {
         return result.data;
     }
 
+    async handoffJob(jobId: string, reason: string): Promise<{ success: boolean; mode: 'requeued' | 'review'; message: string }> {
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const response = await firstValueFrom(
+            this.http.post<{ success: boolean; mode: 'requeued' | 'review'; message: string }>(
+                this.apiUrlService.getApiUrl('/api/booking/driver-unable'),
+                {
+                    jobId,
+                    driverId: user.id,
+                    reason
+                }
+            )
+        );
+
+        this.activeJob.set(null);
+        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== jobId));
+        await this.eventService.logEvent(jobId, 'driver_handoff_requested' as JobEventType, reason);
+
+        return response;
+    }
+
     async recordErrandSpending(jobId: string, amount: number, notes?: string) {
         const payload: Record<string, unknown> = {
             actual_spending: amount,

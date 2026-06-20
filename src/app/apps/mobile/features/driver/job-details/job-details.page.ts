@@ -659,6 +659,16 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                 </app-button>
               }
             }
+
+            @if (canHandoffJob()) {
+              <button
+                type="button"
+                class="mt-3 w-full h-12 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-black tracking-wide active:scale-[0.98] transition-all"
+                (click)="openHandoffRequest()"
+              >
+                I can't continue this request
+              </button>
+            }
           </div>
         } @else {
           <div class="min-h-[70vh] flex flex-col items-center justify-center py-20 text-center space-y-8">
@@ -1276,6 +1286,80 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             await this.showToast('Status updated.', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Update failed';
+            await this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+        }
+    }
+
+    canHandoffJob(): boolean {
+        const status = this.job()?.status || '';
+        return [
+            'assigned',
+            'accepted',
+            'heading_to_pickup',
+            'arrived',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'in_progress',
+            'delivered',
+            'over_budget_requested'
+        ].includes(status);
+    }
+
+    async openHandoffRequest(): Promise<void> {
+        const currentJob = this.job();
+
+        if (!currentJob?.id) {
+            await this.showToast('Request not found.', 'danger');
+            return;
+        }
+
+        const alert = await this.alertCtrl.create({
+            header: "Can't continue?",
+            message: 'Use this only if you cannot complete the request. Movabi will protect the customer payment and reassign or review the job.',
+            inputs: [
+                {
+                    name: 'reason',
+                    type: 'textarea',
+                    placeholder: 'Tell us what happened, e.g. vehicle breakdown, emergency, shop closed'
+                }
+            ],
+            buttons: [
+                { text: 'Go back', role: 'cancel' },
+                {
+                    text: 'Hand off request',
+                    role: 'destructive',
+                    handler: (data) => {
+                        const reason = String(data?.reason || '').trim();
+
+                        if (reason.length < 6) {
+                            void this.showToast('Please add a short reason.', 'warning');
+                            return false;
+                        }
+
+                        void this.handoffRequest(currentJob.id, reason);
+                        return true;
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    private async handoffRequest(jobId: string, reason: string): Promise<void> {
+        const loading = await this.loadingCtrl.create({ message: 'Handing off request...' });
+        await loading.present();
+
+        try {
+            const result = await this.driverService.handoffJob(jobId, reason);
+            await this.showToast(result.message || 'Request handed off.', result.mode === 'review' ? 'warning' : 'success');
+            this.nav.navigateRoot('/driver');
+        } catch (error: unknown) {
+            const message = this.getErrorMessage(error, 'Could not hand off this request.');
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();
