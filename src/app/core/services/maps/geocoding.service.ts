@@ -146,13 +146,12 @@ export class GeocodingService {
                 limit,
                 language: 'en',
                 country: country.code.toLowerCase(),
-                types: 'address,poi,place,locality,neighborhood',
+                types: 'address,poi,place,locality',
                 proximity: `${country.defaultCenter.lng},${country.defaultCenter.lat}`
             }
         }).pipe(
             map(res => this.mapMapTilerFeaturesToResults(res.features)),
-            catchError(error => {
-                console.warn('[GeocodingService] MapTiler geocode failed:', error);
+            catchError(() => {
                 return of([]);
             })
         );

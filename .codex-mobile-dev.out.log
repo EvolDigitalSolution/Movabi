@@ -5685,3 +5685,16 @@ Page reload sent to client(s).
 Application bundle generation complete. [2.141 seconds] - 2026-06-20T00:36:02.390Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m               [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                [2m | [22m[36m274.31 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m               [2m | [22m [1mRaw size[22m
+[32mchunk-PTVEMGVJ.js[39m  [2m | [22m[2mbooking-request-page[22m[2m | [22m[36m162.08 kB[39m[2m | [22m
+[32mchunk-FVR545YV.js[39m  [2m | [22m[2mcreate-job-page[22m     [2m | [22m [36m78.13 kB[39m[2m | [22m
+[32mchunk-WFCPWDNZ.js[39m  [2m | [22m[2m-[22m                   [2m | [22m [36m12.63 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.032 seconds] - 2026-06-20T00:43:52.773Z
+
+Page reload sent to client(s).
