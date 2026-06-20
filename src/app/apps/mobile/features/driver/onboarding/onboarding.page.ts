@@ -547,8 +547,8 @@ type DriverOnboardingDraft = {
             <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm p-5 space-y-4">
               <div class="flex items-center justify-between gap-3">
                 <span class="text-sm font-semibold text-slate-700">{{ vehicleChecklistLabel() }}</span>
-                <app-badge [variant]="onboardingForm.valid ? 'success' : 'warning'">
-                  {{ onboardingForm.valid ? 'Ready' : 'Pending' }}
+                <app-badge [variant]="activeVehicleDetailsReady() ? 'success' : 'warning'">
+                  {{ activeVehicleDetailsReady() ? 'Ready' : 'Pending' }}
                 </app-badge>
               </div>
 
@@ -686,7 +686,7 @@ export class OnboardingPage implements OnInit {
 
     canSubmit = computed(() => {
         return (
-            this.onboardingForm.valid &&
+            this.activeVehicleDetailsReady() &&
             !!this.docs().license &&
             this.secondaryDocumentReady() &&
             this.isStripeReady() &&
@@ -695,21 +695,36 @@ export class OnboardingPage implements OnInit {
         );
     });
 
+    activeVehicleDetailsReady = computed(() => {
+        return this.activeVehicleControls().every(controlName => this.onboardingForm.get(controlName)?.valid);
+    });
+
     setupBlockingMessage = computed(() => {
-        if (this.onboardingForm.get('make')?.invalid || this.onboardingForm.get('model')?.invalid || this.onboardingForm.get('color')?.invalid || this.onboardingForm.get('year')?.invalid) {
+        if (!this.activeVehicleDetailsReady()) {
+            const invalid = this.activeVehicleControls().filter(controlName => this.onboardingForm.get(controlName)?.invalid);
+            const hiddenInvalid = Object.keys(this.onboardingForm.controls).filter(controlName => !this.activeVehicleControls().includes(controlName) && this.onboardingForm.get(controlName)?.invalid);
+
+            if (hiddenInvalid.length) {
+                console.warn('[DriverOnboarding] Ignoring hidden invalid controls for selected vehicle class:', hiddenInvalid);
+            }
+
+            if (invalid.some(controlName => ['make', 'model', 'color', 'year'].includes(controlName))) {
+                return this.isBikeVehicle()
+                    ? 'Complete your bike brand, type, colour, and year before submitting.'
+                    : 'Complete your vehicle make, model, colour, and year before submitting.';
+            }
+
+            if (invalid.includes('license_plate')) return 'Add the vehicle registration plate before submitting.';
+
+            if (invalid.some(controlName => ['council_name', 'council_license_number', 'taxi_badge_number', 'taxi_license_expiry'].includes(controlName))) {
+                return 'Complete the council taxi licence details before submitting.';
+            }
+
             return this.isBikeVehicle()
-                ? 'Complete your bike brand, type, colour, and year before submitting.'
-                : 'Complete your vehicle make, model, colour, and year before submitting.';
+                ? 'Complete the visible bike setup fields before submitting.'
+                : 'Complete the visible vehicle setup fields before submitting.';
         }
-        if (!this.isBikeVehicle() && this.onboardingForm.get('license_plate')?.invalid) return 'Add the vehicle registration plate before submitting.';
-        if (this.requiresTaxiLicence() && (
-            this.onboardingForm.get('council_name')?.invalid ||
-            this.onboardingForm.get('council_license_number')?.invalid ||
-            this.onboardingForm.get('taxi_badge_number')?.invalid ||
-            this.onboardingForm.get('taxi_license_expiry')?.invalid
-        )) {
-            return 'Complete the council taxi licence details before submitting.';
-        }
+
         if (!this.docs().license) return `Upload your ${this.primaryDocumentLabel().toLowerCase()} before submitting.`;
         if (!this.secondaryDocumentReady()) return `Upload your ${this.secondaryDocumentLabel().toLowerCase()} before submitting.`;
         if (!this.isStripeReady()) return 'Complete Stripe Connect before submitting.';
@@ -1047,6 +1062,20 @@ export class OnboardingPage implements OnInit {
 
     private requiresTaxiLicenceForClass(value: DriverVehicleClass): boolean {
         return value === 'standard' || value === 'xl';
+    }
+
+    private activeVehicleControls(): string[] {
+        const controls = ['make', 'model', 'color', 'year', 'vehicle_class'];
+
+        if (!this.isBikeVehicle()) {
+            controls.push('license_plate');
+        }
+
+        if (this.requiresTaxiLicence()) {
+            controls.push('council_name', 'council_license_number', 'taxi_badge_number', 'taxi_license_expiry');
+        }
+
+        return controls;
     }
 
     private parseVerificationItems(value: unknown): Record<string, string> {
