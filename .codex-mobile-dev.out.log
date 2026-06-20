@@ -814,3 +814,14 @@ Page reload sent to client(s).
 Application bundle generation complete. [1.890 seconds] - 2026-06-20T18:55:30.433Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m          [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m           [2m | [22m[36m274.91 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m          [2m | [22m [1mRaw size[22m
+[32mchunk-BLDLN2LB.js[39m  [2m | [22m[2monboarding-page[22m[2m | [22m[36m109.82 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.447 seconds] - 2026-06-20T19:04:39.826Z
+
+Page reload sent to client(s).

@@ -322,7 +322,7 @@ type DriverOnboardingDraft = {
                   </div>
                   <div>
                     <h3 class="font-display font-black text-slate-950">Movabi Pay contact</h3>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Required for virtual card security</p>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recommended for virtual card security</p>
                   </div>
                 </div>
               </div>
@@ -331,7 +331,7 @@ type DriverOnboardingDraft = {
                 <label for="phone" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mobile Number</label>
                 <input id="phone" type="tel" formControlName="phone" placeholder="e.g. 07898 473 840" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 <p class="mt-2 text-xs font-semibold text-slate-500">
-                  Stripe requires this for Movabi Pay virtual card verification.
+                  Add this now if you can. Stripe may require it later before Movabi Pay virtual card activation.
                 </p>
               </div>
             </div>
@@ -696,7 +696,6 @@ export class OnboardingPage implements OnInit {
     });
 
     setupBlockingMessage = computed(() => {
-        if (this.onboardingForm.get('phone')?.invalid) return 'Add your mobile number before submitting.';
         if (this.onboardingForm.get('make')?.invalid || this.onboardingForm.get('model')?.invalid || this.onboardingForm.get('color')?.invalid || this.onboardingForm.get('year')?.invalid) {
             return this.isBikeVehicle()
                 ? 'Complete your bike brand, type, colour, and year before submitting.'
@@ -758,7 +757,7 @@ export class OnboardingPage implements OnInit {
         });
 
         this.onboardingForm = this.fb.group({
-            phone: ['', [Validators.required, Validators.minLength(8)]],
+            phone: ['', [Validators.minLength(8)]],
             make: ['', [Validators.required, Validators.minLength(2)]],
             model: ['', [Validators.required, Validators.minLength(1)]],
             color: ['', [Validators.required, Validators.minLength(2)]],
