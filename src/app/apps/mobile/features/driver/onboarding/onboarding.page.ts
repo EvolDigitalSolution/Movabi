@@ -580,7 +580,7 @@ type DriverOnboardingDraft = {
               <app-button
                 type="submit"
                 class="w-full shadow-xl shadow-blue-600/15"
-                [disabled]="submitting() || !canSubmit()"
+                [disabled]="submitting()"
               >
                 {{ submitting() ? 'Submitting...' : (isActionRequired() ? 'Resubmit for Manual Review' : 'Submit for Manual Review') }}
               </app-button>
@@ -757,7 +757,7 @@ export class OnboardingPage implements OnInit {
         });
 
         this.onboardingForm = this.fb.group({
-            phone: ['', [Validators.minLength(8)]],
+            phone: [''],
             make: ['', [Validators.required, Validators.minLength(2)]],
             model: ['', [Validators.required, Validators.minLength(1)]],
             color: ['', [Validators.required, Validators.minLength(2)]],
