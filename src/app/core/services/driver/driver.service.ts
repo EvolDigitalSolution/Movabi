@@ -648,6 +648,19 @@ export class DriverService {
         );
     }
 
+    async createIssuingCardDetailsSession(cardId: string, nonce: string): Promise<{ ephemeralKeySecret: string }> {
+        const token = await this.getAccessToken();
+        if (!token) throw new Error('Not authenticated');
+
+        return firstValueFrom(
+            this.http.post<{ ephemeralKeySecret: string }>(
+                this.apiUrlService.getApiUrl('/api/issuing/card-details/ephemeral-key'),
+                { cardId, nonce },
+                { headers: { Authorization: `Bearer ${token}` } }
+            )
+        );
+    }
+
     private async getAccessToken(): Promise<string | null> {
         const { data } = await this.supabase.auth.getSession();
         return data.session?.access_token || null;

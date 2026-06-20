@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -46,6 +46,7 @@ import { LocationService } from '../../../../../core/services/logistics/location
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { WalletProvisioningService } from '../../../../../core/services/issuing/wallet-provisioning.service';
+import { PaymentService } from '../../../../../core/services/stripe/payment.service';
 import {
     Booking,
     BookingStatus,
@@ -452,16 +453,68 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                       }
 
                       @if (canProvisionIssuingCard()) {
-                        <app-button
-                          variant="primary"
-                          size="sm"
-                          class="w-full mt-4"
-                          [loading]="isProvisioningToWallet()"
-                          [disabled]="isProvisioningToWallet()"
-                          (clicked)="addIssuingCardToWallet()"
-                        >
-                          Add to {{ phoneWalletName() }}
-                        </app-button>
+                        <div class="grid grid-cols-1 gap-3 mt-4">
+                          <app-button
+                            variant="primary"
+                            size="sm"
+                            class="w-full"
+                            [loading]="isProvisioningToWallet()"
+                            [disabled]="isProvisioningToWallet()"
+                            (clicked)="addIssuingCardToWallet()"
+                          >
+                            Add to {{ phoneWalletName() }}
+                          </app-button>
+
+                          <app-button
+                            variant="secondary"
+                            size="sm"
+                            class="w-full"
+                            [loading]="isRevealingCardDetails()"
+                            [disabled]="isRevealingCardDetails()"
+                            (clicked)="revealIssuingCardDetails()"
+                          >
+                            Reveal secure card details
+                          </app-button>
+                        </div>
+                      }
+
+                      @if (cardDetailsVisible()) {
+                        <div class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                          <div class="flex items-center justify-between gap-3">
+                            <div>
+                              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Secure card details</p>
+                              <p class="text-xs font-semibold text-slate-500">Use only for this customer errand.</p>
+                            </div>
+                            <span class="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                              Protected
+                            </span>
+                          </div>
+
+                          @if (cardDetailsError()) {
+                            <div class="rounded-2xl bg-rose-50 border border-rose-100 p-3 text-sm font-bold text-rose-700">
+                              {{ cardDetailsError() }}
+                            </div>
+                          }
+
+                          <div class="space-y-3">
+                            <div class="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Number</p>
+                              <div #issuingCardNumberElement class="min-h-6 text-base font-mono text-slate-950"></div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                              <div class="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                                <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Expiry</p>
+                                <div #issuingCardExpiryElement class="min-h-6 text-base font-mono text-slate-950"></div>
+                              </div>
+
+                              <div class="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                                <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">CVC</p>
+                                <div #issuingCardCvcElement class="min-h-6 text-base font-mono text-slate-950"></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       }
                     </div>
                   }
@@ -639,6 +692,9 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 })
 export class JobDetailsPage implements OnInit, OnDestroy {
     @ViewChild('pickupMap') pickupMap?: MapComponent;
+    @ViewChild('issuingCardNumberElement') issuingCardNumberElement?: ElementRef<HTMLElement>;
+    @ViewChild('issuingCardExpiryElement') issuingCardExpiryElement?: ElementRef<HTMLElement>;
+    @ViewChild('issuingCardCvcElement') issuingCardCvcElement?: ElementRef<HTMLElement>;
 
     private route = inject(ActivatedRoute);
     private driverService = inject(DriverService);
@@ -651,6 +707,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private routing = inject(RoutingService);
     private supabase = inject(SupabaseService);
     private walletProvisioning = inject(WalletProvisioningService);
+    private paymentService = inject(PaymentService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -663,6 +720,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     issuingCardStatus = signal<ErrandIssuingCardStatus | null>(null);
     isSettingUpIssuingCard = signal(false);
     isProvisioningToWallet = signal(false);
+    isRevealingCardDetails = signal(false);
+    cardDetailsVisible = signal(false);
+    cardDetailsError = signal('');
     isLoading = signal(true);
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
@@ -752,6 +812,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     private channel?: RealtimeChannel;
     private errandFundingChannel?: RealtimeChannel;
+    private issuingElements: Array<{ unmount: () => void }> = [];
 
     private jobMetadata(): Record<string, any> {
         const raw = (this.job() as any)?.metadata || {};
@@ -805,6 +866,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     ngOnDestroy() {
         void this.channel?.unsubscribe();
         void this.errandFundingChannel?.unsubscribe();
+        this.unmountIssuingCardElements();
         this.locationService.stopTracking();
     }
 
@@ -843,6 +905,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             } else {
                 this.funding.set(null);
                 this.issuingCardStatus.set(null);
+                this.cardDetailsVisible.set(false);
+                this.cardDetailsError.set('');
+                this.unmountIssuingCardElements();
             }
 
             this.ensureLiveLocationTracking(currentJob as Booking);
@@ -1088,6 +1153,79 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         } finally {
             this.isProvisioningToWallet.set(false);
         }
+    }
+
+    async revealIssuingCardDetails(): Promise<void> {
+        const status = this.issuingCardStatus();
+
+        if (!status?.cardId) {
+            await this.showToast('Movabi Pay virtual card is not ready yet.', 'warning');
+            return;
+        }
+
+        this.isRevealingCardDetails.set(true);
+        this.cardDetailsError.set('');
+        this.cardDetailsVisible.set(true);
+        this.unmountIssuingCardElements();
+
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            const stripe = await this.paymentService.getStripe();
+
+            if (!stripe) {
+                throw new Error('Stripe secure card display is unavailable.');
+            }
+
+            const nonceResult = await stripe.createEphemeralKeyNonce({ issuingCard: status.cardId });
+
+            if (nonceResult.error || !nonceResult.nonce) {
+                throw new Error(nonceResult.error?.message || 'Could not start secure card details session.');
+            }
+
+            const session = await this.driverService.createIssuingCardDetailsSession(status.cardId, nonceResult.nonce);
+            const options = {
+                issuingCard: status.cardId,
+                ephemeralKeySecret: session.ephemeralKeySecret,
+                nonce: nonceResult.nonce,
+                style: {
+                    base: {
+                        color: '#020617',
+                        fontSize: '16px',
+                        fontFamily: 'Inter, system-ui, sans-serif',
+                        fontWeight: '700'
+                    }
+                }
+            };
+            const elements = stripe.elements();
+            const numberElement = elements.create('issuingCardNumberDisplay', options);
+            const expiryElement = elements.create('issuingCardExpiryDisplay', options);
+            const cvcElement = elements.create('issuingCardCvcDisplay', options);
+
+            numberElement.mount(this.issuingCardNumberElement?.nativeElement || '#issuing-card-number');
+            expiryElement.mount(this.issuingCardExpiryElement?.nativeElement || '#issuing-card-expiry');
+            cvcElement.mount(this.issuingCardCvcElement?.nativeElement || '#issuing-card-cvc');
+
+            this.issuingElements = [numberElement, expiryElement, cvcElement];
+        } catch (error: unknown) {
+            const message = this.getErrorMessage(error, 'Could not reveal secure card details.');
+            this.cardDetailsError.set(message);
+            await this.showToast(message, 'danger');
+        } finally {
+            this.isRevealingCardDetails.set(false);
+        }
+    }
+
+    private unmountIssuingCardElements(): void {
+        for (const element of this.issuingElements) {
+            try {
+                element.unmount();
+            } catch {
+                // Stripe Elements may already be unmounted when the Angular view changes.
+            }
+        }
+
+        this.issuingElements = [];
     }
 
     private subscribeToErrandFunding(id: string): void {
