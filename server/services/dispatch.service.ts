@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from './supabase.service';
 import { Job, DispatchResult } from '../../src/app/shared/models/booking.model';
 import { EventService } from './event.service';
 import { NotificationService } from './notification.service';
+import { stripe } from './stripe.service';
 
 type NearbyDriver = {
     id: string;
@@ -209,7 +210,7 @@ export class DispatchService {
             .eq('id', jobId)
             .eq('status', 'searching')
             .is('driver_id', null)
-            .select('id, customer_id, tenant_id')
+            .select('id, customer_id, tenant_id, payment_method, payment_status, payment_intent_id')
             .maybeSingle();
 
         if (error) {
@@ -219,21 +220,7 @@ export class DispatchService {
 
         if (!job) return;
 
-        const { error: releaseError } = await this.supabase.rpc('release_job_wallet_reservation', {
-            p_job_id: job.id,
-            p_reason: 'No driver found before completion'
-        });
-
-        if (releaseError) {
-            console.error(`[DispatchService] Wallet release failed for ${jobId}:`, releaseError);
-            await this.supabase
-                .from('jobs')
-                .update({
-                    payment_status: 'requires_review',
-                    updated_at: nowIso()
-                })
-                .eq('id', jobId);
-        }
+        await this.releaseNoDriverPayment(job as Job);
 
         await EventService.logEvent(
             'no_driver_found',
@@ -246,6 +233,54 @@ export class DispatchService {
             job.id,
             'no_driver_found'
         );
+    }
+
+    private async releaseNoDriverPayment(job: Job) {
+        const paymentMethod = String((job as any).payment_method || '').toLowerCase();
+        const paymentStatus = String((job as any).payment_status || '').toLowerCase();
+        const paymentIntentId = String((job as any).payment_intent_id || '').trim();
+
+        if (paymentMethod === 'wallet' || paymentStatus === 'wallet_funded') {
+            const { error } = await this.supabase.rpc('release_job_wallet_reservation', {
+                p_job_id: job.id,
+                p_reason: 'No driver found before completion'
+            });
+
+            if (error) {
+                console.error(`[DispatchService] Wallet release failed for ${job.id}:`, error);
+                await this.markPaymentRequiresReview(job.id);
+            }
+
+            return;
+        }
+
+        if (paymentMethod === 'card' && paymentIntentId) {
+            try {
+                const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+                if (['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'].includes(pi.status)) {
+                    await stripe.paymentIntents.cancel(paymentIntentId);
+                }
+
+                await this.supabase
+                    .from('jobs')
+                    .update({ payment_status: 'cancelled', updated_at: nowIso() })
+                    .eq('id', job.id);
+            } catch (error) {
+                console.error(`[DispatchService] Card authorisation release failed for ${job.id}:`, error);
+                await this.markPaymentRequiresReview(job.id);
+            }
+        }
+    }
+
+    private async markPaymentRequiresReview(jobId: string) {
+        await this.supabase
+            .from('jobs')
+            .update({
+                payment_status: 'requires_review',
+                updated_at: nowIso()
+            })
+            .eq('id', jobId);
     }
 
     private async dispatchJob(item: any): Promise<DispatchResult> {

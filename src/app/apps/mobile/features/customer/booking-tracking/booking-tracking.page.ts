@@ -178,7 +178,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     {{ getDisplayedTotal() }}
                   </p>
                   <p class="text-[11px] font-semibold text-emerald-700 mt-1">
-                    {{ booking()?.service_slug === ServiceTypeEnum.ERRAND ? 'Total Reserved' : 'Fixed Price' }}
+                    {{ paymentAmountLabel() }}
                   </p>
                 </div>
               </div>
@@ -205,6 +205,43 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 </div>
               }
             </div>
+
+            @if (showNoDriverPaymentPanel()) {
+              <div class="p-5 rounded-[2rem] border border-amber-100 bg-amber-50 space-y-4">
+                <div class="flex items-start gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shadow-sm shrink-0">
+                    <ion-icon [name]="noDriverPaymentIcon()" class="text-xl"></ion-icon>
+                  </div>
+
+                  <div class="min-w-0">
+                    <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                      Movabi payment protection
+                    </p>
+                    <h3 class="mt-1 text-lg font-display font-black text-slate-950">
+                      {{ noDriverPaymentTitle() }}
+                    </h3>
+                    <p class="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                      {{ noDriverPaymentMessage() }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl bg-white/85 border border-amber-100 p-3 space-y-2 text-sm font-bold text-slate-700">
+                  <div class="flex items-center justify-between gap-3">
+                    <span>Reserved amount</span>
+                    <span class="text-slate-950">{{ getDisplayedTotal() }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <span>Where it returns</span>
+                    <span class="text-right text-slate-950">{{ noDriverPaymentDestination() }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <span>Status</span>
+                    <span class="text-right text-amber-700">{{ noDriverPaymentStatus() }}</span>
+                  </div>
+                </div>
+              </div>
+            }
 
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
               <div class="grid grid-cols-2 gap-3">
@@ -879,6 +916,81 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         return this.config.formatCurrency(bookingTotal);
+    }
+
+    paymentAmountLabel(): string {
+        if (this.booking()?.status === 'no_driver_found') {
+            return this.noDriverPaidByWallet() ? 'Wallet Reserved' : 'Card Authorised';
+        }
+
+        return this.booking()?.service_slug === ServiceTypeEnum.ERRAND ? 'Total Reserved' : 'Fixed Price';
+    }
+
+    showNoDriverPaymentPanel(): boolean {
+        const booking = this.booking() as any;
+
+        return booking?.status === 'no_driver_found';
+    }
+
+    noDriverPaymentIcon(): string {
+        return this.noDriverNeedsPaymentReview() ? 'information-circle' : 'checkmark-circle-outline';
+    }
+
+    noDriverPaymentTitle(): string {
+        if (this.noDriverNeedsPaymentReview()) {
+            return 'We are checking your reserved funds';
+        }
+
+        return this.noDriverPaidByWallet()
+            ? 'Your wallet reservation is released'
+            : 'Your card hold is released';
+    }
+
+    noDriverPaymentMessage(): string {
+        if (this.noDriverNeedsPaymentReview()) {
+            return `Movabi could not assign a ${this.servicePaymentName()} driver, so no service happened. Our system is checking the reservation and will release any unused funds after review.`;
+        }
+
+        if (this.noDriverPaidByWallet()) {
+            return `Movabi could not assign a ${this.servicePaymentName()} driver, so no service happened. The reserved amount is returned to your Movabi wallet balance.`;
+        }
+
+        return `Movabi could not assign a ${this.servicePaymentName()} driver, so no service happened. The card authorisation is cancelled and the money returns to your original card. Your bank may show the hold for a short time before it disappears.`;
+    }
+
+    noDriverPaymentDestination(): string {
+        if (this.noDriverNeedsPaymentReview()) return 'Movabi review';
+        return this.noDriverPaidByWallet() ? 'Movabi wallet' : 'Original payment card';
+    }
+
+    noDriverPaymentStatus(): string {
+        if (this.noDriverNeedsPaymentReview()) return 'Review in progress';
+        return this.noDriverPaidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
+    }
+
+    private noDriverPaidByWallet(): boolean {
+        const booking = this.booking() as any;
+        const method = String(booking?.payment_method || '').toLowerCase();
+        const status = String(booking?.payment_status || '').toLowerCase();
+
+        return method === 'wallet' || status === 'wallet_funded';
+    }
+
+    private noDriverNeedsPaymentReview(): boolean {
+        return String((this.booking() as any)?.payment_status || '').toLowerCase() === 'requires_review';
+    }
+
+    private servicePaymentName(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'errand';
+            case ServiceTypeEnum.DELIVERY:
+                return 'delivery';
+            case ServiceTypeEnum.VAN:
+                return 'moving';
+            default:
+                return 'ride';
+        }
     }
 
     getErrandItemBudget(): number {
