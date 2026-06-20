@@ -70,6 +70,11 @@ export const MOBILE_ROUTES: Routes = [
         loadComponent: () => import('@mobile/features/customer/onboarding/onboarding.page').then((m) => m.CustomerOnboardingPage)
     },
     {
+        path: 'account/settings',
+        canActivate: [authGuard],
+        loadComponent: () => import('@mobile/features/account/account-settings.page').then((m) => m.AccountSettingsPage)
+    },
+    {
         path: 'driver/onboarding',
         canActivate: [authGuard],
         loadComponent: () => import('@mobile/features/driver/onboarding/onboarding.page').then((m) => m.OnboardingPage)
@@ -155,6 +160,10 @@ export const MOBILE_ROUTES: Routes = [
             {
                 path: 'subscription',
                 loadComponent: () => import('@mobile/features/driver/subscription/subscription.page').then((m) => m.SubscriptionPage)
+            },
+            {
+                path: 'settings',
+                loadComponent: () => import('@mobile/features/driver/settings.page').then((m) => m.DriverSettingsPage)
             }
         ]
     }

@@ -6,3 +6,17 @@ Binding this server to an open connection can result in compromising your applic
 computer. Using a different host than the one passed to the "--host" flag might result in
 websocket connection issues.
     [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'lookupVehicleByPlate' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:351:31:
+[37m      351 │                       (click)="[32mlookupVehicleByPlate[37m()"
+          ╵                                [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'normalizePlate' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:358:138:
+[37m      358 │ ...="isReadOnly()" (blur)="[32mnormalizePlate[37m()" class="w-full bg-tra...
+          ╵                            [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m

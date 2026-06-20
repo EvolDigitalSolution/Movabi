@@ -1,0 +1,311 @@
+import { CommonModule } from '@angular/common';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+    AlertController,
+    IonBackButton,
+    IonButtons,
+    IonContent,
+    IonHeader,
+    IonIcon,
+    IonTitle,
+    IonToolbar,
+    LoadingController,
+    ToastController
+} from '@ionic/angular/standalone';
+import { Router } from '@angular/router';
+import { addIcons } from 'ionicons';
+import {
+    callOutline,
+    chevronBackOutline,
+    closeCircleOutline,
+    globeOutline,
+    mailOutline,
+    personCircleOutline,
+    saveOutline,
+    trashOutline
+} from 'ionicons/icons';
+
+import { AuthService } from '@core/services/auth/auth.service';
+import { ProfileService } from '@core/services/profile/profile.service';
+import { ButtonComponent } from '@shared/ui';
+import { Profile } from '@shared/models/booking.model';
+
+@Component({
+    selector: 'app-account-settings',
+    standalone: true,
+    imports: [
+        CommonModule,
+        ReactiveFormsModule,
+        IonHeader,
+        IonToolbar,
+        IonButtons,
+        IonBackButton,
+        IonTitle,
+        IonContent,
+        IonIcon,
+        ButtonComponent
+    ],
+    template: `
+    <ion-header class="ion-no-border">
+      <ion-toolbar class="px-3 pt-4 bg-slate-50">
+        <ion-buttons slot="start">
+          <ion-back-button [defaultHref]="defaultBackHref()" text="" icon="chevron-back-outline"></ion-back-button>
+        </ion-buttons>
+
+        <ion-title class="font-display font-black text-slate-950 tracking-tight">
+          Account Settings
+        </ion-title>
+      </ion-toolbar>
+    </ion-header>
+
+    <ion-content class="bg-slate-50">
+      <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24">
+        <section class="rounded-[2rem] bg-white border border-slate-200 shadow-xl shadow-slate-900/10 p-5">
+          <div class="flex items-start gap-4">
+            <div class="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+              <ion-icon name="person-circle-outline" class="text-3xl"></ion-icon>
+            </div>
+
+            <div class="min-w-0">
+              <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
+                Movabi profile
+              </p>
+              <h1 class="font-display font-black text-2xl text-slate-950 tracking-tight">
+                Keep your details up to date
+              </h1>
+              <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-2">
+                Your name and phone help customers and drivers recognise each other safely.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <form [formGroup]="form" (ngSubmit)="save()" class="rounded-[2rem] bg-white border border-slate-200 shadow-sm overflow-hidden">
+          <div class="divide-y divide-slate-100">
+            <label class="flex items-center gap-4 p-4">
+              <span class="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                <ion-icon name="person-circle-outline" class="text-xl"></ion-icon>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Full name</span>
+                <input formControlName="full_name" placeholder="Your name" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300">
+              </span>
+            </label>
+
+            <label class="flex items-center gap-4 p-4">
+              <span class="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                <ion-icon name="call-outline" class="text-xl"></ion-icon>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Phone</span>
+                <input type="tel" formControlName="phone" placeholder="Mobile number" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300">
+              </span>
+            </label>
+
+            <label class="flex items-center gap-4 p-4">
+              <span class="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                <ion-icon name="globe-outline" class="text-xl"></ion-icon>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Country code</span>
+                <input formControlName="country_code" placeholder="GB" maxlength="2" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+              </span>
+            </label>
+
+            <div class="flex items-center gap-4 p-4 bg-slate-50">
+              <span class="w-11 h-11 rounded-2xl bg-white border border-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                <ion-icon name="mail-outline" class="text-xl"></ion-icon>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Email</span>
+                <span class="block text-base font-bold text-slate-600 truncate">{{ email() }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="p-4">
+            <app-button type="submit" class="w-full" [disabled]="saving() || form.invalid">
+              <span class="inline-flex items-center justify-center gap-2">
+                <ion-icon name="save-outline"></ion-icon>
+                Save Changes
+              </span>
+            </app-button>
+          </div>
+        </form>
+
+        <section class="rounded-[2rem] bg-white border border-rose-100 shadow-sm p-5">
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+              <ion-icon name="close-circle-outline" class="text-2xl"></ion-icon>
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <h2 class="font-display font-black text-slate-950 text-lg">Close account</h2>
+              <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-2">
+                Closing your account disables access. Movabi may keep booking, payment, safety, tax, and legal records where required.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5">
+            <app-button variant="error" class="w-full" [disabled]="saving()" (clicked)="confirmCloseAccount()">
+              <span class="inline-flex items-center justify-center gap-2">
+                <ion-icon name="trash-outline"></ion-icon>
+                Request Account Closure
+              </span>
+            </app-button>
+          </div>
+        </section>
+      </div>
+    </ion-content>
+  `
+})
+export class AccountSettingsPage implements OnInit {
+    private fb = inject(FormBuilder);
+    private auth = inject(AuthService);
+    private profileService = inject(ProfileService);
+    private loadingCtrl = inject(LoadingController);
+    private toastCtrl = inject(ToastController);
+    private alertCtrl = inject(AlertController);
+    private router = inject(Router);
+
+    saving = signal(false);
+    email = signal('');
+
+    form = this.fb.group({
+        full_name: ['', [Validators.required, Validators.minLength(2)]],
+        phone: ['', [Validators.minLength(8)]],
+        country_code: ['GB', [Validators.required, Validators.minLength(2), Validators.maxLength(2)]]
+    });
+
+    constructor() {
+        addIcons({
+            callOutline,
+            chevronBackOutline,
+            closeCircleOutline,
+            globeOutline,
+            mailOutline,
+            personCircleOutline,
+            saveOutline,
+            trashOutline
+        });
+    }
+
+    async ngOnInit() {
+        const user = this.auth.currentUser();
+        this.email.set(user?.email || '');
+
+        let profile = this.profileService.profile();
+
+        if (!profile && user?.id) {
+            profile = await this.profileService.fetchProfile(user.id);
+        }
+
+        if (profile) {
+            this.patchProfile(profile);
+        }
+    }
+
+    defaultBackHref(): string {
+        return this.auth.userRole() === 'driver' ? '/driver' : '/customer';
+    }
+
+    private patchProfile(profile: Profile) {
+        this.form.patchValue(
+            {
+                full_name: profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || '',
+                phone: profile.phone || '',
+                country_code: profile.country_code || 'GB'
+            },
+            { emitEvent: false }
+        );
+    }
+
+    async save() {
+        this.form.markAllAsTouched();
+        if (this.form.invalid || this.saving()) return;
+
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            await this.showToast('Please sign in again to save changes.', 'danger');
+            return;
+        }
+
+        this.saving.set(true);
+        const loading = await this.loadingCtrl.create({ message: 'Saving account details...' });
+        await loading.present();
+
+        try {
+            const raw = this.form.getRawValue();
+            const fullName = String(raw.full_name || '').trim();
+
+            await this.profileService.updateProfile(user.id, {
+                full_name: fullName,
+                phone: String(raw.phone || '').trim(),
+                country_code: String(raw.country_code || 'GB').trim().toUpperCase()
+            } as Partial<Profile>);
+
+            await this.showToast('Account details updated.', 'success');
+        } catch {
+            await this.showToast('Could not save account details.', 'danger');
+        } finally {
+            this.saving.set(false);
+            await loading.dismiss();
+        }
+    }
+
+    async confirmCloseAccount() {
+        const alert = await this.alertCtrl.create({
+            header: 'Close account?',
+            message: 'Your Movabi account will be disabled and the closure request recorded. Active bookings or outstanding payments should be resolved first.',
+            buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Request Closure',
+                    role: 'destructive',
+                    handler: () => void this.closeAccount()
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    private async closeAccount() {
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            await this.showToast('Please sign in again to close your account.', 'danger');
+            return;
+        }
+
+        this.saving.set(true);
+        const loading = await this.loadingCtrl.create({ message: 'Requesting account closure...' });
+        await loading.present();
+
+        try {
+            await this.profileService.updateProfile(user.id, { account_status: 'closure_requested' } as Partial<Profile>);
+            await this.showToast('Account closure requested. You have been signed out.', 'success');
+            await this.auth.signOut();
+            await this.router.navigate(['/auth/login'], { replaceUrl: true });
+        } catch {
+            await this.showToast('Could not request account closure.', 'danger');
+        } finally {
+            this.saving.set(false);
+            await loading.dismiss();
+        }
+    }
+
+    private async showToast(message: string, color: 'success' | 'danger' | 'warning') {
+        const toast = await this.toastCtrl.create({
+            message,
+            color,
+            duration: 2400,
+            position: 'top'
+        });
+
+        await toast.present();
+    }
+}

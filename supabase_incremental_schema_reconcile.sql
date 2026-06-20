@@ -104,6 +104,14 @@ BEGIN
             ALTER TABLE profiles ADD COLUMN account_status TEXT DEFAULT 'active';
         END IF;
 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'account_closure_requested_at') THEN
+            ALTER TABLE profiles ADD COLUMN account_closure_requested_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'account_closure_reason') THEN
+            ALTER TABLE profiles ADD COLUMN account_closure_reason TEXT;
+        END IF;
+
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'tenant_id') THEN
             ALTER TABLE profiles ADD COLUMN tenant_id UUID;
         END IF;
@@ -125,6 +133,10 @@ BEGIN
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'capacity') THEN
             ALTER TABLE public.vehicles ADD COLUMN capacity TEXT DEFAULT 'standard';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'color') THEN
+            ALTER TABLE public.vehicles ADD COLUMN color TEXT;
         END IF;
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'is_verified') THEN

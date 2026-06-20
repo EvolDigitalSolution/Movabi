@@ -21,7 +21,8 @@ import {
     cube,
     chevronForward,
     receiptOutline,
-    walletOutline
+    walletOutline,
+    settingsOutline
 } from 'ionicons/icons';
 
 import { AuthService } from '../../../../core/services/auth/auth.service';
@@ -73,6 +74,14 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm ml-3 active:scale-95 transition-all"
           >
             <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
+          </button>
+
+          <button
+            type="button"
+            (click)="router.navigate(['/account/settings'])"
+            class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shadow-sm ml-3 active:scale-95 transition-all"
+          >
+            <ion-icon name="settings-outline" class="text-xl"></ion-icon>
           </button>
 
           <button
@@ -346,7 +355,8 @@ export class HomePage implements OnInit {
             cube,
             chevronForward,
             receiptOutline,
-            walletOutline
+            walletOutline,
+            settingsOutline
         });
     }
 

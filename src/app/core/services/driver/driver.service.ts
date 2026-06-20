@@ -536,11 +536,12 @@ export class DriverService {
             model: String(vehicleData.model ?? '').trim(),
             year: Number(vehicleData.year),
             license_plate: String(vehicleData.license_plate ?? '').trim(),
+            color: String(vehicleData.color ?? '').trim(),
             type: this.normalizeVehicleType((vehicleData as any).type),
             capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim()
         };
 
-        if (!payload.make || !payload.model || !payload.license_plate) {
+        if (!payload.make || !payload.model || !payload.license_plate || !payload.color) {
             throw new Error('Missing vehicle fields');
         }
 
@@ -548,11 +549,24 @@ export class DriverService {
             throw new Error('Invalid vehicle year');
         }
 
-        const { data, error } = await this.supabase
+        let { data, error } = await this.supabase
             .from('vehicles')
             .upsert(payload, { onConflict: 'user_id' })
             .select()
             .single();
+
+        if (error && this.isMissingColumnError(error, 'color')) {
+            const legacyPayload = { ...payload } as Partial<typeof payload>;
+            delete legacyPayload.color;
+            const retry = await this.supabase
+                .from('vehicles')
+                .upsert(legacyPayload, { onConflict: 'user_id' })
+                .select()
+                .single();
+
+            data = retry.data;
+            error = retry.error;
+        }
 
         if (error) {
             console.error('[DriverService] updateVehicle failed:', error);
@@ -560,6 +574,11 @@ export class DriverService {
         }
 
         this.vehicle.set(data as Vehicle);
+    }
+
+    private isMissingColumnError(error: unknown, column: string): boolean {
+        const maybeError = error as { code?: string; message?: string };
+        return maybeError?.code === '42703' && String(maybeError?.message || '').includes(column);
     }
 
     private normalizeVehicleType(value: unknown): 'car' | 'van' | 'motorcycle' {

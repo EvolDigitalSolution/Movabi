@@ -109,6 +109,32 @@ type DocType = 'license' | 'insurance';
         <section class="space-y-4">
           <div class="flex items-center gap-3 ml-1">
             <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+            <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Profile</h2>
+          </div>
+
+          <app-card class="p-5 cursor-pointer active:scale-[0.98] transition-transform" (click)="router.navigate(['/account/settings'])">
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center gap-4 min-w-0">
+                <div class="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100 shrink-0">
+                  <ion-icon name="card-outline" class="text-2xl"></ion-icon>
+                </div>
+
+                <div class="min-w-0">
+                  <h3 class="text-sm font-black text-slate-950">Personal details</h3>
+                  <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">
+                    Edit name, phone, country, or close account
+                  </p>
+                </div>
+              </div>
+
+              <app-badge variant="secondary">Edit</app-badge>
+            </div>
+          </app-card>
+        </section>
+
+        <section class="space-y-4">
+          <div class="flex items-center gap-3 ml-1">
+            <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
             <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Region & Language</h2>
           </div>
 
@@ -317,7 +343,7 @@ type DocType = 'license' | 'insurance';
 
         <div class="pt-6">
           <app-button variant="error" class="w-full" (clicked)="confirmDeleteAccount()">
-            Delete Account
+            Close Account
           </app-button>
 
           <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest text-center mt-6">
@@ -449,9 +475,10 @@ export class DriverSettingsPage implements OnInit {
         if (!vehicle) return 'Add vehicle details in onboarding';
 
         const year = vehicle.year ? String(vehicle.year) : '';
+        const color = vehicle.color ? String(vehicle.color) : '';
         const plate = vehicle.license_plate ? String(vehicle.license_plate).toUpperCase() : '';
 
-        return [year, plate].filter(Boolean).join(' • ') || 'Vehicle details saved';
+        return [color, year, plate].filter(Boolean).join(' • ') || 'Vehicle details saved';
     }
 
     async setupStripe() {
@@ -611,21 +638,41 @@ export class DriverSettingsPage implements OnInit {
 
     async confirmDeleteAccount() {
         const alert = await this.alertCtrl.create({
-            header: 'Delete Account',
-            message: 'Account deletion is permanent. Please contact support if you want your driver account removed.',
+            header: 'Close account?',
+            message: 'This disables your Movabi account and starts the closure process. Booking, payout, tax, safety, and legal records may be retained where required by law.',
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
-                    text: 'Contact Support',
+                    text: 'Request Closure',
                     role: 'confirm',
-                    handler: () => {
-                        window.location.href = 'mailto:support@movabi.com?subject=Driver%20Account%20Deletion%20Request';
-                    }
+                    handler: () => void this.requestAccountClosure()
                 }
             ]
         });
 
         await alert.present();
+    }
+
+    private async requestAccountClosure() {
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            await this.showToast('Please sign in again to close your account.', 'danger');
+            return;
+        }
+
+        const loading = await this.loadingCtrl.create({ message: 'Requesting account closure...' });
+        await loading.present();
+
+        try {
+            await this.profileService.updateProfile(user.id, { account_status: 'closure_requested' as any });
+            await this.showToast('Account closure requested. You have been signed out.', 'success');
+            await this.auth.signOut();
+        } catch {
+            await this.showToast('Could not request closure. Please try again.', 'danger');
+        } finally {
+            await loading.dismiss();
+        }
     }
 
     private isAllowedFile(file: File): boolean {

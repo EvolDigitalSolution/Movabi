@@ -16,7 +16,6 @@ import { addIcons } from 'ionicons';
 import { personOutline, carOutline, chevronForwardOutline } from 'ionicons/icons';
 import { ProfileService } from '@core/services/profile/profile.service';
 import { AuthService } from '@core/services/auth/auth.service';
-import { DriverService } from '@core/services/driver/driver.service';
 
 @Component({
   selector: 'app-role-selection',
@@ -186,7 +185,6 @@ import { DriverService } from '@core/services/driver/driver.service';
 export class RoleSelectionPage {
   private profileService = inject(ProfileService);
   private authService = inject(AuthService);
-  private driverService = inject(DriverService);
   private router = inject(Router);
   private loadingCtrl = inject(LoadingController);
 
@@ -209,14 +207,6 @@ export class RoleSelectionPage {
       
       // Update local state
       this.authService.userRole.set(role);
-
-      if (role === 'driver') {
-        try {
-          await this.driverService.ensureMovabiPayVirtualCard();
-        } catch (error) {
-          console.warn('[RoleSelection] Movabi Pay virtual card setup deferred:', error);
-        }
-      }
 
       await loading.dismiss();
       // Use centralized redirect logic to handle onboarding etc.

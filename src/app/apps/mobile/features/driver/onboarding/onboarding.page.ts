@@ -87,7 +87,7 @@ type DriverOnboardingDraft = {
 
     <ion-content class="bg-slate-50">
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24 overflow-x-hidden">
-        <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 shadow-2xl shadow-slate-900/20">
+        <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 shadow-2xl shadow-slate-900/20 text-white">
           <div class="absolute -top-12 -right-8 w-32 h-32 bg-blue-400/20 rounded-full blur-3xl"></div>
           <div class="absolute -bottom-10 -left-6 w-28 h-28 bg-cyan-300/10 rounded-full blur-3xl"></div>
 
@@ -101,11 +101,11 @@ type DriverOnboardingDraft = {
               {{ isReadOnly() ? 'Review mode' : 'Driver setup' }}
             </div>
 
-            <h1 class="text-3xl font-display font-black text-white mb-3 tracking-tight">
+            <h1 class="text-3xl font-display font-black mb-3 tracking-tight" style="color: #ffffff;">
               {{ pageTitle() }}
             </h1>
 
-            <p class="text-slate-300 font-medium leading-relaxed max-w-sm mx-auto text-sm">
+            <p class="font-medium leading-relaxed max-w-sm mx-auto text-sm" style="color: #dbe4f0;">
               {{ pageDescription() }}
             </p>
           </div>
@@ -334,13 +334,31 @@ type DriverOnboardingDraft = {
                 </div>
 
                 <div class="p-4">
+                  <label for="color" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Colour</label>
+                  <input id="color" formControlName="color" placeholder="e.g. Silver" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                </div>
+
+                <div class="p-4">
                   <label for="year" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Year</label>
                   <input id="year" type="number" formControlName="year" placeholder="e.g. 2022" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
                 </div>
 
                 <div class="p-4">
-                  <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">License Plate</label>
-                  <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                  <div class="flex items-center justify-between gap-3 mb-1">
+                    <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">License Plate</label>
+                    <button
+                      type="button"
+                      (click)="lookupVehicleByPlate()"
+                      [disabled]="isReadOnly()"
+                      class="text-[10px] font-black uppercase tracking-widest text-amber-600 disabled:text-slate-300"
+                    >
+                      Find details
+                    </button>
+                  </div>
+                  <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" (blur)="normalizePlate()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                  <p class="mt-2 text-xs font-semibold text-slate-500">
+                    We use the plate for manual checks. Automatic DVLA lookup can be enabled when a vehicle data provider is connected.
+                  </p>
                 </div>
 
                 <div class="p-4 space-y-3">
@@ -657,6 +675,7 @@ export class OnboardingPage implements OnInit {
             phone: ['', [Validators.required, Validators.minLength(8)]],
             make: ['', [Validators.required, Validators.minLength(2)]],
             model: ['', [Validators.required, Validators.minLength(1)]],
+            color: ['', [Validators.required, Validators.minLength(2)]],
             year: [
                 new Date().getFullYear(),
                 [Validators.required, Validators.min(1900), Validators.max(new Date().getFullYear() + 1)]
@@ -726,6 +745,7 @@ export class OnboardingPage implements OnInit {
                     {
                         make: draft.form['make'] ?? '',
                         model: draft.form['model'] ?? '',
+                        color: draft.form['color'] ?? '',
                         year: draft.form['year'] ?? new Date().getFullYear(),
                         license_plate: draft.form['license_plate'] ?? '',
                         vehicle_class: draft.form['vehicle_class'] ?? 'standard',
@@ -762,6 +782,7 @@ export class OnboardingPage implements OnInit {
                 {
                     make: vehicle.make ?? '',
                     model: vehicle.model ?? '',
+                    color: vehicle.color ?? '',
                     year: vehicle.year ?? new Date().getFullYear(),
                     license_plate: vehicle.license_plate ?? '',
                     vehicle_class: this.vehicleClassFromVehicle(vehicle)
@@ -840,6 +861,26 @@ export class OnboardingPage implements OnInit {
     setVehicleClass(value: DriverVehicleClass) {
         if (this.isReadOnly()) return;
         this.onboardingForm.get('vehicle_class')?.setValue(value, { emitEvent: true });
+    }
+
+    normalizePlate() {
+        const control = this.onboardingForm.get('license_plate');
+        const plate = String(control?.value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+        control?.setValue(plate, { emitEvent: true });
+    }
+
+    async lookupVehicleByPlate() {
+        if (this.isReadOnly()) return;
+
+        this.normalizePlate();
+        const plate = String(this.onboardingForm.get('license_plate')?.value || '').trim();
+
+        if (!plate) {
+            await this.showToast('Enter the vehicle registration first.', 'warning');
+            return;
+        }
+
+        await this.showToast('Plate lookup is ready for provider connection. Please enter make, model, colour, and year manually for now.', 'warning');
     }
 
     handleDocumentClick(type: DocumentType) {
@@ -986,6 +1027,7 @@ export class OnboardingPage implements OnInit {
             await this.driverService.updateVehicle({
                 make: String(raw.make || '').trim(),
                 model: String(raw.model || '').trim(),
+                color: String(raw.color || '').trim(),
                 year: Number(raw.year),
                 license_plate: String(raw.license_plate || '').trim().toUpperCase(),
                 type: this.vehicleTypeFromClass(String(raw.vehicle_class || 'standard') as DriverVehicleClass),

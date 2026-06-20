@@ -327,7 +327,7 @@ export interface Earning {
     created_at: string;
 }
 
-export type AccountStatus = 'active' | 'suspended' | 'banned' | 'disabled';
+export type AccountStatus = 'active' | 'suspended' | 'banned' | 'disabled' | 'closure_requested';
 
 export type VerificationStatus =
     | 'draft'
@@ -357,6 +357,8 @@ export interface Profile {
     is_available?: boolean;
     last_active_at?: string;
     account_status: AccountStatus;
+    account_closure_requested_at?: string | null;
+    account_closure_reason?: string | null;
     moderation_reason?: string;
     moderated_at?: string;
     moderated_by?: string;

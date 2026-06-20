@@ -34,7 +34,8 @@ import {
     personAddOutline,
     listOutline,
     navigate,
-    chevronDownOutline
+    chevronDownOutline,
+    settingsOutline
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -126,6 +127,14 @@ type PassedJob = {
             class="w-11 h-11 rounded-2xl bg-white text-slate-700 flex items-center justify-center border border-slate-200 shadow-sm ml-2 active:scale-95 transition-all"
           >
             <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
+          </button>
+
+          <button
+            type="button"
+            (click)="router.navigate(['/driver/settings'])"
+            class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shadow-sm ml-2 active:scale-95 transition-all"
+          >
+            <ion-icon name="settings-outline" class="text-xl"></ion-icon>
           </button>
 
           <button
@@ -877,7 +886,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             personAddOutline,
             listOutline,
             navigate,
-            chevronDownOutline
+            chevronDownOutline,
+            settingsOutline
         });
     }
 
