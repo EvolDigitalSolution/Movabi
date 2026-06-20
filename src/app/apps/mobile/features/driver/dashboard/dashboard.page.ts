@@ -470,6 +470,18 @@ type PassedJob = {
                     </div>
 
                     <div class="space-y-4 mb-5">
+                      <div class="rounded-2xl bg-amber-50 border border-amber-100 p-4">
+                        <div class="flex items-start gap-3">
+                          <div class="w-10 h-10 rounded-xl bg-white border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                            <ion-icon [name]="requestServiceIcon(job)" class="text-xl"></ion-icon>
+                          </div>
+                          <div class="min-w-0">
+                            <p class="text-sm font-black text-slate-950">{{ requestServiceHeadline(job) }}</p>
+                            <p class="text-xs font-semibold text-slate-600 leading-relaxed mt-1">{{ requestServiceHelper(job) }}</p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4 space-y-4">
                         <div>
                           <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ requestOriginLabel(job) }}</p>
@@ -513,9 +525,9 @@ type PassedJob = {
 
                       <div class="grid grid-cols-2 gap-2">
                         <div class="rounded-2xl bg-white border border-slate-100 p-3">
-                          <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Search Window</p>
+                          <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">{{ requestThirdMetricLabel(job) }}</p>
                           <p class="text-xs font-bold text-slate-900 mt-1">
-                            {{ formatSearchTimeLeft(job) }}
+                            {{ requestThirdMetricValue(job) }}
                           </p>
                         </div>
 
@@ -1145,6 +1157,86 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             .replace(/_/g, ' ')
             .replace(/-/g, ' ')
             .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    requestServiceIcon(job: Booking): string {
+        switch ((job as any)?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'storefront-outline';
+            case ServiceTypeEnum.DELIVERY:
+                return 'cube-outline';
+            case ServiceTypeEnum.VAN:
+                return 'home-outline';
+            default:
+                return 'car-sport-outline';
+        }
+    }
+
+    requestServiceHeadline(job: Booking): string {
+        const customer = this.requestCustomerFirstName(job);
+
+        switch ((job as any)?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return `Shop and deliver for ${customer}`;
+            case ServiceTypeEnum.DELIVERY:
+                return `Collect and deliver a package`;
+            case ServiceTypeEnum.VAN:
+                return `Help with a move`;
+            default:
+                return `Pickup ride for ${customer}`;
+        }
+    }
+
+    requestServiceHelper(job: Booking): string {
+        const vehicle = this.vehicleCompatibility.getRequiredLabel(job);
+
+        switch ((job as any)?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return `Includes item budget handling, receipt upload, and delivery. Vehicle needed: ${vehicle}.`;
+            case ServiceTypeEnum.DELIVERY:
+                return `Confirm collection before travelling to the recipient. Vehicle needed: ${vehicle}.`;
+            case ServiceTypeEnum.VAN:
+                return `Accept only if your vehicle can handle the load and you can complete the move. Vehicle needed: ${vehicle}.`;
+            default:
+                return `Accept when you can reach pickup and complete the trip. Vehicle needed: ${vehicle}.`;
+        }
+    }
+
+    requestThirdMetricLabel(job: Booking): string {
+        switch ((job as any)?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Item Budget';
+            case ServiceTypeEnum.VAN:
+                return 'Vehicle';
+            default:
+                return 'Search Window';
+        }
+    }
+
+    requestThirdMetricValue(job: Booking): string {
+        if ((job as any)?.service_slug === ServiceTypeEnum.ERRAND) {
+            const budget = this.firstPositiveNumber(
+                (job as any)?.metadata?.errand_details?.budget,
+                (job as any)?.metadata?.errand_details?.estimated_budget,
+                (job as any)?.metadata?.payment_split?.item_budget,
+                (job as any)?.item_budget
+            );
+
+            return budget !== null ? this.formatPrice(budget) : 'Protected';
+        }
+
+        if ((job as any)?.service_slug === ServiceTypeEnum.VAN) {
+            return this.vehicleCompatibility.getRequiredLabel(job);
+        }
+
+        return this.formatSearchTimeLeft(job);
+    }
+
+    private requestCustomerFirstName(job: Booking): string {
+        const customer = (job as any)?.customer || {};
+        const first = String(customer.first_name || customer.full_name || '').trim().split(/\s+/)[0];
+
+        return first || 'customer';
     }
 
     requestOriginLabel(job: Booking): string {

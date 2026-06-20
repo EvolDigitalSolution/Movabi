@@ -242,6 +242,31 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                 </div>
               }
 
+              <div class="p-4 bg-amber-50 rounded-2xl border border-amber-100 mb-4">
+                <div class="flex items-start gap-3">
+                  <div class="w-9 h-9 rounded-xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+                    <ion-icon [name]="serviceIcon()"></ion-icon>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">{{ serviceWorkEyebrow() }}</p>
+                    <h4 class="mt-1 text-base font-display font-black text-slate-950">{{ serviceWorkTitle() }}</h4>
+                    <p class="mt-2 text-xs font-semibold text-slate-600 leading-relaxed">{{ serviceWorkMessage() }}</p>
+                  </div>
+                </div>
+
+                <div class="mt-4 grid gap-2">
+                  @for (step of driverServiceSteps(); track step.title) {
+                    <div class="flex items-center gap-2 rounded-xl bg-white/80 border border-amber-100 p-2">
+                      <ion-icon [name]="step.icon" class="text-amber-600 shrink-0"></ion-icon>
+                      <div class="min-w-0">
+                        <p class="text-xs font-black text-slate-950 truncate">{{ step.title }}</p>
+                        <p class="text-[11px] font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+
               @if (job()?.service_slug === ServiceTypeEnum.RIDE) {
                 <div class="space-y-3">
                   <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
@@ -1929,6 +1954,74 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         if (slug === ServiceTypeEnum.VAN) return 'home-outline';
 
         return 'wallet-outline';
+    }
+
+    serviceWorkEyebrow(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Errand workflow';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Courier workflow';
+            case ServiceTypeEnum.VAN:
+                return 'Move workflow';
+            default:
+                return 'Ride workflow';
+        }
+    }
+
+    serviceWorkTitle(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return `Shop for ${this.customerName()}`;
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collect and deliver the package';
+            case ServiceTypeEnum.VAN:
+                return 'Move items safely';
+            default:
+                return `Pick up ${this.customerName()}`;
+        }
+    }
+
+    serviceWorkMessage(): string {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Use the approved budget, keep the receipt, record the spend, and request extra budget before paying more than approved.';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Confirm the package at collection, keep the customer updated, then complete only after delivery.';
+            case ServiceTypeEnum.VAN:
+                return 'Confirm pickup, handle loading carefully, and complete when the customer move is fully done.';
+            default:
+                return 'Confirm pickup, start the ride only when ready, and complete at the destination.';
+        }
+    }
+
+    driverServiceSteps(): Array<{ title: string; description: string; icon: string }> {
+        switch (this.job()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return [
+                    { title: 'Go to store', description: 'Use navigation and mark arrived before shopping.', icon: 'navigate-outline' },
+                    { title: 'Buy items', description: 'Use Movabi Pay or upload a receipt if card setup is not ready.', icon: 'card-outline' },
+                    { title: 'Deliver and complete', description: 'Deliver to the customer, then complete the request.', icon: 'checkmark-circle-outline' }
+                ];
+            case ServiceTypeEnum.DELIVERY:
+                return [
+                    { title: 'Collect package', description: 'Confirm the right item and recipient details.', icon: 'cube-outline' },
+                    { title: 'Travel to recipient', description: 'Keep the route and live location active.', icon: 'navigate-outline' },
+                    { title: 'Confirm delivery', description: 'Complete after the package is handed over.', icon: 'checkmark-circle-outline' }
+                ];
+            case ServiceTypeEnum.VAN:
+                return [
+                    { title: 'Arrive and load', description: 'Confirm the pickup and load items safely.', icon: 'archive-outline' },
+                    { title: 'Move to destination', description: 'Follow the route and keep the customer updated.', icon: 'navigate-outline' },
+                    { title: 'Unload and finish', description: 'Complete only when the move is finished.', icon: 'checkmark-circle-outline' }
+                ];
+            default:
+                return [
+                    { title: 'Go to pickup', description: 'Navigate to the customer and mark arrived.', icon: 'navigate-outline' },
+                    { title: 'Start ride', description: 'Begin only when the customer is ready.', icon: 'car-sport-outline' },
+                    { title: 'Drop off', description: 'Complete after safe arrival at destination.', icon: 'flag-outline' }
+                ];
+        }
     }
 
     formatStatus(status?: string | null): string {

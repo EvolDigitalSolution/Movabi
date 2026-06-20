@@ -210,6 +210,56 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               }
             </div>
 
+            <div class="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+              <div class="flex items-start gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+                  <ion-icon [name]="serviceGuideIcon()" class="text-xl"></ion-icon>
+                </div>
+
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">
+                    {{ serviceGuideEyebrow() }}
+                  </p>
+                  <h3 class="mt-1 text-lg font-display font-black text-slate-950">
+                    {{ serviceGuideTitle() }}
+                  </h3>
+                  <p class="mt-2 text-sm font-semibold text-slate-600 leading-relaxed">
+                    {{ serviceGuideMessage() }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="grid gap-2">
+                @for (step of serviceProgressSteps(); track step.title) {
+                  <div
+                    class="flex items-center gap-3 rounded-2xl border p-3"
+                    [class.bg-emerald-50]="step.state === 'done'"
+                    [class.border-emerald-100]="step.state === 'done'"
+                    [class.bg-amber-50]="step.state === 'active'"
+                    [class.border-amber-100]="step.state === 'active'"
+                    [class.bg-slate-50]="step.state === 'pending'"
+                    [class.border-slate-100]="step.state === 'pending'"
+                  >
+                    <div
+                      class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                      [class.bg-emerald-100]="step.state === 'done'"
+                      [class.text-emerald-700]="step.state === 'done'"
+                      [class.bg-amber-100]="step.state === 'active'"
+                      [class.text-amber-700]="step.state === 'active'"
+                      [class.bg-white]="step.state === 'pending'"
+                      [class.text-slate-400]="step.state === 'pending'"
+                    >
+                      <ion-icon [name]="step.icon"></ion-icon>
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-sm font-black text-slate-950 truncate">{{ step.title }}</p>
+                      <p class="text-xs font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+
             @if (showPaymentProtectionPanel()) {
               <div class="p-5 rounded-[2rem] border border-amber-100 bg-amber-50 space-y-4">
                 <div class="flex items-start gap-3">
@@ -800,6 +850,150 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             default:
                 return 'Live journey details';
         }
+    }
+
+    serviceGuideIcon(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'storefront-outline';
+            case ServiceTypeEnum.DELIVERY:
+                return 'cube-outline';
+            case ServiceTypeEnum.VAN:
+                return 'home-outline';
+            default:
+                return 'car-sport-outline';
+        }
+    }
+
+    serviceGuideEyebrow(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Errand journey';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Package journey';
+            case ServiceTypeEnum.VAN:
+                return 'Move journey';
+            default:
+                return 'Ride journey';
+        }
+    }
+
+    serviceGuideTitle(): string {
+        switch (this.booking()?.service_slug) {
+            case ServiceTypeEnum.ERRAND:
+                return 'Your shopper is managed step by step';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Collection and delivery are tracked separately';
+            case ServiceTypeEnum.VAN:
+                return 'Your move is guided from loading to drop-off';
+            default:
+                return 'Your driver is matched and tracked';
+        }
+    }
+
+    serviceGuideMessage(): string {
+        const status = String(this.booking()?.status || '');
+
+        if (status === 'no_driver_found') {
+            return 'No driver accepted in this search window. Any reserved payment is protected and released according to the payment method shown below.';
+        }
+
+        if (status === 'cancelled' || status === 'canceled') {
+            return 'This booking is cancelled. Movabi keeps the payment record visible so you can see where any reserved funds return.';
+        }
+
+        if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
+            return 'Movabi separates the service fee from the item budget. The driver records spending and uploads a receipt before the errand is completed.';
+        }
+
+        if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
+            return 'You can follow collection, courier movement, and recipient delivery without reading it like a normal ride.';
+        }
+
+        if (this.booking()?.service_slug === ServiceTypeEnum.VAN) {
+            return 'The driver follows a move flow: arrive, load, travel, unload, and complete when the move is finished.';
+        }
+
+        return 'You can see when the driver is assigned, travelling to pickup, and when the journey is in progress.';
+    }
+
+    serviceProgressSteps(): Array<{ title: string; description: string; icon: string; state: 'done' | 'active' | 'pending' }> {
+        const service = this.booking()?.service_slug;
+        const status = String(this.booking()?.status || '');
+        const done = (statuses: string[]) => statuses.includes(status) ? 'active' : this.hasReachedStatus(statuses[statuses.length - 1]) ? 'done' : 'pending';
+
+        if (service === ServiceTypeEnum.ERRAND) {
+            return [
+                {
+                    title: 'Match errand driver',
+                    description: 'A nearby eligible driver accepts the shop and delivery.',
+                    icon: 'search-outline',
+                    state: done(['searching', 'accepted', 'assigned'])
+                },
+                {
+                    title: 'Shop items',
+                    description: 'Driver uses the approved item budget and records spending.',
+                    icon: 'basket-outline',
+                    state: done(['heading_to_pickup', 'arrived', 'arrived_at_store', 'shopping_in_progress'])
+                },
+                {
+                    title: 'Deliver to you',
+                    description: 'Receipt and live delivery updates are shown here.',
+                    icon: 'navigate-outline',
+                    state: done(['collected', 'en_route_to_customer', 'delivered'])
+                },
+                {
+                    title: 'Settle safely',
+                    description: 'Unused item budget returns to the wallet or original payment route.',
+                    icon: 'shield-checkmark-outline',
+                    state: this.isTerminalTrackingStatus(status) ? 'active' : 'pending'
+                }
+            ];
+        }
+
+        if (service === ServiceTypeEnum.DELIVERY) {
+            return [
+                { title: 'Assign courier', description: 'A compatible driver accepts the package request.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+                { title: 'Collect package', description: 'The courier confirms collection before travelling.', icon: 'cube-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
+                { title: 'Deliver package', description: 'Recipient delivery is tracked to completion.', icon: 'location-outline', state: done(['en_route_to_customer', 'delivered', 'completed']) }
+            ];
+        }
+
+        if (service === ServiceTypeEnum.VAN) {
+            return [
+                { title: 'Assign vehicle', description: 'A driver with the correct vehicle class accepts the move.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+                { title: 'Load at pickup', description: 'Driver arrives and starts the move once ready.', icon: 'archive-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
+                { title: 'Unload and finish', description: 'The move completes only after work is confirmed.', icon: 'checkmark-circle-outline', state: done(['delivered', 'completed', 'settled']) }
+            ];
+        }
+
+        return [
+            { title: 'Match driver', description: 'A nearby driver accepts your ride.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+            { title: 'Pickup', description: 'Track the driver as they come to you.', icon: 'car-sport-outline', state: done(['heading_to_pickup', 'arrived']) },
+            { title: 'Ride and complete', description: 'Follow the trip until drop-off is confirmed.', icon: 'flag-outline', state: done(['in_progress', 'completed', 'settled']) }
+        ];
+    }
+
+    private hasReachedStatus(target: string): boolean {
+        const order = [
+            'searching',
+            'accepted',
+            'assigned',
+            'heading_to_pickup',
+            'arrived',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'in_progress',
+            'delivered',
+            'completed',
+            'settled'
+        ];
+        const currentIndex = order.indexOf(String(this.booking()?.status || ''));
+        const targetIndex = order.indexOf(target);
+
+        return currentIndex >= 0 && targetIndex >= 0 && currentIndex > targetIndex;
     }
 
     originLabel(): string {
@@ -1485,13 +1679,31 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             return '';
         }
 
+        const status = String(this.booking()?.status || '');
         const eta = this.driverEtaToPickup();
 
         if (eta !== null) {
+            if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
+                if (['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping now';
+                if (['collected', 'en_route_to_customer'].includes(status)) return `${this.formatDuration(eta)} to delivery`;
+                return `${this.formatDuration(eta)} to store`;
+            }
+
+            if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
+                return `${this.formatDuration(eta)} to ${this.activeTrackingTargetLabel()}`;
+            }
+
+            if (this.booking()?.service_slug === ServiceTypeEnum.VAN) {
+                return `${this.formatDuration(eta)} to move point`;
+            }
+
             return `${this.formatDuration(eta)} away`;
         }
 
         if (this.driverLastSeenAt()) {
+            if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) return 'Errand driver updating';
+            if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) return 'Courier location updating';
+            if (this.booking()?.service_slug === ServiceTypeEnum.VAN) return 'Move driver updating';
             return 'Driver location updating';
         }
 
@@ -1508,6 +1720,14 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (distance !== null) {
             return `${this.formatDistanceMeters(distance)} to ${target}`;
+        }
+
+        if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
+            return `Waiting for the errand location update to ${target}.`;
+        }
+
+        if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
+            return `Waiting for the courier location update to ${target}.`;
         }
 
         return `Waiting for the driver GPS update to ${target}.`;

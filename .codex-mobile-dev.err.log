@@ -307,3 +307,101 @@ websocket connection issues.
           ╵       [32m~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceGuideIcon' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:216:36:
+[37m      216 │ ...     <ion-icon [name]="[32mserviceGuideIcon[37m()" class="text-xl"></i...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceGuideEyebrow' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:221:23:
+[37m      221 │                     {{ [32mserviceGuideEyebrow[37m() }}
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceGuideTitle' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:224:23:
+[37m      224 │                     {{ [32mserviceGuideTitle[37m() }}
+          ╵                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceGuideMessage' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:227:23:
+[37m      227 │                     {{ [32mserviceGuideMessage[37m() }}
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceProgressSteps' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:233:30:
+[37m      233 │ ...        @for (step of [32mserviceProgressSteps[37m(); track step.title) {
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceWorkEyebrow' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:251:98:
+[37m      251 │ ...se tracking-widest text-amber-700">{{ [32mserviceWorkEyebrow[37m() }}</p>
+          ╵                                          [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceWorkTitle' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:252:89:
+[37m      252 │ ...-display font-black text-slate-950">{{ [32mserviceWorkTitle[37m() }}</h4>
+          ╵                                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'serviceWorkMessage' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:253:92:
+[37m      253 │ ...ld text-slate-600 leading-relaxed">{{ [32mserviceWorkMessage[37m() }}</p>
+          ╵                                          [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverServiceSteps' does not exist on type 'JobDetailsPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/job-details/job-details.page.ts:258:32:
+[37m      258 │ ...          @for (step of [32mdriverServiceSteps[37m(); track step.title) {
+          ╵                            [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestServiceIcon' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:476:46:
+[37m      476 │ ...    <ion-icon [name]="[32mrequestServiceIcon[37m(job)" class="text-xl"...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestServiceHeadline' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:479:76:
+[37m      479 │ ... font-black text-slate-950">{{ [32mrequestServiceHeadline[37m(job) }}</p>
+          ╵                                   [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestServiceHelper' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:480:100:
+[37m      480 │ ...ate-600 leading-relaxed mt-1">{{ [32mrequestServiceHelper[37m(job) }}</p>
+          ╵                                     [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestThirdMetricLabel' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:528:103:
+[37m      528 │ ...uppercase tracking-widest">{{ [32mrequestThirdMetricLabel[37m(job) }}</p>
+          ╵                                  [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requestThirdMetricValue' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:530:31:
+[37m      530 │                             {{ [32mrequestThirdMetricValue[37m(job) }}
+          ╵                                [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
