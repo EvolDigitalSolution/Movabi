@@ -95,6 +95,15 @@ export class AuthService {
     }
 
     private getRedirectUrl(path: string): string {
+        const isBrowser = typeof window !== 'undefined';
+        const currentOrigin = isBrowser ? window.location.origin : '';
+        const isLocalApp = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(currentOrigin);
+
+        if (isLocalApp) {
+            const cleanPath = path.startsWith('/') ? path : `/${path}`;
+            return `${currentOrigin}${cleanPath}`;
+        }
+
         if (path === '/auth/callback' && environment.authCallbackUrl) {
             return environment.authCallbackUrl;
         }
@@ -104,7 +113,7 @@ export class AuthService {
         }
 
         try {
-            const origin = window.location.origin || environment.appUrl || 'http://localhost:3000';
+            const origin = currentOrigin || environment.appUrl || 'http://localhost:3000';
             const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
             const cleanPath = path.startsWith('/') ? path : `/${path}`;
             const finalUrl = `${cleanOrigin}${cleanPath}`;
