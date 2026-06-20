@@ -8,6 +8,19 @@ export const MOBILE_ROUTES: Routes = [
         loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)
     },
     {
+        path: 'privacy',
+        loadComponent: () => import('@mobile/features/legal/privacy.page').then((m) => m.PrivacyPage)
+    },
+    {
+        path: 'help',
+        loadComponent: () => import('@mobile/features/help/help.page').then((m) => m.HelpPage)
+    },
+    {
+        path: 'how-to-use',
+        redirectTo: 'help',
+        pathMatch: 'full'
+    },
+    {
         path: 'dashboard',
         redirectTo: 'admin/dashboard',
         pathMatch: 'full'

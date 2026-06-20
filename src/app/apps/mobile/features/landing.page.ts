@@ -1,1225 +1,915 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router } from '@angular/router';
-import { AuthService } from '@core/services/auth/auth.service';
-import {
-    IonContent,
-    IonIcon,
-    IonButton
-} from '@ionic/angular/standalone';
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
+import { IonButton, IonContent, IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
-    car,
-    carOutline,
-    basketOutline,
-    cubeOutline,
-    checkmarkCircle,
-    shieldCheckmark,
-    trendingUp,
-    arrowForwardOutline,
-    flashOutline,
-    locationOutline,
-    logoApple,
-    logoGooglePlaystore,
-    menuOutline,
-    closeOutline
+  arrowForwardOutline,
+  basketOutline,
+  car,
+  carOutline,
+  cardOutline,
+  chatbubbleEllipsesOutline,
+  checkmarkCircleOutline,
+  chevronForwardOutline,
+  cubeOutline,
+  helpCircleOutline,
+  locationOutline,
+  lockClosedOutline,
+  menuOutline,
+  closeOutline,
+  shieldCheckmarkOutline,
+  storefrontOutline,
+  walletOutline
 } from 'ionicons/icons';
+import { AuthService } from '@core/services/auth/auth.service';
 
 @Component({
-    selector: 'app-landing',
-    standalone: true,
-    imports: [
-        CommonModule,
-        RouterModule,
-        IonContent,
-        IonIcon,
-        IonButton
-    ],
-    template: `
+  selector: 'app-landing',
+  standalone: true,
+  imports: [CommonModule, RouterModule, IonContent, IonIcon, IonButton],
+  template: `
     <ion-content class="landing-content">
-      <div class="landing-shell">
+      <main class="landing-shell">
         <header class="top-nav">
-          <a routerLink="/" class="brand-row compact" aria-label="Movabi home">
-            <div class="brand-mark">
+          <a routerLink="/" class="brand-row" aria-label="Movabi home">
+            <span class="brand-mark">
               <ion-icon name="car"></ion-icon>
-            </div>
-            <div>
-              <div class="brand-name">Movabi</div>
-              <div class="brand-tag">Move Smarter</div>
-            </div>
+            </span>
+            <span>
+              <strong>Movabi</strong>
+              <small>Transport, errands and delivery</small>
+            </span>
           </a>
 
-          <nav class="desktop-nav">
+          <nav class="desktop-nav" aria-label="Main navigation">
             <a href="#services">Services</a>
             <a href="#customers">Customers</a>
             <a href="#drivers">Drivers</a>
+            <a routerLink="/help">How it works</a>
             <a routerLink="/auth/login">Sign in</a>
           </nav>
 
-          <button type="button" class="mobile-menu-btn" (click)="menuOpen.set(!menuOpen())" aria-label="Toggle menu">
+          <button type="button" class="icon-nav-btn" (click)="menuOpen.set(!menuOpen())" aria-label="Open menu">
             <ion-icon [name]="menuOpen() ? 'close-outline' : 'menu-outline'"></ion-icon>
           </button>
         </header>
 
         @if (menuOpen()) {
-          <div class="mobile-menu">
+          <nav class="mobile-menu" aria-label="Mobile navigation">
             <a href="#services" (click)="menuOpen.set(false)">Services</a>
             <a href="#customers" (click)="menuOpen.set(false)">Customers</a>
             <a href="#drivers" (click)="menuOpen.set(false)">Drivers</a>
+            <a routerLink="/help" (click)="menuOpen.set(false)">How it works</a>
+            <a routerLink="/privacy" (click)="menuOpen.set(false)">Privacy</a>
             <a routerLink="/auth/login" (click)="menuOpen.set(false)">Sign in</a>
-          </div>
+          </nav>
         }
 
-        <section class="hero-section">
-          <div class="hero-media">
-            <div class="hero-image-frame">
-              <img
-                src="assets/images/movabi-hero.png"
-                alt="Movabi transport, delivery, errand and moving services"
-                class="hero-image"
-                loading="eager"
-                decoding="async"
-              />
-            </div>
-            <div class="hero-overlay"></div>
-            <div class="hero-glow hero-glow-left"></div>
-            <div class="hero-glow hero-glow-right"></div>
-          </div>
-
-          <div class="hero-inner">
-            <div class="hero-pill">
-              <span class="hero-pill-dot"></span>
-              <span>Rides • Errands • Delivery • Van Moving</span>
-            </div>
-
-            <h1 class="hero-title">
-              Local movement,
-              <span class="hero-title-accent">made simple.</span>
-            </h1>
-
-            <p class="hero-copy">
-              Book trusted rides, run errands, send deliveries, or earn as a driver —
-              all from one modern platform built for communities and everyday movement.
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">One app for local movement</p>
+            <h1>Book a ride, send a package, run an errand, or move items.</h1>
+            <p class="hero-text">
+              Movabi helps customers get things done quickly and helps drivers earn from real local requests.
+              Prices are shown before booking, payments are protected, and progress is easy to follow.
             </p>
-
-            <div class="hero-stats">
-              <div class="hero-stat">
-                <ion-icon name="shield-checkmark" class="text-emerald-400"></ion-icon>
-                <div>
-                  <strong>Manual Approval</strong>
-                  <span>Drivers reviewed before going live</span>
-                </div>
-              </div>
-
-              <div class="hero-stat">
-                <ion-icon name="flash-outline" class="text-amber-400"></ion-icon>
-                <div>
-                  <strong>Fast Booking</strong>
-                  <span>Simple request flow</span>
-                </div>
-              </div>
-
-              <div class="hero-stat">
-                <ion-icon name="location-outline" class="text-blue-400"></ion-icon>
-                <div>
-                  <strong>Live Updates</strong>
-                  <span>Track every step</span>
-                </div>
-              </div>
-            </div>
 
             <div class="hero-actions">
-              <ion-button expand="block" class="hero-primary-btn" routerLink="/auth/signup">
-                Book a Service
+              <ion-button routerLink="/auth/signup" class="primary-action">
+                Get started
                 <ion-icon name="arrow-forward-outline" slot="end"></ion-icon>
               </ion-button>
-
-              <ion-button expand="block" fill="outline" class="hero-secondary-btn" routerLink="/auth/signup">
-                Drive with Movabi
+              <ion-button routerLink="/auth/login" fill="outline" class="secondary-action">
+                Sign in
               </ion-button>
             </div>
 
-            <div class="store-actions">
-              <a [href]="appStoreUrl" target="_blank" rel="noopener noreferrer" class="store-badge" [class.disabled]="!isRealStoreUrl(appStoreUrl)">
-                <ion-icon name="logo-apple"></ion-icon>
-                <span>
-                  <small>{{ isRealStoreUrl(appStoreUrl) ? 'Download on the' : 'Coming soon on' }}</small>
-                  <strong>App Store</strong>
+            <div class="hero-links" aria-label="Quick links">
+              <a routerLink="/help">
+                <ion-icon name="help-circle-outline"></ion-icon>
+                How to use Movabi
+              </a>
+              <a routerLink="/privacy">
+                <ion-icon name="shield-checkmark-outline"></ion-icon>
+                Privacy and data
+              </a>
+            </div>
+          </div>
+
+          <div class="hero-panel" aria-label="Movabi service summary">
+            <div class="phone-card">
+              <div class="phone-header">
+                <span>Movabi</span>
+                <strong>Live</strong>
+              </div>
+              <div class="map-preview">
+                <span class="pin pickup">Pickup</span>
+                <span class="pin dropoff">Dropoff</span>
+                <span class="route-line"></span>
+              </div>
+              <div class="booking-preview">
+                <div>
+                  <small>Next request</small>
+                  <strong>Ride to city centre</strong>
+                </div>
+                <span>£8.40</span>
+              </div>
+              <div class="preview-grid">
+                <span><ion-icon name="location-outline"></ion-icon> Track</span>
+                <span><ion-icon name="wallet-outline"></ion-icon> Wallet</span>
+                <span><ion-icon name="chatbubble-ellipses-outline"></ion-icon> Chat</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="quick-services" id="services">
+          <div class="section-heading">
+            <p class="eyebrow">Choose what you need</p>
+            <h2>Simple services, clear actions.</h2>
+          </div>
+
+          <div class="service-grid">
+            @for (service of services; track service.title) {
+              <a routerLink="/auth/signup" class="service-card">
+                <span class="service-icon" [ngClass]="service.tone">
+                  <ion-icon [name]="service.icon"></ion-icon>
                 </span>
+                <strong>{{ service.title }}</strong>
+                <p>{{ service.copy }}</p>
+                <span class="card-link">Start <ion-icon name="chevron-forward-outline"></ion-icon></span>
               </a>
-
-              <a [href]="googlePlayUrl" target="_blank" rel="noopener noreferrer" class="store-badge" [class.disabled]="!isRealStoreUrl(googlePlayUrl)">
-                <ion-icon name="logo-google-playstore"></ion-icon>
-                <span>
-                  <small>{{ isRealStoreUrl(googlePlayUrl) ? 'Get it on' : 'Coming soon on' }}</small>
-                  <strong>Google Play</strong>
-                </span>
-              </a>
-            </div>
-
-            <p class="hero-login">
-              Already have an account?
-              <a routerLink="/auth/login">Sign in</a>
-            </p>
+            }
           </div>
         </section>
 
-        <section class="service-stack-section" id="services">
-          <div class="service-stack">
-            <a routerLink="/auth/signup" class="service-float-card">
-              <div class="service-icon blue">
-                <ion-icon name="car-outline"></ion-icon>
-              </div>
-              <div class="service-float-text">
-                <h3>Book a Ride</h3>
-                <p>Upfront pricing for everyday trips.</p>
-              </div>
-            </a>
+        <section class="how-section">
+          <div class="section-heading">
+            <p class="eyebrow">How Movabi works</p>
+            <h2>Built so non-technical users can book or earn without guessing.</h2>
+          </div>
 
-            <a routerLink="/auth/signup" class="service-float-card">
-              <div class="service-icon emerald">
-                <ion-icon name="basket-outline"></ion-icon>
-              </div>
-              <div class="service-float-text">
-                <h3>Run an Errand</h3>
-                <p>Shopping, pickups, pharmacy, and local tasks.</p>
-              </div>
-            </a>
-
-            <a routerLink="/auth/signup" class="service-float-card">
-              <div class="service-icon amber">
-                <ion-icon name="cube-outline"></ion-icon>
-              </div>
-              <div class="service-float-text">
-                <h3>Send a Delivery</h3>
-                <p>Move packages and documents securely.</p>
-              </div>
-            </a>
+          <div class="steps-grid">
+            @for (step of customerSteps; track step.title; let index = $index) {
+              <article class="step-card">
+                <span class="step-number">{{ index + 1 }}</span>
+                <h3>{{ step.title }}</h3>
+                <p>{{ step.copy }}</p>
+              </article>
+            }
           </div>
         </section>
 
-        <section class="trust-strip-section">
-          <div class="trust-strip">
-            <div class="trust-item">
-              <div class="trust-value">Fixed</div>
-              <div class="trust-label">fair pricing</div>
-            </div>
-            <div class="trust-item">
-              <div class="trust-value">Fast</div>
-              <div class="trust-label">local response</div>
-            </div>
-            <div class="trust-item">
-              <div class="trust-value">Starter</div>
-              <div class="trust-label">driver default</div>
-            </div>
-            <div class="trust-item">
-              <div class="trust-value">One App</div>
-              <div class="trust-label">many services</div>
-            </div>
+        <section class="split-section" id="customers">
+          <div class="split-card customer-card">
+            <p class="eyebrow">For customers</p>
+            <h2>Know the price, follow the job, and understand your money.</h2>
+            <ul>
+              <li><ion-icon name="checkmark-circle-outline"></ion-icon> Upfront estimates before you confirm.</li>
+              <li><ion-icon name="checkmark-circle-outline"></ion-icon> Wallet or card payment protection with clear refund status.</li>
+              <li><ion-icon name="checkmark-circle-outline"></ion-icon> Live tracking, driver details, chat, and service-specific updates.</li>
+            </ul>
+            <ion-button routerLink="/auth/signup" class="primary-action">Book as customer</ion-button>
+          </div>
+
+          <div class="split-card driver-card" id="drivers">
+            <p class="eyebrow">For drivers</p>
+            <h2>Accept local jobs and get paid through a guided driver flow.</h2>
+            <ul>
+              <li><ion-icon name="checkmark-circle-outline"></ion-icon> Vehicle and service setup during registration.</li>
+              <li><ion-icon name="checkmark-circle-outline"></ion-icon> Online, free, accept, pass, navigate, chat, and complete controls.</li>
+              <li><ion-icon name="checkmark-circle-outline"></ion-icon> Stripe Connect payouts and Movabi Pay for approved errand budgets.</li>
+            </ul>
+            <ion-button routerLink="/auth/signup" class="dark-action">Drive with Movabi</ion-button>
           </div>
         </section>
 
-        <section class="section-light">
-          <div class="section-wrap">
-            <p class="section-kicker">Quick Services</p>
-            <h2 class="section-title">Everything you need to move through the day</h2>
-            <p class="section-subtitle">
-              Whether you need to get somewhere, send something, move items, or have something done,
-              Movabi gives you one place to start.
-            </p>
-
-            <div class="service-grid">
-              <a routerLink="/auth/signup" class="service-card">
-                <div class="service-card-icon blue">
-                  <ion-icon name="car-outline"></ion-icon>
-                </div>
-                <h3>Ride</h3>
-                <p>Reliable local transport with upfront pricing.</p>
-              </a>
-
-              <a routerLink="/auth/signup" class="service-card">
-                <div class="service-card-icon emerald">
-                  <ion-icon name="basket-outline"></ion-icon>
-                </div>
-                <h3>Errand</h3>
-                <p>Let someone handle the task while you focus on your day.</p>
-              </a>
-
-              <a routerLink="/auth/signup" class="service-card">
-                <div class="service-card-icon amber">
-                  <ion-icon name="cube-outline"></ion-icon>
-                </div>
-                <h3>Delivery & Moving</h3>
-                <p>Track package delivery and van moving requests.</p>
-              </a>
-            </div>
-          </div>
-        </section>
-
-        <section class="section-white" id="customers">
-          <div class="section-wrap feature-layout">
-            <div class="feature-copy">
-              <p class="section-kicker blue">For Customers</p>
-              <h2 class="section-title">Straightforward service. Clear pricing. Peace of mind.</h2>
-              <p class="section-subtitle">
-                From short rides to moving a van-load, Movabi keeps bookings simple,
-                visible, and dependable from request to completion.
+        <section class="trust-section">
+          <div class="trust-card">
+            <span><ion-icon name="lock-closed-outline"></ion-icon></span>
+            <div>
+              <h2>Privacy and payments are explained in plain language.</h2>
+              <p>
+                Movabi uses personal, location, payment, and service data only where needed to run the app,
+                protect bookings, support drivers, meet legal duties, and improve safety.
               </p>
-
-              <div class="feature-list">
-                <div class="feature-row">
-                  <ion-icon name="checkmark-circle" class="text-emerald-500"></ion-icon>
-                  <span>Know your fare before you confirm</span>
-                </div>
-                <div class="feature-row">
-                  <ion-icon name="shield-checkmark" class="text-blue-500"></ion-icon>
-                  <span>Drivers are manually reviewed</span>
-                </div>
-                <div class="feature-row">
-                  <ion-icon name="location-outline" class="text-amber-500"></ion-icon>
-                  <span>Track progress with live updates</span>
-                </div>
-              </div>
-
-              <ion-button class="cta-btn" routerLink="/auth/signup">
-                Start Booking
-              </ion-button>
             </div>
-
-            <div class="feature-image-shell">
-              <img
-                src="assets/images/movabi-customer.png"
-                alt="Customer booking Movabi services"
-                class="feature-image"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-          </div>
-        </section>
-
-        <section class="section-dark" id="drivers">
-          <div class="section-wrap feature-layout reverse-on-mobile">
-            <div class="feature-image-shell dark">
-              <img
-                src="assets/images/movabi-driver.png"
-                alt="Movabi driver partner"
-                class="feature-image"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-
-            <div class="feature-copy dark-copy">
-              <p class="section-kicker amber">For Drivers</p>
-              <h2 class="section-title dark-title">Earn on your terms with a platform built for growth.</h2>
-              <p class="section-subtitle dark-subtitle">
-                Start on the free Starter plan by default. Upgrade to Pro only when it makes sense for your earnings.
-              </p>
-
-              <div class="driver-plans">
-                <div class="driver-plan starter">
-                  <div>
-                    <h3>Starter</h3>
-                    <p>Default plan, pay as you earn</p>
-                  </div>
-                  <span>15% commission</span>
-                </div>
-
-                <div class="driver-plan pro">
-                  <div>
-                    <h3>Pro</h3>
-                    <p>Optional upgrade for frequent drivers</p>
-                  </div>
-                  <span>0% commission</span>
-                </div>
-              </div>
-
-              <ion-button class="driver-btn" routerLink="/auth/signup">
-                Become a Driver
-                <ion-icon name="trending-up" slot="end"></ion-icon>
-              </ion-button>
-            </div>
+            <a routerLink="/privacy">Read privacy notice</a>
           </div>
         </section>
 
         <section class="final-cta">
-          <div class="section-wrap final-cta-inner">
-            <p class="section-kicker">Ready to move?</p>
-            <h2 class="section-title final-title">
-              Join Movabi and get moving with a platform built for real everyday needs.
-            </h2>
-            <p class="section-subtitle final-subtitle">
-              One account. Multiple services. Better movement for customers and drivers alike.
-            </p>
-
-            <div class="final-actions">
-              <ion-button class="cta-btn" routerLink="/auth/signup">
-                Create Free Account
-              </ion-button>
-              <ion-button fill="outline" class="signin-btn" routerLink="/auth/login">
-                Sign In
-              </ion-button>
-            </div>
-
-            <div class="store-actions final-store-actions">
-              <a [href]="appStoreUrl" target="_blank" rel="noopener noreferrer" class="store-badge light" [class.disabled]="!isRealStoreUrl(appStoreUrl)">
-                <ion-icon name="logo-apple"></ion-icon>
-                <span>
-                  <small>{{ isRealStoreUrl(appStoreUrl) ? 'Download on the' : 'Coming soon on' }}</small>
-                  <strong>App Store</strong>
-                </span>
-              </a>
-
-              <a [href]="googlePlayUrl" target="_blank" rel="noopener noreferrer" class="store-badge light" [class.disabled]="!isRealStoreUrl(googlePlayUrl)">
-                <ion-icon name="logo-google-playstore"></ion-icon>
-                <span>
-                  <small>{{ isRealStoreUrl(googlePlayUrl) ? 'Get it on' : 'Coming soon on' }}</small>
-                  <strong>Google Play</strong>
-                </span>
-              </a>
-            </div>
-
-            <p class="footer-note">© 2026 Movabi Logistics Platform</p>
+          <p class="eyebrow">Start today</p>
+          <h2>Join Movabi as a customer or driver.</h2>
+          <p>One account gives you access to the right tools for booking, earning, tracking, paying, and getting support.</p>
+          <div class="hero-actions centered">
+            <ion-button routerLink="/auth/signup" class="primary-action">Create account</ion-button>
+            <ion-button routerLink="/help" fill="outline" class="secondary-action light">Learn how it works</ion-button>
           </div>
+          <footer>
+            <a routerLink="/privacy">Privacy</a>
+            <a routerLink="/help">Help</a>
+            <a routerLink="/auth/login">Sign in</a>
+            <span>© 2026 Movabi</span>
+          </footer>
         </section>
-      </div>
+      </main>
     </ion-content>
   `,
-    styles: [`
+  styles: [`
     ion-content.landing-content {
-      --background: #020617;
+      --background: #f4f6f8;
+      color: #111827;
     }
 
     .landing-shell {
       min-height: 100vh;
-      background: #020617;
-      overflow-x: hidden;
+      background: #f4f6f8;
     }
 
     .top-nav {
-      position: fixed;
-      top: env(safe-area-inset-top);
-      left: 0;
-      right: 0;
-      z-index: 50;
+      position: sticky;
+      top: 0;
+      z-index: 30;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 16px;
       padding: 14px 18px;
-      background: rgba(2, 6, 23, 0.72);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(244, 246, 248, 0.92);
+      border-bottom: 1px solid #e5e7eb;
       backdrop-filter: blur(18px);
+    }
+
+    .brand-row,
+    .desktop-nav a,
+    .mobile-menu a,
+    .hero-links a,
+    .service-card,
+    .trust-card a,
+    footer a {
+      text-decoration: none;
     }
 
     .brand-row {
       display: flex;
       align-items: center;
       gap: 12px;
-      text-decoration: none;
-    }
-
-    .brand-row.compact {
-      margin: 0;
+      color: #111827;
     }
 
     .brand-mark {
-      width: 42px;
-      height: 42px;
+      width: 46px;
+      height: 46px;
       border-radius: 16px;
-      background: white;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: #2563eb;
+      background: #ff9800;
+      color: #111827;
       font-size: 1.45rem;
-      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
-      flex-shrink: 0;
+      box-shadow: 0 10px 24px rgba(255, 152, 0, 0.28);
     }
 
-    .brand-name {
-      color: white;
+    .brand-row strong {
+      display: block;
       font-size: 1.45rem;
       font-weight: 900;
-      letter-spacing: -0.03em;
       line-height: 1;
     }
 
-    .brand-tag {
-      color: #cbd5e1;
-      font-size: 0.58rem;
-      font-weight: 900;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
+    .brand-row small {
+      display: block;
+      color: #64748b;
+      font-weight: 800;
+      font-size: 0.68rem;
       margin-top: 4px;
     }
 
     .desktop-nav {
       display: none;
       align-items: center;
-      gap: 24px;
+      gap: 20px;
     }
 
-    .desktop-nav a,
-    .mobile-menu a {
-      color: #e2e8f0;
-      font-weight: 800;
-      text-decoration: none;
+    .desktop-nav a {
+      color: #334155;
+      font-weight: 900;
       font-size: 0.9rem;
     }
 
-    .desktop-nav a:hover {
-      color: white;
-    }
-
-    .mobile-menu-btn {
-      width: 42px;
-      height: 42px;
-      border: 1px solid rgba(255,255,255,0.12);
+    .icon-nav-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid #e2e8f0;
       border-radius: 16px;
-      background: rgba(255,255,255,0.08);
-      color: white;
-      display: flex;
+      background: white;
+      color: #111827;
+      font-size: 1.35rem;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.35rem;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
     }
 
     .mobile-menu {
       position: fixed;
-      top: calc(env(safe-area-inset-top) + 72px);
-      left: 14px;
-      right: 14px;
-      z-index: 49;
+      top: 76px;
+      left: 16px;
+      right: 16px;
+      z-index: 40;
       display: grid;
-      gap: 4px;
+      gap: 8px;
       padding: 12px;
-      border-radius: 24px;
-      background: rgba(15, 23, 42, 0.96);
-      border: 1px solid rgba(255,255,255,0.1);
-      box-shadow: 0 24px 48px rgba(0,0,0,0.25);
-      backdrop-filter: blur(18px);
+      border-radius: 22px;
+      background: white;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 22px 44px rgba(15, 23, 42, 0.16);
     }
 
     .mobile-menu a {
       padding: 14px 16px;
       border-radius: 16px;
-      background: rgba(255,255,255,0.04);
-    }
-
-    .hero-section {
-      position: relative;
-      min-height: 100vh;
-      overflow: hidden;
-      padding-top: 72px;
-    }
-
-    .hero-media {
-      position: absolute;
-      inset: 0;
-      background: #020617;
-    }
-
-    .hero-image-frame {
-      position: absolute;
-      inset: 0;
-      background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 28%),
-        radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 28%);
-    }
-
-    .hero-image {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      object-position: center right;
-      display: block;
-      padding: 78px 10px 0;
-    }
-
-    .hero-overlay {
-      position: absolute;
-      inset: 0;
-      background:
-        linear-gradient(to bottom, rgba(2, 6, 23, 0.22), rgba(2, 6, 23, 0.86)),
-        linear-gradient(to right, rgba(2, 6, 23, 0.9), rgba(2, 6, 23, 0.38));
-    }
-
-    .hero-glow {
-      position: absolute;
-      border-radius: 9999px;
-      filter: blur(72px);
-      pointer-events: none;
-    }
-
-    .hero-glow-left {
-      width: 240px;
-      height: 240px;
-      top: -60px;
-      left: -60px;
-      background: rgba(37, 99, 235, 0.22);
-    }
-
-    .hero-glow-right {
-      width: 280px;
-      height: 280px;
-      bottom: -40px;
-      right: -40px;
-      background: rgba(16, 185, 129, 0.14);
-    }
-
-    .hero-inner {
-      position: relative;
-      z-index: 2;
-      min-height: calc(100vh - 72px);
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 34px 18px 44px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-
-    .hero-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      width: fit-content;
-      padding: 10px 14px;
-      border-radius: 9999px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.06);
-      backdrop-filter: blur(14px);
-      color: #e2e8f0;
-      font-size: 0.68rem;
-      font-weight: 900;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      margin-bottom: 18px;
-    }
-
-    .hero-pill-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 9999px;
-      background: #34d399;
-      flex-shrink: 0;
-    }
-
-    .hero-title {
-      color: white;
-      font-size: clamp(2.8rem, 8vw, 5.4rem);
-      line-height: 0.95;
-      font-weight: 900;
-      letter-spacing: -0.04em;
-      margin: 0 0 16px;
-      text-shadow: 0 10px 30px rgba(0,0,0,0.45);
-      max-width: 760px;
-    }
-
-    .hero-title-accent {
-      color: #60a5fa;
-      display: block;
-    }
-
-    .hero-copy {
-      color: #cbd5e1;
-      font-size: 1rem;
-      line-height: 1.75;
-      font-weight: 600;
-      margin: 0 0 24px;
-      max-width: 640px;
-    }
-
-    .hero-stats {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-      margin-bottom: 24px;
-      max-width: 720px;
-    }
-
-    .hero-stat {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 14px 16px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.08);
-      backdrop-filter: blur(12px);
-    }
-
-    .hero-stat ion-icon {
-      font-size: 1.2rem;
-      margin-top: 2px;
-      flex-shrink: 0;
-    }
-
-    .hero-stat strong {
-      display: block;
-      color: white;
-      font-size: 0.94rem;
-      font-weight: 900;
-      margin-bottom: 2px;
-    }
-
-    .hero-stat span {
-      display: block;
-      color: #94a3b8;
-      font-size: 0.77rem;
-      line-height: 1.4;
-      font-weight: 700;
-    }
-
-    .hero-actions,
-    .final-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-bottom: 14px;
-      max-width: 520px;
-    }
-
-    .store-actions {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-      max-width: 520px;
-      margin: 10px 0 16px;
-    }
-
-    .store-badge {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-height: 58px;
-      padding: 12px 16px;
-      border-radius: 18px;
-      text-decoration: none;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.08);
-      color: white;
-      backdrop-filter: blur(14px);
-      transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-    }
-
-    .store-badge.disabled {
-      pointer-events: none;
-      opacity: 0.72;
-    }
-
-    .store-badge:hover {
-      transform: translateY(-2px);
-      border-color: rgba(255,255,255,0.22);
-      background: rgba(255,255,255,0.12);
-    }
-
-    .store-badge.light {
-      border: 1px solid #e2e8f0;
-      background: white;
-      color: #0f172a;
-      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
-    }
-
-    .store-badge ion-icon {
-      font-size: 1.5rem;
-      flex-shrink: 0;
-    }
-
-    .store-badge span {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.1;
-    }
-
-    .store-badge small {
-      font-size: 0.68rem;
-      font-weight: 800;
-      opacity: 0.8;
-    }
-
-    .store-badge strong {
-      font-size: 1rem;
-      font-weight: 900;
-    }
-
-    .hero-primary-btn,
-    .cta-btn {
-      --background: #2563eb;
-      --background-hover: #1d4ed8;
-      --border-radius: 18px;
-      height: 56px;
-      font-weight: 900;
-      box-shadow: 0 20px 40px rgba(37, 99, 235, 0.35);
-    }
-
-    .hero-secondary-btn {
-      --border-color: rgba(255,255,255,0.24);
-      --color: white;
-      --border-radius: 18px;
-      height: 56px;
-      font-weight: 900;
-      backdrop-filter: blur(10px);
-    }
-
-    .driver-btn {
-      --background: white;
-      --color: #0f172a;
-      --border-radius: 18px;
-      height: 54px;
-      font-weight: 900;
-      width: fit-content;
-    }
-
-    .signin-btn {
-      --border-color: #cbd5e1;
-      --color: #0f172a;
-      --border-radius: 18px;
-      height: 54px;
-      font-weight: 900;
-    }
-
-    .hero-login {
-      color: #94a3b8;
-      font-size: 0.9rem;
-      font-weight: 700;
-      margin: 0;
-    }
-
-    .hero-login a {
-      color: white;
-      font-weight: 900;
-      text-decoration: none;
-    }
-
-    .service-stack-section {
-      position: relative;
-      z-index: 5;
-      margin-top: -44px;
-      padding: 0 16px;
-    }
-
-    .service-stack {
-      max-width: 1180px;
-      margin: 0 auto;
-      display: grid;
-      gap: 14px;
-    }
-
-    .service-float-card {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 18px;
-      border-radius: 26px;
-      backdrop-filter: blur(18px);
-      border: 1px solid rgba(255,255,255,0.08);
-      background: rgba(15, 23, 42, 0.86);
-      text-decoration: none;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.18);
-    }
-
-    .service-float-text h3 {
-      color: white;
-      font-size: 1.1rem;
-      font-weight: 900;
-      margin: 0 0 4px;
-    }
-
-    .service-float-text p {
-      color: rgba(255,255,255,0.72);
-      font-size: 0.88rem;
-      line-height: 1.45;
-      margin: 0;
-      font-weight: 600;
-    }
-
-    .service-icon,
-    .service-card-icon {
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      flex-shrink: 0;
-    }
-
-    .service-icon {
-      width: 56px;
-      height: 56px;
-      font-size: 1.45rem;
-    }
-
-    .service-card-icon {
-      width: 60px;
-      height: 60px;
-      font-size: 1.6rem;
-      margin-bottom: 16px;
-    }
-
-    .blue { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
-    .emerald { background: linear-gradient(135deg, #10b981, #059669); }
-    .amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
-
-    .trust-strip-section,
-    .section-light,
-    .final-cta {
       background: #f8fafc;
+      color: #111827;
+      font-weight: 900;
     }
 
-    .trust-strip-section {
-      padding: 18px 16px 0;
-    }
-
-    .trust-strip {
+    .hero {
       max-width: 1180px;
       margin: 0 auto;
-      background: white;
-      border-radius: 26px;
-      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-      border: 1px solid #e2e8f0;
-      padding: 18px;
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-    }
-
-    .trust-item {
-      text-align: center;
-    }
-
-    .trust-value {
-      font-size: 1.12rem;
-      font-weight: 900;
-      color: #0f172a;
-      margin: 0 0 4px;
-    }
-
-    .trust-label {
-      font-size: 0.68rem;
-      font-weight: 900;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: #64748b;
-    }
-
-    .section-white {
-      background: white;
-    }
-
-    .section-dark {
-      background: #020617;
-    }
-
-    .section-wrap {
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 56px 16px;
-    }
-
-    .section-kicker {
-      font-size: 0.72rem;
-      font-weight: 900;
-      letter-spacing: 0.24em;
-      text-transform: uppercase;
-      color: #2563eb;
-      margin: 0 0 12px;
-    }
-
-    .section-kicker.blue { color: #2563eb; }
-    .section-kicker.amber { color: #f59e0b; }
-
-    .section-title {
-      font-size: clamp(2rem, 7vw, 3.2rem);
-      line-height: 1.04;
-      font-weight: 900;
-      letter-spacing: -0.04em;
-      color: #0f172a;
-      margin: 0 0 14px;
-    }
-
-    .section-subtitle {
-      font-size: 1rem;
-      line-height: 1.75;
-      color: #64748b;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .service-grid {
-      display: grid;
-      gap: 16px;
-      margin-top: 28px;
-    }
-
-    .service-card {
-      display: block;
-      padding: 24px;
-      border-radius: 26px;
-      background: white;
-      border: 1px solid #e2e8f0;
-      text-decoration: none;
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-    }
-
-    .service-card h3 {
-      font-size: 1.25rem;
-      font-weight: 900;
-      color: #0f172a;
-      margin: 0 0 8px;
-    }
-
-    .service-card p {
-      margin: 0;
-      color: #64748b;
-      line-height: 1.6;
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-
-    .feature-layout {
+      padding: 34px 18px 28px;
       display: grid;
       gap: 28px;
       align-items: center;
     }
 
-    .feature-copy {
+    .eyebrow {
+      margin: 0 0 12px;
+      color: #c2410c;
+      font-weight: 900;
+      font-size: 0.74rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 740px;
+      color: #111827;
+      font-size: clamp(2.45rem, 9vw, 5.2rem);
+      line-height: 0.96;
+      font-weight: 900;
+    }
+
+    .hero-text {
+      max-width: 670px;
+      margin: 18px 0 0;
+      color: #475569;
+      font-size: 1.05rem;
+      line-height: 1.75;
+      font-weight: 700;
+    }
+
+    .hero-actions {
       display: flex;
       flex-direction: column;
-      gap: 18px;
-    }
-
-    .feature-list {
-      display: grid;
       gap: 12px;
+      margin-top: 24px;
     }
 
-    .feature-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: #334155;
-      font-weight: 700;
-      font-size: 0.98rem;
-    }
-
-    .feature-row ion-icon {
-      font-size: 1.1rem;
-      flex-shrink: 0;
-    }
-
-    .feature-image-shell {
-      border-radius: 32px;
-      overflow: hidden;
-      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
-      border: 1px solid #e2e8f0;
-      background: linear-gradient(135deg, #f8fafc, #e2e8f0);
-      display: flex;
-      align-items: center;
+    .hero-actions.centered {
       justify-content: center;
-      padding: 14px;
     }
 
-    .feature-image-shell.dark {
-      border-color: rgba(255,255,255,0.08);
-      box-shadow: 0 24px 48px rgba(2, 6, 23, 0.35);
-      background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(2, 6, 23, 1));
+    .primary-action,
+    .dark-action {
+      --border-radius: 18px;
+      height: 56px;
+      font-weight: 900;
+      letter-spacing: 0;
     }
 
-    .feature-image {
-      display: block;
-      width: 100%;
-      height: 320px;
-      object-fit: contain;
-      object-position: center;
-      border-radius: 24px;
+    .primary-action {
+      --background: #ff9800;
+      --color: #111827;
+      box-shadow: 0 16px 32px rgba(255, 152, 0, 0.24);
     }
 
-    .dark-subtitle {
-      color: #cbd5e1;
+    .dark-action {
+      --background: #111827;
+      --color: white;
     }
 
-    .dark-title {
-      color: white;
+    .secondary-action {
+      --border-radius: 18px;
+      --border-color: #cbd5e1;
+      --color: #111827;
+      height: 56px;
+      font-weight: 900;
     }
 
-    .driver-plans {
+    .secondary-action.light {
+      --border-color: rgba(255,255,255,0.72);
+      --color: white;
+    }
+
+    .hero-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .hero-links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: white;
+      color: #334155;
+      font-size: 0.86rem;
+      font-weight: 900;
+      border: 1px solid #e2e8f0;
+    }
+
+    .hero-panel {
+      min-height: 420px;
+      border-radius: 34px;
+      background:
+        radial-gradient(circle at 82% 18%, rgba(255, 152, 0, 0.3), transparent 28%),
+        linear-gradient(145deg, #111827, #1f2937);
+      padding: 22px;
+      box-shadow: 0 28px 56px rgba(15, 23, 42, 0.18);
+    }
+
+    .phone-card {
+      height: 100%;
+      border-radius: 30px;
+      background: #f8fafc;
+      padding: 18px;
       display: grid;
-      gap: 14px;
+      gap: 16px;
     }
 
-    .driver-plan {
+    .phone-header,
+    .booking-preview,
+    .preview-grid {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      padding: 18px 20px;
-      border-radius: 22px;
+      gap: 12px;
     }
 
-    .driver-plan h3 {
-      margin: 0 0 4px;
-      font-size: 1.15rem;
+    .phone-header span {
       font-weight: 900;
+      color: #111827;
+      font-size: 1.2rem;
     }
 
-    .driver-plan p {
-      margin: 0;
-      font-size: 0.92rem;
-    }
-
-    .driver-plan span {
-      font-size: 0.68rem;
-      font-weight: 900;
-      letter-spacing: 0.16em;
+    .phone-header strong {
+      border-radius: 999px;
+      background: #dcfce7;
+      color: #047857;
+      padding: 8px 12px;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      white-space: nowrap;
     }
 
-    .driver-plan.starter {
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      color: white;
+    .map-preview {
+      position: relative;
+      min-height: 210px;
+      border-radius: 26px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(148, 163, 184, 0.24) 1px, transparent 1px),
+        linear-gradient(rgba(148, 163, 184, 0.24) 1px, transparent 1px),
+        #e8f3ed;
+      background-size: 42px 42px;
     }
 
-    .driver-plan.starter p,
-    .driver-plan.starter span {
-      color: #cbd5e1;
+    .route-line {
+      position: absolute;
+      left: 25%;
+      right: 22%;
+      top: 52%;
+      height: 6px;
+      border-radius: 999px;
+      background: #ff9800;
+      transform: rotate(-16deg);
+      box-shadow: 0 0 0 6px rgba(255, 152, 0, 0.13);
     }
 
-    .driver-plan.pro {
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
-      color: white;
-      box-shadow: 0 16px 30px rgba(37, 99, 235, 0.3);
+    .pin {
+      position: absolute;
+      z-index: 2;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: white;
+      color: #111827;
+      font-weight: 900;
+      font-size: 0.72rem;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
     }
 
-    .driver-plan.pro p,
-    .driver-plan.pro span {
-      color: #dbeafe;
+    .pin.pickup {
+      left: 20px;
+      top: 32px;
+      border: 2px solid #ff9800;
     }
 
-    .final-cta-inner {
+    .pin.dropoff {
+      right: 20px;
+      bottom: 32px;
+      border: 2px solid #10b981;
+    }
+
+    .booking-preview {
+      padding: 16px;
+      border-radius: 22px;
+      background: white;
+      border: 1px solid #e2e8f0;
+    }
+
+    .booking-preview small {
+      display: block;
+      color: #64748b;
+      font-weight: 900;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .booking-preview strong {
+      color: #111827;
+      font-size: 1rem;
+    }
+
+    .booking-preview span {
+      color: #c2410c;
+      font-size: 1.45rem;
+      font-weight: 900;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .preview-grid span {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 8px;
+      border-radius: 18px;
+      background: #fff7ed;
+      color: #334155;
+      font-weight: 900;
+      font-size: 0.75rem;
       text-align: center;
     }
 
-    .final-title,
-    .final-subtitle {
-      max-width: 760px;
+    .quick-services,
+    .how-section,
+    .split-section,
+    .trust-section,
+    .final-cta {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 48px 18px;
+    }
+
+    .section-heading {
+      max-width: 720px;
+      margin-bottom: 22px;
+    }
+
+    .section-heading h2,
+    .split-card h2,
+    .trust-card h2,
+    .final-cta h2 {
+      margin: 0;
+      color: #111827;
+      font-size: clamp(1.85rem, 6vw, 3.2rem);
+      line-height: 1.05;
+      font-weight: 900;
+    }
+
+    .service-grid,
+    .steps-grid,
+    .split-section {
+      display: grid;
+      gap: 16px;
+    }
+
+    .service-card,
+    .step-card,
+    .split-card,
+    .trust-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 28px;
+      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+    }
+
+    .service-card {
+      min-height: 210px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      color: #111827;
+    }
+
+    .service-icon {
+      width: 70px;
+      height: 70px;
+      border-radius: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.8rem;
+      margin-bottom: 18px;
+    }
+
+    .ride { background: #ff9800; color: #111827; }
+    .errand { background: #10b981; }
+    .delivery { background: #0f766e; }
+    .moving { background: #111827; }
+
+    .service-card strong {
+      font-size: 1.25rem;
+      font-weight: 900;
+    }
+
+    .service-card p,
+    .step-card p,
+    .split-card li,
+    .trust-card p,
+    .final-cta p {
+      color: #64748b;
+      line-height: 1.65;
+      font-weight: 700;
+    }
+
+    .card-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: auto;
+      color: #c2410c;
+      font-weight: 900;
+    }
+
+    .step-card {
+      padding: 24px;
+    }
+
+    .step-number {
+      display: inline-flex;
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      align-items: center;
+      justify-content: center;
+      background: #fff7ed;
+      color: #c2410c;
+      font-weight: 900;
+      margin-bottom: 16px;
+    }
+
+    .step-card h3 {
+      margin: 0 0 8px;
+      color: #111827;
+      font-weight: 900;
+      font-size: 1.12rem;
+    }
+
+    .split-card {
+      padding: 26px;
+    }
+
+    .split-card ul {
+      display: grid;
+      gap: 12px;
+      margin: 22px 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .split-card li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .split-card ion-icon {
+      color: #10b981;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .driver-card {
+      background: #111827;
+      color: white;
+    }
+
+    .driver-card h2,
+    .driver-card li {
+      color: white;
+    }
+
+    .driver-card li {
+      opacity: 0.82;
+    }
+
+    .trust-card {
+      display: grid;
+      gap: 16px;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .trust-card > span {
+      width: 66px;
+      height: 66px;
+      border-radius: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff7ed;
+      color: #c2410c;
+      font-size: 1.8rem;
+    }
+
+    .trust-card a {
+      color: #c2410c;
+      font-weight: 900;
+    }
+
+    .final-cta {
+      text-align: center;
+      background: #111827;
+      max-width: none;
+      color: white;
+      margin-top: 24px;
+    }
+
+    .final-cta h2 {
+      color: white;
+    }
+
+    .final-cta p {
+      max-width: 680px;
       margin-left: auto;
       margin-right: auto;
+      color: #cbd5e1;
     }
 
-    .final-actions {
+    footer {
+      display: flex;
+      flex-wrap: wrap;
       justify-content: center;
-      margin: 28px auto 14px;
-    }
-
-    .final-store-actions {
-      margin: 18px auto 0;
-    }
-
-    .footer-note {
+      gap: 14px;
       margin-top: 28px;
-      font-size: 0.68rem;
-      font-weight: 900;
-      letter-spacing: 0.24em;
-      text-transform: uppercase;
       color: #94a3b8;
+      font-size: 0.86rem;
+      font-weight: 800;
     }
 
-    @media (min-width: 768px) {
+    footer a {
+      color: white;
+    }
+
+    @media (min-width: 760px) {
       .desktop-nav {
         display: flex;
       }
 
-      .mobile-menu-btn {
+      .icon-nav-btn {
         display: none;
       }
 
-      .hero-image {
-        padding: 86px 24px 0;
+      .hero,
+      .split-section,
+      .trust-card {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .hero-inner {
-        padding: 44px 28px 52px;
-      }
-
-      .hero-stats,
-      .service-stack,
       .service-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
 
-      .hero-actions,
-      .final-actions {
+      .steps-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .hero-actions {
         flex-direction: row;
       }
 
-      .store-actions {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .trust-strip {
-        grid-template-columns: repeat(4, 1fr);
-      }
-
-      .feature-layout {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 48px;
-      }
-
-      .feature-image {
-        height: 480px;
+      .hero {
+        padding-top: 64px;
+        padding-bottom: 58px;
       }
     }
   `]
 })
-
 export class LandingPage implements OnInit {
-    private auth = inject(AuthService);
-    private router = inject(Router);
+  private auth = inject(AuthService);
+  private router = inject(Router);
 
-    menuOpen = signal(false);
+  menuOpen = signal(false);
 
-    appStoreUrl = '';
-    googlePlayUrl = '';
+  services = [
+    {
+      title: 'Book a ride',
+      copy: 'Choose pickup and destination, see the fare, then track your driver.',
+      icon: 'car-outline',
+      tone: 'ride'
+    },
+    {
+      title: 'Run an errand',
+      copy: 'Reserve an item budget, follow shop progress, and approve changes when needed.',
+      icon: 'basket-outline',
+      tone: 'errand'
+    },
+    {
+      title: 'Send a package',
+      copy: 'Book bike, car, or van delivery for local parcels and documents.',
+      icon: 'cube-outline',
+      tone: 'delivery'
+    },
+    {
+      title: 'Book a move',
+      copy: 'Request van moving help with vehicle size and clear job details.',
+      icon: 'storefront-outline',
+      tone: 'moving'
+    }
+  ];
 
-    constructor() {
-        addIcons({
-            car,
-            carOutline,
-            basketOutline,
-            cubeOutline,
-            checkmarkCircle,
-            shieldCheckmark,
-            trendingUp,
-            arrowForwardOutline,
-            flashOutline,
-            locationOutline,
-            logoApple,
-            logoGooglePlaystore,
-            menuOutline,
-            closeOutline
-        });
+  customerSteps = [
+    {
+      title: 'Pick a service',
+      copy: 'Choose ride, errand, delivery, or moving. Movabi only asks for details needed for that service.'
+    },
+    {
+      title: 'Confirm the price',
+      copy: 'Review route, budget, wallet, or card authorisation before the request is sent to drivers.'
+    },
+    {
+      title: 'Track and chat',
+      copy: 'Follow live status, use quick messages, and see what happens if a job is cancelled or no driver is found.'
+    }
+  ];
+
+  constructor() {
+    addIcons({
+      arrowForwardOutline,
+      basketOutline,
+      car,
+      carOutline,
+      cardOutline,
+      chatbubbleEllipsesOutline,
+      checkmarkCircleOutline,
+      chevronForwardOutline,
+      cubeOutline,
+      helpCircleOutline,
+      locationOutline,
+      lockClosedOutline,
+      menuOutline,
+      closeOutline,
+      shieldCheckmarkOutline,
+      storefrontOutline,
+      walletOutline
+    });
+  }
+
+  async ngOnInit() {
+    const user = this.auth.currentUser();
+
+    if (user) {
+      await this.auth.handlePostAuthRedirect();
+      return;
     }
 
-    async ngOnInit() {
-        const user = this.auth.currentUser();
+    const returningUser = localStorage.getItem('movabi_returning_user') === 'true';
 
-        if (user) {
-            await this.auth.handlePostAuthRedirect();
-            return;
-        }
-
-        const returningUser = localStorage.getItem('movabi_returning_user') === 'true';
-
-        if (returningUser) {
-            await this.router.navigate(['/auth/login'], { replaceUrl: true });
-        }
+    if (returningUser) {
+      await this.router.navigate(['/auth/login'], { replaceUrl: true });
     }
-
-    isRealStoreUrl(url: string): boolean {
-        return !!url && !url.includes('YOUR_') && /^https?:\/\//i.test(url);
-    }
+  }
 }

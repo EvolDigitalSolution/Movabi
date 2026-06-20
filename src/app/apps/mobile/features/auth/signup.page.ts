@@ -200,6 +200,14 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
             </p>
           </div>
 
+          <p class="mt-6 text-center text-slate-500 text-xs leading-relaxed">
+            By creating an account, you agree to use Movabi for lawful bookings and understand how Movabi handles account,
+            location, service, wallet, card, driver, and support data in the
+            <a routerLink="/privacy" class="text-orange-700 font-bold"> Privacy notice</a>.
+            Need help with the controls?
+            <a routerLink="/help" class="text-orange-700 font-bold"> Read how Movabi works</a>.
+          </p>
+
           <p class="mt-8 text-center text-slate-600 text-sm pb-8">
             Already have an account? 
             <a routerLink="/auth/login" class="text-blue-600 font-bold hover:text-blue-700 transition-colors">Sign In</a>
