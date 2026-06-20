@@ -1601,7 +1601,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
-        this.geocoding.autocomplete(query).subscribe(results => {
+        this.geocoding.autocomplete(this.withLocationContext(type, query)).subscribe(results => {
             if (type === 'pickup') {
                 this.pickupResults.set(results);
                 this.showPickupResults.set(true);
@@ -1660,7 +1660,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (query.length < 3) return;
 
         try {
-            const results = await firstValueFrom(this.geocoding.geocodeAddress(query));
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query)));
             const result = results?.[0];
 
             if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
@@ -1691,6 +1691,34 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         } catch (error) {
             console.warn(`[BookingRequest] Failed to resolve ${type} address`, error);
         }
+    }
+
+    private withLocationContext(type: 'pickup' | 'dropoff', query: string): string {
+        const cleanQuery = String(query || '').replace(/\s+/g, ' ').trim();
+
+        if (!cleanQuery || cleanQuery.includes(',')) return cleanQuery;
+
+        const contextAddress = type === 'dropoff'
+            ? this.pickupLocation.address
+            : this.dropoffLocation.address;
+        const locality = this.extractLocality(contextAddress);
+
+        if (!locality || cleanQuery.toLowerCase().includes(locality.toLowerCase())) {
+            return cleanQuery;
+        }
+
+        return `${cleanQuery}, ${locality}`;
+    }
+
+    private extractLocality(address?: string): string {
+        const parts = String(address || '')
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean);
+
+        if (parts.length < 2) return '';
+
+        return parts[1];
     }
 
     private updateMarker(kind: 'pickup' | 'dropoff') {

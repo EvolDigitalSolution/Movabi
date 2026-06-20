@@ -699,7 +699,7 @@ export class CreateJobPage implements AfterViewInit {
         }
 
         this.geocoding
-            .autocomplete(query)
+            .autocomplete(this.withLocationContext(type, query))
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe({
                 next: (results) => {
@@ -854,7 +854,7 @@ export class CreateJobPage implements AfterViewInit {
         if (!loc.address || this.hasValidCoords(loc)) return;
 
         try {
-            const results = await firstValueFrom(this.geocoding.geocodeAddress(loc.address));
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, loc.address)));
 
             if (!results?.length) return;
 
@@ -878,6 +878,34 @@ export class CreateJobPage implements AfterViewInit {
         } catch (error) {
             console.error(`Failed to resolve ${type} address:`, error);
         }
+    }
+
+    private withLocationContext(type: 'pickup' | 'dropoff', query?: string): string {
+        const cleanQuery = String(query || '').replace(/\s+/g, ' ').trim();
+
+        if (!cleanQuery || cleanQuery.includes(',')) return cleanQuery;
+
+        const contextAddress = type === 'dropoff'
+            ? this.pickupLocation.address
+            : this.dropoffLocation.address;
+        const locality = this.extractLocality(contextAddress);
+
+        if (!locality || cleanQuery.toLowerCase().includes(locality.toLowerCase())) {
+            return cleanQuery;
+        }
+
+        return `${cleanQuery}, ${locality}`;
+    }
+
+    private extractLocality(address?: string): string {
+        const parts = String(address || '')
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean);
+
+        if (parts.length < 2) return '';
+
+        return parts[1];
     }
 
     private recentLocationResults(type: 'pickup' | 'dropoff'): AutocompleteResult[] {
