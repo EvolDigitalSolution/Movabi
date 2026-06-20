@@ -206,11 +206,11 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               }
             </div>
 
-            @if (showNoDriverPaymentPanel()) {
+            @if (showPaymentProtectionPanel()) {
               <div class="p-5 rounded-[2rem] border border-amber-100 bg-amber-50 space-y-4">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shadow-sm shrink-0">
-                    <ion-icon [name]="noDriverPaymentIcon()" class="text-xl"></ion-icon>
+                    <ion-icon [name]="paymentProtectionIcon()" class="text-xl"></ion-icon>
                   </div>
 
                   <div class="min-w-0">
@@ -218,10 +218,10 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       Movabi payment protection
                     </p>
                     <h3 class="mt-1 text-lg font-display font-black text-slate-950">
-                      {{ noDriverPaymentTitle() }}
+                      {{ paymentProtectionTitle() }}
                     </h3>
                     <p class="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
-                      {{ noDriverPaymentMessage() }}
+                      {{ paymentProtectionMessage() }}
                     </p>
                   </div>
                 </div>
@@ -233,11 +233,11 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   </div>
                   <div class="flex items-center justify-between gap-3">
                     <span>Where it returns</span>
-                    <span class="text-right text-slate-950">{{ noDriverPaymentDestination() }}</span>
+                    <span class="text-right text-slate-950">{{ paymentProtectionDestination() }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
                     <span>Status</span>
-                    <span class="text-right text-amber-700">{{ noDriverPaymentStatus() }}</span>
+                    <span class="text-right text-amber-700">{{ paymentProtectionStatus() }}</span>
                   </div>
                 </div>
               </div>
@@ -640,6 +640,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         switch (status) {
             case 'searching':
             case 'no_driver_found':
+            case 'requires_review':
                 return 'warning';
             case 'accepted':
             case 'arrived':
@@ -675,7 +676,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 settled: 'Errand settled',
                 cancelled: 'Errand cancelled',
                 canceled: 'Errand cancelled',
-                no_driver_found: 'No driver found'
+                no_driver_found: 'No driver found',
+                requires_review: 'Movabi review'
             };
 
             if (errandMap[status]) return errandMap[status];
@@ -697,7 +699,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             settled: 'Settled',
             cancelled: 'Cancelled',
             canceled: 'Cancelled',
-            no_driver_found: 'No driver found'
+            no_driver_found: 'No driver found',
+            requires_review: 'Movabi review'
         };
 
         return map[status] ?? status.replace(/_/g, ' ');
@@ -720,7 +723,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 settled: 'Wallet funds have been settled',
                 cancelled: 'Errand cancelled',
                 canceled: 'Errand cancelled',
-                no_driver_found: 'No available errand driver'
+                no_driver_found: 'No available errand driver',
+                requires_review: 'We are checking this errand and payment'
             };
 
             if (errandMap[status]) return errandMap[status];
@@ -742,7 +746,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             settled: 'Payment settled',
             cancelled: 'Booking cancelled',
             canceled: 'Booking cancelled',
-            no_driver_found: 'No available driver'
+            no_driver_found: 'No available driver',
+            requires_review: 'We are checking this booking and payment'
         };
 
         return map[status] ?? 'Live updates available';
@@ -919,56 +924,57 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     paymentAmountLabel(): string {
-        if (this.booking()?.status === 'no_driver_found') {
-            return this.noDriverPaidByWallet() ? 'Wallet Reserved' : 'Card Authorised';
+        if (this.showPaymentProtectionPanel()) {
+            return this.paidByWallet() ? 'Wallet Reserved' : 'Card Authorised';
         }
 
         return this.booking()?.service_slug === ServiceTypeEnum.ERRAND ? 'Total Reserved' : 'Fixed Price';
     }
 
-    showNoDriverPaymentPanel(): boolean {
-        const booking = this.booking() as any;
+    showPaymentProtectionPanel(): boolean {
+        const booking = this.booking();
+        const status = String(booking?.status || '').toLowerCase();
 
-        return booking?.status === 'no_driver_found';
+        return ['cancelled', 'canceled', 'no_driver_found', 'requires_review'].includes(status);
     }
 
-    noDriverPaymentIcon(): string {
-        return this.noDriverNeedsPaymentReview() ? 'information-circle' : 'checkmark-circle-outline';
+    paymentProtectionIcon(): string {
+        return this.paymentNeedsReview() ? 'information-circle' : 'checkmark-circle-outline';
     }
 
-    noDriverPaymentTitle(): string {
-        if (this.noDriverNeedsPaymentReview()) {
+    paymentProtectionTitle(): string {
+        if (this.paymentNeedsReview()) {
             return 'We are checking your reserved funds';
         }
 
-        return this.noDriverPaidByWallet()
+        return this.paidByWallet()
             ? 'Your wallet reservation is released'
             : 'Your card hold is released';
     }
 
-    noDriverPaymentMessage(): string {
-        if (this.noDriverNeedsPaymentReview()) {
-            return `Movabi could not assign a ${this.servicePaymentName()} driver, so no service happened. Our system is checking the reservation and will release any unused funds after review.`;
+    paymentProtectionMessage(): string {
+        if (this.paymentNeedsReview()) {
+            return `This ${this.servicePaymentName()} could not be completed normally. Movabi is checking the reservation and will release any unused funds after review.`;
         }
 
-        if (this.noDriverPaidByWallet()) {
-            return `Movabi could not assign a ${this.servicePaymentName()} driver, so no service happened. The reserved amount is returned to your Movabi wallet balance.`;
+        if (this.paidByWallet()) {
+            return `${this.paymentProtectionReason()} The reserved amount is returned to your Movabi wallet balance.`;
         }
 
-        return `Movabi could not assign a ${this.servicePaymentName()} driver, so no service happened. The card authorisation is cancelled and the money returns to your original card. Your bank may show the hold for a short time before it disappears.`;
+        return `${this.paymentProtectionReason()} The card authorisation is cancelled and the money returns to your original card. Your bank may show the hold for a short time before it disappears.`;
     }
 
-    noDriverPaymentDestination(): string {
-        if (this.noDriverNeedsPaymentReview()) return 'Movabi review';
-        return this.noDriverPaidByWallet() ? 'Movabi wallet' : 'Original payment card';
+    paymentProtectionDestination(): string {
+        if (this.paymentNeedsReview()) return 'Movabi review';
+        return this.paidByWallet() ? 'Movabi wallet' : 'Original payment card';
     }
 
-    noDriverPaymentStatus(): string {
-        if (this.noDriverNeedsPaymentReview()) return 'Review in progress';
-        return this.noDriverPaidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
+    paymentProtectionStatus(): string {
+        if (this.paymentNeedsReview()) return 'Review in progress';
+        return this.paidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
     }
 
-    private noDriverPaidByWallet(): boolean {
+    private paidByWallet(): boolean {
         const booking = this.booking() as any;
         const method = String(booking?.payment_method || '').toLowerCase();
         const status = String(booking?.payment_status || '').toLowerCase();
@@ -976,8 +982,26 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return method === 'wallet' || status === 'wallet_funded';
     }
 
-    private noDriverNeedsPaymentReview(): boolean {
-        return String((this.booking() as any)?.payment_status || '').toLowerCase() === 'requires_review';
+    private paymentNeedsReview(): boolean {
+        const booking = this.booking() as any;
+
+        return String(booking?.payment_status || '').toLowerCase() === 'requires_review' ||
+            String(booking?.status || '').toLowerCase() === 'requires_review';
+    }
+
+    private paymentProtectionReason(): string {
+        const status = String(this.booking()?.status || '').toLowerCase();
+        const service = this.servicePaymentName();
+
+        if (status === 'no_driver_found') {
+            return `Movabi could not assign a ${service} driver, so no service happened.`;
+        }
+
+        if (status === 'cancelled' || status === 'canceled') {
+            return `This ${service} was cancelled before completion.`;
+        }
+
+        return `This ${service} did not complete normally.`;
     }
 
     private servicePaymentName(): string {
