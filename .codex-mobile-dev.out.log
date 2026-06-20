@@ -792,3 +792,25 @@ Application bundle generation failed. [2.435 seconds] - 2026-06-20T18:33:46.446Z
 Application bundle generation complete. [1.581 seconds] - 2026-06-20T18:34:23.354Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m          [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m           [2m | [22m[36m274.91 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m          [2m | [22m [1mRaw size[22m
+[32mchunk-GKJOT763.js[39m  [2m | [22m[2monboarding-page[22m[2m | [22m[36m109.93 kB[39m[2m | [22m
+
+Application bundle generation complete. [7.777 seconds] - 2026-06-20T18:55:14.289Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m          [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m           [2m | [22m[36m274.91 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m          [2m | [22m [1mRaw size[22m
+[32mchunk-BUEGOSGT.js[39m  [2m | [22m[2monboarding-page[22m[2m | [22m[36m109.88 kB[39m[2m | [22m
+
+Application bundle generation complete. [1.890 seconds] - 2026-06-20T18:55:30.433Z
+
+Page reload sent to client(s).

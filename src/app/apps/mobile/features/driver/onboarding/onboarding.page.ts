@@ -587,7 +587,7 @@ type DriverOnboardingDraft = {
 
               @if (!canSubmit()) {
                 <p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-2xl p-4 mt-4 font-semibold leading-relaxed">
-                  Complete vehicle details, council licence details, driver licence, insurance, and Stripe Connect before submitting.
+                  {{ setupBlockingMessage() }}
                 </p>
               }
 
@@ -693,6 +693,28 @@ export class OnboardingPage implements OnInit {
             !this.isReadOnly() &&
             !this.submitting()
         );
+    });
+
+    setupBlockingMessage = computed(() => {
+        if (this.onboardingForm.get('phone')?.invalid) return 'Add your mobile number before submitting.';
+        if (this.onboardingForm.get('make')?.invalid || this.onboardingForm.get('model')?.invalid || this.onboardingForm.get('color')?.invalid || this.onboardingForm.get('year')?.invalid) {
+            return this.isBikeVehicle()
+                ? 'Complete your bike brand, type, colour, and year before submitting.'
+                : 'Complete your vehicle make, model, colour, and year before submitting.';
+        }
+        if (!this.isBikeVehicle() && this.onboardingForm.get('license_plate')?.invalid) return 'Add the vehicle registration plate before submitting.';
+        if (this.requiresTaxiLicence() && (
+            this.onboardingForm.get('council_name')?.invalid ||
+            this.onboardingForm.get('council_license_number')?.invalid ||
+            this.onboardingForm.get('taxi_badge_number')?.invalid ||
+            this.onboardingForm.get('taxi_license_expiry')?.invalid
+        )) {
+            return 'Complete the council taxi licence details before submitting.';
+        }
+        if (!this.docs().license) return `Upload your ${this.primaryDocumentLabel().toLowerCase()} before submitting.`;
+        if (!this.secondaryDocumentReady()) return `Upload your ${this.secondaryDocumentLabel().toLowerCase()} before submitting.`;
+        if (!this.isStripeReady()) return 'Complete Stripe Connect before submitting.';
+        return 'Complete the remaining required setup before submitting.';
     });
 
     pageTitle = computed(() => {
@@ -993,6 +1015,7 @@ export class OnboardingPage implements OnInit {
 
         if (isBike) {
             plate?.clearValidators();
+            plate?.setErrors(null);
             plate?.setValue('', { emitEvent: false });
         } else {
             plate?.setValidators([Validators.required, Validators.minLength(2)]);
@@ -1008,6 +1031,14 @@ export class OnboardingPage implements OnInit {
             councilNumber?.clearValidators();
             taxiBadge?.clearValidators();
             taxiExpiry?.clearValidators();
+            councilName?.setErrors(null);
+            councilNumber?.setErrors(null);
+            taxiBadge?.setErrors(null);
+            taxiExpiry?.setErrors(null);
+            councilName?.setValue('', { emitEvent: false });
+            councilNumber?.setValue('', { emitEvent: false });
+            taxiBadge?.setValue('', { emitEvent: false });
+            taxiExpiry?.setValue('', { emitEvent: false });
         }
 
         [plate, councilName, councilNumber, taxiBadge, taxiExpiry].forEach(control => {
@@ -1264,7 +1295,7 @@ export class OnboardingPage implements OnInit {
         this.onboardingForm.markAllAsTouched();
 
         if (!this.canSubmit()) {
-            await this.showToast('Complete all required details, documents, and Stripe Connect before submitting.', 'warning');
+            await this.showToast(this.setupBlockingMessage(), 'warning');
             return;
         }
 
