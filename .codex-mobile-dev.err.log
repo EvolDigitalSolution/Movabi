@@ -691,3 +691,150 @@ websocket connection issues.
           ╵              [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:332:137:
+[37m      332 │ ...8 473 840" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleSetupTitle' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:398:72:
+[37m      398 │ ..."text-sm font-black text-slate-950">{{ [32mvehicleSetupTitle[37m() }}</p>
+          ╵                                           [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleSetupMessage' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:399:96:
+[37m      399 │ ...d text-slate-600 leading-relaxed">{{ [32mvehicleSetupMessage[37m() }}</p>
+          ╵                                         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleMakeLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:406:122:
+[37m      406 │ ... uppercase tracking-widest mb-1">{{ [32mvehicleMakeLabel[37m() }}</label>
+          ╵                                        [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleMakePlaceholder' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:407:73:
+[37m      407 │ ...ake" [placeholder]="[32mvehicleMakePlaceholder[37m()" [readonly]="isRe...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:407:134:
+[37m      407 │ ...eholder()" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleModelLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:411:123:
+[37m      411 │ ...uppercase tracking-widest mb-1">{{ [32mvehicleModelLabel[37m() }}</label>
+          ╵                                       [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleModelPlaceholder' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:412:75:
+[37m      412 │ ...del" [placeholder]="[32mvehicleModelPlaceholder[37m()" [readonly]="isR...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:412:137:
+[37m      412 │ ...eholder()" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleColorLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:416:123:
+[37m      416 │ ...uppercase tracking-widest mb-1">{{ [32mvehicleColorLabel[37m() }}</label>
+          ╵                                       [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleColorPlaceholder' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:417:75:
+[37m      417 │ ...lor" [placeholder]="[32mvehicleColorPlaceholder[37m()" [readonly]="isR...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:417:137:
+[37m      417 │ ...eholder()" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleYearLabel' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:421:122:
+[37m      421 │ ... uppercase tracking-widest mb-1">{{ [32mvehicleYearLabel[37m() }}</label>
+          ╵                                        [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'vehicleYearPlaceholder' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:422:87:
+[37m      422 │ ...ear" [placeholder]="[32mvehicleYearPlaceholder[37m()" [readonly]="isRe...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:422:148:
+[37m      422 │ ...eholder()" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:440:167:
+[37m      440 │ ...r)="normalizePlate()" [class]="[32mfieldInputClass[37m() + ' uppercase'">
+          ╵                                   [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'requiresTaxiLicence' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:453:15:
+[37m      453 │           @if ([32mrequiresTaxiLicence[37m()) {
+          ╵                [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:476:143:
+[37m      476 │ ...m Council" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:481:159:
+[37m      481 │ ...HV/123456" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:486:149:
+[37m      486 │ ...ADGE-1234" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'fieldInputClass' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:491:135:
+[37m      491 │ ...se_expiry" [readonly]="isReadOnly()" [class]="[32mfieldInputClass[37m()">
+          ╵                                                  [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m

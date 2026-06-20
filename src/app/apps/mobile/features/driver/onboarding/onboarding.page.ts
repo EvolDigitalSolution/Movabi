@@ -329,7 +329,7 @@ type DriverOnboardingDraft = {
 
               <div class="p-4">
                 <label for="phone" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mobile Number</label>
-                <input id="phone" type="tel" formControlName="phone" placeholder="e.g. 07898 473 840" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                <input id="phone" type="tel" formControlName="phone" placeholder="e.g. 07898 473 840" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 <p class="mt-2 text-xs font-semibold text-slate-500">
                   Stripe requires this for Movabi Pay virtual card verification.
                 </p>
@@ -389,23 +389,37 @@ type DriverOnboardingDraft = {
                 </div>
 
                 <div class="p-4">
-                  <label for="make" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Make</label>
-                  <input id="make" formControlName="make" placeholder="e.g. Toyota" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <div class="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                    <div class="flex items-start gap-3">
+                      <div class="w-10 h-10 rounded-xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+                        <ion-icon [name]="isBikeVehicle() ? 'bicycle-outline' : 'car-sport-outline'"></ion-icon>
+                      </div>
+                      <div>
+                        <p class="text-sm font-black text-slate-950">{{ vehicleSetupTitle() }}</p>
+                        <p class="mt-1 text-xs font-semibold text-slate-600 leading-relaxed">{{ vehicleSetupMessage() }}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="p-4">
-                  <label for="model" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Model</label>
-                  <input id="model" formControlName="model" placeholder="e.g. Corolla" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <label for="make" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleMakeLabel() }}</label>
+                  <input id="make" formControlName="make" [placeholder]="vehicleMakePlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
-                  <label for="color" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Colour</label>
-                  <input id="color" formControlName="color" placeholder="e.g. Silver" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <label for="model" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleModelLabel() }}</label>
+                  <input id="model" formControlName="model" [placeholder]="vehicleModelPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
-                  <label for="year" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Year</label>
-                  <input id="year" type="number" formControlName="year" placeholder="e.g. 2022" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <label for="color" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleColorLabel() }}</label>
+                  <input id="color" formControlName="color" [placeholder]="vehicleColorPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                </div>
+
+                <div class="p-4">
+                  <label for="year" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleYearLabel() }}</label>
+                  <input id="year" type="number" formControlName="year" [placeholder]="vehicleYearPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 @if (!isBikeVehicle()) {
@@ -423,26 +437,12 @@ type DriverOnboardingDraft = {
                         </button>
                       }
                     </div>
-                    <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" (blur)="normalizePlate()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                    <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" (blur)="normalizePlate()" [class]="fieldInputClass() + ' uppercase'">
                     @if (appConfig.vehiclePlateLookupEnabled()) {
                       <p class="mt-2 text-xs font-semibold text-slate-500">
                         Use your plate to help confirm make, colour, and model where lookup is configured.
                       </p>
                     }
-                  </div>
-                } @else {
-                  <div class="p-4 bg-amber-50 border-y border-amber-100">
-                    <div class="flex items-start gap-3">
-                      <div class="w-10 h-10 rounded-xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
-                        <ion-icon name="bicycle-outline"></ion-icon>
-                      </div>
-                      <div>
-                        <p class="text-sm font-black text-slate-950">Bike courier checks</p>
-                        <p class="mt-1 text-xs font-semibold text-slate-600 leading-relaxed">
-                          Bikes do not need a plate number. Movabi verifies your profile photo, mobile number, photo ID, payout setup, and bike details before approval.
-                        </p>
-                      </div>
-                    </div>
                   </div>
                 }
 
@@ -450,7 +450,7 @@ type DriverOnboardingDraft = {
             </div>
           </section>
 
-          @if (!isBikeVehicle()) {
+          @if (requiresTaxiLicence()) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -473,22 +473,22 @@ type DriverOnboardingDraft = {
               <div class="divide-y divide-slate-50">
                 <div class="p-4">
                   <label for="council_name" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Council Name</label>
-                  <input id="council_name" formControlName="council_name" placeholder="e.g. Oldham Council" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <input id="council_name" formControlName="council_name" placeholder="e.g. Oldham Council" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
                   <label for="council_license_number" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Council Licence Number</label>
-                  <input id="council_license_number" formControlName="council_license_number" placeholder="e.g. PHV/123456" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <input id="council_license_number" formControlName="council_license_number" placeholder="e.g. PHV/123456" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
                   <label for="taxi_badge_number" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Taxi Badge Number</label>
-                  <input id="taxi_badge_number" formControlName="taxi_badge_number" placeholder="e.g. BADGE-1234" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <input id="taxi_badge_number" formControlName="taxi_badge_number" placeholder="e.g. BADGE-1234" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
                   <label for="taxi_license_expiry" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Taxi Licence Expiry Date</label>
-                  <input id="taxi_license_expiry" type="date" formControlName="taxi_license_expiry" [readonly]="isReadOnly()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300">
+                  <input id="taxi_license_expiry" type="date" formControlName="taxi_license_expiry" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
               </div>
             </div>
@@ -897,6 +897,64 @@ export class OnboardingPage implements OnInit {
         return this.selectedVehicleClass() === 'bike';
     }
 
+    requiresTaxiLicence(): boolean {
+        return this.requiresTaxiLicenceForClass(this.selectedVehicleClass());
+    }
+
+    fieldInputClass(): string {
+        return 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-all placeholder:text-slate-400 focus:border-amber-500 focus:ring-4 focus:ring-amber-100 disabled:bg-slate-50 disabled:text-slate-400';
+    }
+
+    vehicleSetupTitle(): string {
+        if (this.isBikeVehicle()) return 'Bike courier setup';
+        if (this.selectedVehicleClass() === 'small_van' || this.selectedVehicleClass() === 'large_van') return 'Van setup';
+        return 'Car setup';
+    }
+
+    vehicleSetupMessage(): string {
+        if (this.isBikeVehicle()) {
+            return 'Bike drivers only need bike details, profile photo, mobile number, photo ID, payout setup, and optional courier insurance.';
+        }
+
+        if (this.selectedVehicleClass() === 'small_van' || this.selectedVehicleClass() === 'large_van') {
+            return 'Van drivers need vehicle details, registration plate, insurance, profile photo, and payout setup. Taxi licence fields are hidden for van-only work.';
+        }
+
+        return 'Car and XL drivers need vehicle details, registration plate, insurance, council taxi licence, profile photo, and payout setup.';
+    }
+
+    vehicleMakeLabel(): string {
+        return this.isBikeVehicle() ? 'Bike Brand' : 'Make';
+    }
+
+    vehicleMakePlaceholder(): string {
+        return this.isBikeVehicle() ? 'e.g. Trek, Raleigh, Honda' : 'e.g. Toyota';
+    }
+
+    vehicleModelLabel(): string {
+        return this.isBikeVehicle() ? 'Bike Type / Model' : 'Model';
+    }
+
+    vehicleModelPlaceholder(): string {
+        return this.isBikeVehicle() ? 'e.g. E-bike, road bike, PCX' : 'e.g. Corolla';
+    }
+
+    vehicleColorLabel(): string {
+        return this.isBikeVehicle() ? 'Bike Colour' : 'Colour';
+    }
+
+    vehicleColorPlaceholder(): string {
+        return this.isBikeVehicle() ? 'e.g. Black' : 'e.g. Silver';
+    }
+
+    vehicleYearLabel(): string {
+        return this.isBikeVehicle() ? 'Bike Year' : 'Year';
+    }
+
+    vehicleYearPlaceholder(): string {
+        return this.isBikeVehicle() ? 'e.g. 2023' : 'e.g. 2022';
+    }
+
     primaryDocumentLabel(): string {
         return this.isBikeVehicle() ? 'Photo ID' : 'Driver Licence';
     }
@@ -920,7 +978,8 @@ export class OnboardingPage implements OnInit {
     }
 
     vehicleChecklistLabel(): string {
-        return this.isBikeVehicle() ? 'Bike details and ID checks' : 'Vehicle and council details';
+        if (this.isBikeVehicle()) return 'Bike details and ID checks';
+        return this.requiresTaxiLicence() ? 'Vehicle and council details' : 'Vehicle details and documents';
     }
 
     private applyVehicleClassRules(value: DriverVehicleClass) {
@@ -930,25 +989,34 @@ export class OnboardingPage implements OnInit {
         const taxiBadge = this.onboardingForm.get('taxi_badge_number');
         const taxiExpiry = this.onboardingForm.get('taxi_license_expiry');
         const isBike = value === 'bike';
+        const needsTaxiLicence = this.requiresTaxiLicenceForClass(value);
 
         if (isBike) {
             plate?.clearValidators();
-            councilName?.clearValidators();
-            councilNumber?.clearValidators();
-            taxiBadge?.clearValidators();
-            taxiExpiry?.clearValidators();
             plate?.setValue('', { emitEvent: false });
         } else {
             plate?.setValidators([Validators.required, Validators.minLength(2)]);
+        }
+
+        if (needsTaxiLicence) {
             councilName?.setValidators([Validators.required, Validators.minLength(2)]);
             councilNumber?.setValidators([Validators.required, Validators.minLength(2)]);
             taxiBadge?.setValidators([Validators.required, Validators.minLength(2)]);
             taxiExpiry?.setValidators(Validators.required);
+        } else {
+            councilName?.clearValidators();
+            councilNumber?.clearValidators();
+            taxiBadge?.clearValidators();
+            taxiExpiry?.clearValidators();
         }
 
         [plate, councilName, councilNumber, taxiBadge, taxiExpiry].forEach(control => {
             control?.updateValueAndValidity({ emitEvent: false });
         });
+    }
+
+    private requiresTaxiLicenceForClass(value: DriverVehicleClass): boolean {
+        return value === 'standard' || value === 'xl';
     }
 
     private parseVerificationItems(value: unknown): Record<string, string> {
