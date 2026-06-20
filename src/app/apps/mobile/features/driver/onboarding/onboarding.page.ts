@@ -40,6 +40,8 @@ import { DriverService } from '@core/services/driver/driver.service';
 import { AuthService } from '@core/services/auth/auth.service';
 import { ProfileService } from '@core/services/profile/profile.service';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
+import { StorageUploadService } from '@core/services/storage/storage-upload.service';
+import { AppConfigService } from '@core/services/config/app-config.service';
 import { DriverProfile, Vehicle } from '@shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '@shared/ui';
 
@@ -277,6 +279,38 @@ type DriverOnboardingDraft = {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Profile Photo</h2>
+            </div>
+
+            <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm p-5">
+              <div class="flex items-center gap-4">
+                <div class="w-20 h-20 rounded-[1.65rem] overflow-hidden bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                  @if (driverPhotoUrl()) {
+                    <img [src]="driverPhotoUrl()" alt="Driver photo" class="w-full h-full object-cover" />
+                  } @else {
+                    <ion-icon name="person-add-outline" class="text-4xl"></ion-icon>
+                  }
+                </div>
+
+                <div class="min-w-0 flex-1">
+                  <h3 class="font-display font-black text-slate-950">Customer trust photo</h3>
+                  <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-1">
+                    Customers see this while waiting for you. Use a clear photo of your face.
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-4">
+                <app-button variant="secondary" size="sm" class="w-full" [disabled]="isReadOnly()" (clicked)="uploadDriverPhoto()">
+                  {{ driverPhotoUrl() ? 'Change Photo' : 'Upload Photo' }}
+                </app-button>
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-4">
+            <div class="flex items-center gap-3 ml-1">
+              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Contact Details</h2>
             </div>
 
@@ -346,19 +380,23 @@ type DriverOnboardingDraft = {
                 <div class="p-4">
                   <div class="flex items-center justify-between gap-3 mb-1">
                     <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">License Plate</label>
-                    <button
-                      type="button"
-                      (click)="lookupVehicleByPlate()"
-                      [disabled]="isReadOnly()"
-                      class="text-[10px] font-black uppercase tracking-widest text-amber-600 disabled:text-slate-300"
-                    >
-                      Find details
-                    </button>
+                    @if (appConfig.vehiclePlateLookupEnabled()) {
+                      <button
+                        type="button"
+                        (click)="lookupVehicleByPlate()"
+                        [disabled]="isReadOnly()"
+                        class="text-[10px] font-black uppercase tracking-widest text-amber-600 disabled:text-slate-300"
+                      >
+                        Find details
+                      </button>
+                    }
                   </div>
                   <input id="license_plate" formControlName="license_plate" placeholder="e.g. AB12 CDE" [readonly]="isReadOnly()" (blur)="normalizePlate()" class="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-950 placeholder:text-slate-300 uppercase">
-                  <p class="mt-2 text-xs font-semibold text-slate-500">
-                    We use the plate for manual checks. Automatic DVLA lookup can be enabled when a vehicle data provider is connected.
-                  </p>
+                  @if (appConfig.vehiclePlateLookupEnabled()) {
+                    <p class="mt-2 text-xs font-semibold text-slate-500">
+                      Use your plate to help confirm make, colour, and model where lookup is configured.
+                    </p>
+                  }
                 </div>
 
                 <div class="p-4 space-y-3">
@@ -559,6 +597,8 @@ export class OnboardingPage implements OnInit {
     public authService = inject(AuthService);
     private profileService = inject(ProfileService);
     private supabase = inject(SupabaseService);
+    private storageUpload = inject(StorageUploadService);
+    public appConfig = inject(AppConfigService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private route = inject(ActivatedRoute);
@@ -577,6 +617,11 @@ export class OnboardingPage implements OnInit {
     stripeAccount = this.driverService.stripeAccount;
     profile = this.profileService.profile;
     vehicle = this.driverService.vehicle;
+
+    driverPhotoUrl = computed(() => {
+        const profile = this.profile() as DriverProfile | null;
+        return profile?.avatar_url || null;
+    });
 
     vehicleClassOptions: Array<{ id: DriverVehicleClass; label: string; helper: string; icon: string }> = [
         { id: 'bike', label: 'Bike', helper: 'Small delivery and errands', icon: 'bicycle-outline' },
@@ -892,6 +937,54 @@ export class OnboardingPage implements OnInit {
         void this.upload(type);
     }
 
+    async uploadDriverPhoto() {
+        if (this.isReadOnly()) {
+            await this.showToast('Photo cannot be changed while verification is in progress.', 'warning');
+            return;
+        }
+
+        const user = this.authService.currentUser();
+
+        if (!user?.id) {
+            await this.showToast('Please sign in again to upload your photo.', 'danger');
+            return;
+        }
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/jpeg,image/png,image/webp';
+
+        input.onchange = async (event: Event) => {
+            const target = event.target as HTMLInputElement;
+            const file = target.files?.[0];
+
+            if (!file) return;
+
+            if (!this.isAllowedImage(file)) {
+                await this.showToast('Please upload a JPG, PNG, or WEBP photo under 8MB.', 'warning');
+                return;
+            }
+
+            const loading = await this.loadingCtrl.create({ message: 'Uploading driver photo...' });
+            await loading.present();
+
+            try {
+                const path = await this.storageUpload.uploadProfileImage(user.id, file);
+                const publicUrl = await this.storageUpload.getPublicUrl('profiles', path);
+
+                await this.updateProfileSafely(user.id, { avatar_url: publicUrl });
+                await this.showToast('Driver photo uploaded.', 'success');
+            } catch {
+                await this.showToast('Driver photo upload failed.', 'danger');
+            } finally {
+                target.value = '';
+                await loading.dismiss();
+            }
+        };
+
+        input.click();
+    }
+
     async openDocument(type: DocumentType) {
         const path = this.docs()[type];
 
@@ -993,6 +1086,11 @@ export class OnboardingPage implements OnInit {
 
     private isAllowedFile(file: File): boolean {
         const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        return allowedTypes.includes(file.type) && file.size <= this.maxUploadBytes;
+    }
+
+    private isAllowedImage(file: File): boolean {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
         return allowedTypes.includes(file.type) && file.size <= this.maxUploadBytes;
     }
 

@@ -28,6 +28,7 @@ import {
 
 import { AuthService } from '@core/services/auth/auth.service';
 import { ProfileService } from '@core/services/profile/profile.service';
+import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { ButtonComponent } from '@shared/ui';
 import { Profile } from '@shared/models/booking.model';
 
@@ -63,9 +64,17 @@ import { Profile } from '@shared/models/booking.model';
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24">
         <section class="rounded-[2rem] bg-white border border-slate-200 shadow-xl shadow-slate-900/10 p-5">
           <div class="flex items-start gap-4">
-            <div class="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-              <ion-icon name="person-circle-outline" class="text-3xl"></ion-icon>
-            </div>
+            <button
+              type="button"
+              (click)="uploadProfilePhoto()"
+              class="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0 overflow-hidden active:scale-95 transition-all"
+            >
+              @if (photoUrl()) {
+                <img [src]="photoUrl()" alt="Profile photo" class="w-full h-full object-cover" />
+              } @else {
+                <ion-icon name="person-circle-outline" class="text-4xl"></ion-icon>
+              }
+            </button>
 
             <div class="min-w-0">
               <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
@@ -77,6 +86,13 @@ import { Profile } from '@shared/models/booking.model';
               <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-2">
                 Your name and phone help customers and drivers recognise each other safely.
               </p>
+              <button
+                type="button"
+                (click)="uploadProfilePhoto()"
+                class="mt-3 text-[10px] font-black uppercase tracking-widest text-amber-600"
+              >
+                {{ photoUrl() ? 'Change photo' : 'Upload photo' }}
+              </button>
             </div>
           </div>
         </section>
@@ -165,6 +181,7 @@ export class AccountSettingsPage implements OnInit {
     private fb = inject(FormBuilder);
     private auth = inject(AuthService);
     private profileService = inject(ProfileService);
+    private storageUpload = inject(StorageUploadService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
@@ -172,6 +189,7 @@ export class AccountSettingsPage implements OnInit {
 
     saving = signal(false);
     email = signal('');
+    photoUrl = signal<string | null>(null);
 
     form = this.fb.group({
         full_name: ['', [Validators.required, Validators.minLength(2)]],
@@ -220,6 +238,54 @@ export class AccountSettingsPage implements OnInit {
             },
             { emitEvent: false }
         );
+        this.photoUrl.set(profile.avatar_url || null);
+    }
+
+    async uploadProfilePhoto() {
+        if (this.saving()) return;
+
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            await this.showToast('Please sign in again to upload your photo.', 'danger');
+            return;
+        }
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/jpeg,image/png,image/webp';
+
+        input.onchange = async (event: Event) => {
+            const target = event.target as HTMLInputElement;
+            const file = target.files?.[0];
+
+            if (!file) return;
+
+            if (!this.isAllowedImage(file)) {
+                await this.showToast('Please upload a JPG, PNG, or WEBP photo under 8MB.', 'warning');
+                return;
+            }
+
+            this.saving.set(true);
+            const loading = await this.loadingCtrl.create({ message: 'Uploading photo...' });
+            await loading.present();
+
+            try {
+                const path = await this.storageUpload.uploadProfileImage(user.id, file);
+                const publicUrl = await this.storageUpload.getPublicUrl('profiles', path);
+                await this.profileService.updateProfile(user.id, { avatar_url: publicUrl } as Partial<Profile>);
+                this.photoUrl.set(publicUrl);
+                await this.showToast('Profile photo updated.', 'success');
+            } catch {
+                await this.showToast('Photo upload failed.', 'danger');
+            } finally {
+                this.saving.set(false);
+                target.value = '';
+                await loading.dismiss();
+            }
+        };
+
+        input.click();
     }
 
     async save() {
@@ -296,6 +362,11 @@ export class AccountSettingsPage implements OnInit {
             this.saving.set(false);
             await loading.dismiss();
         }
+    }
+
+    private isAllowedImage(file: File): boolean {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        return allowedTypes.includes(file.type) && file.size <= 8 * 1024 * 1024;
     }
 
     private async showToast(message: string, color: 'success' | 'danger' | 'warning') {

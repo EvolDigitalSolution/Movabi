@@ -122,8 +122,12 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 <div class="max-w-[24rem] bg-white/92 backdrop-blur rounded-2xl border border-white/70 shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
                   <div class="flex items-start justify-between gap-3">
                     <div class="flex items-center gap-2.5 min-w-0">
-                      <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                        <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
+                      <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0 overflow-hidden">
+                        @if (getDriverAvatar()) {
+                          <img [src]="getDriverAvatar()!" alt="Driver photo" class="w-full h-full object-cover" />
+                        } @else {
+                          <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
+                        }
                       </div>
 
                       <div class="min-w-0">
@@ -336,7 +340,13 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               <div class="p-4 bg-white rounded-[2rem] border border-slate-100 shadow-sm">
                 <div class="flex items-start gap-4">
                   <div class="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white shadow-md shrink-0">
-                    <img src="https://picsum.photos/seed/driver/200" alt="Driver profile" class="w-full h-full object-cover" />
+                    @if (getDriverAvatar()) {
+                      <img [src]="getDriverAvatar()!" alt="Driver photo" class="w-full h-full object-cover" />
+                    } @else {
+                      <div class="w-full h-full bg-amber-50 text-amber-600 flex items-center justify-center">
+                        <ion-icon name="car-sport-outline" class="text-2xl"></ion-icon>
+                      </div>
+                    }
                   </div>
 
                   <div class="flex-1 min-w-0">
@@ -850,12 +860,16 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     getDriverName(): string {
         const driver = this.booking()?.driver;
-        const name = [driver?.first_name, driver?.last_name]
+        const name = String(driver?.full_name || '').trim() || [driver?.first_name, driver?.last_name]
             .map((part) => String(part || '').trim())
             .filter(Boolean)
             .join(' ');
 
         return name || 'Your driver';
+    }
+
+    getDriverAvatar(): string | null {
+        return this.booking()?.driver?.avatar_url || null;
     }
 
     getDriverVehicleSummary(): string {

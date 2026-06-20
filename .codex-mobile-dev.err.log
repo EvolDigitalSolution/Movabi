@@ -20,3 +20,290 @@ websocket connection issues.
           ╵                            [32m~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverPhotoUrl' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:288:23:
+[37m      288 │                   @if ([32mdriverPhotoUrl[37m()) {
+          ╵                        [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverPhotoUrl' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:289:32:
+[37m      289 │ ...            <img [src]="[32mdriverPhotoUrl[37m()" alt="Driver photo" c...
+          ╵                            [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'uploadDriverPhoto' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:304:110:
+[37m      304 │ ...-full" [disabled]="isReadOnly()" (clicked)="[32muploadDriverPhoto[37m()">
+          ╵                                                [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverPhotoUrl' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:305:21:
+[37m      305 │                   {{ [32mdriverPhotoUrl[37m() ? 'Change Photo' : 'Upload ...
+          ╵                      [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverPhotoUrl' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:288:23:
+[37m      288 │                   @if ([32mdriverPhotoUrl[37m()) {
+          ╵                        [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverPhotoUrl' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:289:32:
+[37m      289 │ ...            <img [src]="[32mdriverPhotoUrl[37m()" alt="Driver photo" c...
+          ╵                            [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'uploadDriverPhoto' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:304:110:
+[37m      304 │ ...-full" [disabled]="isReadOnly()" (clicked)="[32muploadDriverPhoto[37m()">
+          ╵                                                [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'driverPhotoUrl' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:305:21:
+[37m      305 │                   {{ [32mdriverPhotoUrl[37m() ? 'Change Photo' : 'Upload ...
+          ╵                      [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:41:8:
+[37m      41 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:42:8:
+[37m      42 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:43:8:
+[37m      43 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonBackButton is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:44:8:
+[37m      44 │         [32mIonBackButton[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:45:8:
+[37m      45 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:46:8:
+[37m      46 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:47:8:
+[37m      47 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:48:8:
+[37m      48 │         [32mButtonComponent[37m
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:98:10:
+[37m      98 │           [32m</div>[37m
+         ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "section". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:99:8:
+[37m      99 │         [32m</section>[37m
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:177:6:
+[37m      177 │       [32m</div>[37m
+          ╵       [32m~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:41:8:
+[37m      41 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:42:8:
+[37m      42 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:43:8:
+[37m      43 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonBackButton is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:44:8:
+[37m      44 │         [32mIonBackButton[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:45:8:
+[37m      45 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:46:8:
+[37m      46 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:47:8:
+[37m      47 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:48:8:
+[37m      48 │         [32mButtonComponent[37m
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:98:10:
+[37m      98 │           [32m</div>[37m
+         ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "section". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:99:8:
+[37m      99 │         [32m</section>[37m
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:177:6:
+[37m      177 │       [32m</div>[37m
+          ╵       [32m~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonHeader is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:41:8:
+[37m      41 │         [32mIonHeader[37m,
+         ╵         [32m~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonToolbar is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:42:8:
+[37m      42 │         [32mIonToolbar[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonButtons is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:43:8:
+[37m      43 │         [32mIonButtons[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonBackButton is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:44:8:
+[37m      44 │         [32mIonBackButton[37m,
+         ╵         [32m~~~~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonTitle is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:45:8:
+[37m      45 │         [32mIonTitle[37m,
+         ╵         [32m~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonContent is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:46:8:
+[37m      46 │         [32mIonContent[37m,
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: IonIcon is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:47:8:
+[37m      47 │         [32mIonIcon[37m,
+         ╵         [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: ButtonComponent is not used within the template of AccountSettingsPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:48:8:
+[37m      48 │         [32mButtonComponent[37m
+         ╵         [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:98:10:
+[37m      98 │           [32m</div>[37m
+         ╵           [32m~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "section". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:99:8:
+[37m      99 │         [32m</section>[37m
+         ╵         [32m~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Unexpected closing tag "div". It may happen when the tag has already been closed by another tag. For more info see https://www.w3.org/TR/html5/syntax.html#closing-elements-that-have-implied-end-tags[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/account/account-settings.page.ts:177:6:
+[37m      177 │       [32m</div>[37m
+          ╵       [32m~~~~~~[0m
+
+[39m[22m

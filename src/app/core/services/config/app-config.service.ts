@@ -61,6 +61,10 @@ export class AppConfigService {
     return this.countries().find(c => c.code === code) || this.defaultCountries[0];
   });
 
+  public readonly vehiclePlateLookupEnabled = computed(() => {
+    return this.systemConfig.getConfig<boolean>('vehicle_plate_lookup_enabled', false);
+  });
+
   constructor() {
     this.refreshConfigs();
   }
