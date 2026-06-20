@@ -241,8 +241,9 @@ export class GeocodingService {
     }
 
     private rankResults(results: AutocompleteResult[], query: string): AutocompleteResult[] {
+        const labelledResults = results.map(result => this.preserveTypedHouseNumber(result, query));
         const seen = new Set<string>();
-        const deduped = results.filter(result => {
+        const deduped = labelledResults.filter(result => {
             const key = `${this.normaliseForScore(result.label)}:${result.lat.toFixed(5)}:${result.lng.toFixed(5)}`;
 
             if (seen.has(key)) return false;
@@ -251,6 +252,36 @@ export class GeocodingService {
         });
 
         return deduped.sort((a, b) => this.scoreResult(b, query) - this.scoreResult(a, query));
+    }
+
+    private preserveTypedHouseNumber(result: AutocompleteResult, query: string): AutocompleteResult {
+        const typedLine = this.firstAddressLine(query);
+        const houseNumber = typedLine.match(/^(\d+[a-z]?)\s+/i)?.[1];
+
+        if (!houseNumber) return result;
+
+        const typedStreet = typedLine.replace(/^(\d+[a-z]?)\s+/i, '').trim();
+
+        if (!typedStreet) return result;
+
+        const normalizedLabel = this.normaliseForScore(result.label);
+        const normalizedStreet = this.normaliseForScore(typedStreet);
+        const normalizedNumber = this.normaliseForScore(houseNumber);
+
+        if (!normalizedLabel.includes(normalizedStreet) || normalizedLabel.includes(normalizedNumber)) {
+            return result;
+        }
+
+        const labelParts = result.label.split(',').map(part => part.trim()).filter(Boolean);
+        const remainingParts = this.normaliseForScore(labelParts[0] || '') === normalizedStreet
+            ? labelParts.slice(1)
+            : labelParts;
+        const formattedLine = this.toTitleCase(typedLine);
+
+        return {
+            ...result,
+            label: [formattedLine, ...remainingParts].join(', ')
+        };
     }
 
     private scoreResult(result: AutocompleteResult, query: string): number {
@@ -279,5 +310,21 @@ export class GeocodingService {
             .replace(/[^\p{L}\p{N}\s]/gu, ' ')
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    private firstAddressLine(value: string): string {
+        const country = this.config.currentCountry();
+
+        return String(value || '')
+            .replace(new RegExp(`,?\\s*${country.name}$`, 'i'), '')
+            .split(',')[0]
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    private toTitleCase(value: string): string {
+        return value
+            .toLowerCase()
+            .replace(/\b(\p{L}|\p{N})/gu, match => match.toUpperCase());
     }
 }
