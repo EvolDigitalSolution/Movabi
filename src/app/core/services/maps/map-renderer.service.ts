@@ -14,6 +14,7 @@ export class MapRendererService {
   
   private map: Map | null = null;
   private markers = new globalThis.Map<string, Marker>();
+  private markerAnimationFrames = new globalThis.Map<string, number>();
   private routeLayerId = 'movabi-route-layer';
   private routeSourceId = 'movabi-route-source';
 
@@ -50,6 +51,7 @@ export class MapRendererService {
   }
 
   destroyMap() {
+    this.cancelAllMarkerAnimations();
     if (this.map) {
       this.map.remove();
       this.map = null;
@@ -81,7 +83,13 @@ export class MapRendererService {
       
       if (marker) {
         if (options.kind === 'driver') {
-          this.animateMarkerMovement(marker, options.coordinates.lng, options.coordinates.lat, options.heading);
+          this.animateMarkerMovement(
+            options.id,
+            marker,
+            options.coordinates.lng,
+            options.coordinates.lat,
+            options.heading
+          );
         } else {
           marker.setLngLat([options.coordinates.lng, options.coordinates.lat]);
         }
@@ -103,6 +111,7 @@ export class MapRendererService {
   }
 
   removeMarker(id: string) {
+    this.cancelMarkerAnimation(id);
     const marker = this.markers.get(id);
     if (marker) {
       marker.remove();
@@ -120,31 +129,87 @@ export class MapRendererService {
     }
   }
 
-  private animateMarkerMovement(marker: Marker, targetLng: number, targetLat: number, heading?: number) {
+  private animateMarkerMovement(
+    markerId: string,
+    marker: Marker,
+    targetLng: number,
+    targetLat: number,
+    heading?: number
+  ) {
+    this.cancelMarkerAnimation(markerId);
+
     const start = marker.getLngLat();
     const end = { lng: targetLng, lat: targetLat };
-    const duration = 1000;
+    const distanceKm = this.distanceKm(start.lat, start.lng, end.lat, end.lng);
+
+    // Do not animate stale GPS jumps across a city. Normal location updates glide
+    // for long enough to look continuous without lagging behind the driver.
+    if (distanceKm > 5) {
+      marker.setLngLat([targetLng, targetLat]);
+      if (heading !== undefined) this.rotateMarker(marker, heading);
+      return;
+    }
+
+    const duration = Math.min(3200, Math.max(900, 900 + distanceKm * 18000));
+    const resolvedHeading = heading ?? this.bearingDegrees(start.lat, start.lng, end.lat, end.lng);
     const startTime = performance.now();
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
 
-      const lng = start.lng + (end.lng - start.lng) * progress;
-      const lat = start.lat + (end.lat - start.lat) * progress;
+      const lng = start.lng + (end.lng - start.lng) * easedProgress;
+      const lat = start.lat + (end.lat - start.lat) * easedProgress;
 
       marker.setLngLat([lng, lat]);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        this.markerAnimationFrames.set(markerId, requestAnimationFrame(animate));
+      } else {
+        this.markerAnimationFrames.delete(markerId);
       }
     };
 
-    requestAnimationFrame(animate);
+    this.markerAnimationFrames.set(markerId, requestAnimationFrame(animate));
     
-    if (heading !== undefined) {
-      this.rotateMarker(marker, heading);
+    this.rotateMarker(marker, resolvedHeading);
+  }
+
+  private cancelMarkerAnimation(markerId: string): void {
+    const frame = this.markerAnimationFrames.get(markerId);
+    if (frame !== undefined) {
+      cancelAnimationFrame(frame);
+      this.markerAnimationFrames.delete(markerId);
     }
+  }
+
+  private cancelAllMarkerAnimations(): void {
+    this.markerAnimationFrames.forEach((frame) => cancelAnimationFrame(frame));
+    this.markerAnimationFrames.clear();
+  }
+
+  private distanceKm(startLat: number, startLng: number, endLat: number, endLng: number): number {
+    const toRadians = (value: number) => value * Math.PI / 180;
+    const latDelta = toRadians(endLat - startLat);
+    const lngDelta = toRadians(endLng - startLng);
+    const a = Math.sin(latDelta / 2) ** 2
+      + Math.cos(toRadians(startLat)) * Math.cos(toRadians(endLat))
+      * Math.sin(lngDelta / 2) ** 2;
+
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  private bearingDegrees(startLat: number, startLng: number, endLat: number, endLng: number): number {
+    const toRadians = (value: number) => value * Math.PI / 180;
+    const startLatitude = toRadians(startLat);
+    const endLatitude = toRadians(endLat);
+    const longitudeDelta = toRadians(endLng - startLng);
+    const y = Math.sin(longitudeDelta) * Math.cos(endLatitude);
+    const x = Math.cos(startLatitude) * Math.sin(endLatitude)
+      - Math.sin(startLatitude) * Math.cos(endLatitude) * Math.cos(longitudeDelta);
+
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
   }
 
   drawRoute(route: RouteSummary) {

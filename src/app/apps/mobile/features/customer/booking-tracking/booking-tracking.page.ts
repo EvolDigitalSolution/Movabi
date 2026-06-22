@@ -83,12 +83,12 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
     <ion-content class="bg-slate-50">
       @if (booking()) {
         <div class="flex flex-col h-full">
-          <div class="bg-slate-100 relative overflow-hidden h-[60vh] min-h-[390px]">
+          <div class="bg-slate-100 relative overflow-hidden h-[64vh] min-h-[430px]">
             <app-map #map></app-map>
 
             @if (booking()?.status === 'searching') {
-              <div class="absolute left-3 right-3 top-3 z-20 pointer-events-none">
-                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-2xl shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
+              <div class="absolute left-3 top-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[20rem] pointer-events-none">
+                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-xl shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
                   <div class="flex items-center gap-3">
                     <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
                     <ion-spinner name="crescent" color="primary"></ion-spinner>
@@ -118,8 +118,8 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
             }
 
             @if (booking()?.driver_id && driverLiveLabel()) {
-              <div class="absolute left-3 right-3 bottom-4 z-20 pointer-events-none">
-                <div class="max-w-[24rem] bg-white/92 backdrop-blur rounded-2xl border border-white/70 shadow-xl shadow-slate-900/12 p-3 pointer-events-auto">
+              <div class="absolute left-3 bottom-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[19rem] pointer-events-none">
+                <div class="bg-white/94 backdrop-blur rounded-xl border border-white/70 shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
                   <div class="flex items-start justify-between gap-3">
                     <div class="flex items-center gap-2.5 min-w-0">
                       <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0 overflow-hidden">
@@ -133,7 +133,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       <div class="min-w-0">
                         <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
                         <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ getDriverName() }}</h3>
-                        <p class="text-[11px] text-slate-500 font-semibold leading-snug line-clamp-2">{{ driverLiveSubtext() }}</p>
+                        <p class="text-[11px] text-slate-500 font-semibold leading-snug truncate">{{ driverLiveSubtext() }}</p>
                       </div>
                     </div>
 
@@ -146,7 +146,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
           <div
             class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
-            [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[40vh]'"
+            [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[34vh]'"
           >
             <button
               type="button"
@@ -640,6 +640,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private channel?: RealtimeChannel;
     private errandFundingChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
+    private lastDriverCameraUpdateAt = 0;
 
     private pollingInterval?: ReturnType<typeof setInterval>;
     private countdownInterval?: ReturnType<typeof setInterval>;
@@ -1517,6 +1518,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private subscribeToDriverLocation(driverId: string): void {
         this.locationSubscription?.unsubscribe();
+        this.lastDriverCameraUpdateAt = 0;
 
         void this.locationService.getLatestDriverLocation(driverId).then((location) => {
             if (location) {
@@ -1551,12 +1553,16 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             coordinates: { lat, lng },
             kind: 'driver',
             serviceType: b.service_slug as ServiceTypeSlug,
-            heading: Number(location.heading || 0)
+            heading: location.heading == null ? undefined : Number(location.heading)
         });
 
         this.driverLastSeenAt.set(new Date());
 
-        this.fitTrackingBounds({ lat, lng });
+        const now = Date.now();
+        if (now - this.lastDriverCameraUpdateAt >= 15000) {
+            this.fitTrackingBounds({ lat, lng });
+            this.lastDriverCameraUpdateAt = now;
+        }
 
         const routeTarget = this.getDriverRouteTarget(b);
 
@@ -1625,7 +1631,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (routeBounds) {
             this.mapComponent.fitBounds(routeBounds, {
-                padding: { top: 56, bottom: 92, left: 42, right: 42 },
+                padding: { top: 72, bottom: 138, left: 34, right: 34 },
                 maxZoom: 16,
                 duration: 700
             });
@@ -1639,16 +1645,18 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const pickup = { lat: Number(b.pickup_lat), lng: Number(b.pickup_lng) };
         const dropoff = { lat: Number(b.dropoff_lat), lng: Number(b.dropoff_lng) };
 
-        if (this.isValidCoordinate(pickup.lat) && this.isValidCoordinate(pickup.lng)) {
-            points.push(pickup);
-        }
-
-        if (this.isValidCoordinate(dropoff.lat) && this.isValidCoordinate(dropoff.lng)) {
-            points.push(dropoff);
-        }
-
         if (driver && this.isValidCoordinate(driver.lat) && this.isValidCoordinate(driver.lng)) {
             points.push(driver);
+            const activeTarget = this.getDriverRouteTarget(b);
+            if (activeTarget) points.push(activeTarget);
+        } else {
+            if (this.isValidCoordinate(pickup.lat) && this.isValidCoordinate(pickup.lng)) {
+                points.push(pickup);
+            }
+
+            if (this.isValidCoordinate(dropoff.lat) && this.isValidCoordinate(dropoff.lng)) {
+                points.push(dropoff);
+            }
         }
 
         if (points.length === 0) return;
@@ -1667,7 +1675,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 [Math.max(...lngs), Math.max(...lats)]
             ],
             {
-                padding: { top: 60, bottom: 96, left: 42, right: 42 },
+                padding: { top: 72, bottom: 138, left: 34, right: 34 },
                 maxZoom: 16,
                 duration: 700
             }
