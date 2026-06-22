@@ -531,7 +531,7 @@ export class AdminService {
       headers
     });
 
-    const result = await response.json();
+    const result = await this.readApiResponse(response);
 
     if (!response.ok) {
       throw new Error(result?.error || 'Driver pre-verification failed');
@@ -551,13 +551,61 @@ export class AdminService {
       })
     });
 
-    const result = await response.json();
+    const result = await this.readApiResponse(response);
 
     if (!response.ok) {
+      if (response.status === 404) {
+        return this.manualApproveDriverViaSupabase(driverId, notes);
+      }
+
       throw new Error(result?.error || 'Manual driver approval failed');
     }
 
     return result;
+  }
+
+  private async manualApproveDriverViaSupabase(driverId: string, notes: string) {
+    const { data, error } = await this.supabase
+      .from('profiles')
+      .update({
+        is_verified: true,
+        verification_status: 'approved',
+        account_status: 'active',
+        manual_verification_notes: notes || 'Approved manually. External verification APIs are not enabled yet.',
+        testing_approval_override: true,
+        verification_blockers: [],
+        verified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', driverId)
+      .select('*')
+      .single();
+
+    if (error) {
+      throw new Error(`Verification API is not deployed and the secure database fallback failed: ${error.message}`);
+    }
+
+    return {
+      success: true,
+      message: 'Driver manually approved',
+      driver: data
+    };
+  }
+
+  private async readApiResponse(response: Response): Promise<any> {
+    const text = await response.text();
+
+    if (!text) return {};
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        error: response.status === 404
+          ? 'Verification endpoint is not available on the deployed API.'
+          : `The API returned an unexpected ${response.status} response.`
+      };
+    }
   }
 
   private async getAuthenticatedApiHeaders(): Promise<Record<string, string>> {

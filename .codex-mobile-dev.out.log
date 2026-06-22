@@ -1062,3 +1062,24 @@ Application bundle generation complete. [2.441 seconds] - 2026-06-22T21:27:00.86
 Application bundle generation complete. [3.939 seconds] - 2026-06-22T21:27:05.141Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                         [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                          [2m | [22m[36m275.06 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                         [2m | [22m [1mRaw size[22m
+[32mchunk-BNGGVNIV.js[39m  [2m | [22m[2mdriver-list-component[22m         [2m | [22m [36m94.30 kB[39m[2m | [22m
+[32mchunk-ITYCGFOE.js[39m  [2m | [22m[2mjob-monitoring-component[22m      [2m | [22m [36m87.07 kB[39m[2m | [22m
+[32mchunk-VB6EGCKI.js[39m  [2m | [22m[2mbooking-list-component[22m        [2m | [22m [36m78.64 kB[39m[2m | [22m
+[32mchunk-TJZP3BPP.js[39m  [2m | [22m[2mpricing-rules-component[22m       [2m | [22m [36m55.40 kB[39m[2m | [22m
+[32mchunk-AS6RJ3ES.js[39m  [2m | [22m[2mdashboard-component[22m           [2m | [22m [36m54.74 kB[39m[2m | [22m
+[32mchunk-I6SV2KXB.js[39m  [2m | [22m[2msubscription-plans-component[22m  [2m | [22m [36m34.76 kB[39m[2m | [22m
+[32mchunk-FUHQB2GJ.js[39m  [2m | [22m[2muser-list-component[22m           [2m | [22m [36m27.95 kB[39m[2m | [22m
+[32mchunk-S6MSZVUL.js[39m  [2m | [22m[2m-[22m                             [2m | [22m [36m22.24 kB[39m[2m | [22m
+[32mchunk-SNN5G37K.js[39m  [2m | [22m[2mdriver-subscriptions-component[22m[2m | [22m [36m21.33 kB[39m[2m | [22m
+[32mchunk-C7EKM2DX.js[39m  [2m | [22m[2msubscription-list-component[22m   [2m | [22m [36m20.17 kB[39m[2m | [22m
+[32mchunk-NJ6VDD5U.js[39m  [2m | [22m[2madmin-web-routes[22m              [2m | [22m  [36m2.45 kB[39m[2m | [22m
+
+Application bundle generation complete. [4.447 seconds] - 2026-06-22T21:35:43.552Z
+
+Page reload sent to client(s).
