@@ -345,9 +345,9 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 
                   <div class="grid grid-cols-2 gap-3">
                     <div class="p-4 bg-white rounded-2xl border border-slate-100">
-                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Budget</p>
+                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Approved budget</p>
                       <p class="text-lg font-display font-black text-slate-950">
-                        {{ formatPrice(errandDetails()?.estimated_budget || 0) }}
+                        {{ formatPrice(approvedErrandItemBudget()) }}
                       </p>
                     </div>
 
@@ -356,8 +356,8 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                       <p
                         class="text-lg font-display font-black"
                         [class.text-amber-600]="!hasRecordedErrandSpend()"
-                        [class.text-emerald-600]="hasRecordedErrandSpend() && toNumber(errandDetails()?.actual_spending) <= toNumber(errandDetails()?.estimated_budget)"
-                        [class.text-rose-600]="hasRecordedErrandSpend() && toNumber(errandDetails()?.actual_spending) > toNumber(errandDetails()?.estimated_budget)"
+                        [class.text-emerald-600]="hasRecordedErrandSpend() && toNumber(errandDetails()?.actual_spending) <= approvedErrandItemBudget()"
+                        [class.text-rose-600]="hasRecordedErrandSpend() && toNumber(errandDetails()?.actual_spending) > approvedErrandItemBudget()"
                       >
                         {{ hasRecordedErrandSpend() ? formatPrice(errandDetails()?.actual_spending || 0) : 'Not recorded' }}
                       </p>
@@ -1093,14 +1093,23 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         const paymentSplit = metadata['payment_split'] || {};
 
         return this.firstPositiveMoney(
+            this.approvedErrandItemBudget(),
             this.issuingCardStatus()?.budgetLimit,
-            this.funding()?.amount_reserved,
-            this.errandDetails()?.estimated_budget,
             errandMetadata?.budget,
             errandMetadata?.estimated_budget,
             errandMetadata?.wallet_budget,
             paymentSplit?.item_budget
         );
+    }
+
+    approvedErrandItemBudget(): number {
+        const initialBudget = Math.max(0, this.toNumber(this.errandDetails()?.estimated_budget));
+        const currentFunding = this.funding();
+        const approvedExtra = currentFunding?.over_budget_status === 'approved'
+            ? Math.max(0, this.toNumber(currentFunding.requested_over_budget_amount ?? currentFunding.over_budget_amount))
+            : 0;
+
+        return Number((initialBudget + approvedExtra).toFixed(2));
     }
 
     virtualCardDisplayNumber(): string {
@@ -1522,16 +1531,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         const currentDetails = this.details() as any;
+        const approvedBudget = this.approvedErrandItemBudget();
 
         const alert = await this.alertCtrl.create({
             header: 'Record Spending',
-            message: 'Enter the actual amount spent on items.',
+            message: `Enter the actual item spend. Maximum approved budget: ${this.formatPrice(approvedBudget)}.`,
             inputs: [
                 {
                     name: 'amount',
                     type: 'number',
                     placeholder: 'Amount, e.g. 15.50',
                     min: 0,
+                    max: approvedBudget,
                     value: currentDetails?.actual_spending ?? ''
                 },
                 {
@@ -1550,6 +1561,14 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
                         if (!Number.isFinite(amount) || amount <= 0) {
                             void this.showToast('Enter a valid amount.', 'warning');
+                            return false;
+                        }
+
+                        if (amount > approvedBudget) {
+                            void this.showToast(
+                                `Spending cannot exceed the approved ${this.formatPrice(approvedBudget)} item budget. Request extra budget first.`,
+                                'warning'
+                            );
                             return false;
                         }
 

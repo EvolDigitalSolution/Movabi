@@ -486,8 +486,33 @@ export class DriverService {
     }
 
     async recordErrandSpending(jobId: string, amount: number, notes?: string) {
+        const [job, details, funding] = await Promise.all([
+            this.bookingService.getBooking(jobId),
+            this.bookingService.getBookingDetails(jobId, ServiceTypeEnum.ERRAND) as Promise<ErrandDetails>,
+            this.bookingService.getErrandFunding(jobId)
+        ]);
+        const user = this.auth.currentUser();
+        const initialBudget = Math.max(0, Number(details?.estimated_budget || 0));
+        const approvedExtra = funding?.over_budget_status === 'approved'
+            ? Math.max(0, Number(funding.requested_over_budget_amount ?? funding.over_budget_amount ?? 0))
+            : 0;
+        const approvedBudget = Number((initialBudget + approvedExtra).toFixed(2));
+        const normalizedAmount = Number(Number(amount).toFixed(2));
+
+        if (!user || job.driver_id !== user.id) {
+            throw new Error('Only the assigned driver can record spending for this request.');
+        }
+        if (!Number.isFinite(normalizedAmount) || normalizedAmount < 0) {
+            throw new Error('Enter a valid spending amount.');
+        }
+        if (normalizedAmount > approvedBudget) {
+            throw new Error(
+                `Spending cannot exceed the approved £${approvedBudget.toFixed(2)} item budget. Request extra budget first.`
+            );
+        }
+
         const payload: Record<string, unknown> = {
-            actual_spending: amount,
+            actual_spending: normalizedAmount,
             spending_notes: notes,
             updated_at: new Date().toISOString()
         };
@@ -502,7 +527,7 @@ export class DriverService {
         if (error?.code === '42703') {
             const { data: fallbackData, error: fallbackError } = await this.supabase
                 .from('errand_details')
-                .update({ actual_spending: amount })
+                .update({ actual_spending: normalizedAmount })
                 .eq('job_id', jobId)
                 .select('*')
                 .maybeSingle();
@@ -520,7 +545,7 @@ export class DriverService {
             jobId,
             'errand_spending_recorded',
             `Driver recorded spending of £${amount.toFixed(2)}`,
-            { amount, notes }
+            { amount: normalizedAmount, notes }
         );
 
         return data;

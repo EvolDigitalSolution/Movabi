@@ -238,6 +238,38 @@ export class IssuingService {
       };
     }
 
+    const controlMetadata = this.parseMetadata(existing?.['metadata']);
+    const needsLimitSync = existing?.['status'] === 'active'
+      && budgetLimit > 0
+      && (
+        Math.abs(parseMoney(existing?.['amount_limit']) - budgetLimit) >= 0.01
+        || controlMetadata['spending_limit_interval'] !== 'all_time'
+      );
+
+    if (needsLimitSync) {
+      try {
+        await stripe.issuing.cards.update(card.stripe_card_id, {
+          spending_controls: {
+            spending_limits: [{ amount: moneyToMinor(budgetLimit), interval: 'all_time' }]
+          }
+        } as any);
+        await supabaseAdmin
+          .from('job_issuing_spend_controls')
+          .update({
+            amount_limit: budgetLimit,
+            metadata: {
+              ...controlMetadata,
+              spending_limit_minor: moneyToMinor(budgetLimit),
+              spending_limit_interval: 'all_time'
+            },
+            updated_at: new Date().toISOString()
+          })
+          .eq('job_id', jobId);
+      } catch (error) {
+        console.warn('[IssuingService] Could not synchronize active errand card limit', error);
+      }
+    }
+
     return {
       enabled: true,
       status: existing?.status === 'active' ? 'active' : 'ready',
@@ -294,7 +326,7 @@ export class IssuingService {
         spending_limits: [
           {
             amount: limitAmount,
-            interval: 'per_authorization'
+            interval: 'all_time'
           }
         ]
       },
@@ -321,6 +353,7 @@ export class IssuingService {
           status: 'active',
           metadata: {
             spending_limit_minor: limitAmount,
+            spending_limit_interval: 'all_time',
             card_presence: 'in_person_only'
           },
           activated_at: new Date().toISOString(),
@@ -533,7 +566,7 @@ export class IssuingService {
     const [{ data: funding }, { data: details }, { data: job }] = await Promise.all([
       supabaseAdmin
         .from('errand_funding')
-        .select('amount_reserved')
+        .select('amount_reserved, over_budget_status, over_budget_amount, requested_over_budget_amount, metadata')
         .eq('job_id', jobId)
         .maybeSingle(),
       supabaseAdmin
@@ -552,14 +585,19 @@ export class IssuingService {
     const errandMetadata = this.parseMetadata(metadata['errand_details']);
     const paymentSplit = this.parseMetadata(metadata['payment_split']);
 
-    return this.firstPositiveMoney(
-      (funding as any)?.amount_reserved,
+    const initialItemBudget = this.firstPositiveMoney(
       (details as any)?.estimated_budget,
       errandMetadata['budget'],
       errandMetadata['estimated_budget'],
       errandMetadata['wallet_budget'],
       paymentSplit['item_budget']
     );
+    const fundingRecord = (funding || {}) as Record<string, any>;
+    const approvedExtra = fundingRecord['over_budget_status'] === 'approved'
+      ? parseMoney(fundingRecord['requested_over_budget_amount'] ?? fundingRecord['over_budget_amount'])
+      : 0;
+
+    return Number((initialItemBudget + Math.max(0, approvedExtra)).toFixed(2));
   }
 
   private static firstPositiveMoney(...values: unknown[]): number {

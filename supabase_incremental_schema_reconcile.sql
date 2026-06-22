@@ -727,6 +727,49 @@ BEGIN
     END IF;
 END $$;
 
+CREATE OR REPLACE FUNCTION public.enforce_errand_spending_budget()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_approved_extra NUMERIC := 0;
+    v_approved_budget NUMERIC := 0;
+BEGIN
+    IF NEW.actual_spending IS NULL OR NEW.actual_spending IS NOT DISTINCT FROM OLD.actual_spending THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.actual_spending < 0 THEN
+        RAISE EXCEPTION 'Item spending cannot be negative';
+    END IF;
+
+    SELECT CASE
+        WHEN over_budget_status = 'approved'
+        THEN COALESCE(requested_over_budget_amount, over_budget_amount, 0)
+        ELSE 0
+    END
+    INTO v_approved_extra
+    FROM public.errand_funding
+    WHERE job_id = NEW.job_id;
+
+    v_approved_budget := ROUND(
+        (COALESCE(NEW.estimated_budget, 0) + COALESCE(v_approved_extra, 0))::NUMERIC,
+        2
+    );
+
+    IF ROUND(NEW.actual_spending::NUMERIC, 2) > v_approved_budget THEN
+        RAISE EXCEPTION 'Item spending exceeds approved budget. Maximum: %', v_approved_budget;
+    END IF;
+
+    NEW.actual_spending := ROUND(NEW.actual_spending::NUMERIC, 2);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_enforce_errand_spending_budget ON public.errand_details;
+CREATE TRIGGER trg_enforce_errand_spending_budget
+BEFORE UPDATE OF actual_spending ON public.errand_details
+FOR EACH ROW
+EXECUTE FUNCTION public.enforce_errand_spending_budget();
+
 CREATE TABLE IF NOT EXISTS public.driver_issuing_cardholders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     driver_id UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
