@@ -845,3 +845,16 @@ websocket connection issues.
            ╵                                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'serviceName' does not exist on type 'DriverDashboardPage'. Did you mean 'getServiceName'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:1508:35:
+[37m      1508 │ ...is.showToast(`New ${this.[32mserviceName[37m(job).toLowerCase()} requ...
+           ╵                             [32m~~~~~~~~~~~[0m
+
+  'getServiceName' is declared here.
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:1148:4:
+[37m      1148 │     [32mgetServiceName[37m(job: Booking): string {
+           ╵     [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m

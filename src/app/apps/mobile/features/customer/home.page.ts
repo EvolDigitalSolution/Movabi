@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -29,6 +29,8 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
 import { WalletService } from '../../../../core/services/wallet/wallet.service';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 import { BookingService } from '../../../../core/services/booking/booking.service';
+import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 @Component({
     selector: 'app-customer-home',
@@ -142,6 +144,42 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
             </div>
           </div>
         </div>
+
+        @if (activeBooking(); as booking) {
+          <button
+            type="button"
+            (click)="continueActiveBooking(booking.id)"
+            class="w-full text-left rounded-2xl bg-white border border-slate-200 shadow-lg shadow-slate-900/10 p-5 active:scale-[0.99] transition-all"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex items-start gap-3 min-w-0">
+                <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <ion-icon [name]="getServiceIcon(booking)" class="text-2xl"></ion-icon>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.18em] text-amber-600">Active {{ getServiceName(booking) }}</p>
+                  <h2 class="mt-1 text-lg font-display font-black text-slate-950 truncate">{{ activeJobStatusLabel(booking) }}</h2>
+                  <p class="mt-1 text-xs font-semibold text-slate-500 line-clamp-2">{{ activeJobRouteLabel(booking) }}</p>
+                </div>
+              </div>
+              <span class="shrink-0 rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                Live
+              </span>
+            </div>
+
+            <div class="mt-5 h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div class="h-full rounded-full bg-amber-500 transition-all duration-500" [style.width.%]="activeJobProgress(booking)"></div>
+            </div>
+
+            <div class="mt-3 flex items-center justify-between gap-3">
+              <p class="text-xs font-bold text-slate-600">{{ activeJobProgress(booking) }}% progress</p>
+              <span class="inline-flex items-center gap-1 text-xs font-black text-amber-700">
+                Continue tracking
+                <ion-icon name="chevron-forward"></ion-icon>
+              </span>
+            </div>
+          </button>
+        }
 
         <div class="space-y-6">
           <div class="flex items-center gap-3 ml-1">
@@ -312,14 +350,16 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
     </ion-content>
   `
 })
-export class HomePage implements OnInit {
+export class HomePage implements OnInit, OnDestroy {
     public router = inject(Router);
     public auth = inject(AuthService);
     public walletService = inject(WalletService);
 
     private config = inject(AppConfigService);
     private bookingService = inject(BookingService);
+    private supabase = inject(SupabaseService);
     private toastCtrl = inject(ToastController);
+    private jobsChannel?: RealtimeChannel;
 
     signingOut = signal(false);
     recentBookings = computed(() => this.bookingService.bookingHistory().slice(0, 2));
@@ -343,6 +383,16 @@ export class HomePage implements OnInit {
             .filter(booking => activeStatuses.has(String(booking.status || '').toLowerCase()))
             .length;
     });
+    activeBooking = computed(() => {
+        const activeStatuses = new Set([
+            'requested', 'searching', 'assigned', 'accepted', 'heading_to_pickup', 'arrived',
+            'in_progress', 'arrived_at_store', 'shopping_in_progress', 'collected',
+            'en_route_to_customer', 'delivered', 'over_budget_requested'
+        ]);
+
+        return this.bookingService.bookingHistory()
+            .find(booking => activeStatuses.has(String(booking.status || '').toLowerCase())) || null;
+    });
 
     constructor() {
         addIcons({
@@ -360,9 +410,88 @@ export class HomePage implements OnInit {
         });
     }
 
-    ngOnInit(): void {
+    async ngOnInit(): Promise<void> {
         void this.walletService.fetchWallet();
-        void this.bookingService.getHistory();
+        await this.bookingService.getHistory();
+        this.subscribeToCustomerJobs();
+    }
+
+    ngOnDestroy(): void {
+        if (this.jobsChannel) {
+            void this.supabase.client.removeChannel(this.jobsChannel);
+            this.jobsChannel = undefined;
+        }
+    }
+
+    continueActiveBooking(bookingId: string): void {
+        void this.router.navigate(['/customer/tracking', bookingId]);
+    }
+
+    activeJobStatusLabel(booking: any): string {
+        const status = String(booking?.status || 'requested').toLowerCase();
+        const labels: Record<string, string> = {
+            requested: 'Request received',
+            searching: 'Finding your driver',
+            assigned: 'Driver assigned',
+            accepted: 'Driver confirmed',
+            heading_to_pickup: 'Driver heading to pickup',
+            arrived: 'Driver has arrived',
+            arrived_at_store: 'Driver at the shop',
+            shopping_in_progress: 'Shopping in progress',
+            collected: 'Items collected',
+            en_route_to_customer: 'On the way to you',
+            in_progress: 'Request in progress',
+            over_budget_requested: 'Budget approval needed',
+            delivered: 'Delivery arrived'
+        };
+
+        return labels[status] || this.formatStatus(status);
+    }
+
+    activeJobProgress(booking: any): number {
+        const progress: Record<string, number> = {
+            requested: 10,
+            searching: 18,
+            assigned: 30,
+            accepted: 38,
+            heading_to_pickup: 48,
+            arrived: 58,
+            arrived_at_store: 55,
+            shopping_in_progress: 68,
+            over_budget_requested: 68,
+            collected: 78,
+            in_progress: 72,
+            en_route_to_customer: 88,
+            delivered: 96
+        };
+
+        return progress[String(booking?.status || '').toLowerCase()] || 10;
+    }
+
+    activeJobRouteLabel(booking: any): string {
+        const pickup = String(booking?.pickup_address || '').trim();
+        const destination = String(booking?.dropoff_address || booking?.destination_address || '').trim();
+        if (pickup && destination) return `${pickup} to ${destination}`;
+        return destination || pickup || 'Open live details for the latest update';
+    }
+
+    private subscribeToCustomerJobs(): void {
+        const userId = this.auth.currentUser()?.id;
+        if (!userId || this.jobsChannel || !this.supabase.isConfigured) return;
+
+        this.jobsChannel = this.supabase.client
+            .channel(`customer-home-jobs-${userId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'jobs',
+                    filter: `customer_id=eq.${userId}`
+                },
+                () => void this.bookingService.getHistory()
+            )
+            .subscribe();
     }
 
     displayName(): string {

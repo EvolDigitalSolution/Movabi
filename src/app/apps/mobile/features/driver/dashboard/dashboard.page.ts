@@ -38,6 +38,7 @@ import {
     settingsOutline
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { Haptics, NotificationType } from '@capacitor/haptics';
 
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
@@ -782,6 +783,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     private jobsChannel?: RealtimeChannel;
     private jobsRefreshInterval?: ReturnType<typeof setInterval>;
+    private knownAvailableJobIds = new Set<string>();
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
         const profile = this.profileService.profile() as DriverProfile | null;
@@ -915,6 +917,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         await this.loadDashboardStats();
         await this.refreshActiveJob();
         await this.driverService.fetchAvailableJobs();
+        this.knownAvailableJobIds = new Set(this.jobs().map(job => job.id));
 
         this.subscribeToAvailableJobsRealtime();
         this.startJobsAutoRefresh();
@@ -1452,6 +1455,13 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 async (payload) => {
                     const newStatus = String((payload.new as any)?.status || '');
                     const oldStatus = String((payload.old as any)?.status || '');
+                    const changedJobId = String((payload.new as any)?.id || (payload.old as any)?.id || '');
+                    const shouldAlert =
+                        newStatus === 'searching' &&
+                        !!changedJobId &&
+                        !this.knownAvailableJobIds.has(changedJobId) &&
+                        this.status() === 'online' &&
+                        this.isAvailable();
                     const activeStatuses = [
                         'assigned',
                         'accepted',
@@ -1477,12 +1487,61 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                     ) {
                         await this.refreshActiveJob();
                         await this.driverService.fetchAvailableJobs();
+
+                        const visibleJobs = this.jobs();
+                        const newVisibleJob = visibleJobs.find(job => job.id === changedJobId);
+
+                        if (shouldAlert && newVisibleJob) {
+                            await this.alertNewJob(newVisibleJob);
+                        }
+
+                        this.knownAvailableJobIds = new Set(visibleJobs.map(job => job.id));
                     }
                 }
             )
             .subscribe((status) => {
                 console.log('[driver-dashboard] jobs realtime:', status);
             });
+    }
+
+    private async alertNewJob(job: Booking): Promise<void> {
+        this.showToast(`New ${this.getServiceName(job).toLowerCase()} request nearby`, 'warning');
+
+        try {
+            await Haptics.notification({ type: NotificationType.Warning });
+        } catch {
+            navigator.vibrate?.([250, 120, 250, 120, 400]);
+        }
+
+        this.playNewJobTone();
+    }
+
+    private playNewJobTone(): void {
+        try {
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextClass) return;
+
+            const context: AudioContext = new AudioContextClass();
+            const start = context.currentTime;
+
+            [0, 0.38, 0.76, 1.14].forEach((offset, index) => {
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(index % 2 === 0 ? 880 : 1046, start + offset);
+                gain.gain.setValueAtTime(0.0001, start + offset);
+                gain.gain.exponentialRampToValueAtTime(0.22, start + offset + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.28);
+                oscillator.connect(gain);
+                gain.connect(context.destination);
+                oscillator.start(start + offset);
+                oscillator.stop(start + offset + 0.3);
+            });
+
+            window.setTimeout(() => void context.close(), 1800);
+        } catch (error) {
+            console.warn('[driver-dashboard] New request tone was blocked by the device:', error);
+        }
     }
 
     private startJobsAutoRefresh(): void {
