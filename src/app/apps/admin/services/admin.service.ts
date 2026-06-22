@@ -525,11 +525,10 @@ export class AdminService {
   }
 
   async preVerifyDriver(driverId: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
     const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/preverify`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers
     });
 
     const result = await response.json();
@@ -542,11 +541,10 @@ export class AdminService {
   }
 
   async manualApproveDriver(driverId: string, notes = 'Approved manually') {
+    const headers = await this.getAuthenticatedApiHeaders();
     const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/manual-approve`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({
         testingOverride: true,
         notes
@@ -560,6 +558,20 @@ export class AdminService {
     }
 
     return result;
+  }
+
+  private async getAuthenticatedApiHeaders(): Promise<Record<string, string>> {
+    const { data, error } = await this.supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (error || !token) {
+      throw new Error('Your admin session has expired. Please sign in again.');
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    };
   }
 
   async createServiceType(payload: any) {

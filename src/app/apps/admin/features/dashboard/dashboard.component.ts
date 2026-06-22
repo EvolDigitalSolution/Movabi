@@ -129,19 +129,19 @@ interface AdminEvent {
           </p>
         </div>
 
-        <div class="metric-panel bg-blue-700">
-          <p class="metric-label text-blue-100">Platform Earnings Today</p>
+        <div class="metric-panel bg-blue-700 text-white">
+          <p class="metric-label !text-white">Platform Earnings Today</p>
           <h4 class="metric-value text-white">{{ formatPrice(operationalMetrics()?.platform_earnings_today || 0) }}</h4>
-          <div class="mt-5 space-y-1 text-xs font-medium text-blue-100">
+          <div class="mt-5 space-y-1 text-xs font-semibold text-white/90">
             <p>Total fare: {{ formatPrice(operationalMetrics()?.revenue_today || 0) }}</p>
             <p>Driver payouts: {{ formatPrice(operationalMetrics()?.driver_payouts_today || 0) }}</p>
           </div>
         </div>
 
-        <div class="metric-panel bg-indigo-700">
-          <p class="metric-label text-indigo-100">Active Jobs</p>
+        <div class="metric-panel bg-indigo-700 text-white">
+          <p class="metric-label !text-white">Active Jobs</p>
           <h4 class="metric-value text-white">{{ operationalMetrics()?.active_jobs_count || 0 }}</h4>
-          <div class="mt-5 space-y-1 text-xs font-medium text-indigo-100">
+          <div class="mt-5 space-y-1 text-xs font-semibold text-white/90">
             <p>Pro jobs: {{ operationalMetrics()?.pro_jobs_count || 0 }}</p>
             <p>Starter jobs: {{ operationalMetrics()?.starter_jobs_count || 0 }}</p>
           </div>

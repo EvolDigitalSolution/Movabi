@@ -11,6 +11,11 @@ export class ProfileService {
   profile = signal<Profile | null>(null);
 
   async fetchProfile(userId: string): Promise<Profile | null> {
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      console.warn('Profile fetch skipped because user id is missing.');
+      return null;
+    }
+
     const { data, error } = await this.supabase
       .from('profiles')
       .select('*')

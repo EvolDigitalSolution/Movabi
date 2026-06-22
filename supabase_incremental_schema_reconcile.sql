@@ -2005,4 +2005,45 @@ BEGIN
     END IF;
 END $$;
 
+-- Repair incomplete Pro subscription copy without overwriting admin-customized plans.
+DO $$
+BEGIN
+    IF to_regclass('public.subscription_plans') IS NULL THEN
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscription_plans'
+          AND column_name = 'description'
+    ) THEN
+        UPDATE public.subscription_plans
+        SET description = 'For active drivers who want priority access to suitable requests, zero platform commission on completed fares, and premium support.',
+            updated_at = NOW()
+        WHERE LOWER(COALESCE(plan_code, '')) LIKE '%pro%'
+          AND COALESCE(BTRIM(description), '') = '';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscription_plans'
+          AND column_name = 'features'
+    ) THEN
+        UPDATE public.subscription_plans
+        SET features = '["Priority matching for suitable nearby requests", "Keep 100% of completed fares with 0% platform commission", "Access to Pro driver opportunities", "Enhanced earnings and performance insights", "Premium driver support"]'::jsonb,
+            updated_at = NOW()
+        WHERE LOWER(COALESCE(plan_code, '')) LIKE '%pro%'
+          AND (
+              features IS NULL
+              OR features = '[]'::jsonb
+              OR features @> '["Basic job matching"]'::jsonb
+              OR features @> '["15% Platform fee"]'::jsonb
+          );
+    END IF;
+END $$;
+
 NOTIFY pgrst, 'reload schema';

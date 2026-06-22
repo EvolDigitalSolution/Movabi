@@ -1398,13 +1398,7 @@ export class OnboardingPage implements OnInit {
             });
 
             if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile();
-            }
-
-            try {
-                await this.driverService.ensureMovabiPayVirtualCard();
-            } catch (error) {
-                console.warn('[DriverOnboarding] Movabi Pay virtual card setup deferred:', error);
+                await (this.profileService as any).fetchProfile(user.id);
             }
 
             this.authService.onboardingCompleted.set(true);

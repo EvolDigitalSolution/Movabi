@@ -57,7 +57,7 @@ interface SubscriptionPlan {
           </div>
 
           <p class="text-sm text-slate-500 mt-2">
-            {{ plan.description || 'No description' }}
+            {{ getPlanDescription(plan) }}
           </p>
 
           <div class="mt-5 text-3xl font-black text-slate-900">
@@ -436,12 +436,47 @@ export class SubscriptionPlansComponent implements OnInit {
   getFeatures(plan: SubscriptionPlan): string[] {
     const f:any = plan.features;
 
-    if (Array.isArray(f)) return f;
+    const features = Array.isArray(f)
+      ? f.map(x => String(x).trim()).filter(Boolean)
+      : String(f || '')
+          .split('\n')
+          .map(x => x.trim())
+          .filter(Boolean);
 
-    return String(f || '')
-      .split('\n')
-      .map(x => x.trim())
-      .filter(Boolean);
+    if (this.isProPlan(plan) && (features.length === 0 || this.hasStarterFeatures(features))) {
+      return this.defaultProFeatures();
+    }
+
+    return features;
+  }
+
+  getPlanDescription(plan: SubscriptionPlan): string {
+    if (String(plan.description || '').trim()) return plan.description;
+
+    if (this.isProPlan(plan)) {
+      return 'For active drivers who want priority access to suitable requests, zero platform commission on completed fares, and premium support.';
+    }
+
+    return 'Flexible access to Movabi requests with standard matching and support.';
+  }
+
+  private isProPlan(plan: SubscriptionPlan): boolean {
+    return String(plan.plan_code || plan.name || '').toLowerCase().includes('pro');
+  }
+
+  private hasStarterFeatures(features: string[]): boolean {
+    const normalized = features.map(feature => feature.toLowerCase());
+    return normalized.includes('basic job matching') || normalized.some(feature => feature.includes('15% platform fee'));
+  }
+
+  private defaultProFeatures(): string[] {
+    return [
+      'Priority matching for suitable nearby requests',
+      'Keep 100% of completed fares with 0% platform commission',
+      'Access to Pro driver opportunities',
+      'Enhanced earnings and performance insights',
+      'Premium driver support'
+    ];
   }
 
   featuresFromText(value:any): string[] {

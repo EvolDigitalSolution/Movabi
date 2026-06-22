@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { NextFunction, Request, Response, Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import {
   checkVehicleRegistration,
@@ -19,6 +19,38 @@ const serviceRoleKey =
   '';
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  if (!serviceRoleKey) {
+    return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY is not configured.' });
+  }
+
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+
+  if (authError || !authData.user?.id) {
+    return res.status(401).json({ error: 'Invalid or expired session.' });
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+
+  if (profileError || profile?.role !== 'admin') {
+    return res.status(403).json({ error: 'Administrator access required.' });
+  }
+
+  return next();
+};
+
+router.use(requireAdmin);
 
 router.post('/drivers/:driverId/preverify', async (req, res) => {
   try {
@@ -128,8 +160,6 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
   }
 });
 
-export default router;
-
 // ===== MANUAL TEST APPROVAL ROUTE =====
 router.post('/drivers/:driverId/manual-approve', async (req, res) => {
   try {
@@ -172,3 +202,5 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
     });
   }
 });
+
+export default router;

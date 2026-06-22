@@ -632,7 +632,7 @@ export class DriverSettingsPage implements OnInit {
         await this.profileService.updateProfile(user.id, updates as any);
 
         if (typeof (this.profileService as any).fetchProfile === 'function') {
-            await (this.profileService as any).fetchProfile();
+            await (this.profileService as any).fetchProfile(user.id);
         }
     }
 
