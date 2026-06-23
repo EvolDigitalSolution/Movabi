@@ -1319,3 +1319,14 @@ Page reload sent to client(s).
 
 Application bundle generation complete. [1.796 seconds] - 2026-06-22T23:28:11.769Z
 
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m     [2m | [22m[36m276.65 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m    [2m | [22m [1mRaw size[22m
+[32mchunk-OWR7UBKZ.js[39m  [2m | [22m[2mhome-page[22m[2m | [22m [36m48.28 kB[39m[2m | [22m
+
+Application bundle generation complete. [5.801 seconds] - 2026-06-23T09:27:31.902Z
+
+Page reload sent to client(s).

@@ -360,39 +360,28 @@ export class HomePage implements OnInit, OnDestroy {
     private supabase = inject(SupabaseService);
     private toastCtrl = inject(ToastController);
     private jobsChannel?: RealtimeChannel;
+    private readonly directlyActiveStatuses = new Set([
+        'assigned',
+        'accepted',
+        'heading_to_pickup',
+        'arrived',
+        'in_progress',
+        'arrived_at_store',
+        'shopping_in_progress',
+        'collected',
+        'en_route_to_customer',
+        'delivered',
+        'over_budget_requested'
+    ]);
 
     signingOut = signal(false);
     recentBookings = computed(() => this.bookingService.bookingHistory().slice(0, 2));
-    activeTrips = computed(() => {
-        const activeStatuses = new Set([
-            'requested',
-            'searching',
-            'assigned',
-            'accepted',
-            'heading_to_pickup',
-            'arrived',
-            'in_progress',
-            'arrived_at_store',
-            'shopping_in_progress',
-            'collected',
-            'en_route_to_customer',
-            'delivered'
-        ]);
-
-        return this.bookingService.bookingHistory()
-            .filter(booking => activeStatuses.has(String(booking.status || '').toLowerCase()))
-            .length;
-    });
-    activeBooking = computed(() => {
-        const activeStatuses = new Set([
-            'requested', 'searching', 'assigned', 'accepted', 'heading_to_pickup', 'arrived',
-            'in_progress', 'arrived_at_store', 'shopping_in_progress', 'collected',
-            'en_route_to_customer', 'delivered', 'over_budget_requested'
-        ]);
-
-        return this.bookingService.bookingHistory()
-            .find(booking => activeStatuses.has(String(booking.status || '').toLowerCase())) || null;
-    });
+    activeTrips = computed(() => this.bookingService.bookingHistory().filter(
+        booking => this.isDirectlyActiveBooking(booking)
+    ).length);
+    activeBooking = computed(() => this.bookingService.bookingHistory().find(
+        booking => this.isDirectlyActiveBooking(booking)
+    ) || null);
 
     constructor() {
         addIcons({
@@ -425,6 +414,13 @@ export class HomePage implements OnInit, OnDestroy {
 
     continueActiveBooking(bookingId: string): void {
         void this.router.navigate(['/customer/tracking', bookingId]);
+    }
+
+    private isDirectlyActiveBooking(booking: any): boolean {
+        const status = String(booking?.status || '').toLowerCase();
+        const hasAssignedDriver = Boolean(booking?.driver_id || booking?.accepted_driver_id);
+
+        return hasAssignedDriver && this.directlyActiveStatuses.has(status);
     }
 
     activeJobStatusLabel(booking: any): string {
