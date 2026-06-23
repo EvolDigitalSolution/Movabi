@@ -770,6 +770,31 @@ BEFORE UPDATE OF actual_spending ON public.errand_details
 FOR EACH ROW
 EXECUTE FUNCTION public.enforce_errand_spending_budget();
 
+CREATE TABLE IF NOT EXISTS public.device_push_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    platform TEXT NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_push_tokens_user_enabled
+ON public.device_push_tokens(user_id, enabled);
+
+ALTER TABLE public.device_push_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users manage their push tokens" ON public.device_push_tokens;
+CREATE POLICY "Users manage their push tokens"
+ON public.device_push_tokens
+FOR ALL
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.device_push_tokens TO authenticated;
+
 CREATE TABLE IF NOT EXISTS public.driver_issuing_cardholders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     driver_id UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,

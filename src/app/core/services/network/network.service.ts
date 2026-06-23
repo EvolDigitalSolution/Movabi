@@ -1,23 +1,26 @@
 import { Injectable, signal } from '@angular/core';
-import { fromEvent, merge, map, startWith } from 'rxjs';
+import { Capacitor } from '@capacitor/core';
+import { Network } from '@capacitor/network';
+import { BehaviorSubject, fromEvent, merge, map } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
 })
 export class NetworkService {
-  private onlineSignal = signal<boolean>(navigator.onLine);
-  
-  public readonly isOnline$ = merge(
-    fromEvent(window, 'online').pipe(map(() => true)),
-    fromEvent(window, 'offline').pipe(map(() => false))
-  ).pipe(
-    startWith(navigator.onLine)
-  );
+  private onlineSignal = signal<boolean>(typeof navigator === 'undefined' ? true : navigator.onLine);
+  private onlineSubject = new BehaviorSubject<boolean>(this.onlineSignal());
+  public readonly isOnline$ = this.onlineSubject.asObservable();
 
   constructor() {
-    this.isOnline$.subscribe(status => {
-      this.onlineSignal.set(status);
-    });
+    merge(
+      fromEvent(window, 'online').pipe(map(() => true)),
+      fromEvent(window, 'offline').pipe(map(() => false))
+    ).subscribe(status => this.setOnline(status));
+
+    if (Capacitor.isNativePlatform()) {
+      void Network.getStatus().then(status => this.setOnline(status.connected));
+      void Network.addListener('networkStatusChange', status => this.setOnline(status.connected));
+    }
   }
 
   get isOnline(): boolean {
@@ -29,7 +32,7 @@ export class NetworkService {
    */
   normalizeError(error: unknown): string {
     const err = error as any;
-    if (!navigator.onLine) {
+    if (!this.isOnline) {
       return 'No internet connection. Please reconnect and try again.';
     }
 
@@ -46,5 +49,10 @@ export class NetworkService {
     }
 
     return err.message || 'An unexpected error occurred. Please try again.';
+  }
+
+  private setOnline(status: boolean): void {
+    this.onlineSignal.set(status);
+    this.onlineSubject.next(status);
   }
 }

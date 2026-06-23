@@ -1,7 +1,10 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, effect, inject, signal } from '@angular/core';
+import { Capacitor } from '@capacitor/core';
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { SupabaseService } from './supabase/supabase.service';
 import { AuthService } from './auth/auth.service';
 import { Notification } from '../../shared/models/booking.model';
+import { NativePlatformService } from './native/native-platform.service';
 
 @Injectable({
   providedIn: 'root'
@@ -9,9 +12,37 @@ import { Notification } from '../../shared/models/booking.model';
 export class NotificationService {
   private supabase = inject(SupabaseService);
   private auth = inject(AuthService);
+  private nativePlatform = inject(NativePlatformService);
+  private initialized = signal(false);
+  private channel?: RealtimeChannel;
+  private notificationPermissionRequested = false;
 
   notifications = signal<Notification[]>([]);
   unreadCount = signal(0);
+
+  constructor() {
+    effect(() => {
+      const user = this.auth.currentUser();
+      if (!this.initialized()) return;
+
+      if (user) {
+        void this.fetchNotifications();
+        this.subscribeToNotifications();
+        void this.ensureNativeNotificationPermission();
+      } else {
+        this.channel?.unsubscribe();
+        this.channel = undefined;
+        this.notifications.set([]);
+        this.unreadCount.set(0);
+      }
+    });
+  }
+
+  initialize(): void {
+    if (this.initialized()) return;
+    this.initialized.set(true);
+    this.nativePlatform.pushToken$.subscribe(token => void this.savePushToken(token));
+  }
 
   async fetchNotifications() {
     const user = this.auth.currentUser();
@@ -68,7 +99,8 @@ export class NotificationService {
     const user = this.auth.currentUser();
     if (!user) return;
 
-    this.supabase
+    this.channel?.unsubscribe();
+    this.channel = this.supabase
       .channel(`notifications-${user.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
@@ -79,8 +111,41 @@ export class NotificationService {
         const newNotif = payload.new as Notification;
         this.notifications.update(list => [newNotif, ...list]);
         this.updateUnreadCount();
-        // Here we could trigger a local browser/mobile notification
+        void this.nativePlatform.showForegroundNotification(
+          newNotif.title,
+          newNotif.body,
+          newNotif.metadata
+        );
       })
       .subscribe();
+  }
+
+  async enableNativeNotifications(): Promise<boolean> {
+    return this.nativePlatform.requestNotificationPermission();
+  }
+
+  private async savePushToken(token: string): Promise<void> {
+    const user = this.auth.currentUser();
+    if (!user || !token) return;
+
+    const { error } = await this.supabase
+      .from('device_push_tokens')
+      .upsert({
+        user_id: user.id,
+        token,
+        platform: Capacitor.getPlatform(),
+        enabled: true,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'token' });
+
+    if (error) console.warn('[NotificationService] Could not save push token', error);
+  }
+
+  private async ensureNativeNotificationPermission(): Promise<void> {
+    if (!this.nativePlatform.isNative || this.notificationPermissionRequested) return;
+    this.notificationPermissionRequested = true;
+    await this.enableNativeNotifications().catch(error => {
+      console.warn('[NotificationService] Notification permission was not enabled', error);
+    });
   }
 }

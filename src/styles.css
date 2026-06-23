@@ -1,5 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+@import "@fontsource/outfit/700.css";
 @import "tailwindcss";
 
 /* Core CSS required for Ionic components to work properly */
@@ -20,6 +25,7 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 
 :root {
+  color-scheme: light;
   /* Design System Colors */
   --primary: #F59E0B;
   --primary-dark: #D97706;
@@ -44,15 +50,6 @@
   --ion-text-color: var(--text-primary);
   
   --ion-font-family: 'Inter', sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0F172A;
-    --card: #1E293B;
-    --text-primary: #F8FAFC;
-    --text-secondary: #94A3B8;
-  }
 }
 
 @theme {
@@ -114,44 +111,65 @@ p {
   @apply shadow-sm hover:shadow-md transition-shadow duration-300;
 }
 
-/* Global UI Density Optimizations */
+/* Native mobile ergonomics shared by every Ionic screen. */
 @layer base {
-  /* Reduce default spacing and sizes for a more compact mobile feel */
-  .ion-page {
-    --ion-safe-area-top: 0px;
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--bg);
   }
 
-  /* Override common Tailwind classes for density */
-  .text-lg { font-size: 1rem !important; } /* base */
-  .text-base { font-size: 0.875rem !important; } /* sm */
-  .text-sm { font-size: 0.75rem !important; } /* xs */
-  
-  .p-6 { padding: 1rem !important; } /* p-4 */
-  .p-5 { padding: 0.75rem !important; } /* p-3 */
-  .py-5 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
-  
-  .gap-6 { gap: 0.75rem !important; }
-  .gap-5 { gap: 0.75rem !important; }
-  
-  .space-y-8 { margin-top: 1rem !important; }
-  .space-y-6 { margin-top: 0.75rem !important; }
-  
-  .rounded-3xl { border-radius: 1rem !important; } /* xl */
-  .rounded-2xl { border-radius: 0.75rem !important; } /* lg */
-  
-  /* Buttons and Inputs */
+  body {
+    min-width: 320px;
+    min-height: 100%;
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  [role='button'],
   ion-button {
-    --border-radius: 0.75rem !important;
-    --padding-top: 0.5rem !important;
-    --padding-bottom: 0.5rem !important;
-    min-height: 44px !important;
+    min-height: 44px;
+    touch-action: manipulation;
   }
-  
-  ion-input, ion-textarea, .app-input {
-    --padding-start: 1rem !important;
-    --padding-end: 1rem !important;
-    min-height: 44px !important;
+
+  input,
+  textarea,
+  select,
+  ion-input,
+  ion-textarea,
+  ion-select {
+    font-size: 16px;
   }
+
+  ion-content::part(scroll) {
+    padding-bottom: max(var(--ion-safe-area-bottom, 0px), env(safe-area-inset-bottom));
+  }
+
+  ion-toolbar {
+    min-height: 56px;
+    padding-top: var(--ion-safe-area-top, env(safe-area-inset-top));
+  }
+
+  ion-modal,
+  ion-alert,
+  ion-action-sheet {
+    --backdrop-opacity: 0.42;
+  }
+}
+
+.native-safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.native-sticky-action {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  background: rgb(248 250 252 / 0.96);
+  backdrop-filter: blur(16px);
 }
 
 @layer utilities {

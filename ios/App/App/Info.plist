@@ -24,6 +24,18 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Movabi uses the camera to upload driver documents, profile photos, and errand receipts.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Movabi uses your location to choose accurate pickup points and provide live journey tracking.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Movabi uses selected photos for profile images, verification documents, and receipts.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Movabi can save a receipt or journey document when you request it.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -35,8 +47,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

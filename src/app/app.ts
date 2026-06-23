@@ -3,6 +3,8 @@ import { IonApp, IonRouterOutlet, IonIcon } from '@ionic/angular/standalone';
 import { SupabaseService } from './core/services/supabase/supabase.service';
 import { AppConfigService } from './core/services/config/app-config.service';
 import { NetworkService } from './core/services/network/network.service';
+import { NativePlatformService } from './core/services/native/native-platform.service';
+import { NotificationService } from './core/services/notification.service';
 import { CommonModule } from '@angular/common';
 import { addIcons } from 'ionicons';
 import {
@@ -126,6 +128,8 @@ export class App implements OnInit {
     private supabase = inject(SupabaseService);
     private appConfig = inject(AppConfigService);
     private network = inject(NetworkService);
+    private nativePlatform = inject(NativePlatformService);
+    private notifications = inject(NotificationService);
     isConfigured = this.supabase.isConfigured;
     isOnline = signal(this.network.isOnline);
 
@@ -218,9 +222,11 @@ export class App implements OnInit {
     }
 
     async ngOnInit() {
+        await this.nativePlatform.initialize();
         this.network.isOnline$.subscribe(status => this.isOnline.set(status));
         if (this.isConfigured) {
             await this.appConfig.refreshConfigs();
         }
+        this.notifications.initialize();
     }
 }

@@ -9,22 +9,31 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 2000,
-      launchAutoHide: true,
-      backgroundColor: '#ffffff',
+      launchShowDuration: 1400,
+      launchAutoHide: false,
+      backgroundColor: '#F8FAFC',
       androidSplashResourceName: 'splash',
-      androidScaleType: 'CENTER_CROP',
-      showSpinner: true,
-      androidSpinnerStyle: 'large',
-      iosSpinnerStyle: 'small',
-      spinnerColor: '#2563eb',
+      androidScaleType: 'CENTER_INSIDE',
+      showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true
     },
     Keyboard: {
       resize: 'body',
-      style: 'dark',
+      style: 'light',
       resizeOnFullScreen: true
+    },
+    StatusBar: {
+      style: 'DARK',
+      backgroundColor: '#F8FAFC',
+      overlaysWebView: false
+    },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert']
+    },
+    LocalNotifications: {
+      smallIcon: 'ic_stat_movabi',
+      iconColor: '#F59E0B'
     }
   }
 };

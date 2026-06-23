@@ -858,3 +858,24 @@ websocket connection issues.
            ╵     [32m~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'initialize' does not exist on type 'NotificationService'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/app.ts:230:27:
+[37m      230 │         this.notifications.[32minitialize[37m();
+          ╵                            [32m~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'initialize' does not exist on type 'NotificationService'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/app.ts:230:27:
+[37m      230 │         this.notifications.[32minitialize[37m();
+          ╵                            [32m~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'initialize' does not exist on type 'NotificationService'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/app.ts:230:27:
+[37m      230 │         this.notifications.[32minitialize[37m();
+          ╵                            [32m~~~~~~~~~~[0m
+
+[39m[22m
