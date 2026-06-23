@@ -28,7 +28,17 @@ import {
     refreshOutline,
     closeCircleOutline,
     timerOutline,
-    checkmarkCircleOutline
+    checkmarkCircleOutline,
+    searchOutline,
+    basketOutline,
+    navigateOutline,
+    shieldCheckmarkOutline,
+    cubeOutline,
+    locationOutline,
+    archiveOutline,
+    flagOutline,
+    storefrontOutline,
+    homeOutline
 } from 'ionicons/icons';
 
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -662,7 +672,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             refreshOutline,
             closeCircleOutline,
             timerOutline,
-            checkmarkCircleOutline
+            checkmarkCircleOutline,
+            searchOutline,
+            basketOutline,
+            navigateOutline,
+            shieldCheckmarkOutline,
+            cubeOutline,
+            locationOutline,
+            archiveOutline,
+            flagOutline,
+            storefrontOutline,
+            homeOutline
         });
     }
 
