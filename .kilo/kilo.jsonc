@@ -1,0 +1,43 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "permission": {
+    "read": {
+      "*": "allow",
+      "*.env": "ask",
+      "*.env.*": "ask",
+      "*.env.example": "allow"
+    },
+    "edit": "allow",
+    "glob": {
+      "*": "allow",
+      "**/*": "allow"
+    },
+    "grep": "allow",
+    "list": "allow",
+    "bash": {
+      "*": "allow",
+      "*>*": "ask",
+      "rm *": "ask",
+      "rm -rf *": "ask",
+      "sudo *": "ask",
+      "git reset --hard *": "ask",
+      "git clean *": "ask",
+      "docker system prune *": "ask"
+    },
+    "external_directory": "ask",
+    "webfetch": "allow",
+    "websearch": "allow",
+    "doom_loop": "ask",
+    "codesearch": "allow",
+    "task": "allow",
+    "skill": "allow",
+    "lsp": "allow",
+    "todoread": "allow",
+    "todowrite": "allow",
+    "*": "ask"
+  },
+  "model": "openrouter/qwen/qwen3-coder",
+  "small_model": "openrouter/qwen/qwen3-coder",
+  "subagent_model": "openrouter/qwen/qwen3-coder",
+  "default_agent": "code"
+}
