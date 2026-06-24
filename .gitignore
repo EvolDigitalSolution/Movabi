@@ -60,3 +60,4 @@ docker/**/*.bak
 
 # server backups
 server/*.bak.*
+.aider*
