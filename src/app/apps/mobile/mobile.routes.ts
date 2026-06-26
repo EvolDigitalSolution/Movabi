@@ -8,6 +8,10 @@ export const MOBILE_ROUTES: Routes = [
         loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)
     },
     {
+        path: 'landing',
+        loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)
+    },
+    {
         path: 'privacy',
         loadComponent: () => import('@mobile/features/legal/privacy.page').then((m) => m.PrivacyPage)
     },

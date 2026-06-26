@@ -27,3 +27,10 @@ websocket connection issues.
           ╵                          [32m~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2307: Cannot find module '@mobile/features/landing.page' or its corresponding type declarations.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/mobile.routes.ts:8:36:
+[37m      8 │ ...nt: () => import([32m'@mobile/features/landing.page'[37m).then((m) => m....
+        ╵                     [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
