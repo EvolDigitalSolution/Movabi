@@ -9,6 +9,7 @@ import {
     LocationSource
 } from '@shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { AppConfigService } from '../config/app-config.service';
 
 @Injectable({
     providedIn: 'root'
@@ -17,12 +18,14 @@ export class LocationService {
     private supabase = inject(SupabaseService);
     private auth = inject(AuthService);
     private analytics = inject(AnalyticsService);
+    private config = inject(AppConfigService);
 
     private updateInterval: ReturnType<typeof setInterval> | null = null;
     private isUpdatingLocation = false;
 
     public locationError = signal<string | null>(null);
     public locationMode = signal<LocationMode>('auto');
+    public usingFallbackLocation = signal(false);
 
     async getCurrentPosition(): Promise<GeolocationPosition | null> {
         if (!navigator.geolocation) {
@@ -38,6 +41,7 @@ export class LocationService {
                 (position) => {
                     this.locationError.set(null);
                     this.locationMode.set('auto');
+                    this.usingFallbackLocation.set(false);
                     this.analytics.track('location_auto_mode_used', { success: true });
                     resolve(position);
                 },
@@ -63,6 +67,7 @@ export class LocationService {
 
                     this.analytics.track(event, { error: message });
                     this.locationError.set(message);
+                    this.usingFallbackLocation.set(true);
                     resolve(null);
                 },
                 { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
@@ -97,7 +102,21 @@ export class LocationService {
 
     setAutoMode() {
         this.locationMode.set('auto');
+        this.usingFallbackLocation.set(false);
         this.analytics.track('location_retry_clicked');
+    }
+
+    getFallbackCoordinates(): { lat: number; lng: number } {
+        const country = this.config.currentCountry();
+        return {
+            lat: Number(country.defaultCenter.lat),
+            lng: Number(country.defaultCenter.lng)
+        };
+    }
+
+    getFallbackAddressLabel(): string {
+        const country = this.config.currentCountry();
+        return `${country.name} search area`;
     }
 
     normalizeLocation(

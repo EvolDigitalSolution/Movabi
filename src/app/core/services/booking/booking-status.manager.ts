@@ -17,7 +17,7 @@ export class BookingStatusManager {
     accepted: ['heading_to_pickup', 'arrived', 'cancelled'],
     heading_to_pickup: ['arrived', 'cancelled'],
     arrived: ['in_progress', 'arrived_at_store', 'cancelled'],
-    arrived_at_store: ['shopping_in_progress', 'cancelled'],
+    arrived_at_store: ['shopping_in_progress', 'collected', 'cancelled'],
     shopping_in_progress: ['collected', 'cancelled'],
     collected: ['en_route_to_customer', 'cancelled'],
     en_route_to_customer: ['delivered', 'cancelled'],

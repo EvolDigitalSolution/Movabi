@@ -54,7 +54,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { PricingService } from '../../../../../core/services/pricing.service';
-import { AppConfigService } from '../../../../../core/services/config/app-config.service';
+import { AppConfigService, PopularShopPreset } from '../../../../../core/services/config/app-config.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { AnalyticsService } from '../../../../../core/services/analytics/analytics.service';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
@@ -163,6 +163,85 @@ type PackageSize = 'small' | 'medium' | 'large';
             }
 
             <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-5">
+              @if (type === ServiceTypeEnum.ERRAND) {
+                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div class="space-y-3">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
+                    <div class="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        (click)="setErrandMode('collect_deliver')"
+                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
+                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
+                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
+                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="swap-horizontal-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Collect & Deliver
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        (click)="setErrandMode('quick_buy')"
+                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
+                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
+                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
+                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="cart-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Quick Buy
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        (click)="setErrandMode('shop_deliver')"
+                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
+                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
+                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
+                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="business-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Shop & Deliver
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver') {
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Popular shops</p>
+                        <p class="text-[10px] font-bold text-slate-400">Optional</p>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        @for (shop of popularShopOptions(); track shop.name) {
+                          <button
+                            type="button"
+                            (click)="selectPopularShop(shop)"
+                            class="min-h-[76px] rounded-2xl bg-white border border-slate-100 shadow-sm p-3 text-left flex items-center gap-3 active:scale-95 transition-all">
+                            <span class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-black text-white shrink-0" [style.background]="shop.color">
+                              {{ shop.logo }}
+                            </span>
+                            <span class="min-w-0">
+                              <span class="block text-sm font-black text-slate-950 truncate">{{ shop.name }}</span>
+                              <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Use nearby branch</span>
+                            </span>
+                          </button>
+                        }
+                      </div>
+                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        Picking a shop fills pickup with a nearby branch search. You can still type a different shop or exact address.
+                      </p>
+                    </div>
+                  }
+                </div>
+              }
+
               <div class="space-y-5">
                 <div class="relative">
                   <app-input
@@ -319,53 +398,6 @@ type PackageSize = 'small' | 'medium' | 'large';
 
               @if (type === ServiceTypeEnum.ERRAND) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
-                  <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
-                    <div class="grid grid-cols-3 gap-3">
-                      <button
-                        type="button"
-                        (click)="bookingForm.patchValue({ errand_mode: 'collect_deliver' })"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="swap-horizontal-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Collect & Deliver
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        (click)="bookingForm.patchValue({ errand_mode: 'quick_buy' })"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="cart-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Quick Buy
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        (click)="bookingForm.patchValue({ errand_mode: 'shop_deliver' })"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="business-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Shop & Deliver
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
                   <div class="space-y-2">
                     <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
                       Items to Buy
@@ -883,6 +915,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         { id: 'large', label: 'Large', helper: 'Bulky parcel' }
     ];
 
+    popularShopOptions = computed(() => this.config.popularShops());
+
     pickupResults = signal<AutocompleteResult[]>([]);
     dropoffResults = signal<AutocompleteResult[]>([]);
     showPickupResults = signal(false);
@@ -1021,6 +1055,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.type = this.normalizeTypeParam(typeParam);
 
         this.initForm();
+        void this.config.detectRuntimeCountry();
         void this.loadPricing();
         void this.walletService.fetchWallet();
         void this.bookingService.getHistory();
@@ -1069,6 +1104,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private isCollectDeliverMode(mode: unknown): mode is ErrandMode {
         return mode === 'collect_deliver';
+    }
+
+    setErrandMode(mode: ErrandMode): void {
+        this.bookingForm.patchValue({ errand_mode: mode });
+    }
+
+    selectPopularShop(shop: PopularShopPreset): void {
+        const query = shop.query;
+        this.bookingForm.patchValue({ pickup_address: query });
+        this.onAddressInput('pickup', query);
+        this.showPickupResults.set(true);
     }
 
     private parseErrandItems(raw: unknown): string[] {
@@ -1371,6 +1417,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             if (!pos) {
                 await loading.dismiss();
+                const toast = await this.toastCtrl.create({
+                    message: `Location is off, so Movabi will use ${this.locationService.getFallbackAddressLabel()} for search. You can still type or select any address.`,
+                    duration: 3500,
+                    color: 'warning'
+                });
+                await toast.present();
                 return;
             }
 
@@ -1728,6 +1780,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     lat: Number(position.coords.latitude),
                     lng: Number(position.coords.longitude)
                 };
+            } else {
+                this.currentSearchProximity = this.locationService.getFallbackCoordinates();
             }
         }
 

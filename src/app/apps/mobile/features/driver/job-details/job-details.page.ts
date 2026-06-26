@@ -370,6 +370,33 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <span class="text-sm font-black text-slate-950 text-right">{{ errandModeLabel() }}</span>
                   </div>
 
+                  @if (anyDetails()?.recipient_name || anyDetails()?.recipient_phone) {
+                    <div class="p-4 bg-white rounded-2xl border border-slate-100 space-y-3">
+                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recipient details</p>
+
+                      @if (anyDetails()?.recipient_name) {
+                        <div class="flex justify-between items-center gap-3">
+                          <span class="text-sm font-bold text-slate-600">Name</span>
+                          <span class="text-sm font-black text-slate-950 text-right">{{ anyDetails()?.recipient_name }}</span>
+                        </div>
+                      }
+
+                      @if (anyDetails()?.recipient_phone) {
+                        <div class="flex justify-between items-center gap-3">
+                          <span class="text-sm font-bold text-slate-600">Phone</span>
+                          <button
+                            type="button"
+                            (click)="callPhone(anyDetails()?.recipient_phone)"
+                            class="h-10 rounded-2xl bg-blue-50 border border-blue-100 px-4 text-blue-700 text-sm font-black flex items-center gap-2"
+                          >
+                            <ion-icon name="call-outline"></ion-icon>
+                            {{ anyDetails()?.recipient_phone }}
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  }
+
                   @if (isShoppingErrand()) {
                   <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div class="flex justify-between items-center gap-3 mb-4">

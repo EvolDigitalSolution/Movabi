@@ -227,6 +227,7 @@ export class App implements OnInit {
         if (this.isConfigured) {
             await this.appConfig.refreshConfigs();
         }
+        void this.appConfig.detectRuntimeCountry();
         this.notifications.initialize();
     }
 }

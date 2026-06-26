@@ -279,3 +279,94 @@ websocket connection issues.
           ╵                      [32m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'setErrandMode' does not exist on type 'BookingRequestPage'. Did you mean 'errandMode'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:173:33:
+[37m      173 │                         (click)="[32msetErrandMode[37m('collect_deliver')"
+          ╵                                  [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'setErrandMode' does not exist on type 'BookingRequestPage'. Did you mean 'errandMode'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:187:33:
+[37m      187 │                         (click)="[32msetErrandMode[37m('quick_buy')"
+          ╵                                  [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'setErrandMode' does not exist on type 'BookingRequestPage'. Did you mean 'errandMode'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:201:33:
+[37m      201 │                         (click)="[32msetErrandMode[37m('shop_deliver')"
+          ╵                                  [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'popularShopOptions' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:222:38:
+[37m      222 │ ...             @for (shop of [32mpopularShopOptions[37m; track shop.name) {
+          ╵                               [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'selectPopularShop' does not exist on type 'BookingRequestPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts:225:37:
+[37m      225 │                             (click)="[32mselectPopularShop[37m(shop)"
+          ╵                                      [32m~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:773:59:
+[37m      773 │ ...const errandMap: Record<string, string> = this.[32misShoppingErrand[37m()
+          ╵                                                   [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:839:59:
+[37m      839 │ ...const errandMap: Record<string, string> = this.[32misShoppingErrand[37m()
+          ╵                                                   [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:932:28:
+[37m      932 │ ...           return this.[32misShoppingErrand[37m() ? 'Store, shopping, ...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:971:28:
+[37m      971 │                 return this.[32misShoppingErrand[37m()
+          ╵                             [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:995:24:
+[37m      995 │             return this.[32misShoppingErrand[37m()
+          ╵                         [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1017:22:
+[37m      1017 │             if (!this.[32misShoppingErrand[37m()) {
+           ╵                       [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1122:28:
+[37m      1122 │ ...           return this.[32misShoppingErrand[37m() ? 'Store / pickup p...
+           ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isShoppingErrand' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1148:28:
+[37m      1148 │ ...           return this.[32misShoppingErrand[37m() ? 'STORE' : 'COLLECT';
+           ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

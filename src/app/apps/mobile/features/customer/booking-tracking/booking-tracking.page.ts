@@ -68,6 +68,7 @@ import { CommunicationPanelComponent } from '../../../../../shared/ui/communicat
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
+type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
 @Component({
     selector: 'app-booking-tracking',
@@ -769,24 +770,43 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     getStatusLabel(status: string): string {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            const errandMap: Record<string, string> = {
-                searching: 'Finding errand driver',
-                accepted: 'Driver assigned',
-                assigned: 'Driver assigned',
-                heading_to_pickup: 'Heading to store',
-                arrived: 'Driver arrived',
-                arrived_at_store: 'At the store',
-                shopping_in_progress: 'Shopping now',
-                collected: 'Items collected',
-                en_route_to_customer: 'Delivering to you',
-                delivered: 'Delivered',
-                completed: 'Errand complete',
-                settled: 'Errand settled',
-                cancelled: 'Errand cancelled',
-                canceled: 'Errand cancelled',
-                no_driver_found: 'No driver found',
-                requires_review: 'Movabi review'
-            };
+            const errandMap: Record<string, string> = this.isShoppingErrand()
+                ? {
+                    searching: 'Finding errand driver',
+                    accepted: 'Driver assigned',
+                    assigned: 'Driver assigned',
+                    heading_to_pickup: 'Heading to store',
+                    arrived: 'Driver arrived',
+                    arrived_at_store: 'At the store',
+                    shopping_in_progress: 'Shopping now',
+                    collected: 'Items collected',
+                    en_route_to_customer: 'Delivering to you',
+                    delivered: 'Delivered',
+                    completed: 'Errand complete',
+                    settled: 'Errand settled',
+                    cancelled: 'Errand cancelled',
+                    canceled: 'Errand cancelled',
+                    no_driver_found: 'No driver found',
+                    requires_review: 'Movabi review'
+                }
+                : {
+                    searching: 'Finding errand driver',
+                    accepted: 'Driver assigned',
+                    assigned: 'Driver assigned',
+                    heading_to_pickup: 'Heading to collection',
+                    arrived: 'Driver arrived',
+                    arrived_at_store: 'At collection point',
+                    shopping_in_progress: 'Collecting item',
+                    collected: 'Item collected',
+                    en_route_to_customer: 'Returning to you',
+                    delivered: 'Delivered',
+                    completed: 'Errand complete',
+                    settled: 'Errand settled',
+                    cancelled: 'Errand cancelled',
+                    canceled: 'Errand cancelled',
+                    no_driver_found: 'No driver found',
+                    requires_review: 'Movabi review'
+                };
 
             if (errandMap[status]) return errandMap[status];
         }
@@ -816,24 +836,43 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     getStatusHint(status: string): string {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            const errandMap: Record<string, string> = {
-                searching: 'Matching someone to shop and deliver',
-                accepted: 'Driver is heading to the store',
-                assigned: 'Driver is heading to the store',
-                heading_to_pickup: 'Driver is going to the store',
-                arrived: 'Driver reached the store area',
-                arrived_at_store: 'Driver is ready to shop',
-                shopping_in_progress: 'Driver is shopping for your items',
-                collected: 'Items are collected and ready for delivery',
-                en_route_to_customer: 'Driver is bringing your items',
-                delivered: 'Items have been delivered',
-                completed: 'Errand is complete',
-                settled: 'Wallet funds have been settled',
-                cancelled: 'Errand cancelled',
-                canceled: 'Errand cancelled',
-                no_driver_found: 'No available errand driver',
-                requires_review: 'We are checking this errand and payment'
-            };
+            const errandMap: Record<string, string> = this.isShoppingErrand()
+                ? {
+                    searching: 'Matching someone to shop and deliver',
+                    accepted: 'Driver is heading to the store',
+                    assigned: 'Driver is heading to the store',
+                    heading_to_pickup: 'Driver is going to the store',
+                    arrived: 'Driver reached the store area',
+                    arrived_at_store: 'Driver is ready to shop',
+                    shopping_in_progress: 'Driver is shopping for your items',
+                    collected: 'Items are collected and ready for delivery',
+                    en_route_to_customer: 'Driver is bringing your items',
+                    delivered: 'Items have been delivered',
+                    completed: 'Errand is complete',
+                    settled: 'Wallet funds have been settled',
+                    cancelled: 'Errand cancelled',
+                    canceled: 'Errand cancelled',
+                    no_driver_found: 'No available errand driver',
+                    requires_review: 'We are checking this errand and payment'
+                }
+                : {
+                    searching: 'Matching someone to collect and deliver',
+                    accepted: 'Driver is heading to the collection point',
+                    assigned: 'Driver is heading to the collection point',
+                    heading_to_pickup: 'Driver is going to collect your item',
+                    arrived: 'Driver reached the collection area',
+                    arrived_at_store: 'Driver is collecting the item or documents',
+                    shopping_in_progress: 'Driver is confirming collection',
+                    collected: 'Item is collected and ready for delivery',
+                    en_route_to_customer: 'Driver is bringing it to you',
+                    delivered: 'Item has been delivered',
+                    completed: 'Errand is complete',
+                    settled: 'Payment has been settled',
+                    cancelled: 'Errand cancelled',
+                    canceled: 'Errand cancelled',
+                    no_driver_found: 'No available errand driver',
+                    requires_review: 'We are checking this errand and payment'
+                };
 
             if (errandMap[status]) return errandMap[status];
         }
@@ -890,7 +929,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     routeCardSubtitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store, shopping, and delivery';
+                return this.isShoppingErrand() ? 'Store, shopping, and delivery' : 'Collection point and delivery';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collection and recipient details';
             case ServiceTypeEnum.VAN:
@@ -929,7 +968,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     serviceGuideTitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Your shopper is managed step by step';
+                return this.isShoppingErrand()
+                    ? 'Your shopper is managed step by step'
+                    : 'Your collection errand is managed step by step';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collection and delivery are tracked separately';
             case ServiceTypeEnum.VAN:
@@ -951,7 +992,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            return 'Movabi separates the service fee from the item budget. The driver records spending and uploads a receipt before the errand is completed.';
+            return this.isShoppingErrand()
+                ? 'Movabi separates the service fee from the item budget. The driver records spending and uploads a receipt before the errand is completed.'
+                : 'The driver collects from the pickup location and delivers back to you. No shopping budget, spend record, or receipt is needed for this errand type.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
@@ -971,6 +1014,35 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const done = (statuses: string[]) => statuses.includes(status) ? 'active' : this.hasReachedStatus(statuses[statuses.length - 1]) ? 'done' : 'pending';
 
         if (service === ServiceTypeEnum.ERRAND) {
+            if (!this.isShoppingErrand()) {
+                return [
+                    {
+                        title: 'Match errand driver',
+                        description: 'A nearby eligible driver accepts the collection task.',
+                        icon: 'search-outline',
+                        state: done(['searching', 'accepted', 'assigned'])
+                    },
+                    {
+                        title: 'Collect item',
+                        description: 'Driver goes to the pickup point and confirms collection.',
+                        icon: 'cube-outline',
+                        state: done(['heading_to_pickup', 'arrived', 'arrived_at_store', 'collected'])
+                    },
+                    {
+                        title: 'Deliver to you',
+                        description: 'Follow live updates while the item is returned or delivered.',
+                        icon: 'navigate-outline',
+                        state: done(['en_route_to_customer', 'delivered'])
+                    },
+                    {
+                        title: 'Complete safely',
+                        description: 'The errand completes after delivery is confirmed.',
+                        icon: 'shield-checkmark-outline',
+                        state: this.isTerminalTrackingStatus(status) ? 'active' : 'pending'
+                    }
+                ];
+            }
+
             return [
                 {
                     title: 'Match errand driver',
@@ -1047,7 +1119,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     originLabel(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store / pickup point';
+                return this.isShoppingErrand() ? 'Store / pickup point' : 'Collection point';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collection point';
             case ServiceTypeEnum.VAN:
@@ -1073,7 +1145,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private mapOriginMarkerLabel(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'STORE';
+                return this.isShoppingErrand() ? 'STORE' : 'COLLECT';
             case ServiceTypeEnum.DELIVERY:
                 return 'COLLECT';
             case ServiceTypeEnum.VAN:
@@ -1304,6 +1376,40 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         return raw && typeof raw === 'object' ? raw : {};
+    }
+
+    private errandMode(): ErrandMode {
+        const metadata = this.bookingMetadata();
+        const details = this.details() || {};
+        const raw = String(
+            metadata['errand_details']?.mode ||
+            metadata['errand_mode'] ||
+            details['errand_mode'] ||
+            details['mode'] ||
+            ''
+        ).toLowerCase();
+
+        if (raw === 'collect_deliver' || raw === 'quick_buy' || raw === 'shop_deliver') {
+            return raw as ErrandMode;
+        }
+
+        const itemBudget = this.toMoney(
+            details['estimated_budget'] ||
+            metadata['payment_split']?.item_budget ||
+            metadata['errand_details']?.budget ||
+            0
+        );
+        const items = details['items_list'];
+        const hasItems = Array.isArray(items)
+            ? items.length > 0
+            : String(items || '').trim().length > 0;
+
+        return hasItems || itemBudget > 0 ? 'shop_deliver' : 'collect_deliver';
+    }
+
+    private isShoppingErrand(): boolean {
+        const mode = this.errandMode();
+        return mode === 'quick_buy' || mode === 'shop_deliver';
     }
 
     private normalizeCompletionPin(value: unknown): string {
