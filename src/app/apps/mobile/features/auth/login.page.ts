@@ -31,8 +31,8 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
         <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
       </ion-toolbar>
     </ion-header>
-    <ion-content class="ion-padding bg-slate-50">
-      <div class="flex flex-col h-full max-w-md mx-auto pt-8">
+    <ion-content class="ion-padding bg-slate-50 auth-scroll-page">
+      <div class="auth-form-shell flex flex-col max-w-md mx-auto pt-8">
         <div class="mb-10 text-center">
           <h1 class="text-3xl font-display font-bold text-slate-900 mb-3">Welcome back</h1>
           <p class="text-slate-500 text-sm">Sign in to your Movabi account to manage your services.</p>

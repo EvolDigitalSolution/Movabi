@@ -179,6 +179,25 @@ body.native-keyboard-open .native-sticky-action {
   position: static;
 }
 
+.auth-scroll-page::part(scroll) {
+  min-height: 100%;
+  scroll-padding-top: max(1rem, env(safe-area-inset-top));
+  scroll-padding-bottom: max(7rem, env(safe-area-inset-bottom));
+}
+
+.auth-form-shell {
+  min-height: auto;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+body.native-keyboard-open .auth-scroll-page::part(scroll) {
+  scroll-padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+body.native-keyboard-open .auth-form-shell {
+  padding-bottom: 1rem;
+}
+
 .native-safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }

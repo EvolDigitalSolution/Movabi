@@ -27,8 +27,8 @@ export class NativePlatformService {
 
     await Promise.allSettled([
       StatusBar.setOverlaysWebView({ overlay: false }),
-      StatusBar.setStyle({ style: Style.Dark }),
-      Keyboard.setResizeMode({ mode: KeyboardResize.Body }),
+      StatusBar.setStyle({ style: Style.Light }),
+      Keyboard.setResizeMode({ mode: KeyboardResize.Native }),
       Keyboard.setStyle({ style: KeyboardStyle.Light }),
       Keyboard.setScroll({ isDisabled: false }),
       Device.getInfo()
@@ -106,7 +106,6 @@ export class NativePlatformService {
     const show = (height?: number) => {
       document.body.classList.add('native-keyboard-open');
       if (height) document.documentElement.style.setProperty('--native-keyboard-height', `${height}px`);
-      requestAnimationFrame(() => this.scrollFocusedInputIntoView());
     };
     const hide = () => {
       document.body.classList.remove('native-keyboard-open');
@@ -117,15 +116,6 @@ export class NativePlatformService {
     await Keyboard.addListener('keyboardDidShow', ({ keyboardHeight }) => show(keyboardHeight));
     await Keyboard.addListener('keyboardWillHide', hide);
     await Keyboard.addListener('keyboardDidHide', hide);
-  }
-
-  private scrollFocusedInputIntoView(): void {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement)) return;
-
-    const inputHost = active.closest('ion-input, ion-textarea, input, textarea, select') as HTMLElement | null;
-    const target = inputHost || active;
-    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
   }
 
   private routeFromAppUrl(parsed: URL): string {

@@ -19,12 +19,12 @@ const config: CapacitorConfig = {
       splashImmersive: false
     },
     Keyboard: {
-      resize: 'body',
+      resize: 'native',
       style: 'light',
       resizeOnFullScreen: true
     },
     StatusBar: {
-      style: 'DARK',
+      style: 'LIGHT',
       backgroundColor: '#F8FAFC',
       overlaysWebView: false
     },
