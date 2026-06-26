@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
 import { AppConfigService } from '../config/app-config.service';
 import { AutocompleteResult } from '../../models/maps/route-result.model';
-import { catchError, forkJoin, map, Observable, of } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, switchMap } from 'rxjs';
 
 interface ORSFeature {
     properties: {
@@ -25,6 +25,16 @@ interface MapTilerFeature {
     relevance?: number;
 }
 
+export interface GeocodeSearchOptions {
+    proximity?: { lat: number; lng: number } | null;
+}
+
+interface SearchIntent {
+    term: string;
+    nearText: string | null;
+    usesNearMe: boolean;
+}
+
 @Injectable({
     providedIn: 'root'
 })
@@ -36,25 +46,37 @@ export class GeocodingService {
     private mapTilerGeocodeUrl = 'https://api.maptiler.com/geocoding';
     private cache = new Map<string, AutocompleteResult[]>();
 
-    autocomplete(query: string): Observable<AutocompleteResult[]> {
-        const normalizedQuery = this.normalizeQuery(query);
+    autocomplete(query: string, options: GeocodeSearchOptions = {}): Observable<AutocompleteResult[]> {
+        const intent = this.parseSearchIntent(query);
+        const normalizedQuery = this.normalizeQuery(intent.term);
         if (!normalizedQuery || normalizedQuery.length < 3) return of([]);
 
         const countryCode = this.config.currentCountry().code;
-        const cacheKey = `autocomplete:${countryCode}:${normalizedQuery}`;
+        const proximityKey = options.proximity
+            ? `${options.proximity.lat.toFixed(4)},${options.proximity.lng.toFixed(4)}`
+            : intent.nearText || 'default';
+        const cacheKey = `autocomplete:${countryCode}:${normalizedQuery}:${proximityKey}`;
 
         if (this.cache.has(cacheKey)) return of(this.cache.get(cacheKey)!);
 
+        if (intent.nearText && !options.proximity) {
+            return this.resolveSearchProximity(intent.nearText).pipe(
+                switchMap(proximity => this.autocomplete(intent.term, { proximity }))
+            );
+        }
+
+        const proximity = options.proximity || null;
         const requests = [
-            this.openRouteAutocomplete(normalizedQuery, 8),
-            this.openRouteSearch(normalizedQuery, 8),
-            this.mapTilerSearch(normalizedQuery, 8)
+            this.openRouteAutocomplete(normalizedQuery, 8, proximity),
+            this.openRouteSearch(normalizedQuery, 8, proximity),
+            this.mapTilerSearch(normalizedQuery, 8, proximity)
         ];
 
         return forkJoin(requests).pipe(
             map((groups) => this.rankResults(
                 groups.flat(),
-                normalizedQuery
+                normalizedQuery,
+                proximity
             ).slice(0, 8)),
             map(results => {
                 this.cache.set(cacheKey, results);
@@ -67,15 +89,23 @@ export class GeocodingService {
         );
     }
 
-    geocodeAddress(query: string): Observable<AutocompleteResult[]> {
-        const normalizedQuery = this.normalizeQuery(query);
+    geocodeAddress(query: string, options: GeocodeSearchOptions = {}): Observable<AutocompleteResult[]> {
+        const intent = this.parseSearchIntent(query);
+        const normalizedQuery = this.normalizeQuery(intent.term);
         if (!normalizedQuery) return of([]);
 
+        if (intent.nearText && !options.proximity) {
+            return this.resolveSearchProximity(intent.nearText).pipe(
+                switchMap(proximity => this.geocodeAddress(intent.term, { proximity }))
+            );
+        }
+
+        const proximity = options.proximity || null;
         return forkJoin([
-            this.openRouteSearch(normalizedQuery, 5),
-            this.mapTilerSearch(normalizedQuery, 5)
+            this.openRouteSearch(normalizedQuery, 5, proximity),
+            this.mapTilerSearch(normalizedQuery, 5, proximity)
         ]).pipe(
-            map(groups => this.rankResults(groups.flat(), normalizedQuery).slice(0, 5)),
+            map(groups => this.rankResults(groups.flat(), normalizedQuery, proximity).slice(0, 5)),
             catchError(error => {
                 console.warn('[GeocodingService] Geocode failed:', error);
                 return of([]);
@@ -83,7 +113,7 @@ export class GeocodingService {
         );
     }
 
-    private openRouteAutocomplete(query: string, size: number): Observable<AutocompleteResult[]> {
+    private openRouteAutocomplete(query: string, size: number, proximity?: { lat: number; lng: number } | null): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getOpenRouteServiceApiKey();
 
         if (!apiKey) return of([]);
@@ -95,7 +125,7 @@ export class GeocodingService {
             layers: 'address,venue,street,locality,neighbourhood'
         };
 
-        this.addOpenRouteBounds(params);
+        this.addOpenRouteBounds(params, proximity);
 
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/autocomplete`, {
             params
@@ -108,7 +138,7 @@ export class GeocodingService {
         );
     }
 
-    private openRouteSearch(query: string, size: number): Observable<AutocompleteResult[]> {
+    private openRouteSearch(query: string, size: number, proximity?: { lat: number; lng: number } | null): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getOpenRouteServiceApiKey();
         if (!apiKey) return of([]);
 
@@ -119,7 +149,7 @@ export class GeocodingService {
             layers: 'address,venue,street,locality,neighbourhood'
         };
 
-        this.addOpenRouteBounds(params);
+        this.addOpenRouteBounds(params, proximity);
 
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/search`, {
             params
@@ -132,7 +162,7 @@ export class GeocodingService {
         );
     }
 
-    private mapTilerSearch(query: string, limit: number): Observable<AutocompleteResult[]> {
+    private mapTilerSearch(query: string, limit: number, proximity?: { lat: number; lng: number } | null): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getMapTilerApiKey();
 
         if (!apiKey) return of([]);
@@ -147,7 +177,7 @@ export class GeocodingService {
                 language: 'en',
                 country: country.code.toLowerCase(),
                 types: 'poi,address,place',
-                proximity: `${country.defaultCenter.lng},${country.defaultCenter.lat}`
+                proximity: `${proximity?.lng ?? country.defaultCenter.lng},${proximity?.lat ?? country.defaultCenter.lat}`
             }
         }).pipe(
             map(res => this.mapMapTilerFeaturesToResults(res.features)),
@@ -178,15 +208,49 @@ export class GeocodingService {
         );
     }
 
-    private addOpenRouteBounds(params: Record<string, string | number>): void {
+    private addOpenRouteBounds(params: Record<string, string | number>, proximity?: { lat: number; lng: number } | null): void {
         const country = this.config.currentCountry();
 
         if (country.code) {
             params['boundary.country'] = country.code;
         }
 
-        params['focus.point.lat'] = country.defaultCenter.lat;
-        params['focus.point.lon'] = country.defaultCenter.lng;
+        params['focus.point.lat'] = proximity?.lat ?? country.defaultCenter.lat;
+        params['focus.point.lon'] = proximity?.lng ?? country.defaultCenter.lng;
+    }
+
+    private resolveSearchProximity(nearText: string): Observable<{ lat: number; lng: number } | null> {
+        const normalizedNear = this.normalizeQuery(nearText);
+
+        if (!normalizedNear) return of(null);
+
+        return forkJoin([
+            this.openRouteSearch(normalizedNear, 1, null),
+            this.mapTilerSearch(normalizedNear, 1, null)
+        ]).pipe(
+            map(groups => {
+                const result = this.rankResults(groups.flat(), normalizedNear)[0];
+                if (!result) return null;
+                return { lat: Number(result.lat), lng: Number(result.lng) };
+            }),
+            catchError(() => of(null))
+        );
+    }
+
+    private parseSearchIntent(query: string): SearchIntent {
+        const raw = String(query || '').replace(/\s+/g, ' ').trim();
+        const nearMe = /\b(near|nearby|close to|around)\s+(me|here)\b/i.test(raw) || /\bnearby\b/i.test(raw);
+        const nearMatch = raw.match(/\bnear\s+(.+)$/i);
+        const nearText = nearMatch && !/^(me|here)$/i.test(nearMatch[1].trim())
+            ? nearMatch[1].trim()
+            : null;
+        const term = this.normalizePlaceIntent(raw);
+
+        return {
+            term,
+            nearText,
+            usesNearMe: nearMe
+        };
     }
 
     private normalizeQuery(query: string): string {
@@ -262,7 +326,7 @@ export class GeocodingService {
             );
     }
 
-    private rankResults(results: AutocompleteResult[], query: string): AutocompleteResult[] {
+    private rankResults(results: AutocompleteResult[], query: string, proximity?: { lat: number; lng: number } | null): AutocompleteResult[] {
         const labelledResults = results.map(result => this.preserveTypedHouseNumber(result, query));
         const seen = new Set<string>();
         const deduped = labelledResults.filter(result => {
@@ -273,7 +337,7 @@ export class GeocodingService {
             return true;
         });
 
-        return deduped.sort((a, b) => this.scoreResult(b, query) - this.scoreResult(a, query));
+        return deduped.sort((a, b) => this.scoreResult(b, query, proximity) - this.scoreResult(a, query, proximity));
     }
 
     private preserveTypedHouseNumber(result: AutocompleteResult, query: string): AutocompleteResult {
@@ -306,7 +370,7 @@ export class GeocodingService {
         };
     }
 
-    private scoreResult(result: AutocompleteResult, query: string): number {
+    private scoreResult(result: AutocompleteResult, query: string, proximity?: { lat: number; lng: number } | null): number {
         const label = this.normaliseForScore(result.label);
         const cleanQuery = this.normaliseForScore(query.replace(new RegExp(`,?\\s*${this.config.currentCountry().name}$`, 'i'), ''));
         const queryTokens = cleanQuery.split(' ').filter(Boolean);
@@ -322,8 +386,26 @@ export class GeocodingService {
 
         if (numberTokens.length && numberTokens.every(token => label.includes(token))) score += 35;
         if (label.includes('united kingdom') || label.includes('united states') || label.includes('nigeria')) score += 5;
+        if (proximity) {
+            const distanceKm = this.distanceKm(proximity.lat, proximity.lng, result.lat, result.lng);
+            if (Number.isFinite(distanceKm)) {
+                score += Math.max(0, 80 - distanceKm);
+            }
+        }
 
         return score;
+    }
+
+    private distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+        const toRad = (value: number) => value * Math.PI / 180;
+        const radiusKm = 6371;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+
+        return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     private normaliseForScore(value: string): string {

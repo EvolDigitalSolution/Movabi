@@ -60,7 +60,7 @@ import { AnalyticsService } from '../../../../../core/services/analytics/analyti
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
-import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
+import { GeocodingService, GeocodeSearchOptions } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
@@ -875,6 +875,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     pickupLocation: UnifiedLocation = { source: 'manual', address: '' };
     dropoffLocation: UnifiedLocation = { source: 'manual', address: '' };
+    private currentSearchProximity: { lat: number; lng: number } | null = null;
 
     packageSizeOptions: Array<{ id: PackageSize; label: string; helper: string }> = [
         { id: 'small', label: 'Small', helper: 'Envelope or small bag' },
@@ -1589,7 +1590,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.clearRouteAndFare();
     }
 
-    private performSearch(type: 'pickup' | 'dropoff', query: string) {
+    private async performSearch(type: 'pickup' | 'dropoff', query: string) {
         if (!query || query.length < 3) {
             if (type === 'pickup') {
                 this.pickupResults.set([]);
@@ -1601,7 +1602,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
-        this.geocoding.autocomplete(this.withLocationContext(type, query)).subscribe(results => {
+        const options = await this.getSearchOptions(query);
+
+        this.geocoding.autocomplete(this.withLocationContext(type, query), options).subscribe(results => {
             if (type === 'pickup') {
                 this.pickupResults.set(results);
                 this.showPickupResults.set(true);
@@ -1660,7 +1663,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (query.length < 3) return;
 
         try {
-            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query)));
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(
+                this.withLocationContext(type, query),
+                await this.getSearchOptions(query)
+            ));
             const result = results?.[0];
 
             if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
@@ -1708,6 +1714,24 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
 
         return `${cleanQuery}, ${locality}`;
+    }
+
+    private async getSearchOptions(query: string): Promise<GeocodeSearchOptions> {
+        if (!/\b(near|nearby|close to|around)\s+(me|here)\b/i.test(query) && !/\bnearby\b/i.test(query)) {
+            return {};
+        }
+
+        if (!this.currentSearchProximity) {
+            const position = await this.locationService.getCurrentPosition();
+            if (position?.coords) {
+                this.currentSearchProximity = {
+                    lat: Number(position.coords.latitude),
+                    lng: Number(position.coords.longitude)
+                };
+            }
+        }
+
+        return { proximity: this.currentSearchProximity };
     }
 
     private extractLocality(address?: string): string {

@@ -54,7 +54,7 @@ import { ProfileService } from '@core/services/profile/profile.service';
 import { LocationService } from '@core/services/logistics/location.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
 import { AnalyticsService } from '@core/services/analytics/analytics.service';
-import { GeocodingService } from '@core/services/maps/geocoding.service';
+import { GeocodingService, GeocodeSearchOptions } from '@core/services/maps/geocoding.service';
 import { RoutingService } from '@core/services/maps/routing.service';
 import { FareCalculationService } from '@core/services/maps/fare-calculation.service';
 import { BookingService } from '@core/services/booking/booking.service';
@@ -458,6 +458,7 @@ export class CreateJobPage implements AfterViewInit {
 
     pickupLocation: UnifiedLocation = { source: 'manual', address: '' };
     dropoffLocation: UnifiedLocation = { source: 'manual', address: '' };
+    private currentSearchProximity: { lat: number; lng: number } | null = null;
 
     scheduledTime = new Date().toISOString();
     estimate: JobEstimate | null = null;
@@ -686,7 +687,7 @@ export class CreateJobPage implements AfterViewInit {
         this.estimate = null;
     }
 
-    private performSearch(type: 'pickup' | 'dropoff', query: string): void {
+    private async performSearch(type: 'pickup' | 'dropoff', query: string): Promise<void> {
         if (!query || query.length < 3) {
             if (type === 'pickup') {
                 this.pickupResults.set([]);
@@ -698,8 +699,10 @@ export class CreateJobPage implements AfterViewInit {
             return;
         }
 
+        const options = await this.getSearchOptions(query);
+
         this.geocoding
-            .autocomplete(this.withLocationContext(type, query))
+            .autocomplete(this.withLocationContext(type, query), options)
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe({
                 next: (results) => {
@@ -854,7 +857,10 @@ export class CreateJobPage implements AfterViewInit {
         if (!loc.address || this.hasValidCoords(loc)) return;
 
         try {
-            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, loc.address)));
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(
+                this.withLocationContext(type, loc.address),
+                await this.getSearchOptions(loc.address)
+            ));
 
             if (!results?.length) return;
 
@@ -895,6 +901,24 @@ export class CreateJobPage implements AfterViewInit {
         }
 
         return `${cleanQuery}, ${locality}`;
+    }
+
+    private async getSearchOptions(query: string): Promise<GeocodeSearchOptions> {
+        if (!/\b(near|nearby|close to|around)\s+(me|here)\b/i.test(query) && !/\bnearby\b/i.test(query)) {
+            return {};
+        }
+
+        if (!this.currentSearchProximity) {
+            const position = await this.locationService.getCurrentPosition();
+            if (position?.coords) {
+                this.currentSearchProximity = {
+                    lat: Number(position.coords.latitude),
+                    lng: Number(position.coords.longitude)
+                };
+            }
+        }
+
+        return { proximity: this.currentSearchProximity };
     }
 
     private extractLocality(address?: string): string {
