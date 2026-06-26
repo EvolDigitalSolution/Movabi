@@ -30,7 +30,7 @@ services:
       GOTRUE_DB_DATABASE_URL: postgres://postgres:MovabiDB%402026Secure%21@movabi-supabase-db:5432/postgres?sslmode=disable
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
       GOTRUE_SITE_URL: ${APP_URL}
-      GOTRUE_URI_ALLOW_LIST: ${APP_URL}/auth/callback,http://localhost:3000/auth/callback
+      GOTRUE_URI_ALLOW_LIST: ${APP_URL}/auth/callback,http://localhost:3000/auth/callback,https://localhost/auth/callback,com.movabi.app://auth/callback
       GOTRUE_JWT_EXP: 3600
       GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -50,7 +50,7 @@ services:
       GOTRUE_MAILER_AUTOCONFIRM: "false"
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_EXTERNAL_REDIRECT_URLS: http://localhost:3000/**,https://movabi.apps.evolsolution.com/**,capacitor://localhost/**
+      GOTRUE_EXTERNAL_REDIRECT_URLS: http://localhost:3000/**,https://localhost/**,https://movabi.apps.evolsolution.com/**,capacitor://localhost/**,com.movabi.app://**
     dns:
       - 1.1.1.1
       - 8.8.8.8

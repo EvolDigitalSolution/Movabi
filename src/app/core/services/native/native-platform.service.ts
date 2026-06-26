@@ -28,8 +28,9 @@ export class NativePlatformService {
     await Promise.allSettled([
       StatusBar.setOverlaysWebView({ overlay: false }),
       StatusBar.setStyle({ style: Style.Dark }),
-      Keyboard.setResizeMode({ mode: KeyboardResize.Body }),
+      Keyboard.setResizeMode({ mode: KeyboardResize.Ionic }),
       Keyboard.setStyle({ style: KeyboardStyle.Light }),
+      Keyboard.setScroll({ isDisabled: false }),
       Device.getInfo()
     ]);
 
@@ -38,6 +39,7 @@ export class NativePlatformService {
     }
 
     await this.configurePushListeners();
+    await this.configureKeyboardListeners();
     await this.registerPushWhenAlreadyGranted();
 
     await App.addListener('appStateChange', ({ isActive }) => this.appIsActive.set(isActive));
@@ -45,7 +47,7 @@ export class NativePlatformService {
       void Browser.close().catch(() => undefined);
       const parsed = this.safeUrl(url);
       if (!parsed) return;
-      const route = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      const route = this.routeFromAppUrl(parsed);
       if (route.startsWith('/')) void this.router.navigateByUrl(route);
     });
 
@@ -98,6 +100,23 @@ export class NativePlatformService {
   private async registerPushWhenAlreadyGranted(): Promise<void> {
     const permission = await PushNotifications.checkPermissions();
     if (permission.receive === 'granted') await PushNotifications.register();
+  }
+
+  private async configureKeyboardListeners(): Promise<void> {
+    await Keyboard.addListener('keyboardWillShow', () => document.body.classList.add('native-keyboard-open'));
+    await Keyboard.addListener('keyboardDidShow', () => document.body.classList.add('native-keyboard-open'));
+    await Keyboard.addListener('keyboardWillHide', () => document.body.classList.remove('native-keyboard-open'));
+    await Keyboard.addListener('keyboardDidHide', () => document.body.classList.remove('native-keyboard-open'));
+  }
+
+  private routeFromAppUrl(parsed: URL): string {
+    if (parsed.protocol === 'com.movabi.app:') {
+      const host = parsed.hostname ? `/${parsed.hostname}` : '';
+      const path = parsed.pathname || '';
+      return `${host}${path}${parsed.search}${parsed.hash}` || '/auth/callback';
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   }
 
   private safeUrl(value: string): URL | null {

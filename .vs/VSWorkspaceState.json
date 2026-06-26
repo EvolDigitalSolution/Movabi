@@ -1,6 +1,8 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\android",
+    "\\android\\app"
   ],
   "PreviewInSolutionExplorer": false
 }

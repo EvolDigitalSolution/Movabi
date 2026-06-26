@@ -144,7 +144,13 @@ p {
   }
 
   ion-content::part(scroll) {
-    padding-bottom: max(var(--ion-safe-area-bottom, 0px), env(safe-area-inset-bottom));
+    padding-bottom: max(var(--ion-safe-area-bottom, 0px), env(safe-area-inset-bottom), 1rem);
+  }
+
+  ion-header,
+  ion-toolbar {
+    --background: #f8fafc;
+    background: #f8fafc;
   }
 
   ion-toolbar {
@@ -157,6 +163,15 @@ p {
   ion-action-sheet {
     --backdrop-opacity: 0.42;
   }
+}
+
+body.native-keyboard-open ion-content::part(scroll) {
+  padding-bottom: max(45vh, env(safe-area-inset-bottom));
+  scroll-padding-bottom: 45vh;
+}
+
+body.native-keyboard-open .native-sticky-action {
+  position: static;
 }
 
 .native-safe-bottom {

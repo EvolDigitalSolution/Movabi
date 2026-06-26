@@ -92,6 +92,12 @@ export const ADMIN_WEB_ROUTES: Routes = [
                     import('@admin/features/settings/settings.component')
                         .then(m => m.AdminSettingsComponent)
             },
+            {
+                path: 'about-movabi',
+                loadComponent: () =>
+                    import('@admin/features/landing/movabi-about.component')
+                        .then(m => m.AdminMovabiAboutComponent)
+            },
 
             // 🔥 default inside admin
             {

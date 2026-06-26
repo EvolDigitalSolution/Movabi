@@ -5,6 +5,7 @@ import { Router, Route } from '@angular/router';
 import { ProfileService } from '../profile/profile.service';
 import { AccountStatus } from '@shared/models/booking.model';
 import { environment } from '@env/environment';
+import { Capacitor } from '@capacitor/core';
 
 @Injectable({
     providedIn: 'root'
@@ -95,6 +96,11 @@ export class AuthService {
     }
 
     private getRedirectUrl(path: string): string {
+        if (Capacitor.isNativePlatform()) {
+            const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+            return `com.movabi.app://${cleanPath}`;
+        }
+
         const isBrowser = typeof window !== 'undefined';
         const currentOrigin = isBrowser ? window.location.origin : '';
         const isLocalApp = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(currentOrigin);
