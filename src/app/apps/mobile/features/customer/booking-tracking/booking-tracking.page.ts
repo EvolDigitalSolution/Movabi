@@ -307,6 +307,33 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               </div>
             }
 
+            @if (showCompletionPinPanel()) {
+              <div class="p-5 rounded-[2rem] border border-emerald-100 bg-emerald-50 space-y-4">
+                <div class="flex items-start gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-white text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm shrink-0">
+                    <ion-icon name="shield-checkmark-outline" class="text-xl"></ion-icon>
+                  </div>
+
+                  <div class="min-w-0 flex-1">
+                    <p class="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                      Customer handover PIN
+                    </p>
+                    <div class="mt-2 flex items-center justify-between gap-3">
+                      <h3 class="text-lg font-display font-black text-slate-950">
+                        Share when complete
+                      </h3>
+                      <div class="px-4 py-2 rounded-2xl bg-white text-2xl font-display font-black tracking-[0.35em] text-slate-950 border border-emerald-100">
+                        {{ completionPinForCustomer() }}
+                      </div>
+                    </div>
+                    <p class="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                      Give this PIN to your driver only when your {{ servicePaymentName() }} is finished and you are happy for Movabi to complete payment.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            }
+
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
               <div class="grid grid-cols-2 gap-3">
                 <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -1203,6 +1230,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return this.paidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
     }
 
+    completionPinForCustomer(): string {
+        const metadata = this.bookingMetadata();
+        return this.normalizeCompletionPin(
+            metadata['completion_pin'] ||
+            metadata['service_completion_pin'] ||
+            metadata['delivery_pin']
+        );
+    }
+
+    showCompletionPinPanel(): boolean {
+        const booking = this.booking() as any;
+        const status = String(booking?.status || '').toLowerCase();
+
+        if (!booking?.driver_id || !this.completionPinForCustomer()) return false;
+
+        return !['requested', 'searching', 'completed', 'settled', 'cancelled', 'canceled', 'no_driver_found', 'requires_review'].includes(status);
+    }
+
     private paidByWallet(): boolean {
         const booking = this.booking() as any;
         const method = String(booking?.payment_method || '').toLowerCase();
@@ -1233,7 +1278,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return `This ${service} did not complete normally.`;
     }
 
-    private servicePaymentName(): string {
+    servicePaymentName(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
                 return 'errand';
@@ -1244,6 +1289,25 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             default:
                 return 'ride';
         }
+    }
+
+    private bookingMetadata(): Record<string, any> {
+        const raw = (this.booking() as any)?.metadata || {};
+
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch {
+                return {};
+            }
+        }
+
+        return raw && typeof raw === 'object' ? raw : {};
+    }
+
+    private normalizeCompletionPin(value: unknown): string {
+        return String(value ?? '').replace(/\D/g, '').slice(0, 8);
     }
 
     getErrandItemBudget(): number {

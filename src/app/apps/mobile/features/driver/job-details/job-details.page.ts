@@ -878,6 +878,23 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return raw && typeof raw === 'object' ? raw : {};
     }
 
+    private completionPin(): string {
+        const metadata = this.jobMetadata();
+        return this.normalizeCompletionPin(
+            metadata['completion_pin'] ||
+            metadata['service_completion_pin'] ||
+            metadata['delivery_pin']
+        );
+    }
+
+    private requiresCompletionPin(): boolean {
+        return this.completionPin().length >= 4;
+    }
+
+    private normalizeCompletionPin(value: unknown): string {
+        return String(value ?? '').replace(/\D/g, '').slice(0, 8);
+    }
+
     constructor() {
         addIcons({
             addOutline,
@@ -1480,14 +1497,38 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         const alert = await this.alertCtrl.create({
             header: 'Complete Request',
-            message: 'Confirm this request is fully completed. Payment settlement will only continue after completion.',
+            message: this.requiresCompletionPin()
+                ? 'Ask the customer for their Movabi completion PIN. Payment settlement will only continue after the correct PIN is entered.'
+                : 'Confirm this request is fully completed. Payment settlement will only continue after completion.',
+            inputs: this.requiresCompletionPin()
+                ? [
+                    {
+                        name: 'completionPin',
+                        type: 'tel',
+                        placeholder: '4-digit customer PIN',
+                        attributes: {
+                            inputmode: 'numeric',
+                            maxlength: 6,
+                            autocomplete: 'one-time-code'
+                        }
+                    }
+                ]
+                : [],
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Complete',
                     role: 'confirm',
-                    handler: () => {
-                        void this.executeCompletion();
+                    handler: (data) => {
+                        const completionPin = this.normalizeCompletionPin(data?.completionPin);
+
+                        if (this.requiresCompletionPin() && completionPin.length < 4) {
+                            void this.showToast('Enter the customer completion PIN.', 'warning');
+                            return false;
+                        }
+
+                        void this.executeCompletion(completionPin);
+                        return true;
                     }
                 }
             ]
@@ -1496,7 +1537,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await alert.present();
     }
 
-    private async executeCompletion() {
+    private async executeCompletion(completionPin?: string) {
         const currentJob = this.job();
 
         if (!currentJob?.id) return;
@@ -1505,7 +1546,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
-            const completed = await this.driverService.completeJob(currentJob.id);
+            const completed = await this.driverService.completeJob(currentJob.id, completionPin);
 
             if (completed) {
                 this.driverService.activeJob.set(completed as Booking);

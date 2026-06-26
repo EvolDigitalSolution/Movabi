@@ -118,6 +118,8 @@ export const baseJob = {
   driver: profiles.driver,
   customer: profiles.customer,
   metadata: {
+    completion_pin: '1234',
+    completion_pin_required: true,
     service_vehicle_class: 'standard',
     ride_details: { passenger_count: 4, vehicle_class: 'standard' }
   },
@@ -162,6 +164,17 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
           layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#f7efe2' } }]
         })
       });
+    }
+
+    if (url.includes('api.maptiler.com/geocoding')) {
+      const requestUrl = new URL(url);
+      const encodedQuery = requestUrl.pathname.split('/geocoding/')[1]?.replace(/\.json$/, '') || '';
+      return json(route, { features: geocodeFeatures(decodeURIComponent(encodedQuery), requestUrl.searchParams.get('proximity')) });
+    }
+
+    if (url.includes('api.openrouteservice.org/geocode')) {
+      const requestUrl = new URL(url);
+      return json(route, { features: geocodeFeatures(requestUrl.searchParams.get('text') || '', `${requestUrl.searchParams.get('focus.point.lon')},${requestUrl.searchParams.get('focus.point.lat')}`) });
     }
 
     if (url.includes('api.maptiler.com') || url.includes('api.openrouteservice.org')) {
@@ -261,6 +274,13 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
       return json(route, { job: activeJob, refund: { amount: 3.5 } });
     }
     if (url.includes('/api/booking/complete') || url.includes('/api/logistics/complete')) {
+      const payload = route.request().postDataJSON() as { completionPin?: string } | null;
+      const expectedPin = String((activeJob.metadata as any)?.completion_pin || '');
+
+      if (url.includes('/api/logistics/complete') && expectedPin && payload?.completionPin !== expectedPin) {
+        return json(route, { error: 'The customer PIN is incorrect. Ask the customer for the current 4-digit PIN and try again.' }, 400);
+      }
+
       activeJob = { ...activeJob, status: 'completed', payment_status: 'paid', driver_payout: 2.98, stripe_transfer_id: 'tr_test' };
       return json(route, activeJob);
     }
@@ -318,4 +338,40 @@ async function json(route: Route, data: unknown, status = 200) {
     contentType: 'application/json',
     body: JSON.stringify(data)
   });
+}
+
+function geocodeFeatures(query: string, proximity?: string | null) {
+  const normalized = String(query || '').toLowerCase();
+  const isBoltonIntent = normalized.includes('bolton') || normalized.includes('bl2') || String(proximity || '').includes('-2.43');
+
+  if (normalized.includes('mcdonald') || normalized.includes('asda')) {
+    const label = normalized.includes('mcdonald')
+      ? (isBoltonIntent ? 'McDonald\'s, Manchester Road, Bolton, United Kingdom' : 'McDonald\'s, Charing Cross, London, United Kingdom')
+      : (isBoltonIntent ? 'Asda, Moss Bank Way, Bolton BL1 8QG, United Kingdom' : 'Asda, Old Kent Road, London, United Kingdom');
+    const coordinates: [number, number] = isBoltonIntent ? [-2.429, 53.590] : [-0.127, 51.5074];
+    return [
+      {
+        place_name: label,
+        text: label,
+        properties: { label, name: label },
+        center: coordinates,
+        geometry: { coordinates }
+      }
+    ];
+  }
+
+  const label = isBoltonIntent
+    ? 'Back Skipton Street, Bolton, England, United Kingdom'
+    : 'Waterloo Station, London, United Kingdom';
+  const coordinates: [number, number] = isBoltonIntent ? [-2.43, 53.585] : [-0.113, 51.503];
+
+  return [
+    {
+      place_name: label,
+      text: label,
+      properties: { label, name: label },
+      center: coordinates,
+      geometry: { coordinates }
+    }
+  ];
 }

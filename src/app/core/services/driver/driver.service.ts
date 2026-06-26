@@ -421,7 +421,7 @@ export class DriverService {
         this.earnings.set(data || []);
     }
 
-    async completeJob(jobId: string) {
+    async completeJob(jobId: string, completionPin?: string | null) {
         const job = await this.bookingService.getBooking(jobId);
 
         if (job.service_slug === 'errand') {
@@ -449,7 +449,7 @@ export class DriverService {
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId })
+            body: JSON.stringify({ jobId, completionPin: completionPin || undefined })
         });
 
         if (!response.ok) {

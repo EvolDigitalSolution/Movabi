@@ -107,16 +107,18 @@ router.post('/enqueue', async (req: Request, res: Response) => {
  */
 router.post('/complete', async (req: Request, res: Response) => {
   try {
-    const { jobId } = req.body;
+    const { jobId, completionPin } = req.body;
     if (!jobId) {
       return res.status(400).json({ error: 'jobId required' });
     }
 
-    const data = await LogisticsService.completeJob(jobId);
+    const data = await LogisticsService.completeJob(jobId, completionPin);
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Complete job error:', error);
-    res.status(500).json({ error: error.message });
+    const message = String(error?.message || 'Failed to complete job');
+    const status = /pin|required|incorrect/i.test(message) ? 400 : 500;
+    res.status(status).json({ error: message });
   }
 });
 

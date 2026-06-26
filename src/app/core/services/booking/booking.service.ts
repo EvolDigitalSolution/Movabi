@@ -59,6 +59,7 @@ export class BookingService {
         }
 
         const normalizedDetails = this.normalizeDetails(serviceSlug, details);
+        const completionPin = this.generateCompletionPin();
 
         this.validateDetails(serviceSlug, {
             ...details,
@@ -152,6 +153,9 @@ export class BookingService {
 
             metadata: {
                 ...(bookingData.metadata || {}),
+                completion_pin: completionPin,
+                completion_pin_required: true,
+                completion_pin_created_at: new Date().toISOString(),
                 pricing_source: pricing?.pricingSource || pricing?.source || 'app_confirmed_fare',
                 distance_km: distanceKm,
                 distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
@@ -219,6 +223,18 @@ export class BookingService {
         this.activeBooking.set(booking);
 
         return booking;
+    }
+
+    private generateCompletionPin(): string {
+        const cryptoRef = globalThis.crypto;
+
+        if (cryptoRef?.getRandomValues) {
+            const values = new Uint32Array(1);
+            cryptoRef.getRandomValues(values);
+            return String(1000 + (values[0] % 9000));
+        }
+
+        return String(Math.floor(1000 + Math.random() * 9000));
     }
 
     private async calculateRegionalPrice(
