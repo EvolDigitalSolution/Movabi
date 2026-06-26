@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def movabiKeystoreProperties = new Properties()
+def movabiKeystorePropertiesFile = rootProject.file('key.properties')
+if (movabiKeystorePropertiesFile.exists()) {
+    movabiKeystorePropertiesFile.withInputStream { movabiKeystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.movabi.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,9 +22,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def storeFilePath = project.findProperty('MOVABI_ANDROID_KEYSTORE') ?: movabiKeystoreProperties['MOVABI_ANDROID_KEYSTORE'] ?: System.getenv('MOVABI_ANDROID_KEYSTORE')
+            def storePasswordValue = project.findProperty('MOVABI_ANDROID_KEYSTORE_PASSWORD') ?: movabiKeystoreProperties['MOVABI_ANDROID_KEYSTORE_PASSWORD'] ?: System.getenv('MOVABI_ANDROID_KEYSTORE_PASSWORD')
+            def keyAliasValue = project.findProperty('MOVABI_ANDROID_KEY_ALIAS') ?: movabiKeystoreProperties['MOVABI_ANDROID_KEY_ALIAS'] ?: System.getenv('MOVABI_ANDROID_KEY_ALIAS')
+            def keyPasswordValue = project.findProperty('MOVABI_ANDROID_KEY_PASSWORD') ?: movabiKeystoreProperties['MOVABI_ANDROID_KEY_PASSWORD'] ?: System.getenv('MOVABI_ANDROID_KEY_PASSWORD')
+
+            if (storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue) {
+                storeFile file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }

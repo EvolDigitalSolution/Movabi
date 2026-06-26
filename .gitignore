@@ -4,6 +4,15 @@
 .env*
 !.env.example
 
+# Native app signing and private platform files
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
+android/key.properties
+
 # Compiled output
 /dist
 /tmp

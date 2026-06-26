@@ -1,0 +1,4 @@
+MOVABI_ANDROID_KEYSTORE=C:\\secure\\movabi-release.jks
+MOVABI_ANDROID_KEYSTORE_PASSWORD=replace-with-keystore-password
+MOVABI_ANDROID_KEY_ALIAS=movabi
+MOVABI_ANDROID_KEY_PASSWORD=replace-with-key-password
