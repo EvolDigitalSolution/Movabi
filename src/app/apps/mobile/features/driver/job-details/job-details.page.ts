@@ -25,6 +25,7 @@ import {
     checkmarkCircle,
     checkmarkDone,
     chevronBackOutline,
+    chevronDownOutline,
     navigate,
     receiptOutline,
     walletOutline,
@@ -65,6 +66,7 @@ import { MapComponent } from '../../../../../shared/components/map/map.component
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 
 type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
+type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
 @Component({
     selector: 'app-job-details',
@@ -153,29 +155,48 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
           </div>
 
           <app-card class="overflow-hidden">
-            <div class="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              (click)="toggleSection('navigation')"
+              class="w-full p-4 border-b border-slate-100 flex items-center justify-between gap-3 text-left active:scale-[0.99] transition-all"
+            >
               <div class="min-w-0">
                 <p class="text-xs text-slate-500 font-semibold mb-1">{{ navigationSectionLabel() }}</p>
                 <h3 class="text-base font-display font-black text-slate-950">{{ pickupMapTitle() }}</h3>
                 <p class="text-xs text-slate-500 font-semibold mt-1">{{ pickupMapSubtitle() }}</p>
               </div>
 
-              <button
-                type="button"
-                (click)="openMap(job()?.pickup_address)"
-                class="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center active:scale-95 transition-all shrink-0"
-              >
-                <ion-icon name="navigate"></ion-icon>
-              </button>
-            </div>
+              <ion-icon
+                name="chevron-down-outline"
+                class="text-xl text-slate-400 transition-transform"
+                [class.rotate-180]="!isSectionExpanded('navigation')"
+              ></ion-icon>
+            </button>
 
-            <div class="h-72 bg-slate-50">
-              <app-map #pickupMap></app-map>
-            </div>
+            @if (isSectionExpanded('navigation')) {
+              <div class="h-72 bg-slate-50">
+                <app-map #pickupMap></app-map>
+              </div>
+              <div class="p-4 pt-0">
+                <button
+                  type="button"
+                  (click)="openMap(job()?.pickup_address)"
+                  class="w-full h-12 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <ion-icon name="navigate"></ion-icon>
+                  Open navigation
+                </button>
+              </div>
+            }
           </app-card>
 
           <app-card class="p-5">
-            <div class="flex items-center justify-between gap-4 mb-8">
+            <button
+              type="button"
+              (click)="toggleSection('customer')"
+              class="w-full flex items-center justify-between gap-4 text-left active:scale-[0.99] transition-all"
+              [class.mb-8]="isSectionExpanded('customer')"
+            >
               <div class="flex items-center min-w-0">
                 <div class="w-14 h-14 rounded-2xl overflow-hidden mr-4 border-4 border-slate-50 shadow-lg shadow-slate-200/50 bg-slate-100 flex items-center justify-center shrink-0">
                   <span class="text-lg font-black text-slate-500">
@@ -193,48 +214,71 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                 </div>
               </div>
 
+              <ion-icon
+                name="chevron-down-outline"
+                class="text-xl text-slate-400 transition-transform shrink-0"
+                [class.rotate-180]="!isSectionExpanded('customer')"
+              ></ion-icon>
+            </button>
+
+            @if (isSectionExpanded('customer')) {
               @if (customerPhone()) {
                 <button
                   type="button"
                   (click)="callPhone(customerPhone())"
-                  class="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center active:scale-95 transition-all"
+                  class="w-full h-12 mb-6 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
                 >
-                  <ion-icon name="call" class="text-xl"></ion-icon>
+                  <ion-icon name="call"></ion-icon>
+                  Call customer
                 </button>
               }
-            </div>
 
-            <div class="relative pl-8 space-y-8">
-              <div class="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-100"></div>
+              <div class="relative pl-8 space-y-8">
+                <div class="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-100"></div>
 
-              <div class="relative">
-                <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
-                <p class="text-xs text-slate-500 font-semibold mb-1">{{ originLabel() }}</p>
-                <p class="font-bold text-slate-950 leading-snug">{{ job()?.pickup_address || originUnavailableLabel() }}</p>
+                <div class="relative">
+                  <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
+                  <p class="text-xs text-slate-500 font-semibold mb-1">{{ originLabel() }}</p>
+                  <p class="font-bold text-slate-950 leading-snug">{{ job()?.pickup_address || originUnavailableLabel() }}</p>
+                </div>
+
+                <div class="relative">
+                  <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
+                  <p class="text-xs text-slate-500 font-semibold mb-1">{{ destinationLabel() }}</p>
+                  <p class="font-bold text-slate-950 leading-snug">{{ job()?.dropoff_address || destinationUnavailableLabel() }}</p>
+                </div>
               </div>
-
-              <div class="relative">
-                <div class="absolute -left-[27px] top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
-                <p class="text-xs text-slate-500 font-semibold mb-1">{{ destinationLabel() }}</p>
-                <p class="font-bold text-slate-950 leading-snug">{{ job()?.dropoff_address || destinationUnavailableLabel() }}</p>
-              </div>
-            </div>
+            }
           </app-card>
 
           <app-card class="p-5">
-            <div class="flex items-center gap-3 mb-5">
-              <div class="w-10 h-10 rounded-2xl bg-slate-50 border border-slate-100 text-slate-600 flex items-center justify-center">
-                <ion-icon [name]="serviceIcon()" class="text-xl"></ion-icon>
+            <button
+              type="button"
+              (click)="toggleSection('requirements')"
+              class="w-full flex items-center justify-between gap-4 text-left active:scale-[0.99] transition-all"
+              [class.mb-5]="isSectionExpanded('requirements')"
+            >
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-2xl bg-slate-50 border border-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                  <ion-icon [name]="serviceIcon()" class="text-xl"></ion-icon>
+                </div>
+                <div class="min-w-0">
+                  <h3 class="font-display font-black text-slate-950">Service Requirements</h3>
+                  <p class="text-xs text-slate-500 font-semibold truncate">
+                    {{ serviceName() }}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 class="font-display font-black text-slate-950">Service Requirements</h3>
-                <p class="text-xs text-slate-500 font-semibold">
-                  {{ serviceName() }}
-                </p>
-              </div>
-            </div>
 
-            @if (details()) {
+              <ion-icon
+                name="chevron-down-outline"
+                class="text-xl text-slate-400 transition-transform shrink-0"
+                [class.rotate-180]="!isSectionExpanded('requirements')"
+              ></ion-icon>
+            </button>
+
+            @if (isSectionExpanded('requirements')) {
+              @if (details()) {
               @if (serviceVehicleLabel()) {
                 <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex justify-between items-center mb-3">
                   <span class="text-sm font-bold text-blue-700">Vehicle needed</span>
@@ -321,6 +365,12 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
 
               @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
                 <div class="space-y-4">
+                  <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex justify-between items-center gap-3">
+                    <span class="text-sm font-bold text-blue-700">Errand type</span>
+                    <span class="text-sm font-black text-slate-950 text-right">{{ errandModeLabel() }}</span>
+                  </div>
+
+                  @if (isShoppingErrand()) {
                   <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div class="flex justify-between items-center gap-3 mb-4">
                       <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Shopping List</p>
@@ -575,6 +625,34 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                       </app-button>
                     </div>
                   }
+                  } @else {
+                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                      <div>
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Collection task</p>
+                        <p class="text-sm font-semibold text-slate-600 leading-relaxed">
+                          Go to the collection location, collect the item or documents, then deliver or return them to the customer. No shopping spend or receipt is needed for this errand.
+                        </p>
+                      </div>
+
+                      <div class="grid grid-cols-1 gap-3">
+                        <div class="rounded-2xl bg-white border border-slate-100 p-3">
+                          <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Collect from</p>
+                          <p class="text-sm font-bold text-slate-800 leading-snug">{{ job()?.pickup_address || originUnavailableLabel() }}</p>
+                        </div>
+                        <div class="rounded-2xl bg-white border border-slate-100 p-3">
+                          <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Deliver to</p>
+                          <p class="text-sm font-bold text-slate-800 leading-snug">{{ job()?.dropoff_address || destinationUnavailableLabel() }}</p>
+                        </div>
+                      </div>
+
+                      @if (anyDetails()?.delivery_instructions) {
+                        <div class="rounded-2xl bg-amber-50 border border-amber-100 p-3">
+                          <p class="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2">Customer notes</p>
+                          <p class="text-sm font-semibold text-slate-700 leading-relaxed">{{ anyDetails()?.delivery_instructions }}</p>
+                        </div>
+                      }
+                    </div>
+                  }
                 </div>
               }
 
@@ -598,10 +676,11 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
                   }
                 </div>
               }
-            } @else {
-              <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <p class="text-sm text-slate-500 font-semibold">No extra service details found.</p>
-              </div>
+              } @else {
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p class="text-sm text-slate-500 font-semibold">No extra service details found.</p>
+                </div>
+              }
             }
           </app-card>
 
@@ -643,8 +722,8 @@ type JobDetails = ErrandDetails | RideDetails | DeliveryDetails | VanDetails;
               }
 
               @case ('arrived_at_store') {
-                <app-button variant="primary" size="lg" class="w-full h-16 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('shopping_in_progress')">
-                  Start Shopping
+                <app-button variant="primary" size="lg" class="w-full h-16 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(nextArrivedAtStoreStatus())">
+                  {{ arrivedAtStoreActionLabel() }}
                 </app-button>
               }
 
@@ -776,6 +855,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
     pickupMapReady = signal(false);
+    sectionExpanded = signal<Record<string, boolean>>({
+        navigation: true,
+        customer: false,
+        requirements: true
+    });
 
     itemsList = computed((): string[] => {
         const details = this.details() as any;
@@ -859,6 +943,57 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
     });
 
+    errandMode(): ErrandMode {
+        const metadata = this.jobMetadata();
+        const details = this.anyDetails() || {};
+        const raw = String(
+            metadata['errand_details']?.mode ||
+            metadata['errand_mode'] ||
+            details?.errand_mode ||
+            details?.mode ||
+            ''
+        ).toLowerCase();
+
+        if (raw === 'collect_deliver' || raw === 'quick_buy' || raw === 'shop_deliver') {
+            return raw as ErrandMode;
+        }
+
+        const legacyBudget = this.firstPositiveMoney(
+            details?.estimated_budget,
+            metadata['errand_details']?.budget,
+            metadata['item_budget']
+        );
+
+        return this.itemsList().length > 0 || legacyBudget > 0 ? 'shop_deliver' : 'collect_deliver';
+    }
+
+    isShoppingErrand(): boolean {
+        const mode = this.errandMode();
+        return mode === 'quick_buy' || mode === 'shop_deliver';
+    }
+
+    errandModeLabel(): string {
+        switch (this.errandMode()) {
+            case 'quick_buy':
+                return 'Quick buy';
+            case 'shop_deliver':
+                return 'Shop & deliver';
+            default:
+                return 'Collect & deliver';
+        }
+    }
+
+    isSectionExpanded(section: string): boolean {
+        return this.sectionExpanded()[section] !== false;
+    }
+
+    toggleSection(section: string): void {
+        this.sectionExpanded.update((current) => ({
+            ...current,
+            [section]: !this.isSectionExpanded(section)
+        }));
+    }
+
     private channel?: RealtimeChannel;
     private errandFundingChannel?: RealtimeChannel;
     private issuingElements: Array<{ unmount: () => void }> = [];
@@ -905,6 +1040,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             checkmarkCircle,
             checkmarkDone,
             chevronBackOutline,
+            chevronDownOutline,
             navigate,
             receiptOutline,
             walletOutline,
@@ -964,7 +1100,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
             this.details.set(details as JobDetails | null);
 
-            if (currentJob.service_slug === ServiceTypeEnum.ERRAND) {
+            if (currentJob.service_slug === ServiceTypeEnum.ERRAND && this.isShoppingErrand()) {
                 const funding = await this.bookingService.getErrandFunding(currentJob.id);
                 this.funding.set(funding);
                 await this.loadIssuingCardStatus(currentJob.id);
@@ -1468,6 +1604,14 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return 'in_progress' as BookingStatus;
     }
 
+    nextArrivedAtStoreStatus(): BookingStatus {
+        return (this.isShoppingErrand() ? 'shopping_in_progress' : 'collected') as BookingStatus;
+    }
+
+    arrivedAtStoreActionLabel(): string {
+        return this.isShoppingErrand() ? 'Start Shopping' : 'Item Collected';
+    }
+
     async completeTrip() {
         const currentJob = this.job();
 
@@ -1476,7 +1620,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        if (currentJob.service_slug === ServiceTypeEnum.ERRAND) {
+        if (currentJob.service_slug === ServiceTypeEnum.ERRAND && this.isShoppingErrand()) {
             const errandDetails = this.details() as ErrandDetails | null;
 
             if (!errandDetails?.actual_spending || errandDetails.actual_spending <= 0) {
@@ -2032,7 +2176,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     serviceWorkTitle(): string {
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return `Shop for ${this.customerName()}`;
+                return this.isShoppingErrand()
+                    ? `Shop for ${this.customerName()}`
+                    : `Collect and deliver for ${this.customerName()}`;
             case ServiceTypeEnum.DELIVERY:
                 return 'Collect and deliver the package';
             case ServiceTypeEnum.VAN:
@@ -2045,7 +2191,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     serviceWorkMessage(): string {
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Use the approved budget, keep the receipt, record the spend, and request extra budget before paying more than approved.';
+                return this.isShoppingErrand()
+                    ? 'Use the approved budget, keep the receipt, record the spend, and request extra budget before paying more than approved.'
+                    : 'Go to the collection location, collect the item or documents, and deliver them to the customer. No item spend is needed.';
             case ServiceTypeEnum.DELIVERY:
                 return 'Confirm the package at collection, keep the customer updated, then complete only after delivery.';
             case ServiceTypeEnum.VAN:
@@ -2058,6 +2206,14 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     driverServiceSteps(): Array<{ title: string; description: string; icon: string }> {
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
+                if (!this.isShoppingErrand()) {
+                    return [
+                        { title: 'Go to collection point', description: 'Use navigation and mark arrived at the pickup location.', icon: 'navigate-outline' },
+                        { title: 'Collect item', description: 'Confirm the item or documents with the customer notes.', icon: 'cube-outline' },
+                        { title: 'Deliver to customer', description: 'Return or deliver to the customer, then complete the request.', icon: 'checkmark-circle-outline' }
+                    ];
+                }
+
                 return [
                     { title: 'Go to store', description: 'Use navigation and mark arrived before shopping.', icon: 'navigate-outline' },
                     { title: 'Buy items', description: 'Use Movabi Pay or upload a receipt if card setup is not ready.', icon: 'card-outline' },
@@ -2094,16 +2250,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'accepted':
                 return `Go to ${this.originTargetLabel()}`;
             case 'arrived':
-                if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) return 'Confirm store arrival';
+                if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
+                    return this.isShoppingErrand() ? 'Confirm store arrival' : 'Confirm collection arrival';
+                }
                 if (this.job()?.service_slug === ServiceTypeEnum.DELIVERY) return 'Confirm collection arrival';
                 if (this.job()?.service_slug === ServiceTypeEnum.VAN) return 'Start the move';
                 return 'Start the ride';
             case 'arrived_at_store':
-                return 'Start shopping';
+                return this.isShoppingErrand() ? 'Start shopping' : 'Confirm item collected';
             case 'shopping_in_progress':
                 return 'Collect all items';
             case 'collected':
-                return 'Head to customer';
+                return this.isShoppingErrand() ? 'Head to customer' : 'Deliver to customer';
             case 'en_route_to_customer':
             case 'in_progress':
             case 'delivered':
@@ -2119,7 +2277,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 return `Open the ${this.originTargetLabel()}, contact the customer if needed, then mark yourself arrived.`;
             case 'arrived':
                 if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
-                    return 'Confirm you are at the correct store before shopping for the customer.';
+                    return this.isShoppingErrand()
+                        ? 'Confirm you are at the correct store before shopping for the customer.'
+                        : 'Confirm you are at the correct collection point before collecting the item or documents.';
                 }
                 if (this.job()?.service_slug === ServiceTypeEnum.DELIVERY) {
                     return 'Confirm you are at the collection point before collecting the package.';
@@ -2129,11 +2289,15 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 }
                 return 'Only start once the customer is ready for the ride.';
             case 'arrived_at_store':
-                return 'Begin shopping after confirming the store and customer notes.';
+                return this.isShoppingErrand()
+                    ? 'Begin shopping after confirming the store and customer notes.'
+                    : 'Collect the item or documents, then continue to the customer.';
             case 'shopping_in_progress':
                 return 'Record spending and upload a receipt before completing an errand.';
             case 'collected':
-                return 'Items are collected. Navigate to the customer and keep the request moving.';
+                return this.isShoppingErrand()
+                    ? 'Items are collected. Navigate to the customer and keep the request moving.'
+                    : 'Collection is complete. Navigate to the customer and keep the request moving.';
             case 'en_route_to_customer':
             case 'in_progress':
             case 'delivered':
@@ -2197,6 +2361,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     showErrandSpendTools(): boolean {
         if (this.job()?.service_slug !== ServiceTypeEnum.ERRAND) return false;
+        if (!this.isShoppingErrand()) return false;
 
         return [
             'in_progress',
