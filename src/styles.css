@@ -150,7 +150,17 @@ p {
   ion-header,
   ion-toolbar {
     --background: #f8fafc;
+    --color: #0f172a;
     background: #f8fafc;
+    color: #0f172a;
+  }
+
+  ion-toolbar ion-icon,
+  ion-toolbar ion-title,
+  ion-toolbar ion-button,
+  ion-toolbar ion-back-button {
+    --color: #0f172a;
+    color: #0f172a;
   }
 
   ion-toolbar {
@@ -163,11 +173,6 @@ p {
   ion-action-sheet {
     --backdrop-opacity: 0.42;
   }
-}
-
-body.native-keyboard-open ion-content::part(scroll) {
-  padding-bottom: max(45vh, env(safe-area-inset-bottom));
-  scroll-padding-bottom: 45vh;
 }
 
 body.native-keyboard-open .native-sticky-action {

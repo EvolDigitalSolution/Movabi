@@ -56,6 +56,17 @@ export class AuthCallbackPage implements OnInit {
       return;
     }
 
+    const code = this.getCallbackCode();
+    if (code) {
+      try {
+        await this.auth.completeOAuthCallback(code);
+      } catch {
+        this.callbackTitle.set('Google sign-in failed');
+        this.callbackError.set('Movabi could not finish Google sign-in. Please try again or use email and password.');
+        return;
+      }
+    }
+
     await this.waitForAuthReady();
     await this.auth.handlePostAuthRedirect();
   }
@@ -87,5 +98,11 @@ export class AuthCallbackPage implements OnInit {
     while (!this.auth.isAuthReady() && Date.now() - startedAt < 8000) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
+  }
+
+  private getCallbackCode(): string | null {
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    return params.get('code') || hashParams.get('code');
   }
 }

@@ -19,7 +19,7 @@ const config: CapacitorConfig = {
       splashImmersive: false
     },
     Keyboard: {
-      resize: 'ionic',
+      resize: 'body',
       style: 'light',
       resizeOnFullScreen: true
     },

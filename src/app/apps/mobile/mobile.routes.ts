@@ -20,6 +20,11 @@ export const MOBILE_ROUTES: Routes = [
         loadComponent: () => import('@mobile/features/help/help.page').then((m) => m.HelpPage)
     },
     {
+        path: 'about-movabi',
+        loadComponent: () =>
+            import('@admin/features/landing/movabi-about.component').then((m) => m.AdminMovabiAboutComponent)
+    },
+    {
         path: 'how-to-use',
         redirectTo: 'help',
         pathMatch: 'full'

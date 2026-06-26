@@ -6,6 +6,7 @@ import { ProfileService } from '../profile/profile.service';
 import { AccountStatus } from '@shared/models/booking.model';
 import { environment } from '@env/environment';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 @Injectable({
     providedIn: 'root'
@@ -169,10 +170,12 @@ export class AuthService {
     }
 
     async signInWithGoogle() {
-        const { error } = await this.supabase.auth.signInWithOAuth({
+        const isNative = Capacitor.isNativePlatform();
+        const { data, error } = await this.supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
                 redirectTo: this.getRedirectUrl('/auth/callback'),
+                skipBrowserRedirect: isNative,
                 queryParams: {
                     access_type: 'offline',
                     prompt: 'consent'
@@ -184,6 +187,21 @@ export class AuthService {
             console.error('AuthService: signInWithGoogle error', error);
             throw error;
         }
+
+        if (isNative && data.url) {
+            await Browser.open({ url: data.url, presentationStyle: 'fullscreen' });
+        }
+    }
+
+    async completeOAuthCallback(code: string): Promise<void> {
+        const { data, error } = await this.supabase.auth.exchangeCodeForSession(code);
+
+        if (error) {
+            console.error('AuthService: OAuth code exchange error', error);
+            throw error;
+        }
+
+        await this.handleAuthStateChange('SIGNED_IN', data.session);
     }
 
     async signOut() {

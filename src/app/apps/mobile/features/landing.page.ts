@@ -103,7 +103,7 @@ import {
         <footer>
           <a routerLink="/help">How it works</a>
           <a routerLink="/privacy">Privacy</a>
-          <a routerLink="/admin/about-movabi">About Movabi</a>
+          <a routerLink="/about-movabi">About Movabi</a>
         </footer>
       </main>
     </ion-content>
