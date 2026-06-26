@@ -10,7 +10,8 @@ import {
   IonButton, 
   IonSpinner, 
   IonSelect, 
-  IonSelectOption
+  IonSelectOption,
+  IonBadge
 } from '@ionic/angular/standalone';
 import { Router, RouterModule } from '@angular/router';
 import { addIcons } from 'ionicons';
@@ -115,10 +116,14 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
                   id="email"
                   type="email" 
                   formControlName="email"
+                  [readonly]="otpSent()"
                   placeholder="name@example.com"
-                  class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
+                  class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900 read-only:bg-slate-100"
                 >
               </div>
+              @if (otpSent()) {
+                <button type="button" class="mt-2 ml-1 text-xs font-bold text-orange-700" (click)="editEmail()">Use a different email</button>
+              }
             </div>
 
             <div>
@@ -159,17 +164,55 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
               }
             </div>
 
+            @if (otpSent()) {
+              <div class="rounded-3xl border border-orange-200 bg-orange-50 p-5 space-y-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-xs font-black uppercase tracking-[0.22em] text-orange-700">Email verification</p>
+                    <h2 class="mt-1 text-lg font-display font-bold text-slate-950">Check your inbox</h2>
+                  </div>
+                  <ion-badge class="bg-white text-orange-700 border border-orange-200 rounded-full px-3 py-2">
+                    {{ emailVerified() ? 'Verified' : 'OTP sent' }}
+                  </ion-badge>
+                </div>
+                <div class="rounded-2xl bg-white border border-orange-100 p-4">
+                  <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Registration email</p>
+                  <p class="mt-1 text-base font-bold text-slate-900 break-all">{{ lockedEmail() }}</p>
+                  <p class="mt-2 text-sm font-medium text-slate-600">
+                    Enter the 6 digit code sent to this email to finish creating your account.
+                  </p>
+                </div>
+                <div>
+                  <label for="otpCode" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Verification Code</label>
+                  <input
+                    id="otpCode"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    [value]="otpCode()"
+                    (input)="onOtpInput($event)"
+                    placeholder="123456"
+                    class="w-full h-14 px-5 bg-white border border-orange-200 rounded-2xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all font-black tracking-[0.35em] text-center text-slate-950"
+                  >
+                </div>
+                <button type="button" class="text-sm font-bold text-orange-700" (click)="sendOtp()" [disabled]="isLoading()">
+                  Send a new code
+                </button>
+              </div>
+            }
+
             <div class="pt-4">
               <ion-button 
                 type="submit" 
                 expand="block" 
                 class="h-14 font-bold text-lg rounded-2xl shadow-xl shadow-blue-600/20"
-                [disabled]="signupForm.invalid || isLoading()"
+                [disabled]="signupForm.invalid || (otpSent() && otpCode().length !== 6) || isLoading()"
               >
                 @if (isLoading()) {
                   <ion-spinner name="crescent"></ion-spinner>
                 } @else {
-                  Create Account
+                  {{ primaryButtonText() }}
                 }
               </ion-button>
             </div>
@@ -232,7 +275,8 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
     IonButton, 
     IonSpinner, 
     IonSelect, 
-    IonSelectOption
+    IonSelectOption,
+    IonBadge
   ]
 })
 export class SignupPage {
@@ -253,6 +297,10 @@ export class SignupPage {
   isLoading = signal(false);
   isSuccess = signal(false);
   errorMessage = signal<string | null>(null);
+  otpSent = signal(false);
+  emailVerified = signal(false);
+  lockedEmail = signal('');
+  otpCode = signal('');
 
   constructor() {
     addIcons({ 
@@ -284,6 +332,54 @@ export class SignupPage {
     this.showPassword.update(v => !v);
   }
 
+  primaryButtonText() {
+    if (!this.otpSent()) return 'Send Verification Code';
+    if (!this.emailVerified()) return 'Verify Email & Create Account';
+    return 'Create Account';
+  }
+
+  onOtpInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const value = input.value.replace(/\D/g, '').slice(0, 6);
+    input.value = value;
+    this.otpCode.set(value);
+  }
+
+  editEmail() {
+    this.otpSent.set(false);
+    this.emailVerified.set(false);
+    this.lockedEmail.set('');
+    this.otpCode.set('');
+    this.errorMessage.set(null);
+  }
+
+  async sendOtp() {
+    const email = String(this.signupForm.get('email')?.value || '').trim().toLowerCase();
+
+    if (this.signupForm.get('email')?.invalid || !email) {
+      this.signupForm.get('email')?.markAsTouched();
+      this.errorMessage.set('Enter a valid email address before requesting a code.');
+      return;
+    }
+
+    this.isLoading.set(true);
+    this.errorMessage.set(null);
+
+    try {
+      const result = await this.auth.sendRegistrationOtp(email);
+      this.lockedEmail.set(result.email || email);
+      this.otpSent.set(true);
+      this.emailVerified.set(false);
+      this.otpCode.set('');
+    } catch (err: unknown) {
+      console.error('OTP send failed:', err);
+      const message = err instanceof Error ? err.message : 'Could not send verification code. Please try again.';
+      this.errorMessage.set(message);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
   async onSubmit() {
     if (this.signupForm.invalid) return;
     const { email, password, fullName } = this.signupForm.value;
@@ -292,7 +388,21 @@ export class SignupPage {
     this.isLoading.set(true);
     this.errorMessage.set(null);
     try {
-      await this.auth.signUp(email, password, { full_name: fullName });
+      if (!this.otpSent()) {
+        this.isLoading.set(false);
+        await this.sendOtp();
+        return;
+      }
+
+      if (!this.emailVerified()) {
+        await this.auth.verifyRegistrationOtp(this.lockedEmail() || email, this.otpCode());
+        this.emailVerified.set(true);
+      }
+
+      await this.auth.signUp(this.lockedEmail() || email, password, {
+        full_name: fullName,
+        email_verified_by_movabi: true
+      });
       this.isSuccess.set(true);
     } catch (err: unknown) {
       console.error('Signup failed:', err);

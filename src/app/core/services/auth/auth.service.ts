@@ -5,6 +5,7 @@ import { Router, Route } from '@angular/router';
 import { ProfileService } from '../profile/profile.service';
 import { AccountStatus } from '@shared/models/booking.model';
 import { environment } from '@env/environment';
+import { ApiUrlService } from '../api-url.service';
 
 @Injectable({
     providedIn: 'root'
@@ -12,6 +13,7 @@ import { environment } from '@env/environment';
 export class AuthService {
     private supabase = inject(SupabaseService);
     private router = inject(Router);
+    private apiUrlService = inject(ApiUrlService);
     public profileService = inject(ProfileService);
 
     currentUser = signal<User | null>(null);
@@ -141,6 +143,39 @@ export class AuthService {
 
         localStorage.setItem('movabi_returning_user', 'true');
         return result;
+    }
+
+    async sendRegistrationOtp(email: string): Promise<{ email: string; expiresInSeconds: number }> {
+        const response = await fetch(this.apiUrlService.getApiUrl('/api/auth/registration-otp/send'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(body?.error || 'Could not send verification code. Please try again.');
+        }
+
+        return {
+            email: body.email || email,
+            expiresInSeconds: Number(body.expiresInSeconds || 600)
+        };
+    }
+
+    async verifyRegistrationOtp(email: string, code: string): Promise<void> {
+        const response = await fetch(this.apiUrlService.getApiUrl('/api/auth/registration-otp/verify'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, code })
+        });
+
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(body?.error || 'Could not verify the code. Please try again.');
+        }
     }
 
     async signIn(email: string, password: string) {
