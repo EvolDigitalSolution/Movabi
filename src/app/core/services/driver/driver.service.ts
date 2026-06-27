@@ -294,6 +294,77 @@ export class DriverService {
         return booking;
     }
 
+    async getAcceptanceBlockers(profile?: DriverProfile | null, vehicle?: Vehicle | null): Promise<string[]> {
+        const resolvedProfile = profile ?? await this.fetchProfile();
+        const resolvedVehicle = vehicle ?? this.vehicle() ?? await this.fetchVehicle();
+        const blockers: string[] = [];
+
+        if (!resolvedProfile.phone?.trim()) {
+            blockers.push('Add your mobile number');
+        }
+
+        if (!resolvedProfile.onboarding_completed) {
+            blockers.push('Complete driver setup');
+        }
+
+        if (!resolvedVehicle) {
+            blockers.push('Add vehicle or bike details');
+        }
+
+        const vehicleClass = this.normaliseVehicleClass(resolvedVehicle);
+        const needsTaxiLicence = vehicleClass === 'standard' || vehicleClass === 'xl' || vehicleClass === 'car';
+
+        if (resolvedVehicle && vehicleClass !== 'bike' && vehicleClass !== 'motorcycle') {
+            if (!resolvedVehicle.make?.trim() || !resolvedVehicle.model?.trim()) {
+                blockers.push('Complete vehicle make and model');
+            }
+
+            if (!resolvedVehicle.license_plate?.trim()) {
+                blockers.push('Add vehicle registration plate');
+            }
+
+            if (!resolvedProfile.insurance_url) {
+                blockers.push('Upload insurance');
+            }
+        }
+
+        if (vehicleClass === 'bike' || vehicleClass === 'motorcycle') {
+            if (!resolvedVehicle?.make?.trim() || !resolvedVehicle?.model?.trim()) {
+                blockers.push('Complete bike details');
+            }
+        } else if (!resolvedProfile.driver_license_url) {
+            blockers.push('Upload driver licence');
+        }
+
+        if (needsTaxiLicence) {
+            const items = this.parseVerificationItems(resolvedProfile.verification_items);
+            const councilName = String(items['council_name'] || '').trim();
+            const councilNumber = String(items['council_license_number'] || '').trim();
+            const badgeNumber = String(items['taxi_badge_number'] || '').trim();
+            const licenceExpiry = String(items['taxi_license_expiry'] || '').trim();
+
+            if (!councilName || !councilNumber || !badgeNumber || !licenceExpiry) {
+                blockers.push('Complete council taxi licence details');
+            }
+        }
+
+        const approved =
+            resolvedProfile.is_verified === true ||
+            resolvedProfile.verification_status === 'approved' ||
+            resolvedProfile.testing_approval_override === true;
+
+        if (!approved) {
+            blockers.push('Wait for admin approval');
+        }
+
+        return Array.from(new Set(blockers));
+    }
+
+    formatAcceptanceBlockers(blockers: string[]): string {
+        if (!blockers.length) return '';
+        return `Finish driver requirements before accepting jobs: ${blockers.join(', ')}.`;
+    }
+
     async acceptJob(bookingId: string) {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
@@ -303,13 +374,18 @@ export class DriverService {
         }
 
         const profile = await this.fetchProfile();
+        const vehicle = this.vehicle() || await this.fetchVehicle();
+        const blockers = await this.getAcceptanceBlockers(profile, vehicle);
+
+        if (blockers.length) {
+            throw new Error(this.formatAcceptanceBlockers(blockers));
+        }
 
         if (profile.subscription_status !== 'active') {
             throw new Error('Active subscription required to accept requests');
         }
 
         const job = await this.bookingService.getBooking(bookingId);
-        const vehicle = this.vehicle() || await this.fetchVehicle();
 
         if (!this.vehicleCompatibility.isCompatible(job, vehicle)) {
             throw new Error(
@@ -351,6 +427,52 @@ export class DriverService {
         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== bookingId));
 
         return fullBooking;
+    }
+
+    private normaliseVehicleClass(vehicle: Vehicle | null): string {
+        const type = String(vehicle?.type || '').toLowerCase();
+        const capacity = String(vehicle?.capacity || '').toLowerCase();
+
+        if (type.includes('bike') || type.includes('motorcycle') || capacity.includes('bike')) return 'bike';
+        if (capacity.includes('large_van') || capacity.includes('large van')) return 'large_van';
+        if (type.includes('van') || capacity.includes('small_van') || capacity.includes('van')) return 'small_van';
+        if (capacity.includes('xl') || capacity.includes('7')) return 'xl';
+        if (type.includes('car') || type.includes('standard')) return 'car';
+        return type || capacity || 'standard';
+    }
+
+    private parseVerificationItems(value: unknown): Record<string, unknown> {
+        if (!value) return {};
+
+        if (Array.isArray(value)) {
+            return value.reduce<Record<string, unknown>>((items, entry) => {
+                if (!entry) return items;
+
+                if (typeof entry === 'string') {
+                    items[entry] = entry;
+                    return items;
+                }
+
+                if (typeof entry === 'object') {
+                    const record = entry as Record<string, unknown>;
+                    const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+                    if (key) items[key] = record['value'] ?? record['label'] ?? '';
+                }
+
+                return items;
+            }, {});
+        }
+
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return this.parseVerificationItems(parsed);
+            } catch {
+                return {};
+            }
+        }
+
+        return typeof value === 'object' ? value as Record<string, unknown> : {};
     }
 
     async getDocumentSignedUrl(path: string): Promise<string | null> {

@@ -33,7 +33,6 @@ export class AuthService {
 
     private async init() {
         if (!this.supabase.isConfigured) {
-            console.warn('AuthService: Supabase is not configured.');
             this.isAuthReady.set(true);
             return;
         }
@@ -53,11 +52,11 @@ export class AuthService {
 
     private async handleAuthStateChange(event: AuthChangeEvent | 'INITIAL_SESSION', session: Session | null) {
         this.session.set(session);
-
         const user = session?.user ?? null;
         this.currentUser.set(user);
 
         if (user) {
+            this.markReturningUser();
             const profile = await this.profileService.fetchProfile(user.id);
 
             if (profile) {
@@ -83,17 +82,6 @@ export class AuthService {
             await this.safeNavigate(['/auth/reset-password', '/reset-password', '/auth/login']);
             return;
         }
-
-        if (
-            session?.access_token &&
-            (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')
-        ) {
-            if (this.isAuthPage()) {
-                setTimeout(() => {
-                    void this.handlePostAuthRedirect();
-                }, 100);
-            }
-        }
     }
 
     private getRedirectUrl(path: string): string {
@@ -102,8 +90,7 @@ export class AuthService {
             return `com.movabi.app://${cleanPath}`;
         }
 
-        const isBrowser = typeof window !== 'undefined';
-        const currentOrigin = isBrowser ? window.location.origin : '';
+        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
         const isLocalApp = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(currentOrigin);
 
         if (isLocalApp) {
@@ -119,16 +106,11 @@ export class AuthService {
             return environment.resetPasswordUrl;
         }
 
-        try {
-            const origin = currentOrigin || environment.appUrl || 'http://localhost:3000';
-            const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
-            const cleanPath = path.startsWith('/') ? path : `/${path}`;
-            const finalUrl = `${cleanOrigin}${cleanPath}`;
-            new URL(finalUrl);
-            return finalUrl;
-        } catch {
-            return `${environment.appUrl || 'http://localhost:3000'}${path}`;
-        }
+        const origin = currentOrigin || environment.appUrl || 'http://localhost:3000';
+        const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+        return `${cleanOrigin}${cleanPath}`;
     }
 
     async signUp(email: string, password: string, data?: Record<string, unknown>) {
@@ -141,10 +123,7 @@ export class AuthService {
             }
         });
 
-        if (error) {
-            console.error('AuthService: signUp error', error);
-            throw error;
-        }
+        if (error) throw error;
 
         localStorage.setItem('movabi_returning_user', 'true');
         return result;
@@ -156,12 +135,9 @@ export class AuthService {
             password
         });
 
-        if (error) {
-            console.error('AuthService: signIn error', error);
-            throw error;
-        }
+        if (error) throw error;
 
-        localStorage.setItem('movabi_returning_user', 'true');
+        this.markReturningUser();
 
         await this.handleAuthStateChange('SIGNED_IN', result.session);
         await this.handlePostAuthRedirect();
@@ -171,6 +147,7 @@ export class AuthService {
 
     async signInWithGoogle() {
         const isNative = Capacitor.isNativePlatform();
+
         const { data, error } = await this.supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
@@ -183,10 +160,7 @@ export class AuthService {
             }
         });
 
-        if (error) {
-            console.error('AuthService: signInWithGoogle error', error);
-            throw error;
-        }
+        if (error) throw error;
 
         if (isNative && data.url) {
             await Browser.open({ url: data.url, presentationStyle: 'fullscreen' });
@@ -196,20 +170,28 @@ export class AuthService {
     async completeOAuthCallback(code: string): Promise<void> {
         const { data, error } = await this.supabase.auth.exchangeCodeForSession(code);
 
-        if (error) {
-            console.error('AuthService: OAuth code exchange error', error);
-            throw error;
-        }
+        if (error) throw error;
 
         await this.handleAuthStateChange('SIGNED_IN', data.session);
+        this.markReturningUser();
+    }
+
+    async completeOAuthHashCallback(accessToken: string, refreshToken: string): Promise<void> {
+        const { data, error } = await this.supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+        });
+
+        if (error) throw error;
+
+        await this.handleAuthStateChange('SIGNED_IN', data.session);
+        this.markReturningUser();
     }
 
     async signOut() {
         try {
             const { error } = await this.supabase.auth.signOut();
             if (error) throw error;
-        } catch (error) {
-            console.error('AuthService: signOut error', error);
         } finally {
             this.clearLocalAuthState(true);
             await this.safeNavigate(['/auth/login', '/login']);
@@ -221,10 +203,7 @@ export class AuthService {
             redirectTo: this.getRedirectUrl('/auth/reset-password')
         });
 
-        if (error) {
-            console.error('AuthService: resetPassword error', error);
-            throw error;
-        }
+        if (error) throw error;
     }
 
     async handlePostAuthRedirect(): Promise<void> {
@@ -233,8 +212,9 @@ export class AuthService {
         this.redirecting = true;
 
         try {
-            if (!this.isAuthReady()) {
-                const { data: { session } } = await this.supabase.auth.getSession();
+            const { data: { session } } = await this.supabase.auth.getSession();
+
+            if (!this.currentUser() && session) {
                 await this.handleAuthStateChange('INITIAL_SESSION', session);
             }
 
@@ -311,7 +291,7 @@ export class AuthService {
     }
 
     private async safeNavigate(paths: string[]) {
-        const currentPath = this.router.url.split('?')[0];
+        const currentPath = this.router.url.split('?')[0].split('#')[0];
 
         for (const path of paths) {
             if (!path) continue;
@@ -330,7 +310,7 @@ export class AuthService {
     }
 
     private routeExists(path: string): boolean {
-        const cleanPath = path.replace(/^\/+/, '').split('?')[0];
+        const cleanPath = path.replace(/^\/+/, '').split('?')[0].split('#')[0];
 
         if (!cleanPath) return true;
 
@@ -370,18 +350,6 @@ export class AuthService {
         return false;
     }
 
-    private isAuthPage(): boolean {
-        const url = this.router.url || '';
-
-        return (
-            url.includes('/auth/login') ||
-            url.includes('/login') ||
-            url.includes('/auth/callback') ||
-            url.includes('/auth/role-selection') ||
-            url.includes('/role-selection')
-        );
-    }
-
     private clearLocalAuthState(clearSession: boolean) {
         if (clearSession) {
             this.session.set(null);
@@ -394,5 +362,10 @@ export class AuthService {
         this.accountStatus.set('active');
         this.stripeConnectStatus.set('not_started');
         this.profileService.profile.set(null);
+    }
+
+    private markReturningUser(): void {
+        if (typeof localStorage === 'undefined') return;
+        localStorage.setItem('movabi_returning_user', 'true');
     }
 }

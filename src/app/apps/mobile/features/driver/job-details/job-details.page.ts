@@ -318,6 +318,16 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <span class="text-xl font-display font-black text-slate-950">{{ anyDetails()?.passenger_count || 1 }}</span>
                   </div>
 
+                  @if (ridePassengerName()) {
+                    <div class="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                      <p class="text-xs font-semibold text-amber-700 mb-2">Rider to collect</p>
+                      <p class="text-sm text-slate-950 font-black leading-relaxed">{{ ridePassengerName() }}</p>
+                      <p class="mt-1 text-[11px] text-slate-600 font-semibold leading-relaxed">
+                        This ride was booked by {{ customerName() }} for another person.
+                      </p>
+                    </div>
+                  }
+
                   @if (anyDetails()?.notes) {
                     <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100">
                       <p class="text-xs font-semibold text-blue-700 mb-2">Customer notes</p>
@@ -2174,6 +2184,23 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             details?.recipient_phone ||
             null
         );
+    }
+
+    ridePassengerName(): string | null {
+        const details = this.anyDetails();
+        const metadata = (this.job() as any)?.metadata || {};
+        const name = String(
+            details?.rider_name ||
+            metadata?.ride_details?.rider_name ||
+            ''
+        ).trim();
+
+        const bookedForSomeoneElse = !!(
+            details?.booking_for_someone_else ||
+            metadata?.ride_details?.booking_for_someone_else
+        );
+
+        return bookedForSomeoneElse && name ? name : null;
     }
 
     serviceIcon(): string {

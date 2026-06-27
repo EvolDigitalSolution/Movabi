@@ -48,6 +48,7 @@ import { SupabaseService } from '../../../../../core/services/supabase/supabase.
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
+import { NativePlatformService } from '../../../../../core/services/native/native-platform.service';
 
 import {
     Booking,
@@ -108,8 +109,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center justify-between gap-3">
                         <div class="min-w-0">
-                          <h2 class="text-sm font-display font-black text-slate-950 truncate">Finding your driver</h2>
-                          <p class="text-[11px] text-slate-500 font-semibold truncate">Contacting nearby drivers</p>
+                          <h2 class="text-sm font-display font-black text-slate-950 leading-tight">Finding your driver</h2>
+                          <p class="text-[11px] text-slate-500 font-semibold leading-snug">Contacting nearby drivers</p>
                         </div>
                         <span class="text-sm font-display font-black text-blue-700 shrink-0">
                           {{ searchCountdownLabel() }}
@@ -143,8 +144,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
                       <div class="min-w-0">
                         <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
-                        <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ getDriverName() }}</h3>
-                        <p class="text-[11px] text-slate-500 font-semibold leading-snug truncate">{{ driverLiveSubtext() }}</p>
+                        <h3 class="text-sm font-display font-black text-slate-950 leading-tight break-words">{{ getDriverName() }}</h3>
+                        <p class="text-[11px] text-slate-500 font-semibold leading-snug break-words">{{ driverLiveSubtext() }}</p>
                       </div>
                     </div>
 
@@ -158,11 +159,19 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
           <div
             class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
             [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[34vh]'"
+            (focusin)="detailsExpanded.set(true)"
+            (touchstart)="startDetailsDrag($event)"
+            (touchmove)="moveDetailsDrag($event)"
+            (touchend)="endDetailsDrag()"
           >
             <button
               type="button"
               class="w-full flex items-center justify-center py-1"
               (click)="detailsExpanded.set(!detailsExpanded())"
+              (pointerdown)="startDetailsPointerDrag($event)"
+              (pointermove)="moveDetailsPointerDrag($event)"
+              (pointerup)="endDetailsPointerDrag($event)"
+              (pointercancel)="endDetailsPointerDrag($event)"
               [attr.aria-label]="detailsExpanded() ? 'Collapse details' : 'Expand details'"
             >
               <span class="w-12 h-1 bg-slate-200 rounded-full"></span>
@@ -263,7 +272,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                       <ion-icon [name]="step.icon"></ion-icon>
                     </div>
                     <div class="min-w-0">
-                      <p class="text-sm font-black text-slate-950 truncate">{{ step.title }}</p>
+                      <p class="text-sm font-black text-slate-950 leading-snug break-words">{{ step.title }}</p>
                       <p class="text-xs font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
                     </div>
                   </div>
@@ -438,18 +447,18 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   </div>
 
                   <div class="flex-1 min-w-0">
-                    <h3 class="text-base font-bold text-slate-900 truncate">
+                    <h3 class="text-base font-bold text-slate-900 leading-tight break-words">
                       {{ getDriverName() }}
                     </h3>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 truncate">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 leading-snug break-words">
                       {{ getDriverStatusText() }}
                     </p>
 
                     <div class="mt-3 grid grid-cols-1 gap-2">
                       <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2">
                         <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Transport</p>
-                        <p class="text-sm text-slate-900 font-black truncate">{{ getDriverVehicleSummary() }}</p>
-                        <p class="text-[11px] text-slate-500 font-semibold truncate">{{ getDriverVehicleMeta() }}</p>
+                        <p class="text-sm text-slate-900 font-black leading-tight break-words">{{ getDriverVehicleSummary() }}</p>
+                        <p class="text-[11px] text-slate-500 font-semibold leading-snug break-words">{{ getDriverVehicleMeta() }}</p>
                       </div>
                     </div>
                   </div>
@@ -649,6 +658,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private alertCtrl = inject(AlertController);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
+    private nativePlatform = inject(NativePlatformService);
 
     private localSearchFallbackExpiresAt: number | null = null;
 
@@ -679,6 +689,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private errandFundingChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
     private lastDriverCameraUpdateAt = 0;
+    private dragStartY: number | null = null;
+    private dragDeltaY = 0;
+    private lastNotifiedStatus: string | null = null;
 
     private pollingInterval?: ReturnType<typeof setInterval>;
     private countdownInterval?: ReturnType<typeof setInterval>;
@@ -741,6 +754,88 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.channel?.unsubscribe();
         this.errandFundingChannel?.unsubscribe();
         this.locationSubscription?.unsubscribe();
+    }
+
+    startDetailsDrag(event: TouchEvent): void {
+        const touch = event.touches[0];
+        if (!touch) return;
+        this.dragStartY = touch.clientY;
+        this.dragDeltaY = 0;
+    }
+
+    moveDetailsDrag(event: TouchEvent): void {
+        if (this.dragStartY === null) return;
+        const touch = event.touches[0];
+        if (!touch) return;
+        this.dragDeltaY = touch.clientY - this.dragStartY;
+    }
+
+    endDetailsDrag(): void {
+        if (this.dragStartY === null) return;
+        this.applyDetailsDrag();
+    }
+
+    startDetailsPointerDrag(event: PointerEvent): void {
+        this.dragStartY = event.clientY;
+        this.dragDeltaY = 0;
+        (event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId);
+    }
+
+    moveDetailsPointerDrag(event: PointerEvent): void {
+        if (this.dragStartY === null) return;
+        this.dragDeltaY = event.clientY - this.dragStartY;
+    }
+
+    endDetailsPointerDrag(event: PointerEvent): void {
+        (event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId);
+        if (this.dragStartY === null) return;
+        this.applyDetailsDrag();
+    }
+
+    private applyDetailsDrag(): void {
+        if (this.dragDeltaY < -36) this.detailsExpanded.set(true);
+        if (this.dragDeltaY > 36) this.detailsExpanded.set(false);
+        this.dragStartY = null;
+        this.dragDeltaY = 0;
+
+        setTimeout(() => this.fitTrackingBounds(), 80);
+    }
+
+    private async notifyStatusChange(previousStatus: string, booking: Booking): Promise<void> {
+        const status = String(booking.status || '');
+        if (!status || !previousStatus || previousStatus === status || this.lastNotifiedStatus === status) return;
+
+        this.lastNotifiedStatus = status;
+        const title = this.trackingTitle();
+        const body = this.getStatusHint(status) || this.getStatusLabel(status);
+
+        await Promise.allSettled([
+            this.nativePlatform.showForegroundNotification(title, body, {
+                route: `/customer/tracking/${booking.id}`,
+                bookingId: booking.id,
+                status
+            }),
+            this.playStatusTone()
+        ]);
+    }
+
+    private async playStatusTone(): Promise<void> {
+        if (this.nativePlatform.isNative) return;
+
+        const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextCtor) return;
+
+        const ctx = new AudioContextCtor();
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        gain.gain.value = 0.035;
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.14);
+        setTimeout(() => void ctx.close().catch(() => undefined), 260);
     }
 
     getStatusVariant(
@@ -1623,6 +1718,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (showLoading) this.isLoading.set(true);
 
         try {
+            const previousStatus = String(this.booking()?.status || '');
             const b = await this.bookingService.getBooking(id);
 
             if (!b) {
@@ -1631,6 +1727,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
 
             this.bookingService.activeBooking.set(b);
+            await this.notifyStatusChange(previousStatus, b);
             this.syncSearchUiState();
             this.syncDriverLiveState(b);
 
@@ -1821,7 +1918,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (routeBounds) {
             this.mapComponent.fitBounds(routeBounds, {
-                padding: { top: 72, bottom: 138, left: 34, right: 34 },
+                padding: { top: 86, bottom: this.detailsExpanded() ? 320 : 230, left: 34, right: 34 },
                 maxZoom: 16,
                 duration: 700
             });
@@ -1865,7 +1962,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 [Math.max(...lngs), Math.max(...lats)]
             ],
             {
-                padding: { top: 72, bottom: 138, left: 34, right: 34 },
+                padding: { top: 86, bottom: this.detailsExpanded() ? 320 : 230, left: 34, right: 34 },
                 maxZoom: 16,
                 duration: 700
             }

@@ -249,7 +249,18 @@ type MovingVehicleClass = 'small_van' | 'large_van';
                     <div class="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-blue-600 border border-slate-100">
                       <ion-icon name="calendar-outline" class="text-xl"></ion-icon>
                     </div>
-                    <ion-datetime-button datetime="datetime" class="font-bold text-slate-900"></ion-datetime-button>
+                    <div class="flex-1 min-w-0">
+                      <input
+                        type="datetime-local"
+                        [value]="scheduledLocalValue()"
+                        (change)="onScheduledLocalChange($any($event).target.value)"
+                        class="w-full bg-transparent border-0 outline-none text-sm font-black text-slate-900"
+                      />
+                      <p class="mt-1 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                        {{ scheduledMoveLabel() }}
+                      </p>
+                    </div>
+                    <ion-datetime-button datetime="datetime" class="hidden"></ion-datetime-button>
                     <ion-modal [keepContentsMounted]="true">
                       <ng-template>
                         <ion-datetime id="datetime" presentation="date-time" [(ngModel)]="scheduledTime"></ion-datetime>
@@ -497,6 +508,33 @@ export class CreateJobPage implements AfterViewInit {
         { id: 'large', label: 'Large (3-4 rooms)', icon: 'home-outline' },
         { id: 'full-house', label: 'Full House', icon: 'storefront-outline' }
     ];
+
+    scheduledLocalValue(): string {
+        const date = new Date(this.scheduledTime);
+        if (Number.isNaN(date.getTime())) return '';
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 16);
+    }
+
+    onScheduledLocalChange(value: string): void {
+        if (!value) return;
+        const next = new Date(value);
+        if (Number.isNaN(next.getTime())) return;
+        this.scheduledTime = next.toISOString();
+    }
+
+    scheduledMoveLabel(): string {
+        const date = new Date(this.scheduledTime);
+        if (Number.isNaN(date.getTime())) return 'Choose date and time';
+
+        return new Intl.DateTimeFormat(undefined, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(date);
+    }
 
     movingVehicleOptions: Array<{ id: MovingVehicleClass; label: string; helper: string }> = [
         { id: 'small_van', label: 'Small Van', helper: 'Boxes and a few items' },

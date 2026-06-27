@@ -577,6 +577,11 @@ export class VanJobsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
+            const blockers = await this.driverService.getAcceptanceBlockers();
+            if (blockers.length) {
+                throw new Error(this.driverService.formatAcceptanceBlockers(blockers));
+            }
+
             await this.jobService.acceptJob(jobId, user.id);
 
             this.segment.set('my-jobs');

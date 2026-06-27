@@ -393,6 +393,25 @@ type PackageSize = 'small' | 'medium' | 'large';
                       Standard cars can carry up to 4 passengers.
                     </p>
                   }
+
+                  <label class="flex items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                    <div>
+                      <p class="text-sm font-black text-slate-900">Booking for someone else?</p>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                        Show the rider name to the driver
+                      </p>
+                    </div>
+                    <ion-checkbox formControlName="booking_for_someone_else" color="primary"></ion-checkbox>
+                  </label>
+
+                  @if (bookingForm.get('booking_for_someone_else')?.value) {
+                    <app-input
+                      label="Rider Name"
+                      formControlName="rider_name"
+                      icon="person-outline"
+                      placeholder="Who is travelling?">
+                    </app-input>
+                  }
                 </div>
               }
 
@@ -1284,11 +1303,38 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             }
         }
 
+        if (this.type === ServiceTypeEnum.DELIVERY) {
+            const packageByVehicle: Partial<Record<VehicleClass, PackageSize>> = {
+                bike: 'small',
+                car: 'medium',
+                small_van: 'large'
+            };
+
+            const nextSize = packageByVehicle[value];
+            if (nextSize && this.packageSize() !== nextSize) {
+                this.bookingForm.get('package_size')?.setValue(nextSize, { emitEvent: true });
+            }
+        }
+
         void this.recalculateFare();
     }
 
     setPackageSize(size: PackageSize) {
         this.bookingForm.get('package_size')?.setValue(size, { emitEvent: true });
+
+        if (this.type === ServiceTypeEnum.DELIVERY) {
+            const vehicleBySize: Record<PackageSize, VehicleClass> = {
+                small: 'bike',
+                medium: 'car',
+                large: 'small_van'
+            };
+
+            const nextVehicle = vehicleBySize[size];
+            if (this.vehicleClass() !== nextVehicle) {
+                this.bookingForm.get('vehicle_class')?.setValue(nextVehicle, { emitEvent: true });
+            }
+        }
+
         void this.recalculateFare();
     }
 
@@ -1485,7 +1531,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
                     vehicle_class: ['standard', Validators.required],
-                    passenger_count: [1, [Validators.required, Validators.min(1), Validators.max(7)]]
+                    passenger_count: [1, [Validators.required, Validators.min(1), Validators.max(7)]],
+                    booking_for_someone_else: [false],
+                    rider_name: ['']
                 });
                 break;
 
@@ -2381,7 +2429,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ride_details: {
                     passenger_count: passengerCount,
                     vehicle_class: vehicleClass,
-                    passenger_surcharge: this.largeRideSurcharge()
+                    passenger_surcharge: this.largeRideSurcharge(),
+                    booking_for_someone_else: !!formVal['booking_for_someone_else'],
+                    rider_name: String(formVal['rider_name'] || '').trim()
                 }
             };
         }
@@ -2450,6 +2500,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             case ServiceTypeEnum.RIDE:
                 return {
                     passenger_count: formVal['passenger_count'],
+                    booking_for_someone_else: !!formVal['booking_for_someone_else'],
+                    rider_name: String(formVal['rider_name'] || '').trim(),
                     notes: formVal['notes']
                 };
 

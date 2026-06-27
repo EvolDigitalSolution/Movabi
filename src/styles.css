@@ -211,6 +211,50 @@ body.native-keyboard-open .auth-form-shell {
   backdrop-filter: blur(16px);
 }
 
+@layer components {
+  app-card {
+    display: block;
+    min-width: 0;
+  }
+
+  app-card h1,
+  app-card h2,
+  app-card h3,
+  app-card h4,
+  app-card p,
+  app-card span,
+  ion-card h1,
+  ion-card h2,
+  ion-card h3,
+  ion-card h4,
+  ion-card p,
+  ion-card span {
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 640px) {
+    app-card .truncate,
+    ion-card .truncate {
+      overflow: visible !important;
+      text-overflow: clip !important;
+      white-space: normal !important;
+    }
+
+    app-card .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.25rem !important; }
+    app-card .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem !important; }
+    app-card .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.875rem !important; }
+
+    ion-card {
+      margin-inline: 0.75rem;
+      border-radius: 1.25rem;
+    }
+
+    ion-card-content {
+      padding: 1rem !important;
+    }
+  }
+}
+
 @layer utilities {
   .bg-blue-50,
   .bg-indigo-50 { background-color: #fff7ed !important; }

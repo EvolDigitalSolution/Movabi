@@ -370,3 +370,85 @@ websocket connection issues.
            ╵                           [32m~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'getSession' does not exist on type 'AuthService'. Did you mean 'session'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/auth/callback.page.ts:68:44:
+[37m      68 │             const session = await this.auth.[32mgetSession[37m?.();
+         ╵                                             [32m~~~~~~~~~~[0m
+
+  'session' is declared here.
+
+    src/app/core/services/auth/auth.service.ts:20:4:
+[37m      20 │     [32msession[37m = signal<Session | null>(null);
+         ╵     [32m~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'getSession' does not exist on type 'AuthService'. Did you mean 'session'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/auth/callback.page.ts:68:44:
+[37m      68 │             const session = await this.auth.[32mgetSession[37m?.();
+         ╵                                             [32m~~~~~~~~~~[0m
+
+  'session' is declared here.
+
+    src/app/core/services/auth/auth.service.ts:20:4:
+[37m      20 │     [32msession[37m = signal<Session | null>(null);
+         ╵     [32m~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'startDetailsDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:163:26:
+[37m      163 │             (touchstart)="[32mstartDetailsDrag[37m($event)"
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'moveDetailsDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:164:25:
+[37m      164 │             (touchmove)="[32mmoveDetailsDrag[37m($event)"
+          ╵                          [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'endDetailsDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:165:24:
+[37m      165 │             (touchend)="[32mendDetailsDrag[37m()"
+          ╵                         [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'startDetailsPointerDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:171:29:
+[37m      171 │               (pointerdown)="[32mstartDetailsPointerDrag[37m($event)"
+          ╵                              [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'moveDetailsPointerDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:172:29:
+[37m      172 │               (pointermove)="[32mmoveDetailsPointerDrag[37m($event)"
+          ╵                              [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'endDetailsPointerDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:173:27:
+[37m      173 │               (pointerup)="[32mendDetailsPointerDrag[37m($event)"
+          ╵                            [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'endDetailsPointerDrag' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:174:31:
+[37m      174 │               (pointercancel)="[32mendDetailsPointerDrag[37m($event)"
+          ╵                                [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'notifyStatusChange' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:1648:23:
+[37m      1648 │             await this.[32mnotifyStatusChange[37m(previousStatus, b);
+           ╵                        [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

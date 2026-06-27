@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
 import { IonButton, IonContent, IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
@@ -15,6 +15,7 @@ import {
   shieldCheckmarkOutline,
   storefrontOutline
 } from 'ionicons/icons';
+import { AuthService } from '@core/services/auth/auth.service';
 
 @Component({
   selector: 'app-landing',
@@ -428,7 +429,10 @@ import {
     }
   `]
 })
-export class LandingPage {
+export class LandingPage implements OnInit {
+  private auth = inject(AuthService);
+  private router = inject(Router);
+
   activeSlide = signal(0);
 
   slides = [
@@ -477,11 +481,47 @@ export class LandingPage {
     });
   }
 
+  async ngOnInit(): Promise<void> {
+    await this.waitForAuthReady();
+
+    if (this.auth.currentUser()) {
+      await this.auth.handlePostAuthRedirect();
+      return;
+    }
+
+    if (this.isReturningUser()) {
+      await this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+    }
+  }
+
   nextSlide(): void {
     this.activeSlide.update(index => (index + 1) % this.slides.length);
   }
 
   previousSlide(): void {
     this.activeSlide.update(index => (index - 1 + this.slides.length) % this.slides.length);
+  }
+
+  private async waitForAuthReady(): Promise<void> {
+    if (this.auth.isAuthReady()) return;
+
+    await new Promise<void>((resolve) => {
+      const startedAt = Date.now();
+      const tick = () => {
+        if (this.auth.isAuthReady() || Date.now() - startedAt > 3000) {
+          resolve();
+          return;
+        }
+
+        setTimeout(tick, 50);
+      };
+
+      tick();
+    });
+  }
+
+  private isReturningUser(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('movabi_returning_user') === 'true';
   }
 }

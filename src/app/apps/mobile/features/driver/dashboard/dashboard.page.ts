@@ -1745,6 +1745,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 throw new Error('Please sign in again.');
             }
 
+            const blockers = await this.driverService.getAcceptanceBlockers();
+            if (blockers.length) {
+                throw new Error(this.driverService.formatAcceptanceBlockers(blockers));
+            }
+
             const job = this.driverService.availableJobs().find(item => item.id === jobId);
             const vehicle = this.driverService.vehicle() || await this.driverService.fetchVehicle();
 
