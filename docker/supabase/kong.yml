@@ -58,8 +58,11 @@ plugins:
   - name: cors
     config:
       origins:
-        - http://localhost:3000
-        - https://movabi.apps.evolsolution.com
+         - http://localhost:3000
+         - https://localhost
+         - capacitor://localhost
+         - ionic://localhost
+         - https://movabi.apps.evolsolution.com
 
       methods:
         - GET
