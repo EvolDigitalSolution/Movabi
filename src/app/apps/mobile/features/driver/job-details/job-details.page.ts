@@ -995,13 +995,32 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return raw as ErrandMode;
         }
 
+        const descriptor = [
+            metadata['errand_type'],
+            metadata['errand_details']?.type,
+            metadata['errand_details']?.label,
+            details?.errand_type,
+            details?.task_type,
+            details?.type,
+            details?.mode,
+            details?.delivery_instructions
+        ].map((part) => String(part || '').toLowerCase()).join(' ');
+
+        if (/(collect|collection|pickup|pick up|document|return|deliver only)/.test(descriptor)) {
+            return 'collect_deliver';
+        }
+
+        if (/(shop|shopping|grocery|groceries|buy|purchase|quick buy)/.test(descriptor)) {
+            return 'shop_deliver';
+        }
+
         const legacyBudget = this.firstPositiveMoney(
             details?.estimated_budget,
             metadata['errand_details']?.budget,
             metadata['item_budget']
         );
 
-        return this.itemsList().length > 0 || legacyBudget > 0 ? 'shop_deliver' : 'collect_deliver';
+        return this.itemsList().length > 0 && legacyBudget > 0 ? 'shop_deliver' : 'collect_deliver';
     }
 
     isShoppingErrand(): boolean {

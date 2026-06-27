@@ -55,7 +55,8 @@ import {
     ServiceTypeEnum,
     DriverLocation,
     ErrandFunding,
-    Vehicle
+    Vehicle,
+    JobEvent
 } from '../../../../../shared/models/booking.model';
 
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
@@ -191,6 +192,12 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   <p class="text-xs font-semibold text-slate-500 mt-1">
                     {{ getStatusHint(booking()?.status || '') }}
                   </p>
+
+                  @if (statusUpdatedLabel()) {
+                    <p class="text-[11px] font-bold text-amber-600 mt-1">
+                      {{ statusUpdatedLabel() }}
+                    </p>
+                  }
 
                   <p class="text-[11px] font-semibold text-slate-400 mt-2">
                     ID: {{ booking()?.id?.slice(0, 8) }}
@@ -687,11 +694,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private channel?: RealtimeChannel;
     private errandFundingChannel?: RealtimeChannel;
+    private jobEventsChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
     private lastDriverCameraUpdateAt = 0;
     private dragStartY: number | null = null;
     private dragDeltaY = 0;
     private lastNotifiedStatus: string | null = null;
+    private lastStatusEventAt = signal<Date | null>(null);
 
     private pollingInterval?: ReturnType<typeof setInterval>;
     private countdownInterval?: ReturnType<typeof setInterval>;
@@ -737,6 +746,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.channel = this.bookingService.subscribeToBooking(id);
         this.subscribeToErrandFunding(id);
+        this.subscribeToJobEvents(id);
 
         await this.walletService.fetchWallet();
         await this.loadBookingAndDetails(id, true);
@@ -753,6 +763,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.channel?.unsubscribe();
         this.errandFundingChannel?.unsubscribe();
+        this.jobEventsChannel?.unsubscribe();
         this.locationSubscription?.unsubscribe();
     }
 
@@ -806,13 +817,18 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (!status || !previousStatus || previousStatus === status || this.lastNotifiedStatus === status) return;
 
         this.lastNotifiedStatus = status;
+        this.lastStatusEventAt.set(this.toDate((booking as any).updated_at) || new Date());
+        await this.notifyTrackingUpdate(status, booking.id);
+    }
+
+    private async notifyTrackingUpdate(status: string, bookingId: string): Promise<void> {
         const title = this.trackingTitle();
         const body = this.getStatusHint(status) || this.getStatusLabel(status);
 
         await Promise.allSettled([
             this.nativePlatform.showForegroundNotification(title, body, {
-                route: `/customer/tracking/${booking.id}`,
-                bookingId: booking.id,
+                route: `/customer/tracking/${bookingId}`,
+                bookingId,
                 status
             }),
             this.playStatusTone()
@@ -879,6 +895,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     delivered: 'Delivered',
                     completed: 'Errand complete',
                     settled: 'Errand settled',
+                    over_budget_requested: 'Budget approval needed',
                     cancelled: 'Errand cancelled',
                     canceled: 'Errand cancelled',
                     no_driver_found: 'No driver found',
@@ -897,6 +914,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     delivered: 'Delivered',
                     completed: 'Errand complete',
                     settled: 'Errand settled',
+                    over_budget_requested: 'Budget approval needed',
                     cancelled: 'Errand cancelled',
                     canceled: 'Errand cancelled',
                     no_driver_found: 'No driver found',
@@ -945,6 +963,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     delivered: 'Items have been delivered',
                     completed: 'Errand is complete',
                     settled: 'Wallet funds have been settled',
+                    over_budget_requested: 'Driver needs approval for extra item budget',
                     cancelled: 'Errand cancelled',
                     canceled: 'Errand cancelled',
                     no_driver_found: 'No available errand driver',
@@ -963,6 +982,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     delivered: 'Item has been delivered',
                     completed: 'Errand is complete',
                     settled: 'Payment has been settled',
+                    over_budget_requested: 'Driver needs your approval before continuing',
                     cancelled: 'Errand cancelled',
                     canceled: 'Errand cancelled',
                     no_driver_found: 'No available errand driver',
@@ -1488,6 +1508,25 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             return raw as ErrandMode;
         }
 
+        const descriptor = [
+            metadata['errand_type'],
+            metadata['errand_details']?.type,
+            metadata['errand_details']?.label,
+            details['errand_type'],
+            details['task_type'],
+            details['type'],
+            details['mode'],
+            details['delivery_instructions']
+        ].map((part) => String(part || '').toLowerCase()).join(' ');
+
+        if (/(collect|collection|pickup|pick up|document|return|deliver only)/.test(descriptor)) {
+            return 'collect_deliver';
+        }
+
+        if (/(shop|shopping|grocery|groceries|buy|purchase|quick buy)/.test(descriptor)) {
+            return 'shop_deliver';
+        }
+
         const itemBudget = this.toMoney(
             details['estimated_budget'] ||
             metadata['payment_split']?.item_budget ||
@@ -1499,7 +1538,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             ? items.length > 0
             : String(items || '').trim().length > 0;
 
-        return hasItems || itemBudget > 0 ? 'shop_deliver' : 'collect_deliver';
+        return hasItems && itemBudget > 0 ? 'shop_deliver' : 'collect_deliver';
     }
 
     private isShoppingErrand(): boolean {
@@ -1704,6 +1743,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     if (nextFunding?.job_id === id) {
                         this.errandFunding.set(nextFunding);
                         await this.walletService.fetchWallet();
+                        await this.notifyFundingUpdate(nextFunding);
                     } else {
                         await this.loadBookingAndDetails(id, false);
                     }
@@ -1711,6 +1751,37 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             )
             .subscribe((status) => {
                 console.log('[booking-tracking] errand funding realtime:', status);
+            });
+    }
+
+    private subscribeToJobEvents(id: string): void {
+        this.jobEventsChannel?.unsubscribe();
+
+        this.jobEventsChannel = this.supabase
+            .channel(`tracking-job-events-${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'job_events',
+                    filter: `job_id=eq.${id}`
+                },
+                async (payload) => {
+                    const event = payload.new as JobEvent;
+                    this.lastStatusEventAt.set(this.toDate(event.created_at) || new Date());
+
+                    const eventStatus = String(event.metadata?.['to'] || '').trim();
+                    if (eventStatus && this.lastNotifiedStatus !== eventStatus) {
+                        this.lastNotifiedStatus = eventStatus;
+                        await this.notifyTrackingUpdate(eventStatus, id);
+                    }
+
+                    await this.loadBookingAndDetails(id, false);
+                }
+            )
+            .subscribe((status) => {
+                console.log('[booking-tracking] job events realtime:', status);
             });
     }
 
@@ -1979,9 +2050,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (eta !== null) {
             if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                if (['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping now';
+                if (this.isShoppingErrand() && ['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping now';
                 if (['collected', 'en_route_to_customer'].includes(status)) return `${this.formatDuration(eta)} to delivery`;
-                return `${this.formatDuration(eta)} to store`;
+                return `${this.formatDuration(eta)} to ${this.isShoppingErrand() ? 'store' : 'collection point'}`;
             }
 
             if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
@@ -2028,6 +2099,32 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return `Waiting for the driver GPS update to ${target}.`;
     }
 
+    statusUpdatedLabel(): string {
+        const date = this.lastStatusEventAt() || this.toDate((this.booking() as any)?.updated_at);
+        if (!date) return '';
+
+        const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+        if (seconds < 45) return 'Updated just now';
+        if (seconds < 90) return 'Updated 1 min ago';
+        if (seconds < 3600) return `Updated ${Math.floor(seconds / 60)} mins ago`;
+        return `Updated ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    private async notifyFundingUpdate(funding: ErrandFunding | null): Promise<void> {
+        const booking = this.booking();
+        if (!booking?.id || !funding) return;
+
+        if (String(funding.over_budget_status || '') === 'requested') {
+            await this.notifyTrackingUpdate('over_budget_requested', booking.id);
+        }
+    }
+
+    private toDate(value: unknown): Date | null {
+        if (!value) return null;
+        const date = value instanceof Date ? value : new Date(String(value));
+        return Number.isFinite(date.getTime()) ? date : null;
+    }
+
     driverLastSeenLabel(): string {
         const lastSeen = this.driverLastSeenAt();
 
@@ -2064,7 +2161,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         ].includes(status);
 
         if (service === ServiceTypeEnum.ERRAND) {
-            return isHeadingToDestination ? 'delivery address' : 'store';
+            return isHeadingToDestination
+                ? 'delivery address'
+                : this.isShoppingErrand()
+                    ? 'store'
+                    : 'collection point';
         }
 
         if (service === ServiceTypeEnum.DELIVERY) {

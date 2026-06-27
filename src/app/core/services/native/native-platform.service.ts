@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Device } from '@capacitor/device';
+import { Haptics, NotificationType } from '@capacitor/haptics';
 import { Keyboard, KeyboardResize, KeyboardStyle } from '@capacitor/keyboard';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications, Token } from '@capacitor/push-notifications';
@@ -68,7 +69,10 @@ export class NativePlatformService {
   }
 
   async showForegroundNotification(title: string, body: string, extra?: Record<string, unknown>): Promise<void> {
-    if (!this.isNative || !this.appIsActive()) return;
+    if (!this.isNative) return;
+
+    await Haptics.notification({ type: NotificationType.Success }).catch(() => undefined);
+
     const permission = await LocalNotifications.checkPermissions();
     if (permission.display !== 'granted') return;
 

@@ -1872,13 +1872,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const dropoffReady = this.dropoffLocation.latitude && this.dropoffLocation.longitude;
 
         if (pickupReady && dropoffReady) {
-            this.mapComponent?.fitBounds(
-                [
-                    [Number(this.pickupLocation.longitude), Number(this.pickupLocation.latitude)],
-                    [Number(this.dropoffLocation.longitude), Number(this.dropoffLocation.latitude)]
-                ],
-                { padding: { top: 80, bottom: 170, left: 44, right: 44 } }
-            );
+            const bounds = this.getSelectedLocationBounds();
+            if (bounds) {
+                this.mapComponent?.fitBounds(bounds, {
+                    padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                    maxZoom: 15
+                });
+            }
             return;
         }
 
@@ -1921,20 +1921,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     this.mapComponent.drawRoute(result);
 
                     setTimeout(() => {
-                        this.mapComponent.fitBounds(
-                            [
-                                [pickup.lng, pickup.lat],
-                                [dropoff.lng, dropoff.lat]
-                            ],
-                            {
-                                padding: {
-                                    top: 80,
-                                    bottom: 170,
-                                    left: 44,
-                                    right: 44
-                                }
-                            }
-                        );
+                        const bounds = this.getSelectedLocationBounds();
+                        if (bounds) {
+                            this.mapComponent.fitBounds(bounds, {
+                                padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                                maxZoom: 15
+                            });
+                        }
                     }, 120);
 
                     void this.recalculateFare();
@@ -1955,6 +1948,36 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.fareEstimate.set(null);
         this.estimatedPrice.set(0);
         this.mapComponent?.clearRoute();
+    }
+
+    private getSelectedLocationBounds(): [[number, number], [number, number]] | null {
+        const points = [
+            {
+                lat: Number(this.pickupLocation.latitude),
+                lng: Number(this.pickupLocation.longitude)
+            },
+            {
+                lat: Number(this.dropoffLocation.latitude),
+                lng: Number(this.dropoffLocation.longitude)
+            }
+        ];
+
+        if (points.some(point =>
+            !Number.isFinite(point.lat) ||
+            !Number.isFinite(point.lng) ||
+            Math.abs(point.lat) > 90 ||
+            Math.abs(point.lng) > 180
+        )) {
+            return null;
+        }
+
+        const lats = points.map(point => point.lat);
+        const lngs = points.map(point => point.lng);
+
+        return [
+            [Math.min(...lngs), Math.min(...lats)],
+            [Math.max(...lngs), Math.max(...lats)]
+        ];
     }
 
     private recentLocationResults(type: 'pickup' | 'dropoff'): AutocompleteResult[] {
@@ -2500,8 +2523,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             case ServiceTypeEnum.RIDE:
                 return {
                     passenger_count: formVal['passenger_count'],
-                    booking_for_someone_else: !!formVal['booking_for_someone_else'],
-                    rider_name: String(formVal['rider_name'] || '').trim(),
                     notes: formVal['notes']
                 };
 
