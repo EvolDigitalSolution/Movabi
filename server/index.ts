@@ -26,6 +26,9 @@ app.use((req: any, res: any, next: any) => {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:8100',
+    'https://localhost',
+    'capacitor://localhost',
+    'ionic://localhost',
     'https://movabi.apps.evolsolution.com',
     'https://movabi-api.apps.evolsolution.com'
   ];
