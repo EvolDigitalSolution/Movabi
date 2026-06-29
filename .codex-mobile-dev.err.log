@@ -787,3 +787,129 @@ websocket connection issues.
            ╵                                                          [32m~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | "delivery" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | ServiceTypeEnum.DELIVERY | "base"' and '"van-moving"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:419:76:
+[37m      419 │ ...viceType === 'van' || [32mserviceType === 'van-moving'[37m) return 'van';
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | "base"' and '"delivery"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:420:56:
+[37m      420 │ ...peEnum.DELIVERY || [32mserviceType === 'delivery'[37m) return 'delivery';
+          ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | ServiceTypeEnum.RIDE | "base"' and '"errand"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:421:54:
+[37m      421 │ ...viceTypeEnum.ERRAND || [32mserviceType === 'errand'[37m) return 'errand';
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"base"' and '"ride"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:422:52:
+[37m      422 │ ...== ServiceTypeEnum.RIDE || [32mserviceType === 'ride'[37m) return 'ride';
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | "delivery" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | ServiceTypeEnum.DELIVERY | "base"' and '"van-moving"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:419:76:
+[37m      419 │ ...viceType === 'van' || [32mserviceType === 'van-moving'[37m) return 'van';
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | "base"' and '"delivery"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:420:56:
+[37m      420 │ ...peEnum.DELIVERY || [32mserviceType === 'delivery'[37m) return 'delivery';
+          ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | ServiceTypeEnum.RIDE | "base"' and '"errand"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:421:54:
+[37m      421 │ ...viceTypeEnum.ERRAND || [32mserviceType === 'errand'[37m) return 'errand';
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"base"' and '"ride"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:422:52:
+[37m      422 │ ...== ServiceTypeEnum.RIDE || [32mserviceType === 'ride'[37m) return 'ride';
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type 'string' is not assignable to parameter of type 'ComplianceServiceType'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/driver/driver.service.ts:390:12:
+[37m      390 │             [32mjob.service_slug || job.service_type?.slug || job.ser[37m...
+          ╵             [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | "delivery" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | ServiceTypeEnum.DELIVERY | "base"' and '"van-moving"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:419:76:
+[37m      419 │ ...viceType === 'van' || [32mserviceType === 'van-moving'[37m) return 'van';
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | "base"' and '"delivery"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:420:56:
+[37m      420 │ ...peEnum.DELIVERY || [32mserviceType === 'delivery'[37m) return 'delivery';
+          ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | ServiceTypeEnum.RIDE | "base"' and '"errand"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:421:54:
+[37m      421 │ ...viceTypeEnum.ERRAND || [32mserviceType === 'errand'[37m) return 'errand';
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"base"' and '"ride"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:422:52:
+[37m      422 │ ...== ServiceTypeEnum.RIDE || [32mserviceType === 'ride'[37m) return 'ride';
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type 'string' is not assignable to parameter of type 'ComplianceServiceType'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/driver/driver.service.ts:390:12:
+[37m      390 │             [32mjob.service_slug || job.service_type?.slug || job.ser[37m...
+          ╵             [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | "delivery" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | ServiceTypeEnum.DELIVERY | "base"' and '"van-moving"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:419:76:
+[37m      419 │ ...viceType === 'van' || [32mserviceType === 'van-moving'[37m) return 'van';
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | "errand" | ServiceTypeEnum.RIDE | ServiceTypeEnum.ERRAND | "base"' and '"delivery"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:420:56:
+[37m      420 │ ...peEnum.DELIVERY || [32mserviceType === 'delivery'[37m) return 'delivery';
+          ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"ride" | ServiceTypeEnum.RIDE | "base"' and '"errand"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:421:54:
+[37m      421 │ ...viceTypeEnum.ERRAND || [32mserviceType === 'errand'[37m) return 'errand';
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2367: This comparison appears to be unintentional because the types '"base"' and '"ride"' have no overlap.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:422:52:
+[37m      422 │ ...== ServiceTypeEnum.RIDE || [32mserviceType === 'ride'[37m) return 'ride';
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

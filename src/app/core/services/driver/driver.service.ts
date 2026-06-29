@@ -24,6 +24,7 @@ import { JobEventService } from '../job/job-event.service';
 import { NotificationService } from '../notification.service';
 import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
+import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
 
 @Injectable({
     providedIn: 'root'
@@ -39,6 +40,7 @@ export class DriverService {
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
     private vehicleCompatibility = inject(VehicleCompatibilityService);
+    private compliance = inject(ComplianceService);
 
     onlineStatus = signal<DriverStatus>('offline');
     isAvailable = signal<boolean>(true);
@@ -61,6 +63,14 @@ export class DriverService {
             }
 
             const profile = await this.fetchProfile();
+            const vehicle = this.vehicle() || await this.fetchVehicle();
+            const complianceBlockers = this.compliance
+                .getDriverBaseMissingRequirements(profile, vehicle)
+                .filter((item) => item.severity === 'blocker');
+
+            if (complianceBlockers.length) {
+                throw new Error(this.compliance.formatMissingRequirements(complianceBlockers, 'Complete driver requirements before going online.'));
+            }
 
             if (profile.pricing_plan === 'pro' && profile.subscription_status !== 'active') {
                 throw new Error('Active subscription required for Pro Plan to go online');
@@ -312,7 +322,6 @@ export class DriverService {
         }
 
         const vehicleClass = this.normaliseVehicleClass(resolvedVehicle);
-        const needsTaxiLicence = vehicleClass === 'standard' || vehicleClass === 'xl' || vehicleClass === 'car';
 
         if (resolvedVehicle && vehicleClass !== 'bike' && vehicleClass !== 'motorcycle') {
             if (!resolvedVehicle.make?.trim() || !resolvedVehicle.model?.trim()) {
@@ -334,18 +343,6 @@ export class DriverService {
             }
         } else if (!resolvedProfile.driver_license_url) {
             blockers.push('Upload driver licence');
-        }
-
-        if (needsTaxiLicence) {
-            const items = this.parseVerificationItems(resolvedProfile.verification_items);
-            const councilName = String(items['council_name'] || '').trim();
-            const councilNumber = String(items['council_license_number'] || '').trim();
-            const badgeNumber = String(items['taxi_badge_number'] || '').trim();
-            const licenceExpiry = String(items['taxi_license_expiry'] || '').trim();
-
-            if (!councilName || !councilNumber || !badgeNumber || !licenceExpiry) {
-                blockers.push('Complete council taxi licence details');
-            }
         }
 
         const approved =
@@ -386,6 +383,16 @@ export class DriverService {
         }
 
         const job = await this.bookingService.getBooking(bookingId);
+        const compliance = this.compliance.canDriverAcceptService(
+            profile,
+            vehicle,
+            null,
+            (job.service_slug || job.service_type?.slug || job.service_type?.name || 'base') as ComplianceServiceType
+        );
+
+        if (!compliance.allowed) {
+            throw new Error(this.compliance.formatMissingRequirements(compliance.missing, 'Finish service requirements before accepting this job.'));
+        }
 
         if (!this.vehicleCompatibility.isCompatible(job, vehicle)) {
             throw new Error(

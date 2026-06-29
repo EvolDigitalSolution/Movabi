@@ -64,9 +64,11 @@ import { GeocodingService, GeocodeSearchOptions } from '../../../../../core/serv
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
+import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
 
 import {
     Booking,
+    Profile,
     ServiceType,
     ServiceTypeEnum,
     UnifiedLocation
@@ -899,6 +901,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private routing = inject(RoutingService);
     private fareCalculator = inject(FareCalculationService);
     private supabase = inject(SupabaseService);
+    private compliance = inject(ComplianceService);
     private destroyRef = inject(DestroyRef);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -2280,6 +2283,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
+        const customerComplianceError = await this.validateCustomerCanBook();
+        if (customerComplianceError) {
+            const toast = await this.toastCtrl.create({
+                message: customerComplianceError,
+                duration: 4500,
+                color: 'warning'
+            });
+            await toast.present();
+            return;
+        }
+
         this.submitting.set(true);
         this.paymentProcessing.set(true);
 
@@ -2441,6 +2455,48 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.submitting.set(false);
             this.paymentProcessing.set(false);
         }
+    }
+
+    private async validateCustomerCanBook(): Promise<string | null> {
+        const profile = await this.fetchCurrentCustomerProfile();
+        const result = this.compliance.canCustomerBook(profile);
+
+        if (result.allowed) {
+            return null;
+        }
+
+        return this.compliance.formatMissingRequirements(
+            result.missing,
+            'Complete your profile before booking.'
+        );
+    }
+
+    private async fetchCurrentCustomerProfile(): Promise<Partial<Profile> | null> {
+        const user = this.auth.currentUser();
+        if (!user?.id) return null;
+
+        const { data, error } = await this.supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (error) {
+            console.warn('[BookingRequest] customer compliance profile lookup failed', error);
+            return {
+                id: user.id,
+                email: user.email || '',
+                phone: user.phone || '',
+                role: 'customer'
+            } as Partial<Profile>;
+        }
+
+        return (data || {
+            id: user.id,
+            email: user.email || '',
+            phone: user.phone || '',
+            role: 'customer'
+        }) as Partial<Profile>;
     }
 
     private getMetadataPayload(formVal: Record<string, unknown>) {

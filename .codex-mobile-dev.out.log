@@ -5076,3 +5076,125 @@ Page reload sent to client(s).
 Application bundle generation complete. [5.057 seconds] - 2026-06-29T10:31:15.104Z
 
 Stylesheet update sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+Application bundle generation failed. [6.570 seconds] - 2026-06-29T10:57:30.897Z
+
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+Application bundle generation failed. [3.238 seconds] - 2026-06-29T10:58:55.922Z
+
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+Application bundle generation failed. [3.073 seconds] - 2026-06-29T11:00:04.151Z
+
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+Application bundle generation failed. [2.192 seconds] - 2026-06-29T11:00:31.762Z
+
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                    [2m | [22m[36m292.02 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m                  [2m | [22m[36m260.42 kB[39m[2m | [22m
+[32mchunk-2VUAA3HJ.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m19.48 kB[39m[2m | [22m
+[32mchunk-JH5QE2G4.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m14.34 kB[39m[2m | [22m
+[32mchunk-TOZCLZQR.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m10.98 kB[39m[2m | [22m
+[32mchunk-CMOB5NAE.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m5.13 kB[39m[2m | [22m
+[32mchunk-6NJ5PKR7.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m4.71 kB[39m[2m | [22m
+[32mchunk-IWMVB4IT.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m3.12 kB[39m[2m | [22m
+[32mchunk-VUJOFXKG.js[39m  [2m | [22m[2m-[22m                       [2m | [22m[36m938 bytes[39m[2m | [22m
+
+[1m [22m                  [2m | [22m[1mInitial total[22m           [2m | [22m[1m611.15 kB[22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mchunk-XQ6V3Z6V.js[39m  [2m | [22m[2mjob-details-page[22m        [2m | [22m[36m179.94 kB[39m[2m | [22m
+[32mchunk-IBILD4WY.js[39m  [2m | [22m[2mbooking-request-page[22m    [2m | [22m[36m175.43 kB[39m[2m | [22m
+[32mchunk-LLFPGZPB.js[39m  [2m | [22m[2mbooking-tracking-page[22m   [2m | [22m[36m167.50 kB[39m[2m | [22m
+[32mchunk-WGTISZOE.js[39m  [2m | [22m[2mdashboard-page[22m          [2m | [22m[36m131.79 kB[39m[2m | [22m
+[32mchunk-5AC5IY65.js[39m  [2m | [22m[2monboarding-page[22m         [2m | [22m[36m111.63 kB[39m[2m | [22m
+[32mchunk-YD5JLBPL.js[39m  [2m | [22m[2mdriver-list-component[22m   [2m | [22m [36m94.33 kB[39m[2m | [22m
+[32mchunk-5ONPLOXK.js[39m  [2m | [22m[2mjob-monitoring-component[22m[2m | [22m [36m87.10 kB[39m[2m | [22m
+[32mchunk-OIZYPY5C.js[39m  [2m | [22m[2mcreate-job-page[22m         [2m | [22m [36m81.80 kB[39m[2m | [22m
+[32mchunk-MOYUYW5P.js[39m  [2m | [22m[2mbooking-list-component[22m  [2m | [22m [36m78.67 kB[39m[2m | [22m
+[32mchunk-WFDWJYTJ.js[39m  [2m | [22m[2mmovabi-about-component[22m  [2m | [22m [36m64.92 kB[39m[2m | [22m
+[32mchunk-WWYV2CQT.js[39m  [2m | [22m[2msubscription-page[22m       [2m | [22m [36m64.33 kB[39m[2m | [22m
+[32mchunk-IBQ7HK2C.js[39m  [2m | [22m[2msettings-component[22m      [2m | [22m [36m63.06 kB[39m[2m | [22m
+[32mchunk-QVG2SY2F.js[39m  [2m | [22m[2msettings-page[22m           [2m | [22m [36m59.48 kB[39m[2m | [22m
+[32mchunk-JAEGR4BI.js[39m  [2m | [22m[2mvan-jobs-page[22m           [2m | [22m [36m56.99 kB[39m[2m | [22m
+[32mchunk-DKGFWCOS.js[39m  [2m | [22m[2mpricing-rules-component[22m [2m | [22m [36m55.43 kB[39m[2m | [22m
+[2m...and 45 more lazy chunks files. Use "--verbose" to show all the files.[22m
+
+Application bundle generation complete. [2.271 seconds] - 2026-06-29T11:03:11.770Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                    [2m | [22m[36m292.02 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m                  [2m | [22m[36m260.42 kB[39m[2m | [22m
+[32mchunk-2VUAA3HJ.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m19.48 kB[39m[2m | [22m
+[32mchunk-JH5QE2G4.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m14.34 kB[39m[2m | [22m
+[32mchunk-TOZCLZQR.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m10.98 kB[39m[2m | [22m
+[32mchunk-CMOB5NAE.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m5.13 kB[39m[2m | [22m
+[32mchunk-6NJ5PKR7.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m4.71 kB[39m[2m | [22m
+[32mchunk-IWMVB4IT.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m3.12 kB[39m[2m | [22m
+[32mchunk-VUJOFXKG.js[39m  [2m | [22m[2m-[22m                       [2m | [22m[36m938 bytes[39m[2m | [22m
+
+[1m [22m                  [2m | [22m[1mInitial total[22m           [2m | [22m[1m611.15 kB[22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mchunk-XQ6V3Z6V.js[39m  [2m | [22m[2mjob-details-page[22m        [2m | [22m[36m179.94 kB[39m[2m | [22m
+[32mchunk-IBILD4WY.js[39m  [2m | [22m[2mbooking-request-page[22m    [2m | [22m[36m175.43 kB[39m[2m | [22m
+[32mchunk-LLFPGZPB.js[39m  [2m | [22m[2mbooking-tracking-page[22m   [2m | [22m[36m167.50 kB[39m[2m | [22m
+[32mchunk-WGTISZOE.js[39m  [2m | [22m[2mdashboard-page[22m          [2m | [22m[36m131.79 kB[39m[2m | [22m
+[32mchunk-5AC5IY65.js[39m  [2m | [22m[2monboarding-page[22m         [2m | [22m[36m111.63 kB[39m[2m | [22m
+[32mchunk-YD5JLBPL.js[39m  [2m | [22m[2mdriver-list-component[22m   [2m | [22m [36m94.33 kB[39m[2m | [22m
+[32mchunk-5ONPLOXK.js[39m  [2m | [22m[2mjob-monitoring-component[22m[2m | [22m [36m87.10 kB[39m[2m | [22m
+[32mchunk-OIZYPY5C.js[39m  [2m | [22m[2mcreate-job-page[22m         [2m | [22m [36m81.80 kB[39m[2m | [22m
+[32mchunk-MOYUYW5P.js[39m  [2m | [22m[2mbooking-list-component[22m  [2m | [22m [36m78.67 kB[39m[2m | [22m
+[32mchunk-WFDWJYTJ.js[39m  [2m | [22m[2mmovabi-about-component[22m  [2m | [22m [36m64.92 kB[39m[2m | [22m
+[32mchunk-WWYV2CQT.js[39m  [2m | [22m[2msubscription-page[22m       [2m | [22m [36m64.33 kB[39m[2m | [22m
+[32mchunk-IBQ7HK2C.js[39m  [2m | [22m[2msettings-component[22m      [2m | [22m [36m63.06 kB[39m[2m | [22m
+[32mchunk-QVG2SY2F.js[39m  [2m | [22m[2msettings-page[22m           [2m | [22m [36m59.48 kB[39m[2m | [22m
+[32mchunk-JAEGR4BI.js[39m  [2m | [22m[2mvan-jobs-page[22m           [2m | [22m [36m56.99 kB[39m[2m | [22m
+[32mchunk-DKGFWCOS.js[39m  [2m | [22m[2mpricing-rules-component[22m [2m | [22m [36m55.43 kB[39m[2m | [22m
+[2m...and 45 more lazy chunks files. Use "--verbose" to show all the files.[22m
+
+Application bundle generation complete. [2.249 seconds] - 2026-06-29T11:04:53.324Z
+
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                    [2m | [22m[36m292.02 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m                  [2m | [22m[36m260.42 kB[39m[2m | [22m
+[32mchunk-2VUAA3HJ.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m19.48 kB[39m[2m | [22m
+[32mchunk-JH5QE2G4.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m14.34 kB[39m[2m | [22m
+[32mchunk-TOZCLZQR.js[39m  [2m | [22m[2m-[22m                       [2m | [22m [36m10.98 kB[39m[2m | [22m
+[32mchunk-CMOB5NAE.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m5.13 kB[39m[2m | [22m
+[32mchunk-6NJ5PKR7.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m4.71 kB[39m[2m | [22m
+[32mchunk-IWMVB4IT.js[39m  [2m | [22m[2m-[22m                       [2m | [22m  [36m3.12 kB[39m[2m | [22m
+[32mchunk-VUJOFXKG.js[39m  [2m | [22m[2m-[22m                       [2m | [22m[36m938 bytes[39m[2m | [22m
+
+[1m [22m                  [2m | [22m[1mInitial total[22m           [2m | [22m[1m611.15 kB[22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                   [2m | [22m [1mRaw size[22m
+[32mchunk-XQ6V3Z6V.js[39m  [2m | [22m[2mjob-details-page[22m        [2m | [22m[36m179.94 kB[39m[2m | [22m
+[32mchunk-IBILD4WY.js[39m  [2m | [22m[2mbooking-request-page[22m    [2m | [22m[36m175.43 kB[39m[2m | [22m
+[32mchunk-LLFPGZPB.js[39m  [2m | [22m[2mbooking-tracking-page[22m   [2m | [22m[36m167.50 kB[39m[2m | [22m
+[32mchunk-WGTISZOE.js[39m  [2m | [22m[2mdashboard-page[22m          [2m | [22m[36m131.79 kB[39m[2m | [22m
+[32mchunk-5AC5IY65.js[39m  [2m | [22m[2monboarding-page[22m         [2m | [22m[36m111.63 kB[39m[2m | [22m
+[32mchunk-YD5JLBPL.js[39m  [2m | [22m[2mdriver-list-component[22m   [2m | [22m [36m94.33 kB[39m[2m | [22m
+[32mchunk-5ONPLOXK.js[39m  [2m | [22m[2mjob-monitoring-component[22m[2m | [22m [36m87.10 kB[39m[2m | [22m
+[32mchunk-OIZYPY5C.js[39m  [2m | [22m[2mcreate-job-page[22m         [2m | [22m [36m81.80 kB[39m[2m | [22m
+[32mchunk-MOYUYW5P.js[39m  [2m | [22m[2mbooking-list-component[22m  [2m | [22m [36m78.67 kB[39m[2m | [22m
+[32mchunk-WFDWJYTJ.js[39m  [2m | [22m[2mmovabi-about-component[22m  [2m | [22m [36m64.92 kB[39m[2m | [22m
+[32mchunk-WWYV2CQT.js[39m  [2m | [22m[2msubscription-page[22m       [2m | [22m [36m64.33 kB[39m[2m | [22m
+[32mchunk-IBQ7HK2C.js[39m  [2m | [22m[2msettings-component[22m      [2m | [22m [36m63.06 kB[39m[2m | [22m
+[32mchunk-QVG2SY2F.js[39m  [2m | [22m[2msettings-page[22m           [2m | [22m [36m59.48 kB[39m[2m | [22m
+[32mchunk-JAEGR4BI.js[39m  [2m | [22m[2mvan-jobs-page[22m           [2m | [22m [36m56.99 kB[39m[2m | [22m
+[32mchunk-DKGFWCOS.js[39m  [2m | [22m[2mpricing-rules-component[22m [2m | [22m [36m55.43 kB[39m[2m | [22m
+[2m...and 45 more lazy chunks files. Use "--verbose" to show all the files.[22m
+
+Application bundle generation complete. [1.629 seconds] - 2026-06-29T11:04:55.368Z
+
