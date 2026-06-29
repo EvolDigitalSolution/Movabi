@@ -1001,3 +1001,406 @@ websocket connection issues.
            ╵                            [32m~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'getReviewFeedbackOptions' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:449:33:
+[37m      449 │ ...  @for (blocker of [32mgetReviewFeedbackOptions[37m(selectedDriver());...
+          ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isReviewBlockerSelected' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:454:33:
+[37m      454 │                       [checked]="[32misReviewBlockerSelected[37m(blocker)"
+          ╵                                  [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'toggleReviewBlocker' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:455:32:
+[37m      455 │ ...            (change)="[32mtoggleReviewBlocker[37m(blocker, $any($event...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'reviewFeedbackNotes' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:464:25:
+[37m      464 │                 [value]="[32mreviewFeedbackNotes[37m()"
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'reviewFeedbackNotes' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:465:25:
+[37m      465 │                 (input)="[32mreviewFeedbackNotes[37m.set($any($event.targ...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'sendMissingInfoRequest' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:469:75:
+[37m      469 │ ...t="primary" (clicked)="[32msendMissingInfoRequest[37m(selectedDriver())">
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'getReviewFeedbackOptions' does not exist on type 'DriverListComponent'. Did you mean 'reviewFeedbackNotes'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:449:33:
+[37m      449 │ ...  @for (blocker of [32mgetReviewFeedbackOptions[37m(selectedDriver());...
+          ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isReviewBlockerSelected' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:454:33:
+[37m      454 │                       [checked]="[32misReviewBlockerSelected[37m(blocker)"
+          ╵                                  [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'toggleReviewBlocker' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:455:32:
+[37m      455 │ ...            (change)="[32mtoggleReviewBlocker[37m(blocker, $any($event...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'sendMissingInfoRequest' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:469:75:
+[37m      469 │ ...t="primary" (clicked)="[32msendMissingInfoRequest[37m(selectedDriver())">
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'sendMissingInfoRequest' does not exist on type 'DriverListComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:469:75:
+[37m      469 │ ...t="primary" (clicked)="[32msendMissingInfoRequest[37m(selectedDriver())">
+          ╵                           [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'parseStringList' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:848:20:
+[37m      848 │         return this.[32mparseStringList[37m(profile?.driver_review_blocke...
+          ╵                     [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'parseStringList' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:856:20:
+[37m      856 │         return this.[32mparseStringList[37m(profile?.driver_review_blocke...
+          ╵                     [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'reviewBlockers' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:135:21:
+[37m      135 │                 @if ([32mreviewBlockers[37m().length) {
+          ╵                      [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'reviewBlockers' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:137:37:
+[37m      137 │ ...              @for (blocker of [32mreviewBlockers[37m(); track blocker) {
+          ╵                                   [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'scrollToSetup' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:144:143:
+[37m      144 │ ...text-slate-800 border border-rose-100" (click)="[32mscrollToSetup[37m()">
+          ╵                                                    [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'scrollToDocuments' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:147:143:
+[37m      147 │ ...-slate-800 border border-rose-100" (click)="[32mscrollToDocuments[37m()">
+          ╵                                                [32m~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'scrollToSetup' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:144:143:
+[37m      144 │ ...text-slate-800 border border-rose-100" (click)="[32mscrollToSetup[37m()">
+          ╵                                                    [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'scrollToDocuments' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:147:143:
+[37m      147 │ ...-slate-800 border border-rose-100" (click)="[32mscrollToDocuments[37m()">
+          ╵                                                [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'parseStringList' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:694:20:
+[37m      694 │         return this.[32mparseStringList[37m(profile?.driver_review_blocke...
+          ╵                     [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'scrollToSetup' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:144:143:
+[37m      144 │ ...text-slate-800 border border-rose-100" (click)="[32mscrollToSetup[37m()">
+          ╵                                                    [32m~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'scrollToDocuments' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:147:143:
+[37m      147 │ ...-slate-800 border border-rose-100" (click)="[32mscrollToDocuments[37m()">
+          ╵                                                [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'parseStringList' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:694:20:
+[37m      694 │         return this.[32mparseStringList[37m(profile?.driver_review_blocke...
+          ╵                     [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'parseStringList' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:694:20:
+[37m      694 │         return this.[32mparseStringList[37m(profile?.driver_review_blocke...
+          ╵                     [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'parseStringList' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:694:20:
+[37m      694 │         return this.[32mparseStringList[37m(profile?.driver_review_blocke...
+          ╵                     [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'availableServiceOptions' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:419:36:
+[37m      419 │ ...    @for (option of [32mavailableServiceOptions[37m(); track option.id) {
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'toggleServiceType' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:422:33:
+[37m      422 │                         (click)="[32mtoggleServiceType[37m(option.id)"
+          ╵                                  [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:424:46:
+[37m      424 │ ...              [class.bg-amber-500]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:425:48:
+[37m      425 │ ...            [class.text-slate-950]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:426:50:
+[37m      426 │ ...          [class.border-amber-500]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:427:46:
+[37m      427 │ ...              [class.bg-slate-50]="![32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:428:49:
+[37m      428 │ ...           [class.text-slate-700]="![32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'availableServiceOptions' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:419:36:
+[37m      419 │ ...    @for (option of [32mavailableServiceOptions[37m(); track option.id) {
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'toggleServiceType' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:422:33:
+[37m      422 │                         (click)="[32mtoggleServiceType[37m(option.id)"
+          ╵                                  [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:424:46:
+[37m      424 │ ...              [class.bg-amber-500]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:425:48:
+[37m      425 │ ...            [class.text-slate-950]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:426:50:
+[37m      426 │ ...          [class.border-amber-500]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:427:46:
+[37m      427 │ ...              [class.bg-slate-50]="![32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:428:49:
+[37m      428 │ ...           [class.text-slate-700]="![32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'availableServiceOptions' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:419:36:
+[37m      419 │ ...    @for (option of [32mavailableServiceOptions[37m(); track option.id) {
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'toggleServiceType' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:422:33:
+[37m      422 │                         (click)="[32mtoggleServiceType[37m(option.id)"
+          ╵                                  [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:424:46:
+[37m      424 │ ...              [class.bg-amber-500]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:425:48:
+[37m      425 │ ...            [class.text-slate-950]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:426:50:
+[37m      426 │ ...          [class.border-amber-500]="[32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:427:46:
+[37m      427 │ ...              [class.bg-slate-50]="![32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'isServiceSelected' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:428:49:
+[37m      428 │ ...           [class.text-slate-700]="![32misServiceSelected[37m(option.id)"
+          ╵                                        [32m~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'normaliseServiceTypes' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:932:44:
+[37m      932 │ ... service_types: this.[32mnormaliseServiceTypes[37m(draft.form['service...
+          ╵                         [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'normaliseServiceTypes' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:970:40:
+[37m      970 │ ... service_types: this.[32mnormaliseServiceTypes[37m((vehicle as any).se...
+          ╵                         [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'normaliseServiceTypes' does not exist on type 'OnboardingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:987:40:
+[37m      987 │ ... service_types: this.[32mnormaliseServiceTypes[37m(verificationItems['...
+          ╵                         [32m~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2353: Object literal may only specify known properties, and 'service_eligibility' does not exist in type 'Partial<Vehicle>'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:1311:12:
+[37m      1311 │             [32mservice_eligibility[37m: this.selectedServiceTypes()
+           ╵             [32m~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2353: Object literal may only specify known properties, and 'service_eligibility' does not exist in type 'Partial<Vehicle>'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts:1311:12:
+[37m      1311 │             [32mservice_eligibility[37m: this.selectedServiceTypes()
+           ╵             [32m~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'parseVerificationItems' does not exist on type 'ComplianceService'. Did you mean 'hasVerificationItem'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/compliance/compliance.service.ts:476:27:
+[37m      476 │ ... const items = this.[32mparseVerificationItems[37m(profile?.verificati...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~[0m
+
+  'hasVerificationItem' is declared here.
+
+    src/app/core/services/compliance/compliance.service.ts:563:12:
+[37m      563 │     private [32mhasVerificationItem[37m(profile: Partial<Profile> | null ...
+          ╵             [32m~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'getSelectedServices' does not exist on type 'DriverListComponent'. Did you mean 'getSelectedServiceLabels'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:974:30:
+[37m      974 │         const services = this.[32mgetSelectedServices[37m(driver);
+          ╵                               [32m~~~~~~~~~~~~~~~~~~~[0m
+
+  'getSelectedServiceLabels' is declared here.
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:973:4:
+[37m      973 │     [32mgetSelectedServiceLabels[37m(driver: any): string {
+          ╵     [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7006: Parameter 'service' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:984:28:
+[37m      984 │         return services.map([32mservice[37m => labels[service] || service...
+          ╵                             [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'getSelectedServices' does not exist on type 'DriverListComponent'. Did you mean 'getSelectedServiceLabels'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:1103:37:
+[37m      1103 │ ...edsRideReview = this.[32mgetSelectedServices[37m(driver).includes('ri...
+           ╵                         [32m~~~~~~~~~~~~~~~~~~~[0m
+
+  'getSelectedServiceLabels' is declared here.
+
+    src/app/apps/admin/features/drivers/driver-list.component.ts:973:4:
+[37m      973 │     [32mgetSelectedServiceLabels[37m(driver: any): string {
+          ╵     [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

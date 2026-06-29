@@ -723,7 +723,8 @@ export class DriverService {
             license_plate: String(vehicleData.license_plate ?? '').trim(),
             color: String(vehicleData.color ?? '').trim(),
             type: this.normalizeVehicleType((vehicleData as any).type),
-            capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim()
+            capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim(),
+            service_eligibility: this.normalizeServiceEligibility((vehicleData as any).service_eligibility)
         };
 
         const requiresPlate = payload.type !== 'motorcycle';
@@ -745,6 +746,19 @@ export class DriverService {
         if (error && this.isMissingColumnError(error, 'color')) {
             const legacyPayload = { ...payload } as Partial<typeof payload>;
             delete legacyPayload.color;
+            const retry = await this.supabase
+                .from('vehicles')
+                .upsert(legacyPayload, { onConflict: 'user_id' })
+                .select()
+                .single();
+
+            data = retry.data;
+            error = retry.error;
+        }
+
+        if (error && this.isMissingColumnError(error, 'service_eligibility')) {
+            const legacyPayload = { ...payload } as Partial<typeof payload>;
+            delete legacyPayload.service_eligibility;
             const retry = await this.supabase
                 .from('vehicles')
                 .upsert(legacyPayload, { onConflict: 'user_id' })
@@ -785,6 +799,25 @@ export class DriverService {
         }
         if (type === 'motorcycle') return 'bike';
         return 'standard';
+    }
+
+    private normalizeServiceEligibility(value: unknown): string[] {
+        if (Array.isArray(value)) {
+            return value.map(item => String(item || '').trim()).filter(Boolean);
+        }
+
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) {
+                    return parsed.map(item => String(item || '').trim()).filter(Boolean);
+                }
+            } catch {
+                return value.split(',').map(item => item.trim()).filter(Boolean);
+            }
+        }
+
+        return [];
     }
 
     async uploadDocument(file: File, type: string) {

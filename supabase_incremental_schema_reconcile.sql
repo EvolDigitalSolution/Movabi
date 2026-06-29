@@ -298,7 +298,13 @@ BEGIN
             ADD COLUMN IF NOT EXISTS moving_insurance_url TEXT,
             ADD COLUMN IF NOT EXISTS moving_insurance_status TEXT DEFAULT 'missing',
             ADD COLUMN IF NOT EXISTS moving_insurance_expiry DATE,
-            ADD COLUMN IF NOT EXISTS helper_labour_declaration BOOLEAN DEFAULT FALSE;
+            ADD COLUMN IF NOT EXISTS helper_labour_declaration BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS driver_review_status TEXT,
+            ADD COLUMN IF NOT EXISTS driver_review_notes TEXT,
+            ADD COLUMN IF NOT EXISTS driver_review_blockers JSONB,
+            ADD COLUMN IF NOT EXISTS driver_review_sent_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS driver_review_sent_by UUID,
+            ADD COLUMN IF NOT EXISTS driver_review_history JSONB;
     END IF;
 END $$;
 
@@ -313,6 +319,10 @@ BEGIN
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'capacity') THEN
             ALTER TABLE public.vehicles ADD COLUMN capacity TEXT DEFAULT 'standard';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'service_eligibility') THEN
+            ALTER TABLE public.vehicles ADD COLUMN service_eligibility JSONB;
         END IF;
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'color') THEN

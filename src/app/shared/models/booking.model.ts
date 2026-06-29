@@ -55,6 +55,7 @@ export interface Vehicle {
     is_verified: boolean;
     type: 'bike' | 'car' | 'standard' | 'xl' | 'small_van' | 'large_van' | 'minibus' | 'van' | 'motorcycle';
     capacity?: string;
+    service_eligibility?: string[] | null;
 }
 
 export interface DriverProfile extends Profile {
@@ -433,6 +434,12 @@ export interface Profile {
     verification_notes?: string | null;
     verification_items?: string[] | null;
     verification_blockers?: string[] | string | null;
+    driver_review_status?: 'pending' | 'action_required' | 'under_review' | 'approved' | 'rejected' | null;
+    driver_review_notes?: string | null;
+    driver_review_blockers?: string[] | string | null;
+    driver_review_sent_at?: string | null;
+    driver_review_sent_by?: string | null;
+    driver_review_history?: Array<Record<string, unknown>> | null;
     testing_approval_override?: boolean | null;
     manual_verification_notes?: string | null;
     verified_at?: string | null;

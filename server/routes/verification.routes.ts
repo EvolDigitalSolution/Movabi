@@ -8,6 +8,69 @@ import {
 
 const router = Router();
 
+const parseVerificationItems = (value: unknown): Record<string, unknown> => {
+  if (!value) return {};
+
+  if (Array.isArray(value)) {
+    return value.reduce<Record<string, unknown>>((items, entry) => {
+      if (!entry || typeof entry !== 'object') return items;
+      const record = entry as Record<string, unknown>;
+      const key = String(record.key || record.name || record.field || '').trim();
+      if (key) items[key] = record.value ?? record.label ?? '';
+      return items;
+    }, {});
+  }
+
+  if (typeof value === 'object') return value as Record<string, unknown>;
+
+  if (typeof value === 'string') {
+    try {
+      return parseVerificationItems(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+};
+
+const parseServiceTypes = (value: unknown): string[] => {
+  const values = Array.isArray(value) ? value : [value];
+  const flattened = values.flatMap((item) => {
+    if (Array.isArray(item)) return item;
+    if (typeof item === 'string') {
+      try {
+        const parsed = JSON.parse(item);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return item.split(',');
+      }
+    }
+    return [item];
+  });
+
+  return Array.from(new Set(flattened
+    .map((item) => String(item || '').trim().toLowerCase())
+    .map((item) => item === 'van-moving' || item === 'moving' ? 'van' : item)
+    .map((item) => item === 'package' || item === 'package_delivery' ? 'delivery' : item)
+    .filter(Boolean)));
+};
+
+const driverSelectedRide = (profile: any, vehicle: any): boolean => {
+  const items = parseVerificationItems(profile?.verification_items);
+  const selected = parseServiceTypes([
+    vehicle?.service_eligibility,
+    items.driver_service_types
+  ]);
+
+  if (!selected.length) {
+    const vehicleClass = String(items.vehicle_class || vehicle?.capacity || '').toLowerCase();
+    return vehicleClass.includes('xl') || vehicleClass.includes('standard');
+  }
+
+  return selected.includes('ride');
+};
+
 const supabaseUrl =
   process.env.SUPABASE_URL ||
   process.env.SUPABASE_PUBLIC_URL ||
@@ -94,14 +157,19 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       blockers.push('Insurance document requires manual admin review.');
     }
 
-    const councilCheck = await checkCouncilLicence({
-      councilName: profile.council_name,
-      councilLicenseNumber: profile.council_license_number,
-      taxiBadgeNumber: profile.taxi_badge_number,
-      taxiLicenseExpiry: profile.taxi_license_expiry
-    });
+    const rideSelected = driverSelectedRide(profile, vehicle);
+    const councilCheck = rideSelected
+      ? await checkCouncilLicence({
+          councilName: profile.council_name,
+          councilLicenseNumber: profile.council_license_number,
+          taxiBadgeNumber: profile.taxi_badge_number,
+          taxiLicenseExpiry: profile.taxi_license_expiry
+        })
+      : { status: 'not_required', blockers: [] as string[] };
 
-    blockers.push(...councilCheck.blockers);
+    if (rideSelected) {
+      blockers.push(...councilCheck.blockers);
+    }
 
     if (!profile.driver_license_url) {
       blockers.push('Driver licence document is missing.');
@@ -111,10 +179,15 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       vehicleCheck.passed &&
       !!profile.driver_license_url &&
       !!profile.insurance_url &&
-      !!profile.council_name &&
-      !!profile.council_license_number &&
-      !!profile.taxi_badge_number &&
-      !!profile.taxi_license_expiry;
+      (
+        !rideSelected ||
+        (
+          !!profile.council_name &&
+          !!profile.council_license_number &&
+          !!profile.taxi_badge_number &&
+          !!profile.taxi_license_expiry
+        )
+      );
 
     if (vehicle) {
       await supabase
@@ -160,6 +233,79 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
   }
 });
 
+router.post('/drivers/:driverId/request-info', async (req, res) => {
+  try {
+    if (!serviceRoleKey) {
+      return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY is not configured.' });
+    }
+
+    const { driverId } = req.params;
+    const { notes, blockers } = req.body || {};
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const { data: authData } = await supabase.auth.getUser(token);
+    const adminId = authData.user?.id || null;
+
+    const selectedBlockers = Array.isArray(blockers)
+      ? blockers.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+    if (!selectedBlockers.length && !String(notes || '').trim()) {
+      return res.status(400).json({ error: 'Add at least one blocker or review note before sending.' });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('driver_review_history')
+      .eq('id', driverId)
+      .single();
+
+    if (profileError || !profile) {
+      return res.status(404).json({ error: 'Driver profile not found.' });
+    }
+
+    const sentAt = new Date().toISOString();
+    const previousHistory = Array.isArray(profile.driver_review_history)
+      ? profile.driver_review_history
+      : [];
+
+    const historyEntry = {
+      status: 'action_required',
+      notes: String(notes || '').trim(),
+      blockers: selectedBlockers,
+      sent_at: sentAt,
+      sent_by: adminId
+    };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        driver_review_status: 'action_required',
+        driver_review_notes: historyEntry.notes,
+        driver_review_blockers: selectedBlockers,
+        driver_review_sent_at: sentAt,
+        driver_review_sent_by: adminId,
+        driver_review_history: [...previousHistory, historyEntry].slice(-20),
+        verification_status: 'action_required',
+        verification_blockers: selectedBlockers,
+        verification_notes: historyEntry.notes || null,
+        updated_at: sentAt
+      })
+      .eq('id', driverId);
+
+    if (error) throw error;
+
+    return res.json({
+      success: true,
+      message: 'Missing information request sent to driver.',
+      blockers: selectedBlockers
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      error: error?.message || 'Could not send missing information request.'
+    });
+  }
+});
+
 // ===== MANUAL TEST APPROVAL ROUTE =====
 router.post('/drivers/:driverId/manual-approve', async (req, res) => {
   try {
@@ -184,6 +330,7 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
         account_status: 'active',
         manual_verification_notes: notes || 'Approved manually (testing override)',
         testing_approval_override: true,
+        driver_review_status: 'approved',
         verification_blockers: [],
         updated_at: new Date().toISOString()
       })

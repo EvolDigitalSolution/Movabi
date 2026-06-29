@@ -262,6 +262,16 @@ export class ComplianceService {
     ) {
         const normalized = this.normaliseService(serviceType);
 
+        if (normalized !== 'base' && !this.driverSelectedService(profile, vehicle, normalized)) {
+            missing.push(this.driverRequirement(
+                `service_${normalized}`,
+                'Selected service',
+                'Enable this service in Driver Setup before accepting this job type.',
+                false
+            ));
+            return;
+        }
+
         if (normalized === 'ride') {
             missing.push(...this.rideRequirements(profile, documents, config, relaxedLegacy));
             return;
@@ -440,6 +450,56 @@ export class ComplianceService {
         return 'base';
     }
 
+    private driverSelectedService(
+        profile: Partial<DriverProfile> | Partial<Profile> | null | undefined,
+        vehicle: Partial<Vehicle> | null | undefined,
+        service: 'ride' | 'delivery' | 'errand' | 'van'
+    ): boolean {
+        const selected = this.getSelectedServices(profile, vehicle);
+        if (!selected.length) return true;
+        return selected.includes(service);
+    }
+
+    private getSelectedServices(
+        profile: Partial<DriverProfile> | Partial<Profile> | null | undefined,
+        vehicle: Partial<Vehicle> | null | undefined
+    ): Array<'ride' | 'delivery' | 'errand' | 'van'> {
+        const values: unknown[] = [];
+        const vehicleServices = (vehicle as any)?.service_eligibility;
+
+        if (Array.isArray(vehicleServices)) {
+            values.push(...vehicleServices);
+        } else if (typeof vehicleServices === 'string') {
+            values.push(vehicleServices);
+        }
+
+        const items = this.parseVerificationItems(profile?.verification_items);
+        if (items['driver_service_types']) values.push(items['driver_service_types']);
+
+        return this.normaliseServiceList(values);
+    }
+
+    private normaliseServiceList(values: unknown[]): Array<'ride' | 'delivery' | 'errand' | 'van'> {
+        const flattened = values.flatMap(value => {
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'string') {
+                try {
+                    const parsed = JSON.parse(value);
+                    if (Array.isArray(parsed)) return parsed;
+                } catch {
+                    return value.split(',');
+                }
+            }
+            return [value];
+        });
+
+        return Array.from(new Set(flattened
+            .map(value => String(value || '').trim().toLowerCase())
+            .map(value => value === 'van-moving' || value === 'moving' ? 'van' : value)
+            .map(value => value === 'package' || value === 'package_delivery' ? 'delivery' : value)
+            .filter((value): value is 'ride' | 'delivery' | 'errand' | 'van' => ['ride', 'delivery', 'errand', 'van'].includes(value))));
+    }
+
     private hasFullName(profile?: Partial<Profile> | null): boolean {
         return this.hasText(profile?.full_name) || (this.hasText(profile?.first_name) && this.hasText(profile?.last_name));
     }
@@ -501,16 +561,39 @@ export class ComplianceService {
     }
 
     private hasVerificationItem(profile: Partial<Profile> | null | undefined, key: string): boolean {
-        const items = profile?.verification_items;
-        if (Array.isArray(items)) {
-            return items.some((item) => String(item).includes(key));
+        return this.hasTextValue(this.parseVerificationItems(profile?.verification_items)[key]);
+    }
+
+    private parseVerificationItems(value: unknown): Record<string, unknown> {
+        if (!value) return {};
+
+        if (Array.isArray(value)) {
+            return value.reduce<Record<string, unknown>>((items, entry) => {
+                if (!entry || typeof entry !== 'object') {
+                    return items;
+                }
+
+                const record = entry as Record<string, unknown>;
+                const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+                if (key) items[key] = record['value'] ?? record['label'] ?? '';
+                return items;
+            }, {});
         }
 
-        if (items && typeof items === 'object') {
-            return this.hasTextValue((items as Record<string, unknown>)[key]);
+        if (typeof value === 'object') {
+            return value as Record<string, unknown>;
         }
 
-        return false;
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return this.parseVerificationItems(parsed);
+            } catch {
+                return {};
+            }
+        }
+
+        return {};
     }
 
     private hasDate(value: unknown): boolean {

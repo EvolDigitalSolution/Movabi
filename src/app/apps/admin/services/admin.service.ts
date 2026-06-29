@@ -564,6 +564,27 @@ export class AdminService {
     return result;
   }
 
+  async sendDriverMissingInfoRequest(driverId: string, notes: string, blockers: string[]) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/request-info`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ notes, blockers })
+    });
+
+    const result = await this.readApiResponse(response);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return this.sendDriverMissingInfoViaSupabase(driverId, notes, blockers);
+      }
+
+      throw new Error(result?.error || 'Could not send missing information request');
+    }
+
+    return result;
+  }
+
   private async manualApproveDriverViaSupabase(driverId: string, notes: string) {
     const { data, error } = await this.supabase
       .from('profiles')
@@ -573,6 +594,7 @@ export class AdminService {
         account_status: 'active',
         manual_verification_notes: notes || 'Approved manually. External verification APIs are not enabled yet.',
         testing_approval_override: true,
+        driver_review_status: 'approved',
         verification_blockers: [],
         verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -589,6 +611,35 @@ export class AdminService {
       success: true,
       message: 'Driver manually approved',
       driver: data
+    };
+  }
+
+  private async sendDriverMissingInfoViaSupabase(driverId: string, notes: string, blockers: string[]) {
+    const sentAt = new Date().toISOString();
+    const cleanBlockers = (blockers || []).map((item) => String(item || '').trim()).filter(Boolean);
+
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({
+        driver_review_status: 'action_required',
+        driver_review_notes: String(notes || '').trim(),
+        driver_review_blockers: cleanBlockers,
+        driver_review_sent_at: sentAt,
+        verification_status: 'action_required',
+        verification_blockers: cleanBlockers,
+        verification_notes: String(notes || '').trim() || null,
+        updated_at: sentAt
+      })
+      .eq('id', driverId);
+
+    if (error) {
+      throw new Error(`Verification API is not deployed and the database fallback failed: ${error.message}`);
+    }
+
+    return {
+      success: true,
+      message: 'Missing information request saved',
+      blockers: cleanBlockers
     };
   }
 

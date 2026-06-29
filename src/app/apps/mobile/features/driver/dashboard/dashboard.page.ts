@@ -213,8 +213,16 @@ type PassedJob = {
               </div>
             }
 
+            @if (reviewBlockers().length) {
+              <ul class="rounded-2xl bg-rose-50 border border-rose-100 p-4 space-y-2 text-left">
+                @for (blocker of reviewBlockers(); track blocker) {
+                  <li class="text-sm text-rose-900 font-semibold leading-relaxed">• {{ blocker }}</li>
+                }
+              </ul>
+            }
+
             <app-button variant="primary" color="error" (clicked)="router.navigate(['/driver/onboarding'])">
-              Fix Details
+              Update Details
             </app-button>
           </div>
         } @else if (!isVerified()) {
@@ -829,7 +837,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         if (!profile) return 'draft';
         if (profile.is_verified === true || profile.verification_status === 'approved') return 'approved';
+        if (profile.driver_review_status === 'action_required') return 'action_required';
         if (profile.verification_status === 'action_required') return 'action_required';
+        if (profile.driver_review_status === 'under_review') return 'under_review';
         if (profile.verification_status === 'under_review') return 'under_review';
         if (profile.onboarding_completed) return 'under_review';
 
@@ -838,7 +848,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     verificationNotes = computed(() => {
         const profile = this.profileService.profile() as DriverProfile | null;
-        return profile?.verification_notes ?? null;
+        return profile?.driver_review_notes ?? profile?.verification_notes ?? null;
+    });
+
+    reviewBlockers = computed(() => {
+        const profile = this.profileService.profile() as DriverProfile | null;
+        return this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers);
     });
 
     isVerified = computed(() => this.verificationStatus() === 'approved');
@@ -1538,6 +1553,27 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         if (value === null || value === undefined || value === '') return null;
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    private parseStringList(raw: unknown): string[] {
+        if (Array.isArray(raw)) {
+            return raw.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed)
+                    ? parsed.map((item) => String(item || '').trim()).filter(Boolean)
+                    : raw.trim()
+                        ? [raw.trim()]
+                        : [];
+            } catch {
+                return raw.trim() ? [raw.trim()] : [];
+            }
+        }
+
+        return [];
     }
 
     async refreshAvailableJobs() {

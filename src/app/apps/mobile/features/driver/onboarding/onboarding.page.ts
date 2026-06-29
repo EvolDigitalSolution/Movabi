@@ -48,6 +48,7 @@ import { ButtonComponent, BadgeComponent } from '@shared/ui';
 type DocumentType = 'license' | 'insurance';
 type StripeMessageType = 'success' | 'warning';
 type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'small_van' | 'large_van';
+type DriverServiceSelection = 'ride' | 'errand' | 'delivery' | 'van';
 
 type DriverOnboardingDraft = {
     form?: Record<string, unknown>;
@@ -121,9 +122,9 @@ type DriverOnboardingDraft = {
               </div>
 
               <div class="min-w-0">
-                <h3 class="font-display font-black text-slate-950">Changes Needed</h3>
+                <h3 class="font-display font-black text-slate-950">Action required</h3>
                 <p class="text-sm text-slate-600 font-medium leading-relaxed mt-1">
-                  Please update your information and resubmit for manual review.
+                  Your verification needs more information. Please update the items below and resubmit.
                 </p>
 
                 @if (verificationNotes()) {
@@ -131,6 +132,26 @@ type DriverOnboardingDraft = {
                     {{ verificationNotes() }}
                   </div>
                 }
+
+                @if (reviewBlockers().length) {
+                  <ul class="mt-3 rounded-xl bg-white border border-rose-100 p-3 space-y-2">
+                    @for (blocker of reviewBlockers(); track blocker) {
+                      <li class="text-sm text-rose-900 font-semibold leading-relaxed">• {{ blocker }}</li>
+                    }
+                  </ul>
+                }
+
+                <div class="grid sm:grid-cols-3 gap-2 mt-4">
+                  <button type="button" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-800 border border-rose-100" (click)="scrollToSetup()">
+                    Update Details
+                  </button>
+                  <button type="button" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-800 border border-rose-100" (click)="scrollToDocuments()">
+                    Upload Documents
+                  </button>
+                  <button type="button" class="rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white" (click)="submit()">
+                    Resubmit for Review
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -308,7 +329,7 @@ type DriverOnboardingDraft = {
             </div>
           </section>
 
-          <section class="space-y-4">
+          <section class="space-y-4" data-driver-documents>
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Contact Details</h2>
@@ -360,7 +381,7 @@ type DriverOnboardingDraft = {
                 <div class="p-4 space-y-3">
                   <div>
                     <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Class</p>
-                    <p class="text-xs font-semibold text-slate-500">Choose this first so Movabi shows the right setup fields.</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose the vehicle you will use.</p>
                   </div>
 
                   <div class="grid grid-cols-2 gap-3">
@@ -375,6 +396,37 @@ type DriverOnboardingDraft = {
                         [class.bg-slate-50]="onboardingForm.get('vehicle_class')?.value !== option.id"
                         [class.text-slate-700]="onboardingForm.get('vehicle_class')?.value !== option.id"
                         class="min-h-[92px] rounded-2xl border border-slate-100 p-3 text-left transition-all active:scale-95 disabled:opacity-60"
+                      >
+                        <div class="flex items-center gap-3">
+                          <ion-icon [name]="option.icon" class="text-xl shrink-0"></ion-icon>
+                          <div class="min-w-0">
+                            <p class="text-sm font-black">{{ option.label }}</p>
+                            <p class="text-[10px] font-bold opacity-80 leading-tight">{{ option.helper }}</p>
+                          </div>
+                        </div>
+                      </button>
+                    }
+                  </div>
+                </div>
+
+                <div class="p-4 space-y-3">
+                  <div>
+                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Services You Want To Accept</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose the type of work you want to receive.</p>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    @for (option of availableServiceOptions(); track option.id) {
+                      <button
+                        type="button"
+                        (click)="toggleServiceType(option.id)"
+                        [disabled]="isReadOnly()"
+                        [class.bg-amber-500]="isServiceSelected(option.id)"
+                        [class.text-slate-950]="isServiceSelected(option.id)"
+                        [class.border-amber-500]="isServiceSelected(option.id)"
+                        [class.bg-slate-50]="!isServiceSelected(option.id)"
+                        [class.text-slate-700]="!isServiceSelected(option.id)"
+                        class="min-h-[82px] rounded-2xl border border-slate-100 p-3 text-left transition-all active:scale-95 disabled:opacity-60"
                       >
                         <div class="flex items-center gap-3">
                           <ion-icon [name]="option.icon" class="text-xl shrink-0"></ion-icon>
@@ -454,7 +506,7 @@ type DriverOnboardingDraft = {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Council Taxi Licence</h2>
+                  <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Passenger Ride Approval</h2>
             </div>
 
             <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm overflow-hidden">
@@ -643,11 +695,18 @@ export class OnboardingPage implements OnInit {
     });
 
     vehicleClassOptions: Array<{ id: DriverVehicleClass; label: string; helper: string; icon: string }> = [
-        { id: 'bike', label: 'Bike', helper: 'Small delivery and errands', icon: 'bicycle-outline' },
-        { id: 'standard', label: 'Car', helper: 'Ride, errands, package delivery', icon: 'car-sport-outline' },
-        { id: 'xl', label: 'XL / 7 Seater', helper: 'Standard plus 5-7 passengers', icon: 'people-outline' },
-        { id: 'small_van', label: 'Small Van', helper: 'Bulky delivery and small moves', icon: 'bus-outline' },
-        { id: 'large_van', label: 'Large Van', helper: 'Furniture and full moves', icon: 'bus-outline' }
+        { id: 'bike', label: 'Bike', helper: 'Your bicycle, e-bike, scooter, or motorcycle', icon: 'bicycle-outline' },
+        { id: 'standard', label: 'Car', helper: 'Standard car for local work', icon: 'car-sport-outline' },
+        { id: 'xl', label: 'XL / 7 Seater', helper: 'Larger car with 5-7 seats', icon: 'people-outline' },
+        { id: 'small_van', label: 'Small Van', helper: 'Small van for parcels and light moves', icon: 'bus-outline' },
+        { id: 'large_van', label: 'Large Van', helper: 'Large van for bulky delivery and moves', icon: 'bus-outline' }
+    ];
+
+    serviceOptions: Array<{ id: DriverServiceSelection; label: string; helper: string; icon: string }> = [
+        { id: 'ride', label: 'Ride / Passenger', helper: 'Passenger trips only after taxi/private hire approval', icon: 'people-outline' },
+        { id: 'errand', label: 'Errands', helper: 'Collect, deliver, or shop for customers', icon: 'options-outline' },
+        { id: 'delivery', label: 'Package Delivery', helper: 'Small parcels and local deliveries', icon: 'document-attach-outline' },
+        { id: 'van', label: 'Van / Moving', helper: 'Moving and bulky transport jobs', icon: 'bus-outline' }
     ];
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
@@ -655,7 +714,9 @@ export class OnboardingPage implements OnInit {
 
         if (!profile) return 'draft';
         if (profile.is_verified === true || profile.verification_status === 'approved') return 'approved';
+        if (profile.driver_review_status === 'action_required') return 'action_required';
         if (profile.verification_status === 'action_required') return 'action_required';
+        if (profile.driver_review_status === 'under_review') return 'under_review';
         if (profile.verification_status === 'under_review') return 'under_review';
         if (profile.onboarding_completed) return 'under_review';
 
@@ -664,7 +725,12 @@ export class OnboardingPage implements OnInit {
 
     verificationNotes = computed(() => {
         const profile = this.profile() as DriverProfile | null;
-        return profile?.verification_notes ?? null;
+        return profile?.driver_review_notes ?? profile?.verification_notes ?? null;
+    });
+
+    reviewBlockers = computed(() => {
+        const profile = this.profile() as DriverProfile | null;
+        return this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers);
     });
 
     isStripeReady = computed(() => {
@@ -785,6 +851,7 @@ export class OnboardingPage implements OnInit {
             ],
             license_plate: ['', [Validators.required, Validators.minLength(2)]],
             vehicle_class: ['standard', Validators.required],
+            service_types: [['errand', 'delivery'] as DriverServiceSelection[], Validators.required],
             council_name: ['', [Validators.required, Validators.minLength(2)]],
             council_license_number: ['', [Validators.required, Validators.minLength(2)]],
             taxi_badge_number: ['', [Validators.required, Validators.minLength(2)]],
@@ -862,6 +929,7 @@ export class OnboardingPage implements OnInit {
                         year: draft.form['year'] ?? new Date().getFullYear(),
                         license_plate: draft.form['license_plate'] ?? '',
                         vehicle_class: draft.form['vehicle_class'] ?? 'standard',
+                        service_types: this.normaliseServiceTypes(draft.form['service_types'], draft.form['vehicle_class'] as DriverVehicleClass),
                         council_name: draft.form['council_name'] ?? '',
                         council_license_number: draft.form['council_license_number'] ?? '',
                         taxi_badge_number: draft.form['taxi_badge_number'] ?? '',
@@ -898,7 +966,8 @@ export class OnboardingPage implements OnInit {
                     color: vehicle.color ?? '',
                     year: vehicle.year ?? new Date().getFullYear(),
                     license_plate: vehicle.license_plate ?? '',
-                    vehicle_class: this.vehicleClassFromVehicle(vehicle)
+                    vehicle_class: this.vehicleClassFromVehicle(vehicle),
+                    service_types: this.normaliseServiceTypes((vehicle as any).service_eligibility, this.vehicleClassFromVehicle(vehicle))
                 },
                 { emitEvent: false }
             );
@@ -915,6 +984,7 @@ export class OnboardingPage implements OnInit {
                     council_license_number: verificationItems['council_license_number'] ?? profile.council_license_number ?? '',
                     taxi_badge_number: verificationItems['taxi_badge_number'] ?? profile.taxi_badge_number ?? '',
                     taxi_license_expiry: verificationItems['taxi_license_expiry'] ?? profile.taxi_license_expiry ?? '',
+                    service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
                     phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? ''
                 },
                 { emitEvent: false }
@@ -932,12 +1002,43 @@ export class OnboardingPage implements OnInit {
         return this.vehicleClassOptions.some(option => option.id === value) ? value : 'standard';
     }
 
+    selectedServiceTypes(): DriverServiceSelection[] {
+        return this.normaliseServiceTypes(this.onboardingForm.get('service_types')?.value, this.selectedVehicleClass());
+    }
+
+    availableServiceOptions() {
+        const allowed = this.allowedServicesForClass(this.selectedVehicleClass());
+        return this.serviceOptions.filter(option => allowed.includes(option.id));
+    }
+
+    isServiceSelected(value: DriverServiceSelection): boolean {
+        return this.selectedServiceTypes().includes(value);
+    }
+
+    toggleServiceType(value: DriverServiceSelection) {
+        if (this.isReadOnly()) return;
+
+        const allowed = this.allowedServicesForClass(this.selectedVehicleClass());
+        if (!allowed.includes(value)) return;
+
+        const selected = new Set(this.selectedServiceTypes());
+        if (selected.has(value)) {
+            selected.delete(value);
+        } else {
+            selected.add(value);
+        }
+
+        const next = Array.from(selected).filter(item => allowed.includes(item));
+        this.onboardingForm.get('service_types')?.setValue(next.length ? next : this.defaultServicesForClass(this.selectedVehicleClass()), { emitEvent: true });
+        this.applyVehicleClassRules(this.selectedVehicleClass());
+    }
+
     isBikeVehicle(): boolean {
         return this.selectedVehicleClass() === 'bike';
     }
 
     requiresTaxiLicence(): boolean {
-        return this.requiresTaxiLicenceForClass(this.selectedVehicleClass());
+        return this.selectedServiceTypes().includes('ride');
     }
 
     fieldInputClass(): string {
@@ -951,15 +1052,17 @@ export class OnboardingPage implements OnInit {
     }
 
     vehicleSetupMessage(): string {
-        if (this.isBikeVehicle()) {
-            return 'Bike drivers only need bike details, profile photo, mobile number, photo ID, payout setup, and optional courier insurance.';
+        const selected = this.selectedServiceTypes();
+
+        if (selected.includes('ride')) {
+            return 'Passenger rides require private hire/taxi approval, vehicle licence, insurance, and local licensing details.';
         }
 
-        if (this.selectedVehicleClass() === 'small_van' || this.selectedVehicleClass() === 'large_van') {
-            return 'Van drivers need vehicle details, registration plate, insurance, profile photo, and payout setup. Taxi licence fields are hidden for van-only work.';
+        if (selected.includes('van')) {
+            return 'Moving jobs require vehicle details, registration plate, suitable insurance, goods-in-transit/public-liability documents where required, and payout setup.';
         }
 
-        return 'Car and XL drivers need vehicle details, registration plate, insurance, council taxi licence, profile photo, and payout setup.';
+        return 'Errands and delivery require vehicle details, registration plate, suitable insurance, and payout setup. Bike couriers do not need a taxi licence.';
     }
 
     vehicleMakeLabel(): string {
@@ -1018,17 +1121,24 @@ export class OnboardingPage implements OnInit {
 
     vehicleChecklistLabel(): string {
         if (this.isBikeVehicle()) return 'Bike details and ID checks';
-        return this.requiresTaxiLicence() ? 'Vehicle and council details' : 'Vehicle details and documents';
+        return this.requiresTaxiLicence() ? 'Vehicle and passenger ride approval' : 'Vehicle details and documents';
     }
 
     private applyVehicleClassRules(value: DriverVehicleClass) {
         const plate = this.onboardingForm.get('license_plate');
+        const services = this.onboardingForm.get('service_types');
         const councilName = this.onboardingForm.get('council_name');
         const councilNumber = this.onboardingForm.get('council_license_number');
         const taxiBadge = this.onboardingForm.get('taxi_badge_number');
         const taxiExpiry = this.onboardingForm.get('taxi_license_expiry');
         const isBike = value === 'bike';
-        const needsTaxiLicence = this.requiresTaxiLicenceForClass(value);
+        const allowedServices = this.allowedServicesForClass(value);
+        const selectedServices = this.normaliseServiceTypes(services?.value, value).filter(service => allowedServices.includes(service));
+        const nextServices = selectedServices.length ? selectedServices : this.defaultServicesForClass(value);
+        const needsTaxiLicence = nextServices.includes('ride');
+
+        services?.setValue(nextServices, { emitEvent: false });
+        services?.setValidators([Validators.required]);
 
         if (isBike) {
             plate?.clearValidators();
@@ -1058,17 +1168,58 @@ export class OnboardingPage implements OnInit {
             taxiExpiry?.setValue('', { emitEvent: false });
         }
 
-        [plate, councilName, councilNumber, taxiBadge, taxiExpiry].forEach(control => {
+        [plate, services, councilName, councilNumber, taxiBadge, taxiExpiry].forEach(control => {
             control?.updateValueAndValidity({ emitEvent: false });
         });
     }
 
-    private requiresTaxiLicenceForClass(value: DriverVehicleClass): boolean {
-        return value === 'standard' || value === 'xl';
+    private allowedServicesForClass(value: DriverVehicleClass): DriverServiceSelection[] {
+        switch (value) {
+            case 'bike':
+                return ['errand', 'delivery'];
+            case 'standard':
+            case 'xl':
+                return ['ride', 'errand', 'delivery'];
+            case 'small_van':
+            case 'large_van':
+                return ['delivery', 'van'];
+            default:
+                return ['errand', 'delivery'];
+        }
+    }
+
+    private defaultServicesForClass(value: DriverVehicleClass): DriverServiceSelection[] {
+        const allowed = this.allowedServicesForClass(value);
+        return allowed.filter(service => service !== 'ride') || allowed;
+    }
+
+    private normaliseServiceTypes(value: unknown, vehicleClass: DriverVehicleClass = 'standard'): DriverServiceSelection[] {
+        const allowed = this.allowedServicesForClass(vehicleClass);
+        let raw: unknown[] = [];
+
+        if (Array.isArray(value)) {
+            raw = value;
+        } else if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                raw = Array.isArray(parsed) ? parsed : value.split(',');
+            } catch {
+                raw = value.split(',');
+            }
+        }
+
+        const selected = raw
+            .map(item => String(item || '').trim().toLowerCase())
+            .map(item => item === 'van-moving' || item === 'moving' ? 'van' : item)
+            .map(item => item === 'package' || item === 'package_delivery' ? 'delivery' : item)
+            .filter((item): item is DriverServiceSelection => ['ride', 'errand', 'delivery', 'van'].includes(item))
+            .filter(item => allowed.includes(item));
+
+        return selected.length ? Array.from(new Set(selected)) : this.defaultServicesForClass(vehicleClass);
     }
 
     private activeVehicleControls(): string[] {
-        const controls = ['make', 'model', 'color', 'year', 'vehicle_class'];
+        const controls = ['make', 'model', 'color', 'year', 'vehicle_class', 'service_types'];
 
         if (!this.isBikeVehicle()) {
             controls.push('license_plate');
@@ -1101,6 +1252,8 @@ export class OnboardingPage implements OnInit {
                 return this.hasText(vehicle?.license_plate);
             case 'vehicle_class':
                 return !!vehicle && !!this.vehicleClassFromVehicle(vehicle);
+            case 'service_types':
+                return this.selectedServiceTypes().length > 0;
             default:
                 return false;
         }
@@ -1154,7 +1307,8 @@ export class OnboardingPage implements OnInit {
             year: Number(raw['year'] || vehicle?.year),
             license_plate: plate.toUpperCase(),
             type: this.vehicleTypeFromClass(vehicleClass),
-            capacity: vehicleClass
+            capacity: vehicleClass,
+            service_eligibility: this.selectedServiceTypes()
         };
     }
 
@@ -1193,7 +1347,8 @@ export class OnboardingPage implements OnInit {
     private buildVerificationItems(raw: Record<string, unknown>): Array<{ key: string; value: string }> {
         const items: Array<{ key: string; value: string }> = [
             { key: 'vehicle_class', value: String(raw['vehicle_class'] || 'standard').trim() },
-            { key: 'vehicle_type', value: this.vehicleTypeFromClass(String(raw['vehicle_class'] || 'standard') as DriverVehicleClass) }
+            { key: 'vehicle_type', value: this.vehicleTypeFromClass(String(raw['vehicle_class'] || 'standard') as DriverVehicleClass) },
+            { key: 'driver_service_types', value: JSON.stringify(this.selectedServiceTypes()) }
         ];
 
         if (this.requiresTaxiLicence()) {
@@ -1425,6 +1580,27 @@ export class OnboardingPage implements OnInit {
         return allowedTypes.includes(file.type) && file.size <= this.maxUploadBytes;
     }
 
+    private parseStringList(raw: unknown): string[] {
+        if (Array.isArray(raw)) {
+            return raw.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed)
+                    ? parsed.map((item) => String(item || '').trim()).filter(Boolean)
+                    : raw.trim()
+                        ? [raw.trim()]
+                        : [];
+            } catch {
+                return raw.trim() ? [raw.trim()] : [];
+            }
+        }
+
+        return [];
+    }
+
     async submit() {
         if (this.isReadOnly()) {
             await this.showToast('Your application is already under review.', 'warning');
@@ -1470,6 +1646,7 @@ export class OnboardingPage implements OnInit {
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
                 verification_status: 'under_review',
+                driver_review_status: 'under_review',
                 verification_notes: null,
                 verification_items: this.buildVerificationItems(raw),
                 is_verified: false
@@ -1499,6 +1676,14 @@ export class OnboardingPage implements OnInit {
             this.submitting.set(false);
             await loading.dismiss();
         }
+    }
+
+    scrollToSetup() {
+        document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    scrollToDocuments() {
+        document.querySelector('[data-driver-documents]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     private async updateProfileSafely(userId: string, updates: Record<string, unknown>) {

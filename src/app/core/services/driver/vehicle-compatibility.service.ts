@@ -11,8 +11,18 @@ export class VehicleCompatibilityService {
     isCompatible(job: Booking | null | undefined, vehicle: Vehicle | null | undefined): boolean {
         if (!job || !vehicle) return false;
 
-        const required = this.getRequiredVehicleClass(job);
+        const serviceSlug = String((job as any)?.service_slug || (job as any)?.service_type?.slug || '').toLowerCase();
         const capabilities = this.getDriverCapabilities(vehicle);
+
+        if (serviceSlug === ServiceTypeEnum.ERRAND || serviceSlug.includes('errand')) {
+            return capabilities.some(capability => ['bike', 'standard', 'xl', 'car'].includes(capability));
+        }
+
+        if (serviceSlug === ServiceTypeEnum.DELIVERY || serviceSlug.includes('delivery')) {
+            return capabilities.some(capability => ['bike', 'standard', 'xl', 'car', 'small_van', 'large_van'].includes(capability));
+        }
+
+        const required = this.getRequiredVehicleClass(job);
 
         return capabilities.includes(required);
     }
