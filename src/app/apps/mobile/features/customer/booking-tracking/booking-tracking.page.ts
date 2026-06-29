@@ -71,6 +71,7 @@ import { MapComponent } from '../../../../../shared/components/map/map.component
 
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
+type SheetState = 'collapsed' | 'medium' | 'expanded';
 
 @Component({
     selector: 'app-booking-tracking',
@@ -158,24 +159,24 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
           </div>
 
           <div
-            class="bg-white rounded-t-[1.5rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300 native-safe-bottom"
-            [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[34vh]'"
-            (focusin)="detailsExpanded.set(true)"
-            (touchstart)="startDetailsDrag($event)"
-            (touchmove)="moveDetailsDrag($event)"
-            (touchend)="endDetailsDrag()"
+            class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300 native-safe-bottom"
+            [ngClass]="sheetHeightClass()"
+            (focusin)="expandSheetForFocus()"
           >
             <button
               type="button"
-              class="w-full flex items-center justify-center py-1"
-              (click)="detailsExpanded.set(!detailsExpanded())"
+              class="sticky top-0 z-20 -mx-3 -mt-3 flex w-[calc(100%_+_1.5rem)] items-center justify-center rounded-t-[2rem] bg-white/95 py-3 backdrop-blur touch-none"
+              (click)="cycleSheetState()"
+              (touchstart)="startDetailsDrag($event)"
+              (touchmove)="moveDetailsDrag($event)"
+              (touchend)="endDetailsDrag()"
               (pointerdown)="startDetailsPointerDrag($event)"
               (pointermove)="moveDetailsPointerDrag($event)"
               (pointerup)="endDetailsPointerDrag($event)"
               (pointercancel)="endDetailsPointerDrag($event)"
-              [attr.aria-label]="detailsExpanded() ? 'Collapse details' : 'Expand details'"
+              [attr.aria-label]="sheetState() === 'expanded' ? 'Collapse details' : 'Expand details'"
             >
-              <span class="w-12 h-1 bg-slate-200 rounded-full"></span>
+              <span class="w-14 h-1.5 bg-slate-300 rounded-full shadow-sm"></span>
             </button>
 
             <div class="movabi-card-compact bg-gradient-to-br from-white to-slate-50">
@@ -237,6 +238,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               }
             </div>
 
+            @if (sheetState() !== 'collapsed') {
             <div class="movabi-card-compact space-y-3">
               <div class="flex items-start gap-3">
                 <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
@@ -623,6 +625,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </app-button>
               }
             </div>
+            }
           </div>
         </div>
       } @else {
@@ -680,6 +683,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     isLoading = signal(true);
     showChat = signal(false);
+    sheetState = signal<SheetState>('medium');
     detailsExpanded = signal(false);
     driverDistanceToPickup = signal<number | null>(null);
     driverEtaToPickup = signal<number | null>(null);
@@ -734,6 +738,33 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             storefrontOutline,
             homeOutline
         });
+    }
+
+    sheetHeightClass(): string {
+        switch (this.sheetState()) {
+            case 'collapsed':
+                return 'h-[30vh]';
+            case 'expanded':
+                return 'h-[82vh]';
+            default:
+                return 'h-[48vh]';
+        }
+    }
+
+    cycleSheetState(): void {
+        const current = this.sheetState();
+        if (current === 'collapsed') {
+            this.setSheetState('medium');
+            return;
+        }
+
+        this.setSheetState(current === 'expanded' ? 'medium' : 'expanded');
+    }
+
+    expandSheetForFocus(): void {
+        if (this.sheetState() !== 'expanded') {
+            this.setSheetState('expanded');
+        }
     }
 
     async ngOnInit(): Promise<void> {
@@ -804,11 +835,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private applyDetailsDrag(): void {
-        if (this.dragDeltaY < -36) this.detailsExpanded.set(true);
-        if (this.dragDeltaY > 36) this.detailsExpanded.set(false);
+        if (this.dragDeltaY < -40) this.moveSheetState(1);
+        if (this.dragDeltaY > 40) this.moveSheetState(-1);
         this.dragStartY = null;
         this.dragDeltaY = 0;
 
+        setTimeout(() => this.fitTrackingBounds(), 80);
+    }
+
+    private moveSheetState(direction: 1 | -1): void {
+        const states: SheetState[] = ['collapsed', 'medium', 'expanded'];
+        const currentIndex = states.indexOf(this.sheetState());
+        const nextIndex = Math.max(0, Math.min(states.length - 1, currentIndex + direction));
+        this.setSheetState(states[nextIndex]);
+    }
+
+    private setSheetState(state: SheetState): void {
+        this.sheetState.set(state);
+        this.detailsExpanded.set(state === 'expanded');
         setTimeout(() => this.fitTrackingBounds(), 80);
     }
 

@@ -913,3 +913,77 @@ websocket connection issues.
           ╵                               [32m~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'sheetHeightClass' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:163:23:
+[37m      163 │             [ngClass]="[32msheetHeightClass[37m()"
+          ╵                        [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'expandSheetForFocus' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:164:23:
+[37m      164 │             (focusin)="[32mexpandSheetForFocus[37m()"
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'cycleSheetState' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:169:23:
+[37m      169 │               (click)="[32mcycleSheetState[37m()"
+          ╵                        [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'sheetState' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:177:33:
+[37m      177 │ ...       [attr.aria-label]="[32msheetState[37m() === 'expanded' ? 'Colla...
+          ╵                              [32m~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'sheetState' does not exist on type 'BookingTrackingPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:241:17:
+[37m      241 │             @if ([32msheetState[37m() !== 'collapsed') {
+          ╵                  [32m~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'setSheetState' does not exist on type 'BookingTrackingPage'. Did you mean 'sheetState'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:757:17:
+[37m      757 │             this.[32msetSheetState[37m('medium');
+          ╵                  [32m~~~~~~~~~~~~~[0m
+
+  'sheetState' is declared here.
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:686:4:
+[37m      686 │     [32msheetState[37m = signal<SheetState>('medium');
+          ╵     [32m~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'setSheetState' does not exist on type 'BookingTrackingPage'. Did you mean 'sheetState'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:761:13:
+[37m      761 │         this.[32msetSheetState[37m(current === 'expanded' ? 'medium' : 'e...
+          ╵              [32m~~~~~~~~~~~~~[0m
+
+  'sheetState' is declared here.
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:686:4:
+[37m      686 │     [32msheetState[37m = signal<SheetState>('medium');
+          ╵     [32m~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'setSheetState' does not exist on type 'BookingTrackingPage'. Did you mean 'sheetState'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:766:17:
+[37m      766 │             this.[32msetSheetState[37m('expanded');
+          ╵                  [32m~~~~~~~~~~~~~[0m
+
+  'sheetState' is declared here.
+
+    src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts:686:4:
+[37m      686 │     [32msheetState[37m = signal<SheetState>('medium');
+          ╵     [32m~~~~~~~~~~[0m
+
+[39m[22m

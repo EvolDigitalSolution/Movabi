@@ -909,26 +909,36 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             {
                 eyebrow: 'Today',
                 title: `${this.todayMetric().display} ${this.todayMetric().label}`,
-                description: this.status() === 'online' ? 'Stay available for nearby requests.' : 'Go online when you are ready.',
+                subtitle: this.status() === 'online' ? 'Stay available for nearby requests.' : 'Go online when you are ready.',
                 value: `${this.dashboardStats().completedJobs || 0} done`,
+                icon: 'location-outline',
+                cta: this.status() === 'online' ? 'Live now' : 'Go online',
                 tone: 'slate'
             },
             {
                 eyebrow: 'Performance',
                 title: `Rating ${this.ratingMetric().display}`,
-                description: this.ratingMetric().isNew ? 'Your first customer review will appear here.' : 'Keep responses quick and service friendly.',
-                tone: 'amber'
+                subtitle: this.ratingMetric().isNew ? 'Your first customer review will appear here.' : 'Keep responses quick and service friendly.',
+                icon: 'star-outline',
+                cta: 'Build trust',
+                tone: 'amber',
+                accentColor: '#c2410c'
             },
             {
                 eyebrow: 'Requests',
                 title: `${this.jobs().length} available now`,
-                description: this.jobs().length > 0 ? 'Review the best nearby request and accept when ready.' : "We'll show nearby jobs here automatically.",
-                tone: 'emerald'
+                subtitle: this.jobs().length > 0 ? 'Review the best nearby request and accept when ready.' : "We'll show nearby jobs here automatically.",
+                icon: 'location-outline',
+                cta: 'Nearby work',
+                tone: 'emerald',
+                accentColor: '#047857'
             },
             {
                 eyebrow: 'Payouts',
                 title: this.isStripeReady() ? 'Payouts ready' : 'Payout setup pending',
-                description: this.isStripeReady() ? 'Completed jobs can be processed safely.' : 'Complete Stripe Connect to avoid payout delays.',
+                subtitle: this.isStripeReady() ? 'Completed jobs can be processed safely.' : 'Complete Stripe Connect to avoid payout delays.',
+                icon: 'wallet-outline',
+                cta: this.isStripeReady() ? 'Earnings safe' : 'Finish setup',
                 tone: this.isStripeReady() ? 'blue' : 'rose'
             }
         ];
@@ -937,7 +947,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             slides.push({
                 eyebrow: 'Compliance',
                 title: 'Documents under review',
-                description: 'Some request types unlock after approval.',
+                subtitle: 'Some request types unlock after approval.',
+                icon: 'document-text-outline',
+                cta: 'Review status',
                 tone: 'rose'
             });
         }

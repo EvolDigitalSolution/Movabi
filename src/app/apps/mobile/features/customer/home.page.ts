@@ -101,32 +101,32 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
     </ion-header>
 
     <ion-content class="movabi-page">
-      <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-7 pb-12">
-        <div class="movabi-hero min-h-[190px] flex items-center">
-          <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
+      <div class="max-w-2xl mx-auto p-3 sm:p-5 space-y-5 pb-12">
+        <div class="movabi-hero min-h-[158px] flex items-center p-4">
+          <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
           <div class="relative z-10 w-full">
-            <p class="text-slate-600 font-black text-[10px] uppercase tracking-[0.16em] mb-2">
+            <p class="text-slate-600 font-black text-[10px] uppercase tracking-[0.14em] mb-1">
               Welcome Back
             </p>
 
-            <h1 class="movabi-hero-title mb-2">
+            <h1 class="text-[1.45rem] font-display font-black tracking-tight leading-tight text-slate-950 mb-1">
               Hello, {{ displayName() }}!
             </h1>
 
-            <p class="movabi-hero-subtitle">
+            <p class="text-sm font-semibold text-slate-600 leading-snug">
               Where can we take you today?
             </p>
 
-            <div class="mt-5 grid grid-cols-2 gap-2.5">
+            <div class="mt-4 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 (click)="router.navigate(['/customer/wallet'])"
-                class="movabi-card-compact cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="rounded-2xl border border-white/80 bg-white/70 px-3 py-2 text-left shadow-sm active:scale-95 transition-all w-full"
               >
-                <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.12em] mb-1">
-                  Wallet Balance
+                <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.1em] mb-1">
+                  Wallet
                 </p>
-                <p class="text-lg sm:text-xl font-display font-black text-slate-950">
+                <p class="text-base font-display font-black text-slate-950 leading-tight">
                   {{ formatCurrency(walletService.wallet()?.available_balance || 0) }}
                 </p>
               </button>
@@ -134,12 +134,12 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
               <button
                 type="button"
                 (click)="router.navigate(['/customer/activity'])"
-                class="movabi-card-compact cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="rounded-2xl border border-white/80 bg-white/70 px-3 py-2 text-left shadow-sm active:scale-95 transition-all w-full"
               >
-                <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.12em] mb-1">
-                  Active Trips
+                <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.1em] mb-1">
+                  Active
                 </p>
-                <p class="text-lg sm:text-xl font-display font-black text-slate-950">
+                <p class="text-base font-display font-black text-slate-950 leading-tight">
                   {{ activeTrips() }}
                 </p>
               </button>
@@ -185,35 +185,35 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
 
         <app-movabi-carousel [slides]="customerCarouselSlides()"></app-movabi-carousel>
 
-        <div class="space-y-6">
+        <div class="space-y-3">
           <div class="movabi-section-header">
             <h3 class="movabi-section-title">
               Our Premium Services
             </h3>
           </div>
 
-          <div class="grid grid-cols-1 min-[430px]:grid-cols-2 gap-3 sm:gap-4">
+          <div class="grid grid-cols-2 max-[339px]:grid-cols-1 gap-3">
             <button
               type="button"
               (click)="goToBooking('ride')"
-              class="w-full min-h-[156px] text-center group relative overflow-hidden movabi-card-compact hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[158px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 p-4 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-16 h-16 bg-blue-600 rounded-[1.35rem] flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="car" class="text-4xl"></ion-icon>
+                <div class="w-12 h-12 min-[390px]:w-14 min-[390px]:h-14 bg-blue-600 rounded-[1.2rem] flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="car" class="text-3xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Book a Ride
+                <div class="mt-3 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Ride
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    Fixed price, no surge pricing.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Fixed fare trips.
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-3 w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-lg"></ion-icon>
                 </div>
               </div>
             </button>
@@ -221,24 +221,24 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
             <button
               type="button"
               (click)="goToBooking('errand')"
-              class="w-full min-h-[156px] text-center group relative overflow-hidden movabi-card-compact hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[158px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 p-4 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-16 h-16 bg-emerald-600 rounded-[1.35rem] flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="cart" class="text-4xl"></ion-icon>
+                <div class="w-12 h-12 min-[390px]:w-14 min-[390px]:h-14 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="cart" class="text-3xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Run an Errand
+                <div class="mt-3 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Errand
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    We shop and deliver for you.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Shop or collect.
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-3 w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-lg"></ion-icon>
                 </div>
               </div>
             </button>
@@ -246,24 +246,24 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
             <button
               type="button"
               (click)="goToBooking('delivery')"
-              class="w-full min-h-[156px] text-center group relative overflow-hidden movabi-card-compact hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[158px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 p-4 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-16 h-16 bg-amber-500 rounded-[1.35rem] flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="cube" class="text-4xl"></ion-icon>
+                <div class="w-12 h-12 min-[390px]:w-14 min-[390px]:h-14 bg-amber-500 rounded-[1.2rem] flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="cube" class="text-3xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Send a Package
+                <div class="mt-3 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Package
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    Bike, car, or van delivery.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Local delivery.
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-3 w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-lg"></ion-icon>
                 </div>
               </div>
             </button>
@@ -271,24 +271,24 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
             <button
               type="button"
               (click)="router.navigate(['/customer/van-moving/create'])"
-              class="w-full min-h-[156px] text-center group relative overflow-hidden movabi-card-compact hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[158px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 p-4 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-16 h-16 bg-indigo-600 rounded-[1.35rem] flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="bus" class="text-4xl"></ion-icon>
+                <div class="w-12 h-12 min-[390px]:w-14 min-[390px]:h-14 bg-indigo-600 rounded-[1.2rem] flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="bus" class="text-3xl"></ion-icon>
                 </div>
 
-                <div class="mt-4 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Van Moving
+                <div class="mt-3 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Move
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    Professional help for your move.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Van and helper.
                   </p>
                 </div>
 
-                <div class="mt-4 w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-3 w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-lg"></ion-icon>
                 </div>
               </div>
             </button>
@@ -388,27 +388,39 @@ export class HomePage implements OnInit, OnDestroy {
     customerCarouselSlides = computed<MovabiCarouselSlide[]>(() => [
         {
             eyebrow: 'Quick ride',
-            title: 'Fixed fares before you book',
-            description: 'Know the price before the driver accepts.',
-            tone: 'amber'
+            title: 'Ride with clear fares',
+            subtitle: 'Know the price before the driver accepts.',
+            icon: 'car-sport-outline',
+            cta: 'Book ride',
+            tone: 'amber',
+            accentColor: '#c2410c'
         },
         {
             eyebrow: 'Errands',
             title: 'Shop, collect, or deliver',
-            description: 'Use Movabi for everyday local help.',
-            tone: 'emerald'
+            subtitle: 'Everyday help with live updates.',
+            icon: 'bag-handle-outline',
+            cta: 'Start errand',
+            tone: 'emerald',
+            accentColor: '#047857'
         },
         {
             eyebrow: 'Delivery',
-            title: 'Packages with live updates',
-            description: 'Track the driver from pickup to drop-off.',
-            tone: 'blue'
+            title: 'Send packages locally',
+            subtitle: 'Bike, car, or van based on size.',
+            icon: 'cube-outline',
+            cta: 'Send package',
+            tone: 'blue',
+            accentColor: '#1d4ed8'
         },
         {
-            eyebrow: 'Safety',
-            title: 'PIN protected handover',
-            description: 'Drivers confirm the right customer before completion.',
-            tone: 'slate'
+            eyebrow: 'Moving',
+            title: 'Move with the right van',
+            subtitle: 'Choose van size and helper needs.',
+            icon: 'storefront-outline',
+            cta: 'Plan move',
+            tone: 'slate',
+            accentColor: '#0f172a'
         }
     ]);
 
