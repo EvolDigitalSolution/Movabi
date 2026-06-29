@@ -232,6 +232,18 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'payouts_enabled') THEN
             ALTER TABLE profiles ADD COLUMN payouts_enabled BOOLEAN DEFAULT FALSE;
         END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'movabi_pay_card_preference') THEN
+            ALTER TABLE profiles ADD COLUMN movabi_pay_card_preference TEXT DEFAULT 'virtual';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'movabi_pay_physical_card_status') THEN
+            ALTER TABLE profiles ADD COLUMN movabi_pay_physical_card_status TEXT DEFAULT 'not_requested';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'movabi_pay_physical_card_received_at') THEN
+            ALTER TABLE profiles ADD COLUMN movabi_pay_physical_card_received_at TIMESTAMPTZ;
+        END IF;
     END IF;
 END $$;
 

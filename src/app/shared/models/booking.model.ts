@@ -374,6 +374,9 @@ export interface Profile {
     testing_approval_override?: boolean | null;
     manual_verification_notes?: string | null;
     verified_at?: string | null;
+    movabi_pay_card_preference?: 'virtual' | 'posted' | null;
+    movabi_pay_physical_card_status?: 'not_requested' | 'requested' | 'posted' | 'received' | null;
+    movabi_pay_physical_card_received_at?: string | null;
 }
 
 export interface DriverAccount {

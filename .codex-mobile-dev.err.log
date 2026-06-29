@@ -564,3 +564,226 @@ websocket connection issues.
            ╵                                [32m~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected }[0m [1m[35m[plugin angular-css][0m
+
+    src/styles.css:564:0:
+[37m      564 │ [32m[37m}
+          ╵ [32m^[0m
+
+  The plugin "angular-css" was triggered by this import
+
+    angular:styles/global:styles:1:8:
+[37m      1 │ @import [32m'src/styles.css'[37m;
+        ╵         [32m~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found whitespace[0m [css-syntax-error]
+
+    src/styles.css:7356:15:
+[37m      7356 │   ion-content::[32m[37m part(scroll) {
+           ╵                [32m^[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mUnexpected "part("[0m [css-syntax-error]
+
+    src/styles.css:7356:16:
+[37m      7356 │   ion-content:: [32mpart([37mscroll) {
+           ╵                 [32m~~~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7261:89:
+[37m      7261 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7183:89:
+[37m      7183 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7261:89:
+[37m      7261 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7183:89:
+[37m      7183 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7119:89:
+[37m      7119 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7133:89:
+[37m      7133 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7133:89:
+[37m      7133 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7166:89:
+[37m      7166 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7166:89:
+[37m      7166 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7166:89:
+[37m      7166 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7173:89:
+[37m      7173 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7178:89:
+[37m      7178 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7182:89:
+[37m      7182 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7182:89:
+[37m      7182 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7182:89:
+[37m      7182 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7182:89:
+[37m      7182 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7182:89:
+[37m      7182 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7182:89:
+[37m      7182 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS4111: Property 'en' comes from an index signature, so it must be accessed with ['en'].[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/config/app-config.service.ts:275:57:
+[37m      275 │ ...urn this.phrases[language]?.[key] || this.phrases.[32men[37m[key] || key;
+          ╵                                                      [32m~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7185:89:
+[37m      7185 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS4111: Property 'en' comes from an index signature, so it must be accessed with ['en'].[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/config/app-config.service.ts:275:57:
+[37m      275 │ ...urn this.phrases[language]?.[key] || this.phrases.[32men[37m[key] || key;
+          ╵                                                      [32m~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7185:89:
+[37m      7185 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS4111: Property 'en' comes from an index signature, so it must be accessed with ['en'].[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/config/app-config.service.ts:275:57:
+[37m      275 │ ...urn this.phrases[language]?.[key] || this.phrases.[32men[37m[key] || key;
+          ╵                                                      [32m~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7190:89:
+[37m      7190 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS4111: Property 'en' comes from an index signature, so it must be accessed with ['en'].[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/config/app-config.service.ts:275:57:
+[37m      275 │ ...urn this.phrases[language]?.[key] || this.phrases.[32men[37m[key] || key;
+          ╵                                                      [32m~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7190:89:
+[37m      7190 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS4111: Property 'en' comes from an index signature, so it must be accessed with ['en'].[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/core/services/config/app-config.service.ts:275:57:
+[37m      275 │ ...urn this.phrases[language]?.[key] || this.phrases.[32men[37m[key] || key;
+          ╵                                                      [32m~~[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mExpected identifier but found "0\\\\"[0m [css-syntax-error]
+
+    src/styles.css:7190:89:
+[37m      7190 │ ...*="rounded-[1.75rem]"][class*="text-left"] .tracking-[[32m0\\[37m.2em] {
+           ╵                                                          [32m~~~[0m
+
+[39m[22m

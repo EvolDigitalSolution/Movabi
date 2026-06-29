@@ -157,6 +157,56 @@ export class AppConfigService {
     return this.systemConfig.getConfig<boolean>('vehicle_plate_lookup_enabled', false);
   });
 
+  public readonly selectedLanguage = computed(() => this.currentCountry().locale.split('-')[0] || 'en');
+
+  private readonly gbpRates: Record<string, number> = {
+    GBP: 1,
+    USD: 1.27,
+    EUR: 1.18,
+    NGN: 1900,
+    CAD: 1.73,
+    AUD: 1.94,
+    NZD: 2.1,
+    INR: 106,
+    AED: 4.66,
+    ZAR: 23,
+    KES: 164,
+    GHS: 20
+  };
+
+  private readonly phrases: Record<string, Record<string, string>> = {
+    en: {
+      country_updated: 'Country updated',
+      currency_preview: 'Currency preview',
+      language_preview: 'Language'
+    },
+    fr: {
+      country_updated: 'Pays mis à jour',
+      currency_preview: 'Aperçu de la devise',
+      language_preview: 'Langue'
+    },
+    de: {
+      country_updated: 'Land aktualisiert',
+      currency_preview: 'Währungsvorschau',
+      language_preview: 'Sprache'
+    },
+    es: {
+      country_updated: 'País actualizado',
+      currency_preview: 'Vista de moneda',
+      language_preview: 'Idioma'
+    },
+    it: {
+      country_updated: 'Paese aggiornato',
+      currency_preview: 'Anteprima valuta',
+      language_preview: 'Lingua'
+    },
+    pt: {
+      country_updated: 'País atualizado',
+      currency_preview: 'Prévia da moeda',
+      language_preview: 'Idioma'
+    }
+  };
+
   constructor() {
     this.refreshConfigs();
   }
@@ -208,6 +258,21 @@ export class AppConfigService {
     } catch {
       return `${this.currencySymbol}${numericAmount.toFixed(2)}`;
     }
+  }
+
+  convertAmount(amount: number, fromCurrency = 'GBP', toCurrency = this.currencyCode): number {
+    const sourceRate = this.gbpRates[String(fromCurrency || 'GBP').toUpperCase()] || 1;
+    const targetRate = this.gbpRates[String(toCurrency || this.currencyCode).toUpperCase()] || sourceRate;
+    return Number(((Number(amount || 0) / sourceRate) * targetRate).toFixed(2));
+  }
+
+  formatConvertedFromGbp(amount: number): string {
+    return this.formatCurrency(this.convertAmount(amount, 'GBP', this.currencyCode));
+  }
+
+  t(key: string): string {
+    const language = this.selectedLanguage();
+    return this.phrases[language]?.[key] || this.phrases['en'][key] || key;
   }
 
   private country(

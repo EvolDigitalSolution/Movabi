@@ -394,6 +394,13 @@ export class DriverService {
         }
 
         if (job.service_slug === 'errand' && job.errand_funding) {
+            if (
+                profile.movabi_pay_card_preference === 'posted' &&
+                profile.movabi_pay_physical_card_status !== 'received'
+            ) {
+                throw new Error('Your posted Movabi Pay card must be marked as received before accepting errand item-budget jobs. Switch to virtual card or confirm the card in Driver Settings.');
+            }
+
             const account = await this.fetchStripeAccount();
 
             const stripeReady =
@@ -557,13 +564,36 @@ export class DriverService {
                 throw new Error('Please wait for the customer to approve or reject your over-budget request before completing.');
             }
 
-            if (details?.actual_spending === undefined || details?.actual_spending === null) {
-                throw new Error('Please record the actual amount spent on items before completing.');
+           
+            //if (details?.estimated_budget > 0 && details?.actual_spending === null) {
+            //    throw new Error('Please record the actual amount spent on items before completing.');
+            //}
+
+            //if (details?.actual_spending > 0 && !details?.receipt_url) {
+            //    throw new Error('Please upload a receipt for the items purchased before completing.');
+            //}
+
+
+            const estimatedBudget = details?.estimated_budget ?? 0;
+            const actualSpending = details?.actual_spending;
+
+            // Shopping budget exists
+            if (estimatedBudget > 0) {
+                // Driver must record what was actually spent
+                if (actualSpending == null || actualSpending <= 0) {
+                    throw new Error(
+                        'Please enter the actual amount spent on the purchased items before completing this request.'
+                    );
+                }
+
+                // Receipt is mandatory whenever money was spent
+                if (!details?.receipt_url) {
+                    throw new Error(
+                        'Please upload the purchase receipt before completing this request.'
+                    );
+                }
             }
 
-            if (details?.actual_spending > 0 && !details?.receipt_url) {
-                throw new Error('Please upload a receipt for the items purchased before completing.');
-            }
         }
 
         const url = this.apiUrlService.getApiUrl('/api/logistics/complete');

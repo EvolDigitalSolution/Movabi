@@ -150,7 +150,7 @@ type PassedJob = {
     </ion-header>
 
     <ion-content class="bg-slate-50">
-      <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-20 overflow-x-hidden">
+      <div class="w-full max-w-xl mx-auto px-3 py-3 space-y-5 pb-20 overflow-x-hidden">
         @if (toastVisible()) {
           <div
             class="fixed top-5 left-4 right-4 z-[9999] max-w-xl mx-auto rounded-2xl px-5 py-4 shadow-2xl border text-sm font-bold"
@@ -171,7 +171,7 @@ type PassedJob = {
         @if (isUnderReview()) {
           <div class="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-xl shadow-slate-200/50 space-y-6">
             <div class="text-center space-y-4">
-              <div class="w-20 h-20 bg-amber-50 rounded-[1.75rem] flex items-center justify-center mx-auto border border-amber-100">
+              <div class="w-14 h-14 bg-amber-50 rounded-[1.75rem] flex items-center justify-center mx-auto border border-amber-100">
                 <ion-icon name="time-outline" class="text-4xl text-amber-600"></ion-icon>
               </div>
 
@@ -191,7 +191,7 @@ type PassedJob = {
         } @else if (isActionRequired()) {
           <div class="bg-white rounded-[2rem] p-6 border border-rose-100 shadow-xl shadow-rose-100/30 space-y-6">
             <div class="text-center space-y-4">
-              <div class="w-20 h-20 bg-rose-50 rounded-[1.75rem] flex items-center justify-center mx-auto border border-rose-100">
+              <div class="w-14 h-14 bg-rose-50 rounded-[1.75rem] flex items-center justify-center mx-auto border border-rose-100">
                 <ion-icon name="alert-circle-outline" class="text-4xl text-rose-600"></ion-icon>
               </div>
 
@@ -216,7 +216,7 @@ type PassedJob = {
           </div>
         } @else if (!isVerified()) {
           <div class="bg-white rounded-[2rem] p-7 border border-slate-100 shadow-xl shadow-slate-200/50 text-center space-y-6">
-            <div class="w-20 h-20 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto border border-blue-100">
+            <div class="w-14 h-14 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto border border-blue-100">
               <ion-icon name="person-add-outline" class="text-4xl text-blue-600"></ion-icon>
             </div>
 
@@ -270,39 +270,74 @@ type PassedJob = {
           }
 
           @if (activeJob()) {
-            <button
-              type="button"
-              (click)="resumeActiveJob()"
-              class="w-full text-left relative overflow-hidden rounded-[1.75rem] bg-white p-5 shadow-xl shadow-slate-900/10 border border-slate-200 active:scale-[0.99] transition-all"
-            >
-              <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
-              <div class="relative flex items-start justify-between gap-4">
-                <div class="flex items-start gap-4 min-w-0">
-                  <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                    <ion-icon name="navigate" class="text-2xl"></ion-icon>
-                  </div>
+          <button
+  type="button"
+  (click)="resumeActiveJob()"
+  class="w-full text-left relative overflow-hidden
+         rounded-[1.75rem]
+         bg-white
+         border border-slate-200
+         shadow-lg shadow-slate-200/40
+         px-5 py-5
+         active:scale-[0.99]
+         transition-all"
+>
+  <div class="absolute top-0 left-0 right-0 h-1.5 bg-amber-500"></div>
 
-                  <div class="min-w-0">
-                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
-                      Continue active request
-                    </p>
-                    <h3 class="font-display font-black text-slate-950 text-xl leading-tight">
-                      {{ activeJobTitle() }}
-                    </h3>
-                    <p class="text-sm text-slate-600 font-semibold mt-2 leading-snug line-clamp-2">
-                      {{ activeJobRouteLabel() }}
-                    </p>
-                  </div>
-                </div>
+  <div class="flex gap-4 items-start">
 
-                <div class="text-right shrink-0">
-                  <span class="inline-flex px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700">
-                    {{ activeJobStatusLabel() }}
-                  </span>
-                  <p class="text-amber-600 text-xs font-black mt-4">Resume</p>
-                </div>
-              </div>
-            </button>
+    <div class="w-12 h-12 rounded-2xl
+                bg-amber-50
+                border border-amber-100
+                flex items-center justify-center
+                shrink-0">
+      <ion-icon
+        name="navigate"
+        class="text-2xl text-amber-600">
+      </ion-icon>
+    </div>
+
+    <div class="flex-1 min-w-0 space-y-3">
+
+      <div>
+        <p class="text-[10px] uppercase tracking-[0.18em] font-black text-slate-500">
+          Continue Active Request
+        </p>
+
+        <div class="mt-2">
+          <span class="inline-flex
+                       px-3 py-1
+                       rounded-full
+                       border
+                       border-slate-200
+                       bg-slate-50
+                       text-[10px]
+                       font-bold
+                       uppercase
+                       tracking-wider">
+            {{ activeJobStatusLabel() }}
+          </span>
+        </div>
+      </div>
+
+      <h3 class="text-2xl font-display font-bold text-slate-900">
+        {{ activeJobTitle() }}
+      </h3>
+
+      <p class="text-base text-slate-600 leading-7 whitespace-normal break-words">
+        {{ activeJobRouteLabel() }}
+      </p>
+
+      <div class="pt-2">
+        <span class="text-lg font-bold text-slate-600">
+          Resume →
+        </span>
+      </div>
+
+    </div>
+
+  </div>
+</button>
           }
 
           <div class="relative overflow-hidden rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-900/10 border border-slate-200">
@@ -376,19 +411,19 @@ type PassedJob = {
 
               <div class="grid grid-cols-3 gap-2">
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Today</p>
+                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 whitespace-normal">Today</p>
                   <p class="text-lg font-display font-black text-slate-950">{{ todayMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ todayMetric().label }}</p>
                 </div>
 
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Acceptance</p>
+                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 whitespace-normal">Acceptance</p>
                   <p class="text-lg font-display font-black text-slate-950">{{ acceptanceMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ acceptanceMetric().label }}</p>
                 </div>
 
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 truncate">Rating</p>
+                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 whitespace-normal">Rating</p>
                   <p class="text-lg font-display font-black text-slate-950">{{ ratingMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ ratingMetric().label }}</p>
                 </div>
@@ -396,13 +431,13 @@ type PassedJob = {
             </div>
           </div>
 
-          <div class="space-y-4" data-section="available-requests">
-            <div class="flex items-center justify-between px-1 gap-3">
-              <div class="flex items-center gap-3 min-w-0">
+          <div class="space-y-3" data-section="available-requests">
+            <div class="flex flex-wrap items-center justify-between px-1 gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
                 <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20 shrink-0"></div>
-                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.18em] flex items-center min-w-0">
-                  <span class="truncate">Available Requests</span>
-                  <span class="ml-3 px-2.5 py-0.5 bg-blue-600 text-white rounded-full text-[10px] font-black">
+                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.12em] leading-snug flex flex-wrap items-center gap-2 min-w-0 whitespace-normal">
+                  <span>Available Requests</span>
+                  <span class="px-2.5 py-0.5 bg-blue-600 text-white rounded-full text-[10px] font-black shrink-0">
                     {{ jobs().length }}
                   </span>
                 </h3>
@@ -411,7 +446,7 @@ type PassedJob = {
               <button
                 type="button"
                 (click)="refreshAvailableJobs()"
-                class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-widest shadow-sm active:scale-95 transition-all"
+                class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-[0.12em] shadow-sm active:scale-95 transition-all shrink-0"
               >
                 Refresh
               </button>
@@ -444,14 +479,14 @@ type PassedJob = {
                 </div>
                 <div class="min-w-0">
                   <p class="text-sm font-black text-slate-900">No requests right now</p>
-                  <p class="text-xs font-semibold text-slate-500 truncate">New nearby requests will expand this section automatically.</p>
+                  <p class="text-xs font-semibold text-slate-500 leading-snug whitespace-normal">New nearby requests will expand this section automatically.</p>
                 </div>
               </div>
             } @else {
               <div class="space-y-5">
                 @for (job of jobs(); track job.id) {
                   <app-card [hoverable]="true" class="group overflow-hidden border-slate-100">
-                    <div class="flex justify-between items-start gap-4 mb-5">
+                    <div class="flex justify-between items-start gap-4 mb-3">
                       <div class="space-y-2 min-w-0">
                         <app-badge variant="primary">{{ getServiceName(job) }}</app-badge>
                         <div class="flex items-center gap-2 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
@@ -470,7 +505,7 @@ type PassedJob = {
                       </div>
                     </div>
 
-                    <div class="space-y-4 mb-5">
+                    <div class="space-y-4 mb-3">
                       <div class="rounded-2xl bg-amber-50 border border-amber-100 p-4">
                         <div class="flex items-start gap-3">
                           <div class="w-10 h-10 rounded-xl bg-white border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
@@ -504,7 +539,7 @@ type PassedJob = {
                       <div class="grid grid-cols-3 gap-2">
                         <div class="rounded-2xl bg-blue-50 border border-blue-100 p-3">
                           <p class="text-[8px] font-black text-blue-500 uppercase tracking-widest">Service</p>
-                          <p class="text-xs font-bold text-slate-900 mt-1 truncate">
+                          <p class="text-xs font-bold text-slate-900 mt-1 whitespace-normal leading-snug">
                             {{ getServiceName(job) }}
                           </p>
                         </div>
@@ -581,10 +616,10 @@ type PassedJob = {
                 ></div>
 
                 <div class="min-w-0">
-                  <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.18em]">
+                  <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.12em] leading-snug">
                     Payouts
                   </h3>
-                  <p class="text-[11px] text-slate-400 font-semibold mt-0.5 truncate">
+                  <p class="text-[11px] text-slate-400 font-semibold mt-0.5 whitespace-normal leading-snug">
                     {{ isPayoutPanelOpen() ? 'Stripe Connect' : getStripeCompactSummary() }}
                   </p>
                 </div>
@@ -640,9 +675,9 @@ type PassedJob = {
           </div>
 
           <div class="space-y-4">
-            <div class="flex items-center gap-3 ml-1">
+            <div class="flex items-center gap-2 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.18em]">Performance Metrics</h3>
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.12em] leading-snug">Performance Metrics</h3>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -652,7 +687,7 @@ type PassedJob = {
                     <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm shrink-0">
                       <ion-icon name="checkmark-done-outline"></ion-icon>
                     </div>
-                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Acceptance</span>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.12em] whitespace-normal leading-snug">Acceptance</span>
                   </div>
 
                   <app-badge [variant]="acceptanceBadgeVariant()">
@@ -670,7 +705,7 @@ type PassedJob = {
                     <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm shrink-0">
                       <ion-icon name="star-outline"></ion-icon>
                     </div>
-                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Rating</span>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.12em] whitespace-normal leading-snug">Rating</span>
                   </div>
 
                   <app-badge [variant]="ratingMetric().isNew ? 'secondary' : 'success'">
@@ -692,23 +727,23 @@ type PassedJob = {
           </div>
 
           <div class="space-y-4">
-            <div class="flex items-center gap-3 ml-1">
+            <div class="flex items-center gap-2 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.18em]">Quick Actions</h3>
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.12em] leading-snug">Quick Actions</h3>
             </div>
 
             <div class="grid grid-cols-1 min-[430px]:grid-cols-2 gap-3">
-              <button type="button" (click)="router.navigate(['/driver/earnings'])" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
-                <div class="w-20 h-20 bg-blue-50 rounded-[1.75rem] flex items-center justify-center text-blue-600 mb-5 border border-blue-100 shadow-lg shadow-blue-600/10">
-                  <ion-icon name="stats-chart" class="text-5xl"></ion-icon>
+              <button type="button" (click)="router.navigate(['/driver/earnings'])" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-14 h-14 bg-blue-50 rounded-[1.75rem] flex items-center justify-center text-blue-600 mb-3 border border-blue-100 shadow-lg shadow-blue-600/10">
+                  <ion-icon name="stats-chart" class="text-3xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Earnings</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">View income</p>
               </button>
 
-              <button type="button" (click)="router.navigate(['/driver/subscription'])" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
-                <div class="w-20 h-20 bg-amber-50 rounded-[1.75rem] flex items-center justify-center text-amber-600 mb-5 border border-amber-100 shadow-lg shadow-amber-500/10">
-                  <ion-icon name="star" class="text-5xl"></ion-icon>
+              <button type="button" (click)="router.navigate(['/driver/subscription'])" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-14 h-14 bg-amber-50 rounded-[1.75rem] flex items-center justify-center text-amber-600 mb-3 border border-amber-100 shadow-lg shadow-amber-500/10">
+                  <ion-icon name="star" class="text-3xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Subscription</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">
@@ -716,17 +751,17 @@ type PassedJob = {
                 </p>
               </button>
 
-              <button type="button" (click)="browseRequests()" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
-                <div class="w-20 h-20 bg-indigo-50 rounded-[1.75rem] flex items-center justify-center text-indigo-600 mb-5 border border-indigo-100 shadow-lg shadow-indigo-600/10">
-                  <ion-icon name="list-outline" class="text-5xl"></ion-icon>
+              <button type="button" (click)="browseRequests()" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-14 h-14 bg-indigo-50 rounded-[1.75rem] flex items-center justify-center text-indigo-600 mb-3 border border-indigo-100 shadow-lg shadow-indigo-600/10">
+                  <ion-icon name="list-outline" class="text-3xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Requests</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">Ride, errand & moving</p>
               </button>
 
-              <button type="button" (click)="setupPayouts()" class="relative min-h-[12rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
-                <div class="w-20 h-20 bg-emerald-50 rounded-[1.75rem] flex items-center justify-center text-emerald-600 mb-5 border border-emerald-100 shadow-lg shadow-emerald-600/10">
-                  <ion-icon name="card" class="text-5xl"></ion-icon>
+              <button type="button" (click)="setupPayouts()" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
+                <div class="w-14 h-14 bg-emerald-50 rounded-[1.75rem] flex items-center justify-center text-emerald-600 mb-3 border border-emerald-100 shadow-lg shadow-emerald-600/10">
+                  <ion-icon name="card" class="text-3xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Payouts</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">Stripe Connect</p>
@@ -1074,6 +1109,33 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const destination = job.dropoff_address || this.requestDestinationUnavailableLabel(job);
 
         return `${this.requestOriginLabel(job)}: ${origin} -> ${this.requestDestinationLabel(job)}: ${destination}`;
+    }
+
+    activeJobShortRouteLabel(): string {
+        const job = this.activeJob();
+        if (!job) return 'Tap to continue the request.';
+
+        const origin = this.compactAddress(job.pickup_address || this.requestOriginUnavailableLabel(job));
+        const destination = this.compactAddress(job.dropoff_address || this.requestDestinationUnavailableLabel(job));
+
+        return `${this.requestOriginLabel(job)}: ${origin} → ${this.requestDestinationLabel(job)}: ${destination}`;
+    }
+
+    private compactAddress(address: string | null | undefined): string {
+        const value = String(address || '').trim();
+
+        if (!value) return 'Location unavailable';
+
+        const parts = value
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean);
+
+        if (parts.length >= 2) {
+            return `${parts[0]}, ${parts[1]}`;
+        }
+
+        return value.length > 46 ? `${value.slice(0, 43)}...` : value;
     }
 
     getRequestFare(job: Booking): number {

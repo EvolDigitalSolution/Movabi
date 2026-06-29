@@ -110,8 +110,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center justify-between gap-3">
                         <div class="min-w-0">
-                          <h2 class="text-sm font-display font-black text-slate-950 leading-tight">Finding your driver</h2>
-                          <p class="text-[11px] text-slate-500 font-semibold leading-snug">Contacting nearby drivers</p>
+                          <h2 class="text-sm font-display font-black text-slate-950 leading-tight">Finding driver</h2>
+                          <p class="text-[11px] text-slate-500 font-semibold leading-snug">Nearby drivers contacted</p>
                         </div>
                         <span class="text-sm font-display font-black text-blue-700 shrink-0">
                           {{ searchCountdownLabel() }}
@@ -158,7 +158,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
           </div>
 
           <div
-            class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
+            class="bg-white rounded-t-[1.75rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
             [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[34vh]'"
             (focusin)="detailsExpanded.set(true)"
             (touchstart)="startDetailsDrag($event)"
@@ -178,15 +178,15 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               <span class="w-12 h-1 bg-slate-200 rounded-full"></span>
             </button>
 
-            <div class="p-5 rounded-[2rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
+            <div class="p-4 rounded-[1.5rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
               <div class="flex justify-between items-start gap-4">
                 <div class="min-w-0">
                   <app-badge [variant]="getStatusVariant(booking()?.status || '')" class="mb-3">
                     {{ getStatusLabel(booking()?.status || '') }}
                   </app-badge>
 
-                  <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight">
-                    Booking Details
+                  <h2 class="text-xl font-display font-bold text-slate-900 tracking-tight">
+                    Details
                   </h2>
 
                   <p class="text-xs font-semibold text-slate-500 mt-1">
@@ -205,7 +205,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </div>
 
                 <div class="text-right shrink-0">
-                  <p class="text-3xl font-display font-bold text-slate-900">
+                  <p class="text-2xl font-display font-bold text-slate-900">
                     {{ getDisplayedTotal() }}
                   </p>
                   <p class="text-[11px] font-semibold text-emerald-700 mt-1">
@@ -219,7 +219,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="timer-outline" class="text-blue-600"></ion-icon>
-                      <p class="text-xs font-semibold text-blue-700">Time left</p>
+                      <p class="text-xs font-semibold text-blue-700">Time</p>
                     </div>
                     <p class="text-lg font-display font-bold text-slate-900">
                       {{ searchCountdownLabel() }}
@@ -229,15 +229,15 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="refresh-outline" class="text-slate-500"></ion-icon>
-                      <p class="text-xs font-semibold text-slate-500">Search status</p>
+                      <p class="text-xs font-semibold text-slate-500">Search</p>
                     </div>
-                    <p class="text-sm font-bold text-slate-900">Looking nearby</p>
+                    <p class="text-sm font-bold text-slate-900">Looking</p>
                   </div>
                 </div>
               }
             </div>
 
-            <div class="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+            <div class="p-4 rounded-[1.5rem] border border-slate-100 bg-white shadow-sm space-y-4">
               <div class="flex items-start gap-3">
                 <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
                   <ion-icon [name]="serviceGuideIcon()" class="text-xl"></ion-icon>
@@ -247,10 +247,10 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">
                     {{ serviceGuideEyebrow() }}
                   </p>
-                  <h3 class="mt-1 text-lg font-display font-black text-slate-950">
+                  <h3 class="mt-1 text-base font-display font-black text-slate-950">
                     {{ serviceGuideTitle() }}
                   </h3>
-                  <p class="mt-2 text-sm font-semibold text-slate-600 leading-relaxed">
+                  <p class="mt-1 text-xs font-semibold text-slate-600 leading-snug">
                     {{ serviceGuideMessage() }}
                   </p>
                 </div>
@@ -279,8 +279,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                       <ion-icon [name]="step.icon"></ion-icon>
                     </div>
                     <div class="min-w-0">
-                      <p class="text-sm font-black text-slate-950 leading-snug break-words">{{ step.title }}</p>
-                      <p class="text-xs font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
+                      <p class="text-xs font-black text-slate-950 leading-snug break-words">{{ step.title }}</p>
+                      <p class="text-[11px] font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
                     </div>
                   </div>
                 }
@@ -288,7 +288,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
             </div>
 
             @if (showPaymentProtectionPanel()) {
-              <div class="p-5 rounded-[2rem] border border-amber-100 bg-amber-50 space-y-4">
+              <div class="p-4 rounded-[1.5rem] border border-amber-100 bg-amber-50 space-y-4">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon [name]="paymentProtectionIcon()" class="text-xl"></ion-icon>
@@ -296,12 +296,12 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
                   <div class="min-w-0">
                     <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">
-                      Movabi payment protection
+                      Payment protection
                     </p>
-                    <h3 class="mt-1 text-lg font-display font-black text-slate-950">
+                    <h3 class="mt-1 text-base font-display font-black text-slate-950">
                       {{ paymentProtectionTitle() }}
                     </h3>
-                    <p class="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                    <p class="mt-1 text-xs font-semibold text-slate-700 leading-snug">
                       {{ paymentProtectionMessage() }}
                     </p>
                   </div>
@@ -309,11 +309,11 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
                 <div class="rounded-2xl bg-white/85 border border-amber-100 p-3 space-y-2 text-sm font-bold text-slate-700">
                   <div class="flex items-center justify-between gap-3">
-                    <span>Reserved amount</span>
+                    <span>Reserved</span>
                     <span class="text-slate-950">{{ getDisplayedTotal() }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
-                    <span>Where it returns</span>
+                    <span>Returns to</span>
                     <span class="text-right text-slate-950">{{ paymentProtectionDestination() }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
@@ -325,7 +325,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
             }
 
             @if (showCompletionPinPanel()) {
-              <div class="p-5 rounded-[2rem] border border-emerald-100 bg-emerald-50 space-y-4">
+              <div class="p-4 rounded-[1.5rem] border border-emerald-100 bg-emerald-50 space-y-4">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon name="shield-checkmark-outline" class="text-xl"></ion-icon>
@@ -333,18 +333,18 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
                   <div class="min-w-0 flex-1">
                     <p class="text-[10px] font-black uppercase tracking-widest text-emerald-700">
-                      Customer handover PIN
+                      Handover PIN
                     </p>
                     <div class="mt-2 flex items-center justify-between gap-3">
                       <h3 class="text-lg font-display font-black text-slate-950">
-                        Share when complete
+                        Complete with PIN
                       </h3>
                       <div class="px-4 py-2 rounded-2xl bg-white text-2xl font-display font-black tracking-[0.35em] text-slate-950 border border-emerald-100">
                         {{ completionPinForCustomer() }}
                       </div>
                     </div>
-                    <p class="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
-                      Give this PIN to your driver only when your {{ servicePaymentName() }} is finished and you are happy for Movabi to complete payment.
+                    <p class="mt-1 text-xs font-semibold text-slate-700 leading-snug">
+                      Share this PIN only when the service is finished.
                     </p>
                   </div>
                 </div>
@@ -409,7 +409,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     @if (getOverBudgetReason()) {
                       <div class="p-3 bg-white rounded-xl border border-rose-100">
                         <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                          Driver message
+                          Driver note
                         </p>
                         <p class="text-sm font-semibold text-slate-800 leading-relaxed">
                           {{ getOverBudgetReason() }}
@@ -420,7 +420,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     @if (getExtraBudgetShortfall() > 0) {
                       <div class="p-3 bg-amber-50 rounded-xl border border-amber-200">
                         <p class="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">
-                          Wallet top-up needed
+                          Top-up needed
                         </p>
                         <p class="text-sm font-semibold text-slate-700 leading-snug">
                           Add {{ config.formatCurrency(getExtraBudgetShortfall()) }} to approve this extra budget.
@@ -504,7 +504,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               }
             }
 
-            <div class="p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
+            <div class="p-4 bg-slate-50 rounded-[1.5rem] border border-slate-100">
               <div class="flex items-center gap-2 mb-5">
                 <div class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                   <ion-icon name="navigate" class="text-xl"></ion-icon>
@@ -547,8 +547,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <ion-icon name="sparkles-outline" class="text-xl"></ion-icon>
                   </div>
                   <div>
-                    <h3 class="text-base font-display font-bold text-slate-900">Service Details</h3>
-                    <p class="text-xs font-semibold text-slate-500">Extra information</p>
+                    <h3 class="text-base font-display font-bold text-slate-900">Details</h3>
+                    <p class="text-xs font-semibold text-slate-500">More info</p>
                   </div>
                 </div>
 
@@ -575,7 +575,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
                   <div class="p-4 bg-slate-50 rounded-[2rem] border border-slate-100 mt-4">
                     <div class="flex justify-between items-center mb-4 gap-3">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items Requested</p>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items</p>
 
                       @if (details()?.['actual_spending']) {
                         <app-badge variant="success">
@@ -592,7 +592,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
                     <div class="mt-6 pt-6 border-t border-slate-200/50 space-y-4">
                       <div class="flex justify-between items-center">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Initial Budget</span>
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Budget</span>
                         <span class="text-xl font-display font-bold text-emerald-600">
                           {{ config.formatCurrency($any(details()?.['estimated_budget']) || 0) }}
                         </span>
@@ -632,21 +632,21 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               <ion-spinner name="crescent" color="primary"></ion-spinner>
             </div>
             <div class="space-y-2">
-              <h3 class="text-xl font-display font-bold text-slate-900">Loading details</h3>
-              <p class="text-slate-500 font-medium">Retrieving your journey information...</p>
+              <h3 class="text-xl font-display font-bold text-slate-900">Loading</h3>
+              <p class="text-slate-500 font-medium">Loading request...</p>
             </div>
           } @else {
             <div class="w-24 h-24 bg-red-50 rounded-[2.5rem] flex items-center justify-center text-red-500 border border-red-100 mb-4">
               <ion-icon name="alert-circle-outline" class="text-5xl"></ion-icon>
             </div>
             <div class="space-y-3">
-              <h3 class="text-2xl font-display font-bold text-slate-900">Booking Not Found</h3>
+              <h3 class="text-2xl font-display font-bold text-slate-900">Not Found</h3>
               <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                We couldn't find this booking. It may have been completed or cancelled.
+                This booking may be completed or cancelled.
               </p>
             </div>
             <app-button variant="secondary" size="lg" (clicked)="router.navigate(['/customer'])" class="w-full">
-              Back to Home
+              Back Home
             </app-button>
           }
         </div>
@@ -883,65 +883,65 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             const errandMap: Record<string, string> = this.isShoppingErrand()
                 ? {
-                    searching: 'Finding errand driver',
-                    accepted: 'Driver assigned',
-                    assigned: 'Driver assigned',
-                    heading_to_pickup: 'Heading to store',
-                    arrived: 'Driver arrived',
-                    arrived_at_store: 'At the store',
-                    shopping_in_progress: 'Shopping now',
-                    collected: 'Items collected',
-                    en_route_to_customer: 'Delivering to you',
+                    searching: 'Finding driver',
+                    accepted: 'Assigned',
+                    assigned: 'Assigned',
+                    heading_to_pickup: 'To store',
+                    arrived: 'Arrived',
+                    arrived_at_store: 'At store',
+                    shopping_in_progress: 'Shopping',
+                    collected: 'Collected',
+                    en_route_to_customer: 'On the way',
                     delivered: 'Delivered',
-                    completed: 'Errand complete',
-                    settled: 'Errand settled',
-                    over_budget_requested: 'Budget approval needed',
-                    cancelled: 'Errand cancelled',
-                    canceled: 'Errand cancelled',
-                    no_driver_found: 'No driver found',
-                    requires_review: 'Movabi review'
+                    completed: 'Complete',
+                    settled: 'Settled',
+                    over_budget_requested: 'Budget needed',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
+                    no_driver_found: 'No driver',
+                    requires_review: 'Review'
                 }
                 : {
-                    searching: 'Finding errand driver',
-                    accepted: 'Driver assigned',
-                    assigned: 'Driver assigned',
-                    heading_to_pickup: 'Heading to collection',
-                    arrived: 'Driver arrived',
-                    arrived_at_store: 'At collection point',
-                    shopping_in_progress: 'Collecting item',
-                    collected: 'Item collected',
-                    en_route_to_customer: 'Returning to you',
+                    searching: 'Finding driver',
+                    accepted: 'Assigned',
+                    assigned: 'Assigned',
+                    heading_to_pickup: 'To collection',
+                    arrived: 'Arrived',
+                    arrived_at_store: 'At pickup',
+                    shopping_in_progress: 'Collecting',
+                    collected: 'Collected',
+                    en_route_to_customer: 'On the way',
                     delivered: 'Delivered',
-                    completed: 'Errand complete',
-                    settled: 'Errand settled',
-                    over_budget_requested: 'Budget approval needed',
-                    cancelled: 'Errand cancelled',
-                    canceled: 'Errand cancelled',
-                    no_driver_found: 'No driver found',
-                    requires_review: 'Movabi review'
+                    completed: 'Complete',
+                    settled: 'Settled',
+                    over_budget_requested: 'Budget needed',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
+                    no_driver_found: 'No driver',
+                    requires_review: 'Review'
                 };
 
             if (errandMap[status]) return errandMap[status];
         }
 
         const map: Record<string, string> = {
-            searching: 'Searching for driver',
-            accepted: 'Driver assigned',
-            assigned: 'Driver assigned',
-            heading_to_pickup: 'Heading to pickup',
-            arrived: 'Driver arrived',
-            in_progress: 'Trip in progress',
-            arrived_at_store: 'Driver at store',
-            shopping_in_progress: 'Shopping in progress',
-            collected: 'Items collected',
+            searching: 'Searching',
+            accepted: 'Assigned',
+            assigned: 'Assigned',
+            heading_to_pickup: 'To pickup',
+            arrived: 'Arrived',
+            in_progress: 'In progress',
+            arrived_at_store: 'At store',
+            shopping_in_progress: 'Shopping',
+            collected: 'Collected',
             en_route_to_customer: 'On the way',
             delivered: 'Delivered',
             completed: 'Completed',
             settled: 'Settled',
             cancelled: 'Cancelled',
             canceled: 'Cancelled',
-            no_driver_found: 'No driver found',
-            requires_review: 'Movabi review'
+            no_driver_found: 'No driver',
+            requires_review: 'Review'
         };
 
         return map[status] ?? status.replace(/_/g, ' ');
@@ -951,68 +951,68 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             const errandMap: Record<string, string> = this.isShoppingErrand()
                 ? {
-                    searching: 'Matching someone to shop and deliver',
-                    accepted: 'Driver is heading to the store',
-                    assigned: 'Driver is heading to the store',
-                    heading_to_pickup: 'Driver is going to the store',
-                    arrived: 'Driver reached the store area',
-                    arrived_at_store: 'Driver is ready to shop',
-                    shopping_in_progress: 'Driver is shopping for your items',
-                    collected: 'Items are collected and ready for delivery',
-                    en_route_to_customer: 'Driver is bringing your items',
+                    searching: 'Finding a shopper.',
+                    accepted: 'Driver is going to the store..',
+                    assigned: 'Driver is going to the store..',
+                    heading_to_pickup: 'Driver is going to the store.',
+                    arrived: 'Driver is at the store.',
+                    arrived_at_store: 'Driver is ready to shop.',
+                    shopping_in_progress: 'Shopping in progress.',
+                    collected: 'Items collected.',
+                    en_route_to_customer: 'Driver is on the way..',
                     delivered: 'Items have been delivered',
                     completed: 'Errand is complete',
                     settled: 'Wallet funds have been settled',
-                    over_budget_requested: 'Driver needs approval for extra item budget',
-                    cancelled: 'Errand cancelled',
-                    canceled: 'Errand cancelled',
+                    over_budget_requested: 'Extra budget needed.',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
                     no_driver_found: 'No available errand driver',
-                    requires_review: 'We are checking this errand and payment'
+                    requires_review: 'Under review.'
                 }
                 : {
-                    searching: 'Matching someone to collect and deliver',
-                    accepted: 'Driver is heading to the collection point',
-                    assigned: 'Driver is heading to the collection point',
-                    heading_to_pickup: 'Driver is going to collect your item',
-                    arrived: 'Driver reached the collection area',
-                    arrived_at_store: 'Driver is collecting the item or documents',
-                    shopping_in_progress: 'Driver is confirming collection',
-                    collected: 'Item is collected and ready for delivery',
-                    en_route_to_customer: 'Driver is bringing it to you',
+                    searching: 'Finding a driver.',
+                    accepted: 'Driver is going to collect.',
+                    assigned: 'Driver is going to collect.',
+                    heading_to_pickup: 'Driver is going to collect.',
+                    arrived: 'Driver is at pickup.',
+                    arrived_at_store: 'Driver is collecting.',
+                    shopping_in_progress: 'Collection in progress.',
+                    collected: 'Item collected.',
+                    en_route_to_customer: 'Driver is on the way..',
                     delivered: 'Item has been delivered',
                     completed: 'Errand is complete',
                     settled: 'Payment has been settled',
                     over_budget_requested: 'Driver needs your approval before continuing',
-                    cancelled: 'Errand cancelled',
-                    canceled: 'Errand cancelled',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
                     no_driver_found: 'No available errand driver',
-                    requires_review: 'We are checking this errand and payment'
+                    requires_review: 'Under review.'
                 };
 
             if (errandMap[status]) return errandMap[status];
         }
 
         const map: Record<string, string> = {
-            searching: 'Matching nearby drivers',
-            accepted: 'Driver is coming',
-            assigned: 'Driver is coming',
-            heading_to_pickup: 'Driver is on the way',
-            arrived: 'Driver reached pickup',
-            in_progress: 'Journey in progress',
-            arrived_at_store: 'Driver reached the store',
-            shopping_in_progress: 'Driver is shopping',
+            searching: 'Finding nearby drivers.',
+            accepted: 'Driver is coming.',
+            assigned: 'Driver is coming.',
+            heading_to_pickup: 'Driver is on the way.',
+            arrived: 'Driver arrived.',
+            in_progress: 'In progress.',
+            arrived_at_store: 'Driver at store.',
+            shopping_in_progress: 'Shopping.',
             collected: 'Items have been collected',
-            en_route_to_customer: 'Driver is on the way',
-            delivered: 'Delivery completed',
-            completed: 'Trip completed',
-            settled: 'Payment settled',
-            cancelled: 'Booking cancelled',
-            canceled: 'Booking cancelled',
-            no_driver_found: 'No available driver',
-            requires_review: 'We are checking this booking and payment'
+            en_route_to_customer: 'Driver is on the way.',
+            delivered: 'Delivered.',
+            completed: 'Completed.',
+            settled: 'Settled.',
+            cancelled: 'Cancelled.',
+            canceled: 'Cancelled.',
+            no_driver_found: 'No driver available.',
+            requires_review: 'Under review.'
         };
 
-        return map[status] ?? 'Live updates available';
+        return map[status] ?? 'Live updates.';
     }
 
     trackingTitle(): string {
@@ -1031,26 +1031,26 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     routeCardTitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand Route';
+                return 'Route';
             case ServiceTypeEnum.DELIVERY:
-                return 'Delivery Route';
+                return 'Route';
             case ServiceTypeEnum.VAN:
-                return 'Move Route';
+                return 'Route';
             default:
-                return 'Trip Route';
+                return 'Route';
         }
     }
 
     routeCardSubtitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return this.isShoppingErrand() ? 'Store, shopping, and delivery' : 'Collection point and delivery';
+                return this.isShoppingErrand() ? 'Store to delivery' : 'Collection to delivery';
             case ServiceTypeEnum.DELIVERY:
-                return 'Collection and recipient details';
+                return 'Collection to recipient';
             case ServiceTypeEnum.VAN:
-                return 'Moving journey details';
+                return 'Move route';
             default:
-                return 'Live journey details';
+                return 'Route details';
         }
     }
 
@@ -1070,13 +1070,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     serviceGuideEyebrow(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand journey';
+                return 'Errand';
             case ServiceTypeEnum.DELIVERY:
-                return 'Package journey';
+                return 'Delivery';
             case ServiceTypeEnum.VAN:
-                return 'Move journey';
+                return 'Move';
             default:
-                return 'Ride journey';
+                return 'Ride';
         }
     }
 
@@ -1084,14 +1084,14 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
                 return this.isShoppingErrand()
-                    ? 'Your shopper is managed step by step'
-                    : 'Your collection errand is managed step by step';
+                    ? 'Shop & deliver'
+                    : 'Collect & deliver';
             case ServiceTypeEnum.DELIVERY:
-                return 'Collection and delivery are tracked separately';
+                return 'Tracked delivery';
             case ServiceTypeEnum.VAN:
-                return 'Your move is guided from loading to drop-off';
+                return 'Move tracking';
             default:
-                return 'Your driver is matched and tracked';
+                return 'Live tracking';
         }
     }
 
@@ -1099,28 +1099,28 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const status = String(this.booking()?.status || '');
 
         if (status === 'no_driver_found') {
-            return 'No driver accepted in this search window. Any reserved payment is protected and released according to the payment method shown below.';
+            return 'No driver accepted. Any reserved payment is protected.';
         }
 
         if (status === 'cancelled' || status === 'canceled') {
-            return 'This booking is cancelled. Movabi keeps the payment record visible so you can see where any reserved funds return.';
+            return 'Booking cancelled. Reserved funds are shown below.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             return this.isShoppingErrand()
-                ? 'Movabi separates the service fee from the item budget. The driver records spending and uploads a receipt before the errand is completed.'
-                : 'The driver collects from the pickup location and delivers back to you. No shopping budget, spend record, or receipt is needed for this errand type.';
+                ? 'Item budget is separate. Driver records spend and uploads receipt.'
+                : 'Driver collects and delivers. No shopping receipt needed.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
-            return 'You can follow collection, courier movement, and recipient delivery without reading it like a normal ride.';
+            return 'Track collection, courier movement, and delivery.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.VAN) {
-            return 'The driver follows a move flow: arrive, load, travel, unload, and complete when the move is finished.';
+            return 'Track arrival, loading, travel, unloading, and completion.';
         }
 
-        return 'You can see when the driver is assigned, travelling to pickup, and when the journey is in progress.';
+        return 'See assignment, pickup, and trip progress.';
     }
 
     serviceProgressSteps(): Array<{ title: string; description: string; icon: string; state: 'done' | 'active' | 'pending' }> {
@@ -1133,25 +1133,25 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 return [
                     {
                         title: 'Match errand driver',
-                        description: 'A nearby eligible driver accepts the collection task.',
+                        description: 'Driver accepts the job.',
                         icon: 'search-outline',
                         state: done(['searching', 'accepted', 'assigned'])
                     },
                     {
                         title: 'Collect item',
-                        description: 'Driver goes to the pickup point and confirms collection.',
+                        description: 'Driver collects the item.',
                         icon: 'cube-outline',
                         state: done(['heading_to_pickup', 'arrived', 'arrived_at_store', 'collected'])
                     },
                     {
                         title: 'Deliver to you',
-                        description: 'Follow live updates while the item is returned or delivered.',
+                        description: 'Track the delivery.',
                         icon: 'navigate-outline',
                         state: done(['en_route_to_customer', 'delivered'])
                     },
                     {
                         title: 'Complete safely',
-                        description: 'The errand completes after delivery is confirmed.',
+                        description: 'Complete after handover.',
                         icon: 'shield-checkmark-outline',
                         state: this.isTerminalTrackingStatus(status) ? 'active' : 'pending'
                     }
@@ -1161,25 +1161,25 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             return [
                 {
                     title: 'Match errand driver',
-                    description: 'A nearby eligible driver accepts the shop and delivery.',
+                    description: 'Driver accepts the shop.',
                     icon: 'search-outline',
                     state: done(['searching', 'accepted', 'assigned'])
                 },
                 {
                     title: 'Shop items',
-                    description: 'Driver uses the approved item budget and records spending.',
+                    description: 'Driver shops and records spend.',
                     icon: 'basket-outline',
                     state: done(['heading_to_pickup', 'arrived', 'arrived_at_store', 'shopping_in_progress'])
                 },
                 {
                     title: 'Deliver to you',
-                    description: 'Receipt and live delivery updates are shown here.',
+                    description: 'Receipt and delivery updates show here.',
                     icon: 'navigate-outline',
                     state: done(['collected', 'en_route_to_customer', 'delivered'])
                 },
                 {
                     title: 'Settle safely',
-                    description: 'Unused item budget returns to the wallet or original payment route.',
+                    description: 'Unused budget is returned.',
                     icon: 'shield-checkmark-outline',
                     state: this.isTerminalTrackingStatus(status) ? 'active' : 'pending'
                 }
@@ -1188,24 +1188,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (service === ServiceTypeEnum.DELIVERY) {
             return [
-                { title: 'Assign courier', description: 'A compatible driver accepts the package request.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
-                { title: 'Collect package', description: 'The courier confirms collection before travelling.', icon: 'cube-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
-                { title: 'Deliver package', description: 'Recipient delivery is tracked to completion.', icon: 'location-outline', state: done(['en_route_to_customer', 'delivered', 'completed']) }
+                { title: 'Assign courier', description: 'Courier accepts the request.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+                { title: 'Collect package', description: 'Courier confirms collection.', icon: 'cube-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
+                { title: 'Deliver package', description: 'Track to delivery.', icon: 'location-outline', state: done(['en_route_to_customer', 'delivered', 'completed']) }
             ];
         }
 
         if (service === ServiceTypeEnum.VAN) {
             return [
-                { title: 'Assign vehicle', description: 'A driver with the correct vehicle class accepts the move.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
-                { title: 'Load at pickup', description: 'Driver arrives and starts the move once ready.', icon: 'archive-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
-                { title: 'Unload and finish', description: 'The move completes only after work is confirmed.', icon: 'checkmark-circle-outline', state: done(['delivered', 'completed', 'settled']) }
+                { title: 'Assign vehicle', description: 'Correct vehicle accepts the move.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+                { title: 'Load at pickup', description: 'Driver arrives and loads.', icon: 'archive-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
+                { title: 'Unload and finish', description: 'Complete after unload.', icon: 'checkmark-circle-outline', state: done(['delivered', 'completed', 'settled']) }
             ];
         }
 
         return [
-            { title: 'Match driver', description: 'A nearby driver accepts your ride.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
-            { title: 'Pickup', description: 'Track the driver as they come to you.', icon: 'car-sport-outline', state: done(['heading_to_pickup', 'arrived']) },
-            { title: 'Ride and complete', description: 'Follow the trip until drop-off is confirmed.', icon: 'flag-outline', state: done(['in_progress', 'completed', 'settled']) }
+            { title: 'Match driver', description: 'Driver accepts your ride.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+            { title: 'Pickup', description: 'Track pickup.', icon: 'car-sport-outline', state: done(['heading_to_pickup', 'arrived']) },
+            { title: 'Ride and complete', description: 'Track to drop-off.', icon: 'flag-outline', state: done(['in_progress', 'completed', 'settled']) }
         ];
     }
 
@@ -1408,7 +1408,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     paymentProtectionDestination(): string {
-        if (this.paymentNeedsReview()) return 'Movabi review';
+        if (this.paymentNeedsReview()) return 'Review';
         return this.paidByWallet() ? 'Movabi wallet' : 'Original payment card';
     }
 
@@ -1628,7 +1628,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }, 1000);
     }
 
-  
+
 
     private updateSearchCountdownFromBooking(): void {
         const b: any = this.booking();
@@ -2050,7 +2050,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (eta !== null) {
             if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                if (this.isShoppingErrand() && ['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping now';
+                if (this.isShoppingErrand() && ['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping';
                 if (['collected', 'en_route_to_customer'].includes(status)) return `${this.formatDuration(eta)} to delivery`;
                 return `${this.formatDuration(eta)} to ${this.isShoppingErrand() ? 'store' : 'collection point'}`;
             }
@@ -2326,7 +2326,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private async showWalletShortfallAlert(shortfall: number): Promise<void> {
         const alert = await this.alertCtrl.create({
-            header: 'Wallet top-up needed',
+            header: 'Top-up needed',
             message: `Add ${this.config.formatCurrency(shortfall)} to your wallet before approving this extra budget.`,
             buttons: [
                 { text: 'Not now', role: 'cancel' },

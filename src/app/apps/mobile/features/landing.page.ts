@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { IonButton, IonContent, IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
@@ -227,6 +227,7 @@ import { AuthService } from '@core/services/auth/auth.service';
       font-size: 3rem;
       transform: translate(-50%, -50%);
       border: 1px solid rgba(255, 255, 255, 0.24);
+      animation: car-float 3.2s ease-in-out infinite;
     }
 
     .pin {
@@ -241,6 +242,11 @@ import { AuthService } from '@core/services/auth/auth.service';
     .pin-a { left: 18%; bottom: 22%; }
     .pin-b { right: 18%; top: 24%; background: #f97316; box-shadow: 0 0 0 0.55rem rgba(249, 115, 22, 0.18); }
 
+    @keyframes car-float {
+      0%, 100% { transform: translate(-50%, -50%) rotate(-2deg); }
+      50% { transform: translate(-50%, -56%) rotate(2deg); }
+    }
+
     .eyebrow {
       margin: 0 0 0.7rem;
       color: #c2410c;
@@ -253,8 +259,8 @@ import { AuthService } from '@core/services/auth/auth.service';
     h1 {
       margin: 0;
       color: #0f172a;
-      font-size: clamp(2.2rem, 12vw, 4.4rem);
-      line-height: 0.95;
+      font-size: clamp(1.9rem, 9vw, 3rem);
+      line-height: 1.02;
       letter-spacing: 0;
     }
 
@@ -429,26 +435,27 @@ import { AuthService } from '@core/services/auth/auth.service';
     }
   `]
 })
-export class LandingPage implements OnInit {
+export class LandingPage implements OnDestroy, OnInit {
   private auth = inject(AuthService);
   private router = inject(Router);
+  private carouselTimer?: ReturnType<typeof setInterval>;
 
   activeSlide = signal(0);
 
   slides = [
     {
       eyebrow: 'Cheaper local movement',
-      title: 'Move, shop and deliver without the usual stress.',
+      title: 'Move, shop and deliver with clear pricing.',
       copy: 'Movabi brings rides, errands, package delivery and moving help into one simple app with clear pricing.'
     },
     {
       eyebrow: 'Track every step',
-      title: 'Know what is happening from request to finish.',
+      title: 'Track every step from request to finish.',
       copy: 'Customers see live progress, driver details and payment protection. Drivers get guided steps for each service.'
     },
     {
       eyebrow: 'Built for drivers too',
-      title: 'Earn from the vehicle you already use.',
+      title: 'Earn with the vehicle you already use.',
       copy: 'Bike, car, XL and van drivers receive matching jobs, navigation, chat, wallet tools and Stripe payouts.'
     }
   ];
@@ -491,7 +498,14 @@ export class LandingPage implements OnInit {
 
     if (this.isReturningUser()) {
       await this.router.navigateByUrl('/auth/login', { replaceUrl: true });
+      return;
     }
+
+    this.carouselTimer = setInterval(() => this.nextSlide(), 4200);
+  }
+
+  ngOnDestroy(): void {
+    if (this.carouselTimer) clearInterval(this.carouselTimer);
   }
 
   nextSlide(): void {

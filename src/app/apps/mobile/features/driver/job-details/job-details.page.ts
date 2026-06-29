@@ -1678,13 +1678,17 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         if (currentJob.service_slug === ServiceTypeEnum.ERRAND && this.isShoppingErrand()) {
             const errandDetails = this.details() as ErrandDetails | null;
+            const estimatedBudget = Number(errandDetails?.estimated_budget ?? 0);
+            const actualSpending = Number(errandDetails?.actual_spending ?? 0);
 
-            if (!errandDetails?.actual_spending || errandDetails.actual_spending <= 0) {
-                await this.showToast('Please record the actual spending before completing.', 'warning');
+            // If this errand had an item/shopping budget, the driver must enter actual spend.
+            if (estimatedBudget > 0 && actualSpending <= 0) {
+                await this.showToast('Please enter the actual amount spent before completing.', 'warning');
                 return;
             }
 
-            if (errandDetails.actual_spending > 0 && !errandDetails.receipt_url) {
+            // If money was spent from the customer budget, a receipt is mandatory.
+            if (estimatedBudget > 0 && actualSpending > 0 && !errandDetails?.receipt_url) {
                 await this.showToast('Please upload a receipt before completing this errand.', 'warning');
                 return;
             }
