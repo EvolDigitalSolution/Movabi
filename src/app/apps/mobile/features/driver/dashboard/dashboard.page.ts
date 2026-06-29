@@ -53,7 +53,9 @@ import {
     BadgeComponent,
     RatingComponent,
     EmptyStateComponent,
-    PerformanceBadgeComponent
+    PerformanceBadgeComponent,
+    MovabiCarouselComponent,
+    MovabiCarouselSlide
 } from '../../../../../shared/ui';
 import { Booking, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
@@ -102,7 +104,8 @@ type PassedJob = {
         BadgeComponent,
         RatingComponent,
         EmptyStateComponent,
-        PerformanceBadgeComponent
+        PerformanceBadgeComponent,
+        MovabiCarouselComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -149,7 +152,7 @@ type PassedJob = {
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
+    <ion-content class="movabi-page">
       <div class="w-full max-w-xl mx-auto px-3 py-3 space-y-5 pb-20 overflow-x-hidden">
         @if (toastVisible()) {
           <div
@@ -340,23 +343,23 @@ type PassedJob = {
 </button>
           }
 
-          <div class="relative overflow-hidden rounded-[2rem] bg-white p-5 shadow-xl shadow-slate-900/10 border border-slate-200">
+          <div class="movabi-hero">
             <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
 
             <div class="relative z-10">
               <div class="flex flex-col gap-5 mb-6">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-slate-700 text-[9px] font-black uppercase tracking-[0.18em] mb-4">
+                    <div class="movabi-badge-sm mb-4 bg-white/80">
                       <ion-icon name="radio-outline" class="text-sm"></ion-icon>
                       Live status
                     </div>
 
-                    <h2 class="text-xl font-display font-black text-slate-950 tracking-tight leading-none">
+                    <h2 class="movabi-hero-title">
                       {{ status() === 'online' ? (isAvailable() ? 'Active' : 'Busy') : 'Offline' }}
                     </h2>
 
-                    <p class="text-slate-600 font-semibold text-sm mt-3 leading-relaxed max-w-[14rem]">
+                    <p class="movabi-hero-subtitle mt-3 max-w-[14rem]">
                       @if (status() === 'offline') {
                         Go online to receive nearby ride, errand, delivery, and moving requests.
                       } @else if (!isAvailable()) {
@@ -367,7 +370,7 @@ type PassedJob = {
                     </p>
                   </div>
 
-                  <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-3 shadow-sm shrink-0">
+                  <div class="rounded-[1.25rem] border border-slate-200 bg-white/75 p-3 shadow-sm shrink-0">
                     <div class="grid grid-cols-2 gap-3">
                       <div class="flex flex-col items-center">
                         <span class="text-[9px] uppercase text-slate-600 font-black mb-2 tracking-[0.08em]">Online</span>
@@ -410,34 +413,35 @@ type PassedJob = {
               </div>
 
               <div class="grid grid-cols-3 gap-2">
-                <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-600 mb-1 whitespace-normal">Today</p>
-                  <p class="text-lg font-display font-black text-slate-950">{{ todayMetric().display }}</p>
+                <div class="movabi-card-compact bg-white/75 min-w-0">
+                  <p class="movabi-card-label mb-1 whitespace-normal">Today</p>
+                  <p class="movabi-price">{{ todayMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ todayMetric().label }}</p>
                 </div>
 
-                <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-600 mb-1 whitespace-normal">Acceptance</p>
-                  <p class="text-lg font-display font-black text-slate-950">{{ acceptanceMetric().display }}</p>
+                <div class="movabi-card-compact bg-white/75 min-w-0">
+                  <p class="movabi-card-label mb-1 whitespace-normal">Acceptance</p>
+                  <p class="movabi-price">{{ acceptanceMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ acceptanceMetric().label }}</p>
                 </div>
 
-                <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-600 mb-1 whitespace-normal">Rating</p>
-                  <p class="text-lg font-display font-black text-slate-950">{{ ratingMetric().display }}</p>
+                <div class="movabi-card-compact bg-white/75 min-w-0">
+                  <p class="movabi-card-label mb-1 whitespace-normal">Rating</p>
+                  <p class="movabi-price">{{ ratingMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ ratingMetric().label }}</p>
                 </div>
               </div>
             </div>
           </div>
 
+          <app-movabi-carousel [slides]="driverCarouselSlides()"></app-movabi-carousel>
+
           <div class="space-y-3" data-section="available-requests">
-            <div class="flex flex-wrap items-center justify-between px-1 gap-2">
+            <div class="movabi-section-header">
               <div class="flex items-center gap-2 min-w-0 flex-1">
-                <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20 shrink-0"></div>
-                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-[0.12em] leading-snug flex flex-wrap items-center gap-2 min-w-0 whitespace-normal">
+                <h3 class="movabi-section-title flex flex-wrap items-center gap-2 min-w-0 whitespace-normal">
                   <span>Available Requests</span>
-                  <span class="px-2.5 py-0.5 bg-blue-600 text-white rounded-full text-[10px] font-black shrink-0">
+                  <span class="movabi-badge-sm bg-amber-500 text-slate-950 border-amber-500 shrink-0">
                     {{ jobs().length }}
                   </span>
                 </h3>
@@ -898,6 +902,47 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             display: rating.toFixed(1),
             isNew: false
         };
+    });
+
+    driverCarouselSlides = computed<MovabiCarouselSlide[]>(() => {
+        const slides: MovabiCarouselSlide[] = [
+            {
+                eyebrow: 'Today',
+                title: `${this.todayMetric().display} ${this.todayMetric().label}`,
+                description: this.status() === 'online' ? 'Stay available for nearby requests.' : 'Go online when you are ready.',
+                value: `${this.dashboardStats().completedJobs || 0} done`,
+                tone: 'slate'
+            },
+            {
+                eyebrow: 'Performance',
+                title: `Rating ${this.ratingMetric().display}`,
+                description: this.ratingMetric().isNew ? 'Your first customer review will appear here.' : 'Keep responses quick and service friendly.',
+                tone: 'amber'
+            },
+            {
+                eyebrow: 'Requests',
+                title: `${this.jobs().length} available now`,
+                description: this.jobs().length > 0 ? 'Review the best nearby request and accept when ready.' : "We'll show nearby jobs here automatically.",
+                tone: 'emerald'
+            },
+            {
+                eyebrow: 'Payouts',
+                title: this.isStripeReady() ? 'Payouts ready' : 'Payout setup pending',
+                description: this.isStripeReady() ? 'Completed jobs can be processed safely.' : 'Complete Stripe Connect to avoid payout delays.',
+                tone: this.isStripeReady() ? 'blue' : 'rose'
+            }
+        ];
+
+        if (!this.isVerified()) {
+            slides.push({
+                eyebrow: 'Compliance',
+                title: 'Documents under review',
+                description: 'Some request types unlock after approval.',
+                tone: 'rose'
+            });
+        }
+
+        return slides;
     });
 
     isStripeReady = computed(() => {

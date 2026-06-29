@@ -183,6 +183,197 @@ body.native-keyboard-open .native-sticky-action {
     backdrop-filter: blur(16px);
 }
 
+@layer components {
+    .movabi-page {
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text-primary);
+    }
+
+    .movabi-section {
+        margin-bottom: 1.25rem;
+    }
+
+    .movabi-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+        padding-inline: 0.25rem;
+    }
+
+    .movabi-section-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.625rem;
+        min-width: 0;
+        color: var(--secondary);
+        font-size: 0.95rem;
+        font-weight: 800;
+        line-height: 1.2;
+        letter-spacing: 0.01em;
+    }
+
+    .movabi-section-title::before {
+        content: "";
+        width: 0.35rem;
+        height: 1.65rem;
+        border-radius: 999px;
+        background: var(--primary);
+        box-shadow: 0 0.5rem 1.25rem rgb(245 158 11 / 0.25);
+        flex: 0 0 auto;
+    }
+
+    .movabi-card,
+    .movabi-card-compact {
+        min-width: 0;
+        border: 1px solid rgb(226 232 240 / 0.9);
+        background: var(--card);
+        box-shadow: 0 0.75rem 1.875rem rgb(15 23 42 / 0.07);
+    }
+
+    .movabi-card {
+        border-radius: 1.5rem;
+        padding: clamp(0.875rem, 3.8vw, 1.125rem);
+    }
+
+    .movabi-card-compact {
+        border-radius: 1.25rem;
+        padding: clamp(0.75rem, 3.2vw, 1rem);
+    }
+
+    .movabi-card-title {
+        color: var(--secondary);
+        font-family: var(--font-display);
+        font-size: clamp(1rem, 4vw, 1.125rem);
+        font-weight: 800;
+        line-height: 1.2;
+        letter-spacing: 0;
+    }
+
+    .movabi-card-subtitle {
+        color: var(--text-secondary);
+        font-size: clamp(0.78rem, 3.2vw, 0.875rem);
+        font-weight: 600;
+        line-height: 1.45;
+    }
+
+    .movabi-card-label {
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        font-weight: 800;
+        line-height: 1.2;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .movabi-price {
+        color: var(--secondary);
+        font-family: var(--font-display);
+        font-size: clamp(1.125rem, 5vw, 1.375rem);
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: 0;
+    }
+
+    .movabi-badge-sm {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        min-height: 1.55rem;
+        border-radius: 999px;
+        border: 1px solid rgb(226 232 240 / 0.9);
+        background: #fff7ed;
+        color: #c2410c;
+        padding: 0.25rem 0.65rem;
+        font-size: 0.65rem;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .movabi-icon-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 1rem;
+        border: 1px solid #ffedd5;
+        background: #fff7ed;
+        color: var(--primary-dark);
+        box-shadow: 0 0.625rem 1.5rem rgb(245 158 11 / 0.12);
+        flex: 0 0 auto;
+    }
+
+    .movabi-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 1.65rem;
+        border: 1px solid rgb(226 232 240 / 0.9);
+        background:
+            radial-gradient(circle at 85% 0%, rgb(245 158 11 / 0.18), transparent 32%),
+            linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
+        box-shadow: 0 1rem 2.5rem rgb(15 23 42 / 0.09);
+        padding: clamp(1rem, 4vw, 1.25rem);
+    }
+
+    .movabi-hero-title {
+        color: var(--secondary);
+        font-family: var(--font-display);
+        font-size: clamp(1.35rem, 7vw, 1.625rem);
+        font-weight: 800;
+        line-height: 1.05;
+        letter-spacing: 0;
+    }
+
+    .movabi-hero-subtitle {
+        color: var(--text-secondary);
+        font-size: clamp(0.84rem, 3.6vw, 0.95rem);
+        font-weight: 650;
+        line-height: 1.45;
+    }
+
+    .movabi-shimmer {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 45%, #f8fafc 70%, #f1f5f9 100%);
+        background-size: 240% 100%;
+        animation: movabi-shimmer 1.35s linear infinite;
+    }
+
+    .movabi-skeleton-line {
+        height: 0.75rem;
+        border-radius: 999px;
+    }
+
+    .movabi-skeleton-card {
+        min-height: 6rem;
+        border-radius: 1.25rem;
+        border: 1px solid rgb(226 232 240 / 0.8);
+    }
+
+    @keyframes movabi-shimmer {
+        from {
+            background-position: 120% 0;
+        }
+
+        to {
+            background-position: -120% 0;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .movabi-shimmer {
+            animation: none;
+        }
+    }
+}
+
 @layer utilities {
     .bg-blue-50,
     .bg-indigo-50 {

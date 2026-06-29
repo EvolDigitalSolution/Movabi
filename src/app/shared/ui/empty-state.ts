@@ -6,12 +6,12 @@ import { ButtonComponent } from './button';
 @Component({
   selector: 'app-empty-state',
   template: `
-    <div class="flex flex-col items-center justify-center p-12 text-center animate-in fade-in zoom-in duration-500">
-      <div class="w-24 h-24 rounded-[2rem] bg-slate-50 flex items-center justify-center mb-6 border border-slate-100 shadow-sm">
-        <ion-icon [name]="icon" class="text-4xl text-slate-300"></ion-icon>
+    <div class="flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in zoom-in duration-500">
+      <div class="movabi-icon-chip mb-4">
+        <ion-icon [name]="icon" class="text-2xl"></ion-icon>
       </div>
-      <h3 class="text-xl font-display font-bold text-slate-900 mb-2">{{ title }}</h3>
-      <p class="text-slate-500 max-w-xs mx-auto mb-8 text-sm leading-relaxed">{{ description }}</p>
+      <h3 class="movabi-card-title mb-2">{{ title }}</h3>
+      <p class="movabi-card-subtitle max-w-xs mx-auto mb-5">{{ description }}</p>
       
       @if (actionLabel) {
         <app-button (click)="action.emit()" size="md" class="px-8">

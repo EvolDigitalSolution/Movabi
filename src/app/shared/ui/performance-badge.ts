@@ -9,9 +9,9 @@ export type PerformanceType = 'top-rated' | 'reliable' | 'fast-responder' | 'pro
   standalone: true,
   imports: [CommonModule, IonicModule],
   template: `
-    <div [class]="containerClasses" class="inline-flex items-center px-3 py-1.5 rounded-full border transition-all duration-300 hover:scale-105">
+    <div [class]="containerClasses">
       <ion-icon [name]="icon" [class]="iconClasses" class="mr-1.5 text-sm"></ion-icon>
-      <span class="text-[10px] font-bold uppercase tracking-widest">{{ label }}</span>
+      <span class="text-[10px] font-bold uppercase tracking-[0.08em] whitespace-nowrap">{{ label }}</span>
     </div>
   `
 })
@@ -40,11 +40,11 @@ export class PerformanceBadgeComponent {
 
   get containerClasses(): string {
     switch (this.type) {
-      case 'top-rated': return 'bg-amber-50 text-amber-600 border-amber-100';
-      case 'reliable': return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      case 'fast-responder': return 'bg-blue-50 text-blue-600 border-blue-100';
-      case 'pro-driver': return 'bg-indigo-50 text-indigo-600 border-indigo-100';
-      default: return 'bg-slate-50 text-slate-600 border-slate-100';
+      case 'top-rated': return 'movabi-badge-sm bg-amber-50 text-amber-600 border-amber-100';
+      case 'reliable': return 'movabi-badge-sm bg-emerald-50 text-emerald-600 border-emerald-100';
+      case 'fast-responder': return 'movabi-badge-sm bg-blue-50 text-blue-600 border-blue-100';
+      case 'pro-driver': return 'movabi-badge-sm bg-indigo-50 text-indigo-600 border-indigo-100';
+      default: return 'movabi-badge-sm bg-slate-50 text-slate-600 border-slate-100';
     }
   }
 

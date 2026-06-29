@@ -93,7 +93,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
+    <ion-content class="movabi-page">
       @if (booking()) {
         <div class="flex flex-col h-full">
           <div class="bg-slate-100 relative overflow-hidden h-[64vh] min-h-[430px]">
@@ -158,7 +158,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
           </div>
 
           <div
-            class="bg-white rounded-t-[1.75rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
+            class="bg-white rounded-t-[1.5rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300 native-safe-bottom"
             [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[34vh]'"
             (focusin)="detailsExpanded.set(true)"
             (touchstart)="startDetailsDrag($event)"
@@ -178,18 +178,18 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               <span class="w-12 h-1 bg-slate-200 rounded-full"></span>
             </button>
 
-            <div class="p-4 rounded-[1.5rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
+            <div class="movabi-card-compact bg-gradient-to-br from-white to-slate-50">
               <div class="flex justify-between items-start gap-4">
                 <div class="min-w-0">
                   <app-badge [variant]="getStatusVariant(booking()?.status || '')" class="mb-3">
                     {{ getStatusLabel(booking()?.status || '') }}
                   </app-badge>
 
-                  <h2 class="text-xl font-display font-bold text-slate-900 tracking-tight">
+                  <h2 class="movabi-card-title">
                     Details
                   </h2>
 
-                  <p class="text-xs font-semibold text-slate-500 mt-1">
+                  <p class="movabi-card-subtitle mt-1">
                     {{ getStatusHint(booking()?.status || '') }}
                   </p>
 
@@ -199,13 +199,13 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     </p>
                   }
 
-                  <p class="text-[11px] font-semibold text-slate-400 mt-2">
+                  <p class="text-[11px] font-semibold text-slate-400 mt-2 leading-snug">
                     ID: {{ booking()?.id?.slice(0, 8) }}
                   </p>
                 </div>
 
                 <div class="text-right shrink-0">
-                  <p class="text-2xl font-display font-bold text-slate-900">
+                  <p class="movabi-price">
                     {{ getDisplayedTotal() }}
                   </p>
                   <p class="text-[11px] font-semibold text-emerald-700 mt-1">
@@ -215,8 +215,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               </div>
 
               @if (booking()?.status === 'searching') {
-                <div class="mt-5 grid grid-cols-2 gap-3">
-                  <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100">
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                  <div class="movabi-card-compact bg-blue-50 border-blue-100 shadow-none">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="timer-outline" class="text-blue-600"></ion-icon>
                       <p class="text-xs font-semibold text-blue-700">Time</p>
@@ -226,7 +226,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     </p>
                   </div>
 
-                  <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="refresh-outline" class="text-slate-500"></ion-icon>
                       <p class="text-xs font-semibold text-slate-500">Search</p>
@@ -237,7 +237,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               }
             </div>
 
-            <div class="p-4 rounded-[1.5rem] border border-slate-100 bg-white shadow-sm space-y-4">
+            <div class="movabi-card-compact space-y-3">
               <div class="flex items-start gap-3">
                 <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
                   <ion-icon [name]="serviceGuideIcon()" class="text-xl"></ion-icon>
@@ -247,10 +247,10 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">
                     {{ serviceGuideEyebrow() }}
                   </p>
-                  <h3 class="mt-1 text-base font-display font-black text-slate-950">
+                  <h3 class="mt-1 movabi-card-title">
                     {{ serviceGuideTitle() }}
                   </h3>
-                  <p class="mt-1 text-xs font-semibold text-slate-600 leading-snug">
+                  <p class="mt-1 movabi-card-subtitle">
                     {{ serviceGuideMessage() }}
                   </p>
                 </div>
@@ -288,7 +288,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
             </div>
 
             @if (showPaymentProtectionPanel()) {
-              <div class="p-4 rounded-[1.5rem] border border-amber-100 bg-amber-50 space-y-4">
+              <div class="movabi-card-compact border-amber-100 bg-amber-50 space-y-3">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon [name]="paymentProtectionIcon()" class="text-xl"></ion-icon>
@@ -298,7 +298,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">
                       Payment protection
                     </p>
-                    <h3 class="mt-1 text-base font-display font-black text-slate-950">
+                    <h3 class="mt-1 movabi-card-title">
                       {{ paymentProtectionTitle() }}
                     </h3>
                     <p class="mt-1 text-xs font-semibold text-slate-700 leading-snug">
@@ -325,7 +325,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
             }
 
             @if (showCompletionPinPanel()) {
-              <div class="p-4 rounded-[1.5rem] border border-emerald-100 bg-emerald-50 space-y-4">
+              <div class="movabi-card-compact border-emerald-100 bg-emerald-50 space-y-3">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon name="shield-checkmark-outline" class="text-xl"></ion-icon>
@@ -336,7 +336,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                       Handover PIN
                     </p>
                     <div class="mt-2 flex items-center justify-between gap-3">
-                      <h3 class="text-lg font-display font-black text-slate-950">
+                      <h3 class="movabi-card-title">
                         Complete with PIN
                       </h3>
                       <div class="px-4 py-2 rounded-2xl bg-white text-2xl font-display font-black tracking-[0.35em] text-slate-950 border border-emerald-100">
@@ -353,14 +353,14 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
               <div class="grid grid-cols-2 gap-3">
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
                   <p class="text-lg font-display font-bold text-slate-900">
                     {{ config.formatCurrency(getErrandServiceFee()) }}
                   </p>
                 </div>
 
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
                   <p class="text-lg font-display font-bold text-slate-900">
                     {{ config.formatCurrency(getErrandItemBudget()) }}
@@ -368,7 +368,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </div>
 
                 @if (getErrandReleasedAmount() > 0) {
-                  <div class="col-span-2 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                  <div class="col-span-2 movabi-card-compact bg-emerald-50 border-emerald-100 shadow-none">
                     <p class="text-[9px] font-bold text-emerald-700 uppercase tracking-widest mb-1">Returned to wallet</p>
                     <p class="text-lg font-display font-bold text-emerald-700">
                       {{ config.formatCurrency(getErrandReleasedAmount()) }}
@@ -380,7 +380,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 
             @if (booking()?.driver_id) {
               @if (errandFunding()?.over_budget_status === 'requested') {
-                <div class="p-6 bg-rose-50 rounded-[2rem] border border-rose-100">
+                <div class="movabi-card-compact bg-rose-50 border-rose-100">
                   <div class="flex items-center gap-3 mb-4">
                     <div class="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
                       <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
@@ -441,7 +441,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </div>
               }
 
-              <div class="p-4 bg-white rounded-[2rem] border border-slate-100 shadow-sm">
+              <div class="movabi-card-compact">
                 <div class="flex items-start gap-4">
                   <div class="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white shadow-md shrink-0">
                     @if (getDriverAvatar()) {
@@ -461,7 +461,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                       {{ getDriverStatusText() }}
                     </p>
 
-                    <div class="mt-3 grid grid-cols-1 gap-2">
+                    <div class="mt-2 grid grid-cols-1 gap-2">
                       <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2">
                         <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Transport</p>
                         <p class="text-sm text-slate-900 font-black leading-tight break-words">{{ getDriverVehicleSummary() }}</p>
@@ -492,7 +492,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   </app-button>
 
                   @if (showChat()) {
-                    <div class="mt-6 h-[500px] border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-200/50">
+                    <div class="mt-3 h-[500px] border border-slate-100 rounded-[1.5rem] overflow-hidden shadow-lg shadow-slate-200/50">
                       <app-communication-panel
                         [jobId]="booking()!.id"
                         [receiverId]="booking()!.driver_id!"
@@ -504,18 +504,18 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
               }
             }
 
-            <div class="p-4 bg-slate-50 rounded-[1.5rem] border border-slate-100">
-              <div class="flex items-center gap-2 mb-5">
+            <div class="movabi-card-compact bg-slate-50 shadow-none">
+              <div class="flex items-center gap-2 mb-4">
                 <div class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                   <ion-icon name="navigate" class="text-xl"></ion-icon>
                 </div>
                 <div>
-                  <h3 class="text-base font-display font-bold text-slate-900">{{ routeCardTitle() }}</h3>
-                  <p class="text-xs font-semibold text-slate-500">{{ routeCardSubtitle() }}</p>
+                  <h3 class="movabi-card-title">{{ routeCardTitle() }}</h3>
+                  <p class="movabi-card-subtitle">{{ routeCardSubtitle() }}</p>
                 </div>
               </div>
 
-              <div class="relative pl-10 space-y-10">
+              <div class="relative pl-10 space-y-8">
                 <div class="absolute left-[13px] top-2 bottom-2 w-0.5 bg-slate-200"></div>
 
                 <div class="relative">
@@ -547,14 +547,14 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <ion-icon name="sparkles-outline" class="text-xl"></ion-icon>
                   </div>
                   <div>
-                    <h3 class="text-base font-display font-bold text-slate-900">Details</h3>
-                    <p class="text-xs font-semibold text-slate-500">More info</p>
+                  <h3 class="movabi-card-title">Details</h3>
+                  <p class="movabi-card-subtitle">More info</p>
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-2">
                   @if (booking()?.service_slug === ServiceTypeEnum.RIDE) {
-                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div class="movabi-card-compact bg-slate-50 shadow-none">
                       <p class="text-xs font-semibold text-slate-500 mb-1">Passengers</p>
                       <p class="text-xl font-display font-bold text-slate-900">
                         {{ details()?.['passenger_count'] || 1 }}
@@ -563,7 +563,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   }
 
                   @if (booking()?.service_slug === ServiceTypeEnum.VAN) {
-                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div class="movabi-card-compact bg-slate-50 shadow-none">
                       <p class="text-xs font-semibold text-slate-500 mb-1">Helpers</p>
                       <p class="text-xl font-display font-bold text-slate-900">
                         {{ details()?.['helper_count'] || 0 }}
@@ -573,8 +573,8 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </div>
 
                 @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                  <div class="p-4 bg-slate-50 rounded-[2rem] border border-slate-100 mt-4">
-                    <div class="flex justify-between items-center mb-4 gap-3">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none mt-3">
+                    <div class="flex justify-between items-center mb-3 gap-3">
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items</p>
 
                       @if (details()?.['actual_spending']) {
@@ -590,7 +590,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                       }
                     </div>
 
-                    <div class="mt-6 pt-6 border-t border-slate-200/50 space-y-4">
+                    <div class="mt-4 pt-4 border-t border-slate-200/50 space-y-3">
                       <div class="flex justify-between items-center">
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Budget</span>
                         <span class="text-xl font-display font-bold text-emerald-600">

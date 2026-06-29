@@ -72,10 +72,10 @@ type DocType = 'license' | 'insurance';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
+    <ion-content class="movabi-page">
       <div class="w-full max-w-xl mx-auto px-3 py-2 space-y-4 pb-16 overflow-x-hidden">
 
-        <div class="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-xl shadow-slate-900/15">
+        <div class="movabi-hero bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white">
           <div class="absolute -right-12 -bottom-16 w-48 h-48 rounded-full bg-white/10 blur-2xl"></div>
 
           <div class="relative z-10">
@@ -83,11 +83,11 @@ type DocType = 'license' | 'insurance';
               Account
             </p>
 
-            <h1 class="text-2xl font-display font-black tracking-tight leading-none">
+            <h1 class="text-[1.55rem] font-display font-black tracking-tight leading-tight">
               Driver Settings
             </h1>
 
-            <p class="text-xs text-white/80 font-medium mt-2 max-w-sm leading-6">
+            <p class="text-xs text-white/80 font-semibold mt-2 max-w-sm leading-5">
               Manage your region, verification documents, vehicle, payouts, and subscription.
             </p>
 
@@ -108,9 +108,8 @@ type DocType = 'license' | 'insurance';
         </div>
 
         <section class="space-y-2">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-1.5 h-5 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h2 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.12em] leading-none">Profile</h2>
+          <div class="movabi-section-header">
+            <h2 class="movabi-section-title">Profile</h2>
           </div>
 
           <app-card class="p-4 cursor-pointer active:scale-[0.98] transition-transform" (click)="router.navigate(['/account/settings'])">
@@ -134,9 +133,8 @@ type DocType = 'license' | 'insurance';
         </section>
 
         <section class="space-y-2">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-1.5 h-5 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h2 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.12em] leading-none">Region & Language</h2>
+          <div class="movabi-section-header">
+            <h2 class="movabi-section-title">Region & Language</h2>
           </div>
 
           <app-card class="p-4">
@@ -183,9 +181,8 @@ type DocType = 'license' | 'insurance';
         </section>
 
         <section class="space-y-2">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-1.5 h-5 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h2 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.12em] leading-none">Verification</h2>
+          <div class="movabi-section-header">
+            <h2 class="movabi-section-title">Verification</h2>
           </div>
 
           <div class="space-y-2">
@@ -243,9 +240,8 @@ type DocType = 'license' | 'insurance';
         </section>
 
         <section class="space-y-2">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-1.5 h-5 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h2 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.12em] leading-none">Vehicle Details</h2>
+          <div class="movabi-section-header">
+            <h2 class="movabi-section-title">Vehicle Details</h2>
           </div>
 
           <app-card class="p-4 cursor-pointer active:scale-[0.98] transition-transform" (click)="router.navigate(['/driver/onboarding'])">
@@ -256,8 +252,8 @@ type DocType = 'license' | 'insurance';
                 </div>
 
                 <div class="min-w-0">
-                  <h3 class="text-sm font-black text-slate-950 truncate">{{ vehicleTitle() }}</h3>
-                  <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.1em] mt-0.5 truncate leading-snug">
+                  <h3 class="text-sm font-black text-slate-950 leading-tight whitespace-normal">{{ vehicleTitle() }}</h3>
+                  <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.08em] mt-0.5 leading-snug whitespace-normal">
                     {{ vehicleSubtitle() }}
                   </p>
                 </div>
@@ -271,9 +267,8 @@ type DocType = 'license' | 'insurance';
         </section>
 
         <section class="space-y-2">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-1.5 h-5 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h2 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.12em] leading-none">Payments & Payouts</h2>
+          <div class="movabi-section-header">
+            <h2 class="movabi-section-title">Payments & Payouts</h2>
           </div>
 
           <app-card class="p-4">
@@ -327,9 +322,8 @@ type DocType = 'license' | 'insurance';
         </section>
 
         <section class="space-y-2">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-1.5 h-5 bg-amber-500 rounded-full shadow-lg shadow-amber-500/20"></div>
-            <h2 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.12em] leading-none">Movabi Pay Card</h2>
+          <div class="movabi-section-header">
+            <h2 class="movabi-section-title">Movabi Pay Card</h2>
           </div>
 
           <app-card class="p-4">
