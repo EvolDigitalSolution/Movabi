@@ -882,12 +882,7 @@ export class DriverListComponent implements OnInit {
     getVehiclePlate(driver: any): string {
         const vehicle = this.getVehicle(driver);
 
-        return (
-            vehicle?.license_plate ||
-            vehicle?.registration_number ||
-            vehicle?.plate_number ||
-            'No plate'
-        );
+        return vehicle?.license_plate || 'No plate';
     }
 
     getVehicleColor(driver: any): string {

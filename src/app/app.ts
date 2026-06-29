@@ -279,6 +279,18 @@ export class App implements OnInit {
                     const callbackUrl = `/auth/callback${url.search || ''}${url.hash || ''}`;
                     console.log('[App] navigating to:', callbackUrl);
                     await this.router.navigateByUrl(callbackUrl, { replaceUrl: true });
+                    return;
+                }
+
+                if (url.protocol === 'com.movabi.app:') {
+                    const path = url.hostname === 'driver' ? '/driver' : url.pathname;
+                    const query = url.search || '';
+
+                    if (path === '/driver') {
+                        const driverUrl = `${path}${query}`;
+                        console.log('[App] navigating to:', driverUrl);
+                        await this.router.navigateByUrl(driverUrl, { replaceUrl: true });
+                    }
                 }
             } catch (error) {
                 console.error('[App] appUrlOpen parse error:', error);

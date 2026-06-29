@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { Capacitor } from '@capacitor/core';
 import { ApiUrlService } from '../api-url.service';
 import { SupabaseService } from '../supabase/supabase.service';
 
@@ -19,6 +20,8 @@ export interface StripeConnectStatusResponse {
         disabled_reason?: string | null;
     };
 }
+
+type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
 
 @Injectable({
     providedIn: 'root'
@@ -46,12 +49,13 @@ export class ConnectService {
         );
     }
 
-    async getOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string) {
+    async getOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string, platform = this.getConnectPlatform()) {
         return firstValueFrom(
             this.http.post<{ url: string }>(
                 `${this.apiUrl}/onboarding-link`,
                 {
                     accountId,
+                    platform,
                     returnUrl,
                     refreshUrl
                 },
@@ -60,6 +64,20 @@ export class ConnectService {
                 }
             )
         );
+    }
+
+    getConnectPlatform(): ConnectPlatform {
+        try {
+            const platform = Capacitor.getPlatform();
+
+            if (platform === 'android' || platform === 'ios') {
+                return platform;
+            }
+        } catch {
+            // Capacitor may be unavailable in web tests.
+        }
+
+        return 'web';
     }
 
     async getDashboardLink(accountId: string) {

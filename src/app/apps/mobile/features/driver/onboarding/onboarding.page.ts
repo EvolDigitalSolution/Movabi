@@ -696,7 +696,10 @@ export class OnboardingPage implements OnInit {
     });
 
     activeVehicleDetailsReady = computed(() => {
-        return this.activeVehicleControls().every(controlName => this.onboardingForm.get(controlName)?.valid);
+        const vehicle = this.vehicle() as Vehicle | null;
+        console.log('[DriverOnboarding] Checklist vehicle:', vehicle);
+
+        return this.activeVehicleControls().every(controlName => this.isActiveVehicleControlReady(controlName, vehicle));
     });
 
     setupBlockingMessage = computed(() => {
@@ -1078,6 +1081,83 @@ export class OnboardingPage implements OnInit {
         return controls;
     }
 
+    private isActiveVehicleControlReady(controlName: string, vehicle: Vehicle | null): boolean {
+        const control = this.onboardingForm.get(controlName);
+
+        if (control?.valid) {
+            return true;
+        }
+
+        switch (controlName) {
+            case 'make':
+                return this.hasText(vehicle?.make);
+            case 'model':
+                return this.hasText(vehicle?.model);
+            case 'color':
+                return this.hasText(vehicle?.color);
+            case 'year':
+                return Number(vehicle?.year) >= 1900;
+            case 'license_plate':
+                return this.hasText(vehicle?.license_plate);
+            case 'vehicle_class':
+                return !!vehicle && !!this.vehicleClassFromVehicle(vehicle);
+            default:
+                return false;
+        }
+    }
+
+    private hasText(value: unknown): boolean {
+        return String(value ?? '').trim().length > 0;
+    }
+
+    private getCanonicalPlate(vehicle: Vehicle | null | undefined, fallback?: unknown): string {
+        return String(vehicle?.license_plate ?? fallback ?? '').trim();
+    }
+
+    private async refreshVehicleForValidation(): Promise<Vehicle | null> {
+        const vehicle = await this.driverService.fetchVehicle();
+        console.log('[DriverOnboarding] Validation vehicle:', vehicle);
+
+        if (vehicle) {
+            this.onboardingForm.patchValue(
+                {
+                    make: this.hasText(this.onboardingForm.get('make')?.value) ? this.onboardingForm.get('make')?.value : vehicle.make ?? '',
+                    model: this.hasText(this.onboardingForm.get('model')?.value) ? this.onboardingForm.get('model')?.value : vehicle.model ?? '',
+                    color: this.hasText(this.onboardingForm.get('color')?.value) ? this.onboardingForm.get('color')?.value : vehicle.color ?? '',
+                    year: this.onboardingForm.get('year')?.value || vehicle.year || new Date().getFullYear(),
+                    license_plate: this.hasText(this.onboardingForm.get('license_plate')?.value)
+                        ? this.onboardingForm.get('license_plate')?.value
+                        : this.getCanonicalPlate(vehicle),
+                    vehicle_class: this.onboardingForm.get('vehicle_class')?.value || this.vehicleClassFromVehicle(vehicle)
+                },
+                { emitEvent: false }
+            );
+            this.onboardingForm.updateValueAndValidity({ emitEvent: false });
+        }
+
+        return vehicle;
+    }
+
+    private buildVehiclePayload(raw: Record<string, unknown>, vehicle: Vehicle | null): Partial<Vehicle> {
+        const vehicleClass = String(raw['vehicle_class'] || this.vehicleClassFromVehicle(vehicle) || 'standard') as DriverVehicleClass;
+        const plate = this.getCanonicalPlate(vehicle, raw['license_plate']);
+        const isBike = vehicleClass === 'bike';
+
+        if (!isBike && (!plate || plate.length === 0)) {
+            throw new Error('Add the vehicle registration plate before submitting.');
+        }
+
+        return {
+            make: String(raw['make'] || vehicle?.make || '').trim(),
+            model: String(raw['model'] || vehicle?.model || '').trim(),
+            color: String(raw['color'] || vehicle?.color || '').trim(),
+            year: Number(raw['year'] || vehicle?.year),
+            license_plate: plate.toUpperCase(),
+            type: this.vehicleTypeFromClass(vehicleClass),
+            capacity: vehicleClass
+        };
+    }
+
     private parseVerificationItems(value: unknown): Record<string, string> {
         if (!value) return {};
 
@@ -1351,6 +1431,7 @@ export class OnboardingPage implements OnInit {
             return;
         }
 
+        await this.refreshVehicleForValidation();
         this.onboardingForm.markAllAsTouched();
 
         if (!this.canSubmit()) {
@@ -1372,16 +1453,13 @@ export class OnboardingPage implements OnInit {
 
         try {
             const raw = this.onboardingForm.getRawValue();
+            const latestVehicle = await this.driverService.fetchVehicle();
+            console.log('[DriverOnboarding] Validation vehicle:', latestVehicle);
+            const vehiclePayload = this.buildVehiclePayload(raw, latestVehicle);
 
-            await this.driverService.updateVehicle({
-                make: String(raw.make || '').trim(),
-                model: String(raw.model || '').trim(),
-                color: String(raw.color || '').trim(),
-                year: Number(raw.year),
-                license_plate: String(raw.license_plate || '').trim().toUpperCase(),
-                type: this.vehicleTypeFromClass(String(raw.vehicle_class || 'standard') as DriverVehicleClass),
-                capacity: String(raw.vehicle_class || 'standard')
-            });
+            const savedVehicle = await this.driverService.updateVehicle(vehiclePayload);
+            console.log('[DriverOnboarding] Saved vehicle:', savedVehicle);
+            await this.driverService.fetchVehicle();
 
             await this.updateProfileSafely(user.id, {
                 onboarding_completed: true,

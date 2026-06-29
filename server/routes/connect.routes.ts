@@ -4,6 +4,38 @@ import { supabaseAdmin } from '../services/supabase.service';
 
 const router = Router();
 
+type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
+
+const WEB_DRIVER_URL = 'https://movabi.apps.evolsolution.com/driver';
+const NATIVE_DRIVER_URL = 'com.movabi.app://driver';
+
+function normalizePlatform(platform: unknown): ConnectPlatform {
+  const value = String(platform || 'web').trim().toLowerCase();
+
+  if (value === 'android' || value === 'ios' || value === 'native') {
+    return value;
+  }
+
+  return 'web';
+}
+
+function buildConnectReturnUrls(req: Request) {
+  const platform = normalizePlatform(req.body?.platform);
+  const isNative = platform === 'android' || platform === 'ios' || platform === 'native';
+
+  if (isNative) {
+    return {
+      refreshUrl: `${NATIVE_DRIVER_URL}?stripe=refresh`,
+      returnUrl: `${NATIVE_DRIVER_URL}?stripe=success`
+    };
+  }
+
+  return {
+    refreshUrl: `${WEB_DRIVER_URL}?stripe=refresh`,
+    returnUrl: `${WEB_DRIVER_URL}?stripe=success`
+  };
+}
+
 async function getUserIdFromRequest(req: Request): Promise<string | null> {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
@@ -156,8 +188,7 @@ router.post('/onboarding-link', async (req: Request, res: Response) => {
   try {
     const userId = await getUserIdFromRequest(req);
     const accountId = await getStripeAccountId(req, userId);
-    const returnUrl = String(req.body?.returnUrl || '').trim();
-    const refreshUrl = String(req.body?.refreshUrl || '').trim();
+    const { returnUrl, refreshUrl } = buildConnectReturnUrls(req);
 
     if (!accountId) {
       return res.status(400).json({ error: 'Stripe Connect account not found' });

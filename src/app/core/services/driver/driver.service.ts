@@ -234,6 +234,7 @@ export class DriverService {
             return null;
         }
 
+        console.log('[DriverService] Checklist vehicle:', data);
         this.vehicle.set((data as Vehicle) ?? null);
         return (data as Vehicle) ?? null;
     }
@@ -759,7 +760,9 @@ export class DriverService {
             throw error;
         }
 
+        console.log('[DriverService] Saved vehicle:', data);
         this.vehicle.set(data as Vehicle);
+        return data as Vehicle;
     }
 
     private isMissingColumnError(error: unknown, column: string): boolean {
