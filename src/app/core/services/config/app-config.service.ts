@@ -159,6 +159,7 @@ export class AppConfigService {
 
   public readonly selectedLanguage = computed(() => this.currentCountry().locale.split('-')[0] || 'en');
 
+  // Static FX rates are placeholders until live FX service is added.
   private readonly gbpRates: Record<string, number> = {
     GBP: 1,
     USD: 1.27,
@@ -240,6 +241,10 @@ export class AppConfigService {
     return this.currentCountry().currency;
   }
 
+  currentCurrency(): string {
+    return this.currencyCode;
+  }
+
   get locale() {
     return this.currentCountry().locale;
   }
@@ -247,6 +252,7 @@ export class AppConfigService {
   formatCurrency(amount: number | string | null | undefined): string {
     const numericAmount = typeof amount === 'string' ? parseFloat(amount) : (amount || 0);
     if (isNaN(numericAmount)) return `${this.currencySymbol}0.00`;
+    const displayAmount = this.convertAmount(numericAmount, 'GBP', this.currencyCode);
 
     try {
       return new Intl.NumberFormat(this.locale, {
@@ -254,9 +260,9 @@ export class AppConfigService {
         currency: this.currencyCode,
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
-      }).format(numericAmount);
+      }).format(displayAmount);
     } catch {
-      return `${this.currencySymbol}${numericAmount.toFixed(2)}`;
+      return `${this.currencySymbol}${displayAmount.toFixed(2)}`;
     }
   }
 
@@ -267,7 +273,7 @@ export class AppConfigService {
   }
 
   formatConvertedFromGbp(amount: number): string {
-    return this.formatCurrency(this.convertAmount(amount, 'GBP', this.currencyCode));
+    return this.formatCurrency(amount);
   }
 
   t(key: string): string {

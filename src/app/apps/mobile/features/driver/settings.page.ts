@@ -83,7 +83,7 @@ type DocType = 'license' | 'insurance';
               Account
             </p>
 
-            <h1 class="text-3xl font-display font-black tracking-tight leading-none">
+            <h1 class="text-2xl font-display font-black tracking-tight leading-none">
               Driver Settings
             </h1>
 
@@ -171,7 +171,7 @@ type DocType = 'license' | 'insurance';
             <div class="mt-3 grid grid-cols-2 gap-2">
               <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
                 <p class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{{ config.t('currency_preview') }}</p>
-                <p class="mt-1 text-sm font-black text-slate-950">£10 → {{ config.formatConvertedFromGbp(10) }}</p>
+                <p class="mt-1 text-sm font-black text-slate-950">GBP 10 -> {{ config.formatConvertedFromGbp(10) }}</p>
               </div>
 
               <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">

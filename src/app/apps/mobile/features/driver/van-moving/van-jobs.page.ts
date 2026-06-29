@@ -109,7 +109,7 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                   Van & Moving
                 </p>
 
-                <h1 class="text-3xl font-display font-black tracking-tight leading-none">
+                <h1 class="text-2xl font-display font-black tracking-tight leading-none">
                   {{ segment() === 'available' ? 'Available Moves' : 'My Moves' }}
                 </h1>
 
@@ -121,23 +121,23 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
               </div>
 
               <div class="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
-                <ion-icon name="cube-outline" class="text-3xl"></ion-icon>
+                <ion-icon name="cube-outline" class="text-2xl"></ion-icon>
               </div>
             </div>
 
             <div class="grid grid-cols-3 gap-2">
               <div class="rounded-2xl bg-white/10 border border-white/10 p-3">
-                <p class="text-[9px] text-white/60 font-black uppercase tracking-widest mb-1">Shown</p>
-                <p class="text-2xl font-display font-black">{{ filteredJobs().length }}</p>
+                <p class="text-[10px] text-white/60 font-black uppercase tracking-[0.08em] mb-1">Shown</p>
+                <p class="text-xl font-display font-black">{{ filteredJobs().length }}</p>
               </div>
 
               <div class="rounded-2xl bg-white/10 border border-white/10 p-3">
-                <p class="text-[9px] text-white/60 font-black uppercase tracking-widest mb-1">Today</p>
-                <p class="text-2xl font-display font-black">{{ todayCount() }}</p>
+                <p class="text-[10px] text-white/60 font-black uppercase tracking-[0.08em] mb-1">Today</p>
+                <p class="text-xl font-display font-black">{{ todayCount() }}</p>
               </div>
 
               <div class="rounded-2xl bg-white/10 border border-white/10 p-3">
-                <p class="text-[9px] text-white/60 font-black uppercase tracking-widest mb-1">Location</p>
+                <p class="text-[10px] text-white/60 font-black uppercase tracking-[0.08em] mb-1">Location</p>
                 <p class="text-sm font-black">
                   {{ currentPos() ? 'GPS Ready' : 'Not Set' }}
                 </p>
@@ -160,7 +160,7 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
             <button
               type="button"
               (click)="getCurrentLocation()"
-              class="text-xs font-black text-blue-600 uppercase tracking-widest shrink-0"
+              class="text-xs font-black text-blue-600 uppercase tracking-[0.08em] shrink-0"
             >
               Retry
             </button>
@@ -185,12 +185,12 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
 
         <div class="grid grid-cols-2 gap-3">
           <div class="bg-white rounded-[1.25rem] border border-slate-100 p-4 shadow-sm">
-            <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Potential payout</p>
+            <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.08em] mb-1">Potential payout</p>
             <p class="text-xl font-display font-black text-slate-950">{{ formatPrice(totalVisiblePayout()) }}</p>
           </div>
 
           <div class="bg-white rounded-[1.25rem] border border-slate-100 p-4 shadow-sm">
-            <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Nearest pickup</p>
+            <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.08em] mb-1">Nearest pickup</p>
             <p class="text-xl font-display font-black text-slate-950">{{ nearestPickupLabel() }}</p>
           </div>
         </div>
@@ -258,7 +258,7 @@ type DriverJobStatus = 'pending' | 'searching' | 'accepted' | 'arrived' | 'in_pr
                           }
                         </div>
 
-                        <h3 class="font-display font-black text-2xl text-slate-950">
+                        <h3 class="font-display font-black text-lg text-slate-950">
                           {{ formatPrice(job.price || job.total_price || 0) }}
                         </h3>
 

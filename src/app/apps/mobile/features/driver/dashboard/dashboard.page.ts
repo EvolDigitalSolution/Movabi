@@ -175,7 +175,7 @@ type PassedJob = {
                 <ion-icon name="time-outline" class="text-4xl text-amber-600"></ion-icon>
               </div>
 
-              <h2 class="text-2xl font-display font-bold text-slate-950">
+              <h2 class="text-lg font-display font-bold text-slate-950">
                 Manual Review in Progress
               </h2>
 
@@ -195,7 +195,7 @@ type PassedJob = {
                 <ion-icon name="alert-circle-outline" class="text-4xl text-rose-600"></ion-icon>
               </div>
 
-              <h2 class="text-2xl font-display font-bold text-slate-950">
+              <h2 class="text-lg font-display font-bold text-slate-950">
                 Changes Needed
               </h2>
 
@@ -221,7 +221,7 @@ type PassedJob = {
             </div>
 
             <div class="space-y-2">
-              <h2 class="text-2xl font-display font-bold text-slate-950">Complete Onboarding</h2>
+              <h2 class="text-lg font-display font-bold text-slate-950">Complete Onboarding</h2>
               <p class="text-slate-500 font-medium leading-relaxed">
                 Add your vehicle, upload documents, and connect payouts to start receiving ride, errand, and moving requests.
               </p>
@@ -236,7 +236,7 @@ type PassedJob = {
             <div class="relative overflow-hidden rounded-[1.75rem] border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-5 shadow-lg shadow-amber-100/40">
               <div class="relative flex items-start gap-4">
                 <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-amber-600 shadow-sm border border-amber-100 shrink-0">
-                  <ion-icon name="cash-outline" class="text-2xl"></ion-icon>
+                  <ion-icon name="cash-outline" class="text-xl"></ion-icon>
                 </div>
 
                 <div class="flex-1 min-w-0">
@@ -278,7 +278,7 @@ type PassedJob = {
          bg-white
          border border-slate-200
          shadow-lg shadow-slate-200/40
-         px-5 py-5
+         px-4 py-4
          active:scale-[0.99]
          transition-all"
 >
@@ -286,21 +286,21 @@ type PassedJob = {
 
   <div class="flex gap-4 items-start">
 
-    <div class="w-12 h-12 rounded-2xl
+    <div class="w-10 h-10 rounded-2xl
                 bg-amber-50
                 border border-amber-100
                 flex items-center justify-center
                 shrink-0">
       <ion-icon
         name="navigate"
-        class="text-2xl text-amber-600">
+        class="text-xl text-amber-600">
       </ion-icon>
     </div>
 
-    <div class="flex-1 min-w-0 space-y-3">
+    <div class="flex-1 min-w-0 space-y-2">
 
       <div>
-        <p class="text-[10px] uppercase tracking-[0.18em] font-black text-slate-500">
+        <p class="text-[10px] uppercase tracking-[0.1em] font-black text-slate-500">
           Continue Active Request
         </p>
 
@@ -314,22 +314,22 @@ type PassedJob = {
                        text-[10px]
                        font-bold
                        uppercase
-                       tracking-wider">
+                        tracking-wide">
             {{ activeJobStatusLabel() }}
           </span>
         </div>
       </div>
 
-      <h3 class="text-2xl font-display font-bold text-slate-900">
+      <h3 class="text-lg font-display font-bold text-slate-900 leading-tight">
         {{ activeJobTitle() }}
       </h3>
 
-      <p class="text-base text-slate-600 leading-7 whitespace-normal break-words">
+      <p class="text-sm text-slate-600 leading-5 whitespace-normal">
         {{ activeJobRouteLabel() }}
       </p>
 
-      <div class="pt-2">
-        <span class="text-lg font-bold text-slate-600">
+      <div class="pt-1">
+        <span class="text-sm font-bold text-amber-700">
           Resume →
         </span>
       </div>
@@ -352,7 +352,7 @@ type PassedJob = {
                       Live status
                     </div>
 
-                    <h2 class="text-3xl font-display font-black text-slate-950 tracking-tight leading-none">
+                    <h2 class="text-xl font-display font-black text-slate-950 tracking-tight leading-none">
                       {{ status() === 'online' ? (isAvailable() ? 'Active' : 'Busy') : 'Offline' }}
                     </h2>
 
@@ -370,7 +370,7 @@ type PassedJob = {
                   <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-3 shadow-sm shrink-0">
                     <div class="grid grid-cols-2 gap-3">
                       <div class="flex flex-col items-center">
-                        <span class="text-[7px] uppercase text-slate-600 font-black mb-2 tracking-widest">Online</span>
+                        <span class="text-[9px] uppercase text-slate-600 font-black mb-2 tracking-[0.08em]">Online</span>
                         <ion-toggle
                           [checked]="status() === 'online'"
                           (ionChange)="toggleStatus($event)"
@@ -379,7 +379,7 @@ type PassedJob = {
                       </div>
 
                       <div class="flex flex-col items-center">
-                        <span class="text-[7px] uppercase text-slate-600 font-black mb-2 tracking-widest">Free</span>
+                        <span class="text-[9px] uppercase text-slate-600 font-black mb-2 tracking-[0.08em]">Free</span>
                         <ion-toggle
                           [checked]="isAvailable()"
                           (ionChange)="toggleAvailability($event)"
@@ -411,19 +411,19 @@ type PassedJob = {
 
               <div class="grid grid-cols-3 gap-2">
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 whitespace-normal">Today</p>
+                  <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-600 mb-1 whitespace-normal">Today</p>
                   <p class="text-lg font-display font-black text-slate-950">{{ todayMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ todayMetric().label }}</p>
                 </div>
 
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 whitespace-normal">Acceptance</p>
+                  <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-600 mb-1 whitespace-normal">Acceptance</p>
                   <p class="text-lg font-display font-black text-slate-950">{{ acceptanceMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ acceptanceMetric().label }}</p>
                 </div>
 
                 <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3 min-w-0">
-                  <p class="text-[8px] uppercase tracking-widest font-black text-slate-600 mb-1 whitespace-normal">Rating</p>
+                  <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-600 mb-1 whitespace-normal">Rating</p>
                   <p class="text-lg font-display font-black text-slate-950">{{ ratingMetric().display }}</p>
                   <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ ratingMetric().label }}</p>
                 </div>
@@ -496,7 +496,7 @@ type PassedJob = {
                       </div>
 
                       <div class="text-right shrink-0">
-                        <span class="text-2xl font-display font-bold text-slate-950">
+                        <span class="text-xl font-display font-bold text-slate-950">
                           {{ formatPrice(getRequestFare(job)) }}
                         </span>
                         <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">
@@ -695,7 +695,7 @@ type PassedJob = {
                   </app-badge>
                 </div>
 
-                <p class="text-3xl font-display font-bold text-slate-950">{{ acceptanceMetric().display }}</p>
+                <p class="text-xl font-display font-bold text-slate-950">{{ acceptanceMetric().display }}</p>
                 <p class="text-sm text-slate-500 font-medium mt-1">{{ acceptanceMetric().label }}</p>
               </div>
 
@@ -714,12 +714,12 @@ type PassedJob = {
                 </div>
 
                 @if (ratingMetric().isNew) {
-                  <p class="text-3xl font-display font-bold text-slate-950">New</p>
+                  <p class="text-xl font-display font-bold text-slate-950">New</p>
                   <p class="text-sm text-slate-500 font-medium mt-1">
                     Rating will appear after your first customer review.
                   </p>
                 } @else {
-                  <p class="text-3xl font-display font-bold text-slate-950">{{ ratingMetric().display }}</p>
+                  <p class="text-xl font-display font-bold text-slate-950">{{ ratingMetric().display }}</p>
                   <app-rating [rating]="ratingMetric().value || 0"></app-rating>
                 }
               </div>
@@ -735,7 +735,7 @@ type PassedJob = {
             <div class="grid grid-cols-1 min-[430px]:grid-cols-2 gap-3">
               <button type="button" (click)="router.navigate(['/driver/earnings'])" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
                 <div class="w-14 h-14 bg-blue-50 rounded-[1.75rem] flex items-center justify-center text-blue-600 mb-3 border border-blue-100 shadow-lg shadow-blue-600/10">
-                  <ion-icon name="stats-chart" class="text-3xl"></ion-icon>
+                  <ion-icon name="stats-chart" class="text-2xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Earnings</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">View income</p>
@@ -743,7 +743,7 @@ type PassedJob = {
 
               <button type="button" (click)="router.navigate(['/driver/subscription'])" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
                 <div class="w-14 h-14 bg-amber-50 rounded-[1.75rem] flex items-center justify-center text-amber-600 mb-3 border border-amber-100 shadow-lg shadow-amber-500/10">
-                  <ion-icon name="star" class="text-3xl"></ion-icon>
+                  <ion-icon name="star" class="text-2xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Subscription</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">
@@ -753,7 +753,7 @@ type PassedJob = {
 
               <button type="button" (click)="browseRequests()" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
                 <div class="w-14 h-14 bg-indigo-50 rounded-[1.75rem] flex items-center justify-center text-indigo-600 mb-3 border border-indigo-100 shadow-lg shadow-indigo-600/10">
-                  <ion-icon name="list-outline" class="text-3xl"></ion-icon>
+                  <ion-icon name="list-outline" class="text-2xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Requests</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">Ride, errand & moving</p>
@@ -761,7 +761,7 @@ type PassedJob = {
 
               <button type="button" (click)="setupPayouts()" class="relative min-h-[9.5rem] overflow-hidden flex flex-col items-center justify-center p-5 bg-white rounded-[1.5rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all text-center">
                 <div class="w-14 h-14 bg-emerald-50 rounded-[1.75rem] flex items-center justify-center text-emerald-600 mb-3 border border-emerald-100 shadow-lg shadow-emerald-600/10">
-                  <ion-icon name="card" class="text-3xl"></ion-icon>
+                  <ion-icon name="card" class="text-2xl"></ion-icon>
                 </div>
                 <h4 class="font-display font-black text-slate-950 text-lg leading-tight mb-2">Payouts</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-[0.14em] leading-snug">Stripe Connect</p>
@@ -1089,7 +1089,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const job = this.activeJob();
         if (!job) return 'Active request';
 
-        return `${this.getServiceName(job)} in progress`;
+        return this.getServiceName(job);
     }
 
     activeJobStatusLabel(): string {
@@ -1105,10 +1105,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const job = this.activeJob();
         if (!job) return 'Tap to continue the request.';
 
-        const origin = job.pickup_address || this.requestOriginUnavailableLabel(job);
-        const destination = job.dropoff_address || this.requestDestinationUnavailableLabel(job);
+        const origin = this.shortenAddress(job.pickup_address || this.requestOriginUnavailableLabel(job));
+        const destination = this.shortenAddress(job.dropoff_address || this.requestDestinationUnavailableLabel(job));
 
-        return `${this.requestOriginLabel(job)}: ${origin} -> ${this.requestDestinationLabel(job)}: ${destination}`;
+        return `${origin} → ${destination}`;
     }
 
     activeJobShortRouteLabel(): string {
@@ -1136,6 +1136,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         return value.length > 46 ? `${value.slice(0, 43)}...` : value;
+    }
+
+    private shortenAddress(address: string): string {
+        const value = String(address || '').trim();
+        if (!value) return 'Location unavailable';
+
+        const parts = value
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean);
+
+        return parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : value;
     }
 
     getRequestFare(job: Booking): number {

@@ -113,7 +113,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     {{ serviceName() }}
                   </app-badge>
 
-                  <h2 class="text-3xl font-display font-black tracking-tight mt-4 capitalize text-slate-950">
+                  <h2 class="text-2xl font-display font-black tracking-tight mt-4 capitalize text-slate-950">
                     {{ formatStatus(job()?.status) }}
                   </h2>
 
@@ -126,7 +126,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                   <p class="text-xs text-slate-500 font-semibold mb-1">
                     Payout
                   </p>
-                  <span class="text-3xl font-display font-black text-slate-950">
+                  <span class="text-xl font-display font-black text-slate-950">
                     {{ formatPrice(job()?.total_price || job()?.price || 0) }}
                   </span>
                 </div>
@@ -205,7 +205,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </div>
 
                 <div class="flex-1 min-w-0">
-                  <h4 class="text-lg font-display font-black text-slate-950 truncate">
+                  <h4 class="text-base font-display font-black text-slate-950 leading-tight whitespace-normal">
                     {{ customerName() }}
                   </h4>
                   <p class="text-xs text-slate-500 font-semibold">
@@ -264,7 +264,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 </div>
                 <div class="min-w-0">
                   <h3 class="font-display font-black text-slate-950">Service Requirements</h3>
-                  <p class="text-xs text-slate-500 font-semibold truncate">
+                  <p class="text-xs text-slate-500 font-semibold whitespace-normal">
                     {{ serviceName() }}
                   </p>
                 </div>
@@ -303,7 +303,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                     <div class="flex items-center gap-2 rounded-xl bg-white/80 border border-amber-100 p-2">
                       <ion-icon [name]="step.icon" class="text-amber-600 shrink-0"></ion-icon>
                       <div class="min-w-0">
-                        <p class="text-xs font-black text-slate-950 truncate">{{ step.title }}</p>
+                        <p class="text-xs font-black text-slate-950 whitespace-normal">{{ step.title }}</p>
                         <p class="text-[11px] font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
                       </div>
                     </div>
@@ -509,7 +509,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                             <p class="text-[10px] font-black uppercase tracking-widest text-white/40">
                               Cardholder
                             </p>
-                            <p class="mt-1 text-base font-display font-black uppercase tracking-[0.08em] text-white truncate">
+                            <p class="mt-1 text-base font-display font-black uppercase tracking-[0.06em] text-white whitespace-normal">
                               {{ virtualCardDriverName() }}
                             </p>
                           </div>
@@ -839,7 +839,7 @@ type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
                 <ion-icon name="alert-circle-outline" class="text-5xl"></ion-icon>
               </div>
               <div class="space-y-3">
-                <h3 class="text-2xl font-display font-black text-slate-950">Request Not Found</h3>
+                <h3 class="text-lg font-display font-black text-slate-950">Request Not Found</h3>
                 <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
                   This request may have been cancelled, completed, or assigned to another driver.
                 </p>

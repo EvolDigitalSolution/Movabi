@@ -118,7 +118,7 @@ export class ComplianceService {
 
         if (!this.hasEmail(profile)) {
             missing.push(this.blocker('email', 'Email address', 'Add an email address before booking.'));
-        } else if (!this.isEmailVerified(profile)) {
+        } else if (this.emailVerificationSupported(profile) && !this.isEmailVerified(profile)) {
             missing.push(this.blocker('email_verified', 'Email verified', 'Verify your email before booking.'));
         }
 
@@ -204,8 +204,10 @@ export class ComplianceService {
         this.requireText(missing, this.hasDate(profile?.date_of_birth), 'date_of_birth', 'Date of birth', 'Add your date of birth.', relaxedLegacy);
         this.requireText(missing, this.hasCurrentAddress(profile), 'current_address', 'Current address', 'Add your current address.', relaxedLegacy);
 
-        if (!this.isEmailVerified(profile)) {
+        if (this.emailVerificationSupported(profile) && !this.isEmailVerified(profile)) {
             missing.push(this.driverRequirement('email_verified', 'Email verified', 'Verify your email address.', relaxedLegacy));
+        } else if (!this.hasEmail(profile)) {
+            missing.push(this.driverRequirement('email', 'Email address', 'Add your email address.', relaxedLegacy));
         }
 
         if (config.requireDriverPhoneVerification && this.phoneVerificationSupported(profile) && !this.isPhoneVerified(profile)) {
@@ -214,8 +216,8 @@ export class ComplianceService {
             missing.push(this.driverRequirement('phone', 'Phone number', 'Add your mobile number.', relaxedLegacy));
         }
 
-        this.requireDocument(missing, 'profile_photo', 'Profile photo', 'Upload a clear driver profile photo.', documents, ['avatar_url', 'profile_photo_url'], relaxedLegacy);
-        this.requireDocument(missing, 'live_selfie', 'Live selfie', 'Complete live selfie verification.', documents, ['live_selfie_url', 'selfie_url'], relaxedLegacy, ['live_selfie_status']);
+        this.warnDocument(missing, 'profile_photo', 'Profile photo', 'Add a clear driver profile photo.', documents, ['avatar_url', 'profile_photo_url']);
+        this.warnDocument(missing, 'live_selfie', 'Live selfie', 'Live selfie verification will be required when enabled.', documents, ['live_selfie_url', 'selfie_url']);
         this.requireDocument(missing, 'driver_license', 'Driving licence', 'Upload your driving licence document.', documents, ['driver_license_url'], relaxedLegacy, ['driver_license_status']);
 
         if (config.requireRightToWork) {
@@ -390,6 +392,19 @@ export class ComplianceService {
         }
     }
 
+    private warnDocument(
+        missing: ComplianceRequirement[],
+        key: string,
+        label: string,
+        message: string,
+        documents: Record<string, unknown>,
+        urlKeys: string[]
+    ) {
+        const hasDocument = urlKeys.some((urlKey) => this.hasTextValue(documents[urlKey]));
+        if (hasDocument) return;
+        missing.push({ key, label, message, severity: 'warning', status: 'missing' });
+    }
+
     private requireText(
         missing: ComplianceRequirement[],
         condition: boolean,
@@ -435,6 +450,11 @@ export class ComplianceService {
 
     private isEmailVerified(profile?: Partial<Profile> | null): boolean {
         return profile?.email_verified === true || this.hasDate(profile?.email_confirmed_at) || this.isLegacyApprovedDriver(profile);
+    }
+
+    private emailVerificationSupported(profile?: Partial<Profile> | null): boolean {
+        return profile?.email_verified !== null && profile?.email_verified !== undefined ||
+            this.hasDate(profile?.email_confirmed_at);
     }
 
     private isPhoneVerified(profile?: Partial<Profile> | null): boolean {
