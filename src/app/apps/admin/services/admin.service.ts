@@ -225,17 +225,31 @@ export class AdminService {
     }));
   }
 
-  async verifyDriver(driverId: string, isVerified: boolean) {
-    const { error } = await this.supabase
-      .from('profiles')
-      .update({
-        verification_status: isVerified ? 'approved' : 'action_required',
-        verified_at: isVerified ? new Date().toISOString() : null
-      })
-      .eq('id', driverId);
+    async verifyDriver(driverId: string, approved: boolean) {
 
-    if (error) throw error;
-  }
+        const now = new Date().toISOString();
+
+        const update: any = approved
+            ? {
+                verification_status: 'approved',
+                driver_review_status: 'approved',
+                verified_at: now,
+                verification_blockers: [],
+                driver_review_blockers: [],
+                driver_review_notes: null
+            }
+            : {
+                verification_status: 'action_required',
+                driver_review_status: 'action_required'
+            };
+
+        const { error } = await this.supabase
+            .from('profiles')
+            .update(update)
+            .eq('id', driverId);
+
+        if (error) throw error;
+    }
 
   async getJobs(filters?: { status?: string; payment_status?: string; service_type_id?: string }) {
     let query = this.supabase
@@ -614,34 +628,89 @@ export class AdminService {
     };
   }
 
-  private async sendDriverMissingInfoViaSupabase(driverId: string, notes: string, blockers: string[]) {
-    const sentAt = new Date().toISOString();
-    const cleanBlockers = (blockers || []).map((item) => String(item || '').trim()).filter(Boolean);
+    private async sendDriverMissingInfoViaSupabase(
+        driverId: string,
+        notes: string,
+        blockers: string[]
+    ) {
+        const sentAt = new Date().toISOString();
 
-    const { error } = await this.supabase
-      .from('profiles')
-      .update({
-        driver_review_status: 'action_required',
-        driver_review_notes: String(notes || '').trim(),
-        driver_review_blockers: cleanBlockers,
-        driver_review_sent_at: sentAt,
-        verification_status: 'action_required',
-        verification_blockers: cleanBlockers,
-        verification_notes: String(notes || '').trim() || null,
-        updated_at: sentAt
-      })
-      .eq('id', driverId);
+        const cleanBlockers = (blockers || [])
+            .map(x => String(x || '').trim())
+            .filter(Boolean);
 
-    if (error) {
-      throw new Error(`Verification API is not deployed and the database fallback failed: ${error.message}`);
+        // Update driver profile
+        const { error } = await this.supabase
+            .from('profiles')
+            .update({
+                driver_review_status: 'action_required',
+                driver_review_notes: notes,
+                driver_review_blockers: cleanBlockers,
+                driver_review_sent_at: sentAt,
+
+                verification_status: 'action_required',
+                verification_notes: notes,
+                verification_blockers: cleanBlockers,
+
+                updated_at: sentAt
+            })
+            .eq('id', driverId);
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        //
+        // Create in-app notification
+        //
+        try {
+            await this.supabase
+                .from('notifications')
+                .insert({
+                    user_id: driverId,
+                    title: 'Verification action required',
+                    body: notes,
+                    type: 'driver_review_action_required',
+                    route: '/driver/settings',
+                    data: {
+                        blockers: cleanBlockers
+                    },
+                    is_read: false,
+                    created_at: sentAt
+                });
+        } catch (e) {
+            console.warn('Notification table not available.', e);
+        }
+
+        //
+        // Trigger backend push notification
+        //
+        try {
+            const headers = await this.getAuthenticatedApiHeaders();
+
+            await fetch(
+                `${this.apiUrlService.getBaseUrl()}/api/notifications/send-driver-review`,
+                {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        driverId,
+                        title: 'Verification action required',
+                        message: notes,
+                        blockers: cleanBlockers
+                    })
+                }
+            );
+        } catch (e) {
+            console.warn('Push notification unavailable.', e);
+        }
+
+        return {
+            success: true,
+            message: 'Driver notified successfully.',
+            blockers: cleanBlockers
+        };
     }
-
-    return {
-      success: true,
-      message: 'Missing information request saved',
-      blockers: cleanBlockers
-    };
-  }
 
   private async readApiResponse(response: Response): Promise<any> {
     const text = await response.text();
