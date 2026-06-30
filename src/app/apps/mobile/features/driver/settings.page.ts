@@ -38,6 +38,13 @@ import { ConnectService } from '../../../../core/services/stripe/connect.service
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
+import {
+    getBlockingRequirements,
+    getVehiclePlateValue,
+    normaliseSelectedServices,
+    normaliseVehicleClass,
+    vehicleRequiresRegistration
+} from '../../../../shared/verification/driver-requirements.engine';
 
 type DocType = 'license' | 'insurance';
 
@@ -535,7 +542,48 @@ export class DriverSettingsPage implements OnInit {
 
     reviewBlockers(): string[] {
         const profile = this.profile() as DriverProfile | null;
-        return this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers);
+        const vehicle = this.vehicle() as Vehicle | null;
+        const selectedServices = normaliseSelectedServices(profile, vehicle);
+        const engineBlockers = getBlockingRequirements({
+            countryCode: (profile as any)?.country_code || (profile as any)?.country,
+            driver: profile,
+            vehicle,
+            documents: { ...(profile || {}), ...(vehicle || {}) },
+            selectedServices
+        }).map(requirement => requirement.message);
+
+        return this.filterResolvedBlockers([
+            ...this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers),
+            ...engineBlockers
+        ], profile, vehicle, selectedServices);
+    }
+
+    private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
+        const plate = getVehiclePlateValue(vehicle);
+        const needsRegistration = vehicleRequiresRegistration(
+            normaliseVehicleClass(vehicle),
+            selectedServices,
+            (profile as any)?.country_code || (profile as any)?.country
+        );
+        const needsRide = selectedServices.includes('ride');
+        const hasInsurance = !!(
+            (profile as any)?.insurance_url ||
+            (profile as any)?.courier_insurance_url ||
+            (profile as any)?.hire_reward_insurance_url
+        );
+
+        return Array.from(new Set(blockers.filter((blocker) => {
+            const text = String(blocker || '').toLowerCase();
+            if ((!needsRegistration || plate) && text.includes('registration')) return false;
+            if (!needsRide && (
+                text.includes('council') ||
+                text.includes('taxi') ||
+                text.includes('private hire') ||
+                text.includes('badge')
+            )) return false;
+            if (hasInsurance && (text.includes('insurance document is missing') || text.includes('courier insurance') || text.includes('hire and reward'))) return false;
+            return true;
+        })));
     }
 
     verificationLabel(): string {

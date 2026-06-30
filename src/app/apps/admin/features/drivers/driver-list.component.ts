@@ -5,8 +5,15 @@ import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
-import { ComplianceService } from '../../../../core/services/compliance/compliance.service';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
+import {
+    getBlockingRequirements,
+    getVehiclePlateValue,
+    isRideSelected as engineRideSelected,
+    normaliseSelectedServices,
+    normaliseVehicleClass,
+    vehicleRequiresRegistration
+} from '../../../../shared/verification/driver-requirements.engine';
 
 type AdminDriver = DriverProfile & {
     vehicles?: Vehicle[];
@@ -337,27 +344,31 @@ type AdminDriver = DriverProfile & {
             <div class="detail-card">
               <p class="detail-label">Council / Taxi Licence</p>
 
-              <div class="grid sm:grid-cols-2 gap-3 mt-3">
-                <div>
-                  <span class="detail-muted">Council:</span>
-                  <span class="detail-value">{{ selectedDriver()?.council_name || 'Missing' }}</span>
-                </div>
+              @if (isRideSelected(selectedDriver())) {
+                <div class="grid sm:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <span class="detail-muted">Council:</span>
+                    <span class="detail-value">{{ selectedDriver()?.council_name || 'Missing' }}</span>
+                  </div>
 
-                <div>
-                  <span class="detail-muted">Licence No:</span>
-                  <span class="detail-value">{{ selectedDriver()?.council_license_number || 'Missing' }}</span>
-                </div>
+                  <div>
+                    <span class="detail-muted">Licence No:</span>
+                    <span class="detail-value">{{ selectedDriver()?.council_license_number || 'Missing' }}</span>
+                  </div>
 
-                <div>
-                  <span class="detail-muted">Badge No:</span>
-                  <span class="detail-value">{{ selectedDriver()?.taxi_badge_number || 'Missing' }}</span>
-                </div>
+                  <div>
+                    <span class="detail-muted">Badge No:</span>
+                    <span class="detail-value">{{ selectedDriver()?.taxi_badge_number || 'Missing' }}</span>
+                  </div>
 
-                <div>
-                  <span class="detail-muted">Expiry:</span>
-                  <span class="detail-value">{{ formatDate(selectedDriver()?.taxi_license_expiry) }}</span>
+                  <div>
+                    <span class="detail-muted">Expiry:</span>
+                    <span class="detail-value">{{ formatDate(selectedDriver()?.taxi_license_expiry) }}</span>
+                  </div>
                 </div>
-              </div>
+              } @else {
+                <p class="detail-muted mt-3">Not required for the selected services.</p>
+              }
             </div>
 
             <div class="detail-card">
@@ -760,7 +771,6 @@ type AdminDriver = DriverProfile & {
 export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
-    private compliance = inject(ComplianceService);
     private tour = inject(OnboardingTourService);
 
     drivers = signal<AdminDriver[]>([]);
@@ -954,7 +964,7 @@ export class DriverListComponent implements OnInit {
     }
 
     isRideSelected(driver: any): boolean {
-        return this.getSelectedServices(driver).includes('ride');
+        return engineRideSelected(driver, this.getVehicle(driver));
     }
 
     getCouncilSummary(driver: any): string {
@@ -976,7 +986,7 @@ export class DriverListComponent implements OnInit {
     getVehiclePlate(driver: any): string {
         const vehicle = this.getVehicle(driver);
 
-        const plate = this.getVehiclePlateValue(vehicle);
+        const plate = getVehiclePlateValue(vehicle);
         return plate || 'No plate';
     }
 
@@ -987,14 +997,13 @@ export class DriverListComponent implements OnInit {
 
     getVehicleClassLabel(driver: any): string {
         const vehicle = this.getVehicle(driver);
-        const raw = this.safeLower(vehicle?.type || vehicle?.service_class || vehicle?.capacity);
+        const vehicleClass = normaliseVehicleClass(vehicle);
 
         if (!vehicle) return 'No class';
-        if (raw.includes('bike') || raw.includes('motorcycle') || raw.includes('scooter')) return 'Bike';
-        if (raw.includes('large_van') || raw.includes('large van') || raw.includes('luton')) return 'Large van';
-        if (raw.includes('small_van') || raw.includes('small van')) return 'Small van';
-        if (raw.includes('minibus') || raw.includes('7') || raw.includes('xl')) return 'XL / 7 seater';
-        if (raw.includes('van')) return 'Small van';
+        if (vehicleClass === 'bike') return 'Bike';
+        if (vehicleClass === 'large_van') return 'Large van';
+        if (vehicleClass === 'small_van') return 'Small van';
+        if (vehicleClass === 'xl_7_seater') return 'XL / 7 seater';
         return 'Car';
     }
 
@@ -1011,29 +1020,7 @@ export class DriverListComponent implements OnInit {
     }
 
     private getSelectedServices(driver: any): string[] {
-        const vehicle = this.getVehicle(driver);
-        const items = this.parseVerificationItems(driver?.verification_items);
-        const rawValues = [
-            vehicle?.service_eligibility,
-            items['driver_service_types']
-        ];
-
-        return Array.from(new Set(rawValues.flatMap(value => {
-            if (Array.isArray(value)) return value;
-            if (typeof value === 'string') {
-                try {
-                    const parsed = JSON.parse(value);
-                    if (Array.isArray(parsed)) return parsed;
-                } catch {
-                    return value.split(',');
-                }
-            }
-            return value ? [value] : [];
-        })
-            .map(value => String(value || '').trim().toLowerCase())
-            .map(value => value === 'van-moving' || value === 'moving' ? 'van' : value)
-            .map(value => value === 'package' || value === 'package_delivery' ? 'delivery' : value)
-            .filter(value => ['ride', 'errand', 'delivery', 'van'].includes(value))));
+        return normaliseSelectedServices(driver, this.getVehicle(driver));
     }
 
     private parseVerificationItems(value: unknown): Record<string, unknown> {
@@ -1182,111 +1169,55 @@ export class DriverListComponent implements OnInit {
 
     getBlockers(driver: any): string[] {
         const raw = driver?.verification_blockers ?? driver?.driver_review_blockers;
-        return this.filterReviewBlockers(driver, this.parseStringList(raw));
+        const engineBlockers = this.getEngineBlockers(driver);
+        return this.filterReviewBlockers(driver, [
+            ...this.parseStringList(raw),
+            ...engineBlockers
+        ]);
     }
 
     getReviewFeedbackOptions(driver: any): string[] {
-        const vehicle = this.getVehicle(driver);
-        const plate = this.getVehiclePlateValue(vehicle);
-        const selectedServices = this.getSelectedServices(driver);
-        const isRide = selectedServices.includes('ride');
-        const isDelivery = selectedServices.includes('delivery');
-        const isErrand = selectedServices.includes('errand');
-        const isVan = selectedServices.includes('van');
-
-        const legalName = String(
-            driver?.full_name || `${driver?.first_name || ''} ${driver?.last_name || ''}`.trim()
-        ).trim();
-
         const existing = this.filterReviewBlockers(driver, [
             ...this.parseStringList(driver?.driver_review_blockers),
             ...this.parseStringList(driver?.verification_blockers)
         ]);
 
-        const baseBlockers = [
-            !legalName ? 'Full legal name is missing.' : null,
-            !String(driver?.email || '').trim() ? 'Email address is missing.' : null,
-            !String(driver?.phone || '').trim() ? 'Phone number is missing.' : null,
-            !String((driver as any)?.date_of_birth || (driver as any)?.dob || '').trim() ? 'Date of birth is missing.' : null,
-            !vehicle ? 'Vehicle details are missing.' : null,
-            vehicle && !String(vehicle?.type || vehicle?.service_class || vehicle?.capacity || '').trim() ? 'Vehicle class is missing.' : null,
-            !selectedServices.length ? 'Selected service types are missing.' : null,
-            vehicle && !String(vehicle?.make || '').trim() ? 'Vehicle make is missing.' : null,
-            vehicle && !String(vehicle?.model || '').trim() ? 'Vehicle model is missing.' : null,
-            vehicle && !String(vehicle?.color || '').trim() ? 'Vehicle colour is missing.' : null,
-            vehicle && !String(vehicle?.year || '').trim() ? 'Vehicle year is missing.' : null,
-            !plate ? 'Vehicle registration number is missing.' : null,
-            !driver?.driver_license_url ? 'Driver licence is missing.' : null,
-            !driver?.insurance_url ? 'Insurance document is missing.' : 'Insurance document requires manual admin review.',
-            !driver?.stripe_account_id && !['enabled', 'connected'].includes(this.safeLower(driver?.stripe_connect_status))
-                ? 'Stripe payout setup is missing.'
-                : null,
-            !(driver as any)?.driver_agreement_accepted_at && !(driver as any)?.accepted_driver_terms_at
-                ? 'Driver agreement is missing.'
-                : null
-        ];
-
-        const rideBlockers = isRide
-            ? [
-                !driver?.council_name ? 'Council/private hire authority is missing.' : null,
-                !driver?.council_license_number ? 'Council licence number is missing.' : null,
-                !driver?.taxi_badge_number ? 'Taxi badge number is missing.' : null,
-                !driver?.taxi_license_expiry ? 'Taxi licence expiry date is missing.' : null,
-                !(driver as any)?.private_hire_vehicle_licence_url ? 'Private hire vehicle licence is missing.' : null,
-                !(driver as any)?.private_hire_insurance_url ? 'Private hire insurance is missing.' : null
-            ]
-            : [];
-
-        const deliveryErrandBlockers = (isDelivery || isErrand)
-            ? [
-                !(driver as any)?.hire_reward_insurance_url && !(driver as any)?.courier_insurance_url
-                    ? 'Hire and reward/courier insurance requires manual admin review.'
-                    : null,
-                !(driver as any)?.goods_in_transit_url && (driver as any)?.goods_in_transit_required
-                    ? 'Goods in transit insurance is missing.'
-                    : null
-            ]
-            : [];
-
-        const vanBlockers = isVan
-            ? [
-                !(driver as any)?.goods_in_transit_url ? 'Goods in transit insurance requires manual admin review.' : null,
-                !(driver as any)?.public_liability_url ? 'Public liability insurance requires manual admin review.' : null,
-                !String(vehicle?.capacity || '').trim() ? 'Vehicle capacity/size is missing.' : null
-            ]
-            : [];
-
-        let complianceGenerated: string[] = [];
-        try {
-            const serviceTypes = selectedServices.length ? selectedServices : ['base'];
-            complianceGenerated = serviceTypes.flatMap((serviceType) =>
-                this.compliance.getDriverMissingRequirements(driver, vehicle, driver, serviceType as any)
-                    .filter((item) => item.severity === 'blocker')
-                    .map((item) => item.message)
-            );
-        } catch (error) {
-            console.warn('[admin-driver-review] compliance options skipped', error);
-        }
-
         return this.filterReviewBlockers(driver, Array.from(new Set([
             ...existing,
-            ...baseBlockers,
-            ...rideBlockers,
-            ...deliveryErrandBlockers,
-            ...vanBlockers,
-            ...complianceGenerated
+            ...this.getEngineBlockers(driver)
         ].filter(Boolean) as string[])));
+    }
+
+    private getEngineBlockers(driver: any): string[] {
+        const vehicle = this.getVehicle(driver);
+        return getBlockingRequirements({
+            countryCode: driver?.country_code || driver?.country,
+            driver,
+            vehicle,
+            documents: { ...driver, ...vehicle },
+            selectedServices: this.getSelectedServices(driver)
+        }).map(requirement => requirement.message);
     }
 
     private filterReviewBlockers(driver: any, blockers: string[]): string[] {
         const vehicle = this.getVehicle(driver);
-        const plate = this.getVehiclePlateValue(vehicle);
+        const selectedServices = this.getSelectedServices(driver);
+        const plate = getVehiclePlateValue(vehicle);
         const needsRideReview = this.isRideSelected(driver);
+        const needsRegistration = vehicleRequiresRegistration(
+            normaliseVehicleClass(vehicle),
+            selectedServices,
+            driver?.country_code || driver?.country
+        );
 
         return blockers.filter((blocker) => {
             const text = String(blocker || '').toLowerCase();
 
-            if (plate && (text.includes('vehicle registration number is missing') || text.includes('registration plate is missing'))) {
+            if ((!needsRegistration || plate) && (
+                text.includes('vehicle registration number is missing') ||
+                text.includes('registration plate is missing') ||
+                text.includes('vehicle registration is missing')
+            )) {
                 return false;
             }
 
@@ -1296,6 +1227,14 @@ export class DriverListComponent implements OnInit {
                 text.includes('private hire') ||
                 text.includes('badge number') ||
                 text.includes('phv')
+            )) {
+                return false;
+            }
+
+            if ((driver?.insurance_url || driver?.courier_insurance_url || driver?.hire_reward_insurance_url) && (
+                text.includes('insurance document is missing') ||
+                text.includes('courier insurance') ||
+                text.includes('hire and reward')
             )) {
                 return false;
             }

@@ -44,6 +44,14 @@ import { StorageUploadService } from '@core/services/storage/storage-upload.serv
 import { AppConfigService } from '@core/services/config/app-config.service';
 import { DriverProfile, Vehicle } from '@shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '@shared/ui';
+import {
+    getBlockingRequirements,
+    getVehiclePlateValue,
+    isRideSelected as engineRideSelected,
+    normaliseSelectedServices,
+    normaliseVehicleClass,
+    vehicleRequiresRegistration
+} from '@shared/verification/driver-requirements.engine';
 
 type DocumentType = 'license' | 'insurance';
 type StripeMessageType = 'success' | 'warning';
@@ -730,7 +738,20 @@ export class OnboardingPage implements OnInit {
 
     reviewBlockers = computed(() => {
         const profile = this.profile() as DriverProfile | null;
-        return this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers);
+        const vehicle = this.vehicle() as Vehicle | null;
+        const selectedServices = normaliseSelectedServices(profile, vehicle);
+        const engineBlockers = getBlockingRequirements({
+            countryCode: (profile as any)?.country_code || (profile as any)?.country,
+            driver: profile,
+            vehicle,
+            documents: { ...(profile || {}), ...(vehicle || {}) },
+            selectedServices
+        }).map(requirement => requirement.message);
+
+        return this.filterResolvedBlockers([
+            ...this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers),
+            ...engineBlockers
+        ], profile, vehicle, selectedServices);
     });
 
     isStripeReady = computed(() => {
@@ -1038,7 +1059,39 @@ export class OnboardingPage implements OnInit {
     }
 
     requiresTaxiLicence(): boolean {
-        return this.selectedServiceTypes().includes('ride');
+        return engineRideSelected(
+            { verification_items: { driver_service_types: this.selectedServiceTypes() }, driver_service_types: this.selectedServiceTypes() },
+            { service_eligibility: this.selectedServiceTypes(), capacity: this.selectedVehicleClass() }
+        );
+    }
+
+    private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
+        const plate = getVehiclePlateValue(vehicle);
+        const needsRegistration = vehicleRequiresRegistration(
+            normaliseVehicleClass(vehicle),
+            selectedServices,
+            (profile as any)?.country_code || (profile as any)?.country
+        );
+        const needsRide = selectedServices.includes('ride');
+        const hasInsurance = !!(
+            (profile as any)?.insurance_url ||
+            (profile as any)?.courier_insurance_url ||
+            (profile as any)?.hire_reward_insurance_url ||
+            this.docs().insurance
+        );
+
+        return Array.from(new Set(blockers.filter((blocker) => {
+            const text = String(blocker || '').toLowerCase();
+            if ((!needsRegistration || plate) && text.includes('registration')) return false;
+            if (!needsRide && (
+                text.includes('council') ||
+                text.includes('taxi') ||
+                text.includes('private hire') ||
+                text.includes('badge')
+            )) return false;
+            if (hasInsurance && (text.includes('insurance document is missing') || text.includes('courier insurance') || text.includes('hire and reward'))) return false;
+            return true;
+        })));
     }
 
     fieldInputClass(): string {
@@ -1296,7 +1349,13 @@ export class OnboardingPage implements OnInit {
         const plate = this.getCanonicalPlate(vehicle, raw['license_plate']);
         const isBike = vehicleClass === 'bike';
 
-        if (!isBike && (!plate || plate.length === 0)) {
+        const registrationRequired = vehicleRequiresRegistration(
+            normaliseVehicleClass({ capacity: vehicleClass, type: this.vehicleTypeFromClass(vehicleClass) }),
+            this.selectedServiceTypes(),
+            (this.profile() as any)?.country_code || (this.profile() as any)?.country
+        );
+
+        if (registrationRequired && (!plate || plate.length === 0)) {
             throw new Error('Add the vehicle registration plate before submitting.');
         }
 
@@ -1305,7 +1364,7 @@ export class OnboardingPage implements OnInit {
             model: String(raw['model'] || vehicle?.model || '').trim(),
             color: String(raw['color'] || vehicle?.color || '').trim(),
             year: Number(raw['year'] || vehicle?.year),
-            license_plate: plate.toUpperCase(),
+            license_plate: registrationRequired ? plate.toUpperCase() : '',
             type: this.vehicleTypeFromClass(vehicleClass),
             capacity: vehicleClass,
             service_eligibility: this.selectedServiceTypes()

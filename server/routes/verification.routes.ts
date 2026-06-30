@@ -1,12 +1,17 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import {
-  checkVehicleRegistration,
-  checkInsurance,
-  checkCouncilLicence
-} from '../services/verification.service';
 import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
+import {
+  getAdminReviewRequirements,
+  getBlockingRequirements,
+  getDriverRequirements,
+  getVehiclePlateValue,
+  isRideSelected,
+  normaliseSelectedServices,
+  normaliseVehicleClass,
+  vehicleRequiresRegistration
+} from '../shared/driver-requirements.engine';
 
 const router = Router();
 
@@ -57,30 +62,6 @@ const parseServiceTypes = (value: unknown): string[] => {
     .map((item) => item === 'package' || item === 'package_delivery' ? 'delivery' : item)
     .filter(Boolean)));
 };
-
-const driverSelectedRide = (profile: any, vehicle: any): boolean => {
-  const items = parseVerificationItems(profile?.verification_items);
-  const selected = parseServiceTypes([
-    vehicle?.service_eligibility,
-    items.driver_service_types
-  ]);
-
-  if (!selected.length) {
-    const vehicleClass = String(items.vehicle_class || vehicle?.capacity || '').toLowerCase();
-    return vehicleClass.includes('xl') || vehicleClass.includes('standard');
-  }
-
-  return selected.includes('ride');
-};
-
-const getVehiclePlate = (vehicle: any): string => String(
-  vehicle?.license_plate ??
-  vehicle?.registration_plate ??
-  vehicle?.registration_number ??
-  vehicle?.plate_number ??
-  vehicle?.vehicle_registration ??
-  ''
-).trim();
 
 const supabaseUrl =
   process.env.SUPABASE_URL ||
@@ -152,70 +133,29 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       .limit(1)
       .maybeSingle();
 
-    const blockers: string[] = [];
-
-    const vehiclePlate = getVehiclePlate(vehicle);
-    const vehicleCheck = await checkVehicleRegistration(vehiclePlate);
-
-    if (!vehicleCheck.passed) {
-      blockers.push(...vehicleCheck.blockers);
-    }
-
-    const insuranceCheck = await checkInsurance();
-
-    if (!profile.insurance_url) {
-      blockers.push('Insurance document is missing.');
-    } else {
-      blockers.push('Insurance document requires manual admin review.');
-    }
-
-    const rideSelected = driverSelectedRide(profile, vehicle);
-    const councilCheck = rideSelected
-      ? await checkCouncilLicence({
-          councilName: profile.council_name,
-          councilLicenseNumber: profile.council_license_number,
-          taxiBadgeNumber: profile.taxi_badge_number,
-          taxiLicenseExpiry: profile.taxi_license_expiry
-        })
-      : { status: 'not_required', blockers: [] as string[] };
-
-    if (rideSelected) {
-      blockers.push(...councilCheck.blockers);
-    }
-
-    if (!profile.driver_license_url) {
-      blockers.push('Driver licence document is missing.');
-    }
-
-    if (vehicle && !String(vehicle.make || '').trim()) blockers.push('Vehicle make is missing.');
-    if (vehicle && !String(vehicle.model || '').trim()) blockers.push('Vehicle model is missing.');
-    if (vehicle && !String(vehicle.color || '').trim()) blockers.push('Vehicle colour is missing.');
-    if (vehicle && !String(vehicle.year || '').trim()) blockers.push('Vehicle year is missing.');
-
-    const canApprove =
-      vehicleCheck.passed &&
-      !!profile.driver_license_url &&
-      !!profile.insurance_url &&
-      (
-        !rideSelected ||
-        (
-          !!profile.council_name &&
-          !!profile.council_license_number &&
-          !!profile.taxi_badge_number &&
-          !!profile.taxi_license_expiry
-        )
-      );
+    const selectedServices = normaliseSelectedServices(profile, vehicle);
+    const vehicleClass = normaliseVehicleClass(vehicle);
+    const requirementsInput = {
+      countryCode: profile.country_code || profile.country || vehicle?.country_code,
+      driver: profile,
+      vehicle,
+      documents: { ...profile, ...vehicle },
+      selectedServices
+    };
+    const requirements = getDriverRequirements(requirementsInput);
+    const blockingRequirements = getBlockingRequirements(requirementsInput);
+    const adminReviewRequirements = getAdminReviewRequirements(requirementsInput);
+    const blockers = blockingRequirements.map((requirement) => requirement.message);
+    const canApprove = blockers.length === 0;
+    const rideSelected = isRideSelected(profile, vehicle);
+    const vehiclePlate = getVehiclePlateValue(vehicle);
+    const registrationRequired = vehicleRequiresRegistration(vehicleClass, selectedServices, profile.country_code);
 
     if (vehicle) {
       await supabase
         .from('vehicles')
         .update({
-          dvla_make: vehicleCheck.data?.make || null,
-          dvla_colour: vehicleCheck.data?.colour || null,
-          dvla_tax_status: vehicleCheck.data?.taxStatus || null,
-          dvla_mot_status: vehicleCheck.data?.motStatus || null,
-          mot_expiry_date: vehicleCheck.data?.motExpiryDate || null,
-          vehicle_verified: vehicleCheck.passed,
+          vehicle_verified: registrationRequired ? canApprove && !!vehiclePlate : true,
           last_vehicle_check_at: new Date().toISOString()
         })
         .eq('id', vehicle.id);
@@ -224,10 +164,10 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     await supabase
       .from('profiles')
       .update({
-        vehicle_check_status: vehicleCheck.status,
-        mot_check_status: vehicleCheck.status,
-        insurance_check_status: insuranceCheck.status,
-        council_check_status: councilCheck.status,
+        vehicle_check_status: registrationRequired ? (vehiclePlate ? 'uploaded' : 'missing') : 'not_required',
+        mot_check_status: registrationRequired ? (vehiclePlate ? 'uploaded' : 'missing') : 'not_required',
+        insurance_check_status: requirements.find((requirement) => requirement.key.includes('insurance'))?.status || 'missing',
+        council_check_status: rideSelected ? (blockers.some((blocker) => blocker.toLowerCase().includes('council') || blocker.toLowerCase().includes('taxi')) ? 'missing' : 'uploaded') : 'not_required',
         verification_blockers: blockers,
         verification_status: canApprove ? 'ready_for_admin_review' : 'action_required',
         updated_at: new Date().toISOString()
@@ -237,10 +177,19 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     return res.json({
       canApprove,
       blockers,
+      requirements,
+      adminReviewRequirements,
       checks: {
-        vehicle: vehicleCheck,
-        insurance: insuranceCheck,
-        council: councilCheck
+        vehicle: {
+          status: registrationRequired ? (vehiclePlate ? 'uploaded' : 'missing') : 'not_required',
+          vehicleClass,
+          selectedServices,
+          registrationRequired
+        },
+        insurance: requirements.find((requirement) => requirement.key.includes('insurance')) || null,
+        council: {
+          status: rideSelected ? 'required' : 'not_required'
+        }
       }
     });
   } catch (error: any) {

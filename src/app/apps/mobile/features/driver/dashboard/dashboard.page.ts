@@ -361,11 +361,37 @@ type PassedJob = {
 </button>
           }
 
+          @if (hasDriverReviewActionRequired()) {
+            <button
+              type="button"
+              class="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left shadow-sm shadow-amber-100/40 active:scale-[0.99] transition-all"
+              (click)="router.navigate(['/driver/settings'])"
+            >
+              <div class="flex items-start gap-3">
+                <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                  <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
+                </div>
+
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.12em] text-amber-800">
+                    Action Required
+                  </p>
+                  <p class="mt-1 text-sm font-bold leading-snug text-slate-950">
+                    Your driver verification needs attention.
+                  </p>
+                  <p class="mt-0.5 text-xs font-semibold leading-snug text-amber-800">
+                    Tap here to update your information.
+                  </p>
+                </div>
+              </div>
+            </button>
+          }
+
           <div class="movabi-hero" data-tour="driver-status">
             <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
 
             <div class="relative z-10">
-              <div class="flex flex-col gap-5 mb-6">
+              <div class="flex flex-col gap-5">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
                     <div class="movabi-badge-sm mb-4 bg-white/80">
@@ -427,26 +453,6 @@ type PassedJob = {
                   @if (!isProDriver()) {
                     <app-badge variant="secondary">Starter Driver</app-badge>
                   }
-                </div>
-              </div>
-
-              <div class="grid grid-cols-3 gap-2">
-                <div class="movabi-card-compact bg-white/75 min-w-0">
-                  <p class="movabi-card-label mb-1 whitespace-normal">Today</p>
-                  <p class="movabi-price">{{ todayMetric().display }}</p>
-                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ todayMetric().label }}</p>
-                </div>
-
-                <div class="movabi-card-compact bg-white/75 min-w-0">
-                  <p class="movabi-card-label mb-1 whitespace-normal">Acceptance</p>
-                  <p class="movabi-price">{{ acceptanceMetric().display }}</p>
-                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ acceptanceMetric().label }}</p>
-                </div>
-
-                <div class="movabi-card-compact bg-white/75 min-w-0">
-                  <p class="movabi-card-label mb-1 whitespace-normal">Rating</p>
-                  <p class="movabi-price">{{ ratingMetric().display }}</p>
-                  <p class="text-[9px] text-slate-600 font-semibold leading-snug">{{ ratingMetric().label }}</p>
                 </div>
               </div>
             </div>
@@ -872,6 +878,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     isVerified = computed(() => this.verificationStatus() === 'approved');
     isUnderReview = computed(() => this.verificationStatus() === 'under_review');
     isActionRequired = computed(() => this.verificationStatus() === 'action_required');
+    hasDriverReviewActionRequired = computed(() => {
+        const profile = this.profileService.profile() as DriverProfile | null;
+        return profile?.driver_review_status === 'action_required';
+    });
 
     todayMetric = computed<MetricState>(() => {
         const count = this.dashboardStats().todayJobs;
