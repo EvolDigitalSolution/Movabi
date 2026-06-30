@@ -1404,3 +1404,10 @@ websocket connection issues.
           ╵     [32m~~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'jobDisplayFare' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:1678:70:
+[37m      1678 │ ...Name} nearby • ${this.formatPrice(thi[32ms.jobDisplayFa[37mre(job))}`;
+           ╵                                         [32m~~~~~~~~~~~~~~[0m
+
+[39m[22m

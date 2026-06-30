@@ -5,6 +5,8 @@ import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
+import { ComplianceService } from '../../../../core/services/compliance/compliance.service';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 
 type AdminDriver = DriverProfile & {
     vehicles?: Vehicle[];
@@ -748,6 +750,8 @@ type AdminDriver = DriverProfile & {
 export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
+    private compliance = inject(ComplianceService);
+    private tour = inject(OnboardingTourService);
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
@@ -851,6 +855,7 @@ export class DriverListComponent implements OnInit {
 
     async ngOnInit() {
         await this.loadDrivers();
+        this.tour.startIfNeeded('admin');
     }
 
     async loadDrivers() {
@@ -937,7 +942,8 @@ export class DriverListComponent implements OnInit {
     getVehiclePlate(driver: any): string {
         const vehicle = this.getVehicle(driver);
 
-        return vehicle?.license_plate || 'No plate';
+        const plate = this.getVehiclePlateValue(vehicle);
+        return plate || 'No plate';
     }
 
     getVehicleColor(driver: any): string {
@@ -1142,27 +1148,64 @@ export class DriverListComponent implements OnInit {
 
     getBlockers(driver: any): string[] {
         const raw = driver?.verification_blockers ?? driver?.driver_review_blockers;
-        return this.parseStringList(raw);
+        return this.filterReviewBlockers(driver, this.parseStringList(raw));
     }
 
     getReviewFeedbackOptions(driver: any): string[] {
-        const current = [
+        const current = this.filterReviewBlockers(driver, [
             ...this.parseStringList(driver?.driver_review_blockers),
             ...this.getBlockers(driver)
-        ];
+        ]);
 
         const vehicle = this.getVehicle(driver);
-        const needsRideReview = this.getSelectedServices(driver).includes('ride');
+        const plate = this.getVehiclePlateValue(vehicle);
+        const selectedServices = this.getSelectedServices(driver);
+        const serviceTypes = selectedServices.length ? selectedServices : ['base'];
+        const complianceGenerated = serviceTypes.flatMap((serviceType) =>
+            this.compliance.getDriverMissingRequirements(driver, vehicle, driver, serviceType as any)
+                .filter((item) => item.severity === 'blocker')
+                .map((item) => item.message)
+        );
+        const countryWarning = this.compliance.getCountryConfigurationWarning(driver?.country_code);
         const generated = [
-            vehicle?.license_plate ? null : 'Vehicle registration number is missing.',
-            driver?.insurance_url ? 'Insurance document requires manual admin review.' : 'Insurance document is missing.',
-            needsRideReview && !driver?.council_name ? 'Council name is missing.' : null,
-            needsRideReview && !driver?.council_license_number ? 'Council licence number is missing.' : null,
-            needsRideReview && !driver?.taxi_badge_number ? 'Taxi badge number is missing.' : null,
-            needsRideReview && !driver?.taxi_license_expiry ? 'Taxi licence expiry date is missing.' : null
+            countryWarning,
+            !vehicle ? 'Vehicle details are missing.' : null,
+            plate ? null : 'Vehicle registration number is missing.',
+            vehicle && !String(vehicle?.make || '').trim() ? 'Vehicle make is missing.' : null,
+            vehicle && !String(vehicle?.model || '').trim() ? 'Vehicle model is missing.' : null,
+            vehicle && !String(vehicle?.color || '').trim() ? 'Vehicle colour is missing.' : null,
+            vehicle && !String(vehicle?.year || '').trim() ? 'Vehicle year is missing.' : null,
+            this.getSelectedServices(driver).length ? null : 'Selected service types are missing.',
+            driver?.insurance_url ? 'Insurance document requires manual admin review.' : null,
+            ...complianceGenerated
         ].filter(Boolean) as string[];
 
         return Array.from(new Set([...current, ...generated]));
+    }
+
+    private filterReviewBlockers(driver: any, blockers: string[]): string[] {
+        const vehicle = this.getVehicle(driver);
+        const plate = this.getVehiclePlateValue(vehicle);
+        const needsRideReview = this.getSelectedServices(driver).includes('ride');
+
+        return blockers.filter((blocker) => {
+            const text = String(blocker || '').toLowerCase();
+
+            if (plate && text.includes('vehicle registration number is missing')) {
+                return false;
+            }
+
+            if (!needsRideReview && (
+                text.includes('council') ||
+                text.includes('taxi') ||
+                text.includes('private hire') ||
+                text.includes('badge number')
+            )) {
+                return false;
+            }
+
+            return true;
+        });
     }
 
     isReviewBlockerSelected(blocker: string): boolean {
@@ -1201,6 +1244,17 @@ export class DriverListComponent implements OnInit {
         }
 
         return [];
+    }
+
+    private getVehiclePlateValue(vehicle: any): string {
+        return String(
+            vehicle?.license_plate ??
+            vehicle?.registration_plate ??
+            vehicle?.registration_number ??
+            vehicle?.plate_number ??
+            vehicle?.vehicle_registration ??
+            ''
+        ).trim();
     }
 
     viewDriver(driver: AdminDriver) {
@@ -1317,7 +1371,16 @@ export class DriverListComponent implements OnInit {
         }
 
         try {
+            console.log('[admin-driver-review] sending', {
+                driverId: driver.id,
+                notes,
+                blockers
+            });
             await this.adminService.sendDriverMissingInfoRequest(driver.id, notes, blockers);
+            console.log('[admin-driver-review] saved', {
+                driverId: driver.id,
+                blockers
+            });
             await this.showToast('Missing information request sent to driver.', 'success');
             await this.loadDrivers();
 

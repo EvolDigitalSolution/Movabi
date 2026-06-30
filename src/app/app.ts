@@ -10,6 +10,7 @@ import { AppConfigService } from './core/services/config/app-config.service';
 import { NetworkService } from './core/services/network/network.service';
 import { NativePlatformService } from './core/services/native/native-platform.service';
 import { NotificationService } from './core/services/notification.service';
+import { MovabiTourOverlayComponent } from './shared/ui/movabi-tour-overlay.component';
 
 import { addIcons } from 'ionicons';
 import {
@@ -102,7 +103,7 @@ import {
     changeDetection: ChangeDetectionStrategy.OnPush,
     selector: 'app-root',
     standalone: true,
-    imports: [IonApp, IonRouterOutlet, IonIcon, CommonModule],
+    imports: [IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent],
     template: `
     <ion-app>
       @if (!isConfigured) {
@@ -133,6 +134,7 @@ import {
       }
 
       <ion-router-outlet></ion-router-outlet>
+      <app-movabi-tour-overlay></app-movabi-tour-overlay>
     </ion-app>
   `,
     styleUrl: './app.css',

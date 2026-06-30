@@ -632,7 +632,7 @@ export interface Notification {
     user_id: string;
     title: string;
     body: string;
-    type: 'booking' | 'system' | 'payment';
+    type: 'booking' | 'system' | 'payment' | 'booking_update' | 'payment_success' | 'system_alert' | 'chat_message' | 'driver_review_action_required';
     is_read: boolean;
     created_at: string;
     metadata?: Record<string, unknown>;

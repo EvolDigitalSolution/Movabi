@@ -34,6 +34,9 @@ const config: CapacitorConfig = {
     LocalNotifications: {
       smallIcon: 'ic_stat_movabi',
       iconColor: '#F59E0B'
+    },
+    OneSignal: {
+      appId: '952c6d19-656c-4dab-90f3-6e253e2c9151'
     }
   }
 };

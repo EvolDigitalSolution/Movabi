@@ -47,6 +47,8 @@ import { ProfileService } from '../../../../../core/services/profile/profile.ser
 import { ConnectService } from '../../../../../core/services/stripe/connect.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { VehicleCompatibilityService } from '../../../../../core/services/driver/vehicle-compatibility.service';
+import { OneSignalService } from '../../../../../core/services/notification/onesignal.service';
+import { OnboardingTourService } from '../../../../../core/services/onboarding-tour/onboarding-tour.service';
 import {
     CardComponent,
     ButtonComponent,
@@ -351,7 +353,7 @@ type PassedJob = {
 </button>
           }
 
-          <div class="movabi-hero">
+          <div class="movabi-hero" data-tour="driver-status">
             <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
 
             <div class="relative z-10">
@@ -798,6 +800,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private config = inject(AppConfigService);
+    private oneSignal = inject(OneSignalService);
+    private tour = inject(OnboardingTourService);
 
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
@@ -1033,6 +1037,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.checkTracking();
             await this.loadAvailability();
         }
+
+        this.tour.startIfNeeded('driver');
     }
 
     ngOnDestroy() {
@@ -1672,13 +1678,17 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     private async alertNewJob(job: Booking): Promise<void> {
-        this.showToast(`New ${this.getServiceName(job).toLowerCase()} request nearby`, 'warning');
+        const serviceName = this.getServiceName(job);
+        this.showToast(`New ${serviceName.toLowerCase()} request nearby`, 'warning');
 
         try {
             await Haptics.notification({ type: NotificationType.Warning });
         } catch {
-            navigator.vibrate?.([250, 120, 250, 120, 400]);
+            navigator.vibrate?.([160, 80, 160]);
         }
+
+        await this.oneSignal.notifyNewJob(serviceName, this.formatPrice(this.getRequestFare(job)), job.id)
+            .catch(() => undefined);
 
         this.playNewJobTone();
     }
@@ -1691,21 +1701,24 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             const context: AudioContext = new AudioContextClass();
             const start = context.currentTime;
 
-            [0, 0.38, 0.76, 1.14].forEach((offset, index) => {
+            [
+                { offset: 0, frequency: 880, duration: 0.12, gain: 0.2 },
+                { offset: 0.18, frequency: 660, duration: 0.1, gain: 0.12 }
+            ].forEach((tone) => {
                 const oscillator = context.createOscillator();
                 const gain = context.createGain();
                 oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(index % 2 === 0 ? 880 : 1046, start + offset);
-                gain.gain.setValueAtTime(0.0001, start + offset);
-                gain.gain.exponentialRampToValueAtTime(0.22, start + offset + 0.03);
-                gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.28);
+                oscillator.frequency.setValueAtTime(tone.frequency, start + tone.offset);
+                gain.gain.setValueAtTime(0.0001, start + tone.offset);
+                gain.gain.exponentialRampToValueAtTime(tone.gain, start + tone.offset + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + tone.offset + tone.duration);
                 oscillator.connect(gain);
                 gain.connect(context.destination);
-                oscillator.start(start + offset);
-                oscillator.stop(start + offset + 0.3);
+                oscillator.start(start + tone.offset);
+                oscillator.stop(start + tone.offset + tone.duration + 0.02);
             });
 
-            window.setTimeout(() => void context.close(), 1800);
+            window.setTimeout(() => void context.close(), 600);
         } catch (error) {
             console.warn('[driver-dashboard] New request tone was blocked by the device:', error);
         }

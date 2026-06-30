@@ -847,18 +847,92 @@ BEFORE UPDATE OF actual_spending ON public.errand_details
 FOR EACH ROW
 EXECUTE FUNCTION public.enforce_errand_spending_budget();
 
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'system',
+    route TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'notifications') THEN
+        ALTER TABLE public.notifications
+            ADD COLUMN IF NOT EXISTS route TEXT,
+            ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+ON public.notifications(user_id, created_at DESC);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users read own notifications" ON public.notifications;
+CREATE POLICY "Users read own notifications"
+ON public.notifications
+FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users update own notification read state" ON public.notifications;
+CREATE POLICY "Users update own notification read state"
+ON public.notifications
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users create own notifications" ON public.notifications;
+CREATE POLICY "Users create own notifications"
+ON public.notifications
+FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+GRANT SELECT, INSERT, UPDATE ON public.notifications TO authenticated;
+
 CREATE TABLE IF NOT EXISTS public.device_push_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     token TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL DEFAULT 'capacitor',
+    subscription_id TEXT,
+    external_id TEXT,
     platform TEXT NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'device_push_tokens') THEN
+        ALTER TABLE public.device_push_tokens
+            ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'capacitor',
+            ADD COLUMN IF NOT EXISTS subscription_id TEXT,
+            ADD COLUMN IF NOT EXISTS external_id TEXT,
+            ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_device_push_tokens_user_enabled
 ON public.device_push_tokens(user_id, enabled);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_device_push_tokens_user_provider_subscription
+ON public.device_push_tokens(user_id, provider, subscription_id)
+WHERE subscription_id IS NOT NULL;
 
 ALTER TABLE public.device_push_tokens ENABLE ROW LEVEL SECURITY;
 

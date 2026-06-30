@@ -25,7 +25,7 @@ dependencies {
     implementation project(':capacitor-status-bar')
 
 }
-
+apply from: "../../node_modules/onesignal-cordova-plugin/build-extras-onesignal.gradle"
 
 if (hasProperty('postBuildExtras')) {
   postBuildExtras()

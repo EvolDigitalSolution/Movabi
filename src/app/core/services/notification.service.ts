@@ -5,6 +5,7 @@ import { SupabaseService } from './supabase/supabase.service';
 import { AuthService } from './auth/auth.service';
 import { Notification } from '../../shared/models/booking.model';
 import { NativePlatformService } from './native/native-platform.service';
+import { OneSignalService } from './notification/onesignal.service';
 
 @Injectable({
   providedIn: 'root'
@@ -13,6 +14,7 @@ export class NotificationService {
   private supabase = inject(SupabaseService);
   private auth = inject(AuthService);
   private nativePlatform = inject(NativePlatformService);
+  private oneSignal = inject(OneSignalService);
   private initialized = signal(false);
   private channel?: RealtimeChannel;
   private notificationPermissionRequested = false;
@@ -23,17 +25,19 @@ export class NotificationService {
   constructor() {
     effect(() => {
       const user = this.auth.currentUser();
+      const role = this.auth.userRole();
       if (!this.initialized()) return;
 
       if (user) {
         void this.fetchNotifications();
         this.subscribeToNotifications();
-        void this.ensureNativeNotificationPermission();
+        void this.syncOneSignalIdentity(role);
       } else {
         this.channel?.unsubscribe();
         this.channel = undefined;
         this.notifications.set([]);
         this.unreadCount.set(0);
+        void this.oneSignal.logout();
       }
     });
   }
@@ -42,6 +46,7 @@ export class NotificationService {
     if (this.initialized()) return;
     this.initialized.set(true);
     this.nativePlatform.pushToken$.subscribe(token => void this.savePushToken(token));
+    void this.oneSignal.init();
   }
 
   async fetchNotifications() {
@@ -121,7 +126,7 @@ export class NotificationService {
   }
 
   async enableNativeNotifications(): Promise<boolean> {
-    return this.nativePlatform.requestNotificationPermission();
+    return this.oneSignal.requestPermission();
   }
 
   private async savePushToken(token: string): Promise<void> {
@@ -133,16 +138,31 @@ export class NotificationService {
       .upsert({
         user_id: user.id,
         token,
+        provider: 'capacitor',
+        external_id: user.id,
         platform: Capacitor.getPlatform(),
         enabled: true,
+        last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'token' });
 
     if (error) console.warn('[NotificationService] Could not save push token', error);
   }
 
+  private async syncOneSignalIdentity(role?: string | null): Promise<void> {
+    const user = this.auth.currentUser();
+    if (!user?.id) return;
+
+    await this.oneSignal.login(user.id);
+    await this.oneSignal.setUserTags({
+      role: role || 'unknown',
+      platform: Capacitor.getPlatform(),
+      appName: 'Movabi'
+    });
+  }
+
   private async ensureNativeNotificationPermission(): Promise<void> {
-    if (!this.nativePlatform.isNative || this.notificationPermissionRequested) return;
+    if (this.notificationPermissionRequested) return;
     this.notificationPermissionRequested = true;
     await this.enableNativeNotifications().catch(error => {
       console.warn('[NotificationService] Notification permission was not enabled', error);

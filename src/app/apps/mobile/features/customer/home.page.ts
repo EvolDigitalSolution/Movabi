@@ -32,6 +32,7 @@ import { BookingService } from '../../../../core/services/booking/booking.servic
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared/ui';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 
 @Component({
     selector: 'app-customer-home',
@@ -192,7 +193,7 @@ import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared
             </h3>
           </div>
 
-          <div class="grid grid-cols-2 max-[339px]:grid-cols-1 gap-3">
+          <div class="grid grid-cols-2 max-[339px]:grid-cols-1 gap-3" data-tour="customer-services">
             <button
               type="button"
               (click)="goToBooking('ride')"
@@ -362,6 +363,7 @@ export class HomePage implements OnInit, OnDestroy {
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
     private toastCtrl = inject(ToastController);
+    private tour = inject(OnboardingTourService);
     private jobsChannel?: RealtimeChannel;
     private readonly directlyActiveStatuses = new Set([
         'assigned',
@@ -444,6 +446,7 @@ export class HomePage implements OnInit, OnDestroy {
         void this.walletService.fetchWallet();
         await this.bookingService.getHistory();
         this.subscribeToCustomerJobs();
+        this.tour.startIfNeeded('customer');
     }
 
     ngOnDestroy(): void {

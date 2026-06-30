@@ -20,6 +20,8 @@ export interface ComplianceCountryConfig {
     deliveryRequiredFields: string[];
     errandRequiredFields: string[];
     vanRequiredFields: string[];
+    requiredDocuments: string[];
+    optionalDocuments: string[];
     requireCustomerPhoneVerification: boolean;
     requireDriverPhoneVerification: boolean;
     requireRightToWork: boolean;
@@ -45,6 +47,8 @@ export class ComplianceService {
             deliveryRequiredFields: ['courier_insurance'],
             errandRequiredFields: ['courier_insurance'],
             vanRequiredFields: ['vehicle_size', 'moving_insurance', 'goods_in_transit'],
+            requiredDocuments: ['driver_license', 'insurance', 'right_to_work'],
+            optionalDocuments: ['profile_photo', 'live_selfie', 'goods_in_transit', 'public_liability'],
             requireCustomerPhoneVerification: true,
             requireDriverPhoneVerification: true,
             requireRightToWork: true,
@@ -58,10 +62,12 @@ export class ComplianceService {
         NG: {
             customerRequiredFields: ['full_name', 'email_verified', 'phone', 'accepted_terms_at', 'accepted_privacy_at'],
             driverBaseRequiredFields: ['full_legal_name', 'date_of_birth', 'current_address', 'phone_verified', 'email_verified', 'profile_photo', 'live_selfie', 'driver_license', 'vehicle', 'insurance', 'payout_setup', 'agreements'],
-            rideRequiredFields: ['local_transport_permit', 'vehicle_roadworthiness', 'ride_insurance'],
+            rideRequiredFields: ['ride_insurance'],
             deliveryRequiredFields: ['courier_insurance'],
             errandRequiredFields: ['courier_insurance'],
             vanRequiredFields: ['vehicle_size', 'moving_insurance'],
+            requiredDocuments: ['driver_license', 'insurance'],
+            optionalDocuments: ['profile_photo', 'live_selfie', 'goods_in_transit', 'background_check'],
             requireCustomerPhoneVerification: true,
             requireDriverPhoneVerification: true,
             requireRightToWork: false,
@@ -75,14 +81,16 @@ export class ComplianceService {
         US: {
             customerRequiredFields: ['full_name', 'email_verified', 'phone', 'accepted_terms_at', 'accepted_privacy_at'],
             driverBaseRequiredFields: ['full_legal_name', 'date_of_birth', 'current_address', 'phone_verified', 'email_verified', 'profile_photo', 'live_selfie', 'driver_license', 'vehicle', 'insurance', 'payout_setup', 'agreements'],
-            rideRequiredFields: ['local_tnc_permit', 'ride_insurance', 'background_check'],
+            rideRequiredFields: ['ride_insurance'],
             deliveryRequiredFields: ['courier_insurance'],
             errandRequiredFields: ['courier_insurance'],
             vanRequiredFields: ['vehicle_size', 'moving_insurance', 'goods_in_transit'],
+            requiredDocuments: ['driver_license', 'insurance'],
+            optionalDocuments: ['profile_photo', 'live_selfie', 'goods_in_transit', 'public_liability'],
             requireCustomerPhoneVerification: true,
             requireDriverPhoneVerification: true,
             requireRightToWork: false,
-            requireRideBackgroundCheck: true,
+            requireRideBackgroundCheck: false,
             requireDeliveryCourierInsurance: true,
             requireGoodsInTransit: true,
             requireVanPublicLiability: false,
@@ -92,10 +100,12 @@ export class ComplianceService {
         DEFAULT: {
             customerRequiredFields: ['full_name', 'email_verified', 'phone', 'accepted_terms_at', 'accepted_privacy_at'],
             driverBaseRequiredFields: ['full_legal_name', 'date_of_birth', 'current_address', 'phone_verified', 'email_verified', 'profile_photo', 'live_selfie', 'driver_license', 'vehicle', 'insurance', 'payout_setup', 'agreements'],
-            rideRequiredFields: ['local_ride_approval', 'ride_insurance'],
+            rideRequiredFields: ['ride_insurance'],
             deliveryRequiredFields: ['courier_insurance'],
             errandRequiredFields: ['courier_insurance'],
             vanRequiredFields: ['vehicle_size', 'moving_insurance'],
+            requiredDocuments: ['driver_license', 'insurance'],
+            optionalDocuments: ['profile_photo', 'live_selfie', 'goods_in_transit', 'public_liability'],
             requireCustomerPhoneVerification: false,
             requireDriverPhoneVerification: false,
             requireRightToWork: false,
@@ -190,6 +200,16 @@ export class ComplianceService {
         const labels = missing.slice(0, 4).map((item) => item.message || item.label);
         const suffix = missing.length > labels.length ? ` and ${missing.length - labels.length} more` : '';
         return `${fallback} ${labels.join(' ')}${suffix}.`;
+    }
+
+    getCountryConfig(countryCode?: string | null): ComplianceCountryConfig {
+        return this.configFor(countryCode);
+    }
+
+    getCountryConfigurationWarning(countryCode?: string | null): string | null {
+        const code = String(countryCode || '').trim().toUpperCase();
+        if (!code || code === 'GB') return null;
+        return `${code} country requirement is not fully configured. DEFAULT-safe checks are being used.`;
     }
 
     private pushBaseDriverRequirements(
@@ -309,13 +329,46 @@ export class ComplianceService {
         relaxedLegacy: boolean
     ): ComplianceRequirement[] {
         const missing: ComplianceRequirement[] = [];
-        this.requireDocument(missing, 'private_hire_driver_license', 'Private hire/taxi driver licence', 'Passenger rides require local private hire/taxi approval.', documents, ['private_hire_driver_license_url', 'driver_license_url'], relaxedLegacy, ['private_hire_driver_license_status', 'driver_license_status']);
-        this.requireDocument(missing, 'private_hire_vehicle_license', 'Private hire/taxi vehicle licence', 'Upload your private hire/taxi vehicle licence.', documents, ['private_hire_vehicle_license_url', 'vehicle_license_url'], relaxedLegacy, ['private_hire_vehicle_license_status', 'vehicle_license_status']);
-        this.requireText(missing, this.hasTextValue(documents['council_license_authority']) || this.hasVerificationItem(profile, 'council_name'), 'council_license_authority', 'Licence authority', 'Add your council or TfL licence authority.', relaxedLegacy);
-        this.requireText(missing, this.hasTextValue(documents['council_license_number']) || this.hasVerificationItem(profile, 'council_license_number'), 'council_license_number', 'Licence number', 'Add your private hire/taxi licence number.', relaxedLegacy);
-        this.requireText(missing, this.hasDateValue(documents['council_license_expiry']) || this.hasVerificationItem(profile, 'taxi_license_expiry'), 'council_license_expiry', 'Licence expiry', 'Add your licence expiry date.', relaxedLegacy);
-        this.requireDocument(missing, 'private_hire_insurance', 'Private hire insurance', 'Upload private hire insurance before accepting passenger rides.', documents, ['private_hire_insurance_url', 'insurance_url'], relaxedLegacy, ['private_hire_insurance_status', 'insurance_status']);
-        this.requireText(missing, this.statusApproved(documents['operator_compliance_status']) || relaxedLegacy, 'operator_compliance', 'Operator compliance', 'Operator/compliance check is required before enabling ride jobs.', relaxedLegacy);
+
+        const fields = new Set(config.rideRequiredFields || []);
+
+        if (fields.has('private_hire_driver_license')) {
+            this.requireDocument(missing, 'private_hire_driver_license', 'Private hire/taxi driver licence', 'Passenger rides require local private hire/taxi approval.', documents, ['private_hire_driver_license_url', 'driver_license_url'], relaxedLegacy, ['private_hire_driver_license_status', 'driver_license_status']);
+        }
+
+        if (fields.has('private_hire_vehicle_license')) {
+            this.requireDocument(missing, 'private_hire_vehicle_license', 'Private hire/taxi vehicle licence', 'Upload your private hire/taxi vehicle licence.', documents, ['private_hire_vehicle_license_url', 'vehicle_license_url'], relaxedLegacy, ['private_hire_vehicle_license_status', 'vehicle_license_status']);
+        }
+
+        if (fields.has('council_license')) {
+            this.requireText(missing, this.hasTextValue(documents['council_license_authority']) || this.hasVerificationItem(profile, 'council_name'), 'council_license_authority', 'Licence authority', 'Add your council or TfL licence authority.', relaxedLegacy);
+            this.requireText(missing, this.hasTextValue(documents['council_license_number']) || this.hasVerificationItem(profile, 'council_license_number'), 'council_license_number', 'Licence number', 'Add your private hire/taxi licence number.', relaxedLegacy);
+            this.requireText(missing, this.hasDateValue(documents['council_license_expiry']) || this.hasVerificationItem(profile, 'taxi_license_expiry'), 'council_license_expiry', 'Licence expiry', 'Add your licence expiry date.', relaxedLegacy);
+        }
+
+        if (fields.has('private_hire_insurance') || fields.has('ride_insurance')) {
+            this.requireDocument(missing, 'private_hire_insurance', 'Ride insurance', 'Upload insurance suitable for passenger ride jobs.', documents, ['private_hire_insurance_url', 'ride_insurance_url', 'insurance_url'], relaxedLegacy, ['private_hire_insurance_status', 'ride_insurance_status', 'insurance_status']);
+        }
+
+        if (fields.has('operator_compliance')) {
+            this.requireText(missing, this.statusApproved(documents['operator_compliance_status']) || relaxedLegacy, 'operator_compliance', 'Operator compliance', 'Operator/compliance check is required before enabling ride jobs.', relaxedLegacy);
+        }
+
+        if (fields.has('local_transport_permit')) {
+            this.requireText(missing, this.hasTextValue(documents['local_transport_permit_url']) || this.hasTextValue(documents['local_transport_permit_number']), 'local_transport_permit', 'Local transport permit', 'Add your local transport permit where required.', relaxedLegacy);
+        }
+
+        if (fields.has('vehicle_roadworthiness')) {
+            this.requireText(missing, this.hasTextValue(documents['roadworthiness_certificate_url']) || this.hasTextValue(documents['mot_url']), 'vehicle_roadworthiness', 'Roadworthiness', 'Upload vehicle roadworthiness evidence where required.', relaxedLegacy);
+        }
+
+        if (fields.has('local_tnc_permit')) {
+            this.requireText(missing, this.hasTextValue(documents['local_tnc_permit_url']) || this.hasTextValue(documents['local_tnc_permit_number']), 'local_tnc_permit', 'Local TNC permit', 'Add your local ride-hailing/TNC permit where required.', relaxedLegacy);
+        }
+
+        if (fields.has('local_ride_approval')) {
+            this.requireText(missing, this.hasTextValue(documents['local_ride_approval_url']) || this.hasTextValue(documents['local_ride_approval_number']), 'local_ride_approval', 'Local ride approval', 'Add local passenger ride approval where required.', relaxedLegacy);
+        }
 
         if (config.requireRideBackgroundCheck) {
             this.requireText(missing, this.statusApproved(documents['background_check_status']) || this.statusApproved(documents['dbs_status']) || relaxedLegacy, 'background_check', 'Background check', 'DBS/background-check status is required where local law requires it.', relaxedLegacy);

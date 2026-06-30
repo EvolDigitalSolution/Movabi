@@ -130,4 +130,36 @@ describe('ComplianceService', () => {
     expect(result.allowed).toBe(false);
     expect(result.missing.some((item) => item.key === 'service_ride')).toBe(true);
   });
+
+  it('does not leak GB council taxi rules into US ride checks', () => {
+    const result = service.canDriverAcceptService(
+      {
+        role: 'driver',
+        full_name: 'Driver Two',
+        email: 'driver2@example.com',
+        email_verified: true,
+        phone: '5551234567',
+        accepted_terms_at: new Date().toISOString(),
+        accepted_privacy_at: new Date().toISOString(),
+        accepted_driver_agreement_at: new Date().toISOString(),
+        date_of_birth: '1990-01-01',
+        current_address: '1 Main Street',
+        stripe_connect_status: 'connected',
+        country_code: 'US',
+        verification_items: [{ key: 'driver_service_types', value: '["ride"]' }]
+      },
+      { type: 'car', make: 'Toyota', model: 'Camry', color: 'Black', license_plate: 'ABC 123', service_eligibility: ['ride'] },
+      {
+        avatar_url: 'avatar.png',
+        live_selfie_url: 'selfie.png',
+        driver_license_url: 'licence.png',
+        insurance_url: 'insurance.png',
+        ride_insurance_url: 'ride.png',
+        background_check_status: 'approved'
+      },
+      ServiceTypeEnum.RIDE
+    );
+
+    expect(result.missing.some((item) => item.key.includes('council') || item.key.includes('private_hire'))).toBe(false);
+  });
 });

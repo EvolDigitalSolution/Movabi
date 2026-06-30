@@ -6,7 +6,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   data?: Record<string, any>;
-  type: 'booking_update' | 'payment_success' | 'system_alert' | 'chat_message';
+  type: 'booking_update' | 'payment_success' | 'system_alert' | 'chat_message' | 'driver_review_action_required';
 }
 
 export class NotificationService {
@@ -24,6 +24,8 @@ export class NotificationService {
           title: payload.title,
           body: payload.body,
           data: payload.data || {},
+          metadata: payload.data || {},
+          route: payload.data?.route || payload.data?.url || null,
           type: payload.type,
           is_read: false
         });
@@ -62,10 +64,13 @@ export class NotificationService {
   }
 
   private static async sendOneSignalPush(payload: NotificationPayload): Promise<void> {
-    const appId = process.env.ONESIGNAL_APP_ID;
+    // TODO: Move this to a secured server-only settings store once admin
+    // configuration endpoints enforce authorization. Never expose the REST key.
+    const appId = process.env.ONESIGNAL_APP_ID || '952c6d19-656c-4dab-90f3-6e253e2c9151';
     const apiKey = process.env.ONESIGNAL_REST_API_KEY;
 
-    if (!appId || !apiKey) {
+    if (!apiKey) {
+      console.warn('[OneSignal] REST API key missing; push skipped.');
       return;
     }
 
@@ -145,6 +150,21 @@ export class NotificationService {
       body: preview || 'You have a new message.',
       type: 'chat_message',
       data: { jobId, senderId, action: 'open_chat' }
+    });
+  }
+
+  static async notifyDriverReviewActionRequired(userId: string, blockers: string[], message: string) {
+    return this.sendNotification({
+      userId,
+      title: 'Verification action required',
+      body: 'Your Movabi driver verification needs more information.',
+      type: 'driver_review_action_required',
+      data: {
+        route: '/driver/settings',
+        blockers,
+        message,
+        action: 'driver_review_action_required'
+      }
     });
   }
 }

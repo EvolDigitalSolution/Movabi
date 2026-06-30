@@ -5,6 +5,7 @@ import {
   checkInsurance,
   checkCouncilLicence
 } from '../services/verification.service';
+import { NotificationService } from '../services/notification.service';
 
 const router = Router();
 
@@ -70,6 +71,15 @@ const driverSelectedRide = (profile: any, vehicle: any): boolean => {
 
   return selected.includes('ride');
 };
+
+const getVehiclePlate = (vehicle: any): string => String(
+  vehicle?.license_plate ??
+  vehicle?.registration_plate ??
+  vehicle?.registration_number ??
+  vehicle?.plate_number ??
+  vehicle?.vehicle_registration ??
+  ''
+).trim();
 
 const supabaseUrl =
   process.env.SUPABASE_URL ||
@@ -143,7 +153,8 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
 
     const blockers: string[] = [];
 
-    const vehicleCheck = await checkVehicleRegistration(vehicle?.license_plate);
+    const vehiclePlate = getVehiclePlate(vehicle);
+    const vehicleCheck = await checkVehicleRegistration(vehiclePlate);
 
     if (!vehicleCheck.passed) {
       blockers.push(...vehicleCheck.blockers);
@@ -174,6 +185,11 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     if (!profile.driver_license_url) {
       blockers.push('Driver licence document is missing.');
     }
+
+    if (vehicle && !String(vehicle.make || '').trim()) blockers.push('Vehicle make is missing.');
+    if (vehicle && !String(vehicle.model || '').trim()) blockers.push('Vehicle model is missing.');
+    if (vehicle && !String(vehicle.color || '').trim()) blockers.push('Vehicle colour is missing.');
+    if (vehicle && !String(vehicle.year || '').trim()) blockers.push('Vehicle year is missing.');
 
     const canApprove =
       vehicleCheck.passed &&
@@ -293,6 +309,12 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       .eq('id', driverId);
 
     if (error) throw error;
+
+    await NotificationService
+      .notifyDriverReviewActionRequired(driverId, selectedBlockers, historyEntry.notes)
+      .catch((notifyError) => {
+        console.warn('[admin-driver-review] notification failed:', notifyError?.message || notifyError);
+      });
 
     return res.json({
       success: true,

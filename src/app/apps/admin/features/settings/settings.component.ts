@@ -14,6 +14,7 @@ import {
 } from 'ionicons/icons';
 import { SystemConfigService } from '../../../../core/services/config/system-config.service';
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 
 type SettingsTab = 'general' | 'countries';
 
@@ -34,6 +35,11 @@ type SettingsTab = 'general' | 'countries';
           </div>
 
           <div class="flex flex-col sm:flex-row gap-3">
+            <button type="button" (click)="restartAdminTour()" class="secondary-btn">
+              <ion-icon name="help-circle-outline"></ion-icon>
+              Restart Tour
+            </button>
+
             <button type="button" (click)="resetChanges()" [disabled]="saving()" class="secondary-btn">
               <ion-icon name="refresh-outline"></ion-icon>
               Reset
@@ -395,6 +401,7 @@ type SettingsTab = 'general' | 'countries';
 export class AdminSettingsComponent implements OnInit {
   private systemConfig = inject(SystemConfigService);
   private appConfig = inject(AppConfigService);
+  private tour = inject(OnboardingTourService);
 
   activeTab = signal<SettingsTab>('general');
   saving = signal(false);
@@ -428,6 +435,11 @@ export class AdminSettingsComponent implements OnInit {
 
   async ngOnInit() {
     await this.loadSettings();
+    this.tour.startIfNeeded('admin');
+  }
+
+  restartAdminTour() {
+    this.tour.restart('admin');
   }
 
   async loadSettings() {
