@@ -154,15 +154,17 @@ export class NotificationService {
   }
 
   static async notifyDriverReviewActionRequired(userId: string, blockers: string[], message: string) {
+    const body = message?.trim() || 'Your Movabi driver verification needs more information.';
+
     return this.sendNotification({
       userId,
       title: 'Verification action required',
-      body: 'Your Movabi driver verification needs more information.',
+      body,
       type: 'driver_review_action_required',
       data: {
         route: '/driver/settings',
         blockers,
-        message,
+        message: body,
         action: 'driver_review_action_required'
       }
     });

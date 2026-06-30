@@ -223,9 +223,17 @@ type PassedJob = {
               </ul>
             }
 
-            <app-button variant="primary" color="error" (clicked)="router.navigate(['/driver/onboarding'])">
-              Update Details
-            </app-button>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <app-button variant="secondary" size="sm" class="w-full" (clicked)="router.navigate(['/driver/onboarding'])">
+                Update Details
+              </app-button>
+              <app-button variant="secondary" size="sm" class="w-full" (clicked)="router.navigate(['/driver/onboarding'])">
+                Upload Documents
+              </app-button>
+              <app-button variant="primary" color="error" size="sm" class="w-full" [disabled]="resubmittingReview()" (clicked)="resubmitDriverReview()">
+                {{ resubmittingReview() ? 'Sending...' : 'Resubmit' }}
+              </app-button>
+            </div>
           </div>
         } @else if (!isVerified()) {
           <div class="bg-white rounded-[2rem] p-7 border border-slate-100 shadow-xl shadow-slate-200/50 text-center space-y-6">
@@ -835,6 +843,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     private jobsChannel?: RealtimeChannel;
     private jobsRefreshInterval?: ReturnType<typeof setInterval>;
     private knownAvailableJobIds = new Set<string>();
+    resubmittingReview = signal(false);
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
         const profile = this.profileService.profile() as DriverProfile | null;
@@ -1970,6 +1979,34 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         this.driverService.availableJobs.update((jobs: Booking[]) =>
             jobs.filter((job: Booking) => job.id !== jobId)
         );
+    }
+
+    async resubmitDriverReview() {
+        const profile = this.profileService.profile();
+
+        if (!profile?.id || this.resubmittingReview()) return;
+
+        this.resubmittingReview.set(true);
+
+        try {
+            await this.safeUpdateProfile(profile.id, {
+                driver_review_status: 'under_review',
+                verification_status: 'under_review',
+                verification_notes: null,
+                driver_review_notes: null,
+                verification_blockers: [],
+                driver_review_blockers: [],
+                updated_at: new Date().toISOString()
+            });
+
+            if (typeof (this.profileService as any).fetchProfile === 'function') {
+                await (this.profileService as any).fetchProfile(profile.id);
+            }
+
+            this.showToast('Resubmitted for manual review.', 'success');
+        } finally {
+            this.resubmittingReview.set(false);
+        }
     }
 
     private loadPassedJobs() {

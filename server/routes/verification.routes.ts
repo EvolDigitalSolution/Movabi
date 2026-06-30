@@ -6,6 +6,7 @@ import {
   checkCouncilLicence
 } from '../services/verification.service';
 import { NotificationService } from '../services/notification.service';
+import { EmailService } from '../services/email.service';
 
 const router = Router();
 
@@ -271,7 +272,7 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('driver_review_history')
+      .select('driver_review_history, full_name, first_name, last_name, email')
       .eq('id', driverId)
       .single();
 
@@ -292,7 +293,7 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       sent_by: adminId
     };
 
-    const { error } = await supabase
+    const { data: updatedProfile, error } = await supabase
       .from('profiles')
       .update({
         driver_review_status: 'action_required',
@@ -306,7 +307,9 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
         verification_notes: historyEntry.notes || null,
         updated_at: sentAt
       })
-      .eq('id', driverId);
+      .eq('id', driverId)
+      .select('*')
+      .single();
 
     if (error) throw error;
 
@@ -316,10 +319,29 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
         console.warn('[admin-driver-review] notification failed:', notifyError?.message || notifyError);
       });
 
+    if (profile.email) {
+      const driverName = String(
+        profile.full_name ||
+        [profile.first_name, profile.last_name].filter(Boolean).join(' ') ||
+        ''
+      ).trim();
+
+      await EmailService
+        .sendDriverReviewActionRequired(profile.email, {
+          driverName,
+          notes: historyEntry.notes,
+          blockers: selectedBlockers
+        })
+        .catch((emailError) => {
+          console.warn('[admin-driver-review] email failed:', emailError?.message || emailError);
+        });
+    }
+
     return res.json({
       success: true,
       message: 'Missing information request sent to driver.',
-      blockers: selectedBlockers
+      blockers: selectedBlockers,
+      driver: updatedProfile
     });
   } catch (error: any) {
     return res.status(500).json({

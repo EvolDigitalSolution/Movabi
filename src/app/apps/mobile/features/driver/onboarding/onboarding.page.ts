@@ -1648,6 +1648,9 @@ export class OnboardingPage implements OnInit {
                 verification_status: 'under_review',
                 driver_review_status: 'under_review',
                 verification_notes: null,
+                driver_review_notes: null,
+                verification_blockers: [],
+                driver_review_blockers: [],
                 verification_items: this.buildVerificationItems(raw),
                 is_verified: false
             });

@@ -107,6 +107,51 @@ type DocType = 'license' | 'insurance';
           </div>
         </div>
 
+        @if (isActionRequired()) {
+          <app-card class="p-4 border border-rose-100 shadow-rose-100/30">
+            <div class="flex gap-3">
+              <div class="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 border border-rose-100 shrink-0">
+                <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
+              </div>
+
+              <div class="min-w-0 flex-1 space-y-3">
+                <div>
+                  <h2 class="text-sm font-black text-slate-950">Action required</h2>
+                  <p class="text-xs text-slate-600 font-semibold leading-relaxed mt-1">
+                    Admin needs more information before your driver account can be approved.
+                  </p>
+                </div>
+
+                @if (verificationNotes()) {
+                  <div class="rounded-2xl bg-rose-50 border border-rose-100 p-3 text-xs text-slate-700 font-semibold leading-relaxed">
+                    {{ verificationNotes() }}
+                  </div>
+                }
+
+                @if (reviewBlockers().length) {
+                  <ul class="rounded-2xl bg-rose-50 border border-rose-100 p-3 space-y-2">
+                    @for (blocker of reviewBlockers(); track blocker) {
+                      <li class="text-xs text-rose-900 font-bold leading-relaxed">• {{ blocker }}</li>
+                    }
+                  </ul>
+                }
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <app-button size="sm" variant="secondary" class="w-full" (clicked)="router.navigate(['/driver/onboarding'])">
+                    Update Details
+                  </app-button>
+                  <app-button size="sm" variant="secondary" class="w-full" (clicked)="router.navigate(['/driver/onboarding'])">
+                    Upload Documents
+                  </app-button>
+                  <app-button size="sm" color="error" class="w-full" [disabled]="resubmitting()" (clicked)="resubmitDriverReview()">
+                    {{ resubmitting() ? 'Sending...' : 'Resubmit' }}
+                  </app-button>
+                </div>
+              </div>
+            </div>
+          </app-card>
+        }
+
         <section class="space-y-2">
           <div class="movabi-section-header">
             <h2 class="movabi-section-title">Profile</h2>
@@ -443,6 +488,7 @@ export class DriverSettingsPage implements OnInit {
     });
 
     loadingStripe = signal(false);
+    resubmitting = signal(false);
 
     constructor() {
         addIcons({
@@ -475,6 +521,21 @@ export class DriverSettingsPage implements OnInit {
     isUnderReview(): boolean {
         const profile = this.profile() as DriverProfile | null;
         return profile?.verification_status === 'under_review' || (!!profile?.onboarding_completed && !this.isVerified());
+    }
+
+    isActionRequired(): boolean {
+        const profile = this.profile() as DriverProfile | null;
+        return profile?.driver_review_status === 'action_required' || profile?.verification_status === 'action_required';
+    }
+
+    verificationNotes(): string | null {
+        const profile = this.profile() as DriverProfile | null;
+        return profile?.driver_review_notes || profile?.verification_notes || null;
+    }
+
+    reviewBlockers(): string[] {
+        const profile = this.profile() as DriverProfile | null;
+        return this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers);
     }
 
     verificationLabel(): string {
@@ -692,6 +753,36 @@ export class DriverSettingsPage implements OnInit {
         await this.uploadDoc(type);
     }
 
+    async resubmitDriverReview() {
+        const user = this.auth.currentUser();
+
+        if (!user?.id || this.resubmitting()) return;
+
+        this.resubmitting.set(true);
+
+        try {
+            await this.profileService.updateProfile(user.id, {
+                driver_review_status: 'under_review',
+                verification_status: 'under_review',
+                verification_notes: null,
+                driver_review_notes: null,
+                verification_blockers: [],
+                driver_review_blockers: [],
+                updated_at: new Date().toISOString()
+            } as any);
+
+            if (typeof (this.profileService as any).fetchProfile === 'function') {
+                await (this.profileService as any).fetchProfile(user.id);
+            }
+
+            await this.showToast('Resubmitted for manual review.', 'success');
+        } catch {
+            await this.showToast('Could not resubmit for review. Please try again.', 'danger');
+        } finally {
+            this.resubmitting.set(false);
+        }
+    }
+
     async openDoc(type: DocType) {
         const path = this.docs()[type];
 
@@ -805,6 +896,25 @@ export class DriverSettingsPage implements OnInit {
         const maxBytes = 8 * 1024 * 1024;
 
         return allowedTypes.includes(file.type) && file.size <= maxBytes;
+    }
+
+    private parseStringList(raw: unknown): string[] {
+        if (Array.isArray(raw)) {
+            return raw.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    return parsed.map((item) => String(item || '').trim()).filter(Boolean);
+                }
+            } catch {
+                return raw.split('\n').map((item) => item.replace(/^[-•]\s*/, '').trim()).filter(Boolean);
+            }
+        }
+
+        return [];
     }
 
     private async showToast(message: string, color: 'success' | 'danger' | 'warning') {

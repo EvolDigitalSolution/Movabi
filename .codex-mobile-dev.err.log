@@ -1411,3 +1411,31 @@ websocket connection issues.
            ╵                                         [32m~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resubmittingReview' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:233:95:
+[37m      233 │ ...="w-full" [disabled]="[32mresubmittingReview[37m()" (clicked)="resubmi...
+          ╵                          [32m~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resubmitDriverReview' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:233:128:
+[37m      233 │ ...abled]="resubmittingReview()" (clicked)="[32mresubmitDriverReview[37m()">
+          ╵                                             [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resubmittingReview' does not exist on type 'DriverDashboardPage'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:234:19:
+[37m      234 │                 {{ [32mresubmittingReview[37m() ? 'Sending...' : 'Resubmi...
+          ╵                    [32m~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2551: Property 'resubmitDriverReview' does not exist on type 'DriverDashboardPage'. Did you mean 'resubmittingReview'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:233:128:
+[37m      233 │ ...abled]="resubmittingReview()" (clicked)="[32mresubmitDriverReview[37m()">
+          ╵                                             [32m~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

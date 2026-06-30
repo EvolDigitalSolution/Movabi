@@ -18,6 +18,7 @@ export class NotificationService {
   private initialized = signal(false);
   private channel?: RealtimeChannel;
   private notificationPermissionRequested = false;
+  private soundedNotificationKeys = new Set<string>();
 
   notifications = signal<Notification[]>([]);
   unreadCount = signal(0);
@@ -114,12 +115,14 @@ export class NotificationService {
         filter: `user_id=eq.${user.id}`
       }, payload => {
         const newNotif = payload.new as Notification;
+        const routeData = this.getNotificationRouteData(newNotif);
         this.notifications.update(list => [newNotif, ...list]);
         this.updateUnreadCount();
+        void this.playNotificationToneOnce(newNotif);
         void this.nativePlatform.showForegroundNotification(
           newNotif.title,
           newNotif.body,
-          newNotif.metadata
+          routeData
         );
       })
       .subscribe();
@@ -166,6 +169,77 @@ export class NotificationService {
     this.notificationPermissionRequested = true;
     await this.enableNativeNotifications().catch(error => {
       console.warn('[NotificationService] Notification permission was not enabled', error);
+    });
+  }
+
+  private getNotificationRouteData(notification: Notification): Record<string, unknown> {
+    const data = ((notification as any).metadata || (notification as any).data || {}) as Record<string, unknown>;
+    const route = (notification as any).route || data['route'];
+
+    return {
+      ...data,
+      ...(route ? { route } : {})
+    };
+  }
+
+  private shouldPlayTone(notification: Notification): boolean {
+    const data = this.getNotificationRouteData(notification);
+    const action = String(data['action'] || '').toLowerCase();
+    const type = String(notification.type || '').toLowerCase();
+
+    return (
+      type === 'driver_review_action_required' ||
+      type === 'booking_update' ||
+      action === 'new_job' ||
+      action === 'driver_review_action_required' ||
+      action.includes('status')
+    );
+  }
+
+  private async playNotificationToneOnce(notification: Notification): Promise<void> {
+    if (!this.shouldPlayTone(notification)) return;
+
+    const data = this.getNotificationRouteData(notification);
+    const key = String(
+      notification.id ||
+      data['jobId'] ||
+      data['job_id'] ||
+      `${notification.type}:${notification.title}:${notification.created_at || notification.body}`
+    );
+
+    if (this.soundedNotificationKeys.has(key)) return;
+    this.soundedNotificationKeys.add(key);
+
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const context = new AudioContextClass();
+      await this.playTone(context, 880, 0.12, 0);
+      await this.playTone(context, 660, 0.1, 0.14);
+      window.setTimeout(() => void context.close?.(), 400);
+    } catch (error) {
+      console.warn('[NotificationService] Could not play notification tone', error);
+    }
+  }
+
+  private playTone(context: AudioContext, frequency: number, durationSeconds: number, offsetSeconds: number): Promise<void> {
+    return new Promise(resolve => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const startAt = context.currentTime + offsetSeconds;
+      const stopAt = startAt + durationSeconds;
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt);
+      oscillator.stop(stopAt);
+      window.setTimeout(resolve, Math.ceil((offsetSeconds + durationSeconds) * 1000) + 20);
     });
   }
 }

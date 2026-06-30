@@ -579,6 +579,7 @@ export class AdminService {
   }
 
   async sendDriverMissingInfoRequest(driverId: string, notes: string, blockers: string[]) {
+    console.log('[admin-driver-review] sending', { driverId, blockers });
     const headers = await this.getAuthenticatedApiHeaders();
     const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/request-info`, {
       method: 'POST',
@@ -590,12 +591,16 @@ export class AdminService {
 
     if (!response.ok) {
       if (response.status === 404) {
-        return this.sendDriverMissingInfoViaSupabase(driverId, notes, blockers);
+        const fallbackResult = await this.sendDriverMissingInfoViaSupabase(driverId, notes, blockers);
+        console.log('[admin-driver-review] saved', fallbackResult);
+        return fallbackResult;
       }
 
+      console.warn('[admin-driver-review] failed', result);
       throw new Error(result?.error || 'Could not send missing information request');
     }
 
+    console.log('[admin-driver-review] saved', result);
     return result;
   }
 
@@ -673,36 +678,22 @@ export class AdminService {
                     type: 'driver_review_action_required',
                     route: '/driver/settings',
                     data: {
-                        blockers: cleanBlockers
+                        route: '/driver/settings',
+                        blockers: cleanBlockers,
+                        message: notes,
+                        action: 'driver_review_action_required'
+                    },
+                    metadata: {
+                        route: '/driver/settings',
+                        blockers: cleanBlockers,
+                        message: notes,
+                        action: 'driver_review_action_required'
                     },
                     is_read: false,
                     created_at: sentAt
                 });
         } catch (e) {
             console.warn('Notification table not available.', e);
-        }
-
-        //
-        // Trigger backend push notification
-        //
-        try {
-            const headers = await this.getAuthenticatedApiHeaders();
-
-            await fetch(
-                `${this.apiUrlService.getBaseUrl()}/api/notifications/send-driver-review`,
-                {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                        driverId,
-                        title: 'Verification action required',
-                        message: notes,
-                        blockers: cleanBlockers
-                    })
-                }
-            );
-        } catch (e) {
-            console.warn('Push notification unavailable.', e);
         }
 
         return {
