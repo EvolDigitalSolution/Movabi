@@ -205,6 +205,15 @@ BEGIN
             ALTER TABLE profiles ADD COLUMN account_closure_reason TEXT;
         END IF;
 
+        ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS closure_requested_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS closure_reason TEXT,
+            ADD COLUMN IF NOT EXISTS closure_notes TEXT,
+            ADD COLUMN IF NOT EXISTS reinstated_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reinstated_by UUID,
+            ADD COLUMN IF NOT EXISTS reinstatement_notes TEXT;
+
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'tenant_id') THEN
             ALTER TABLE profiles ADD COLUMN tenant_id UUID;
         END IF;
@@ -875,6 +884,65 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
 ON public.notifications(user_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.notify_admins_account_closure_requested()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_display_name TEXT;
+    v_route TEXT;
+BEGIN
+    IF NEW.account_status = 'closure_requested'
+       AND COALESCE(OLD.account_status, 'active') <> 'closure_requested' THEN
+        v_display_name := COALESCE(
+            NULLIF(to_jsonb(NEW)->>'full_name', ''),
+            NULLIF(to_jsonb(NEW)->>'email', ''),
+            NULLIF(to_jsonb(NEW)->>'phone', ''),
+            NEW.id::TEXT
+        );
+
+        v_route := CASE
+            WHEN COALESCE(to_jsonb(NEW)->>'role', '') = 'driver' THEN '/admin/drivers'
+            ELSE '/admin/users'
+        END;
+
+        INSERT INTO public.notifications (
+            user_id,
+            title,
+            body,
+            type,
+            route,
+            metadata,
+            data
+        )
+        SELECT
+            admin_profile.id,
+            'Account closure requested',
+            v_display_name || ' requested account closure',
+            'account_closure_requested',
+            v_route,
+            jsonb_build_object(
+                'profile_id', NEW.id,
+                'role', to_jsonb(NEW)->>'role',
+                'account_status', NEW.account_status
+            ),
+            jsonb_build_object(
+                'profile_id', NEW.id,
+                'role', to_jsonb(NEW)->>'role',
+                'account_status', NEW.account_status
+            )
+        FROM public.profiles admin_profile
+        WHERE admin_profile.role = 'admin';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_notify_admins_account_closure_requested ON public.profiles;
+CREATE TRIGGER trg_notify_admins_account_closure_requested
+AFTER UPDATE OF account_status ON public.profiles
+FOR EACH ROW
+EXECUTE FUNCTION public.notify_admins_account_closure_requested();
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 

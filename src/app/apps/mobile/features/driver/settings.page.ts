@@ -993,14 +993,38 @@ export class DriverSettingsPage implements OnInit {
 
     async confirmDeleteAccount() {
         const alert = await this.alertCtrl.create({
-            header: 'Close account?',
-            message: 'This disables your Movabi account and starts the closure process. Booking, payout, tax, safety, and legal records may be retained where required by law.',
+            header: 'Request account closure?',
+            message: 'This will disable your Movabi access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
+            inputs: [
+                {
+                    name: 'understood',
+                    type: 'checkbox',
+                    label: 'I understand my account access will be disabled.',
+                    value: 'yes'
+                },
+                {
+                    name: 'reason',
+                    type: 'textarea',
+                    placeholder: 'Optional reason'
+                }
+            ],
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Request Closure',
                     role: 'confirm',
-                    handler: () => void this.requestAccountClosure()
+                    handler: (value) => {
+                        const understood = Array.isArray(value) ? value.includes('yes') : Boolean(value?.understood);
+                        const reason = Array.isArray(value) ? '' : String(value?.reason || '').trim();
+
+                        if (!understood) {
+                            void this.showToast('Please confirm you understand before continuing.', 'warning');
+                            return false;
+                        }
+
+                        void this.requestAccountClosure(reason);
+                        return true;
+                    }
                 }
             ]
         });
@@ -1008,7 +1032,7 @@ export class DriverSettingsPage implements OnInit {
         await alert.present();
     }
 
-    private async requestAccountClosure() {
+    private async requestAccountClosure(reason = '') {
         const user = this.auth.currentUser();
 
         if (!user?.id) {
@@ -1020,9 +1044,18 @@ export class DriverSettingsPage implements OnInit {
         await loading.present();
 
         try {
-            await this.profileService.updateProfile(user.id, { account_status: 'closure_requested' as any });
-            await this.showToast('Account closure requested. You have been signed out.', 'success');
-            await this.auth.signOut();
+            const now = new Date().toISOString();
+            await this.profileService.updateProfile(user.id, {
+                account_status: 'closure_requested',
+                closure_requested_at: now,
+                account_closure_requested_at: now,
+                closure_reason: reason || null,
+                account_closure_reason: reason || null,
+                is_online: false,
+                is_available: false
+            } as any);
+            await this.showToast('Your closure request has been received. You can contact support if this was a mistake.', 'success');
+            await this.router.navigate(['/auth/blocked'], { replaceUrl: true });
         } catch {
             await this.showToast('Could not request closure. Please try again.', 'danger');
         } finally {

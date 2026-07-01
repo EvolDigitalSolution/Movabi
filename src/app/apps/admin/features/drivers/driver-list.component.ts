@@ -79,6 +79,9 @@ type AdminDriver = DriverProfile & {
             <option value="approved">Approved</option>
             <option value="under_review">Under Review</option>
             <option value="action_required">Action Required</option>
+            <option value="closure_requested">Closure Requested</option>
+            <option value="closed">Closed</option>
+            <option value="reinstated">Reinstated</option>
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
             <option value="banned">Banned</option>
@@ -586,7 +589,7 @@ type AdminDriver = DriverProfile & {
           <p class="text-sm font-medium text-slate-700 mt-1">{{ getDriverName(moderationModal()?.driver) }}</p>
 
           <div class="space-y-3 mt-5">
-            @for (status of ['active', 'suspended', 'banned', 'disabled']; track status) {
+            @for (status of ['active', 'closure_requested', 'closed', 'reinstated', 'suspended', 'banned', 'disabled']; track status) {
               <label class="flex items-center gap-3 rounded-2xl border border-slate-100 p-3 cursor-pointer">
                 <input
                   type="radio"
@@ -1167,10 +1170,13 @@ export class DriverListComponent implements OnInit {
     getAccountStatusVariant(status: string): 'success' | 'warning' | 'error' | 'secondary' {
         switch (this.safeLower(status)) {
             case 'active':
+            case 'reinstated':
                 return 'success';
             case 'suspended':
+            case 'closure_requested':
                 return 'warning';
             case 'banned':
+            case 'closed':
                 return 'error';
             case 'disabled':
                 return 'secondary';

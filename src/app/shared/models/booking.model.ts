@@ -334,6 +334,8 @@ export type AccountStatus =
     | 'banned'
     | 'disabled'
     | 'closure_requested'
+    | 'closed'
+    | 'reinstated'
     | 'draft'
     | 'pending_review'
     | 'approved'
@@ -374,6 +376,13 @@ export interface Profile {
     compliance_status?: 'draft' | 'pending_review' | 'approved' | 'action_required' | 'suspended' | null;
     account_closure_requested_at?: string | null;
     account_closure_reason?: string | null;
+    closure_requested_at?: string | null;
+    closed_at?: string | null;
+    closure_reason?: string | null;
+    closure_notes?: string | null;
+    reinstated_at?: string | null;
+    reinstated_by?: string | null;
+    reinstatement_notes?: string | null;
     moderation_reason?: string;
     moderated_at?: string;
     moderated_by?: string;

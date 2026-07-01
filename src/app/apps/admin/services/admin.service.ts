@@ -375,14 +375,37 @@ export class AdminService {
   }
 
   async updateAccountStatus(userId: string, status: string, reason: string, adminId: string) {
+    const now = new Date().toISOString();
+    const normalisedStatus = String(status || 'active').trim();
+    const update: any = {
+      account_status: normalisedStatus,
+      moderation_reason: reason,
+      moderated_at: now,
+      moderated_by: adminId
+    };
+
+    if (normalisedStatus === 'closure_requested') {
+      update.closure_requested_at = now;
+      update.account_closure_requested_at = now;
+      update.closure_notes = reason;
+    }
+
+    if (normalisedStatus === 'closed') {
+      update.closed_at = now;
+      update.closure_notes = reason;
+      update.is_online = false;
+      update.is_available = false;
+    }
+
+    if (normalisedStatus === 'active') {
+      update.reinstated_at = now;
+      update.reinstated_by = adminId || null;
+      update.reinstatement_notes = reason;
+    }
+
     const { error } = await this.supabase
       .from('profiles')
-      .update({
-        account_status: status,
-        moderation_reason: reason,
-        moderated_at: new Date().toISOString(),
-        moderated_by: adminId
-      })
+      .update(update)
       .eq('id', userId);
 
     if (error) throw error;

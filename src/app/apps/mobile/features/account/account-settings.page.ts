@@ -324,14 +324,38 @@ export class AccountSettingsPage implements OnInit {
 
     async confirmCloseAccount() {
         const alert = await this.alertCtrl.create({
-            header: 'Close account?',
-            message: 'Your Movabi account will be disabled and the closure request recorded. Active bookings or outstanding payments should be resolved first.',
+            header: 'Request account closure?',
+            message: 'This will disable your Movabi access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
+            inputs: [
+                {
+                    name: 'understood',
+                    type: 'checkbox',
+                    label: 'I understand my account access will be disabled.',
+                    value: 'yes'
+                },
+                {
+                    name: 'reason',
+                    type: 'textarea',
+                    placeholder: 'Optional reason'
+                }
+            ],
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Request Closure',
                     role: 'destructive',
-                    handler: () => void this.closeAccount()
+                    handler: (value) => {
+                        const understood = Array.isArray(value) ? value.includes('yes') : Boolean(value?.understood);
+                        const reason = Array.isArray(value) ? '' : String(value?.reason || '').trim();
+
+                        if (!understood) {
+                            void this.showToast('Please confirm you understand before continuing.', 'warning');
+                            return false;
+                        }
+
+                        void this.closeAccount(reason);
+                        return true;
+                    }
                 }
             ]
         });
@@ -339,7 +363,7 @@ export class AccountSettingsPage implements OnInit {
         await alert.present();
     }
 
-    private async closeAccount() {
+    private async closeAccount(reason = '') {
         const user = this.auth.currentUser();
 
         if (!user?.id) {
@@ -352,10 +376,16 @@ export class AccountSettingsPage implements OnInit {
         await loading.present();
 
         try {
-            await this.profileService.updateProfile(user.id, { account_status: 'closure_requested' } as Partial<Profile>);
-            await this.showToast('Account closure requested. You have been signed out.', 'success');
-            await this.auth.signOut();
-            await this.router.navigate(['/auth/login'], { replaceUrl: true });
+            const now = new Date().toISOString();
+            await this.profileService.updateProfile(user.id, {
+                account_status: 'closure_requested',
+                closure_requested_at: now,
+                account_closure_requested_at: now,
+                closure_reason: reason || null,
+                account_closure_reason: reason || null
+            } as Partial<Profile>);
+            await this.showToast('Your closure request has been received. You can contact support if this was a mistake.', 'success');
+            await this.router.navigate(['/auth/blocked'], { replaceUrl: true });
         } catch {
             await this.showToast('Could not request account closure.', 'danger');
         } finally {

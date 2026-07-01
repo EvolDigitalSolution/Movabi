@@ -18,6 +18,17 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
         </div>
 
         <div class="flex flex-col sm:flex-row items-center gap-4">
+          <select
+            [value]="statusFilter()"
+            (change)="onStatusFilter($event)"
+            class="w-full sm:w-56 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-600 focus:outline-none"
+          >
+            <option value="all">All accounts</option>
+            <option value="closure_requested">Closure Requested</option>
+            <option value="closed">Closed</option>
+            <option value="reinstated">Reinstated</option>
+          </select>
+
           <div class="relative w-full sm:w-72 group">
             <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"></ion-icon>
             <input
@@ -111,7 +122,7 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
           <p class="text-sm font-medium text-slate-700 mt-1">{{ getUserName(moderationModal()?.user) }}</p>
 
           <div class="space-y-3 mt-5">
-            @for (status of ['active', 'suspended', 'banned', 'disabled']; track status) {
+            @for (status of ['active', 'closure_requested', 'closed', 'reinstated', 'suspended', 'banned', 'disabled']; track status) {
               <label class="flex items-center gap-3 rounded-2xl border border-slate-100 p-3 cursor-pointer">
                 <input
                   type="radio"
@@ -169,6 +180,7 @@ export class UserListComponent implements OnInit {
 
     users = signal<Profile[]>([]);
     searchTerm = signal('');
+    statusFilter = signal('all');
     filteredUsers = signal<Profile[]>([]);
 
     toastMessage = signal<string | null>(null);
@@ -197,14 +209,16 @@ export class UserListComponent implements OnInit {
         this.applySearchFilter();
     }
 
+    onStatusFilter(event: Event) {
+        const select = event.target as HTMLSelectElement;
+        this.statusFilter.set(select.value || 'all');
+        this.applySearchFilter();
+    }
+
     applySearchFilter() {
         const term = (this.searchTerm() || '').toLowerCase().trim();
+        const statusFilter = this.statusFilter();
         const users = this.users() || [];
-
-        if (!term) {
-            this.filteredUsers.set(users);
-            return;
-        }
 
         this.filteredUsers.set(
             users.filter((user: any) => {
@@ -214,13 +228,16 @@ export class UserListComponent implements OnInit {
                 const status = (user?.account_status || 'active').toLowerCase();
                 const id = (user?.id || '').toLowerCase();
 
-                return (
+                const matchesStatus = statusFilter === 'all' || status === statusFilter;
+                const matchesSearch = !term || (
                     name.includes(term) ||
                     email.includes(term) ||
                     phone.includes(term) ||
                     status.includes(term) ||
                     id.includes(term)
                 );
+
+                return matchesStatus && matchesSearch;
             })
         );
     }
@@ -251,8 +268,11 @@ export class UserListComponent implements OnInit {
             case 'active':
                 return 'success';
             case 'suspended':
+            case 'closure_requested':
+            case 'reinstated':
                 return 'warning';
             case 'banned':
+            case 'closed':
                 return 'error';
             case 'disabled':
                 return 'secondary';
