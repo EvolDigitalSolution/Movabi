@@ -20,6 +20,7 @@ import { SystemConfigService } from '../../../../core/services/config/system-con
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
+import { ApiUrlService } from '../../../../core/services/api-url.service';
 
 type SettingsTab = 'general' | 'countries' | 'notifications';
 
@@ -485,6 +486,7 @@ export class AdminSettingsComponent implements OnInit {
     private appConfig = inject(AppConfigService);
     private tour = inject(OnboardingTourService);
     private supabase = inject(SupabaseService);
+    private apiUrl = inject(ApiUrlService);
 
     activeTab = signal<SettingsTab>('general');
     saving = signal(false);
@@ -625,98 +627,145 @@ export class AdminSettingsComponent implements OnInit {
     }
 
     private async loadNotificationSecretStatus(): Promise<void> {
-        try {
-            const headers = await this.getAdminApiHeaders(false);
-            const response = await fetch('/api/admin/settings/secrets/onesignal/status', {
-                method: 'GET',
-                credentials: 'include',
-                headers
-            });
 
-            if (!response.ok) return;
+        try {
+
+            const headers = await this.getAdminApiHeaders();
+
+            const response = await fetch(
+                `${this.apiUrl.getBaseUrl()}/api/admin/settings/secrets/onesignal/status`,
+                {
+                    method: 'GET',
+                    headers
+                }
+            );
+
+            if (response.status === 401) {
+                throw new Error('Administrator authentication required.');
+            }
+
+            if (!response.ok) {
+                throw new Error('Unable to load OneSignal configuration.');
+            }
 
             const data = await response.json();
-            this.notificationConfig.configured = Boolean(data?.configured);
-            if (data?.appId && !this.notificationConfig.appId.trim()) {
+
+            this.notificationConfig.configured = !!data.configured;
+
+            if (data.appId) {
                 this.notificationConfig.appId = data.appId;
             }
-            if (typeof data?.enabled === 'boolean') {
+
+            if (typeof data.enabled === 'boolean') {
                 this.notificationConfig.enabled = data.enabled;
             }
-        } catch {
+
+        } catch (err) {
+
+            console.error(err);
+
             this.notificationConfig.configured = false;
         }
     }
 
     private async saveNotificationSecret(): Promise<void> {
-        const restApiKey = this.notificationConfig.restApiKey.trim();
+
         const headers = await this.getAdminApiHeaders(true);
 
-        const response = await fetch('/api/admin/settings/secrets/onesignal', {
-            method: 'POST',
-            credentials: 'include',
-            headers,
-            body: JSON.stringify({
-                appId: this.notificationConfig.appId.trim(),
-                restApiKey: restApiKey || undefined,
-                enabled: this.notificationConfig.enabled
-            })
-        });
+        const response = await fetch(
+            `${this.apiUrl.getBaseUrl()}/api/admin/settings/secrets/onesignal`,
+            {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    appId: this.notificationConfig.appId.trim(),
+                    restApiKey: this.notificationConfig.restApiKey.trim() || undefined,
+                    enabled: this.notificationConfig.enabled
+                })
+            }
+        );
+
+        if (response.status === 401) {
+            throw new Error('Administrator authentication required.');
+        }
 
         if (!response.ok) {
-            if (response.status === 404 || response.status === 405) {
-                throw new Error('Backend OneSignal settings endpoint is not deployed. Env config may still work.');
-            }
 
-            let message = 'Could not save OneSignal server configuration.';
+            let message = 'Unable to save OneSignal configuration.';
+
             try {
                 const body = await response.json();
-                message = body?.error || body?.message || message;
-            } catch {
-                // Keep the generic message when the server returns HTML or an empty body.
-            }
+                message = body.error || body.message || message;
+            } catch { }
+
             throw new Error(message);
         }
 
         const data = await response.json();
-        this.notificationConfig.configured = Boolean(data?.configured ?? true);
-        if (data?.message) {
-            this.triggerToast(data.message, 'success');
-        }
+
+        this.notificationConfig.configured = !!data.configured;
+        this.notificationConfig.restApiKey = '';
+
+        this.triggerToast(
+            data.message || 'OneSignal configuration saved.',
+            'success'
+        );
     }
 
     async sendTestNotification(): Promise<void> {
+
         const userId = this.notificationConfig.testUserId.trim();
 
         if (!userId) {
-            this.triggerToast('Enter a test user ID first.', 'warning');
+            this.triggerToast('Enter a user ID first.', 'warning');
             return;
         }
 
         this.testingNotification.set(true);
 
         try {
+
             const headers = await this.getAdminApiHeaders(true);
-            const response = await fetch('/api/admin/notifications/test', {
-                method: 'POST',
-                credentials: 'include',
-                headers,
-                body: JSON.stringify({
-                    userId,
-                    title: 'Movabi test notification',
-                    body: 'Push notifications are working.'
-                })
-            });
+
+            const response = await fetch(
+                `${this.apiUrl.getBaseUrl()}/api/admin/notifications/test`,
+                {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        userId,
+                        title: 'Movabi Test Notification',
+                        body: 'Push notifications are configured correctly.'
+                    })
+                }
+            );
 
             if (!response.ok) {
-                throw new Error('Test notification failed.');
+
+                let message = 'Test notification failed.';
+
+                try {
+                    const body = await response.json();
+                    message = body.error || body.message || message;
+                } catch { }
+
+                throw new Error(message);
             }
 
-            this.triggerToast('Test notification sent.', 'success');
-        } catch (error) {
-            console.error('[admin-settings] test notification failed', error);
-            this.triggerToast('Test notification failed. Check server OneSignal settings.', 'danger');
+            this.triggerToast(
+                'Test notification sent successfully.',
+                'success'
+            );
+
+        } catch (err: any) {
+
+            this.triggerToast(
+                err?.message || 'Unable to send test notification.',
+                'danger'
+            );
+
         } finally {
+
             this.testingNotification.set(false);
         }
     }
@@ -735,13 +784,24 @@ export class AdminSettingsComponent implements OnInit {
         return true;
     }
 
-    private async getAdminApiHeaders(includeJson = false): Promise<Record<string, string>> {
-        const { data, error } = await this.supabase.auth.getSession();
-        const token = data.session?.access_token;
-        const headers: Record<string, string> = includeJson ? { 'Content-Type': 'application/json' } : {};
+    private async getAdminApiHeaders(
+        includeJson = false
+    ): Promise<Record<string, string>> {
 
-        if (!error && token) {
-            headers['Authorization'] = `Bearer ${token}`;
+        const {
+            data: { session }
+        } = await this.supabase.auth.getSession();
+
+        if (!session?.access_token) {
+            throw new Error('Your administrator session has expired. Please sign in again.');
+        }
+
+        const headers: Record<string, string> = {
+            Authorization: `Bearer ${session.access_token}`
+        };
+
+        if (includeJson) {
+            headers['Content-Type'] = 'application/json';
         }
 
         return headers;
