@@ -285,13 +285,14 @@ export class App implements OnInit {
                 }
 
                 if (url.protocol === 'com.movabi.app:') {
-                    const path = url.hostname === 'driver' ? '/driver' : url.pathname;
-                    const query = url.search || '';
+                    const path = url.hostname === 'driver'
+                        ? '/driver'
+                        : `/${[url.hostname, url.pathname.replace(/^\/+/, '')].filter(Boolean).join('/')}`;
+                    const targetUrl = `${path}${url.search || ''}${url.hash || ''}`;
 
-                    if (path === '/driver') {
-                        const driverUrl = `${path}${query}`;
-                        console.log('[App] navigating to:', driverUrl);
-                        await this.router.navigateByUrl(driverUrl, { replaceUrl: true });
+                    if (path === '/driver' || path === '/auth/reset-password' || path === '/auth/callback') {
+                        console.log('[App] navigating to:', targetUrl);
+                        await this.router.navigateByUrl(targetUrl, { replaceUrl: true });
                     }
                 }
             } catch (error) {

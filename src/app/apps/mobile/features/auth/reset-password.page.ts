@@ -4,7 +4,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { RouterModule, Router } from '@angular/router';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
-import { AuthService } from '../../../../core/services/auth/auth.service';
 
 @Component({
   selector: 'app-reset-password',
@@ -111,7 +110,6 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
 export class ResetPasswordPage implements OnInit {
   private fb = inject(FormBuilder);
   private supabase = inject(SupabaseService);
-  private auth = inject(AuthService);
   private router = inject(Router);
 
   resetForm = this.fb.group({
@@ -125,9 +123,42 @@ export class ResetPasswordPage implements OnInit {
   errorMessage = signal<string | null>(null);
 
   async ngOnInit() {
+    await this.restoreRecoverySessionFromUrl();
+
     const { data: { session } } = await this.supabase.auth.getSession();
     if (!session) {
       this.errorMessage.set('Invalid or expired reset link. Please request a new one.');
+    }
+  }
+
+  private async restoreRecoverySessionFromUrl() {
+    if (typeof window === 'undefined') return;
+
+    const query = new URLSearchParams(window.location.search || '');
+    const hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    const code = query.get('code') || hash.get('code');
+    const accessToken = query.get('access_token') || hash.get('access_token');
+    const refreshToken = query.get('refresh_token') || hash.get('refresh_token');
+
+    if (code) {
+      const { error } = await this.supabase.auth.exchangeCodeForSession(code);
+      if (error) {
+        console.error('Password reset code exchange failed:', error);
+        this.errorMessage.set('This reset link could not be verified. Please request a new one.');
+      }
+      return;
+    }
+
+    if (accessToken && refreshToken) {
+      const { error } = await this.supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+
+      if (error) {
+        console.error('Password reset session restore failed:', error);
+        this.errorMessage.set('This reset link could not be verified. Please request a new one.');
+      }
     }
   }
 
@@ -152,6 +183,7 @@ export class ResetPasswordPage implements OnInit {
       const { error } = await this.supabase.auth.updateUser({ password });
       if (error) throw error;
       this.isSuccess.set(true);
+      await this.supabase.auth.signOut();
     } catch (err: unknown) {
       console.error('Password reset failed:', err);
       const message = err instanceof Error ? err.message : 'Failed to reset password. Please try again.';
