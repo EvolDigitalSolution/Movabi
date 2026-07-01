@@ -284,9 +284,12 @@ BEGIN
             ADD COLUMN IF NOT EXISTS private_hire_vehicle_license_status TEXT DEFAULT 'missing',
             ADD COLUMN IF NOT EXISTS private_hire_insurance_url TEXT,
             ADD COLUMN IF NOT EXISTS private_hire_insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS council_name TEXT,
             ADD COLUMN IF NOT EXISTS council_license_authority TEXT,
             ADD COLUMN IF NOT EXISTS council_license_number TEXT,
             ADD COLUMN IF NOT EXISTS council_license_expiry DATE,
+            ADD COLUMN IF NOT EXISTS taxi_badge_number TEXT,
+            ADD COLUMN IF NOT EXISTS taxi_license_expiry DATE,
             ADD COLUMN IF NOT EXISTS vehicle_license_url TEXT,
             ADD COLUMN IF NOT EXISTS vehicle_license_status TEXT DEFAULT 'missing',
             ADD COLUMN IF NOT EXISTS vehicle_license_expiry DATE,
@@ -314,6 +317,27 @@ BEGIN
             ADD COLUMN IF NOT EXISTS driver_review_sent_at TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS driver_review_sent_by UUID,
             ADD COLUMN IF NOT EXISTS driver_review_history JSONB;
+
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'council_license_authority') THEN
+            UPDATE public.profiles
+            SET council_name = COALESCE(NULLIF(TRIM(council_name), ''), NULLIF(TRIM(council_license_authority), ''))
+            WHERE NULLIF(TRIM(COALESCE(council_name, '')), '') IS NULL
+              AND NULLIF(TRIM(COALESCE(council_license_authority, '')), '') IS NOT NULL;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'council_license_expiry') THEN
+            UPDATE public.profiles
+            SET taxi_license_expiry = COALESCE(taxi_license_expiry, council_license_expiry)
+            WHERE taxi_license_expiry IS NULL
+              AND council_license_expiry IS NOT NULL;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'vehicle_license_url') THEN
+            UPDATE public.profiles
+            SET private_hire_vehicle_license_url = COALESCE(NULLIF(TRIM(private_hire_vehicle_license_url), ''), NULLIF(TRIM(vehicle_license_url), ''))
+            WHERE NULLIF(TRIM(COALESCE(private_hire_vehicle_license_url, '')), '') IS NULL
+              AND NULLIF(TRIM(COALESCE(vehicle_license_url, '')), '') IS NOT NULL;
+        END IF;
     END IF;
 END $$;
 

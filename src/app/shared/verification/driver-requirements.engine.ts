@@ -122,6 +122,14 @@ const REGISTRATION_KEYS = [
     'registration'
 ];
 
+const RIDE_COMPLIANCE_KEYS = {
+    councilName: ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority'],
+    councilLicenseNumber: ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number'],
+    taxiBadgeNumber: ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number'],
+    taxiLicenseExpiry: ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry'],
+    privateHireVehicleLicenseUrl: ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url']
+};
+
 export function normaliseVehicleClass(vehicle?: any): DriverVehicleClass {
     const raw = safeLower(
         valueFrom(vehicle, ['vehicle_class', 'service_class', 'type', 'capacity', 'vehicle_type'])
@@ -175,7 +183,7 @@ export function vehicleRequiresRegistration(vehicleClass: DriverVehicleClass, _s
 }
 
 export function getDriverRequirements(input: DriverRequirementsInput): DriverRequirementResult[] {
-    const driver = input.driver || {};
+    const driver = { ...parseVerificationItems(input.driver?.verification_items), ...(input.driver || {}) };
     const vehicle = input.vehicle || {};
     const documents = { ...driver, ...vehicle, ...(input.documents || {}) };
     const countryCode = safeUpper(input.countryCode || driver.country_code || driver.country || vehicle.country_code || 'DEFAULT');
@@ -240,11 +248,11 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
     }
 
     if (selectedServices.includes('ride') && country.rideRequiresPrivateHire) {
-        requirements.push(textRequirement(driver, ['council_name', 'licensing_authority'], 'council_name', 'Council / licensing authority', 'Council/private hire authority is missing.', 'profile', ['ride']));
-        requirements.push(textRequirement(driver, ['council_license_number', 'taxi_licence_number'], 'council_license_number', 'Council licence number', 'Council licence number is missing.', 'profile', ['ride']));
-        requirements.push(textRequirement(driver, ['taxi_badge_number', 'badge_number'], 'taxi_badge_number', 'Taxi badge number', 'Taxi badge number is missing.', 'profile', ['ride']));
-        requirements.push(textRequirement(driver, ['taxi_license_expiry', 'private_hire_expiry'], 'taxi_license_expiry', 'Taxi licence expiry date', 'Taxi licence expiry date is missing.', 'profile', ['ride']));
-        requirements.push(documentRequirement(driver, ['private_hire_vehicle_licence_url', 'phv_licence_url'], ['private_hire_vehicle_licence_status'], 'private_hire_vehicle_licence', 'Private hire vehicle licence', 'Private hire vehicle licence is missing.', ['ride']));
+        requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.councilName, 'council_name', 'Council / licensing authority', 'Council/private hire authority is missing.', 'profile', ['ride']));
+        requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.councilLicenseNumber, 'council_license_number', 'Council licence number', 'Council licence number is missing.', 'profile', ['ride']));
+        requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.taxiBadgeNumber, 'taxi_badge_number', 'Taxi badge number', 'Taxi badge number is missing.', 'profile', ['ride']));
+        requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.taxiLicenseExpiry, 'taxi_license_expiry', 'Taxi licence expiry date', 'Taxi licence expiry date is missing.', 'profile', ['ride']));
+        requirements.push(documentRequirement(driver, RIDE_COMPLIANCE_KEYS.privateHireVehicleLicenseUrl, ['private_hire_vehicle_license_status', 'vehicle_license_status', 'private_hire_vehicle_licence_status'], 'private_hire_vehicle_license', 'Private hire vehicle licence', 'Private hire vehicle licence is missing.', ['ride']));
         requirements.push(documentRequirement(driver, ['private_hire_insurance_url', 'insurance_url'], ['private_hire_insurance_status', 'insurance_status'], 'private_hire_insurance', 'Private hire insurance', 'Private hire insurance is missing.', ['ride']));
     } else {
         requirements.push(result('council_name', 'Council / taxi licence', 'Council/taxi fields are not required unless Ride is selected for a configured country.', 'not_required', 'warning', 'profile', false, selectedServices));

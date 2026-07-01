@@ -245,6 +245,8 @@ export class AdminService {
   }
 
   private normaliseAdminDriver(driver: any, vehicles: Vehicle[]): DriverProfile & { vehicles: Vehicle[] } {
+    const verificationItems = this.parseVerificationItems(driver?.verification_items);
+    const driverWithVerificationItems = { ...verificationItems, ...driver };
     const authEmail = String(driver?.auth_email || '').trim();
     const profileEmail = String(driver?.email || '').trim();
     const phone = String(driver?.phone || driver?.phone_number || driver?.mobile || '').trim();
@@ -255,8 +257,43 @@ export class AdminService {
       auth_email: authEmail || null,
       date_of_birth: driver?.date_of_birth || null,
       phone: phone || null,
+      council_name: this.firstValue(driverWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+      council_license_number: this.firstValue(driverWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number']),
+      taxi_badge_number: this.firstValue(driverWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+      taxi_license_expiry: this.firstValue(driverWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry']),
+      private_hire_vehicle_license_url: this.firstValue(driverWithVerificationItems, ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url']),
       vehicles: vehicles || []
     } as DriverProfile & { vehicles: Vehicle[] };
+  }
+
+  private parseVerificationItems(value: unknown): Record<string, unknown> {
+    if (!value) return {};
+    if (Array.isArray(value)) {
+      return value.reduce<Record<string, unknown>>((items, entry) => {
+        if (!entry || typeof entry !== 'object') return items;
+        const record = entry as Record<string, unknown>;
+        const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+        if (key) items[key] = record['value'] ?? record['label'] ?? '';
+        return items;
+      }, {});
+    }
+    if (typeof value === 'object') return value as Record<string, unknown>;
+    if (typeof value === 'string') {
+      try {
+        return this.parseVerificationItems(JSON.parse(value));
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  private firstValue(source: any, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = source?.[key];
+      if (String(value ?? '').trim()) return String(value).trim();
+    }
+    return null;
   }
 
     async verifyDriver(driverId: string, approved: boolean) {

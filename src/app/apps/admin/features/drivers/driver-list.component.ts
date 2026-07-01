@@ -29,6 +29,7 @@ type AdminDriver = DriverProfile & {
     council_name?: string | null;
     taxi_badge_number?: string | null;
     taxi_license_expiry?: string | null;
+    private_hire_vehicle_license_url?: string | null;
     stripe_connect_status?: string | null;
     stripe_account_id?: string | null;
     driver_license_url?: string | null;
@@ -1254,6 +1255,12 @@ export class DriverListComponent implements OnInit {
             )) {
                 return false;
             }
+
+            if (driver?.council_name && (text.includes('council/private hire authority') || text.includes('council name') || text.includes('licensing authority'))) return false;
+            if (driver?.council_license_number && text.includes('council licence number')) return false;
+            if (driver?.taxi_badge_number && text.includes('taxi badge number')) return false;
+            if (driver?.taxi_license_expiry && text.includes('taxi licence expiry')) return false;
+            if (driver?.private_hire_vehicle_license_url && text.includes('private hire vehicle licence')) return false;
 
             if ((driver?.insurance_url || driver?.courier_insurance_url || driver?.hire_reward_insurance_url) && (
                 text.includes('insurance document is missing') ||

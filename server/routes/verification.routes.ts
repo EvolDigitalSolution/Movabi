@@ -63,6 +63,15 @@ const parseServiceTypes = (value: unknown): string[] => {
     .filter(Boolean)));
 };
 
+const firstValue = (source: Record<string, unknown> | null | undefined, keys: string[]): string | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (String(value ?? '').trim()) return String(value).trim();
+  }
+  return null;
+};
+
 const supabaseUrl =
   process.env.SUPABASE_URL ||
   process.env.SUPABASE_PUBLIC_URL ||
@@ -141,6 +150,17 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       auth_email: authUser?.user?.email,
       user: authUser?.user
     };
+    const driverProfileWithVerificationItems = {
+      ...parseVerificationItems(profile.verification_items),
+      ...driverProfile
+    };
+    console.log('[driver-preverify] ride fields', {
+      council_name: firstValue(driverProfileWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+      council_license_number: firstValue(driverProfileWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number']),
+      taxi_badge_number: firstValue(driverProfileWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+      taxi_license_expiry: firstValue(driverProfileWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry']),
+      private_hire_vehicle_license_url: firstValue(driverProfileWithVerificationItems, ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url'])
+    });
     const requirementsInput = {
       countryCode: profile.country_code || profile.country || vehicle?.country_code,
       driver: driverProfile,

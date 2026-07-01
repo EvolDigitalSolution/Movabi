@@ -613,6 +613,11 @@ export class DriverSettingsPage implements OnInit {
             (profile as any)?.courier_insurance_url ||
             (profile as any)?.hire_reward_insurance_url
         );
+        const hasCouncilName = this.firstProfileValue(profile as any, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']);
+        const hasCouncilNumber = this.firstProfileValue(profile as any, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number']);
+        const hasTaxiBadge = this.firstProfileValue(profile as any, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']);
+        const hasTaxiExpiry = this.firstProfileValue(profile as any, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry']);
+        const hasPhvVehicleLicence = this.firstProfileValue(profile as any, ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url']);
 
         return Array.from(new Set(blockers.filter((blocker) => {
             const text = String(blocker || '').toLowerCase();
@@ -623,9 +628,23 @@ export class DriverSettingsPage implements OnInit {
                 text.includes('private hire') ||
                 text.includes('badge')
             )) return false;
+            if (hasCouncilName && (text.includes('council/private hire authority') || text.includes('council name') || text.includes('licensing authority'))) return false;
+            if (hasCouncilNumber && text.includes('council licence number')) return false;
+            if (hasTaxiBadge && text.includes('taxi badge number')) return false;
+            if (hasTaxiExpiry && text.includes('taxi licence expiry')) return false;
+            if (hasPhvVehicleLicence && text.includes('private hire vehicle licence')) return false;
             if (hasInsurance && (text.includes('insurance document is missing') || text.includes('courier insurance') || text.includes('hire and reward'))) return false;
             return true;
         })));
+    }
+
+    private firstProfileValue(profile: Record<string, unknown> | null | undefined, keys: string[]): string {
+        if (!profile) return '';
+        for (const key of keys) {
+            const value = profile[key];
+            if (String(value ?? '').trim()) return String(value).trim();
+        }
+        return '';
     }
 
     verificationLabel(): string {
@@ -900,6 +919,7 @@ export class DriverSettingsPage implements OnInit {
         this.resubmitting.set(true);
 
         try {
+            await this.driverService.fetchVehicle();
             await this.profileService.updateProfile(user.id, {
                 driver_review_status: 'under_review',
                 verification_status: 'under_review',
@@ -913,6 +933,7 @@ export class DriverSettingsPage implements OnInit {
             if (typeof (this.profileService as any).fetchProfile === 'function') {
                 await (this.profileService as any).fetchProfile(user.id);
             }
+            await this.driverService.fetchVehicle();
 
             await this.showToast('Resubmitted for manual review.', 'success');
         } catch {

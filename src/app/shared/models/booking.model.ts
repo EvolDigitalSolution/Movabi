@@ -415,9 +415,12 @@ export interface Profile {
     private_hire_vehicle_license_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
     private_hire_insurance_url?: string | null;
     private_hire_insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    council_name?: string | null;
     council_license_authority?: string | null;
     council_license_number?: string | null;
     council_license_expiry?: string | null;
+    taxi_badge_number?: string | null;
+    taxi_license_expiry?: string | null;
     vehicle_license_url?: string | null;
     vehicle_license_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
     vehicle_license_expiry?: string | null;

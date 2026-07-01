@@ -1022,15 +1022,16 @@ export class OnboardingPage implements OnInit {
 
         if (profile) {
             const verificationItems = this.parseVerificationItems(profile.verification_items);
+            const profileWithVerificationItems = { ...verificationItems, ...profile };
 
             this.onboardingForm.patchValue(
                 {
                     full_name: profile.full_name ?? profile.legal_name ?? profile.name ?? user?.user_metadata?.['full_name'] ?? '',
                     email: profile.email ?? user?.email ?? '',
-                    council_name: verificationItems['council_name'] ?? profile.council_name ?? '',
-                    council_license_number: verificationItems['council_license_number'] ?? profile.council_license_number ?? '',
-                    taxi_badge_number: verificationItems['taxi_badge_number'] ?? profile.taxi_badge_number ?? '',
-                    taxi_license_expiry: verificationItems['taxi_license_expiry'] ?? profile.taxi_license_expiry ?? '',
+                    council_name: this.firstProfileValue(profileWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+                    council_license_number: this.firstProfileValue(profileWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number']),
+                    taxi_badge_number: this.firstProfileValue(profileWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+                    taxi_license_expiry: this.firstProfileValue(profileWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry']),
                     service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
                     phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? '',
                     date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob)
@@ -1343,6 +1344,15 @@ export class OnboardingPage implements OnInit {
         return String(value ?? '').trim().length > 0;
     }
 
+    private firstProfileValue(profile: Record<string, unknown> | null | undefined, keys: string[]): string {
+        if (!profile) return '';
+        for (const key of keys) {
+            const value = profile[key];
+            if (this.hasText(value)) return String(value).trim();
+        }
+        return '';
+    }
+
     private getCanonicalPlate(vehicle: Vehicle | null | undefined, fallback?: unknown): string {
         return String(vehicle?.license_plate ?? fallback ?? '').trim();
     }
@@ -1447,6 +1457,28 @@ export class OnboardingPage implements OnInit {
         }
 
         return items.filter(item => item.value.length > 0);
+    }
+
+    private buildRideCompliancePayload(raw: Record<string, unknown>, profile?: Record<string, unknown> | null): Record<string, unknown> {
+        if (!this.requiresTaxiLicence()) return {};
+
+        const payload = {
+            council_name: String(raw['council_name'] || '').trim(),
+            council_license_number: String(raw['council_license_number'] || '').trim(),
+            taxi_badge_number: String(raw['taxi_badge_number'] || '').trim(),
+            taxi_license_expiry: String(raw['taxi_license_expiry'] || '').trim() || null,
+            private_hire_vehicle_license_url: this.firstProfileValue(profile, [
+                'private_hire_vehicle_license_url',
+                'privateHireVehicleLicenseUrl',
+                'phv_license_url',
+                'vehicle_license_url',
+                'private_hire_vehicle_licence_url',
+                'phv_licence_url'
+            ]) || null
+        };
+
+        console.log('[driver-compliance] saving ride fields', payload);
+        return payload;
     }
 
     private vehicleClassFromVehicle(vehicle: Vehicle | null): DriverVehicleClass {
@@ -1718,6 +1750,7 @@ export class OnboardingPage implements OnInit {
             const latestVehicle = await this.driverService.fetchVehicle();
             console.log('[DriverOnboarding] Validation vehicle:', latestVehicle);
             const vehiclePayload = this.buildVehiclePayload(raw, latestVehicle);
+            const rideCompliancePayload = this.buildRideCompliancePayload(raw, this.profile() as any);
 
             const savedVehicle = await this.driverService.updateVehicle(vehiclePayload);
             console.log('[DriverOnboarding] Saved vehicle:', savedVehicle);
@@ -1731,6 +1764,7 @@ export class OnboardingPage implements OnInit {
                 full_name: String(raw.full_name || '').trim(),
                 phone: String(raw.phone || '').trim(),
                 date_of_birth: String(raw.date_of_birth || '').trim() || null,
+                ...rideCompliancePayload,
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
                 verification_status: 'under_review',
@@ -1779,37 +1813,28 @@ export class OnboardingPage implements OnInit {
 
     private async updateProfileSafely(userId: string, updates: Record<string, unknown>) {
         const cleaned = this.cleanProfileUpdates(updates);
+        const pending = { ...cleaned };
 
-        let { error } = await this.supabase.client
-            .from('profiles')
-            .update(cleaned)
-            .eq('id', userId);
-
-        if (!error) {
-            this.mergeLocalProfile(cleaned);
-            return;
-        }
-
-        const missingColumn = this.extractMissingColumn(error);
-
-        if (missingColumn && cleaned[missingColumn] !== undefined) {
-            const retry = { ...cleaned };
-            delete retry[missingColumn];
-
-            const result = await this.supabase.client
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const { error } = await this.supabase.client
                 .from('profiles')
-                .update(retry)
+                .update(pending)
                 .eq('id', userId);
 
-            error = result.error;
-
             if (!error) {
-                this.mergeLocalProfile(retry);
+                this.mergeLocalProfile(pending);
                 return;
             }
+
+            const missingColumn = this.extractMissingColumn(error);
+            if (!missingColumn || pending[missingColumn] === undefined) {
+                throw error;
+            }
+
+            delete pending[missingColumn];
         }
 
-        throw error;
+        throw new Error('Could not save profile updates after removing unsupported optional fields.');
     }
 
     private cleanProfileUpdates(updates: Record<string, unknown>) {

@@ -21,6 +21,36 @@ function isValidOneSignalAppId(appId: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId.trim());
 }
 
+function firstValue(source: any, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (String(value ?? '').trim()) return String(value).trim();
+  }
+  return null;
+}
+
+function parseVerificationItems(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (Array.isArray(value)) {
+    return value.reduce<Record<string, unknown>>((items, entry) => {
+      if (!entry || typeof entry !== 'object') return items;
+      const record = entry as Record<string, unknown>;
+      const key = String(record.key || record.name || record.field || '').trim();
+      if (key) items[key] = record.value ?? record.label ?? '';
+      return items;
+    }, {});
+  }
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  if (typeof value === 'string') {
+    try {
+      return parseVerificationItems(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
 
@@ -142,12 +172,21 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
 
     const result = (drivers || []).map((driver: any) => {
       const authEmail = authEmails.get(driver.id) || null;
+      const driverWithVerificationItems = {
+        ...parseVerificationItems(driver.verification_items),
+        ...driver
+      };
       return {
         ...driver,
         email: driver.email || authEmail,
         auth_email: authEmail,
         date_of_birth: driver.date_of_birth || null,
         phone: driver.phone || driver.phone_number || driver.mobile || null,
+        council_name: firstValue(driverWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+        council_license_number: firstValue(driverWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number']),
+        taxi_badge_number: firstValue(driverWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+        taxi_license_expiry: firstValue(driverWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry']),
+        private_hire_vehicle_license_url: firstValue(driverWithVerificationItems, ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url']),
         vehicles: vehiclesByUser.get(driver.id) || []
       };
     });
