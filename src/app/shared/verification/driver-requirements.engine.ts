@@ -34,6 +34,7 @@ export interface DriverRequirementsInput {
 
 interface CountryRequirementConfig {
     expiryWarningDays: number;
+    requireDateOfBirth: boolean;
     requireCourierInsurance: boolean;
     requireGoodsInTransitForVan: boolean;
     requirePublicLiabilityForVan: boolean;
@@ -45,6 +46,7 @@ interface CountryRequirementConfig {
 const COUNTRY_CONFIGS: Record<string, CountryRequirementConfig> = {
     GB: {
         expiryWarningDays: 30,
+        requireDateOfBirth: true,
         requireCourierInsurance: true,
         requireGoodsInTransitForVan: true,
         requirePublicLiabilityForVan: false,
@@ -53,6 +55,7 @@ const COUNTRY_CONFIGS: Record<string, CountryRequirementConfig> = {
     },
     US: {
         expiryWarningDays: 30,
+        requireDateOfBirth: true,
         requireCourierInsurance: false,
         requireGoodsInTransitForVan: false,
         requirePublicLiabilityForVan: false,
@@ -62,6 +65,7 @@ const COUNTRY_CONFIGS: Record<string, CountryRequirementConfig> = {
     },
     NG: {
         expiryWarningDays: 30,
+        requireDateOfBirth: true,
         requireCourierInsurance: false,
         requireGoodsInTransitForVan: false,
         requirePublicLiabilityForVan: false,
@@ -71,6 +75,7 @@ const COUNTRY_CONFIGS: Record<string, CountryRequirementConfig> = {
     },
     CA: {
         expiryWarningDays: 30,
+        requireDateOfBirth: true,
         requireCourierInsurance: false,
         requireGoodsInTransitForVan: false,
         requirePublicLiabilityForVan: false,
@@ -80,6 +85,7 @@ const COUNTRY_CONFIGS: Record<string, CountryRequirementConfig> = {
     },
     AU: {
         expiryWarningDays: 30,
+        requireDateOfBirth: true,
         requireCourierInsurance: false,
         requireGoodsInTransitForVan: false,
         requirePublicLiabilityForVan: false,
@@ -89,6 +95,7 @@ const COUNTRY_CONFIGS: Record<string, CountryRequirementConfig> = {
     },
     DEFAULT: {
         expiryWarningDays: 30,
+        requireDateOfBirth: true,
         requireCourierInsurance: false,
         requireGoodsInTransitForVan: false,
         requirePublicLiabilityForVan: false,
@@ -200,9 +207,11 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
         )));
 
     requirements.push(textRequirement(driver, ['full_name', 'legal_name'], 'full_legal_name', 'Full legal name', 'Full legal name is missing.', 'profile'));
-    requirements.push(textRequirement(driver, ['email'], 'email', 'Email address', 'Email address is missing.', 'profile'));
+    requirements.push(emailRequirement(driver));
     requirements.push(textRequirement(driver, ['phone', 'phone_number', 'mobile'], 'phone', 'Phone number', 'Phone number is missing.', 'profile'));
-    requirements.push(textRequirement(driver, ['date_of_birth', 'dob'], 'date_of_birth', 'Date of birth', 'Date of birth is missing.', 'profile'));
+    if (country.requireDateOfBirth) {
+        requirements.push(textRequirement(driver, ['date_of_birth', 'dob'], 'date_of_birth', 'Date of birth', 'Date of birth is missing.', 'profile'));
+    }
 
     requirements.push(textRequirement(vehicle, ['make'], 'vehicle_make', 'Vehicle make', 'Vehicle make is missing.', 'vehicle'));
     requirements.push(textRequirement(vehicle, ['model'], 'vehicle_model', 'Vehicle model', 'Vehicle model is missing.', 'vehicle'));
@@ -314,6 +323,20 @@ function textRequirement(
 ): DriverRequirementResult {
     const ok = hasText(valueFrom(source, keys));
     return result(key, label, ok ? `${label} is present.` : missingMessage, ok ? 'uploaded' : 'missing', ok ? 'warning' : 'blocker', category, true, serviceTypes);
+}
+
+function emailRequirement(driver: any): DriverRequirementResult {
+    const email = driver?.email || driver?.auth_email || driver?.user?.email;
+    const ok = hasText(email);
+    return result(
+        'email',
+        'Email address',
+        ok ? 'Email address is present.' : 'Email address is missing.',
+        ok ? 'uploaded' : 'missing',
+        ok ? 'warning' : 'blocker',
+        'profile',
+        true
+    );
 }
 
 function documentRequirement(

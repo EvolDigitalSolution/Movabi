@@ -187,6 +187,9 @@ export class AdminService {
   }
 
   async getDrivers() {
+    const apiDrivers = await this.getDriversFromApi();
+    if (apiDrivers) return apiDrivers;
+
     const { data: drivers, error: driversError } = await this.supabase
       .from('profiles')
       .select('*')
@@ -219,10 +222,41 @@ export class AdminService {
       vehiclesByUser.get(vehicle.user_id)?.push(vehicle as Vehicle);
     });
 
-    return (drivers || []).map((driver: any) => ({
+    return (drivers || []).map((driver: any) => this.normaliseAdminDriver(driver, vehiclesByUser.get(driver.id) || []));
+  }
+
+  private async getDriversFromApi(): Promise<(DriverProfile & { vehicles: Vehicle[] })[] | null> {
+    try {
+      const headers = await this.getAuthenticatedApiHeaders();
+      const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/drivers`, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) return null;
+
+      const payload = await response.json();
+      const drivers = Array.isArray(payload?.drivers) ? payload.drivers : [];
+      return drivers.map((driver: any) => this.normaliseAdminDriver(driver, driver.vehicles || []));
+    } catch (error) {
+      console.warn('[AdminService] Falling back to Supabase driver list:', error);
+      return null;
+    }
+  }
+
+  private normaliseAdminDriver(driver: any, vehicles: Vehicle[]): DriverProfile & { vehicles: Vehicle[] } {
+    const authEmail = String(driver?.auth_email || '').trim();
+    const profileEmail = String(driver?.email || '').trim();
+    const phone = String(driver?.phone || driver?.phone_number || driver?.mobile || '').trim();
+
+    return {
       ...(driver as DriverProfile),
-      vehicles: vehiclesByUser.get(driver.id) || []
-    }));
+      email: profileEmail || authEmail || null,
+      auth_email: authEmail || null,
+      date_of_birth: driver?.date_of_birth || null,
+      phone: phone || null,
+      vehicles: vehicles || []
+    } as DriverProfile & { vehicles: Vehicle[] };
   }
 
     async verifyDriver(driverId: string, approved: boolean) {

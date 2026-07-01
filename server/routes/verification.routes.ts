@@ -135,11 +135,17 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
 
     const selectedServices = normaliseSelectedServices(profile, vehicle);
     const vehicleClass = normaliseVehicleClass(vehicle);
+    const { data: authUser } = await supabase.auth.admin.getUserById(driverId);
+    const driverProfile = {
+      ...profile,
+      auth_email: authUser?.user?.email,
+      user: authUser?.user
+    };
     const requirementsInput = {
       countryCode: profile.country_code || profile.country || vehicle?.country_code,
-      driver: profile,
+      driver: driverProfile,
       vehicle,
-      documents: { ...profile, ...vehicle },
+      documents: { ...driverProfile, ...vehicle },
       selectedServices
     };
     const requirements = getDriverRequirements(requirementsInput);

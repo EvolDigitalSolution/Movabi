@@ -340,7 +340,7 @@ type DriverOnboardingDraft = {
           <section class="space-y-4" data-driver-documents>
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Contact Details</h2>
+              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Personal Details</h2>
             </div>
 
             <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm overflow-hidden">
@@ -350,17 +350,36 @@ type DriverOnboardingDraft = {
                     <ion-icon name="card-outline" class="text-2xl"></ion-icon>
                   </div>
                   <div>
-                    <h3 class="font-display font-black text-slate-950">Movabi Pay contact</h3>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recommended for virtual card security</p>
+                    <h3 class="font-display font-black text-slate-950">Personal details</h3>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Used for verification and payouts</p>
                   </div>
                 </div>
               </div>
 
-              <div class="p-4">
-                <label for="phone" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mobile Number</label>
-                <input id="phone" type="tel" formControlName="phone" placeholder="e.g. 07898 473 840" [readonly]="isReadOnly()" [class]="fieldInputClass()">
-                <p class="mt-2 text-xs font-semibold text-slate-500">
-                  Add this now if you can. Stripe may require it later before Movabi Pay virtual card activation.
+              <div class="p-4 space-y-3">
+                <div>
+                  <label for="full_name" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Full Legal Name</label>
+                  <input id="full_name" type="text" formControlName="full_name" placeholder="Your legal name" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                </div>
+
+                <div>
+                  <label for="email" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email</label>
+                  <input id="email" type="email" formControlName="email" placeholder="Email from your sign in" readonly [class]="fieldInputClass() + ' bg-slate-50 text-slate-500'">
+                  <p class="mt-1 text-[11px] font-semibold text-slate-500">We use your signed-in email for driver verification.</p>
+                </div>
+
+                <div>
+                  <label for="phone" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mobile Number</label>
+                  <input id="phone" type="tel" formControlName="phone" placeholder="e.g. 07898 473 840" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                </div>
+
+                <div>
+                  <label for="date_of_birth" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date of Birth</label>
+                  <input id="date_of_birth" type="date" formControlName="date_of_birth" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                </div>
+
+                <p class="text-xs font-semibold text-slate-500">
+                  These details keep your account review accurate. Stripe may also require them before Movabi Pay activation.
                 </p>
               </div>
             </div>
@@ -740,9 +759,10 @@ export class OnboardingPage implements OnInit {
         const profile = this.profile() as DriverProfile | null;
         const vehicle = this.vehicle() as Vehicle | null;
         const selectedServices = normaliseSelectedServices(profile, vehicle);
+        const authUser = this.authService.currentUser();
         const engineBlockers = getBlockingRequirements({
             countryCode: (profile as any)?.country_code || (profile as any)?.country,
-            driver: profile,
+            driver: { ...(profile || {}), auth_email: authUser?.email, user: authUser },
             vehicle,
             documents: { ...(profile || {}), ...(vehicle || {}) },
             selectedServices
@@ -862,7 +882,10 @@ export class OnboardingPage implements OnInit {
         });
 
         this.onboardingForm = this.fb.group({
+            full_name: [''],
+            email: [''],
             phone: [''],
+            date_of_birth: [''],
             make: ['', [Validators.required, Validators.minLength(2)]],
             model: ['', [Validators.required, Validators.minLength(1)]],
             color: ['', [Validators.required, Validators.minLength(2)]],
@@ -995,18 +1018,22 @@ export class OnboardingPage implements OnInit {
         }
 
         const profile = this.profile() as DriverProfile | any | null;
+        const user = this.authService.currentUser();
 
         if (profile) {
             const verificationItems = this.parseVerificationItems(profile.verification_items);
 
             this.onboardingForm.patchValue(
                 {
+                    full_name: profile.full_name ?? profile.legal_name ?? profile.name ?? user?.user_metadata?.['full_name'] ?? '',
+                    email: profile.email ?? user?.email ?? '',
                     council_name: verificationItems['council_name'] ?? profile.council_name ?? '',
                     council_license_number: verificationItems['council_license_number'] ?? profile.council_license_number ?? '',
                     taxi_badge_number: verificationItems['taxi_badge_number'] ?? profile.taxi_badge_number ?? '',
                     taxi_license_expiry: verificationItems['taxi_license_expiry'] ?? profile.taxi_license_expiry ?? '',
                     service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
-                    phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? ''
+                    phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? '',
+                    date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob)
                 },
                 { emitEvent: false }
             );
@@ -1701,7 +1728,9 @@ export class OnboardingPage implements OnInit {
                 role: 'driver',
                 pricing_plan: 'starter',
                 subscription_status: 'inactive',
+                full_name: String(raw.full_name || '').trim(),
                 phone: String(raw.phone || '').trim(),
+                date_of_birth: String(raw.date_of_birth || '').trim() || null,
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
                 verification_status: 'under_review',
@@ -1798,6 +1827,11 @@ export class OnboardingPage implements OnInit {
             acc[key] = value;
             return acc;
         }, {});
+    }
+
+    private formatDateForInput(value: unknown): string {
+        if (!value) return '';
+        return String(value).slice(0, 10);
     }
 
     private extractMissingColumn(error: unknown): string | null {

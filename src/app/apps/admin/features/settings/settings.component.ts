@@ -19,6 +19,7 @@ import {
 import { SystemConfigService } from '../../../../core/services/config/system-config.service';
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
+import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 
 type SettingsTab = 'general' | 'countries' | 'notifications';
 
@@ -195,7 +196,7 @@ type SettingsTab = 'general' | 'countries' | 'notifications';
                       <div>
                         <label class="field-label">REST API Key Status</label>
                         <div class="field-control bg-slate-50 flex items-center justify-between">
-                          <span>{{ notificationConfig.configured ? '•••••••• configured' : 'Not configured' }}</span>
+                          <span>{{ notificationConfig.configured ? 'REST API key configured' : 'Not configured' }}</span>
                           <ion-icon name="key-outline"></ion-icon>
                         </div>
                       </div>
@@ -483,6 +484,7 @@ export class AdminSettingsComponent implements OnInit {
     private systemConfig = inject(SystemConfigService);
     private appConfig = inject(AppConfigService);
     private tour = inject(OnboardingTourService);
+    private supabase = inject(SupabaseService);
 
     activeTab = signal<SettingsTab>('general');
     saving = signal(false);
@@ -624,15 +626,23 @@ export class AdminSettingsComponent implements OnInit {
 
     private async loadNotificationSecretStatus(): Promise<void> {
         try {
+            const headers = await this.getAdminApiHeaders(false);
             const response = await fetch('/api/admin/settings/secrets/onesignal/status', {
                 method: 'GET',
-                credentials: 'include'
+                credentials: 'include',
+                headers
             });
 
             if (!response.ok) return;
 
             const data = await response.json();
             this.notificationConfig.configured = Boolean(data?.configured);
+            if (data?.appId && !this.notificationConfig.appId.trim()) {
+                this.notificationConfig.appId = data.appId;
+            }
+            if (typeof data?.enabled === 'boolean') {
+                this.notificationConfig.enabled = data.enabled;
+            }
         } catch {
             this.notificationConfig.configured = false;
         }
@@ -640,13 +650,12 @@ export class AdminSettingsComponent implements OnInit {
 
     private async saveNotificationSecret(): Promise<void> {
         const restApiKey = this.notificationConfig.restApiKey.trim();
-
-        if (!restApiKey && this.notificationConfig.configured) return;
+        const headers = await this.getAdminApiHeaders(true);
 
         const response = await fetch('/api/admin/settings/secrets/onesignal', {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
                 appId: this.notificationConfig.appId.trim(),
                 restApiKey: restApiKey || undefined,
@@ -655,11 +664,25 @@ export class AdminSettingsComponent implements OnInit {
         });
 
         if (!response.ok) {
-            throw new Error('Could not save OneSignal server configuration.');
+            if (response.status === 404 || response.status === 405) {
+                throw new Error('Backend OneSignal settings endpoint is not deployed. Env config may still work.');
+            }
+
+            let message = 'Could not save OneSignal server configuration.';
+            try {
+                const body = await response.json();
+                message = body?.error || body?.message || message;
+            } catch {
+                // Keep the generic message when the server returns HTML or an empty body.
+            }
+            throw new Error(message);
         }
 
         const data = await response.json();
         this.notificationConfig.configured = Boolean(data?.configured ?? true);
+        if (data?.message) {
+            this.triggerToast(data.message, 'success');
+        }
     }
 
     async sendTestNotification(): Promise<void> {
@@ -673,10 +696,11 @@ export class AdminSettingsComponent implements OnInit {
         this.testingNotification.set(true);
 
         try {
+            const headers = await this.getAdminApiHeaders(true);
             const response = await fetch('/api/admin/notifications/test', {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     userId,
                     title: 'Movabi test notification',
@@ -705,12 +729,22 @@ export class AdminSettingsComponent implements OnInit {
         }
 
         if (!this.notificationConfig.configured && !this.notificationConfig.restApiKey.trim()) {
-            this.triggerToast('Paste the OneSignal REST API key to configure push notifications.', 'warning');
-            this.activeTab.set('notifications');
-            return false;
+            this.triggerToast('No REST API key entered. If the server env is configured, Movabi will keep using it.', 'warning');
         }
 
         return true;
+    }
+
+    private async getAdminApiHeaders(includeJson = false): Promise<Record<string, string>> {
+        const { data, error } = await this.supabase.auth.getSession();
+        const token = data.session?.access_token;
+        const headers: Record<string, string> = includeJson ? { 'Content-Type': 'application/json' } : {};
+
+        if (!error && token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        return headers;
     }
 
     private mergeCountries(saved: CountryConfig[], defaults: CountryConfig[]): CountryConfig[] {

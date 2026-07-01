@@ -22,6 +22,9 @@ type AdminDriver = DriverProfile & {
     first_name?: string | null;
     last_name?: string | null;
     email?: string | null;
+    auth_email?: string | null;
+    date_of_birth?: string | null;
+    phone?: string | null;
     council_license_number?: string | null;
     council_name?: string | null;
     taxi_badge_number?: string | null;
@@ -328,9 +331,24 @@ type AdminDriver = DriverProfile & {
             <div class="grid md:grid-cols-2 gap-4">
               <div class="detail-card">
                 <p class="detail-label">Contact</p>
-                <p class="detail-muted">Driver ID: {{ selectedDriver()?.id }}</p>
-                <p class="detail-value">{{ selectedDriver()?.email || 'No email' }}</p>
-                <p class="detail-muted">{{ selectedDriver()?.phone || 'No phone' }}</p>
+                <div class="space-y-2 mt-2">
+                  <div>
+                    <span class="detail-muted">Registered Email:</span>
+                    <span class="detail-value">{{ getDriverEmail(selectedDriver()) }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-muted">Phone:</span>
+                    <span class="detail-value">{{ getDriverPhone(selectedDriver()) }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-muted">Date of Birth:</span>
+                    <span class="detail-value">{{ formatDate(selectedDriver()?.date_of_birth) }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-muted">Driver ID:</span>
+                    <span class="detail-value break-all">{{ selectedDriver()?.id }}</span>
+                  </div>
+                </div>
               </div>
 
               <div class="detail-card">
@@ -945,7 +963,7 @@ export class DriverListComponent implements OnInit {
     }
 
     getDriverEmail(driver: any): string {
-        return String(driver?.email || '').trim() || 'No email';
+        return String(driver?.email || driver?.auth_email || '').trim() || 'No email';
     }
 
     getDriverPhone(driver: any): string {

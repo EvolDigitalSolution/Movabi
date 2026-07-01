@@ -26,6 +26,7 @@ export interface DriverRequirementsInput {
 
 const COUNTRY_CONFIGS: Record<string, {
   expiryWarningDays: number;
+  requireDateOfBirth: boolean;
   requireCourierInsurance: boolean;
   requireGoodsInTransitForVan: boolean;
   requirePublicLiabilityForVan: boolean;
@@ -35,6 +36,7 @@ const COUNTRY_CONFIGS: Record<string, {
 }> = {
   GB: {
     expiryWarningDays: 30,
+    requireDateOfBirth: true,
     requireCourierInsurance: true,
     requireGoodsInTransitForVan: true,
     requirePublicLiabilityForVan: false,
@@ -43,6 +45,7 @@ const COUNTRY_CONFIGS: Record<string, {
   },
   US: {
     expiryWarningDays: 30,
+    requireDateOfBirth: true,
     requireCourierInsurance: false,
     requireGoodsInTransitForVan: false,
     requirePublicLiabilityForVan: false,
@@ -52,6 +55,7 @@ const COUNTRY_CONFIGS: Record<string, {
   },
   NG: {
     expiryWarningDays: 30,
+    requireDateOfBirth: true,
     requireCourierInsurance: false,
     requireGoodsInTransitForVan: false,
     requirePublicLiabilityForVan: false,
@@ -61,6 +65,7 @@ const COUNTRY_CONFIGS: Record<string, {
   },
   CA: {
     expiryWarningDays: 30,
+    requireDateOfBirth: true,
     requireCourierInsurance: false,
     requireGoodsInTransitForVan: false,
     requirePublicLiabilityForVan: false,
@@ -70,6 +75,7 @@ const COUNTRY_CONFIGS: Record<string, {
   },
   AU: {
     expiryWarningDays: 30,
+    requireDateOfBirth: true,
     requireCourierInsurance: false,
     requireGoodsInTransitForVan: false,
     requirePublicLiabilityForVan: false,
@@ -79,6 +85,7 @@ const COUNTRY_CONFIGS: Record<string, {
   },
   DEFAULT: {
     expiryWarningDays: 30,
+    requireDateOfBirth: true,
     requireCourierInsurance: false,
     requireGoodsInTransitForVan: false,
     requirePublicLiabilityForVan: false,
@@ -156,9 +163,11 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
     .forEach((service) => requirements.push(result(`service_${service}_not_allowed`, 'Service eligibility', `${serviceLabel(service)} is not available for ${vehicleClassLabel(vehicleClass)}.`, 'missing', 'blocker', 'service', true, [service], [vehicleClass])));
 
   requirements.push(textRequirement(driver, ['full_name', 'legal_name'], 'full_legal_name', 'Full legal name', 'Full legal name is missing.', 'profile'));
-  requirements.push(textRequirement(driver, ['email'], 'email', 'Email address', 'Email address is missing.', 'profile'));
+  requirements.push(emailRequirement(driver));
   requirements.push(textRequirement(driver, ['phone', 'phone_number', 'mobile'], 'phone', 'Phone number', 'Phone number is missing.', 'profile'));
-  requirements.push(textRequirement(driver, ['date_of_birth', 'dob'], 'date_of_birth', 'Date of birth', 'Date of birth is missing.', 'profile'));
+  if (country.requireDateOfBirth) {
+    requirements.push(textRequirement(driver, ['date_of_birth', 'dob'], 'date_of_birth', 'Date of birth', 'Date of birth is missing.', 'profile'));
+  }
   requirements.push(textRequirement(vehicle, ['make'], 'vehicle_make', 'Vehicle make', 'Vehicle make is missing.', 'vehicle'));
   requirements.push(textRequirement(vehicle, ['model'], 'vehicle_model', 'Vehicle model', 'Vehicle model is missing.', 'vehicle'));
   requirements.push(textRequirement(vehicle, ['color', 'colour'], 'vehicle_colour', 'Vehicle colour', 'Vehicle colour is missing.', 'vehicle'));
@@ -238,6 +247,12 @@ export function getNotApplicableRequirements(input: DriverRequirementsInput): Dr
 function textRequirement(source: any, keys: string[], key: string, label: string, missingMessage: string, category: DriverRequirementCategory, serviceTypes?: DriverServiceType[]): DriverRequirementResult {
   const ok = hasText(valueFrom(source, keys));
   return result(key, label, ok ? `${label} is present.` : missingMessage, ok ? 'uploaded' : 'missing', ok ? 'warning' : 'blocker', category, true, serviceTypes);
+}
+
+function emailRequirement(driver: any): DriverRequirementResult {
+  const email = driver?.email || driver?.auth_email || driver?.user?.email;
+  const ok = hasText(email);
+  return result('email', 'Email address', ok ? 'Email address is present.' : 'Email address is missing.', ok ? 'uploaded' : 'missing', ok ? 'warning' : 'blocker', 'profile', true);
 }
 
 function documentRequirement(source: any, urlKeys: string[], statusKeys: string[], key: string, label: string, missingMessage: string, serviceTypes?: DriverServiceType[]): DriverRequirementResult {

@@ -1,11 +1,162 @@
-import { Router, Request, Response } from 'express';
+import { Router, NextFunction, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
 import { dispatchService } from '../services/dispatch.service';
 import { AuditService } from '../services/audit.service';
 import { stripe } from '../services/stripe.service';
 import { PayoutService } from '../services/payout.service';
+import { NotificationService } from '../services/notification.service';
 
 const router = Router();
+
+function getOneSignalStatus() {
+  return {
+    ok: true,
+    configured: Boolean(process.env.ONESIGNAL_REST_API_KEY),
+    appId: process.env.ONESIGNAL_APP_ID || '952c6d19-656c-4dab-90f3-6e253e2c9151',
+    enabled: process.env.PUSH_NOTIFICATIONS_ENABLED === 'true'
+  };
+}
+
+function isValidOneSignalAppId(appId: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId.trim());
+}
+
+const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'Authentication required.' });
+  }
+
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+  if (authError || !authData.user?.id) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+
+  if (profileError || profile?.role !== 'admin') {
+    return res.status(403).json({ ok: false, error: 'Administrator access required.' });
+  }
+
+  return next();
+};
+
+router.get('/settings/secrets/onesignal/status', requireAdmin, (_req: Request, res: Response) => {
+  res.json(getOneSignalStatus());
+});
+
+router.post('/settings/secrets/onesignal', requireAdmin, (req: Request, res: Response) => {
+  const body = req.body || {};
+  const appId = String(body.appId || process.env.ONESIGNAL_APP_ID || '').trim();
+  const restApiKey = typeof body.restApiKey === 'string' ? body.restApiKey.trim() : '';
+
+  if (!appId || !isValidOneSignalAppId(appId)) {
+    return res.status(400).json({ ok: false, error: 'Valid OneSignal App ID is required.' });
+  }
+
+  if (restApiKey && !process.env.ONESIGNAL_REST_API_KEY) {
+    console.warn('[OneSignal] REST API key was submitted, but secure settings storage is not configured. Set ONESIGNAL_REST_API_KEY in server env.');
+  }
+
+  const configuredFromEnv = Boolean(process.env.ONESIGNAL_REST_API_KEY);
+
+  res.json({
+    ok: true,
+    configured: configuredFromEnv,
+    appId: process.env.ONESIGNAL_APP_ID || appId,
+    enabled: body.enabled === true || process.env.PUSH_NOTIFICATIONS_ENABLED === 'true',
+    message: configuredFromEnv
+      ? 'Using server environment OneSignal configuration'
+      : 'OneSignal REST API key must be configured in the server environment'
+  });
+});
+
+router.post('/notifications/test', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = String(req.body?.userId || '').trim();
+    const title = String(req.body?.title || 'Movabi test notification').trim();
+    const body = String(req.body?.body || 'Push notifications are working.').trim();
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'User ID is required.' });
+    }
+
+    const result = await NotificationService.sendNotification({
+      userId,
+      title,
+      body,
+      type: 'system_alert',
+      data: { route: '/driver', source: 'admin_test_notification' }
+    });
+
+    res.json({ ok: true, pushAttempted: Boolean(process.env.ONESIGNAL_REST_API_KEY), result });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message || 'Test notification failed.' });
+  }
+});
+
+router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const { data: drivers, error: driversError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('role', 'driver')
+      .order('created_at', { ascending: false });
+
+    if (driversError) {
+      return res.status(500).json({ ok: false, error: driversError.message });
+    }
+
+    const driverIds = (drivers || []).map((driver: any) => driver.id).filter(Boolean);
+    const { data: vehicles } = driverIds.length
+      ? await supabaseAdmin
+        .from('vehicles')
+        .select('*')
+        .in('user_id', driverIds)
+      : { data: [] as any[] };
+
+    const vehiclesByUser = new Map<string, any[]>();
+
+    (vehicles || []).forEach((vehicle: any) => {
+      const ownerId = vehicle.user_id || vehicle.driver_id;
+      if (!ownerId) return;
+      if (!vehiclesByUser.has(ownerId)) vehiclesByUser.set(ownerId, []);
+      vehiclesByUser.get(ownerId)?.push(vehicle);
+    });
+
+    const authEmails = new Map<string, string>();
+    await Promise.all(driverIds.map(async (driverId: string) => {
+      try {
+        const { data } = await supabaseAdmin.auth.admin.getUserById(driverId);
+        if (data?.user?.email) authEmails.set(driverId, data.user.email);
+      } catch (error: any) {
+        console.warn('[admin-drivers] auth email lookup failed:', driverId, error?.message || error);
+      }
+    }));
+
+    const result = (drivers || []).map((driver: any) => {
+      const authEmail = authEmails.get(driver.id) || null;
+      return {
+        ...driver,
+        email: driver.email || authEmail,
+        auth_email: authEmail,
+        date_of_birth: driver.date_of_birth || null,
+        phone: driver.phone || driver.phone_number || driver.mobile || null,
+        vehicles: vehiclesByUser.get(driver.id) || []
+      };
+    });
+
+    res.json({ ok: true, drivers: result });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message || 'Failed to load drivers.' });
+  }
+});
 
 /**
  * Get heatmap data (supply vs demand)

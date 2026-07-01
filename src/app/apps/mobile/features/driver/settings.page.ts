@@ -182,6 +182,44 @@ type DocType = 'license' | 'insurance';
               <app-badge variant="secondary">Edit</app-badge>
             </div>
           </app-card>
+
+          <app-card class="p-4">
+            <div class="space-y-3">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-black text-slate-950">Verification details</h3>
+                  <p class="text-[11px] font-semibold text-slate-500 mt-1">Your sign-in email is used automatically for review.</p>
+                </div>
+                <app-badge variant="secondary">Profile</app-badge>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3">
+                <div class="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                  <p class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Full legal name</p>
+                  <p class="text-sm font-bold text-slate-900 mt-1">{{ driverFullName() }}</p>
+                </div>
+
+                <div class="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                  <p class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Email</p>
+                  <p class="text-sm font-bold text-slate-900 mt-1 break-words">{{ driverEmail() }}</p>
+                </div>
+
+                <label class="block">
+                  <span class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</span>
+                  <input
+                    type="date"
+                    class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                    [value]="dateOfBirthDraft()"
+                    (input)="onDateOfBirthInput($event)"
+                  >
+                </label>
+
+                <app-button size="sm" class="w-full" [disabled]="savingPersonalDetails()" (clicked)="savePersonalDetails()">
+                  {{ savingPersonalDetails() ? 'Saving...' : 'Save Personal Details' }}
+                </app-button>
+              </div>
+            </div>
+          </app-card>
         </section>
 
         <section class="space-y-2">
@@ -496,6 +534,8 @@ export class DriverSettingsPage implements OnInit {
 
     loadingStripe = signal(false);
     resubmitting = signal(false);
+    savingPersonalDetails = signal(false);
+    dateOfBirthDraft = signal('');
 
     constructor() {
         addIcons({
@@ -518,6 +558,7 @@ export class DriverSettingsPage implements OnInit {
             this.driverService.fetchVehicle(),
             this.driverService.fetchStripeAccount()
         ]);
+        this.syncPersonalDraft();
     }
 
     isVerified(): boolean {
@@ -544,9 +585,10 @@ export class DriverSettingsPage implements OnInit {
         const profile = this.profile() as DriverProfile | null;
         const vehicle = this.vehicle() as Vehicle | null;
         const selectedServices = normaliseSelectedServices(profile, vehicle);
+        const authUser = this.auth.currentUser();
         const engineBlockers = getBlockingRequirements({
             countryCode: (profile as any)?.country_code || (profile as any)?.country,
-            driver: profile,
+            driver: { ...(profile || {}), auth_email: authUser?.email, user: authUser },
             vehicle,
             documents: { ...(profile || {}), ...(vehicle || {}) },
             selectedServices
@@ -651,6 +693,55 @@ export class DriverSettingsPage implements OnInit {
         const plate = vehicle.license_plate ? String(vehicle.license_plate).toUpperCase() : '';
 
         return [color, year, plate].filter(Boolean).join(' • ') || 'Vehicle details saved';
+    }
+
+    driverFullName(): string {
+        const profile = this.profile() as any;
+        return profile?.full_name || profile?.legal_name || profile?.name || 'Add your legal name';
+    }
+
+    driverEmail(): string {
+        const profile = this.profile() as any;
+        const user = this.auth.currentUser();
+        return profile?.email || user?.email || 'Email not available';
+    }
+
+    onDateOfBirthInput(event: Event) {
+        this.dateOfBirthDraft.set((event.target as HTMLInputElement).value || '');
+    }
+
+    async savePersonalDetails() {
+        const user = this.auth.currentUser();
+        if (!user?.id || this.savingPersonalDetails()) return;
+
+        this.savingPersonalDetails.set(true);
+
+        try {
+            await this.profileService.updateProfile(user.id, {
+                date_of_birth: this.dateOfBirthDraft() || null
+            } as any);
+
+            if (typeof (this.profileService as any).fetchProfile === 'function') {
+                await (this.profileService as any).fetchProfile(user.id);
+            }
+
+            this.syncPersonalDraft();
+            await this.showToast('Personal details saved.', 'success');
+        } catch {
+            await this.showToast('Could not save personal details.', 'danger');
+        } finally {
+            this.savingPersonalDetails.set(false);
+        }
+    }
+
+    private syncPersonalDraft() {
+        const profile = this.profile() as any;
+        this.dateOfBirthDraft.set(this.formatDateForInput(profile?.date_of_birth ?? profile?.dob));
+    }
+
+    private formatDateForInput(value: unknown): string {
+        if (!value) return '';
+        return String(value).slice(0, 10);
     }
 
     async setupStripe() {
