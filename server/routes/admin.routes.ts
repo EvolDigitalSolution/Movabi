@@ -222,6 +222,36 @@ router.post('/notifications/test', requireAdmin, async (req: Request, res: Respo
   }
 });
 
+router.get('/notifications/diagnostics/:userId', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = String(req.params.userId || '').trim();
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'User ID is required.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('device_push_tokens')
+      .select('provider, platform, subscription_id, external_id, enabled, last_seen_at, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(5);
+
+    if (error) throw error;
+
+    res.json({
+      ok: true,
+      configured: Boolean(process.env.ONESIGNAL_REST_API_KEY),
+      appId: process.env.ONESIGNAL_APP_ID || '952c6d19-656c-4dab-90f3-6e253e2c9151',
+      tokens: (data || []).map((token) => ({
+        ...token,
+        tokenSaved: Boolean(token.subscription_id || token.external_id)
+      }))
+    });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message || 'Unable to load push diagnostics.' });
+  }
+});
+
 router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
   try {
     const { data: drivers, error: driversError } = await supabaseAdmin

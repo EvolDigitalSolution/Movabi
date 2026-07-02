@@ -97,7 +97,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
     <ion-content class="movabi-page">
       @if (booking()) {
         <div class="flex flex-col h-full">
-          <div class="bg-slate-100 relative overflow-hidden h-[64vh] min-h-[430px]">
+          <div class="bg-slate-100 relative overflow-hidden h-[60vh] min-h-[390px]">
             <app-map #map></app-map>
 
             @if (booking()?.status === 'searching') {
@@ -159,7 +159,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
           </div>
 
           <div
-            class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300 native-safe-bottom"
+            class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto overscroll-contain border-t border-slate-100 transition-all duration-300 native-safe-bottom"
             [ngClass]="sheetHeightClass()"
             (focusin)="expandSheetForFocus()"
           >
@@ -743,11 +743,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     sheetHeightClass(): string {
         switch (this.sheetState()) {
             case 'collapsed':
-                return 'h-[30vh]';
+                return 'h-[28vh]';
             case 'expanded':
-                return 'h-[82vh]';
+                return 'h-[86vh]';
             default:
-                return 'h-[48vh]';
+                return 'h-[52vh]';
         }
     }
 
@@ -810,6 +810,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const touch = event.touches[0];
         if (!touch) return;
         this.dragDeltaY = touch.clientY - this.dragStartY;
+        if (Math.abs(this.dragDeltaY) > 8) event.preventDefault();
     }
 
     endDetailsDrag(): void {
@@ -826,6 +827,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     moveDetailsPointerDrag(event: PointerEvent): void {
         if (this.dragStartY === null) return;
         this.dragDeltaY = event.clientY - this.dragStartY;
+        if (Math.abs(this.dragDeltaY) > 8) event.preventDefault();
     }
 
     endDetailsPointerDrag(event: PointerEvent): void {

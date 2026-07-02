@@ -2474,6 +2474,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private async fetchCurrentCustomerProfile(): Promise<Partial<Profile> | null> {
         const user = this.auth.currentUser();
         if (!user?.id) return null;
+        const authEmail = String(user.email || '').trim();
 
         const { data, error } = await this.supabase
             .from('profiles')
@@ -2485,18 +2486,39 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             console.warn('[BookingRequest] customer compliance profile lookup failed', error);
             return {
                 id: user.id,
-                email: user.email || '',
+                email: authEmail,
+                auth_email: authEmail,
+                email_confirmed_at: user.email_confirmed_at || null,
                 phone: user.phone || '',
                 role: 'customer'
-            } as Partial<Profile>;
+            } as Partial<Profile> & Record<string, unknown>;
         }
 
-        return (data || {
+        if (data && authEmail && !String(data['email'] || '').trim()) {
+            const { data: updated, error: updateError } = await this.supabase
+                .from('profiles')
+                .update({ email: authEmail })
+                .eq('id', user.id)
+                .select('*')
+                .maybeSingle();
+
+            if (updateError) {
+                console.warn('[BookingRequest] customer email hydrate skipped', updateError);
+            } else if (updated) {
+                return { ...updated, auth_email: authEmail, email_confirmed_at: user.email_confirmed_at || updated['email_confirmed_at'] } as Partial<Profile> & Record<string, unknown>;
+            }
+        }
+
+        return ({
+            ...(data || {
             id: user.id,
-            email: user.email || '',
+            email: authEmail,
             phone: user.phone || '',
             role: 'customer'
-        }) as Partial<Profile>;
+            }),
+            auth_email: authEmail,
+            email_confirmed_at: (data as Record<string, unknown> | null)?.['email_confirmed_at'] || user.email_confirmed_at || null
+        }) as Partial<Profile> & Record<string, unknown>;
     }
 
     private getMetadataPayload(formVal: Record<string, unknown>) {

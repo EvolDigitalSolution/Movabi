@@ -558,7 +558,11 @@ export class ComplianceService {
     }
 
     private hasEmail(profile?: Partial<Profile> | null): boolean {
-        return this.hasText(profile?.email);
+        const record = (profile || {}) as Record<string, unknown>;
+        return this.hasText(profile?.email) ||
+            this.hasText(record['auth_email']) ||
+            this.hasText((record['user'] as Record<string, unknown> | undefined)?.['email']) ||
+            this.hasText(record['customer_settings_email']);
     }
 
     private isEmailVerified(profile?: Partial<Profile> | null): boolean {

@@ -29,6 +29,7 @@ import {
 import { AuthService } from '@core/services/auth/auth.service';
 import { ProfileService } from '@core/services/profile/profile.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
+import { OneSignalService } from '@core/services/notification/onesignal.service';
 import { ButtonComponent } from '@shared/ui';
 import { Profile } from '@shared/models/booking.model';
 
@@ -150,6 +151,43 @@ import { Profile } from '@shared/models/booking.model';
           </div>
         </form>
 
+        <section class="rounded-[2rem] bg-white border border-slate-200 shadow-sm p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="font-display font-black text-slate-950 text-lg">Push Diagnostics</h2>
+              <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-1">
+                Check this phone's OneSignal subscription when push alerts are not arriving.
+              </p>
+            </div>
+            <button type="button" (click)="refreshPushDiagnostics()" class="text-[10px] font-black uppercase tracking-widest text-amber-600">
+              Refresh
+            </button>
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Platform</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().platform || 'Unknown' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Permission</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().permissionStatus || 'Unknown' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 col-span-2">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Subscription ID</p>
+              <p class="font-bold text-slate-900 break-all">{{ pushDiagnostics().subscriptionId || 'Not ready yet' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Token saved</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().tokenSaved ? 'Yes' : 'No' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Last attempt</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().lastPushAttempt || 'None' }}</p>
+            </div>
+          </div>
+        </section>
+
         <section class="rounded-[2rem] bg-white border border-rose-100 shadow-sm p-5">
           <div class="flex items-start gap-4">
             <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -182,6 +220,7 @@ export class AccountSettingsPage implements OnInit {
     private auth = inject(AuthService);
     private profileService = inject(ProfileService);
     private storageUpload = inject(StorageUploadService);
+    private oneSignal = inject(OneSignalService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
@@ -190,6 +229,7 @@ export class AccountSettingsPage implements OnInit {
     saving = signal(false);
     email = signal('');
     photoUrl = signal<string | null>(null);
+    pushDiagnostics = this.oneSignal.diagnostics;
 
     form = this.fb.group({
         full_name: ['', [Validators.required, Validators.minLength(2)]],
@@ -223,6 +263,8 @@ export class AccountSettingsPage implements OnInit {
         if (profile) {
             this.patchProfile(profile);
         }
+
+        await this.refreshPushDiagnostics();
     }
 
     defaultBackHref(): string {
@@ -320,6 +362,10 @@ export class AccountSettingsPage implements OnInit {
             this.saving.set(false);
             await loading.dismiss();
         }
+    }
+
+    async refreshPushDiagnostics() {
+        await this.oneSignal.getDiagnostics().catch(() => undefined);
     }
 
     async confirmCloseAccount() {

@@ -46,13 +46,25 @@ export type MovabiCarouselSlide = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (slides.length > 0) {
-      <section class="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-lg shadow-slate-900/10">
+      <section
+        class="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-950 shadow-lg shadow-slate-900/10"
+        (mouseenter)="pauseAutoSlide()"
+        (mouseleave)="resumeAutoSlideSoon()"
+        (focusin)="pauseAutoSlide()"
+        (focusout)="resumeAutoSlideSoon()"
+        (touchstart)="pauseAutoSlide()"
+        (touchend)="resumeAutoSlideSoon()"
+        (pointerdown)="pauseAutoSlide()"
+        (pointerup)="resumeAutoSlideSoon()"
+        (pointercancel)="resumeAutoSlideSoon()"
+      >
         <div
           class="flex transition-transform duration-500 ease-out"
           [style.transform]="'translateX(-' + (activeIndex * 100) + '%)'"
         >
           @for (slide of slides; track $index) {
             <article class="relative min-w-full overflow-hidden p-4 sm:p-5 min-h-[172px]" [ngClass]="toneClass(slide)">
+              <div class="absolute inset-0 bg-gradient-to-br from-slate-950/70 via-slate-900/35 to-slate-950/60"></div>
               <div class="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/15"></div>
               <div class="absolute right-5 bottom-4 h-16 w-32 rounded-full border-2 border-white/20 rotate-[-18deg]"></div>
               <div class="absolute right-9 bottom-11 h-1.5 w-28 rounded-full bg-white/25 rotate-[-18deg]"></div>
@@ -66,7 +78,7 @@ export type MovabiCarouselSlide = {
                     {{ slide.title }}
                   </h3>
                   @if (slide.subtitle || slide.description) {
-                    <p class="mt-2 text-sm font-semibold leading-snug text-white/90">
+                    <p class="mt-2 text-sm font-semibold leading-snug text-white drop-shadow-sm">
                       {{ slide.subtitle || slide.description }}
                     </p>
                   }
@@ -122,6 +134,7 @@ export class MovabiCarouselComponent implements OnInit, OnChanges, OnDestroy {
 
   activeIndex = 0;
   private timer?: ReturnType<typeof setInterval>;
+  private resumeTimer?: ReturnType<typeof setTimeout>;
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly zone = inject(NgZone);
   private readonly reducedMotion = typeof window !== 'undefined'
@@ -148,13 +161,16 @@ export class MovabiCarouselComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['slides']) {
-      this.activeIndex = 0;
+      if (this.activeIndex >= this.slides.length) {
+        this.activeIndex = Math.max(0, this.slides.length - 1);
+      }
       this.resetTimer();
       this.cdr.markForCheck();
     }
   }
 
   ngOnDestroy(): void {
+    this.clearResumeTimer();
     this.clearTimer();
   }
 
@@ -162,8 +178,19 @@ export class MovabiCarouselComponent implements OnInit, OnChanges, OnDestroy {
     if (!this.slides.length) return;
 
     this.activeIndex = Math.max(0, Math.min(index, this.slides.length - 1));
-    this.resetTimer();
+    this.resumeAutoSlideSoon();
     this.cdr.markForCheck();
+  }
+
+  pauseAutoSlide(): void {
+    this.clearResumeTimer();
+    this.clearTimer();
+  }
+
+  resumeAutoSlideSoon(): void {
+    this.clearResumeTimer();
+    if (this.slides.length <= 1 || this.reducedMotion?.matches) return;
+    this.resumeTimer = setTimeout(() => this.resetTimer(), 6000);
   }
 
   toneClass(slide: MovabiCarouselSlide): string {
@@ -193,6 +220,7 @@ export class MovabiCarouselComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private resetTimer(): void {
+    this.clearResumeTimer();
     this.clearTimer();
     if (this.slides.length <= 1 || this.reducedMotion?.matches) return;
 
@@ -211,5 +239,11 @@ export class MovabiCarouselComponent implements OnInit, OnChanges, OnDestroy {
     if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = undefined;
+  }
+
+  private clearResumeTimer(): void {
+    if (!this.resumeTimer) return;
+    clearTimeout(this.resumeTimer);
+    this.resumeTimer = undefined;
   }
 }

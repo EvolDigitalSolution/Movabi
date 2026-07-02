@@ -1739,3 +1739,66 @@ websocket connection issues.
            ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'pauseAutoSlide' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:51:22:
+[37m      51 │         (mouseenter)="[32mpauseAutoSlide[37m()"
+         ╵                       [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resumeAutoSlideSoon' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:52:22:
+[37m      52 │         (mouseleave)="[32mresumeAutoSlideSoon[37m()"
+         ╵                       [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'pauseAutoSlide' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:53:19:
+[37m      53 │         (focusin)="[32mpauseAutoSlide[37m()"
+         ╵                    [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resumeAutoSlideSoon' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:54:20:
+[37m      54 │         (focusout)="[32mresumeAutoSlideSoon[37m()"
+         ╵                     [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'pauseAutoSlide' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:55:22:
+[37m      55 │         (touchstart)="[32mpauseAutoSlide[37m()"
+         ╵                       [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resumeAutoSlideSoon' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:56:20:
+[37m      56 │         (touchend)="[32mresumeAutoSlideSoon[37m()"
+         ╵                     [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'pauseAutoSlide' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:57:23:
+[37m      57 │         (pointerdown)="[32mpauseAutoSlide[37m()"
+         ╵                        [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resumeAutoSlideSoon' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:58:21:
+[37m      58 │         (pointerup)="[32mresumeAutoSlideSoon[37m()"
+         ╵                      [32m~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'resumeAutoSlideSoon' does not exist on type 'MovabiCarouselComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/shared/ui/movabi-carousel/movabi-carousel.component.ts:59:25:
+[37m      59 │         (pointercancel)="[32mresumeAutoSlideSoon[37m()"
+         ╵                          [32m~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

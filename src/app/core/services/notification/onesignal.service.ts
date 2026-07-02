@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { NativePlatformService } from '../native/native-platform.service';
@@ -28,6 +28,14 @@ export class OneSignalService {
 
     readonly appId = ONESIGNAL_APP_ID;
     readonly platform = Capacitor.getPlatform();
+    readonly diagnostics = signal({
+        platform: this.platform,
+        oneSignalUserId: '',
+        subscriptionId: '',
+        permissionStatus: 'unknown',
+        tokenSaved: false,
+        lastPushAttempt: ''
+    });
 
     async init(): Promise<void> {
         if (this.initialized) return;
@@ -164,7 +172,50 @@ export class OneSignalService {
         }
     }
 
+    async getDiagnostics(): Promise<ReturnType<OneSignalService['diagnostics']>> {
+        await this.init();
+        const oneSignal = await this.getOneSignal().catch(() => null);
+        const subscriptionId = await this.getSubscriptionId();
+        let oneSignalUserId = '';
+        let permissionStatus = 'unknown';
+
+        try {
+            oneSignalUserId = String(
+                oneSignal?.User?.onesignalId ||
+                oneSignal?.User?.id ||
+                (typeof oneSignal?.getUserId === 'function' ? await oneSignal.getUserId() : '') ||
+                ''
+            );
+        } catch { }
+
+        try {
+            permissionStatus = String(
+                oneSignal?.Notifications?.permissionNative ||
+                oneSignal?.Notifications?.permission ||
+                (typeof oneSignal?.getNotificationPermission === 'function' ? await oneSignal.getNotificationPermission() : '') ||
+                'unknown'
+            );
+        } catch { }
+
+        const snapshot = {
+            platform: this.platform,
+            oneSignalUserId,
+            subscriptionId: subscriptionId || '',
+            permissionStatus,
+            tokenSaved: localStorage.getItem(REGISTRATION_CONFIRMED_KEY) === 'true',
+            lastPushAttempt: localStorage.getItem('movabi_last_push_attempt') || ''
+        };
+
+        if (this.isNativePlatform() && !subscriptionId) {
+            console.warn('[OneSignal] no native push subscription yet');
+        }
+
+        this.diagnostics.set(snapshot);
+        return snapshot;
+    }
+
     async showLocalStatusNotification(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
+        localStorage.setItem('movabi_last_push_attempt', new Date().toISOString());
         await this.nativePlatform.showForegroundNotification(title, body, data).catch(() => undefined);
     }
 
@@ -288,7 +339,11 @@ export class OneSignalService {
 
     private async evaluateSubscription(): Promise<void> {
         const subscriptionId = await this.getSubscriptionId();
-        if (!subscriptionId || !this.loggedInUserId) return;
+        if (!subscriptionId) {
+            if (this.isNativePlatform()) console.warn('[OneSignal] no native push subscription yet');
+            return;
+        }
+        if (!this.loggedInUserId) return;
 
         console.log('[OneSignal] push subscription ready:', subscriptionId);
 
@@ -297,6 +352,7 @@ export class OneSignalService {
         }
 
         await this.saveSubscription(subscriptionId);
+        await this.getDiagnostics().catch(() => undefined);
     }
 
     private async saveSubscription(subscriptionId: string): Promise<void> {

@@ -95,6 +95,9 @@ export class NotificationService {
       if (!response.ok) {
         const text = await response.text();
         console.warn('[Notification] OneSignal push failed:', response.status, text);
+      } else {
+        const text = await response.text();
+        console.log('[Notification] OneSignal push accepted:', text);
       }
     } catch (error: any) {
       console.warn('[Notification] OneSignal push error:', error?.message || error);
