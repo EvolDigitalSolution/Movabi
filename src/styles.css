@@ -165,22 +165,6 @@ p {
     padding-bottom: max(90px, env(safe-area-inset-bottom));
 }
 
-.booking-keyboard-safe::part(scroll) {
-    padding-bottom: max(120px, env(safe-area-inset-bottom));
-    scroll-padding-bottom: max(120px, env(safe-area-inset-bottom));
-}
-
-body.native-keyboard-open .booking-keyboard-safe::part(scroll) {
-    padding-bottom: max(260px, env(safe-area-inset-bottom));
-    scroll-padding-bottom: max(260px, env(safe-area-inset-bottom));
-}
-
-body.native-keyboard-open .booking-keyboard-safe .booking-bottom-action,
-body.native-keyboard-open .booking-keyboard-safe .sticky-bottom,
-body.native-keyboard-open .booking-keyboard-safe ion-footer {
-    position: static !important;
-}
-
 .native-sticky-action {
     position: sticky;
     bottom: 0;
