@@ -700,6 +700,38 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.system_configs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key TEXT NOT NULL UNIQUE,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO public.system_configs (key, value, updated_at)
+VALUES (
+    'app_version_config',
+    jsonb_build_object(
+        'current_web_version', '1.0.0',
+        'minimum_web_version', '1.0.0',
+        'current_android_version', '1.0.0',
+        'minimum_android_version', '1.0.0',
+        'current_ios_version', '1.0.0',
+        'minimum_ios_version', '1.0.0',
+        'update_required', false,
+        'update_severity', 'optional',
+        'update_title', 'Movabi update available',
+        'update_message', 'A new version of Movabi is available.',
+        'release_notes', '',
+        'android_update_url', '',
+        'ios_update_url', '',
+        'web_reload_required', false,
+        'admin_set_by', null,
+        'updated_at', NOW()
+    ),
+    NOW()
+)
+ON CONFLICT (key) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS stripe_events (
     id TEXT PRIMARY KEY, -- Use Stripe's event ID
     type TEXT,

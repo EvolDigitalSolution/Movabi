@@ -14,7 +14,8 @@ import {
     helpCircleOutline,
     notificationsOutline,
     keyOutline,
-    sendOutline
+    sendOutline,
+    cloudUploadOutline
 } from 'ionicons/icons';
 import { SystemConfigService } from '../../../../core/services/config/system-config.service';
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
@@ -22,7 +23,7 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { ApiUrlService } from '../../../../core/services/api-url.service';
 
-type SettingsTab = 'general' | 'countries' | 'notifications';
+type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
 
 @Component({
     selector: 'app-admin-settings',
@@ -80,6 +81,16 @@ type SettingsTab = 'general' | 'countries' | 'notifications';
                 @if (notificationConfig.configured) {
                   <span class="ml-auto text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
                     Ready
+                  </span>
+                }
+              </button>
+
+              <button type="button" (click)="activeTab.set('appVersion')" [class]="activeTab() === 'appVersion' ? 'nav-btn active' : 'nav-btn'">
+                <ion-icon name="cloud-upload-outline"></ion-icon>
+                <span>App Version & Updates</span>
+                @if (appVersionConfig.updateRequired || appVersionConfig.updateSeverity === 'critical') {
+                  <span class="ml-auto text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                    Required
                   </span>
                 }
               </button>
@@ -231,6 +242,113 @@ type SettingsTab = 'general' | 'countries' | 'notifications';
                           {{ testingNotification() ? 'Sending...' : 'Send Test' }}
                         </button>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (activeTab() === 'appVersion') {
+                <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-hidden">
+                  <div class="p-6 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-950">App Version & Updates</h3>
+                    <p class="text-sm text-slate-500 font-medium mt-1">
+                      Control minimum supported app versions and require refresh/update when production releases need it.
+                    </p>
+                  </div>
+
+                  <div class="p-6 space-y-6">
+                    <div class="rounded-2xl bg-slate-50 border border-slate-100 p-5">
+                      <div class="grid md:grid-cols-3 gap-4">
+                        <div>
+                          <label class="field-label">Current Web Version</label>
+                          <input [(ngModel)]="appVersionConfig.currentWebVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Minimum Web Version</label>
+                          <input [(ngModel)]="appVersionConfig.minimumWebVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Web Reload Required</label>
+                          <select [(ngModel)]="appVersionConfig.webReloadRequired" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label class="field-label">Current Android Version</label>
+                          <input [(ngModel)]="appVersionConfig.currentAndroidVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Minimum Android Version</label>
+                          <input [(ngModel)]="appVersionConfig.minimumAndroidVersion" class="field-control" placeholder="1.0.7">
+                        </div>
+                        <div>
+                          <label class="field-label">Android Update URL</label>
+                          <input [(ngModel)]="appVersionConfig.androidUpdateUrl" class="field-control" placeholder="https://play.google.com/store/apps/details?id=com.movabi.app">
+                        </div>
+
+                        <div>
+                          <label class="field-label">Current iOS Version</label>
+                          <input [(ngModel)]="appVersionConfig.currentIosVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Minimum iOS Version</label>
+                          <input [(ngModel)]="appVersionConfig.minimumIosVersion" class="field-control" placeholder="1.0.7">
+                        </div>
+                        <div>
+                          <label class="field-label">iOS Update URL</label>
+                          <input [(ngModel)]="appVersionConfig.iosUpdateUrl" class="field-control" placeholder="https://apps.apple.com/app/movabi">
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-5">
+                      <div>
+                        <label class="field-label">Update Severity</label>
+                        <select [(ngModel)]="appVersionConfig.updateSeverity" class="field-control">
+                          <option value="optional">Optional</option>
+                          <option value="recommended">Recommended</option>
+                          <option value="required">Required</option>
+                          <option value="critical">Critical</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="field-label">Force Update</label>
+                        <select [(ngModel)]="appVersionConfig.updateRequired" class="field-control">
+                          <option [ngValue]="false">No</option>
+                          <option [ngValue]="true">Yes</option>
+                        </select>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Update Title</label>
+                        <input [(ngModel)]="appVersionConfig.updateTitle" class="field-control" placeholder="Important Movabi update">
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Update Message</label>
+                        <textarea [(ngModel)]="appVersionConfig.updateMessage" rows="3" class="field-control min-h-24" placeholder="A new version is required to continue using Movabi."></textarea>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Release Notes</label>
+                        <textarea [(ngModel)]="appVersionConfig.releaseNotes" rows="4" class="field-control min-h-28" placeholder="Improved driver verification and push notifications."></textarea>
+                      </div>
+                    </div>
+
+                    <div class="rounded-2xl bg-amber-50 border border-amber-100 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 class="text-sm font-bold text-amber-950">Notify users</h4>
+                        <p class="text-sm text-amber-800 font-medium mt-1">
+                          Sends an in-app/push notice when the update is required. Saving still succeeds if push is unavailable.
+                        </p>
+                      </div>
+                      <label class="inline-flex items-center gap-3 text-sm font-bold text-amber-950">
+                        <input type="checkbox" [(ngModel)]="appVersionConfig.sendNotification" class="w-5 h-5 accent-amber-500">
+                        Send notification on save
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -513,6 +631,24 @@ export class AdminSettingsComponent implements OnInit {
         testUserId: ''
     };
 
+    appVersionConfig = {
+        currentWebVersion: '1.0.0',
+        minimumWebVersion: '1.0.0',
+        currentAndroidVersion: '1.0.0',
+        minimumAndroidVersion: '1.0.0',
+        currentIosVersion: '1.0.0',
+        minimumIosVersion: '1.0.0',
+        updateRequired: false,
+        updateSeverity: 'optional' as 'optional' | 'recommended' | 'required' | 'critical',
+        updateTitle: 'Movabi update available',
+        updateMessage: 'A new version of Movabi is available.',
+        releaseNotes: '',
+        androidUpdateUrl: '',
+        iosUpdateUrl: '',
+        webReloadRequired: false,
+        sendNotification: false
+    };
+
     countries: CountryConfig[] = [];
     private originalCountries: CountryConfig[] = [];
 
@@ -528,7 +664,8 @@ export class AdminSettingsComponent implements OnInit {
             helpCircleOutline,
             notificationsOutline,
             keyOutline,
-            sendOutline
+            sendOutline,
+            cloudUploadOutline
         });
     }
 
@@ -574,6 +711,7 @@ export class AdminSettingsComponent implements OnInit {
 
             this.notificationConfig.enabled = Boolean(this.systemConfig.getConfig('push_notifications_enabled', true));
             await this.loadNotificationSecretStatus();
+            await this.loadAppVersionConfig();
 
             this.onDefaultCountryChange();
         } catch (error) {
@@ -593,6 +731,7 @@ export class AdminSettingsComponent implements OnInit {
     async saveAll() {
         if (!this.validateSettings()) return;
         if (!this.validateNotificationSettings()) return;
+        if (!this.validateAppVersionSettings()) return;
 
         this.saving.set(true);
 
@@ -610,12 +749,14 @@ export class AdminSettingsComponent implements OnInit {
             await this.systemConfig.setConfig('push_notifications_enabled', this.notificationConfig.enabled);
 
             await this.saveNotificationSecret();
+            await this.saveAppVersionConfig();
 
             await this.appConfig.refreshConfigs();
 
             this.countries = this.cloneCountries(normalisedCountries);
             this.originalCountries = this.cloneCountries(normalisedCountries);
             this.notificationConfig.restApiKey = '';
+            this.appVersionConfig.sendNotification = false;
 
             this.triggerToast('Settings saved successfully.', 'success');
         } catch (error) {
@@ -782,6 +923,117 @@ export class AdminSettingsComponent implements OnInit {
         }
 
         return true;
+    }
+
+    validateAppVersionSettings(): boolean {
+        const fields = [
+            this.appVersionConfig.currentWebVersion,
+            this.appVersionConfig.minimumWebVersion,
+            this.appVersionConfig.currentAndroidVersion,
+            this.appVersionConfig.minimumAndroidVersion,
+            this.appVersionConfig.currentIosVersion,
+            this.appVersionConfig.minimumIosVersion
+        ];
+
+        if (fields.some(value => !String(value || '').trim())) {
+            this.triggerToast('All current and minimum app versions are required.', 'warning');
+            this.activeTab.set('appVersion');
+            return false;
+        }
+
+        if (!this.appVersionConfig.updateTitle.trim() || !this.appVersionConfig.updateMessage.trim()) {
+            this.triggerToast('Update title and message are required.', 'warning');
+            this.activeTab.set('appVersion');
+            return false;
+        }
+
+        return true;
+    }
+
+    private normaliseUpdateSeverity(value: unknown): 'optional' | 'recommended' | 'required' | 'critical' {
+        const severity = String(value || '').toLowerCase();
+        return ['optional', 'recommended', 'required', 'critical'].includes(severity)
+            ? severity as 'optional' | 'recommended' | 'required' | 'critical'
+            : 'optional';
+    }
+
+    private async loadAppVersionConfig(): Promise<void> {
+        try {
+            const headers = await this.getAdminApiHeaders();
+            const response = await fetch(`${this.apiUrl.getBaseUrl()}/api/admin/app-version`, {
+                method: 'GET',
+                headers
+            });
+
+            if (!response.ok) {
+                throw new Error('Unable to load app version settings.');
+            }
+
+            const data = await response.json();
+            const config = data.config || {};
+
+            this.appVersionConfig = {
+                ...this.appVersionConfig,
+                currentWebVersion: config.current_web_version || this.appVersionConfig.currentWebVersion,
+                minimumWebVersion: config.minimum_web_version || this.appVersionConfig.minimumWebVersion,
+                currentAndroidVersion: config.current_android_version || this.appVersionConfig.currentAndroidVersion,
+                minimumAndroidVersion: config.minimum_android_version || this.appVersionConfig.minimumAndroidVersion,
+                currentIosVersion: config.current_ios_version || this.appVersionConfig.currentIosVersion,
+                minimumIosVersion: config.minimum_ios_version || this.appVersionConfig.minimumIosVersion,
+                updateRequired: !!config.update_required,
+                updateSeverity: this.normaliseUpdateSeverity(config.update_severity),
+                updateTitle: config.update_title || this.appVersionConfig.updateTitle,
+                updateMessage: config.update_message || this.appVersionConfig.updateMessage,
+                releaseNotes: config.release_notes || '',
+                androidUpdateUrl: config.android_update_url || '',
+                iosUpdateUrl: config.ios_update_url || '',
+                webReloadRequired: !!config.web_reload_required,
+                sendNotification: false
+            };
+        } catch (error) {
+            console.error('Failed to load app version settings:', error);
+            this.triggerToast('App version settings loaded with defaults.', 'warning');
+        }
+    }
+
+    private async saveAppVersionConfig(): Promise<void> {
+        const headers = await this.getAdminApiHeaders(true);
+        const response = await fetch(`${this.apiUrl.getBaseUrl()}/api/admin/app-version`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                currentWebVersion: this.appVersionConfig.currentWebVersion.trim(),
+                minimumWebVersion: this.appVersionConfig.minimumWebVersion.trim(),
+                currentAndroidVersion: this.appVersionConfig.currentAndroidVersion.trim(),
+                minimumAndroidVersion: this.appVersionConfig.minimumAndroidVersion.trim(),
+                currentIosVersion: this.appVersionConfig.currentIosVersion.trim(),
+                minimumIosVersion: this.appVersionConfig.minimumIosVersion.trim(),
+                updateRequired: this.appVersionConfig.updateRequired,
+                updateSeverity: this.appVersionConfig.updateSeverity,
+                updateTitle: this.appVersionConfig.updateTitle.trim(),
+                updateMessage: this.appVersionConfig.updateMessage.trim(),
+                releaseNotes: this.appVersionConfig.releaseNotes.trim(),
+                androidUpdateUrl: this.appVersionConfig.androidUpdateUrl.trim(),
+                iosUpdateUrl: this.appVersionConfig.iosUpdateUrl.trim(),
+                webReloadRequired: this.appVersionConfig.webReloadRequired,
+                sendNotification: this.appVersionConfig.sendNotification
+            })
+        });
+
+        if (!response.ok) {
+            let message = 'Unable to save app version settings.';
+            try {
+                const body = await response.json();
+                message = body.error || body.message || message;
+            } catch { }
+            throw new Error(message);
+        }
+
+        const data = await response.json();
+        const config = data.config || {};
+        this.appVersionConfig.sendNotification = false;
+        this.appVersionConfig.updateRequired = !!config.update_required;
+        this.appVersionConfig.updateSeverity = this.normaliseUpdateSeverity(config.update_severity);
     }
 
     private async getAdminApiHeaders(

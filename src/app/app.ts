@@ -11,6 +11,8 @@ import { NetworkService } from './core/services/network/network.service';
 import { NativePlatformService } from './core/services/native/native-platform.service';
 import { NotificationService } from './core/services/notification.service';
 import { MovabiTourOverlayComponent } from './shared/ui/movabi-tour-overlay.component';
+import { MovabiUpdateRequiredComponent } from './shared/ui/movabi-update-required.component';
+import { AppVersionService } from './core/services/app-version.service';
 
 import { addIcons } from 'ionicons';
 import {
@@ -103,7 +105,7 @@ import {
     changeDetection: ChangeDetectionStrategy.OnPush,
     selector: 'app-root',
     standalone: true,
-    imports: [IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent],
+    imports: [IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent, MovabiUpdateRequiredComponent],
     template: `
     <ion-app>
       @if (!isConfigured) {
@@ -135,6 +137,7 @@ import {
 
       <ion-router-outlet></ion-router-outlet>
       <app-movabi-tour-overlay></app-movabi-tour-overlay>
+      <app-movabi-update-required></app-movabi-update-required>
     </ion-app>
   `,
     styleUrl: './app.css',
@@ -145,6 +148,7 @@ export class App implements OnInit {
     private network = inject(NetworkService);
     private nativePlatform = inject(NativePlatformService);
     private notifications = inject(NotificationService);
+    private appVersion = inject(AppVersionService);
     private router = inject(Router);
 
     isConfigured = this.supabase.isConfigured;
@@ -242,6 +246,7 @@ export class App implements OnInit {
         this.setupDeepLinkListener();
 
         await this.nativePlatform.initialize();
+        this.appVersion.init();
 
         this.network.isOnline$.subscribe((status) => this.isOnline.set(status));
 

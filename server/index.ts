@@ -9,6 +9,7 @@ import paymentRoutes from './routes/payment.routes';
 import bookingRoutes from './routes/booking.routes';
 import walletRoutes from './routes/wallet.routes';
 import adminRoutes from './routes/admin.routes';
+import appRoutes from './routes/app.routes';
 import webhookRoutes from './routes/webhook.routes';
 import stripeWebhookRoutes from './routes/stripe-webhook.routes';
 import communicationRoutes from './routes/communication.routes';
@@ -104,6 +105,7 @@ app.use('/api/webhook/stripe', bodyParser.raw({ type: 'application/json' }), str
 app.use(bodyParser.json());
 
 // Routes
+app.use('/api/app', appRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/logistics', logisticsRoutes);
 app.use('/api/connect', connectRoutes);

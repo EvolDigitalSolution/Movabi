@@ -1487,3 +1487,255 @@ websocket connection issues.
           ╵                     [32m~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:91:21:
+[37m      91 │                 @if ([32mappVersionConfig[37m.updateRequired || appVersion...
+         ╵                      [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:91:56:
+[37m      91 │ ...onfig.updateRequired || [32mappVersionConfig[37m.updateSeverity === 'cr...
+         ╵                            [32m~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:91:21:
+[37m      91 │                 @if ([32mappVersionConfig[37m.updateRequired || appVersion...
+         ╵                      [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:91:56:
+[37m      91 │ ...onfig.updateRequired || [32mappVersionConfig[37m.updateSeverity === 'cr...
+         ╵                            [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:264:46:
+[37m      264 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.currentWebVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:264:46:
+[37m      264 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.currentWebVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:268:46:
+[37m      268 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.minimumWebVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:268:46:
+[37m      268 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.minimumWebVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:272:47:
+[37m      272 │ ...  <select [(ngModel)]="[32mappVersionConfig[37m.webReloadRequired" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:272:47:
+[37m      272 │ ...  <select [(ngModel)]="[32mappVersionConfig[37m.webReloadRequired" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:280:46:
+[37m      280 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.currentAndroidVersion"...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:280:46:
+[37m      280 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.currentAndroidVersion"...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:284:46:
+[37m      284 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.minimumAndroidVersion"...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:284:46:
+[37m      284 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.minimumAndroidVersion"...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:288:46:
+[37m      288 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.androidUpdateUrl" clas...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:288:46:
+[37m      288 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.androidUpdateUrl" clas...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:293:46:
+[37m      293 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.currentIosVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:293:46:
+[37m      293 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.currentIosVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:297:46:
+[37m      297 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.minimumIosVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:297:46:
+[37m      297 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.minimumIosVersion" cla...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:301:46:
+[37m      301 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.iosUpdateUrl" class="f...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:301:46:
+[37m      301 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.iosUpdateUrl" class="f...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:309:45:
+[37m      309 │ ...  <select [(ngModel)]="[32mappVersionConfig[37m.updateSeverity" class=...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:309:45:
+[37m      309 │ ...  <select [(ngModel)]="[32mappVersionConfig[37m.updateSeverity" class=...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:319:45:
+[37m      319 │ ...  <select [(ngModel)]="[32mappVersionConfig[37m.updateRequired" class=...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:319:45:
+[37m      319 │ ...  <select [(ngModel)]="[32mappVersionConfig[37m.updateRequired" class=...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:327:44:
+[37m      327 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.updateTitle" class="fi...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:327:44:
+[37m      327 │ ...   <input [(ngModel)]="[32mappVersionConfig[37m.updateTitle" class="fi...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:332:47:
+[37m      332 │ ...<textarea [(ngModel)]="[32mappVersionConfig[37m.updateMessage" rows="3...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:332:47:
+[37m      332 │ ...<textarea [(ngModel)]="[32mappVersionConfig[37m.updateMessage" rows="3...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:337:47:
+[37m      337 │ ...<textarea [(ngModel)]="[32mappVersionConfig[37m.releaseNotes" rows="4"...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:337:47:
+[37m      337 │ ...<textarea [(ngModel)]="[32mappVersionConfig[37m.releaseNotes" rows="4"...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:349:60:
+[37m      349 │ ...checkbox" [(ngModel)]="[32mappVersionConfig[37m.sendNotification" clas...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'appVersionConfig' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:349:60:
+[37m      349 │ ...checkbox" [(ngModel)]="[32mappVersionConfig[37m.sendNotification" clas...
+          ╵                           [32m~~~~~~~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'normaliseUpdateSeverity' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:951:37:
+[37m      951 │ ...pdateSeverity: this.[32mnormaliseUpdateSeverity[37m(config.update_seve...
+          ╵                        [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'normaliseUpdateSeverity' does not exist on type 'AdminSettingsComponent'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/settings/settings.component.ts:1003:52:
+[37m      1003 │ ...ateSeverity = this.[32mnormaliseUpdateSeverity[37m(config.update_seve...
+           ╵                       [32m~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[39m[22m

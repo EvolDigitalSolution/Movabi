@@ -5,6 +5,7 @@ import { AuditService } from '../services/audit.service';
 import { stripe } from '../services/stripe.service';
 import { PayoutService } from '../services/payout.service';
 import { NotificationService } from '../services/notification.service';
+import { AppVersionService, normaliseAppVersionConfig } from '../services/app-version.service';
 
 const router = Router();
 
@@ -74,8 +75,98 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
     return res.status(403).json({ ok: false, error: 'Administrator access required.' });
   }
 
+  (req as any).adminUserId = authData.user.id;
   return next();
 };
+
+function appVersionBodyToConfig(body: any, adminId?: string | null) {
+  return normaliseAppVersionConfig({
+    currentWebVersion: body?.currentWebVersion,
+    minimumWebVersion: body?.minimumWebVersion,
+    currentAndroidVersion: body?.currentAndroidVersion,
+    minimumAndroidVersion: body?.minimumAndroidVersion,
+    currentIosVersion: body?.currentIosVersion,
+    minimumIosVersion: body?.minimumIosVersion,
+    updateRequired: body?.updateRequired,
+    updateSeverity: body?.updateSeverity,
+    updateTitle: body?.updateTitle,
+    updateMessage: body?.updateMessage,
+    releaseNotes: body?.releaseNotes,
+    androidUpdateUrl: body?.androidUpdateUrl,
+    iosUpdateUrl: body?.iosUpdateUrl,
+    webReloadRequired: body?.webReloadRequired,
+    admin_set_by: adminId || null
+  });
+}
+
+async function notifyUsersOfRequiredUpdate(title: string, body: string): Promise<void> {
+  try {
+    const { data: users, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .in('role', ['customer', 'driver', 'admin'])
+      .limit(10000);
+
+    if (error) {
+      console.warn('[AppVersion] update notification user lookup failed:', error.message);
+      return;
+    }
+
+    await Promise.all((users || []).map((user: any) => NotificationService.sendNotification({
+      userId: user.id,
+      title,
+      body,
+      type: 'system_alert',
+      data: {
+        route: '/',
+        type: 'app_update_required',
+        action: 'app_update_required'
+      }
+    })));
+  } catch (error: any) {
+    console.warn('[AppVersion] update notification failed:', error?.message || error);
+  }
+}
+
+router.get('/app-version', requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const config = await AppVersionService.getConfig();
+    res.json({ ok: true, config });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message || 'Unable to load app version settings.' });
+  }
+});
+
+router.post('/app-version', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).adminUserId || null;
+    const previous = await AppVersionService.getConfig();
+    const config = appVersionBodyToConfig(req.body || {}, adminId);
+    const saved = await AppVersionService.saveConfig(config);
+
+    await AuditService.log({
+      userId: adminId || undefined,
+      action: 'admin_app_version_updated',
+      entityType: 'system_config',
+      metadata: { key: 'app_version_config', previous, saved }
+    });
+
+    const shouldNotify =
+      (saved.update_required || saved.update_severity === 'required' || saved.update_severity === 'critical') &&
+      (req.body?.sendNotification === true || previous.update_required !== saved.update_required || previous.update_severity !== saved.update_severity);
+
+    if (shouldNotify) {
+      void notifyUsersOfRequiredUpdate(
+        'Movabi update required',
+        saved.update_message || 'A new Movabi update is required to continue.'
+      );
+    }
+
+    res.json({ ok: true, config: saved });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message || 'Unable to save app version settings.' });
+  }
+});
 
 router.get('/settings/secrets/onesignal/status', requireAdmin, (_req: Request, res: Response) => {
   res.json(getOneSignalStatus());
