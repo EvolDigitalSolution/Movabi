@@ -29,7 +29,7 @@ export class NativePlatformService {
     await Promise.allSettled([
       StatusBar.setOverlaysWebView({ overlay: false }),
       StatusBar.setStyle({ style: Style.Light }),
-      Keyboard.setResizeMode({ mode: KeyboardResize.Body }),
+      Keyboard.setResizeMode({ mode: KeyboardResize.Native }),
       Keyboard.setStyle({ style: KeyboardStyle.Light }),
       Keyboard.setScroll({ isDisabled: false }),
       Device.getInfo()
@@ -110,7 +110,7 @@ export class NativePlatformService {
     const show = (height?: number) => {
       document.body.classList.add('native-keyboard-open');
       if (height) document.documentElement.style.setProperty('--native-keyboard-height', `${height}px`);
-      window.setTimeout(() => this.scrollFocusedInputIntoView(), 80);
+      window.setTimeout(() => this.scrollFocusedBookingInputIntoView(), 80);
     };
     const hide = () => {
       document.body.classList.remove('native-keyboard-open');
@@ -123,13 +123,14 @@ export class NativePlatformService {
     await Keyboard.addListener('keyboardDidHide', hide);
   }
 
-  private scrollFocusedInputIntoView(): void {
+  private scrollFocusedBookingInputIntoView(): void {
     const active = document.activeElement as HTMLElement | null;
     if (!active) return;
 
     const tag = active.tagName.toLowerCase();
     const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || active.closest('ion-input, ion-textarea, ion-select');
     if (!isInput) return;
+    if (!active.closest('.booking-keyboard-safe')) return;
 
     active.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
   }

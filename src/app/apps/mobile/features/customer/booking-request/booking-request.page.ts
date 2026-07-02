@@ -115,7 +115,7 @@ type PackageSize = 'small' | 'medium' | 'large';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
+    <ion-content class="bg-slate-50 booking-keyboard-safe">
       <div class="flex flex-col h-full">
         <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
           <app-map #map></app-map>

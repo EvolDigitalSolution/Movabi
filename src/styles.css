@@ -140,8 +140,7 @@ p {
     }
 
     ion-content::part(scroll) {
-        padding-bottom: max(var(--ion-safe-area-bottom, 0px), env(safe-area-inset-bottom), 90px);
-        scroll-padding-bottom: max(var(--ion-safe-area-bottom, 0px), env(safe-area-inset-bottom), 90px);
+        padding-bottom: max(var(--ion-safe-area-bottom, 0px), env(safe-area-inset-bottom), 1rem);
     }
 
     ion-header,
@@ -162,36 +161,24 @@ p {
     }
 }
 
-body.native-keyboard-open ion-content::part(scroll) {
-    padding-bottom: calc(var(--native-keyboard-height, 0px) + max(env(safe-area-inset-bottom), 24px)) !important;
-    scroll-padding-bottom: calc(var(--native-keyboard-height, 0px) + 32px);
-}
-
-body.native-keyboard-open .native-sticky-action {
-    position: static;
-}
-
-body.native-keyboard-open input,
-body.native-keyboard-open textarea,
-body.native-keyboard-open select,
-body.native-keyboard-open ion-input,
-body.native-keyboard-open ion-textarea,
-body.native-keyboard-open ion-select {
-    scroll-margin-bottom: calc(var(--native-keyboard-height, 0px) + 48px);
-    scroll-margin-top: 96px;
-}
-
 .native-safe-bottom {
     padding-bottom: max(90px, env(safe-area-inset-bottom));
 }
 
-.native-form-scroll {
-    min-height: 100%;
-    padding-bottom: max(90px, env(safe-area-inset-bottom));
+.booking-keyboard-safe::part(scroll) {
+    padding-bottom: max(120px, env(safe-area-inset-bottom));
+    scroll-padding-bottom: max(120px, env(safe-area-inset-bottom));
 }
 
-body.native-keyboard-open .native-form-scroll {
-    padding-bottom: calc(var(--native-keyboard-height, 0px) + 32px);
+body.native-keyboard-open .booking-keyboard-safe::part(scroll) {
+    padding-bottom: max(260px, env(safe-area-inset-bottom));
+    scroll-padding-bottom: max(260px, env(safe-area-inset-bottom));
+}
+
+body.native-keyboard-open .booking-keyboard-safe .booking-bottom-action,
+body.native-keyboard-open .booking-keyboard-safe .sticky-bottom,
+body.native-keyboard-open .booking-keyboard-safe ion-footer {
+    position: static !important;
 }
 
 .native-sticky-action {

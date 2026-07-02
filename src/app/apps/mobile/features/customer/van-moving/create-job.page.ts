@@ -100,7 +100,7 @@ type MovingVehicleClass = 'small_van' | 'large_van';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
+    <ion-content class="bg-slate-50 booking-keyboard-safe">
       <div class="flex flex-col h-full">
         <div class="w-full h-[35vh] relative z-10 shadow-lg">
           <app-map #map></app-map>
