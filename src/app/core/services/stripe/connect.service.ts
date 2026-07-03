@@ -157,28 +157,22 @@ export class ConnectService {
 
     private async getAccessToken(): Promise<string | null> {
         try {
-            const client =
-                (this.supabase as any).client ||
-                (this.supabase as any).supabase ||
-                (this.supabase as any).supabaseClient;
-
-            if (client?.auth?.getSession) {
-                const { data } = await client.auth.getSession();
-                const token = data?.session?.access_token;
-
-                if (token) return token;
+            // Use the Supabase client to get the current session
+            const { data, error } = await this.supabase.client.auth.getSession();
+            
+            if (error) {
+                console.warn('[Connect] Failed to get session:', error.message);
+                return null;
             }
 
-            if ((this.supabase as any).getSession) {
-                const session = await (this.supabase as any).getSession();
-                const token = session?.access_token || session?.data?.session?.access_token;
-
-                if (token) return token;
+            const token = data?.session?.access_token;
+            
+            if (token) {
+                return token;
             }
 
-            if ((this.supabase as any).session?.access_token) {
-                return (this.supabase as any).session.access_token;
-            }
+            console.warn('[Connect] No active session found');
+            return null;
         } catch (error) {
             console.warn('[ConnectService] Unable to read Supabase session token:', error);
         }

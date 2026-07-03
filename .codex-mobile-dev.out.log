@@ -13937,3 +13937,20 @@ Page reload sent to client(s).
 Application bundle generation complete. [6.579 seconds] - 2026-07-03T15:31:21.473Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m            [2m | [22m[36m358.31 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m           [2m | [22m [1mRaw size[22m
+[32mchunk-DZRYAPY3.js[39m  [2m | [22m[2mjob-details-page[22m[2m | [22m[36m179.95 kB[39m[2m | [22m
+[32mchunk-75CXHPEC.js[39m  [2m | [22m[2mdashboard-page[22m  [2m | [22m[36m140.28 kB[39m[2m | [22m
+[32mchunk-PAGMNV5G.js[39m  [2m | [22m[2monboarding-page[22m [2m | [22m[36m137.05 kB[39m[2m | [22m
+[32mchunk-S46NNAWA.js[39m  [2m | [22m[2msettings-page[22m   [2m | [22m [36m79.31 kB[39m[2m | [22m
+[32mchunk-QSBABGM7.js[39m  [2m | [22m[2mvan-jobs-page[22m   [2m | [22m [36m57.04 kB[39m[2m | [22m
+[32mchunk-SZXGVEWX.js[39m  [2m | [22m[2mearnings-page[22m   [2m | [22m [36m54.87 kB[39m[2m | [22m
+[32mchunk-RR4SFHGK.js[39m  [2m | [22m[2m-[22m               [2m | [22m [36m36.70 kB[39m[2m | [22m
+
+Application bundle generation complete. [6.117 seconds] - 2026-07-03T15:34:52.728Z
+
+Page reload sent to client(s).
