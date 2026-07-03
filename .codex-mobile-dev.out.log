@@ -13905,3 +13905,35 @@ Application bundle generation failed. [6.738 seconds] - 2026-07-03T15:26:25.921Z
 Application bundle generation complete. [6.210 seconds] - 2026-07-03T15:27:14.796Z
 
 Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m358.31 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-QUGNOYV4.js[39m  [2m | [22m[2mjob-details-page[22m     [2m | [22m[36m179.95 kB[39m[2m | [22m
+[32mchunk-I2U6JPZF.js[39m  [2m | [22m[2mbooking-request-page[22m [2m | [22m[36m176.23 kB[39m[2m | [22m
+[32mchunk-ZL436UFN.js[39m  [2m | [22m[2mdashboard-page[22m       [2m | [22m[36m140.28 kB[39m[2m | [22m
+[32mchunk-LJ6JXE7O.js[39m  [2m | [22m[2monboarding-page[22m      [2m | [22m[36m137.05 kB[39m[2m | [22m
+[32mchunk-ONGGWRMV.js[39m  [2m | [22m[2mdriver-list-component[22m[2m | [22m[36m114.95 kB[39m[2m | [22m
+[32mchunk-VWLHHAXY.js[39m  [2m | [22m[2msettings-page[22m        [2m | [22m [36m79.31 kB[39m[2m | [22m
+[32mchunk-C7Q7K3WX.js[39m  [2m | [22m[2mvan-jobs-page[22m        [2m | [22m [36m57.04 kB[39m[2m | [22m
+[32mchunk-AWFP5UBA.js[39m  [2m | [22m[2mearnings-page[22m        [2m | [22m [36m54.87 kB[39m[2m | [22m
+[32mchunk-ZSJTKPSN.js[39m  [2m | [22m[2m-[22m                    [2m | [22m [36m36.97 kB[39m[2m | [22m
+[32mchunk-A7SQTVBP.js[39m  [2m | [22m[2madmin-web-routes[22m     [2m | [22m  [36m2.60 kB[39m[2m | [22m
+
+Application bundle generation complete. [9.643 seconds] - 2026-07-03T15:31:14.853Z
+
+Page reload sent to client(s).
+[33m>[39m Changes detected. Rebuilding...
+[32m√[39m Changes detected. Rebuilding...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m                 [2m | [22m[36m358.31 kB[39m[2m | [22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                [2m | [22m [1mRaw size[22m
+[32mchunk-YNKINODU.js[39m  [2m | [22m[2mdriver-list-component[22m[2m | [22m[36m115.24 kB[39m[2m | [22m
+[32mchunk-CFP4IGX5.js[39m  [2m | [22m[2madmin-web-routes[22m     [2m | [22m  [36m2.60 kB[39m[2m | [22m
+
+Application bundle generation complete. [6.579 seconds] - 2026-07-03T15:31:21.473Z
+
+Page reload sent to client(s).

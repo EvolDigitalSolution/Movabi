@@ -6,6 +6,7 @@ import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
+import { ComplianceService } from '../../../../core/services/compliance/compliance.service';
 import {
     getBlockingRequirements,
     getVehiclePlateValue,
@@ -794,6 +795,7 @@ export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
     private tour = inject(OnboardingTourService);
+    private complianceService = inject(ComplianceService);
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
@@ -1215,13 +1217,33 @@ export class DriverListComponent implements OnInit {
 
     private getEngineBlockers(driver: any): string[] {
         const vehicle = this.getVehicle(driver);
-        return getBlockingRequirements({
-            countryCode: driver?.country_code || driver?.country,
+        const selectedServices = this.getSelectedServices(driver);
+        
+        // Use ComplianceService as source of truth for all service types
+        const allRequirements = selectedServices.map(serviceType => 
+            this.complianceService.getDriverMissingRequirements(
+                driver,
+                vehicle,
+                { ...driver, ...vehicle },
+                serviceType as any
+            )
+        ).flat();
+        
+        // Also check base requirements
+        const baseRequirements = this.complianceService.getDriverMissingRequirements(
             driver,
             vehicle,
-            documents: { ...driver, ...vehicle },
-            selectedServices: this.getSelectedServices(driver)
-        }).map(requirement => requirement.message);
+            { ...driver, ...vehicle },
+            'base'
+        );
+        
+        // Combine and filter for blockers only
+        const allBlockers = [...allRequirements, ...baseRequirements]
+            .filter(req => req.severity === 'blocker')
+            .map(req => req.message);
+        
+        // Remove duplicates
+        return Array.from(new Set(allBlockers));
     }
 
     private filterReviewBlockers(driver: any, blockers: string[]): string[] {
