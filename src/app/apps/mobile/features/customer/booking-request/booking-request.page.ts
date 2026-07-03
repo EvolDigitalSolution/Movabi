@@ -1497,8 +1497,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                     this.updateRoute();
                 },
-                error: () => {
+                error: (error) => {
                     void loading.dismiss();
+                    console.warn('[BookingRequest] Reverse geocoding failed:', error);
 
                     const finalAddress = 'Current Location';
 
