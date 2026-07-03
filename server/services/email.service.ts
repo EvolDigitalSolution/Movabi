@@ -119,4 +119,38 @@ export class EmailService {
       return false;
     }
   }
+
+  static async sendRegistrationOtp(email: string, code: string): Promise<boolean> {
+    console.log(`[EmailService] Sending registration OTP to ${email}: ${code}`);
+    
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.log('[EmailService] Email credentials not configured, skipping email send');
+      return true; // Return true in development when no email config
+    }
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Movabi - Verification Code',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #1f2937;">Movabi Verification Code</h2>
+            <p style="font-size: 16px; color: #374151;">Your verification code is:</p>
+            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+              <span style="font-size: 24px; font-weight: bold; color: #1f2937; letter-spacing: 2px;">${code}</span>
+            </div>
+            <p style="font-size: 14px; color: #6b7280;">This code will expire in 10 minutes.</p>
+            <p style="font-size: 12px; color: #64748b;">Thank you,<br>Movabi</p>
+          </div>
+        `
+      });
+
+      console.log('[EmailService] Registration OTP email sent:', info.messageId);
+      return true;
+    } catch (error) {
+      console.error('[EmailService] Error sending registration OTP:', error);
+      return false;
+    }
+  }
 }

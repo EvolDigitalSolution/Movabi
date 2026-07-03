@@ -704,7 +704,7 @@ router.get('/validate-push-subscription/:userId', async (req: Request, res: Resp
       return res.status(400).json({ ok: false, error: 'userId is required.' });
     }
 
-    const validation = await NotificationService.validateUserPushSubscription(userId);
+    const validation = await NotificationService.validateUserPushSubscription(Array.isArray(userId) ? userId[0] : userId);
 
     res.json({
       ok: true,

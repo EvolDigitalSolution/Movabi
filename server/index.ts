@@ -31,6 +31,7 @@ app.use((req: any, res: any, next: any) => {
     'capacitor://localhost',
     'ionic://localhost',
     'https://movabi.apps.evolsolution.com',
+    'https://admin.movabi.apps.evolsolution.com',
     'https://movabi-api.apps.evolsolution.com'
   ];
 
@@ -38,12 +39,14 @@ app.use((req: any, res: any, next: any) => {
 
   if (origin && allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
+  } else if (origin) {
+    console.warn('[CORS] blocked origin', origin);
   }
 
   res.header('Vary', 'Origin');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,apikey,x-client-info');
+  res.header('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept,Origin,X-Requested-With,apikey,x-client-info');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).send();
