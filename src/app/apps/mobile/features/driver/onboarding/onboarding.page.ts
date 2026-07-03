@@ -1675,6 +1675,8 @@ export class OnboardingPage implements OnInit {
                 this.docs.update((current) => ({ ...current, [type]: path }));
                 this.saveDraft();
 
+                await this.persistUploadedDocument(type, path);
+
                 await this.showToast(`${type === 'license' ? 'Driver licence' : 'Insurance'} uploaded.`, 'success');
             } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : 'Upload failed.';
@@ -1686,6 +1688,22 @@ export class OnboardingPage implements OnInit {
         };
 
         input.click();
+    }
+
+    private async persistUploadedDocument(type: DocumentType, path: string | undefined) {
+        const user = this.authService.currentUser();
+
+        if (!user?.id || !path) return;
+
+        await this.updateProfileSafely(user.id, type === 'license'
+            ? { driver_license_url: path }
+            : { insurance_url: path });
+
+        if (typeof (this.profileService as any).fetchProfile === 'function') {
+            await (this.profileService as any).fetchProfile(user.id);
+        }
+
+        await this.driverService.fetchVehicle();
     }
 
     private isAllowedFile(file: File): boolean {
@@ -1904,7 +1922,8 @@ export class OnboardingPage implements OnInit {
             this.saveDraft();
             const url = await this.driverService.setupStripeConnect();
             window.location.href = url;
-        } catch {
+        } catch (error) {
+            console.warn('[DriverOnboarding] Failed to load payout settings', error);
             await this.showToast('Failed to load payout settings.', 'danger');
         } finally {
             await loading.dismiss();

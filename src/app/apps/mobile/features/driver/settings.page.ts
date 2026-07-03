@@ -919,14 +919,21 @@ export class DriverSettingsPage implements OnInit {
         this.resubmitting.set(true);
 
         try {
+            if (typeof (this.profileService as any).fetchProfile === 'function') {
+                await (this.profileService as any).fetchProfile(user.id);
+            }
+
             await this.driverService.fetchVehicle();
+            const remainingBlockers = this.reviewBlockers();
+            const nextStatus = remainingBlockers.length ? 'action_required' : 'under_review';
+
             await this.profileService.updateProfile(user.id, {
-                driver_review_status: 'under_review',
-                verification_status: 'under_review',
-                verification_notes: null,
-                driver_review_notes: null,
-                verification_blockers: [],
-                driver_review_blockers: [],
+                driver_review_status: nextStatus,
+                verification_status: nextStatus,
+                verification_notes: remainingBlockers.length ? this.verificationNotes() : null,
+                driver_review_notes: remainingBlockers.length ? this.verificationNotes() : null,
+                verification_blockers: remainingBlockers,
+                driver_review_blockers: remainingBlockers,
                 updated_at: new Date().toISOString()
             } as any);
 
@@ -935,7 +942,12 @@ export class DriverSettingsPage implements OnInit {
             }
             await this.driverService.fetchVehicle();
 
-            await this.showToast('Resubmitted for manual review.', 'success');
+            await this.showToast(
+                remainingBlockers.length
+                    ? 'Some requested items still need attention before review.'
+                    : 'Resubmitted for manual review.',
+                remainingBlockers.length ? 'warning' : 'success'
+            );
         } catch {
             await this.showToast('Could not resubmit for review. Please try again.', 'danger');
         } finally {

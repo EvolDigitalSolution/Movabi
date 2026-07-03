@@ -933,6 +933,29 @@ export class DriverService {
         const user = this.auth.currentUser();
         if (!user) return null;
 
+        try {
+            const settings = await this.connectService.getPayoutSettings();
+
+            if (!settings.stripeAccountId) {
+                this.stripeAccount.set(null);
+                return null;
+            }
+
+            const account = {
+                user_id: user.id,
+                stripe_account_id: settings.stripeAccountId,
+                onboarding_complete: settings.chargesEnabled === true && settings.payoutsEnabled === true,
+                payouts_enabled: settings.payoutsEnabled === true,
+                charges_enabled: settings.chargesEnabled === true,
+                onboarding_status: settings.connectStatus || 'pending'
+            } as any;
+
+            this.stripeAccount.set(account);
+            return account;
+        } catch (error) {
+            console.warn('[DriverService] payout settings lookup failed; falling back to profile Stripe fields', error);
+        }
+
         const { data: profile, error: profileError } = await this.supabase
             .from('profiles')
             .select('id, stripe_account_id, stripe_connect_status')
@@ -1045,6 +1068,23 @@ export class DriverService {
 
             accountId = stripe_account_id;
             await this.fetchStripeAccount();
+        }
+
+        const settings = await this.connectService.getPayoutSettings().catch((error) => {
+            console.warn('[DriverService] payout settings refresh after account creation failed', error);
+            return null;
+        });
+
+        if (settings?.stripeAccountId) {
+            accountId = settings.stripeAccountId;
+            this.stripeAccount.set({
+                user_id: user.id,
+                stripe_account_id: settings.stripeAccountId,
+                onboarding_complete: settings.chargesEnabled === true && settings.payoutsEnabled === true,
+                payouts_enabled: settings.payoutsEnabled === true,
+                charges_enabled: settings.chargesEnabled === true,
+                onboarding_status: settings.connectStatus || 'pending'
+            } as any);
         }
 
         const returnUrl = `${window.location.origin}/driver?stripe=success`;

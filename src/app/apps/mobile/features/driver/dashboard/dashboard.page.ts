@@ -1764,6 +1764,31 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             return;
         }
 
+        try {
+            const settings = await this.connectService.getPayoutSettings();
+
+            if (!settings.stripeAccountId) {
+                this.resetStripeUiState();
+                return;
+            }
+
+            this.stripeUiState.set({
+                accountId: settings.stripeAccountId,
+                status: settings.connectStatus || 'pending',
+                chargesEnabled: settings.chargesEnabled === true,
+                payoutsEnabled: settings.payoutsEnabled === true
+            });
+
+            this.mergeLocalProfile({
+                stripe_account_id: settings.stripeAccountId,
+                stripe_connect_status: settings.connectStatus || 'pending'
+            });
+
+            return;
+        } catch (error) {
+            console.warn('[DriverDashboard] payout settings lookup failed; falling back to profile Stripe fields', error);
+        }
+
         const { data: profile, error } = await this.supabase.client
             .from('profiles')
             .select('id, tenant_id, stripe_account_id, stripe_connect_status')
@@ -1791,7 +1816,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 chargesEnabled: status.charges_enabled === true,
                 payoutsEnabled: status.payouts_enabled === true
             });
-        } catch {
+        } catch (error) {
+            console.warn('[DriverDashboard] Stripe status refresh failed', error);
             this.stripeUiState.set({
                 accountId,
                 status: dbStatus,
@@ -2186,13 +2212,13 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
             if (!accountId) throw new Error('Stripe account could not be created.');
 
-            const status = await this.connectService.refreshAccountStatus(accountId, user.id);
+            const settings = await this.connectService.getPayoutSettings();
 
             this.stripeUiState.set({
-                accountId: status.stripe_account_id || accountId,
-                status: status.status || 'pending',
-                chargesEnabled: status.charges_enabled === true,
-                payoutsEnabled: status.payouts_enabled === true
+                accountId: settings.stripeAccountId || accountId,
+                status: settings.connectStatus || 'pending',
+                chargesEnabled: settings.chargesEnabled === true,
+                payoutsEnabled: settings.payoutsEnabled === true
             });
 
             const returnUrl = `${window.location.origin}/driver?stripe=success`;
@@ -2203,7 +2229,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 : await this.connectService.getOnboardingLink(accountId, returnUrl, refreshUrl);
 
             window.location.href = link.url;
-        } catch {
+        } catch (error) {
+            console.warn('[DriverDashboard] Failed to load payout settings', error);
             this.showToast('Failed to load payout settings', 'danger');
         } finally {
             await loading.dismiss();

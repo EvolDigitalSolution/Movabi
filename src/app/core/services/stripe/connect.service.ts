@@ -21,6 +21,16 @@ export interface StripeConnectStatusResponse {
     };
 }
 
+export interface PayoutSettingsResponse {
+    ok: boolean;
+    stripeAccountId: string | null;
+    connectStatus: 'not_started' | 'pending' | 'restricted' | 'enabled' | 'connected';
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+    detailsSubmitted: boolean;
+    requirementsCurrentlyDue: string[];
+}
+
 type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
 
 @Injectable({
@@ -113,6 +123,17 @@ export class ConnectService {
                     accountId,
                     userId
                 },
+                {
+                    headers: await this.getAuthHeaders()
+                }
+            )
+        );
+    }
+
+    async getPayoutSettings() {
+        return firstValueFrom(
+            this.http.get<PayoutSettingsResponse>(
+                `${this.apiUrl}/payout-settings`,
                 {
                     headers: await this.getAuthHeaders()
                 }

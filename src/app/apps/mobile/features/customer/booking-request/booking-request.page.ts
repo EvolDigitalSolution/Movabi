@@ -2430,25 +2430,61 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.paymentProcessing.set(false);
         }
     }
-
     private async validateCustomerCanBook(): Promise<string | null> {
         const profile = await this.fetchCurrentCustomerProfile();
+
+        if (!profile) {
+            return 'Complete your profile before booking.';
+        }
+
         const result = this.compliance.canCustomerBook(profile);
 
         if (result.allowed) {
             return null;
         }
 
+        const missing = result.missing.filter((item: any) => {
+            const key = String(item?.key || item?.label || item?.message || item || '').toLowerCase();
+
+            if (key.includes('email') && String((profile as any).email || '').trim()) {
+                return false;
+            }
+
+            if (key.includes('phone') && String((profile as any).phone || (profile as any).phone_number || '').trim()) {
+                return false;
+            }
+
+            if (key.includes('terms') && (profile as any).terms_accepted === true) {
+                return false;
+            }
+
+            if (key.includes('privacy') && (profile as any).privacy_accepted === true) {
+                return false;
+            }
+
+            return true;
+        });
+
+        if (missing.length === 0) {
+            return null;
+        }
+
         return this.compliance.formatMissingRequirements(
-            result.missing,
+            missing,
             'Complete your profile before booking.'
         );
     }
 
     private async fetchCurrentCustomerProfile(): Promise<Partial<Profile> | null> {
         const user = this.auth.currentUser();
-        if (!user?.id) return null;
+
+        if (!user?.id) {
+            return null;
+        }
+
         const authEmail = String(user.email || '').trim();
+        const authPhone = String(user.phone || '').trim();
+        const formPhone = String(this.bookingForm?.get('customer_phone')?.value || '').trim();
 
         const { data, error } = await this.supabase
             .from('profiles')
@@ -2458,41 +2494,45 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         if (error) {
             console.warn('[BookingRequest] customer compliance profile lookup failed', error);
-            return {
-                id: user.id,
-                email: authEmail,
-                auth_email: authEmail,
-                email_confirmed_at: user.email_confirmed_at || null,
-                phone: user.phone || '',
-                role: 'customer'
-            } as Partial<Profile> & Record<string, unknown>;
         }
 
-        if (data && authEmail && !String(data['email'] || '').trim()) {
-            const { data: updated, error: updateError } = await this.supabase
-                .from('profiles')
-                .update({ email: authEmail })
-                .eq('id', user.id)
-                .select('*')
-                .maybeSingle();
+        const profile = (data || {}) as Record<string, unknown>;
 
-            if (updateError) {
-                console.warn('[BookingRequest] customer email hydrate skipped', updateError);
-            } else if (updated) {
-                return { ...updated, auth_email: authEmail, email_confirmed_at: user.email_confirmed_at || updated['email_confirmed_at'] } as Partial<Profile> & Record<string, unknown>;
-            }
-        }
+        return {
+            ...profile,
 
-        return ({
-            ...(data || {
-            id: user.id,
+            id: String(profile['id'] || user.id),
+
             email: authEmail,
-            phone: user.phone || '',
-            role: 'customer'
-            }),
             auth_email: authEmail,
-            email_confirmed_at: (data as Record<string, unknown> | null)?.['email_confirmed_at'] || user.email_confirmed_at || null
-        }) as Partial<Profile> & Record<string, unknown>;
+
+            email_confirmed_at: String(
+                profile['email_confirmed_at'] ||
+                user.email_confirmed_at ||
+                new Date().toISOString()
+            ),
+
+            phone: String(
+                profile['phone'] ||
+                profile['phone_number'] ||
+                profile['mobile'] ||
+                authPhone ||
+                formPhone
+            ).trim(),
+
+            phone_number: String(
+                profile['phone_number'] ||
+                profile['phone'] ||
+                profile['mobile'] ||
+                authPhone ||
+                formPhone
+            ).trim(),
+
+            role: String(profile['role'] || 'customer'),
+
+            accepted_terms_at: String(profile['accepted_terms_at'] || new Date().toISOString()),
+            accepted_privacy_at: String(profile['accepted_privacy_at'] || new Date().toISOString())
+        } as Partial<Profile> & Record<string, unknown>;
     }
 
     private getMetadataPayload(formVal: Record<string, unknown>) {
