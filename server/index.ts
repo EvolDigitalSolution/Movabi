@@ -3,8 +3,10 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { rateLimit } from 'express-rate-limit';
 
-// Load environment variables first
-dotenv.config();
+// Load environment variables first (only for local development)
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
 
 // Check for critical environment variables before loading any modules
 const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
