@@ -1872,6 +1872,23 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
         } catch (err) {
             console.error('Load booking failed', err);
+            
+            if (err instanceof Error && err.message === 'Booking not found') {
+                const alert = await this.alertCtrl.create({
+                    header: 'Booking Not Found',
+                    message: 'The booking you\'re looking for doesn\'t exist or has been removed.',
+                    buttons: [
+                        {
+                            text: 'Go Back',
+                            handler: () => {
+                                void this.router.navigate(['/customer']);
+                            }
+                        }
+                    ]
+                });
+                
+                await alert.present();
+            }
         } finally {
             this.isLoading.set(false);
         }

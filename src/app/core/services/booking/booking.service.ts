@@ -608,14 +608,19 @@ export class BookingService {
             .eq('id', bookingId)
             .single();
 
-        if (error) throw error;
+        if (error) {
+            if (error.code === 'PGRST116') {
+                throw new Error('Booking not found');
+            }
+            throw error;
+        }
 
         if (data.customer_id) {
             const { data: customer } = await this.supabase
                 .from('profiles')
                 .select('*')
                 .eq('id', data.customer_id)
-                .single();
+                .maybeSingle();
 
             data.customer = customer;
         }
@@ -625,7 +630,7 @@ export class BookingService {
                 .from('profiles')
                 .select('*')
                 .eq('id', data.driver_id)
-                .single();
+                .maybeSingle();
 
             if (driver) {
                 const { data: vehicles } = await this.supabase
