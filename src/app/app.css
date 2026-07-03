@@ -64,3 +64,46 @@ ion-title {
 .container-padding {
   @apply px-4 md:px-8 lg:px-12;
 }
+
+/* Keyboard handling for mobile */
+ion-app.keyboard-open .ion-page {
+  --keyboard-height: env(keyboard-inset-height, 0px);
+}
+
+/* Safe area handling */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+}
+
+.ion-padding-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+}
+
+/* Keyboard resize handling */
+@media (max-height: 600px) {
+  ion-content[fullscreen="true"] {
+    --keyboard-height: env(keyboard-inset-height, 0px);
+  }
+}
+
+/* Android keyboard handling */
+@media (pointer: coarse) and (hover: none) {
+  ion-content {
+    --keyboard-offset: env(keyboard-inset-height, 0px);
+  }
+  
+  .keyboard-open ion-content {
+    --keyboard-offset: env(keyboard-inset-height, 0px);
+  }
+}
+
+/* iOS keyboard handling */
+@supports (-webkit-touch-callout: none) {
+  ion-content[fullscreen="true"] {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  
+  .keyboard-open ion-content[fullscreen="true"] {
+    padding-bottom: max(env(safe-area-inset-bottom), env(keyboard-inset-height, 0px));
+  }
+}

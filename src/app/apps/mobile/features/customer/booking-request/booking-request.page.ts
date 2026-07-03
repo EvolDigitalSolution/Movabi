@@ -115,8 +115,8 @@ type PackageSize = 'small' | 'medium' | 'large';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
-      <div class="flex flex-col h-full">
+    <ion-content class="bg-slate-50" [fullscreen]="true">
+      <div class="flex flex-col h-full ion-padding-bottom">
         <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
           <app-map #map></app-map>
 
@@ -140,8 +140,8 @@ type PackageSize = 'small' | 'medium' | 'large';
           }
         </div>
 
-        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto">
-          <div class="max-w-2xl mx-auto space-y-5 pb-24">
+        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto ion-padding-bottom">
+          <div class="max-w-2xl mx-auto space-y-5 pb-safe">
             <div class="flex items-center gap-4 p-1">
               <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100 shrink-0">
                 <ion-icon [name]="getIcon()" class="text-2xl"></ion-icon>

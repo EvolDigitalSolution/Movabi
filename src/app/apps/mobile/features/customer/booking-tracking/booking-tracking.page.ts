@@ -94,9 +94,9 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="movabi-page">
+    <ion-content class="movabi-page" [fullscreen]="true">
       @if (booking()) {
-        <div class="flex flex-col h-full">
+        <div class="flex flex-col h-full ion-padding-bottom">
           <div class="bg-slate-100 relative overflow-hidden h-[60vh] min-h-[390px]">
             <app-map #map></app-map>
 
@@ -159,7 +159,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
           </div>
 
           <div
-            class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto overscroll-contain border-t border-slate-100 transition-all duration-300 native-safe-bottom"
+            class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto overscroll-contain border-t border-slate-100 transition-all duration-300 ion-padding-bottom"
             [ngClass]="sheetHeightClass()"
             (focusin)="expandSheetForFocus()"
           >
