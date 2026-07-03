@@ -11,22 +11,15 @@ export const getSupabaseAdmin = (): SupabaseClient => {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('[SupabaseService] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in environment variables.');
-      // Return a dummy client that will fail gracefully when used
-      _supabaseAdmin = createClient('http://localhost:54321', 'dummy-key', {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      });
-    } else {
-      _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      });
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in environment variables.');
     }
+
+    _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
   }
   return _supabaseAdmin;
 };
