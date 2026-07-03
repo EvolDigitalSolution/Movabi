@@ -1,4 +1,4 @@
-ï»¿import {
+import {
     Component,
     inject,
     OnInit,
@@ -47,6 +47,7 @@ import { BookingService } from '../../../../../core/services/booking/booking.ser
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
+import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { NativePlatformService } from '../../../../../core/services/native/native-platform.service';
 
@@ -71,7 +72,7 @@ import { MapComponent } from '../../../../../shared/components/map/map.component
 
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
-type SheetState = 'collapsed' | 'medium' | 'expanded';
+type SheetState = 'medium' | 'expanded';
 
 @Component({
     selector: 'app-booking-tracking',
@@ -100,6 +101,18 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
           <div class="bg-slate-100 relative overflow-hidden h-[60vh] min-h-[390px]">
             <app-map #map></app-map>
 
+            <!-- Recenter button -->
+            @if (!autoFollowEnabled) {
+              <button
+                type="button"
+                (click)="recenterMap()"
+                class="absolute right-3 bottom-3 z-20 w-12 h-12 bg-white rounded-full shadow-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
+                title="Recenter map"
+              >
+                <ion-icon name="navigate-outline" class="text-xl text-slate-700"></ion-icon>
+              </button>
+            }
+
             @if (booking()?.status === 'searching') {
               <div class="absolute left-3 top-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[20rem] pointer-events-none">
                 <div class="bg-white/95 backdrop-blur border border-white/70 rounded-xl shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
@@ -124,22 +137,23 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                           class="h-full bg-blue-600 rounded-full transition-all duration-1000"
                           [style.width.%]="searchProgressPercent()"
                         ></div>
-                      </div>
-                    </div>
+            }
+
+            @if (booking()?.driver_id && (driverEtaToPickup() !== null || driverDistanceToPickup() !== null)) {
+              <div class="absolute left-3 top-3 z-20 pointer-events-none">
+                <div class="bg-black/75 backdrop-blur-sm rounded-lg px-3 py-2 pointer-events-auto">
+                  <div class="flex items-center gap-2">
+                    @if (driverEtaToPickup() !== null) {
+                      <span class="text-white font-semibold text-sm">{{ formatDuration(driverEtaToPickup()!) }}</span>
+                    }
+                    @if (driverDistanceToPickup() !== null) {
+                      <span class="text-white/80 text-xs">{{ formatDistance(driverDistanceToPickup()!) }}</span>
+                    }
+                    <span class="bg-emerald-500 text-white text-xs font-bold px-1.5 py-0.5 rounded">NOW</span>
                   </div>
                 </div>
               </div>
-            }
-
-            @if (booking()?.driver_id && driverLiveLabel()) {
-              <div class="absolute left-3 bottom-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[19rem] pointer-events-none">
-                <div class="bg-white/94 backdrop-blur rounded-xl border border-white/70 shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0 overflow-hidden">
-                        @if (getDriverAvatar()) {
-                          <img [src]="getDriverAvatar()!" alt="Driver photo" class="w-full h-full object-cover" />
-                        } @else {
+            } @else {
                           <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
                         }
                       </div>
@@ -152,11 +166,11 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                     </div>
 
                     <app-badge variant="success" class="shrink-0">{{ driverLastSeenLabel() }}</app-badge>
-                  </div>
-                </div>
-              </div>
-            }
-          </div>
+
+
+
+
+
 
           <div
             class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto overscroll-contain border-t border-slate-100 transition-all duration-300 ion-padding-bottom"
@@ -165,7 +179,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
           >
             <button
               type="button"
-              class="sticky top-0 z-20 -mx-3 -mt-3 flex w-[calc(100%_+_1.5rem)] items-center justify-center rounded-t-[2rem] bg-white/95 py-3 backdrop-blur touch-none"
+              class="sticky top-0 z-20 -mx-3 -mt-3 flex w-[calc(100%_+_1.5rem)] items-center justify-center rounded-t-[2rem] bg-white/95 py-4 backdrop-blur touch-none"
               (click)="cycleSheetState()"
               (touchstart)="startDetailsDrag($event)"
               (touchmove)="moveDetailsDrag($event)"
@@ -174,9 +188,9 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
               (pointermove)="moveDetailsPointerDrag($event)"
               (pointerup)="endDetailsPointerDrag($event)"
               (pointercancel)="endDetailsPointerDrag($event)"
-              [attr.aria-label]="sheetState() === 'expanded' ? 'Collapse details' : 'Expand details'"
+              [attr.aria-label]="sheetState() === 'expanded' ? 'Collapse to 40%' : 'Expand to 80%'"
             >
-              <span class="w-14 h-1.5 bg-slate-300 rounded-full shadow-sm"></span>
+              <span class="w-16 h-1.5 bg-slate-400 rounded-full shadow-md"></span>
             </button>
 
             <div class="movabi-card-compact bg-gradient-to-br from-white to-slate-50">
@@ -186,11 +200,11 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                     {{ getStatusLabel(booking()?.status || '') }}
                   </app-badge>
 
-                  <h2 class="movabi-card-title">
+                  <h2 class="text-sm font-bold text-slate-900">
                     Details
                   </h2>
 
-                  <p class="movabi-card-subtitle mt-1">
+                  <p class="text-xs text-slate-500 mt-1">
                     {{ getStatusHint(booking()?.status || '') }}
                   </p>
 
@@ -222,7 +236,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                       <ion-icon name="timer-outline" class="text-blue-600"></ion-icon>
                       <p class="text-xs font-semibold text-blue-700">Time</p>
                     </div>
-                    <p class="text-lg font-display font-bold text-slate-900">
+                    <p class="text-base font-display font-semibold text-slate-900">
                       {{ searchCountdownLabel() }}
                     </p>
                   </div>
@@ -238,7 +252,6 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
               }
             </div>
 
-            @if (sheetState() !== 'collapsed') {
             <div class="movabi-card-compact space-y-3">
               <div class="flex items-start gap-3">
                 <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
@@ -249,10 +262,10 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                   <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">
                     {{ serviceGuideEyebrow() }}
                   </p>
-                  <h3 class="mt-1 movabi-card-title">
+                  <h3 class="mt-1 text-sm font-bold text-slate-900">
                     {{ serviceGuideTitle() }}
                   </h3>
-                  <p class="mt-1 movabi-card-subtitle">
+                  <p class="mt-1 text-xs text-slate-500">
                     {{ serviceGuideMessage() }}
                   </p>
                 </div>
@@ -300,7 +313,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                     <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">
                       Payment protection
                     </p>
-                    <h3 class="mt-1 movabi-card-title">
+                    <h3 class="mt-1 text-sm font-bold text-slate-900">
                       {{ paymentProtectionTitle() }}
                     </h3>
                     <p class="mt-1 text-xs font-semibold text-slate-700 leading-snug">
@@ -338,10 +351,10 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                       Handover PIN
                     </p>
                     <div class="mt-2 flex items-center justify-between gap-3">
-                      <h3 class="movabi-card-title">
+                      <h3 class="text-sm font-bold text-slate-900">
                         Complete with PIN
                       </h3>
-                      <div class="px-4 py-2 rounded-2xl bg-white text-2xl font-display font-black tracking-[0.35em] text-slate-950 border border-emerald-100">
+                      <div class="px-4 py-2 rounded-2xl bg-white text-xl font-display font-bold tracking-[0.35em] text-slate-950 border border-emerald-100">
                         {{ completionPinForCustomer() }}
                       </div>
                     </div>
@@ -351,20 +364,19 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                   </div>
                 </div>
               </div>
-            }
 
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
               <div class="grid grid-cols-2 gap-3">
                   <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
-                  <p class="text-lg font-display font-bold text-slate-900">
+                  <p class="text-base font-display font-semibold text-slate-900">
                     {{ config.formatCurrency(getErrandServiceFee()) }}
                   </p>
                 </div>
 
                   <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
-                  <p class="text-lg font-display font-bold text-slate-900">
+                  <p class="text-base font-display font-semibold text-slate-900">
                     {{ config.formatCurrency(getErrandItemBudget()) }}
                   </p>
                 </div>
@@ -372,7 +384,7 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                 @if (getErrandReleasedAmount() > 0) {
                   <div class="col-span-2 movabi-card-compact bg-emerald-50 border-emerald-100 shadow-none">
                     <p class="text-[9px] font-bold text-emerald-700 uppercase tracking-widest mb-1">Returned to wallet</p>
-                    <p class="text-lg font-display font-bold text-emerald-700">
+                    <p class="text-base font-display font-semibold text-emerald-700">
                       {{ config.formatCurrency(getErrandReleasedAmount()) }}
                     </p>
                   </div>
@@ -512,8 +524,8 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                   <ion-icon name="navigate" class="text-xl"></ion-icon>
                 </div>
                 <div>
-                  <h3 class="movabi-card-title">{{ routeCardTitle() }}</h3>
-                  <p class="movabi-card-subtitle">{{ routeCardSubtitle() }}</p>
+                  <h3 class="text-sm font-bold text-slate-900">{{ routeCardTitle() }}</h3>
+                  <p class="text-xs text-slate-500">{{ routeCardSubtitle() }}</p>
                 </div>
               </div>
 
@@ -536,21 +548,15 @@ type SheetState = 'collapsed' | 'medium' | 'expanded';
                     <p class="text-xs font-semibold text-slate-500 mb-1">{{ destinationLabel() }}</p>
                     <h3 class="text-sm font-bold text-slate-900 leading-snug">
                       {{ booking()?.dropoff_address }}
-                    </h3>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            @if (details()) {
+                    </h3>@if (details()) {
               <div class="pt-2">
                 <div class="flex items-center gap-2 mb-4">
                   <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                     <ion-icon name="sparkles-outline" class="text-xl"></ion-icon>
                   </div>
                   <div>
-                  <h3 class="movabi-card-title">Details</h3>
-                  <p class="movabi-card-subtitle">More info</p>
+                  <h3 class="text-sm font-bold text-slate-900">Details</h3>
+                  <p class="text-xs text-slate-500">More info</p>
                   </div>
                 </div>
 
@@ -668,6 +674,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private alertCtrl = inject(AlertController);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
+    private routingService = inject(RoutingService);
     private nativePlatform = inject(NativePlatformService);
 
     private localSearchFallbackExpiresAt: number | null = null;
@@ -704,6 +711,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private dragStartY: number | null = null;
     private dragDeltaY = 0;
     private lastNotifiedStatus: string | null = null;
+    
+    // Map control properties
+    private userIsInteracting = false;
+    private lastUserInteractionTime = 0;
+    autoFollowEnabled = true;
+    private readonly USER_INTERACTION_TIMEOUT = 30000; // 30 seconds
     private lastStatusEventAt = signal<Date | null>(null);
 
     private pollingInterval?: ReturnType<typeof setInterval>;
@@ -742,22 +755,15 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     sheetHeightClass(): string {
         switch (this.sheetState()) {
-            case 'collapsed':
-                return 'h-[28vh]';
             case 'expanded':
-                return 'h-[86vh]';
+                return 'h-[80vh]';
             default:
-                return 'h-[52vh]';
+                return 'h-[40vh]';
         }
     }
 
     cycleSheetState(): void {
         const current = this.sheetState();
-        if (current === 'collapsed') {
-            this.setSheetState('medium');
-            return;
-        }
-
         this.setSheetState(current === 'expanded' ? 'medium' : 'expanded');
     }
 
@@ -842,11 +848,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.dragStartY = null;
         this.dragDeltaY = 0;
 
-        setTimeout(() => this.fitTrackingBounds(), 80);
+        // Don't auto-fit bounds on sheet drag - let user control the map
+        this.onMapUserInteraction();
     }
 
     private moveSheetState(direction: 1 | -1): void {
-        const states: SheetState[] = ['collapsed', 'medium', 'expanded'];
+        const states: SheetState[] = ['medium', 'expanded'];
         const currentIndex = states.indexOf(this.sheetState());
         const nextIndex = Math.max(0, Math.min(states.length - 1, currentIndex + direction));
         this.setSheetState(states[nextIndex]);
@@ -855,7 +862,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private setSheetState(state: SheetState): void {
         this.sheetState.set(state);
         this.detailsExpanded.set(state === 'expanded');
-        setTimeout(() => this.fitTrackingBounds(), 80);
+        // Don't auto-fit bounds on sheet state change - let user control the map
     }
 
     private async notifyStatusChange(previousStatus: string, booking: Booking): Promise<void> {
@@ -1371,7 +1378,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             .map((part) => String(part || '').trim())
             .filter(Boolean);
 
-        return parts.length ? parts.join(' â€¢ ') : 'Transport confirmed';
+        return parts.length ? parts.join(' • ') : 'Transport confirmed';
     }
 
     private getVehicleColorLabel(vehicle: Vehicle): string {
@@ -1393,7 +1400,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const capacity = String(vehicle.capacity || '').trim();
         const label = type ? type.replace(/\b\w/g, (char) => char.toUpperCase()) : 'Vehicle';
 
-        return capacity ? `${label} â€¢ ${capacity}` : label;
+        return capacity ? `${label} • ${capacity}` : label;
     }
 
     canManuallyCancel(): boolean {
@@ -1927,13 +1934,22 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     label: this.mapDestinationMarkerLabel()
                 });
 
+                // Draw route between pickup and dropoff
+                this.drawRouteBetweenPoints(
+                    { lat: pickupLat, lng: pickupLng },
+                    { lat: dropLat, lng: dropLng }
+                );
+
                 this.fitTrackingBounds({ lat: pickupLat, lng: pickupLng }, [
                     [Math.min(pickupLng, dropLng), Math.min(pickupLat, dropLat)],
                     [Math.max(pickupLng, dropLng), Math.max(pickupLat, dropLat)]
                 ]);
             }
 
-            this.fitTrackingBounds();
+            // Only fit bounds on initial load, not on subsequent updates
+            if (this.lastDriverCameraUpdateAt === 0) {
+                this.fitTrackingBounds();
+            }
         }, 300);
     }
 
@@ -1941,25 +1957,37 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.locationSubscription?.unsubscribe();
         this.lastDriverCameraUpdateAt = 0;
 
+        // Get latest location first, then subscribe for updates
         void this.locationService.getLatestDriverLocation(driverId).then((location) => {
             if (location) {
                 this.updateDriverMarker(location);
             }
+        }).catch((error) => {
+            console.warn('[booking-tracking] Failed to get latest driver location:', error);
         });
 
+        // Subscribe to real-time location updates
         this.locationSubscription = this.locationService.subscribeToDriverLocation(
             driverId,
             (location: DriverLocation) => {
+                console.log('[booking-tracking] Driver location update received:', location);
                 this.updateDriverMarker(location);
             }
         );
+
+        console.log('[booking-tracking] Subscribed to driver location updates for driver:', driverId);
     }
 
     private updateDriverMarker(location: DriverLocation): void {
         const b = this.booking();
 
-        if (!b || !this.mapComponent) return;
+        if (!b || !this.mapComponent) {
+            console.warn('[booking-tracking] Cannot update driver marker - missing booking or map component');
+            return;
+        }
+        
         if (this.isTerminalTrackingStatus(String(b.status || ''))) {
+            console.log('[booking-tracking] Clearing driver state - booking is in terminal status:', b.status);
             this.clearDriverLiveState();
             return;
         }
@@ -1967,7 +1995,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const lat = Number(location.lat);
         const lng = Number(location.lng);
 
-        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) return;
+        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) {
+            console.warn('[booking-tracking] Invalid driver location coordinates:', location);
+            return;
+        }
+
+        console.log('[booking-tracking] Updating driver marker to:', { lat, lng, heading: location.heading });
 
         this.mapComponent.addOrUpdateMarker({
             id: 'driver',
@@ -1979,10 +2012,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.driverLastSeenAt.set(new Date());
 
+        // Smart auto-follow: only update camera if user hasn't interacted recently
         const now = Date.now();
-        if (now - this.lastDriverCameraUpdateAt >= 15000) {
-            this.fitTrackingBounds({ lat, lng });
-            this.lastDriverCameraUpdateAt = now;
+        if (this.autoFollowEnabled && (now - this.lastUserInteractionTime) > this.USER_INTERACTION_TIMEOUT) {
+            if (now - this.lastDriverCameraUpdateAt >= 15000) {
+                this.fitTrackingBounds({ lat, lng });
+                this.lastDriverCameraUpdateAt = now;
+            }
         }
 
         const routeTarget = this.getDriverRouteTarget(b);
@@ -2430,5 +2466,55 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private isValidCoordinate(value: number): boolean {
         return Number.isFinite(value) && !Number.isNaN(value);
+    }
+
+    recenterMap(): void {
+        console.log('[booking-tracking] Recentering map and enabling auto-follow');
+        this.autoFollowEnabled = true;
+        this.lastUserInteractionTime = 0;
+        this.lastDriverCameraUpdateAt = 0;
+        
+        // Immediately fit bounds to current positions
+        this.fitTrackingBounds();
+    }
+
+    onMapUserInteraction(): void {
+        console.log('[booking-tracking] User interacting with map, disabling auto-follow');
+        this.userIsInteracting = true;
+        this.lastUserInteractionTime = Date.now();
+        this.autoFollowEnabled = false;
+    }
+
+    private async drawRouteBetweenPoints(
+        from: { lat: number; lng: number },
+        to: { lat: number; lng: number }
+    ): Promise<void> {
+        if (!this.mapComponent) return;
+
+        try {
+            const route = await this.routingService.getRoute(from, to).toPromise();
+            if (route && route.geometry) {
+                this.mapComponent.drawRoute(route);
+                console.log("[booking-tracking] Route drawn successfully");
+            } else {
+                throw new Error("No route geometry returned");
+            }
+        } catch (error) {
+            console.warn("[booking-tracking] Failed to draw route, using fallback line:", error);
+            // Draw simple fallback route object
+            const fallbackRoute = {
+                geometry: {
+                    type: "LineString",
+                    coordinates: [
+                        [from.lng, from.lat],
+                        [to.lng, to.lat]
+                    ]
+                },
+                distanceMeters: 0,\n                durationSeconds: 0
+            };
+            this.mapComponent.drawRoute(fallbackRoute);
+        }
+    });
+        }
     }
 }

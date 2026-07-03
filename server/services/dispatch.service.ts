@@ -535,7 +535,7 @@ export class DispatchService {
 
         let query = this.supabase
             .from('profiles')
-            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled')
+            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled, vehicles!inner(vehicle_class)')
             .eq('role', 'driver')
             .eq('is_available', true)
             .eq('is_online', true)
@@ -566,7 +566,17 @@ export class DispatchService {
             return [];
         }
 
-        return ((data || []) as NearbyDriver[]).sort((a, b) => {
+        // Filter drivers by vehicle compatibility
+        const compatibleDrivers = ((data || []) as any[]).filter(driver => {
+            const vehicleClass = driver.vehicles?.vehicle_class;
+            const serviceType = job.service_slug;
+            
+            return this.isVehicleCompatible(vehicleClass, serviceType);
+        });
+
+        console.log(`[DispatchService] Vehicle compatibility filter: ${data?.length || 0} total drivers -> ${compatibleDrivers.length} compatible drivers for service ${job.service_slug}`);
+
+        return (compatibleDrivers as NearbyDriver[]).sort((a, b) => {
             const scoreA = distanceScore(job, a);
             const scoreB = distanceScore(job, b);
 
@@ -603,6 +613,28 @@ export class DispatchService {
             .lte('lng', lng + radius);
 
         return { demand: demand || 0, supply: supply || 0 };
+    }
+
+    private isVehicleCompatible(vehicleClass: string | null | undefined, serviceType: string | null | undefined): boolean {
+        if (!vehicleClass || !serviceType) return false;
+
+        // Bike drivers can receive bike and small delivery/errand jobs
+        if (vehicleClass === 'bike') {
+            return ['delivery', 'errand'].includes(serviceType);
+        }
+
+        // Car drivers can receive rides and car-compatible delivery/errand jobs
+        if (vehicleClass === 'car' || vehicleClass === 'standard') {
+            return ['ride', 'delivery', 'errand'].includes(serviceType);
+        }
+
+        // Van drivers can receive moving and large delivery jobs
+        if (vehicleClass === 'van' || vehicleClass === 'large_van') {
+            return ['van_moving', 'delivery'].includes(serviceType);
+        }
+
+        // Default to compatible for unknown vehicle classes
+        return true;
     }
 }
 

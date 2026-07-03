@@ -1,6 +1,7 @@
 import { Injectable, effect, inject, signal } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { SupabaseService } from './supabase/supabase.service';
 import { AuthService } from './auth/auth.service';
 import { Notification } from '../../shared/models/booking.model';
@@ -220,6 +221,55 @@ export class NotificationService {
       window.setTimeout(() => void context.close?.(), 400);
     } catch (error) {
       console.warn('[NotificationService] Could not play notification tone', error);
+    }
+  }
+
+  async showLocalNotification(title: string, body: string, data?: any): Promise<void> {
+    if (!Capacitor.isNativePlatform()) {
+      console.log('[NotificationService] Web platform - using in-app notification only');
+      return;
+    }
+
+    try {
+      // Check permissions first
+      const permissionStatus = await LocalNotifications.checkPermissions();
+      console.log('[NotificationService] Local notification permission status:', permissionStatus);
+
+      if (permissionStatus.display !== 'granted') {
+        const requested = await LocalNotifications.requestPermissions();
+        console.log('[NotificationService] Local notification permission requested:', requested);
+        
+        if (requested.display !== 'granted') {
+          console.warn('[NotificationService] Local notification permission denied');
+          return;
+        }
+      }
+
+      const notificationId = Date.now().toString();
+      
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: parseInt(notificationId),
+            title,
+            body,
+            extra: data || {},
+            sound: 'default',
+            smallIcon: 'ic_stat_movabi',
+            iconColor: '#F59E0B',
+            schedule: { at: new Date() }
+          }
+        ]
+      });
+
+      console.log('[NotificationService] Local notification scheduled:', {
+        id: notificationId,
+        title,
+        body,
+        hasData: !!data
+      });
+    } catch (error) {
+      console.error('[NotificationService] Failed to show local notification:', error);
     }
   }
 

@@ -69,27 +69,58 @@ export class NotificationService {
     const appId = process.env.ONESIGNAL_APP_ID || '952c6d19-656c-4dab-90f3-6e253e2c9151';
     const apiKey = process.env.ONESIGNAL_REST_API_KEY;
 
+    console.log('[Notification] Preparing OneSignal push:', {
+      targetUserId: payload.userId,
+      title: payload.title,
+      body: payload.body,
+      type: payload.type,
+      hasApiKey: !!apiKey,
+      appId: appId
+    });
+
     if (!apiKey) {
       console.warn('[OneSignal] REST API key missing; push skipped.');
       return;
     }
 
+    // Validate user has active subscriptions before sending
+    const validation = await this.validateUserPushSubscription(payload.userId);
+    console.log('[Notification] User subscription validation:', {
+      userId: payload.userId,
+      hasSubscription: validation.hasSubscription,
+      subscriptionCount: validation.subscriptions.length,
+      details: validation.details
+    });
+
+    if (!validation.hasSubscription) {
+      console.warn('[Notification] Skipping push - user has no active subscriptions:', payload.userId);
+      return;
+    }
+
     try {
+      const requestBody = {
+        app_id: appId,
+        include_external_user_ids: [payload.userId],
+        channel_for_external_user_ids: 'push',
+        headings: { en: payload.title },
+        contents: { en: payload.body },
+        data: payload.data || {},
+        android_channel_id: process.env.ONESIGNAL_ANDROID_CHANNEL_ID || undefined
+      };
+
+      console.log('[Notification] Sending OneSignal request:', {
+        url: 'https://onesignal.com/api/v1/notifications',
+        targetUserId: payload.userId,
+        requestBody: { ...requestBody, /* omit sensitive data in logs */ }
+      });
+
       const response = await fetch('https://onesignal.com/api/v1/notifications', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Basic ${apiKey}`
         },
-        body: JSON.stringify({
-          app_id: appId,
-          include_external_user_ids: [payload.userId],
-          channel_for_external_user_ids: 'push',
-          headings: { en: payload.title },
-          contents: { en: payload.body },
-          data: payload.data || {},
-          android_channel_id: process.env.ONESIGNAL_ANDROID_CHANNEL_ID || undefined
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const responseText = await response.text();
@@ -102,25 +133,31 @@ export class NotificationService {
       }
 
       if (!response.ok) {
-        console.warn('[Notification] OneSignal push failed:', {
+        console.error('[Notification] OneSignal push failed:', {
           status: response.status,
           statusText: response.statusText,
           body: responseText,
           parsedData: responseData,
           userId: payload.userId,
-          appId: appId
+          appId: appId,
+          errorCode: responseData?.errors?.[0]?.code || 'unknown'
         });
       } else {
-        console.log('[Notification] OneSignal push accepted:', {
+        console.log('[Notification] OneSignal push accepted successfully:', {
           status: response.status,
           body: responseText,
           parsedData: responseData,
           userId: payload.userId,
-          recipients: responseData?.recipients || 'unknown'
+          recipients: responseData?.recipients || 'unknown',
+          notificationId: responseData?.id || 'unknown'
         });
       }
     } catch (error: any) {
-      console.warn('[Notification] OneSignal push error:', error?.message || error);
+      console.error('[Notification] OneSignal push error:', {
+        message: error?.message || error,
+        stack: error?.stack,
+        userId: payload.userId
+      });
     }
   }
 

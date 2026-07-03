@@ -40,12 +40,14 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { DriverService } from '../../../../core/services/driver/driver.service';
 import { BookingService } from '../../../../core/services/booking/booking.service';
+import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { BookingStatus, DriverLocation, Booking } from '../../../../shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import { CommunicationPanelComponent } from '../../../../shared/ui/communication-panel';
 import { MapComponent } from '../../../../shared/components/map/map.component';
 import { RoutingService } from '../../../../core/services/maps/routing.service';
 import { LocationService } from '../../../../core/services/logistics/location.service';
+import { GeocodingService } from '../../../../core/services/maps/geocoding.service';
 import { ServiceTypeSlug } from '../../../../core/models/maps/map-marker.model';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 
@@ -209,17 +211,48 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
                 </div>
 
                 <div class="flex-1 space-y-6 min-w-0">
-                  <button type="button" (click)="openMap(job()?.pickup_address)" class="block text-left w-full">
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pickup</p>
-                    <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.pickup_address || 'Pickup unavailable' }}</h3>
-                    <p class="text-xs text-blue-600 font-bold mt-1">Open map</p>
-                  </button>
+                  @if (!isNavigating()) {
+                    <button type="button" (click)="startNavigation('pickup')" class="block text-left w-full">
+                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pickup</p>
+                      <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.pickup_address || 'Pickup unavailable' }}</h3>
+                      <p class="text-xs text-blue-600 font-bold mt-1">Start navigation</p>
+                    </button>
 
-                  <button type="button" (click)="openMap(job()?.dropoff_address)" class="block text-left w-full">
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Destination</p>
-                    <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.dropoff_address || 'Destination unavailable' }}</h3>
-                    <p class="text-xs text-emerald-600 font-bold mt-1">Open map</p>
-                  </button>
+                    <button type="button" (click)="startNavigation('dropoff')" class="block text-left w-full">
+                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Destination</p>
+                      <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.dropoff_address || 'Destination unavailable' }}</h3>
+                      <p class="text-xs text-emerald-600 font-bold mt-1">Start navigation</p>
+                    </button>
+                  } @else {
+                    <div class="space-y-4">
+                      <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-sm font-bold text-blue-900">
+                              Navigating to {{ navigationMode() === 'pickup' ? 'Pickup' : 'Destination' }}
+                            </p>
+                            @if (currentRoute()) {
+                              <p class="text-xs text-blue-700 mt-1">
+                                {{ formatDistance(currentRoute().distanceMeters || 0) }} • 
+                                {{ formatDuration(currentRoute().durationSeconds || 0) }} mins
+                              </p>
+                            }
+                          </div>
+                          <button type="button" (click)="stopNavigation()" 
+                                  class="bg-red-500 text-white px-3 py-1 rounded-lg text-xs font-medium">
+                            Stop
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="flex gap-2">
+                        <button type="button" (click)="openExternalMaps(navigationMode() === 'pickup' ? job()?.pickup_address : job()?.dropoff_address)" 
+                                class="flex-1 text-center bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium">
+                          Open in Google Maps
+                        </button>
+                      </div>
+                    </div>
+                  }
                 </div>
               </div>
             </div>
@@ -358,12 +391,14 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
     public route = inject(ActivatedRoute);
     private driverService = inject(DriverService);
     private bookingService = inject(BookingService);
+    private supabase = inject(SupabaseService);
     public nav = inject(NavController);
     private alertCtrl = inject(AlertController);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private routing = inject(RoutingService);
     private locationService = inject(LocationService);
+    private geocoding = inject(GeocodingService);
     private config = inject(AppConfigService);
 
     job = this.driverService.activeJob;
@@ -374,6 +409,15 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
     private locationSubscription?: RealtimeChannel;
     private routeId: string | null = null;
     private mapReady = false;
+
+    // Navigation mode properties
+    navigationMode = signal<'pickup' | 'dropoff' | null>(null);
+    isNavigating = signal(false);
+    currentRoute = signal<any>(null);
+    driverPosition = signal<{ lat: number; lng: number } | null>(null);
+    navigationWatchId: number | null = null;
+    lastRouteUpdate = 0;
+    private readonly ROUTE_UPDATE_THRESHOLD = 100; // meters
 
     constructor() {
         addIcons({
@@ -405,6 +449,12 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
 
     ngOnDestroy() {
         void this.locationSubscription?.unsubscribe();
+        
+        // Clean up navigation watch
+        if (this.navigationWatchId !== null) {
+            navigator.geolocation.clearWatch(this.navigationWatchId);
+            this.navigationWatchId = null;
+        }
     }
 
     private async loadJob() {
@@ -869,7 +919,80 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
         return this.config.formatCurrency(Number(amount || 0));
     }
 
-    openMap(address?: string | null) {
+    formatDistance(meters: number): string {
+        const km = Math.round(meters / 10) / 100;
+        return `${km} km`;
+    }
+
+    formatDuration(seconds: number): string {
+        return `${Math.round(seconds / 60)}`;
+    }
+
+    // In-app navigation methods
+    async startNavigation(type: 'pickup' | 'dropoff') {
+        const currentJob = this.job();
+        if (!currentJob) {
+            await this.showToast('Job details not available.', 'warning');
+            return;
+        }
+
+        const address = type === 'pickup' ? currentJob.pickup_address : currentJob.dropoff_address;
+        if (!address) {
+            await this.showToast(`${type === 'pickup' ? 'Pickup' : 'Dropoff'} address is unavailable.`, 'warning');
+            return;
+        }
+
+        // Get current driver position
+        const currentPosition = await this.getCurrentDriverPosition();
+        if (!currentPosition) {
+            await this.showToast('Unable to get your current location.', 'warning');
+            return;
+        }
+
+        // Geocode the destination address
+        const destination = await this.geocodeAddress(address);
+        if (!destination) {
+            await this.showToast('Unable to locate destination address.', 'warning');
+            return;
+        }
+
+        console.log(`[Navigation] Starting ${type} navigation:`, {
+            from: currentPosition,
+            to: destination
+        });
+
+        this.navigationMode.set(type);
+        this.isNavigating.set(true);
+        this.driverPosition.set(currentPosition);
+
+        // Get initial route
+        await this.updateNavigationRoute(currentPosition, destination);
+
+        // Start watching driver position
+        this.startNavigationWatch(destination);
+
+        // Update map to show navigation view
+        await this.updateNavigationMap();
+    }
+
+    stopNavigation() {
+        console.log('[Navigation] Stopping navigation');
+        
+        if (this.navigationWatchId !== null) {
+            navigator.geolocation.clearWatch(this.navigationWatchId);
+            this.navigationWatchId = null;
+        }
+
+        this.navigationMode.set(null);
+        this.isNavigating.set(false);
+        this.currentRoute.set(null);
+        this.driverPosition.set(null);
+
+        // Reset map to normal view
+        this.resetMapToNormalView();
+    }
+
+    openExternalMaps(address?: string | null) {
         const safeAddress = String(address || '').trim();
 
         if (!safeAddress) {
@@ -878,6 +1001,187 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeAddress)}`, '_blank');
+    }
+
+    private async getCurrentDriverPosition(): Promise<{ lat: number; lng: number } | null> {
+        return new Promise((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+                },
+                (error) => {
+                    console.warn('[Navigation] Could not get current position:', error);
+                    resolve(null);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 30000
+                }
+            );
+        });
+    }
+
+    private async geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+        try {
+            const result = await this.geocoding.geocodeAddress(address).toPromise();
+            if (result && result.length > 0) {
+                return {
+                    lat: result[0].lat,
+                    lng: result[0].lng
+                };
+            }
+        } catch (error) {
+            console.error('[Navigation] Geocoding failed:', error);
+        }
+        return null;
+    }
+
+    private async updateNavigationRoute(from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
+        try {
+            const route = await this.routing.getRoute(from, to).toPromise();
+            if (route) {
+                this.currentRoute.set(route);
+                console.log('[Navigation] Route updated:', {
+                    distance: route.distanceMeters,
+                    duration: route.durationSeconds
+                });
+            }
+        } catch (error) {
+            console.error('[Navigation] Failed to get route:', error);
+        }
+    }
+
+    private startNavigationWatch(destination: { lat: number; lng: number }) {
+        this.navigationWatchId = navigator.geolocation.watchPosition(
+            async (position) => {
+                const newPosition = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+
+                this.driverPosition.set(newPosition);
+
+                // Update driver location in database for customer tracking
+                await this.updateDriverLocationInDatabase(
+                    newPosition.lat,
+                    newPosition.lng,
+                    position.coords.heading || undefined
+                );
+
+                // Update route if driver has moved enough distance
+                const lastPos = this.driverPosition();
+                if (lastPos) {
+                    const distance = this.locationService.calculateDistance(
+                        lastPos.lat, lastPos.lng,
+                        newPosition.lat, newPosition.lng
+                    );
+
+                    const now = Date.now();
+                    if (distance > this.ROUTE_UPDATE_THRESHOLD || 
+                        (now - this.lastRouteUpdate) > 30000) { // Update every 30 seconds minimum
+                        await this.updateNavigationRoute(newPosition, destination);
+                        this.lastRouteUpdate = now;
+                        await this.updateNavigationMap();
+                    }
+                }
+            },
+            (error) => {
+                console.error('[Navigation] Position watch error:', error);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 5000,
+                timeout: 10000
+            }
+        );
+    }
+
+    private async updateDriverLocationInDatabase(lat: number, lng: number, heading?: number) {
+        try {
+            // Direct database update to driver_locations table for customer tracking
+            const { data: { user } } = await this.supabase.client.auth.getUser();
+            if (!user?.id) return;
+
+            const payload = {
+                driver_id: user.id,
+                lat,
+                lng,
+                heading: heading || null,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await this.supabase.client
+                .from('driver_locations')
+                .upsert(payload, { onConflict: 'driver_id' });
+
+            if (error) {
+                console.error('[Navigation] Failed to update driver location:', error);
+            }
+        } catch (error) {
+            console.error('[Navigation] Failed to update driver location:', error);
+        }
+    }
+
+    private async updateNavigationMap() {
+        if (!this.mapComponent || !this.driverPosition() || !this.currentRoute()) return;
+
+        const driverPos = this.driverPosition()!;
+        const route = this.currentRoute()!;
+        const currentJob = this.job();
+        if (!currentJob) return;
+
+        // Clear existing markers
+        this.mapComponent.removeMarker('driver');
+        this.mapComponent.removeMarker('destination');
+
+        // Add driver marker
+        this.mapComponent.addOrUpdateMarker({
+            id: 'driver',
+            kind: 'driver',
+            coordinates: driverPos,
+            serviceType: currentJob.service_slug as ServiceTypeSlug,
+            heading: 0 // Will be updated with actual heading
+        });
+
+        // Add destination marker
+        const destination = this.navigationMode() === 'pickup' 
+            ? await this.geocodeAddress(currentJob.pickup_address || '')
+            : await this.geocodeAddress(currentJob.dropoff_address || '');
+
+        if (destination) {
+            this.mapComponent.addOrUpdateMarker({
+                id: 'destination',
+                kind: 'pickup',
+                coordinates: destination,
+                serviceType: currentJob.service_slug as ServiceTypeSlug
+            });
+        }
+
+        // Draw route
+        if (route.geometry) {
+            this.mapComponent.drawRoute(route);
+        }
+
+        // Fit map to show route
+        if (route.bounds) {
+            this.mapComponent.fitBounds(route.bounds, { padding: 50 });
+        }
+    }
+
+    private resetMapToNormalView() {
+        if (!this.mapComponent) return;
+
+        // Clear navigation markers
+        this.mapComponent.removeMarker('driver');
+        this.mapComponent.removeMarker('destination');
+        this.mapComponent.clearRoute();
+
+        // Reset to original job view
+        this.initMap();
     }
 
     private hasValidCoords(coords: { lat: number; lng: number }): boolean {

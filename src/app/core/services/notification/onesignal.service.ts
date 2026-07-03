@@ -149,25 +149,53 @@ export class OneSignalService {
 
     async getSubscriptionId(): Promise<string | null> {
         const oneSignal = await this.getOneSignal().catch(() => null);
-        if (!oneSignal) return null;
+        if (!oneSignal) {
+            console.warn('[OneSignal] getSubscriptionId: OneSignal instance not available');
+            return null;
+        }
 
         try {
-            const id =
-                oneSignal?.User?.PushSubscription?.id ||
-                oneSignal?.User?.pushSubscription?.id ||
-                (typeof oneSignal?.User?.PushSubscription?.getId === 'function'
-                    ? oneSignal.User.PushSubscription.getId()
-                    : null) ||
-                (typeof oneSignal?.User?.pushSubscription?.getId === 'function'
-                    ? oneSignal.User.pushSubscription.getId()
-                    : null) ||
-                (typeof oneSignal?.getUserId === 'function'
-                    ? await oneSignal.getUserId()
-                    : null);
+            console.log('[OneSignal] Getting subscription ID, checking multiple paths...');
+            
+            const subscription = oneSignal?.User?.PushSubscription || oneSignal?.User?.pushSubscription;
+            console.log('[OneSignal] Subscription object found:', !!subscription);
+            
+            let id = '';
+            
+            // Try direct ID property
+            if (subscription?.id) {
+                id = subscription.id;
+                console.log('[OneSignal] Found subscription ID via direct property:', id);
+            }
+            
+            // Try getId method
+            if (!id && typeof subscription?.getId === 'function') {
+                id = await subscription.getId();
+                console.log('[OneSignal] Found subscription ID via getId():', id);
+            }
+            
+            // Try getUserId as fallback
+            if (!id && typeof oneSignal?.getUserId === 'function') {
+                id = await oneSignal.getUserId();
+                console.log('[OneSignal] Using getUserId as fallback:', id);
+            }
 
             const value = String(id || '').trim();
-            return value && !value.startsWith('local-') ? value : null;
-        } catch {
+            const finalId = value && !value.startsWith('local-') ? value : null;
+            
+            if (finalId) {
+                console.log('[OneSignal] Subscription ID retrieved successfully:', {
+                    subscriptionId: finalId,
+                    platform: this.platform,
+                    userId: this.loggedInUserId
+                });
+                return finalId;
+            } else {
+                console.warn('[OneSignal] No valid subscription ID found - user may not have granted permission');
+                return null;
+            }
+        } catch (error) {
+            console.error('[OneSignal] getSubscriptionId failed:', error);
             return null;
         }
     }
@@ -356,11 +384,24 @@ export class OneSignalService {
     }
 
     private async saveSubscription(subscriptionId: string): Promise<void> {
-        if (!this.loggedInUserId || !subscriptionId) return;
+        if (!this.loggedInUserId || !subscriptionId) {
+            console.warn('[OneSignal] Cannot save subscription - missing userId or subscriptionId', {
+                userId: this.loggedInUserId,
+                subscriptionId: !!subscriptionId
+            });
+            return;
+        }
+
+        console.log('[OneSignal] Saving push subscription:', {
+            userId: this.loggedInUserId,
+            subscriptionId,
+            platform: this.platform,
+            timestamp: new Date().toISOString()
+        });
 
         const now = new Date().toISOString();
 
-        const { error } = await this.supabase
+        const { error, data } = await this.supabase
             .from('device_push_tokens')
             .upsert(
                 {
@@ -375,10 +416,25 @@ export class OneSignalService {
                     updated_at: now
                 },
                 { onConflict: 'token' }
-            );
+            )
+            .select()
+            .single();
 
         if (error) {
-            console.warn('[OneSignal] could not save subscription', error);
+            console.error('[OneSignal] Failed to save subscription to database:', {
+                error: error.message,
+                code: error.code,
+                details: error.details,
+                userId: this.loggedInUserId,
+                subscriptionId
+            });
+        } else {
+            console.log('[OneSignal] Subscription saved successfully:', {
+                subscriptionId,
+                userId: this.loggedInUserId,
+                platform: this.platform,
+                dbRecord: data
+            });
         }
     }
 
