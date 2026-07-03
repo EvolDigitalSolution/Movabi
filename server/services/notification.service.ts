@@ -92,15 +92,80 @@ export class NotificationService {
         })
       });
 
+      const responseText = await response.text();
+      let responseData: any = {};
+      
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        // Response is not JSON, use as-is
+      }
+
       if (!response.ok) {
-        const text = await response.text();
-        console.warn('[Notification] OneSignal push failed:', response.status, text);
+        console.warn('[Notification] OneSignal push failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText,
+          parsedData: responseData,
+          userId: payload.userId,
+          appId: appId
+        });
       } else {
-        const text = await response.text();
-        console.log('[Notification] OneSignal push accepted:', text);
+        console.log('[Notification] OneSignal push accepted:', {
+          status: response.status,
+          body: responseText,
+          parsedData: responseData,
+          userId: payload.userId,
+          recipients: responseData?.recipients || 'unknown'
+        });
       }
     } catch (error: any) {
       console.warn('[Notification] OneSignal push error:', error?.message || error);
+    }
+  }
+
+  /**
+   * Check if user has active push subscriptions
+   */
+  static async validateUserPushSubscription(userId: string): Promise<{
+    hasSubscription: boolean;
+    subscriptions: any[];
+    details: any;
+  }> {
+    try {
+      const { data: subscriptions, error } = await supabaseAdmin
+        .from('device_push_tokens')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('enabled', true);
+
+      if (error) {
+        console.warn('[Notification] Failed to validate push subscription:', error);
+        return { hasSubscription: false, subscriptions: [], details: { error: error.message } };
+      }
+
+      const hasSubscription = Array.isArray(subscriptions) && subscriptions.length > 0;
+      
+      console.log('[Notification] Push subscription validation:', {
+        userId,
+        hasSubscription,
+        subscriptionCount: subscriptions?.length || 0,
+        platforms: subscriptions?.map(s => s.platform) || [],
+        subscriptionIds: subscriptions?.map(s => s.subscription_id) || []
+      });
+
+      return {
+        hasSubscription,
+        subscriptions: subscriptions || [],
+        details: {
+          userId,
+          subscriptionCount: subscriptions?.length || 0,
+          platforms: subscriptions?.map(s => ({ platform: s.platform, enabled: s.enabled, lastSeen: s.last_seen_at })) || []
+        }
+      };
+    } catch (error: any) {
+      console.error('[Notification] Error validating push subscription:', error);
+      return { hasSubscription: false, subscriptions: [], details: { error: error.message } };
     }
   }
 

@@ -621,4 +621,101 @@ router.post('/process-payouts', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Test Push Notification
+ */
+router.post('/test-push', async (req: Request, res: Response) => {
+  try {
+    const { userId, title, body } = req.body || {};
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+    if (!token) {
+      return res.status(401).json({ ok: false, error: 'Authentication required.' });
+    }
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+    if (authError || !authData.user?.id) {
+      return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
+    }
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'userId is required.' });
+    }
+
+    // Validate user has push subscription first
+    const subscriptionValidation = await NotificationService.validateUserPushSubscription(userId);
+    
+    if (!subscriptionValidation.hasSubscription) {
+      return res.json({
+        ok: true,
+        message: 'User has no active push subscriptions',
+        validation: subscriptionValidation,
+        oneSignalStatus: getOneSignalStatus()
+      });
+    }
+
+    // Send test push
+    const result = await NotificationService.sendNotification({
+      userId,
+      title: title || 'Test Push Notification',
+      body: body || 'This is a test push notification from Movabi admin.',
+      type: 'system_alert',
+      data: { 
+        test: true, 
+        sentBy: authData.user.id,
+        sentAt: new Date().toISOString()
+      }
+    });
+
+    res.json({
+      ok: true,
+      message: 'Test push notification sent',
+      result,
+      validation: subscriptionValidation,
+      oneSignalStatus: getOneSignalStatus()
+    });
+
+  } catch (error: any) {
+    console.error('[Admin] Test push failed:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * Validate User Push Subscription
+ */
+router.get('/validate-push-subscription/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+    if (!token) {
+      return res.status(401).json({ ok: false, error: 'Authentication required.' });
+    }
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+    if (authError || !authData.user?.id) {
+      return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
+    }
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: 'userId is required.' });
+    }
+
+    const validation = await NotificationService.validateUserPushSubscription(userId);
+
+    res.json({
+      ok: true,
+      validation,
+      oneSignalStatus: getOneSignalStatus()
+    });
+
+  } catch (error: any) {
+    console.error('[Admin] Validate push subscription failed:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 export default router;
