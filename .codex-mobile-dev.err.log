@@ -1915,3 +1915,1193 @@ websocket connection issues.
            ╵                                          [32m~~~~~~~~~~~~~~~[0m
 
 [39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:855:4:
+[37m      855 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:854:4:
+[37m      854 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:200:4:
+[37m      200 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:199:4:
+[37m      199 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: @else block must be last inside the conditional[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:411:24:
+[37m      411 │                       } [32m@else {[37m
+          ╵                         [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Conditional can only have one @else block[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:94:
+[37m      412 │ ...e.\n                      } [32m@else {[37m\n                        Y...
+          ╵                                [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:200:4:
+[37m      200 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:199:4:
+[37m      199 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: @else block must be last inside the conditional[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:411:24:
+[37m      411 │                       } [32m@else {[37m
+          ╵                         [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Conditional can only have one @else block[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:94:
+[37m      412 │ ...e.\n                      } [32m@else {[37m\n                        Y...
+          ╵                                [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:200:4:
+[37m      200 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:199:4:
+[37m      199 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:200:4:
+[37m      200 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:199:4:
+[37m      199 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: @else block must be last inside the conditional[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:411:24:
+[37m      411 │                       } [32m@else {[37m
+          ╵                         [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Conditional can only have one @else block[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:94:
+[37m      412 │ ...e.\n                      } [32m@else {[37m\n                        Y...
+          ╵                                [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:200:4:
+[37m      200 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:199:4:
+[37m      199 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: @else block must be last inside the conditional[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:411:24:
+[37m      411 │                       } [32m@else {[37m
+          ╵                         [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Conditional can only have one @else block[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:94:
+[37m      412 │ ...e.\n                      } [32m@else {[37m\n                        Y...
+          ╵                                [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate member "n" in class body[0m [duplicate-class-member]
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:200:4:
+[37m      200 │     [32mn[37m;
+          ╵     [32m^[0m
+
+  The original member "n" is here:
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:199:4:
+[37m      199 │     [32mn[37m;
+          ╵     [32m^[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: @else block must be last inside the conditional[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:411:24:
+[37m      411 │                       } [32m@else {[37m
+          ╵                         [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNG5002: Conditional can only have one @else block[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:412:94:
+[37m      412 │ ...e.\n                      } [32m@else {[37m\n                        Y...
+          ╵                                [32m~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:36:
+[37m      998 │ ...sStripeReady = computed(() => {[32m[37m\n        const state = this.st...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:37:
+[37m      998 │ ...StripeReady = computed(() => {\[32mn[37m        const state = this.str...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:81:
+[37m      998 │ ...t state = this.stripeUiState();[32m[37m\n        if (!state.accountId)...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:82:
+[37m      998 │ ... state = this.stripeUiState();\[32mn[37m        if (!state.accountId) ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:126:
+[37m      998 │ ...!state.accountId) return false;[32m[37m\n        return state.chargesE...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:127:
+[37m      998 │ ...state.accountId) return false;\[32mn[37m        return state.chargesEn...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:206:
+[37m      998 │ ... state.payoutsEnabled === true;[32m[37m\n    });\n\n    canDriverAccep...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:207:
+[37m      998 │ ...state.payoutsEnabled === true;\[32mn[37m    });\n\n    canDriverAccept...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:215:
+[37m      998 │ ...youtsEnabled === true;\n    });[32m[37m\n\n    canDriverAcceptTrips = ...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS7008: Member 'n' implicitly has an 'any' type.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:216:
+[37m      998 │ ...outsEnabled === true;\n    });\[32mn[37m\n    canDriverAcceptTrips = c...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:217:
+[37m      998 │ ...utsEnabled === true;\n    });\n[32m[37m\n    canDriverAcceptTrips = co...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2300: Duplicate identifier 'n'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:218:
+[37m      998 │ ...tsEnabled === true;\n    });\n\[32mn[37m    canDriverAcceptTrips = com...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:262:
+[37m      998 │ ...rAcceptTrips = computed(() => {[32m[37m\n        return this.isStripeR...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1434: Unexpected keyword or identifier.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:263:
+[37m      998 │ ...AcceptTrips = computed(() => {\[32mn[37m        return this.isStripeRe...
+          ╵                                   [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS1127: Invalid character.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:300:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();[32m[37m\n    });
+          ╵                                                            [32m^[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2663: Cannot find name 'n'. Did you mean the instance member 'this.n'?[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts:998:301:
+[37m      998 │ ...= computed(() => {\n        return this.isStripeReady();\[32mn[37m    });
+          ╵                                                             [32m^[0m
+
+[39m[22m

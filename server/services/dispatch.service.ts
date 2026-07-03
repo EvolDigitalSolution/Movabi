@@ -535,10 +535,12 @@ export class DispatchService {
 
         let query = this.supabase
             .from('profiles')
-            .select('id, lat, lng, is_available, is_online, last_active_at')
+            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled')
             .eq('role', 'driver')
             .eq('is_available', true)
             .eq('is_online', true)
+            .eq('charges_enabled', true)
+            .eq('payouts_enabled', true)
             .limit(MAX_NOTIFY_DRIVERS);
 
         if (tenantId) {
@@ -593,6 +595,8 @@ export class DispatchService {
             .eq('role', 'driver')
             .eq('is_available', true)
             .eq('is_online', true)
+            .eq('charges_enabled', true)
+            .eq('payouts_enabled', true)
             .gte('lat', lat - radius)
             .lte('lat', lat + radius)
             .gte('lng', lng - radius)

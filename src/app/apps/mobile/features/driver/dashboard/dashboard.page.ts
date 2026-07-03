@@ -408,6 +408,8 @@ type PassedJob = {
                         Go online to receive nearby ride, errand, delivery, and moving requests.
                       } @else if (!isAvailable()) {
                         You're online, but temporarily marked as busy.
+                      } @else if (!canDriverAcceptTrips()) {
+                        Complete Stripe Connect before going online.
                       } @else {
                         You're live and ready for new requests.
                       }
@@ -422,6 +424,7 @@ type PassedJob = {
                           [checked]="status() === 'online'"
                           (ionChange)="toggleStatus($event)"
                           color="success"
+                          [disabled]="!canDriverAcceptTrips()"
                         ></ion-toggle>
                       </div>
 
@@ -431,6 +434,7 @@ type PassedJob = {
                           [checked]="isAvailable()"
                           (ionChange)="toggleAvailability($event)"
                           color="primary"
+                          [disabled]="!canDriverAcceptTrips()"
                         ></ion-toggle>
                       </div>
                     </div>
@@ -999,6 +1003,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const state = this.stripeUiState();
         if (!state.accountId) return false;
         return state.chargesEnabled === true && state.payoutsEnabled === true;
+    });
+
+    canDriverAcceptTrips = computed(() => {
+        return this.isStripeReady();
     });
 
     isPayoutPanelOpen = computed(() => this.payoutPanelOpen() || !this.isStripeReady());
@@ -1904,6 +1912,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     async goOnline() {
+        if (!this.canDriverAcceptTrips()) {
+            this.showToast('Complete Stripe Connect before going online.', 'warning');
+            return;
+        }
+
         const profile = this.profileService.profile();
 
         this.driverService.onlineStatus.set('online');
@@ -1925,6 +1938,13 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const customEvent = event as CustomEvent;
         const available = !!customEvent.detail?.checked;
         const profile = this.profileService.profile();
+
+        if (available && !this.canDriverAcceptTrips()) {
+            this.showToast('Complete Stripe Connect before accepting trips.', 'warning');
+            // Force the toggle back to off
+            this.driverService.isAvailable.set(false);
+            return;
+        }
 
         this.driverService.isAvailable.set(available);
 
