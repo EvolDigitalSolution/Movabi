@@ -687,7 +687,8 @@ router.post('/test-push', async (req: Request, res: Response) => {
  */
 router.get('/validate-push-subscription/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const rawUserId = req.params['userId'];
+    const userId = Array.isArray(rawUserId) ? rawUserId[0] : rawUserId;
     const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
 
     if (!token) {
@@ -704,7 +705,7 @@ router.get('/validate-push-subscription/:userId', async (req: Request, res: Resp
       return res.status(400).json({ ok: false, error: 'userId is required.' });
     }
 
-    const validation = await NotificationService.validateUserPushSubscription(Array.isArray(userId) ? userId[0] : userId);
+    const validation = await NotificationService.validateUserPushSubscription(userId);
 
     res.json({
       ok: true,
