@@ -100,36 +100,42 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
           Request Details
         </ion-title>
       </ion-toolbar>
-    </ion-header>
 
-    <ion-content class="bg-slate-50">
-      <div class="w-full max-w-xl mx-auto px-3 py-3 space-y-4 pb-[calc(env(safe-area-inset-bottom)+8rem)] overflow-x-hidden">
-        @if (job()) {
-          <div class="sticky top-0 z-30 -mx-3 px-3 pt-2 pb-3 bg-slate-50/95 backdrop-blur border-b border-slate-100">
-            <div class="flex gap-2 overflow-x-auto scrollbar-hide">
+      @if (job()) {
+        <div class="bg-slate-50/95 backdrop-blur border-b border-slate-100">
+          <div class="w-full max-w-xl mx-auto px-4 py-2.5">
+            <div class="flex gap-3 overflow-x-auto scrollbar-hide overscroll-x-contain">
               @for (tab of requestTabs; track tab.id) {
                 <button
                   type="button"
                   (click)="setActiveRequestTab(tab.id)"
-                  class="relative shrink-0 rounded-full px-3.5 py-2 text-[11px] font-black tracking-wide border transition-all"
-                  [class.bg-slate-950]="activeRequestTab() === tab.id"
+                  class="relative shrink-0 h-10 rounded-full px-4 text-[13px] font-semibold tracking-normal border transition-all whitespace-nowrap"
+                  [class.bg-amber-500]="activeRequestTab() === tab.id"
                   [class.text-white]="activeRequestTab() === tab.id"
-                  [class.border-slate-950]="activeRequestTab() === tab.id"
+                  [class.border-amber-500]="activeRequestTab() === tab.id"
+                  [class.shadow-md]="activeRequestTab() === tab.id"
+                  [class.shadow-amber-500/20]="activeRequestTab() === tab.id"
                   [class.bg-white]="activeRequestTab() !== tab.id"
-                  [class.text-slate-600]="activeRequestTab() !== tab.id"
+                  [class.text-slate-700]="activeRequestTab() !== tab.id"
                   [class.border-slate-200]="activeRequestTab() !== tab.id"
                 >
                   {{ tab.label }}
-                  @if (tab.id === 'chat' && messageCount() > 0) {
-                    <span class="ml-1 inline-flex min-w-5 justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] text-slate-950">
-                      {{ messageCount() }}
+                  @if (tab.id === 'chat' && unreadMessageCount() > 0) {
+                    <span class="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-orange-600 px-1.5 text-[10px] font-black text-white ring-2 ring-white/70">
+                      {{ unreadMessageCount() }}
                     </span>
                   }
                 </button>
               }
             </div>
           </div>
+        </div>
+      }
+    </ion-header>
 
+    <ion-content class="bg-slate-50">
+      <div class="w-full max-w-xl mx-auto px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+8rem)] space-y-4 overflow-x-hidden">
+        @if (job()) {
           @if (activeRequestTab() === 'overview') {
             <div class="relative overflow-hidden bg-white rounded-[1.5rem] p-4 text-slate-950 shadow-lg shadow-slate-900/10 border border-slate-200">
               <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
@@ -651,6 +657,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     pickupMapReady = signal(false);
     activeRequestTab = signal<DriverRequestTab>('overview');
     messageCount = signal(0);
+    unreadMessageCount = signal(0);
     requestTabs: Array<{ id: DriverRequestTab; label: string }> = [
         { id: 'overview', label: 'Overview' },
         { id: 'workflow', label: 'Workflow' },
@@ -822,6 +829,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         if (tab === 'overview') {
             setTimeout(() => void this.renderPickupRoute(), 120);
+        }
+
+        if (tab === 'chat') {
+            this.unreadMessageCount.set(0);
         }
     }
 
@@ -1376,7 +1387,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 return;
             }
 
-            this.messageCount.set(count || 0);
+            const nextCount = count || 0;
+            const previousCount = this.messageCount();
+            this.messageCount.set(nextCount);
+
+            if (this.activeRequestTab() !== 'chat' && nextCount > previousCount) {
+                this.unreadMessageCount.update((current) => current + (nextCount - previousCount));
+            }
         } catch (error) {
             console.warn('[driver-job-details] message count unavailable', error);
         }

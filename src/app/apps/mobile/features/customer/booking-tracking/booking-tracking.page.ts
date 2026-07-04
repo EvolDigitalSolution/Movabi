@@ -1,4 +1,4 @@
-import {
+ï»¿import {
     Component,
     inject,
     OnInit,
@@ -73,6 +73,7 @@ import { MapComponent } from '../../../../../shared/components/map/map.component
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
 type SheetState = 'medium' | 'expanded';
+type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment' | 'help';
 
 @Component({
     selector: 'app-booking-tracking',
@@ -97,8 +98,8 @@ type SheetState = 'medium' | 'expanded';
 
     <ion-content class="movabi-page" [fullscreen]="true">
       @if (booking()) {
-        <div class="flex flex-col h-full ion-padding-bottom">
-          <div class="bg-slate-100 relative overflow-hidden h-[60vh] min-h-[390px]">
+        <div class="relative h-full overflow-hidden ion-padding-bottom">
+          <div class="absolute inset-0 bg-slate-100 overflow-hidden">
             <app-map #map></app-map>
 
             <!-- Recenter button -->
@@ -181,27 +182,58 @@ type SheetState = 'medium' | 'expanded';
 
           </div>
           <div
-            class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto overscroll-contain border-t border-slate-100 transition-all duration-300 ion-padding-bottom"
-            [ngClass]="sheetHeightClass()"
+            class="absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[2rem] border-t border-slate-100 bg-white p-3 shadow-2xl transition-all duration-300 ion-padding-bottom"
+            [class.transition-none]="isDraggingSheet()"
+            [style.height.%]="trackingSheetHeight()"
+            (window:pointermove)="onSheetDrag($event)"
+            (window:pointerup)="endSheetDrag()"
+            (window:pointercancel)="endSheetDrag()"
             (focusin)="expandSheetForFocus()"
           >
-            <button
-              type="button"
-              class="sticky top-0 z-20 -mx-3 -mt-3 flex w-[calc(100%_+_1.5rem)] items-center justify-center rounded-t-[2rem] bg-white/95 py-4 backdrop-blur touch-none"
-              (click)="cycleSheetState()"
-              (touchstart)="startDetailsDrag($event)"
-              (touchmove)="moveDetailsDrag($event)"
-              (touchend)="endDetailsDrag()"
-              (pointerdown)="startDetailsPointerDrag($event)"
-              (pointermove)="moveDetailsPointerDrag($event)"
-              (pointerup)="endDetailsPointerDrag($event)"
-              (pointercancel)="endDetailsPointerDrag($event)"
-              [attr.aria-label]="sheetState() === 'expanded' ? 'Collapse to 40%' : 'Expand to 80%'"
-            >
-              <span class="w-16 h-1.5 bg-slate-400 rounded-full shadow-md"></span>
-            </button>
+            <div class="shrink-0 -mx-3 -mt-3 rounded-t-[2rem] bg-white/95 backdrop-blur border-b border-slate-100">
+              <button
+                type="button"
+                class="flex w-full cursor-grab select-none touch-none items-center justify-center rounded-t-[2rem] py-3 active:cursor-grabbing"
+                (click)="cycleSheetState()"
+                (pointerdown)="startSheetDrag($event)"
+                [attr.aria-label]="sheetState() === 'expanded' ? 'Collapse to 40%' : 'Expand to 80%'"
+              >
+                <span class="w-16 h-1.5 bg-slate-400 rounded-full shadow-md"></span>
+              </button>
 
-            <div class="movabi-card-compact bg-gradient-to-br from-white to-slate-50">
+              <div class="px-4 pb-3">
+                <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-1.5 shadow-inner shadow-slate-200/40">
+                  <div class="flex gap-3 overflow-x-auto scrollbar-hide overscroll-x-contain">
+                  @for (tab of trackingTabs; track tab.id) {
+                    <button
+                      type="button"
+                      (click)="setActiveTrackingTab(tab.id)"
+                      class="relative shrink-0 h-10 rounded-full px-4 text-[13px] font-semibold tracking-normal border transition-all whitespace-nowrap"
+                      [class.bg-amber-500]="activeTrackingTab() === tab.id"
+                      [class.text-white]="activeTrackingTab() === tab.id"
+                      [class.border-amber-500]="activeTrackingTab() === tab.id"
+                      [class.shadow-md]="activeTrackingTab() === tab.id"
+                      [class.shadow-amber-500/20]="activeTrackingTab() === tab.id"
+                      [class.bg-white]="activeTrackingTab() !== tab.id"
+                      [class.text-slate-700]="activeTrackingTab() !== tab.id"
+                      [class.border-slate-200]="activeTrackingTab() !== tab.id"
+                    >
+                      {{ tab.label }}
+                      @if (tab.id === 'chat' && unreadMessageCount() > 0) {
+                        <span class="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-orange-600 px-1.5 text-[10px] font-black text-white ring-2 ring-white/70">
+                          {{ unreadMessageCount() }}
+                        </span>
+                      }
+                    </button>
+                  }
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tracking-sheet-content min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+24px)]">
+
+            <div class="movabi-card-compact bg-gradient-to-br from-white to-slate-50" [class.hidden]="activeTrackingTab() !== 'overview'">
               <div class="flex justify-between items-start gap-4">
                 <div class="min-w-0">
                   <app-badge [variant]="getStatusVariant(booking()?.status || '')" class="mb-3">
@@ -260,7 +292,7 @@ type SheetState = 'medium' | 'expanded';
               }
             </div>
 
-            <div class="movabi-card-compact space-y-3">
+            <div class="movabi-card-compact space-y-3" [class.hidden]="activeTrackingTab() !== 'overview'">
               <div class="flex items-start gap-3">
                 <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
                   <ion-icon [name]="serviceGuideIcon()" class="text-xl"></ion-icon>
@@ -310,8 +342,18 @@ type SheetState = 'medium' | 'expanded';
               </div>
             </div>
 
+            <div class="movabi-card-compact bg-white border border-slate-100" [class.hidden]="activeTrackingTab() !== 'payment'">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</p>
+                  <h3 class="mt-1 text-sm font-bold text-slate-900">{{ paymentAmountLabel() }}</h3>
+                  <p class="mt-1 text-xs font-semibold text-slate-500 leading-snug">Wallet/card reservation is protected by Movabi until the request is complete.</p>
+                </div>
+                <p class="movabi-price shrink-0">{{ getDisplayedTotal() }}</p>
+              </div>
+            </div>
             @if (showPaymentProtectionPanel()) {
-              <div class="movabi-card-compact border-amber-100 bg-amber-50 space-y-3">
+              <div class="movabi-card-compact border-amber-100 bg-amber-50 space-y-3" [class.hidden]="activeTrackingTab() !== 'payment'">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon [name]="paymentProtectionIcon()" class="text-xl"></ion-icon>
@@ -348,7 +390,7 @@ type SheetState = 'medium' | 'expanded';
             }
 
             @if (showCompletionPinPanel()) {
-              <div class="movabi-card-compact border-emerald-100 bg-emerald-50 space-y-3">
+              <div class="movabi-card-compact border-emerald-100 bg-emerald-50 space-y-3" [class.hidden]="activeTrackingTab() !== 'overview'">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon name="shield-checkmark-outline" class="text-xl"></ion-icon>
@@ -375,7 +417,7 @@ type SheetState = 'medium' | 'expanded';
             }
 
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-2 gap-3" [class.hidden]="activeTrackingTab() !== 'payment'">
                   <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
                   <p class="text-base font-display font-semibold text-slate-900">
@@ -403,7 +445,7 @@ type SheetState = 'medium' | 'expanded';
 
             @if (booking()?.driver_id) {
               @if (errandFunding()?.over_budget_status === 'requested') {
-                <div class="movabi-card-compact bg-rose-50 border-rose-100">
+                <div class="movabi-card-compact bg-rose-50 border-rose-100" [class.hidden]="activeTrackingTab() !== 'payment'">
                   <div class="flex items-center gap-3 mb-4">
                     <div class="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
                       <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
@@ -452,7 +494,7 @@ type SheetState = 'medium' | 'expanded';
                     }
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="grid grid-cols-2 gap-3" [class.hidden]="activeTrackingTab() !== 'payment'">
                     <app-button variant="secondary" color="error" size="md" (clicked)="rejectOverBudget()">
                       Reject
                     </app-button>
@@ -464,7 +506,7 @@ type SheetState = 'medium' | 'expanded';
                 </div>
               }
 
-              <div class="movabi-card-compact">
+              <div class="movabi-card-compact" [class.hidden]="activeTrackingTab() !== 'overview'">
                 <div class="flex items-start gap-4">
                   <div class="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white shadow-md shrink-0">
                     @if (getDriverAvatar()) {
@@ -504,7 +546,7 @@ type SheetState = 'medium' | 'expanded';
               </div>
 
               @if (['accepted', 'arrived', 'in_progress', 'heading_to_pickup', 'en_route_to_customer'].includes(booking()?.status || '')) {
-                <div class="pt-2">
+                <div class="pt-2" [class.hidden]="activeTrackingTab() !== 'chat'">
                   <app-button
                     [variant]="showChat() ? 'outline' : 'secondary'"
                     (clicked)="showChat.set(!showChat())"
@@ -527,7 +569,7 @@ type SheetState = 'medium' | 'expanded';
               }
             }
 
-            <div class="movabi-card-compact bg-slate-50 shadow-none">
+            <div class="movabi-card-compact bg-slate-50 shadow-none" [class.hidden]="activeTrackingTab() !== 'route'">
               <div class="flex items-center gap-2 mb-4">
                 <div class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                   <ion-icon name="navigate" class="text-xl"></ion-icon>
@@ -563,8 +605,24 @@ type SheetState = 'medium' | 'expanded';
               </div>
             </div>
 
+            <div class="movabi-card-compact bg-white border border-slate-100" [class.hidden]="activeTrackingTab() !== 'details'">
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Request ID</p>
+                  <p class="mt-1 font-bold text-slate-900">{{ booking()?.id?.slice(0, 8) }}</p>
+                </div>
+                <div>
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Service</p>
+                  <p class="mt-1 font-bold text-slate-900 capitalize">{{ booking()?.service_slug || 'Request' }}</p>
+                </div>
+                <div class="col-span-2">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</p>
+                  <p class="mt-1 font-bold text-slate-900">{{ getStatusLabel(booking()?.status || '') }}</p>
+                </div>
+              </div>
+            </div>
             @if (details()) {
-              <div class="pt-2">
+              <div class="pt-2" [class.hidden]="activeTrackingTab() !== 'details'">
                 <div class="flex items-center gap-2 mb-4">
                   <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                     <ion-icon name="sparkles-outline" class="text-xl"></ion-icon>
@@ -633,7 +691,7 @@ type SheetState = 'medium' | 'expanded';
               </div>
             }
 
-            <div class="pt-4 space-y-4">
+            <div class="pt-4 space-y-4" [class.hidden]="activeTrackingTab() !== 'help'">
               @if (booking()?.status === 'completed') {
                 <app-button variant="primary" size="lg" (clicked)="showRating()" class="w-full">
                   <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
@@ -645,6 +703,7 @@ type SheetState = 'medium' | 'expanded';
                   Cancel Booking
                 </app-button>
               }
+            </div>
             </div>
           </div>
         </div>
@@ -679,8 +738,21 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     isLoading = signal(true);
     showChat = signal(false);
+    activeTrackingTab = signal<CustomerTrackingTab>('overview');
+    messageCount = signal(0);
+    unreadMessageCount = signal(0);
+    trackingTabs: Array<{ id: CustomerTrackingTab; label: string }> = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'route', label: 'Route' },
+        { id: 'details', label: 'Details' },
+        { id: 'chat', label: 'Chat' },
+        { id: 'payment', label: 'Payment' },
+        { id: 'help', label: 'Help' }
+    ];
     sheetState = signal<SheetState>('medium');
     detailsExpanded = signal(false);
+    trackingSheetHeight = signal(40);
+    isDraggingSheet = signal(false);
     driverDistanceToPickup = signal<number | null>(null);
     driverEtaToPickup = signal<number | null>(null);
     driverLastSeenAt = signal<Date | null>(null);
@@ -695,10 +767,15 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private channel?: RealtimeChannel;
     private errandFundingChannel?: RealtimeChannel;
     private jobEventsChannel?: RealtimeChannel;
+    private messageChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
     private lastDriverCameraUpdateAt = 0;
     private dragStartY: number | null = null;
     private dragDeltaY = 0;
+    private sheetDragStartY = 0;
+    private sheetDragStartHeight = 40;
+    private sheetDragActive = false;
+    private sheetDragMoved = false;
     private lastNotifiedStatus: string | null = null;
     
     // Map control properties
@@ -751,9 +828,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+
+    setActiveTrackingTab(tab: CustomerTrackingTab): void {
+        this.activeTrackingTab.set(tab);
+        if (tab === 'chat') {
+            this.unreadMessageCount.set(0);
+            this.showChat.set(true);
+        }
+        if (tab === 'route') {
+            setTimeout(() => this.recenterMap(), 120);
+        }
+    }
     cycleSheetState(): void {
-        const current = this.sheetState();
-        this.setSheetState(current === 'expanded' ? 'medium' : 'expanded');
+        if (this.sheetDragMoved) {
+            this.sheetDragMoved = false;
+            return;
+        }
+        if (this.sheetDragActive) return;
+        this.setSheetState(this.trackingSheetHeight() >= 60 ? 'medium' : 'expanded');
     }
 
     expandSheetForFocus(): void {
@@ -773,6 +865,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.channel = this.bookingService.subscribeToBooking(id);
         this.subscribeToErrandFunding(id);
         this.subscribeToJobEvents(id);
+        this.subscribeToJobMessages(id);
 
         await this.walletService.fetchWallet();
         await this.loadBookingAndDetails(id, true);
@@ -790,6 +883,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.channel?.unsubscribe();
         this.errandFundingChannel?.unsubscribe();
         this.jobEventsChannel?.unsubscribe();
+        this.messageChannel?.unsubscribe();
         this.locationSubscription?.unsubscribe();
     }
 
@@ -813,10 +907,46 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.applyDetailsDrag();
     }
 
+    startSheetDrag(event: PointerEvent): void {
+        if (event.button !== 0 && event.pointerType === 'mouse') return;
+        event.preventDefault();
+
+        this.sheetDragActive = true;
+        this.sheetDragMoved = false;
+        this.isDraggingSheet.set(true);
+        this.sheetDragStartY = event.clientY;
+        this.sheetDragStartHeight = this.trackingSheetHeight();
+        console.debug('[booking-tracking] sheet drag start', this.sheetDragStartHeight);
+    }
+
+    onSheetDrag(event: PointerEvent): void {
+        if (!this.sheetDragActive) return;
+        event.preventDefault();
+
+        const viewportHeight = Math.max(window.innerHeight, 1);
+        const deltaPercent = ((this.sheetDragStartY - event.clientY) / viewportHeight) * 100;
+        if (Math.abs(deltaPercent) > 1) {
+            this.sheetDragMoved = true;
+        }
+        const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaPercent));
+        this.trackingSheetHeight.set(nextHeight);
+        console.debug('[booking-tracking] sheet drag move', nextHeight);
+    }
+
+    endSheetDrag(): void {
+        if (!this.sheetDragActive) return;
+
+        this.sheetDragActive = false;
+        this.setSheetState(this.trackingSheetHeight() >= 60 ? 'expanded' : 'medium');
+        window.setTimeout(() => this.isDraggingSheet.set(false), 0);
+        console.debug('[booking-tracking] sheet drag end', this.trackingSheetHeight());
+
+        // Don't auto-fit bounds on sheet drag - let user control the map
+        this.onMapUserInteraction();
+    }
+
     startDetailsPointerDrag(event: PointerEvent): void {
-        this.dragStartY = event.clientY;
-        this.dragDeltaY = 0;
-        (event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId);
+        this.startSheetDrag(event);
     }
 
     moveDetailsPointerDrag(event: PointerEvent): void {
@@ -851,6 +981,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private setSheetState(state: SheetState): void {
         this.sheetState.set(state);
         this.detailsExpanded.set(state === 'expanded');
+        this.trackingSheetHeight.set(state === 'expanded' ? 80 : 40);
         // Don't auto-fit bounds on sheet state change - let user control the map
     }
 
@@ -1367,7 +1498,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             .map((part) => String(part || '').trim())
             .filter(Boolean);
 
-        return parts.length ? parts.join(' • ') : 'Transport confirmed';
+        return parts.length ? parts.join(' â€¢ ') : 'Transport confirmed';
     }
 
     private getVehicleColorLabel(vehicle: Vehicle): string {
@@ -1389,7 +1520,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const capacity = String(vehicle.capacity || '').trim();
         const label = type ? type.replace(/\b\w/g, (char) => char.toUpperCase()) : 'Vehicle';
 
-        return capacity ? `${label} • ${capacity}` : label;
+        return capacity ? `${label} â€¢ ${capacity}` : label;
     }
 
     canManuallyCancel(): boolean {
@@ -1827,6 +1958,51 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             });
     }
 
+    private subscribeToJobMessages(id: string): void {
+        this.messageChannel?.unsubscribe();
+        void this.refreshMessageCount(id);
+
+        this.messageChannel = this.supabase
+            .channel(`tracking-job-messages-${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'job_messages',
+                    filter: `job_id=eq.${id}`
+                },
+                () => {
+                    void this.refreshMessageCount(id);
+                }
+            )
+            .subscribe((status) => {
+                console.log('[booking-tracking] job messages realtime:', status);
+            });
+    }
+
+    private async refreshMessageCount(id: string): Promise<void> {
+        try {
+            const { count, error } = await this.supabase
+                .from('job_messages')
+                .select('id', { count: 'exact', head: true })
+                .eq('job_id', id);
+
+            if (error) {
+                return;
+            }
+
+            const nextCount = count || 0;
+            const previousCount = this.messageCount();
+            this.messageCount.set(nextCount);
+
+            if (this.activeTrackingTab() !== 'chat' && nextCount > previousCount) {
+                this.unreadMessageCount.update((current) => current + (nextCount - previousCount));
+            }
+        } catch (error) {
+            console.warn('[booking-tracking] message count unavailable', error);
+        }
+    }
     async loadBookingAndDetails(id: string, showLoading = true): Promise<void> {
         if (showLoading) this.isLoading.set(true);
 
