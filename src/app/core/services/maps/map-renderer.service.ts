@@ -95,6 +95,9 @@ export class MapRendererService {
         }
       } else {
         const el = this.markerFactory.createMarkerElement(options.kind, options.serviceType, options.label);
+        if (options.onClick) {
+          el.addEventListener('click', () => options.onClick?.(options.id));
+        }
         marker = new Marker({ element: el })
           .setLngLat([options.coordinates.lng, options.coordinates.lat])
           .addTo(this.map);

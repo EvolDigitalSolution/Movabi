@@ -1,4 +1,4 @@
-import { Component, inject, computed, OnInit, OnDestroy, signal } from '@angular/core';
+import { AfterViewInit, Component, ViewChild, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -39,6 +39,7 @@ import {
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Haptics, NotificationType } from '@capacitor/haptics';
+import { firstValueFrom } from 'rxjs';
 
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
@@ -65,6 +66,9 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
 import { MapProviderService } from '../../../../../core/services/maps/map-provider.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
+import { MarkerCoordinates, ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
+import { RouteSummary } from '../../../../../core/models/maps/route-result.model';
+import { NotificationService } from '../../../../../core/services/notification.service';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -92,6 +96,8 @@ type PassedJob = {
     id: string;
     passedAt: number;
 };
+
+type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
 
 @Component({
     selector: 'app-driver-dashboard',
@@ -153,14 +159,6 @@ type PassedJob = {
 
             <button
               type="button"
-              (click)="router.navigate(['/driver/earnings'])"
-              class="w-9 h-9 rounded-xl bg-white text-slate-700 flex items-center justify-center border border-slate-200 shadow-sm ml-2 active:scale-95 transition-all"
-            >
-              <ion-icon name="wallet-outline" class="text-lg"></ion-icon>
-            </button>
-
-            <button
-              type="button"
               (click)="router.navigate(['/driver/settings'])"
               class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shadow-sm ml-2 active:scale-95 transition-all"
             >
@@ -197,227 +195,497 @@ type PassedJob = {
         </div>
       }
 
-      <!-- Map Container -->
-      <div class="relative h-[60vh] w-full">
-        <app-map
-          #map
-          class="w-full h-full"
-        ></app-map>
-
-        <!-- Re-center Button -->
-        <button
-          type="button"
-          (click)="recenterMap()"
-          class="absolute top-4 right-4 w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center active:scale-95 transition-all z-10"
-        >
-          <ion-icon name="navigate" class="text-lg text-slate-700"></ion-icon>
-        </button>
-
-        <!-- Surge Area Overlay -->
-        @if (surgeAreas().length > 0) {
-          <div class="absolute top-4 left-4 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2 shadow-lg z-10">
-            <div class="flex items-center gap-2">
-              <ion-icon name="flash-outline" class="text-orange-600"></ion-icon>
-              <div>
-                <p class="text-[10px] font-bold text-orange-800 uppercase tracking-wide">High Demand</p>
-                <p class="text-xs font-semibold text-orange-700">{{ surgeAreas()[0]?.multiplier || 1.2 }}x surge</p>
-              </div>
-            </div>
+      @if (activeHubTab() === 'requests') {
+        <div class="relative h-[calc(100vh-10.75rem)] min-h-[560px] overflow-hidden bg-slate-100 mb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
+          <div class="absolute inset-0">
+            <app-map
+              #map
+              class="w-full h-full"
+            ></app-map>
           </div>
-        }
-      </div>
 
-      <!-- Draggable Bottom Sheet -->
-      <div 
-        class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 transition-all duration-300 z-20"
-        [style.height.%]="sheetHeight()"
-        [style.transform]="isDraggingSheet() ? 'scale(0.98)' : 'scale(1)'"
-      >
-        <!-- Drag Handle -->
-        <div class="flex justify-center py-3 cursor-grab active:cursor-grabbing" (mousedown)="startDragSheet()" (touchstart)="startDragSheet()">
-          <div class="w-12 h-1.5 bg-slate-300 rounded-full"></div>
-        </div>
+          <button
+            type="button"
+            (click)="recenterMap()"
+            class="absolute top-4 right-4 w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center active:scale-95 transition-all z-10"
+          >
+            <ion-icon name="navigate" class="text-lg text-slate-700"></ion-icon>
+          </button>
 
-        <!-- Sheet Content -->
-        <div class="px-4 pb-4 h-full overflow-hidden flex flex-col">
-          @if (selectedJobId()) {
-            <!-- Job Details View -->
-            <div class="flex-1 overflow-y-auto">
-              @let selectedJob = jobs().find(j => j.id === selectedJobId());
-              @if (selectedJob) {
-                <div class="space-y-4">
-                  <!-- Job Header -->
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="flex-1">
-                      <app-badge variant="primary">{{ getServiceName(selectedJob) }}</app-badge>
-                      <h3 class="text-lg font-display font-bold text-slate-900 mt-2">
-                        {{ requestServiceHeadline(selectedJob) }}
-                      </h3>
-                      <p class="text-sm text-slate-600 mt-1">{{ requestServiceHelper(selectedJob) }}</p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-2xl font-display font-black text-slate-950">
-                        {{ formatPrice(getRequestFare(selectedJob)) }}
-                      </p>
-                      <p class="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Fare</p>
-                    </div>
-                  </div>
-
-                  <!-- Route Info -->
-                  <div class="grid grid-cols-2 gap-3">
-                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                      <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Pickup</p>
-                      <p class="text-sm font-bold text-slate-900 leading-snug">
-                        {{ selectedJob.pickup_address || 'Location pending' }}
-                      </p>
-                    </div>
-                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                      <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Dropoff</p>
-                      <p class="text-sm font-bold text-slate-900 leading-snug">
-                        {{ selectedJob.dropoff_address || 'Location pending' }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <!-- Job Details -->
-                  <div class="grid grid-cols-3 gap-2">
-                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                      <p class="text-[8px] font-black text-blue-500 uppercase tracking-wider">Distance</p>
-                      <p class="text-xs font-bold text-slate-900 mt-1">{{ formatJobDistance(selectedJob) }}</p>
-                    </div>
-                    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                      <p class="text-[8px] font-black text-emerald-600 uppercase tracking-wider">Time</p>
-                      <p class="text-xs font-bold text-slate-900 mt-1">{{ formatJobDuration(selectedJob) }}</p>
-                    </div>
-                    <div class="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                      <p class="text-[8px] font-black text-amber-600 uppercase tracking-wider">Vehicle</p>
-                      <p class="text-xs font-bold text-slate-900 mt-1">{{ getVehicleRequired(selectedJob) }}</p>
-                    </div>
-                  </div>
-
-                  <!-- Action Buttons -->
-                  <div class="grid grid-cols-2 gap-3 pt-2">
-                    <button
-                      type="button"
-                      (click)="seeJobOnMap(selectedJob)"
-                      class="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
-                    >
-                      See on Map
-                    </button>
-                    <button
-                      type="button"
-                      [disabled]="submitting()"
-                      (click)="accept(selectedJob.id)"
-                      class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      {{ submitting() ? 'Accepting...' : 'Accept Request' }}
-                    </button>
-                  </div>
+          @if (surgeAreas().length > 0) {
+            <div class="absolute top-4 left-4 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2 shadow-lg z-10">
+              <div class="flex items-center gap-2">
+                <ion-icon name="flash-outline" class="text-orange-600"></ion-icon>
+                <div>
+                  <p class="text-[10px] font-bold text-orange-800 uppercase tracking-wide">High Demand</p>
+                  <p class="text-xs font-semibold text-orange-700">{{ surgeAreas()[0]?.multiplier || 1.2 }}x surge</p>
                 </div>
-              }
-            </div>
-          } @else {
-            <!-- Job List View -->
-            <div class="flex-1 overflow-y-auto">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-display font-bold text-slate-900">
-                  Available Requests
-                  <span class="ml-2 px-2 py-1 bg-amber-500 text-slate-950 text-[10px] font-bold rounded-full">
-                    {{ jobs().length }}
-                  </span>
-                </h3>
-                <button
-                  type="button"
-                  (click)="refreshAvailableJobs()"
-                  class="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold uppercase rounded-xl active:scale-95 transition-all"
-                >
-                  Refresh
-                </button>
               </div>
+            </div>
+          }
 
-              @if (status() === 'offline') {
-                <div class="text-center py-8">
-                  <ion-icon name="moon-outline" class="text-4xl text-slate-400"></ion-icon>
-                  <p class="text-sm font-bold text-slate-900 mt-3">You are offline</p>
-                  <p class="text-xs text-slate-600 mt-1">Go online to see nearby requests</p>
-                  <button
-                    type="button"
-                    (click)="goOnline()"
-                    class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-95 transition-all"
-                  >
-                    Go Online
-                  </button>
-                </div>
-              } @else if (!isAvailable()) {
-                <div class="text-center py-8">
-                  <ion-icon name="time-outline" class="text-4xl text-slate-400"></ion-icon>
-                  <p class="text-sm font-bold text-slate-900 mt-3">You are marked busy</p>
-                  <p class="text-xs text-slate-600 mt-1">Turn Free on to receive requests</p>
-                  <button
-                    type="button"
-                    (click)="setAvailableNow()"
-                    class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-95 transition-all"
-                  >
-                    Set Free
-                  </button>
-                </div>
-              } @else if (jobs().length === 0) {
-                <div class="text-center py-8">
-                  <ion-icon name="search-outline" class="text-4xl text-slate-400"></ion-icon>
-                  <p class="text-sm font-bold text-slate-900 mt-3">No requests right now</p>
-                  <p class="text-xs text-slate-600 mt-1">New nearby requests will appear automatically</p>
-                </div>
-              } @else {
-                <div class="space-y-3">
-                  @for (job of jobs(); track job.id) {
-                    <button
-                      type="button"
-                      (click)="selectJob(job.id)"
-                      class="w-full bg-white border border-slate-100 rounded-xl p-4 text-left active:scale-[0.98] transition-all hover:border-blue-200 hover:bg-blue-50"
-                    >
+          <div 
+            class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 transition-all duration-300 z-20"
+            [style.height.%]="sheetHeight()"
+            [style.transform]="isDraggingSheet() ? 'scale(0.99)' : 'scale(1)'"
+          >
+            <button
+              type="button"
+              class="w-full flex justify-center py-3 cursor-grab active:cursor-grabbing"
+              (click)="toggleSheet()"
+              (pointerdown)="startDragSheet($event)"
+              aria-label="Resize requests sheet"
+            >
+              <span class="w-12 h-1.5 bg-slate-300 rounded-full"></span>
+            </button>
+
+            <div class="px-4 h-[calc(100%-3rem)] overflow-hidden flex flex-col">
+              @if (activeJob()) {
+                @let currentJob = activeJob();
+                <div class="min-h-0 flex-1 flex flex-col">
+                  <div class="flex-1 overflow-y-auto overscroll-contain pb-5">
+                    <div class="space-y-4">
                       <div class="flex items-start justify-between gap-3">
-                        <div class="flex-1 min-w-0">
-                          <div class="flex items-center gap-2 mb-2">
-                            <app-badge variant="primary" size="sm">{{ getServiceName(job) }}</app-badge>
-                            @if (getSurgeMultiplier(job) > 1) {
-                              <span class="px-2 py-1 bg-orange-100 text-orange-700 text-[9px] font-bold rounded-full">
-                                {{ getSurgeMultiplier(job) }}x surge
-                              </span>
-                            }
-                          </div>
-                          <p class="text-sm font-bold text-slate-900 truncate">{{ requestServiceHeadline(job) }}</p>
-                          <p class="text-xs text-slate-600 mt-1">{{ job.pickup_address || 'Location pending' }}</p>
-                          <div class="flex items-center gap-3 mt-2">
-                            <span class="text-xs text-slate-500">{{ formatJobDistance(job) }}</span>
-                            <span class="text-xs text-slate-500">{{ formatJobDuration(job) }}</span>
-                            <span class="text-xs text-slate-500">{{ getVehicleRequired(job) }}</span>
-                          </div>
+                        <div class="min-w-0 flex-1">
+                          <app-badge variant="primary">{{ activeJobStatusLabel() }}</app-badge>
+                          <h3 class="mt-2 text-lg font-display font-bold text-slate-900">
+                            {{ activeJobTitle() }} in progress
+                          </h3>
+                          <p class="mt-1 text-sm font-semibold text-slate-600">
+                            {{ activeJobCustomerName(currentJob) }}
+                          </p>
                         </div>
-                        <div class="text-right">
-                          <p class="text-lg font-display font-black text-slate-950">
-                            {{ formatPrice(getRequestFare(job)) }}
+                        <div class="text-right shrink-0">
+                          <p class="text-2xl font-display font-black text-slate-950">
+                            {{ formatPrice(getRequestFare(currentJob!)) }}
+                          </p>
+                          <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Fare</p>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                          <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">{{ requestOriginLabel(currentJob!) }}</p>
+                          <p class="text-sm font-bold text-slate-900 leading-snug">
+                            {{ currentJob?.pickup_address || requestOriginUnavailableLabel(currentJob!) }}
+                          </p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                          <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">{{ requestDestinationLabel(currentJob!) }}</p>
+                          <p class="text-sm font-bold text-slate-900 leading-snug">
+                            {{ currentJob?.dropoff_address || requestDestinationUnavailableLabel(currentJob!) }}
                           </p>
                         </div>
                       </div>
+
+                      <div class="grid grid-cols-3 gap-2">
+                        <div class="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                          <p class="text-[8px] font-black text-blue-500 uppercase tracking-wider">Status</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">{{ activeJobStatusLabel() }}</p>
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                          <p class="text-[8px] font-black text-emerald-600 uppercase tracking-wider">Route</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">{{ activeJobShortRouteLabel() }}</p>
+                        </div>
+                        <div class="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                          <p class="text-[8px] font-black text-amber-600 uppercase tracking-wider">Vehicle</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">{{ getVehicleRequired(currentJob!) }}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="-mx-4 shrink-0 grid grid-cols-2 gap-3 bg-white/95 backdrop-blur border-t border-slate-100 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+                    <button
+                      type="button"
+                      (click)="openActiveJobChat(currentJob)"
+                      class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                    >
+                      Chat
                     </button>
+                    @if (activeJobCustomerPhone(currentJob)) {
+                      <button
+                        type="button"
+                        (click)="callActiveJobCustomer(currentJob)"
+                        class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Call
+                      </button>
+                    } @else {
+                      <button
+                        type="button"
+                        (click)="focusMapOnActiveJob()"
+                        class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Go to map
+                      </button>
+                    }
+                    <button
+                      type="button"
+                      (click)="resumeActiveJob()"
+                      class="col-span-2 w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                    >
+                      Continue Request
+                    </button>
+                  </div>
+                </div>
+              } @else if (selectedAvailableJob()) {
+                @let selectedJob = selectedAvailableJob();
+                  <div class="min-h-0 flex-1 flex flex-col">
+                    <div class="flex-1 overflow-y-auto overscroll-contain pb-5">
+                      <div class="space-y-4">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="flex-1">
+                          <app-badge variant="primary">{{ getServiceName(selectedJob!) }}</app-badge>
+                          <h3 class="text-lg font-display font-bold text-slate-900 mt-2">
+                            {{ requestServiceHeadline(selectedJob!) }}
+                          </h3>
+                          <p class="text-sm text-slate-600 mt-1">{{ requestServiceHelper(selectedJob!) }}</p>
+                        </div>
+                        <div class="text-right">
+                          <p class="text-2xl font-display font-black text-slate-950">
+                            {{ formatPrice(getRequestFare(selectedJob!)) }}
+                          </p>
+                          <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Fare</p>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                          <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Pickup</p>
+                          <p class="text-sm font-bold text-slate-900 leading-snug">
+                            {{ selectedJob!.pickup_address || 'Location pending' }}
+                          </p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                          <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Dropoff</p>
+                          <p class="text-sm font-bold text-slate-900 leading-snug">
+                            {{ selectedJob!.dropoff_address || 'Location pending' }}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-3 gap-2">
+                        <div class="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                          <p class="text-[8px] font-black text-blue-500 uppercase tracking-wider">Distance</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">{{ formatJobDistance(selectedJob!) }}</p>
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                          <p class="text-[8px] font-black text-emerald-600 uppercase tracking-wider">Time</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">{{ formatJobDuration(selectedJob!) }}</p>
+                        </div>
+                        <div class="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                          <p class="text-[8px] font-black text-amber-600 uppercase tracking-wider">Vehicle</p>
+                          <p class="text-xs font-bold text-slate-900 mt-1">{{ getVehicleRequired(selectedJob!) }}</p>
+                        </div>
+                      </div>
+                      </div>
+                    </div>
+
+                    <div class="-mx-4 shrink-0 grid grid-cols-2 gap-3 bg-white/95 backdrop-blur border-t border-slate-100 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+                      <button
+                        type="button"
+                        (click)="reject(selectedJob!.id)"
+                        class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Pass
+                      </button>
+                      <button
+                        type="button"
+                        [disabled]="submitting()"
+                        (click)="accept(selectedJob!.id)"
+                        class="w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {{ submitting() ? 'Accepting...' : 'Accept Request' }}
+                      </button>
+                    </div>
+                  </div>
+              } @else {
+                <div class="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+5rem)]">
+                  <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-display font-bold text-slate-900">
+                      Available Requests
+                      <span class="ml-2 px-2 py-1 bg-amber-500 text-slate-950 text-[10px] font-bold rounded-full">
+                        {{ jobs().length }}
+                      </span>
+                    </h3>
+                    <button
+                      type="button"
+                      (click)="refreshAvailableJobs()"
+                      class="px-3 py-2 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold uppercase rounded-xl active:scale-95 transition-all"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+
+                  @if (status() === 'offline') {
+                    <div class="text-center py-8">
+                      <ion-icon name="moon-outline" class="text-4xl text-slate-400"></ion-icon>
+                      <p class="text-sm font-bold text-slate-900 mt-3">You are offline</p>
+                      <p class="text-xs text-slate-600 mt-1">Go online to see nearby requests</p>
+                      <button
+                        type="button"
+                        (click)="goOnline()"
+                        class="mt-4 px-4 py-2 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Go Online
+                      </button>
+                    </div>
+                  } @else if (!isAvailable()) {
+                    <div class="text-center py-8">
+                      <ion-icon name="time-outline" class="text-4xl text-slate-400"></ion-icon>
+                      <p class="text-sm font-bold text-slate-900 mt-3">You are marked busy</p>
+                      <p class="text-xs text-slate-600 mt-1">Turn Free on to receive requests</p>
+                      <button
+                        type="button"
+                        (click)="setAvailableNow()"
+                        class="mt-4 px-4 py-2 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Set Free
+                      </button>
+                    </div>
+                  } @else if (jobs().length === 0) {
+                    <div class="text-center py-8">
+                      <ion-icon name="search-outline" class="text-4xl text-slate-400"></ion-icon>
+                      <p class="text-sm font-bold text-slate-900 mt-3">No requests right now</p>
+                      <p class="text-xs text-slate-600 mt-1">New nearby requests will appear automatically</p>
+                    </div>
+                  } @else {
+                    <div class="space-y-3">
+                      @for (job of jobs(); track job.id) {
+                        <button
+                          type="button"
+                          (click)="selectJob(job.id)"
+                          class="w-full bg-white border border-slate-100 rounded-xl p-4 text-left active:scale-[0.98] transition-all hover:border-amber-200 hover:bg-amber-50"
+                        >
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="flex-1 min-w-0">
+                              <div class="flex items-center gap-2 mb-2">
+                                <app-badge variant="primary" size="sm">{{ getServiceName(job) }}</app-badge>
+                                @if (getSurgeMultiplier(job) > 1) {
+                                  <span class="px-2 py-1 bg-orange-100 text-orange-700 text-[9px] font-bold rounded-full">
+                                    {{ getSurgeMultiplier(job) }}x surge
+                                  </span>
+                                }
+                              </div>
+                              <p class="text-sm font-bold text-slate-900 truncate">{{ requestServiceHeadline(job) }}</p>
+                              <p class="text-xs text-slate-600 mt-1">{{ job.pickup_address || 'Location pending' }}</p>
+                              <div class="flex items-center gap-3 mt-2">
+                                <span class="text-xs text-slate-500">{{ formatJobDistance(job) }}</span>
+                                <span class="text-xs text-slate-500">{{ formatJobDuration(job) }}</span>
+                                <span class="text-xs text-slate-500">{{ getVehicleRequired(job) }}</span>
+                              </div>
+                            </div>
+                            <div class="text-right">
+                              <p class="text-lg font-display font-black text-slate-950">
+                                {{ formatPrice(getRequestFare(job)) }}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      }
+                    </div>
                   }
                 </div>
               }
             </div>
+          </div>
+        </div>
+      } @else {
+        <div class="px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+6.75rem)] space-y-4">
+          @if (activeHubTab() === 'earnings') {
+            <app-movabi-carousel [slides]="driverCarouselSlides()"></app-movabi-carousel>
+
+            <div class="grid grid-cols-2 gap-3">
+              <app-card class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Acceptance</p>
+                    <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ acceptanceMetric().display }}</h2>
+                    <p class="mt-1 text-xs font-bold text-slate-500">{{ acceptanceMetric().label }}</p>
+                  </div>
+                  <app-performance-badge [type]="hasAcceptanceRate() ? 'reliable' : 'fast-responder'"></app-performance-badge>
+                </div>
+              </app-card>
+
+              <app-card class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Rating</p>
+                    <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ ratingMetric().isNew ? 'New' : ratingMetric().display }}</h2>
+                    <p class="mt-1 text-xs font-bold text-slate-500">{{ ratingMetric().label }}</p>
+                  </div>
+                  <app-rating [rating]="ratingMetric().value || undefined"></app-rating>
+                </div>
+              </app-card>
+            </div>
+
+            <app-card class="p-4">
+              <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Future analytics</p>
+              <h2 class="mt-2 text-xl font-display font-black text-slate-950">Performance insights</h2>
+              <p class="mt-1 text-sm font-semibold text-slate-600">Acceptance, service quality, and growth features will appear here without duplicating wallet payouts.</p>
+            </app-card>
+          } @else if (activeHubTab() === 'trips') {
+            <app-card class="p-4">
+              <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Trips</p>
+              <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ activeJob() ? activeJobTitle() : 'No active request' }}</h2>
+              <p class="mt-1 text-sm font-semibold text-slate-600">{{ activeJob() ? activeJobShortRouteLabel() : 'Accepted requests will appear here so you can continue them.' }}</p>
+              <button type="button" (click)="activeJob() ? resumeActiveJob() : setHubTab('requests')" class="mt-4 w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ activeJob() ? 'Continue Request' : 'Browse Requests' }}</button>
+            </app-card>
+          } @else if (activeHubTab() === 'wallet') {
+            <div class="space-y-4">
+              <app-card class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Earnings & Wallet</p>
+                    <h2 class="mt-2 text-2xl font-display font-black text-slate-950">{{ formatPrice(walletTransferredTotal()) }}</h2>
+                    <p class="mt-1 text-sm font-semibold text-slate-600">Completed payouts transferred to Stripe Express.</p>
+                  </div>
+                  <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+                    {{ getStripeBadgeText() }}
+                  </span>
+                </div>
+                <div class="mt-4 grid grid-cols-3 gap-2">
+                  <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-emerald-700">Paid</p>
+                    <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletPaidTotal()) }}</p>
+                  </div>
+                  <div class="rounded-xl border border-amber-100 bg-amber-50 p-3">
+                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-amber-700">Pending</p>
+                    <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletPendingTotal()) }}</p>
+                  </div>
+                  <div class="rounded-xl border border-rose-100 bg-rose-50 p-3">
+                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-rose-700">Fees</p>
+                    <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletFeeTotal()) }}</p>
+                  </div>
+                </div>
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                  <button type="button" (click)="openPayoutSettings()" class="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">Stripe Payouts</button>
+                  <button type="button" (click)="router.navigate(['/driver/earnings'])" class="rounded-xl border border-slate-200 bg-white py-3 text-sm font-black text-slate-800">Full History</button>
+                </div>
+              </app-card>
+
+              <app-card class="p-4">
+                <div class="mb-3 flex items-center justify-between">
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Transactions</p>
+                  <span class="text-[10px] font-black text-slate-400">{{ walletRecentEarnings().length }} latest</span>
+                </div>
+                @if (walletRecentEarnings().length === 0) {
+                  <p class="rounded-xl bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-600">Completed job earnings will appear here.</p>
+                } @else {
+                  <div class="space-y-2">
+                    @for (earning of walletRecentEarnings(); track earning.id || earning.job_id || $index) {
+                      <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                        <div class="min-w-0">
+                          <p class="truncate text-sm font-black text-slate-900">{{ earningLabel(earning) }}</p>
+                          <p class="text-[11px] font-semibold text-slate-500">{{ earningStatusLabel(earning) }}</p>
+                        </div>
+                        <p class="shrink-0 text-sm font-black text-slate-950">{{ formatPrice(earningNetAmount(earning)) }}</p>
+                      </div>
+                    }
+                  </div>
+                }
+              </app-card>
+            </div>
+          } @else if (activeHubTab() === 'profile') {
+            <div class="space-y-4">
+              <app-card class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Driver Controls</p>
+                    <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ status() === 'online' ? 'Active' : 'Offline' }}</h2>
+                    <p class="mt-1 text-sm font-semibold text-slate-600">
+                      {{ status() === 'online' ? "You're live and ready for request controls." : 'Go online when you are ready to receive requests.' }}
+                    </p>
+                  </div>
+                  <span class="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700">
+                    {{ driverPlanLabel() }}
+                  </span>
+                </div>
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    (click)="status() === 'online' ? goOffline() : goOnline()"
+                    class="rounded-xl py-3 text-sm font-black active:scale-95 transition-all"
+                    [class.bg-emerald-500]="status() !== 'online'"
+                    [class.text-white]="status() !== 'online'"
+                    [class.bg-slate-900]="status() === 'online'"
+                    [class.text-white]="status() === 'online'"
+                  >
+                    {{ status() === 'online' ? 'Go Offline' : 'Go Online' }}
+                  </button>
+                  <button
+                    type="button"
+                    (click)="toggleAvailability()"
+                    [disabled]="status() !== 'online'"
+                    class="rounded-xl py-3 text-sm font-black active:scale-95 transition-all disabled:opacity-50"
+                    [class.bg-amber-500]="isAvailable()"
+                    [class.text-slate-950]="isAvailable()"
+                    [class.bg-slate-100]="!isAvailable()"
+                    [class.text-slate-800]="!isAvailable()"
+                  >
+                    {{ isAvailable() ? 'Set Busy' : 'Set Free' }}
+                  </button>
+                </div>
+              </app-card>
+
+              <app-card class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Verification</p>
+                    <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ isVerified() ? 'Approved driver' : 'Setup needs attention' }}</h2>
+                    <p class="mt-1 text-sm font-semibold text-slate-600">{{ verificationNotes() || 'Manage vehicle, documents, plan and verification status.' }}</p>
+                  </div>
+                  <app-badge [variant]="isVerified() ? 'success' : isActionRequired() ? 'warning' : 'secondary'">{{ verificationStatus() }}</app-badge>
+                </div>
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                  <button type="button" (click)="router.navigate(['/driver/settings'])" class="rounded-xl bg-slate-100 py-3 text-sm font-black text-slate-800">Settings</button>
+                  <button type="button" (click)="router.navigate(['/driver/onboarding'])" class="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">Setup</button>
+                </div>
+              </app-card>
+
+              <app-card class="p-4">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Stripe Connect</p>
+                    <h2 class="mt-2 text-lg font-display font-black text-slate-950">{{ getStripeCompactSummary() }}</h2>
+                    <p class="mt-1 text-sm font-semibold text-slate-600">{{ getStripeDescription() }}</p>
+                  </div>
+                  <app-badge [variant]="getStripeBadgeVariant()">{{ getStripeBadgeText() }}</app-badge>
+                </div>
+                <button type="button" (click)="openPayoutSettings()" class="mt-4 w-full rounded-xl bg-slate-950 py-3 text-sm font-black text-white">Payout Setup</button>
+              </app-card>
+            </div>
           }
         </div>
-      </div>
-
-      <!-- Legacy Status Cards (Hidden but functional) -->
-      @if (isUnderReview() || isActionRequired() || !isVerified() || !isStripeReady() || activeJob()) {
-        <div class="hidden">
-          <!-- Keep existing logic for backward compatibility -->
-        </div>
       }
-  `
-}
+    </ion-content>
 
-export class DriverDashboardPage implements OnInit, OnDestroy {
+    <nav class="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur">
+      <div class="grid grid-cols-5 gap-1 rounded-2xl bg-slate-50 p-1">
+        @for (tab of hubTabs; track tab.key) {
+          <button
+            type="button"
+            (click)="setHubTab(tab.key)"
+            class="flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-black transition-all"
+            [class.bg-amber-500]="activeHubTab() === tab.key"
+            [class.text-slate-950]="activeHubTab() === tab.key"
+            [class.text-slate-500]="activeHubTab() !== tab.key"
+          >
+            <ion-icon [name]="tab.icon" class="text-base"></ion-icon>
+            <span>{{ tab.label }}</span>
+          </button>
+        }
+      </div>
+    </nav>
+  `
+})
+
+
+
+export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
+    @ViewChild('map') private marketplaceMap?: MapComponent;
+
     public router = inject(Router);
     private route = inject(ActivatedRoute);
     public auth = inject(AuthService);
@@ -435,15 +703,29 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     private mapProvider = inject(MapProviderService);
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
+    private notificationService = inject(NotificationService);
 
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
     activeJob = this.driverService.activeJob;
+    activeHubTab = signal<DriverHubTab>('requests');
+    readonly hubTabs: Array<{ key: DriverHubTab; label: string; icon: string }> = [
+        { key: 'requests', label: 'Requests', icon: 'location-outline' },
+        { key: 'earnings', label: 'Earnings', icon: 'stats-chart' },
+        { key: 'trips', label: 'Trips', icon: 'list-outline' },
+        { key: 'wallet', label: 'Wallet', icon: 'wallet-outline' },
+        { key: 'profile', label: 'Profile', icon: 'settings-outline' }
+    ];
     private readonly passedJobsStorageKey = 'movabi_driver_passed_jobs';
     passedJobIds = signal<Set<string>>(new Set());
     jobs = computed(() => {
         const passed = this.passedJobIds();
         return this.driverService.availableJobs().filter(job => !passed.has(job.id));
+    });
+    selectedAvailableJob = computed(() => {
+        const id = this.selectedJobId();
+        if (!id) return null;
+        return this.jobs().find(job => job.id === id) || null;
     });
     locationError = this.locationService.locationError;
 
@@ -474,8 +756,21 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     surgeAreas = signal<any[]>([]); // For surge/high-demand areas
 
     private jobsChannel?: RealtimeChannel;
+    private messagesChannel?: RealtimeChannel;
     private jobsRefreshInterval?: ReturnType<typeof setInterval>;
+    private locationRefreshInterval?: ReturnType<typeof setInterval>;
     private knownAvailableJobIds = new Set<string>();
+    private renderedJobMarkerIds = new Set<string>();
+    private geocodedJobCoordinates = new Map<string, MarkerCoordinates>();
+    private geocodingInFlight = new Set<string>();
+    private geocodingAttempted = new Set<string>();
+    private hasCenteredMarketplaceMap = false;
+    private hasFitMarketplaceBounds = false;
+    private activeRouteDrawnFor: string | null = null;
+    private notifiedDriverEventIds = new Set<string>();
+    private sheetDragStartY = 0;
+    private sheetDragStartHeight = 40;
+    private sheetDragMoved = false;
     resubmittingReview = signal(false);
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
@@ -664,6 +959,17 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             chevronDownOutline,
             settingsOutline
         });
+
+        effect(() => {
+            this.jobs();
+            this.activeJob();
+            this.driverLocation();
+            this.activeHubTab();
+
+            if (this.mapComponent()) {
+                queueMicrotask(() => this.syncMarketplaceMapMarkers());
+            }
+        });
     }
 
     async ngOnInit() {
@@ -678,9 +984,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         await this.loadDashboardStats();
         await this.refreshActiveJob();
         await this.driverService.fetchAvailableJobs();
+        await this.loadWalletEarnings();
+        this.syncMarketplaceMapMarkers();
         this.knownAvailableJobIds = new Set(this.jobs().map(job => job.id));
 
         this.subscribeToAvailableJobsRealtime();
+        this.subscribeToDriverMessagesRealtime();
         this.startJobsAutoRefresh();
 
         // Initialize marketplace UI features
@@ -703,10 +1012,28 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.jobsRefreshInterval = undefined;
         }
 
+        if (this.locationRefreshInterval) {
+            clearInterval(this.locationRefreshInterval);
+            this.locationRefreshInterval = undefined;
+        }
+
         if (this.jobsChannel) {
             this.supabase.client.removeChannel(this.jobsChannel);
             this.jobsChannel = undefined;
         }
+
+        if (this.messagesChannel) {
+            this.supabase.client.removeChannel(this.messagesChannel);
+            this.messagesChannel = undefined;
+        }
+    }
+
+    ngAfterViewInit(): void {
+        window.setTimeout(() => {
+            if (this.marketplaceMap) {
+                this.onMapReady(this.marketplaceMap);
+            }
+        }, 150);
     }
 
     formatPrice(amount: number | null | undefined) {
@@ -815,6 +1142,62 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         await this.router.navigate(['/driver/job-details', jobId]);
+    }
+
+    async openActiveJobChat(job: Booking | null | undefined): Promise<void> {
+        const jobId = job?.id || this.activeJob()?.id;
+
+        if (!jobId) {
+            this.showToast('No active request chat to open.', 'warning');
+            return;
+        }
+
+        await this.router.navigate(['/driver/job-details', jobId], { queryParams: { chat: '1' } });
+    }
+
+    activeJobCustomerName(job: Booking | null | undefined = this.activeJob()): string {
+        const raw = job as any;
+        const value = raw?.customer?.full_name ||
+            raw?.customer?.name ||
+            raw?.customer_name ||
+            raw?.rider_name ||
+            raw?.metadata?.customer_name ||
+            raw?.metadata?.rider_name;
+
+        return String(value || 'Customer').trim();
+    }
+
+    activeJobCustomerPhone(job: Booking | null | undefined = this.activeJob()): string | null {
+        const raw = job as any;
+        const value = raw?.customer?.phone ||
+            raw?.customer_phone ||
+            raw?.metadata?.customer_phone ||
+            raw?.metadata?.phone ||
+            raw?.details?.customer_phone;
+        const phone = String(value || '').trim();
+        return phone || null;
+    }
+
+    callActiveJobCustomer(job: Booking | null | undefined = this.activeJob()): void {
+        const phone = this.activeJobCustomerPhone(job);
+        if (!phone) {
+            this.showToast('No customer phone number available.', 'warning');
+            return;
+        }
+
+        window.location.href = `tel:${phone}`;
+    }
+
+    async focusMapOnActiveJob(): Promise<void> {
+        const active = this.activeJob();
+        if (!active) return;
+
+        const pickup = this.resolveJobCoordinates(active) || await this.ensureJobCoordinates(active);
+        if (pickup) {
+            this.mapComponent()?.setCenter(pickup.lng, pickup.lat, 15);
+        }
+
+        this.syncMarketplaceMapMarkers();
     }
 
     activeJobTitle(): string {
@@ -1209,6 +1592,81 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return profile?.pricing_plan === 'pro' && profile?.subscription_status === 'active';
     }
 
+    driverPlanLabel(): string {
+        return this.isProDriver() ? 'Pro Driver' : 'Starter Driver';
+    }
+
+    walletRecentEarnings(): any[] {
+        return (this.driverService.earnings() || []).slice(0, 5);
+    }
+
+    walletPaidTotal(): number {
+        return this.sumEarningsByStatus('paid');
+    }
+
+    walletPendingTotal(): number {
+        return this.sumEarningsByStatus('pending');
+    }
+
+    walletTransferredTotal(): number {
+        return this.walletPaidTotal();
+    }
+
+    walletFeeTotal(): number {
+        return (this.driverService.earnings() || []).reduce((total, earning: any) => {
+            const fee = this.firstPositiveNumber(
+                earning?.platform_fee,
+                earning?.platform_commission,
+                earning?.commission_amount,
+                earning?.fee
+            );
+            return total + (fee || 0);
+        }, 0);
+    }
+
+    earningNetAmount(earning: any): number {
+        return this.firstPositiveNumber(
+            earning?.net_amount,
+            earning?.driver_payout,
+            earning?.payout_amount,
+            earning?.amount
+        ) || 0;
+    }
+
+    earningStatusLabel(earning: any): string {
+        const status = this.getWalletEarningStatus(earning);
+        return status === 'paid' ? 'Paid to Stripe' : 'Pending payout';
+    }
+
+    earningLabel(earning: any): string {
+        return String(
+            earning?.service_type ||
+            earning?.service_slug ||
+            earning?.job_type ||
+            earning?.description ||
+            'Completed request'
+        ).replace(/_/g, ' ');
+    }
+
+    private sumEarningsByStatus(status: 'paid' | 'pending'): number {
+        return (this.driverService.earnings() || [])
+            .filter((earning: any) => this.getWalletEarningStatus(earning) === status)
+            .reduce((total, earning: any) => total + this.earningNetAmount(earning), 0);
+    }
+
+    private getWalletEarningStatus(earning: any): 'paid' | 'pending' {
+        const status = String(
+            earning?.status ||
+            earning?.payout_status ||
+            earning?.transfer_status ||
+            ''
+        ).toLowerCase();
+
+        return ['paid', 'transferred', 'settled', 'completed', 'succeeded'].includes(status)
+            ? 'paid'
+            : 'pending';
+    }
+
     private toNullableNumber(value: unknown): number | null {
         if (value === null || value === undefined || value === '') return null;
         const parsed = Number(value);
@@ -1238,7 +1696,16 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     async refreshAvailableJobs() {
         await this.driverService.fetchAvailableJobs();
+        this.syncMarketplaceMapMarkers();
         this.showToast('Requests refreshed.', 'success');
+    }
+
+    private async loadWalletEarnings(): Promise<void> {
+        try {
+            await this.driverService.fetchEarnings();
+        } catch (error) {
+            console.warn('[driver-dashboard] Failed to load wallet earnings', error);
+        }
     }
 
     async browseRequests() {
@@ -1246,6 +1713,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             await this.goOnline();
         } else {
             await this.driverService.fetchAvailableJobs();
+            this.syncMarketplaceMapMarkers();
         }
 
         const section = document.querySelector('[data-section="available-requests"]');
@@ -1265,6 +1733,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         await this.driverService.fetchAvailableJobs();
+        this.syncMarketplaceMapMarkers();
     }
 
     private subscribeToAvailableJobsRealtime(): void {
@@ -1283,6 +1752,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                     const newStatus = String((payload.new as any)?.status || '');
                     const oldStatus = String((payload.old as any)?.status || '');
                     const changedJobId = String((payload.new as any)?.id || (payload.old as any)?.id || '');
+                    const user = this.auth.currentUser();
+                    const changedDriverId = String((payload.new as any)?.driver_id || (payload.old as any)?.driver_id || '');
+                    const isDriverJob = !!user?.id && changedDriverId === user.id;
                     const shouldAlert =
                         newStatus === 'searching' &&
                         !!changedJobId &&
@@ -1314,12 +1786,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                     ) {
                         await this.refreshActiveJob();
                         await this.driverService.fetchAvailableJobs();
+                        this.syncMarketplaceMapMarkers();
 
                         const visibleJobs = this.jobs();
                         const newVisibleJob = visibleJobs.find(job => job.id === changedJobId);
 
                         if (shouldAlert && newVisibleJob) {
                             await this.alertNewJob(newVisibleJob);
+                        }
+
+                        if (isDriverJob && changedJobId && newStatus && newStatus !== oldStatus) {
+                            await this.notifyDriverEventOnce(
+                                `job-status:${changedJobId}:${newStatus}`,
+                                'Request updated',
+                                `Status changed to ${this.formatStatusText(newStatus)}.`,
+                                { route: `/driver/job-details/${changedJobId}`, jobId: changedJobId, type: 'job_status_update' }
+                            );
                         }
 
                         this.knownAvailableJobIds = new Set(visibleJobs.map(job => job.id));
@@ -1329,6 +1811,61 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             .subscribe((status) => {
                 console.log('[driver-dashboard] jobs realtime:', status);
             });
+    }
+
+    private subscribeToDriverMessagesRealtime(): void {
+        if (this.messagesChannel) return;
+
+        const user = this.auth.currentUser();
+        if (!user?.id) return;
+
+        this.messagesChannel = this.supabase.client
+            .channel(`driver-dashboard-messages-${user.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'job_messages',
+                    filter: `receiver_id=eq.${user.id}`
+                },
+                async (payload) => {
+                    const message = payload.new as Record<string, any>;
+                    const jobId = String(message['job_id'] || '');
+                    const messageId = String(message['id'] || `${jobId}:${message['created_at'] || Date.now()}`);
+
+                    await this.notifyDriverEventOnce(
+                        `chat:${messageId}`,
+                        'New customer message',
+                        String(message['message'] || 'Open the request to reply.'),
+                        { route: jobId ? `/driver/job-details/${jobId}` : '/driver', jobId, type: 'customer_chat_message' }
+                    );
+                }
+            )
+            .subscribe((status) => {
+                console.log('[driver-dashboard] messages realtime:', status);
+            });
+    }
+
+    private async notifyDriverEventOnce(
+        key: string,
+        title: string,
+        body: string,
+        data?: Record<string, unknown>
+    ): Promise<void> {
+        if (this.notifiedDriverEventIds.has(key)) return;
+        this.notifiedDriverEventIds.add(key);
+
+        this.showToast(`${title}: ${body}`, 'warning');
+
+        try {
+            await Haptics.notification({ type: NotificationType.Warning });
+        } catch {
+            navigator.vibrate?.([120, 70, 120]);
+        }
+
+        this.playNewJobTone();
+        await this.notificationService.showLocalNotification(title, body, data).catch(() => undefined);
     }
 
     private async alertNewJob(job: Booking): Promise<void> {
@@ -1345,6 +1882,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             .catch(() => undefined);
 
         this.playNewJobTone();
+    }
+
+    private formatStatusText(status: string): string {
+        return String(status || 'updated')
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, char => char.toUpperCase());
     }
 
     private playNewJobTone(): void {
@@ -1387,6 +1930,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
             if (this.status() === 'online' && this.isAvailable()) {
                 await this.driverService.fetchAvailableJobs();
+                this.syncMarketplaceMapMarkers();
             }
         }, 5000);
     }
@@ -1527,6 +2071,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         this.driverService.onlineStatus.set('offline');
         this.driverService.availableJobs.set([]);
+        this.syncMarketplaceMapMarkers();
 
         if (profile) {
             await this.safeUpdateProfile(profile.id, {
@@ -1558,12 +2103,33 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         await this.driverService.fetchAvailableJobs();
+        this.syncMarketplaceMapMarkers();
         this.checkTracking();
     }
 
-    async toggleAvailability(event: Event) {
-        const customEvent = event as CustomEvent;
-        const available = !!customEvent.detail?.checked;
+    async goOffline() {
+        const profile = this.profileService.profile();
+
+        this.driverService.onlineStatus.set('offline');
+        this.driverService.isAvailable.set(false);
+        this.driverService.availableJobs.set([]);
+        this.syncMarketplaceMapMarkers();
+
+        if (profile) {
+            await this.safeUpdateProfile(profile.id, {
+                is_online: false,
+                is_available: false,
+                last_active_at: new Date().toISOString()
+            });
+        }
+
+        this.checkTracking();
+    }
+
+    async toggleAvailability(event?: Event) {
+        const customEvent = event as CustomEvent | undefined;
+        const hasToggleValue = customEvent?.detail && typeof customEvent.detail.checked === 'boolean';
+        const available = hasToggleValue ? !!customEvent?.detail?.checked : !this.isAvailable();
         const profile = this.profileService.profile();
 
         if (available && !this.canDriverAcceptTrips()) {
@@ -1584,8 +2150,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         if (available) {
             await this.driverService.fetchAvailableJobs();
+            this.syncMarketplaceMapMarkers();
         } else {
             this.driverService.availableJobs.set([]);
+            this.syncMarketplaceMapMarkers();
         }
     }
 
@@ -1640,12 +2208,19 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 throw new Error(error.message || 'Request no longer available');
             }
 
+            this.driverService.availableJobs.update((jobs: Booking[]) =>
+                jobs.filter((job: Booking) => job.id !== jobId)
+            );
+            await this.refreshActiveJob();
             await this.driverService.fetchAvailableJobs();
+            this.selectedJobId.set(null);
+            this.sheetHeight.set(55);
+            this.hasFitMarketplaceBounds = false;
+            this.syncMarketplaceMapMarkers();
 
             await loading.dismiss();
             this.submitting.set(false);
-
-            await this.router.navigate(['/driver/job-details', jobId]);
+            this.showToast('Request accepted. Continue when you are ready.', 'success');
         } catch (e: unknown) {
             await loading.dismiss();
             this.submitting.set(false);
@@ -1654,14 +2229,20 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.showToast(message, 'danger');
 
             await this.driverService.fetchAvailableJobs();
+            this.syncMarketplaceMapMarkers();
         }
     }
 
     reject(jobId: string) {
         this.rememberPassedJob(jobId);
+        if (this.selectedJobId() === jobId) {
+            this.selectedJobId.set(null);
+            this.sheetHeight.set(40);
+        }
         this.driverService.availableJobs.update((jobs: Booking[]) =>
             jobs.filter((job: Booking) => job.id !== jobId)
         );
+        this.syncMarketplaceMapMarkers();
     }
 
     async resubmitDriverReview() {
@@ -1969,69 +2550,163 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
     // MARK: - Marketplace UI Methods
 
-    onMapReady(mapComponent: any) {
-        console.log('[DriverDashboard] Map component ready');
+    onMapReady(mapComponent: MapComponent) {
         this.mapComponent.set(mapComponent);
-        
-        // Initialize map with driver location
-        this.updateDriverLocation();
+
+        window.setTimeout(() => {
+            mapComponent.resize();
+            void this.updateDriverLocation();
+            this.syncMarketplaceMapMarkers();
+        }, 200);
+    }
+
+    setHubTab(tab: DriverHubTab): void {
+        this.activeHubTab.set(tab);
+
+        if (tab === 'requests') {
+            window.setTimeout(() => {
+                this.mapComponent()?.resize?.();
+                this.syncMarketplaceMapMarkers();
+                this.centerMarketplaceMap(false);
+            }, 120);
+        }
+
+        if (tab === 'wallet' || tab === 'earnings') {
+            void this.loadWalletEarnings();
+        }
     }
 
     selectJob(jobId: string) {
-        console.log('[DriverDashboard] Selecting job:', jobId);
         this.selectedJobId.set(jobId);
-        
-        // Focus map on selected job
+
         const job = this.jobs().find(j => j.id === jobId);
-        if (job && this.mapComponent()) {
-            this.focusMapOnJob(job);
+        if (job) {
+            void this.focusMapOnJob(job);
         }
-        
-        // Expand sheet to show details
-        this.sheetHeight.set(60);
+
+        this.sheetHeight.set(80);
     }
 
     recenterMap() {
-        console.log('[DriverDashboard] Recentering map');
-        if (this.mapComponent() && this.driverLocation()) {
-            this.mapComponent().recenter(this.driverLocation());
-        } else {
-            this.updateDriverLocation();
-        }
+        this.hasCenteredMarketplaceMap = false;
+        this.hasFitMarketplaceBounds = false;
+        void this.updateDriverLocation().then(() => this.centerMarketplaceMap(true));
     }
 
     seeJobOnMap(job: Booking) {
-        console.log('[DriverDashboard] Focusing map on job:', job.id);
-        if (this.mapComponent()) {
-            this.focusMapOnJob(job);
-        }
+        this.selectedJobId.set(job.id);
+        void this.focusMapOnJob(job);
     }
 
-    startDragSheet() {
+    toggleSheet(): void {
+        if (this.sheetDragMoved) {
+            this.sheetDragMoved = false;
+            return;
+        }
+
+        this.sheetHeight.set(this.sheetHeight() >= 70 ? 40 : 80);
+    }
+
+    startDragSheet(event: PointerEvent) {
+        event.preventDefault();
         this.isDraggingSheet.set(true);
-        // TODO: Implement drag functionality
-        console.log('[DriverDashboard] Sheet drag started');
+        this.sheetDragMoved = false;
+        this.sheetDragStartY = event.clientY;
+        this.sheetDragStartHeight = this.sheetHeight();
+
+        const move = (moveEvent: PointerEvent) => {
+            const delta = Math.abs(moveEvent.clientY - this.sheetDragStartY);
+            if (delta > 4) {
+                this.sheetDragMoved = true;
+            }
+
+            const viewportHeight = Math.max(window.innerHeight, 1);
+            const deltaVh = ((this.sheetDragStartY - moveEvent.clientY) / viewportHeight) * 100;
+            const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaVh));
+            this.sheetHeight.set(nextHeight);
+        };
+
+        const end = () => {
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            document.removeEventListener('pointercancel', end);
+            this.sheetHeight.set(this.sheetHeight() >= 60 ? 80 : 40);
+
+            window.setTimeout(() => {
+                this.isDraggingSheet.set(false);
+                this.sheetDragMoved = false;
+            }, 0);
+        };
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', end, { once: true });
+        document.addEventListener('pointercancel', end, { once: true });
+    }
+
+    payoutHelperText(): string {
+        if (this.isStripeReady()) {
+            return 'Stripe Connect is ready for completed job payouts.';
+        }
+
+        return 'Open payout setup to finish Stripe Connect before payout processing.';
+    }
+
+    async openPayoutSettings(): Promise<void> {
+        if (this.isStripeReady()) {
+            await this.openStripeDashboard();
+            return;
+        }
+
+        await this.setupPayouts();
     }
 
     private setupLocationTracking() {
-        // Update driver location every 10 seconds
-        setInterval(() => {
-            this.updateDriverLocation();
+        if (this.locationRefreshInterval) return;
+
+        void this.updateDriverLocation();
+        this.locationRefreshInterval = setInterval(() => {
+            void this.updateDriverLocation();
         }, 10000);
     }
 
-    private async updateDriverLocation() {
+    private async updateDriverLocation(): Promise<MarkerCoordinates | null> {
         try {
             const location = await this.locationService.getCurrentPosition();
             if (location) {
-                this.driverLocation.set({
+                const coordinates = {
                     lat: location.coords.latitude,
                     lng: location.coords.longitude
-                });
+                };
+                this.driverLocation.set(coordinates);
+                this.syncMarketplaceMapMarkers();
+                this.centerMarketplaceMap(false);
+                return coordinates;
             }
         } catch (error) {
-            console.error('[DriverDashboard] Failed to update driver location:', error);
+            console.warn('[DriverDashboard] GPS location unavailable, checking last known driver location.', error);
         }
+
+        const user = this.auth.currentUser();
+        if (user?.id) {
+            try {
+                const lastKnown = await this.locationService.getLatestDriverLocation(user.id);
+                if (lastKnown) {
+                    const coordinates = {
+                        lat: lastKnown.lat,
+                        lng: lastKnown.lng
+                    };
+                    this.driverLocation.set(coordinates);
+                    this.syncMarketplaceMapMarkers();
+                    this.centerMarketplaceMap(false);
+                    return coordinates;
+                }
+            } catch (error) {
+                console.warn('[DriverDashboard] Last known driver location unavailable.', error);
+            }
+        }
+
+        this.centerMarketplaceMap(false);
+        return null;
     }
 
     private async loadSurgeAreas() {
@@ -2044,13 +2719,439 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
     }
 
-    private focusMapOnJob(job: Booking) {
-        if (!job.pickup_lat || !job.pickup_lng) return;
-        
-        // Update selected job and center map on job location
+    private async focusMapOnJob(job: Booking): Promise<void> {
+        let coordinates = this.resolveJobCoordinates(job);
+
+        if (!coordinates) {
+            coordinates = await this.ensureJobCoordinates(job);
+        }
+
+        if (!coordinates) return;
+
         this.selectedJobId.set(job.id);
-        // Note: Will implement map focusing when MapComponent supports it
-        console.log('[DriverDashboard] Focus map on job:', job.id);
+        this.mapComponent()?.setCenter(coordinates.lng, coordinates.lat, 15);
+        this.syncMarketplaceMapMarkers();
+    }
+
+    private syncMarketplaceMapMarkers(): void {
+        const map = this.mapComponent() as MapComponent | null;
+        if (!map || this.activeHubTab() !== 'requests') return;
+
+        map.resize();
+
+        const driverLocation = this.driverLocation();
+        if (driverLocation) {
+            map.addOrUpdateMarker({
+                id: 'driver-current-location',
+                kind: 'driver',
+                serviceType: 'ride',
+                coordinates: driverLocation,
+                label: 'You'
+            });
+        } else {
+            map.removeMarker('driver-current-location');
+        }
+
+        const nextMarkerIds = new Set<string>();
+        for (const job of this.jobs()) {
+            const coordinates = this.resolveJobCoordinates(job);
+
+            if (!coordinates) {
+                void this.ensureJobCoordinates(job);
+                continue;
+            }
+
+            const markerId = `available-job-${job.id}`;
+            nextMarkerIds.add(markerId);
+            map.addOrUpdateMarker({
+                id: markerId,
+                kind: 'pickup',
+                serviceType: this.getMarkerServiceType(job),
+                coordinates,
+                label: this.formatPrice(this.getRequestFare(job)),
+                onClick: () => this.selectJob(job.id)
+            });
+        }
+
+        const active = this.activeJob();
+        if (active) {
+            const pickup = this.resolveJobCoordinates(active);
+            const dropoff = this.resolveJobDestinationCoordinates(active);
+
+            if (!pickup) {
+                void this.ensureJobCoordinates(active);
+            }
+
+            if (!dropoff) {
+                void this.ensureJobDestinationCoordinates(active);
+            }
+
+            if (pickup) {
+                const pickupMarkerId = `active-job-pickup-${active.id}`;
+                nextMarkerIds.add(pickupMarkerId);
+                map.addOrUpdateMarker({
+                    id: pickupMarkerId,
+                    kind: 'pickup',
+                    serviceType: this.getMarkerServiceType(active),
+                    coordinates: pickup,
+                    label: this.requestOriginLabel(active)
+                });
+            }
+
+            if (dropoff) {
+                const dropoffMarkerId = `active-job-dropoff-${active.id}`;
+                nextMarkerIds.add(dropoffMarkerId);
+                map.addOrUpdateMarker({
+                    id: dropoffMarkerId,
+                    kind: 'destination',
+                    serviceType: this.getMarkerServiceType(active),
+                    coordinates: dropoff,
+                    label: this.requestDestinationLabel(active)
+                });
+            }
+
+            this.drawActiveJobRoute(active, pickup, dropoff);
+        } else {
+            map.clearRoute();
+            this.activeRouteDrawnFor = null;
+        }
+
+        for (const markerId of this.renderedJobMarkerIds) {
+            if (!nextMarkerIds.has(markerId)) {
+                map.removeMarker(markerId);
+            }
+        }
+
+        this.renderedJobMarkerIds = nextMarkerIds;
+        this.centerMarketplaceMap(false);
+    }
+
+    private centerMarketplaceMap(force: boolean): void {
+        const map = this.mapComponent() as MapComponent | null;
+        if (!map || this.activeHubTab() !== 'requests') return;
+
+        const points = this.getMarketplaceMapPoints();
+        const uniquePoints = this.uniqueCoordinates(points);
+
+        if (uniquePoints.length >= 2) {
+            if (this.hasFitMarketplaceBounds && !force) return;
+
+            const lats = uniquePoints.map(point => point.lat);
+            const lngs = uniquePoints.map(point => point.lng);
+            const bounds: [[number, number], [number, number]] = [
+                [Math.min(...lngs), Math.min(...lats)],
+                [Math.max(...lngs), Math.max(...lats)]
+            ];
+
+            map.fitBounds(bounds, {
+                padding: { top: 72, bottom: 260, left: 48, right: 48 },
+                maxZoom: 15,
+                duration: force ? 700 : 900
+            });
+            this.hasFitMarketplaceBounds = true;
+            this.hasCenteredMarketplaceMap = true;
+            return;
+        }
+
+        if (this.hasCenteredMarketplaceMap && !force) return;
+
+        const center = uniquePoints[0] ?? this.locationService.getFallbackCoordinates();
+        if (!center) return;
+
+        map.setCenter(center.lng, center.lat, this.driverLocation() ? 14 : 12);
+        this.hasCenteredMarketplaceMap = true;
+    }
+
+    private getMarketplaceMapPoints(): MarkerCoordinates[] {
+        const points: MarkerCoordinates[] = [];
+        const driverLocation = this.driverLocation();
+
+        if (driverLocation) {
+            points.push(driverLocation);
+        }
+
+        for (const job of this.jobs()) {
+            const coordinates = this.resolveJobCoordinates(job);
+            if (coordinates) {
+                points.push(coordinates);
+            }
+        }
+
+        const active = this.activeJob();
+        if (active) {
+            const pickup = this.resolveJobCoordinates(active);
+            const dropoff = this.resolveJobDestinationCoordinates(active);
+            if (pickup) points.push(pickup);
+            if (dropoff) points.push(dropoff);
+        }
+
+        const serviceArea = this.resolveServiceAreaCoordinates();
+        if (!points.length && serviceArea) {
+            points.push(serviceArea);
+        }
+
+        return points;
+    }
+
+    private uniqueCoordinates(points: MarkerCoordinates[]): MarkerCoordinates[] {
+        const seen = new Set<string>();
+        const unique: MarkerCoordinates[] = [];
+
+        for (const point of points) {
+            const key = `${point.lat.toFixed(5)},${point.lng.toFixed(5)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            unique.push(point);
+        }
+
+        return unique;
+    }
+
+    private resolveJobCoordinates(job: Booking): MarkerCoordinates | null {
+        const cached = this.geocodedJobCoordinates.get(job.id);
+        if (cached) return cached;
+
+        const raw = job as Record<string, any>;
+        const direct = this.coordinatesFromValues(
+            raw['pickup_lat'] ?? raw['pickup_latitude'] ?? raw['store_lat'] ?? raw['store_latitude'],
+            raw['pickup_lng'] ?? raw['pickup_longitude'] ?? raw['pickup_lon'] ?? raw['store_lng'] ?? raw['store_longitude'] ?? raw['store_lon']
+        );
+        if (direct) return direct;
+
+        const metadata = raw['metadata'] as Record<string, any> | undefined;
+        return this.coordinatesFromValues(
+            metadata?.['pickup_lat'] ?? metadata?.['store_lat'],
+            metadata?.['pickup_lng'] ?? metadata?.['pickup_lon'] ?? metadata?.['store_lng'] ?? metadata?.['store_lon']
+        );
+    }
+
+    private resolveJobDestinationCoordinates(job: Booking): MarkerCoordinates | null {
+        const cacheKey = `${job.id}:dropoff`;
+        const cached = this.geocodedJobCoordinates.get(cacheKey);
+        if (cached) return cached;
+
+        const raw = job as Record<string, any>;
+        const direct = this.coordinatesFromValues(
+            raw['dropoff_lat'] ?? raw['dropoff_latitude'] ?? raw['destination_lat'] ?? raw['delivery_lat'],
+            raw['dropoff_lng'] ?? raw['dropoff_longitude'] ?? raw['dropoff_lon'] ?? raw['destination_lng'] ?? raw['destination_lon'] ?? raw['delivery_lng'] ?? raw['delivery_lon']
+        );
+        if (direct) return direct;
+
+        const metadata = raw['metadata'] as Record<string, any> | undefined;
+        return this.coordinatesFromValues(
+            metadata?.['dropoff_lat'] ?? metadata?.['destination_lat'] ?? metadata?.['delivery_lat'],
+            metadata?.['dropoff_lng'] ?? metadata?.['dropoff_lon'] ?? metadata?.['destination_lng'] ?? metadata?.['destination_lon'] ?? metadata?.['delivery_lng'] ?? metadata?.['delivery_lon']
+        );
+    }
+
+    private async ensureJobCoordinates(job: Booking): Promise<MarkerCoordinates | null> {
+        const existing = this.resolveJobCoordinates(job);
+        if (existing) return existing;
+        if (this.geocodingInFlight.has(job.id)) return null;
+        if (this.geocodingAttempted.has(job.id)) return null;
+
+        const address = this.getJobMarkerAddress(job);
+        if (!address) return null;
+
+        this.geocodingInFlight.add(job.id);
+        this.geocodingAttempted.add(job.id);
+
+        try {
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(address));
+            const match = results.find(result => this.isValidCoordinate(result.lat, result.lng));
+
+            if (!match) return null;
+
+            const coordinates = { lat: Number(match.lat), lng: Number(match.lng) };
+            this.geocodedJobCoordinates.set(job.id, coordinates);
+            await this.cacheJobCoordinates(job.id, coordinates);
+            this.syncMarketplaceMapMarkers();
+            return coordinates;
+        } catch (error) {
+            console.warn('[DriverDashboard] Could not geocode available request address.', { jobId: job.id, error });
+            return null;
+        } finally {
+            this.geocodingInFlight.delete(job.id);
+        }
+    }
+
+    private async ensureJobDestinationCoordinates(job: Booking): Promise<MarkerCoordinates | null> {
+        const existing = this.resolveJobDestinationCoordinates(job);
+        if (existing) return existing;
+
+        const cacheKey = `${job.id}:dropoff`;
+        if (this.geocodingInFlight.has(cacheKey)) return null;
+        if (this.geocodingAttempted.has(cacheKey)) return null;
+
+        const address = this.getJobDestinationMarkerAddress(job);
+        if (!address) return null;
+
+        this.geocodingInFlight.add(cacheKey);
+        this.geocodingAttempted.add(cacheKey);
+
+        try {
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(address));
+            const match = results.find(result => this.isValidCoordinate(result.lat, result.lng));
+
+            if (!match) return null;
+
+            const coordinates = { lat: Number(match.lat), lng: Number(match.lng) };
+            this.geocodedJobCoordinates.set(cacheKey, coordinates);
+            await this.cacheJobDestinationCoordinates(job.id, coordinates);
+            this.syncMarketplaceMapMarkers();
+            return coordinates;
+        } catch (error) {
+            console.warn('[DriverDashboard] Could not geocode active request destination.', { jobId: job.id, error });
+            return null;
+        } finally {
+            this.geocodingInFlight.delete(cacheKey);
+        }
+    }
+
+    private async cacheJobCoordinates(jobId: string, coordinates: MarkerCoordinates): Promise<void> {
+        try {
+            const { error } = await this.supabase.client
+                .from('jobs')
+                .update({
+                    pickup_lat: coordinates.lat,
+                    pickup_lng: coordinates.lng
+                })
+                .eq('id', jobId);
+
+            if (error) {
+                console.warn('[DriverDashboard] Could not cache available request coordinates.', error);
+            }
+        } catch (error) {
+            console.warn('[DriverDashboard] Available request coordinate cache skipped.', error);
+        }
+    }
+
+    private async cacheJobDestinationCoordinates(jobId: string, coordinates: MarkerCoordinates): Promise<void> {
+        try {
+            const { error } = await this.supabase.client
+                .from('jobs')
+                .update({
+                    dropoff_lat: coordinates.lat,
+                    dropoff_lng: coordinates.lng
+                })
+                .eq('id', jobId);
+
+            if (error) {
+                console.warn('[DriverDashboard] Could not cache active request destination coordinates.', error);
+            }
+        } catch (error) {
+            console.warn('[DriverDashboard] Active request destination coordinate cache skipped.', error);
+        }
+    }
+
+    private getJobMarkerAddress(job: Booking): string {
+        const raw = job as Record<string, any>;
+        const metadata = raw['metadata'] as Record<string, any> | undefined;
+        return String(
+            raw['pickup_address'] ||
+            raw['store_address'] ||
+            raw['origin_address'] ||
+            metadata?.['pickup_address'] ||
+            metadata?.['store_address'] ||
+            ''
+        ).trim();
+    }
+
+    private getJobDestinationMarkerAddress(job: Booking): string {
+        const raw = job as Record<string, any>;
+        const metadata = raw['metadata'] as Record<string, any> | undefined;
+        return String(
+            raw['dropoff_address'] ||
+            raw['destination_address'] ||
+            raw['delivery_address'] ||
+            metadata?.['dropoff_address'] ||
+            metadata?.['destination_address'] ||
+            metadata?.['delivery_address'] ||
+            ''
+        ).trim();
+    }
+
+    private drawActiveJobRoute(
+        job: Booking,
+        pickup: MarkerCoordinates | null,
+        dropoff: MarkerCoordinates | null
+    ): void {
+        const map = this.mapComponent() as MapComponent | null;
+        if (!map || !pickup || !dropoff) {
+            map?.clearRoute();
+            this.activeRouteDrawnFor = null;
+            return;
+        }
+
+        const routeKey = `${job.id}:${pickup.lat.toFixed(5)},${pickup.lng.toFixed(5)}:${dropoff.lat.toFixed(5)},${dropoff.lng.toFixed(5)}`;
+        if (this.activeRouteDrawnFor === routeKey) return;
+
+        const bounds: [[number, number], [number, number]] = [
+            [Math.min(pickup.lng, dropoff.lng), Math.min(pickup.lat, dropoff.lat)],
+            [Math.max(pickup.lng, dropoff.lng), Math.max(pickup.lat, dropoff.lat)]
+        ];
+
+        const route: RouteSummary = {
+            distanceMeters: 0,
+            durationSeconds: 0,
+            geometry: {
+                type: 'LineString',
+                coordinates: [
+                    [pickup.lng, pickup.lat],
+                    [dropoff.lng, dropoff.lat]
+                ]
+            },
+            bounds
+        };
+
+        map.drawRoute(route);
+        this.activeRouteDrawnFor = routeKey;
+    }
+
+    private getMarkerServiceType(job: Booking): ServiceTypeSlug {
+        const slug = String((job as any).service_type?.slug || (job as any).service_slug || (job as any).type || '').toLowerCase();
+
+        if (slug.includes('van')) return 'van-moving';
+        if (slug.includes('delivery')) return 'delivery';
+        if (slug.includes('errand')) return 'errand';
+        return 'ride';
+    }
+
+    private resolveServiceAreaCoordinates(): MarkerCoordinates | null {
+        for (const job of this.jobs()) {
+            const coordinates = this.resolveJobCoordinates(job);
+            if (coordinates) return coordinates;
+
+            const raw = job as Record<string, any>;
+            const metadata = raw['metadata'] as Record<string, any> | undefined;
+            const cityCoordinates = this.coordinatesFromValues(
+                raw['city_lat'] ?? metadata?.['city_lat'],
+                raw['city_lng'] ?? raw['city_lon'] ?? metadata?.['city_lng'] ?? metadata?.['city_lon']
+            );
+
+            if (cityCoordinates) return cityCoordinates;
+        }
+
+        return null;
+    }
+
+    private coordinatesFromValues(latValue: unknown, lngValue: unknown): MarkerCoordinates | null {
+        const lat = Number(latValue);
+        const lng = Number(lngValue);
+
+        if (!this.isValidCoordinate(lat, lng)) return null;
+        return { lat, lng };
+    }
+
+    private isValidCoordinate(lat: unknown, lng: unknown): boolean {
+        const parsedLat = Number(lat);
+        const parsedLng = Number(lng);
+        return Number.isFinite(parsedLat) &&
+            Number.isFinite(parsedLng) &&
+            parsedLat >= -90 &&
+            parsedLat <= 90 &&
+            parsedLng >= -180 &&
+            parsedLng <= 180;
     }
 
     getVehicleRequired(job: Booking): string {

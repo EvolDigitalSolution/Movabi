@@ -13,6 +13,7 @@ export interface MarkerOptions {
   coordinates: MarkerCoordinates;
   label?: string;
   heading?: number;
+  onClick?: (markerId: string) => void;
 }
 
 export interface DriverLivePosition {

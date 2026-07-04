@@ -137,6 +137,11 @@ type SheetState = 'medium' | 'expanded';
                           class="h-full bg-blue-600 rounded-full transition-all duration-1000"
                           [style.width.%]="searchProgressPercent()"
                         ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             }
 
             @if (booking()?.driver_id && (driverEtaToPickup() !== null || driverDistanceToPickup() !== null)) {
@@ -153,25 +158,28 @@ type SheetState = 'medium' | 'expanded';
                   </div>
                 </div>
               </div>
-            } @else {
-                          <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
-                        }
-                      </div>
-
-                      <div class="min-w-0">
-                        <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
-                        <h3 class="text-sm font-display font-black text-slate-950 leading-tight break-words">{{ getDriverName() }}</h3>
-                        <p class="text-[11px] text-slate-500 font-semibold leading-snug break-words">{{ driverLiveSubtext() }}</p>
-                      </div>
+            } @else if (booking()?.driver_id) {
+              <div class="absolute left-3 top-3 z-20 pointer-events-none">
+                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-xl shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center border border-orange-100 shrink-0">
+                      <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
                     </div>
+                    <div class="min-w-0">
+                      <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
+                      <h3 class="text-sm font-display font-black text-slate-950 leading-tight break-words">{{ getDriverName() }}</h3>
+                      <p class="text-[11px] text-slate-500 font-semibold leading-snug break-words">{{ driverLiveSubtext() }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            }
 
-                    <app-badge variant="success" class="shrink-0">{{ driverLastSeenLabel() }}</app-badge>
 
 
 
 
-
-
+          </div>
           <div
             class="bg-white rounded-t-[2rem] shadow-2xl p-3 space-y-3 -mt-8 relative z-10 overflow-y-auto overscroll-contain border-t border-slate-100 transition-all duration-300 ion-padding-bottom"
             [ngClass]="sheetHeightClass()"
@@ -364,6 +372,7 @@ type SheetState = 'medium' | 'expanded';
                   </div>
                 </div>
               </div>
+            }
 
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
               <div class="grid grid-cols-2 gap-3">
@@ -548,7 +557,13 @@ type SheetState = 'medium' | 'expanded';
                     <p class="text-xs font-semibold text-slate-500 mb-1">{{ destinationLabel() }}</p>
                     <h3 class="text-sm font-bold text-slate-900 leading-snug">
                       {{ booking()?.dropoff_address }}
-                    </h3>@if (details()) {
+                    </h3>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            @if (details()) {
               <div class="pt-2">
                 <div class="flex items-center gap-2 mb-4">
                   <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
@@ -631,33 +646,7 @@ type SheetState = 'medium' | 'expanded';
                 </app-button>
               }
             </div>
-            }
           </div>
-        </div>
-      } @else {
-        <div class="flex flex-col items-center justify-center h-full p-10 text-center space-y-8">
-          @if (isLoading()) {
-            <div class="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-slate-200/50 border border-slate-100">
-              <ion-spinner name="crescent" color="primary"></ion-spinner>
-            </div>
-            <div class="space-y-2">
-              <h3 class="text-xl font-display font-bold text-slate-900">Loading</h3>
-              <p class="text-slate-500 font-medium">Loading request...</p>
-            </div>
-          } @else {
-            <div class="w-24 h-24 bg-red-50 rounded-[2.5rem] flex items-center justify-center text-red-500 border border-red-100 mb-4">
-              <ion-icon name="alert-circle-outline" class="text-5xl"></ion-icon>
-            </div>
-            <div class="space-y-3">
-              <h3 class="text-2xl font-display font-bold text-slate-900">Not Found</h3>
-              <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                This booking may be completed or cancelled.
-              </p>
-            </div>
-            <app-button variant="secondary" size="lg" (clicked)="router.navigate(['/customer'])" class="w-full">
-              Back Home
-            </app-button>
-          }
         </div>
       }
     </ion-content>
@@ -2237,12 +2226,15 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return `${Math.round(seconds / 60)}m`;
     }
 
-    private formatDuration(seconds: number | null): string {
+    formatDuration(seconds: number | null): string {
         if (!seconds || !Number.isFinite(seconds)) return 'ETA unavailable';
         const minutes = Math.max(1, Math.round(seconds / 60));
         return `${minutes} min`;
     }
 
+    formatDistance(meters: number | null): string {
+        return this.formatDistanceMeters(meters);
+    }
     private formatDistanceMeters(meters: number | null): string {
         if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
         return `${(meters / 1000).toFixed(1)} km`;
@@ -2510,11 +2502,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                         [to.lng, to.lat]
                     ]
                 },
-                distanceMeters: 0,\n                durationSeconds: 0
+                distanceMeters: 0,
+                durationSeconds: 0
             };
             this.mapComponent.drawRoute(fallbackRoute);
-        }
-    });
         }
     }
 }
