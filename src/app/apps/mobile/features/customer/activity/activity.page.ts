@@ -40,8 +40,8 @@ import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
-      <div class="max-w-xl mx-auto p-5 space-y-8 pb-16">
+    <ion-content class="bg-slate-50" [fullscreen]="true">
+      <div class="max-w-xl mx-auto p-5 space-y-8 pb-safe ion-padding-bottom">
         @if (history().length === 0) {
           <button
             type="button"

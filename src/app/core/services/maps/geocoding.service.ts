@@ -146,7 +146,7 @@ export class GeocodingService {
                 limit,
                 language: 'en',
                 country: country.code.toLowerCase(),
-                types: 'address,poi,place,locality',
+                types: 'poi,address,place',
                 proximity: `${country.defaultCenter.lng},${country.defaultCenter.lat}`
             }
         }).pipe(
@@ -191,7 +191,7 @@ export class GeocodingService {
 
     private normalizeQuery(query: string): string {
         const country = this.config.currentCountry();
-        const trimmed = String(query || '')
+        const trimmed = this.normalizePlaceIntent(String(query || ''))
             .replace(/\s+/g, ' ')
             .replace(/\s*,\s*/g, ', ')
             .trim();
@@ -202,6 +202,28 @@ export class GeocodingService {
         const hasCountry = lower.includes(country.name.toLowerCase()) || lower.includes(country.code.toLowerCase());
 
         return hasCountry ? trimmed : `${trimmed}, ${country.name}`;
+    }
+
+    private normalizePlaceIntent(query: string): string {
+        let value = String(query || '').trim();
+
+        value = value
+            .replace(/\b(near|nearby|close to|around)\s+me\b/gi, '')
+            .replace(/\bnear\s+here\b/gi, '')
+            .replace(/\bnearby\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        value = value.replace(/\bnear\s+([^,]+)$/i, (_match, place: string) => {
+            const cleanPlace = String(place || '').trim();
+            return cleanPlace ? `, ${cleanPlace}` : '';
+        });
+
+        return value
+            .replace(/\s*,\s*/g, ', ')
+            .replace(/^,\s*/, '')
+            .replace(/,\s*$/, '')
+            .trim();
     }
 
     private mapOpenRouteFeaturesToResults(features: ORSFeature[]): AutocompleteResult[] {

@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Device } from '@capacitor/device';
+import { Haptics, NotificationType } from '@capacitor/haptics';
 import { Keyboard, KeyboardResize, KeyboardStyle } from '@capacitor/keyboard';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications, Token } from '@capacitor/push-notifications';
@@ -27,9 +28,10 @@ export class NativePlatformService {
 
     await Promise.allSettled([
       StatusBar.setOverlaysWebView({ overlay: false }),
-      StatusBar.setStyle({ style: Style.Dark }),
-      Keyboard.setResizeMode({ mode: KeyboardResize.Body }),
+      StatusBar.setStyle({ style: Style.Light }),
+      Keyboard.setResizeMode({ mode: KeyboardResize.Native }),
       Keyboard.setStyle({ style: KeyboardStyle.Light }),
+      Keyboard.setScroll({ isDisabled: false }),
       Device.getInfo()
     ]);
 
@@ -38,6 +40,7 @@ export class NativePlatformService {
     }
 
     await this.configurePushListeners();
+    await this.configureKeyboardListeners();
     await this.registerPushWhenAlreadyGranted();
 
     await App.addListener('appStateChange', ({ isActive }) => this.appIsActive.set(isActive));
@@ -45,7 +48,7 @@ export class NativePlatformService {
       void Browser.close().catch(() => undefined);
       const parsed = this.safeUrl(url);
       if (!parsed) return;
-      const route = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      const route = this.routeFromAppUrl(parsed);
       if (route.startsWith('/')) void this.router.navigateByUrl(route);
     });
 
@@ -66,7 +69,10 @@ export class NativePlatformService {
   }
 
   async showForegroundNotification(title: string, body: string, extra?: Record<string, unknown>): Promise<void> {
-    if (!this.isNative || !this.appIsActive()) return;
+    if (!this.isNative) return;
+
+    await Haptics.notification({ type: NotificationType.Success }).catch(() => undefined);
+
     const permission = await LocalNotifications.checkPermissions();
     if (permission.display !== 'granted') return;
 
@@ -98,6 +104,32 @@ export class NativePlatformService {
   private async registerPushWhenAlreadyGranted(): Promise<void> {
     const permission = await PushNotifications.checkPermissions();
     if (permission.receive === 'granted') await PushNotifications.register();
+  }
+
+  private async configureKeyboardListeners(): Promise<void> {
+    const show = (height?: number) => {
+      document.body.classList.add('native-keyboard-open');
+      if (height) document.documentElement.style.setProperty('--native-keyboard-height', `${height}px`);
+    };
+    const hide = () => {
+      document.body.classList.remove('native-keyboard-open');
+      document.documentElement.style.removeProperty('--native-keyboard-height');
+    };
+
+    await Keyboard.addListener('keyboardWillShow', ({ keyboardHeight }) => show(keyboardHeight));
+    await Keyboard.addListener('keyboardDidShow', ({ keyboardHeight }) => show(keyboardHeight));
+    await Keyboard.addListener('keyboardWillHide', hide);
+    await Keyboard.addListener('keyboardDidHide', hide);
+  }
+
+  private routeFromAppUrl(parsed: URL): string {
+    if (parsed.protocol === 'com.movabi.app:') {
+      const host = parsed.hostname ? `/${parsed.hostname}` : '';
+      const path = parsed.pathname || '';
+      return `${host}${path}${parsed.search}${parsed.hash}` || '/auth/callback';
+    }
+
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   }
 
   private safeUrl(value: string): URL | null {

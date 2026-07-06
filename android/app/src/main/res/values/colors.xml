@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="movabi_surface">#F8FAFC</color>
+    <color name="movabi_splash_background">#F59E0B</color>
+    <color name="colorPrimary">#F59E0B</color>
+    <color name="colorPrimaryDark">#F59E0B</color>
+    <color name="colorAccent">#D97706</color>
+</resources>

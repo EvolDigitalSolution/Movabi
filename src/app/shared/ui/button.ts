@@ -61,8 +61,8 @@ export class ButtonComponent {
 
     const sizes = {
       sm: 'min-h-11 px-5 py-2.5 text-xs uppercase tracking-[0.12em]',
-      md: 'min-h-[3.25rem] px-6 py-3.5 text-sm',
-      lg: 'min-h-[3.75rem] px-8 py-4 text-base'
+      md: 'min-h-12 px-5 py-3 text-sm',
+      lg: 'min-h-[3.25rem] px-6 py-3.5 text-base'
     };
 
     return `${base} ${variants[this.variant]} ${colorOverrides[this.color]} ${sizes[this.size]} ${this.fullWidth ? 'w-full' : ''}`;

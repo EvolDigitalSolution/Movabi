@@ -40,12 +40,14 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 
 import { DriverService } from '../../../../core/services/driver/driver.service';
 import { BookingService } from '../../../../core/services/booking/booking.service';
+import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { BookingStatus, DriverLocation, Booking } from '../../../../shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import { CommunicationPanelComponent } from '../../../../shared/ui/communication-panel';
 import { MapComponent } from '../../../../shared/components/map/map.component';
 import { RoutingService } from '../../../../core/services/maps/routing.service';
 import { LocationService } from '../../../../core/services/logistics/location.service';
+import { GeocodingService } from '../../../../core/services/maps/geocoding.service';
 import { ServiceTypeSlug } from '../../../../core/models/maps/map-marker.model';
 import { AppConfigService } from '../../../../core/services/config/app-config.service';
 
@@ -181,6 +183,117 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
               </app-button>
             </div>
 
+            <!-- Delivery/Errand Contact Details -->
+            @if (recipientName()) {
+              <div class="flex items-center p-4 bg-blue-50 rounded-[1.75rem] border border-blue-100 shadow-sm">
+                <div class="w-14 h-14 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0 mr-4">
+                  <ion-icon name="location-outline" class="text-xl"></ion-icon>
+                </div>
+
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-black text-slate-950 truncate">{{ recipientName() }}</h3>
+                  <p class="text-xs text-slate-500 font-semibold">
+                    @if (job()?.service_slug === 'errand') { Recipient } @else { Delivery Recipient }
+                  </p>
+                  @if (recipientPhone()) {
+                    <p class="text-xs text-blue-600 font-medium mt-1">{{ recipientPhone() }}</p>
+                  }
+                </div>
+
+                @if (recipientPhone()) {
+                  <a [href]="'tel:' + recipientPhone()" class="ml-2">
+                    <app-button variant="primary" size="sm" [fullWidth]="false">
+                      <ion-icon name="call" slot="icon-only"></ion-icon>
+                    </app-button>
+                  </a>
+                }
+              </div>
+            }
+
+            <!-- Delivery Details -->
+            @if (job()?.service_slug === 'delivery' || job()?.service_slug === 'package') {
+              <div class="p-5 bg-amber-50 rounded-[1.75rem] border border-amber-100 space-y-4">
+                <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Delivery Details</h3>
+                
+                @if (packageSizeLabel()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Package Size</span>
+                    <span class="text-xs font-black text-slate-950">{{ packageSizeLabel() }}</span>
+                  </div>
+                }
+
+                @if (packageDescription()) {
+                  <div>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Package Details</p>
+                    <p class="text-xs text-slate-700 leading-relaxed">{{ packageDescription() }}</p>
+                  </div>
+                }
+
+                @if (deliveryInstructions()) {
+                  <div>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Special Instructions</p>
+                    <p class="text-xs text-slate-700 leading-relaxed">{{ deliveryInstructions() }}</p>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Errand Details -->
+            @if (job()?.service_slug === 'errand') {
+              <div class="p-5 bg-purple-50 rounded-[1.75rem] border border-purple-100 space-y-4">
+                <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Errand Details</h3>
+                
+                @if (errandMode()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Errand Mode</span>
+                    <span class="text-xs font-black text-slate-950">{{ errandMode() }}</span>
+                  </div>
+                }
+
+                @if (errandCustomerPhone()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Customer Phone</span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-slate-700">{{ errandCustomerPhone() }}</span>
+                      <a [href]="'tel:' + errandCustomerPhone()">
+                        <app-button variant="outline" size="sm" [fullWidth]="false">
+                          <ion-icon name="call" slot="icon-only"></ion-icon>
+                        </app-button>
+                      </a>
+                    </div>
+                  </div>
+                }
+
+                @if (errandItems().length > 0) {
+                  <div>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Items List</p>
+                    <ul class="space-y-1">
+                      @for (item of errandItems(); track item) {
+                        <li class="text-xs text-slate-700 flex items-center gap-2">
+                          <div class="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></div>
+                          {{ item }}
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+
+                @if (estimatedBudget()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Estimated Budget</span>
+                    <span class="text-xs font-black text-slate-950">{{ formatPrice(estimatedBudget()) }}</span>
+                  </div>
+                }
+
+                @if (substitutionRule()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Substitution Rule</span>
+                    <span class="text-xs font-black text-slate-950">{{ substitutionRule() }}</span>
+                  </div>
+                }
+              </div>
+            }
+
             @if (canMessageCustomer()) {
               <div>
                 <app-button variant="secondary" (clicked)="showChat.set(!showChat())">
@@ -209,17 +322,48 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
                 </div>
 
                 <div class="flex-1 space-y-6 min-w-0">
-                  <button type="button" (click)="openMap(job()?.pickup_address)" class="block text-left w-full">
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pickup</p>
-                    <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.pickup_address || 'Pickup unavailable' }}</h3>
-                    <p class="text-xs text-blue-600 font-bold mt-1">Open map</p>
-                  </button>
+                  @if (!isNavigating()) {
+                    <button type="button" (click)="startNavigation('pickup')" class="block text-left w-full">
+                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pickup</p>
+                      <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.pickup_address || 'Pickup unavailable' }}</h3>
+                      <p class="text-xs text-blue-600 font-bold mt-1">Start navigation</p>
+                    </button>
 
-                  <button type="button" (click)="openMap(job()?.dropoff_address)" class="block text-left w-full">
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Destination</p>
-                    <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.dropoff_address || 'Destination unavailable' }}</h3>
-                    <p class="text-xs text-emerald-600 font-bold mt-1">Open map</p>
-                  </button>
+                    <button type="button" (click)="startNavigation('dropoff')" class="block text-left w-full">
+                      <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Destination</p>
+                      <h3 class="text-sm font-black text-slate-950 leading-tight">{{ job()?.dropoff_address || 'Destination unavailable' }}</h3>
+                      <p class="text-xs text-emerald-600 font-bold mt-1">Start navigation</p>
+                    </button>
+                  } @else {
+                    <div class="space-y-4">
+                      <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-sm font-bold text-blue-900">
+                              Navigating to {{ navigationMode() === 'pickup' ? 'Pickup' : 'Destination' }}
+                            </p>
+                            @if (currentRoute()) {
+                              <p class="text-xs text-blue-700 mt-1">
+                                {{ formatDistance(currentRoute().distanceMeters || 0) }} • 
+                                {{ formatDuration(currentRoute().durationSeconds || 0) }} mins
+                              </p>
+                            }
+                          </div>
+                          <button type="button" (click)="stopNavigation()" 
+                                  class="bg-red-500 text-white px-3 py-1 rounded-lg text-xs font-medium">
+                            Stop
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="flex gap-2">
+                        <button type="button" (click)="openExternalMaps(navigationMode() === 'pickup' ? job()?.pickup_address : job()?.dropoff_address)" 
+                                class="flex-1 text-center bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium">
+                          Open in Google Maps
+                        </button>
+                      </div>
+                    </div>
+                  }
                 </div>
               </div>
             </div>
@@ -358,22 +502,37 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
     public route = inject(ActivatedRoute);
     private driverService = inject(DriverService);
     private bookingService = inject(BookingService);
+    private supabase = inject(SupabaseService);
     public nav = inject(NavController);
     private alertCtrl = inject(AlertController);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private routing = inject(RoutingService);
     private locationService = inject(LocationService);
+    private geocoding = inject(GeocodingService);
     private config = inject(AppConfigService);
 
     job = this.driverService.activeJob;
     showChat = signal(false);
     submitting = signal(false);
     loadingJob = signal(true);
+    
+    // Delivery and errand details
+    deliveryDetails = signal<any>(null);
+    errandDetails = signal<any>(null);
 
     private locationSubscription?: RealtimeChannel;
     private routeId: string | null = null;
     private mapReady = false;
+
+    // Navigation mode properties
+    navigationMode = signal<'pickup' | 'dropoff' | null>(null);
+    isNavigating = signal(false);
+    currentRoute = signal<any>(null);
+    driverPosition = signal<{ lat: number; lng: number } | null>(null);
+    navigationWatchId: number | null = null;
+    lastRouteUpdate = 0;
+    private readonly ROUTE_UPDATE_THRESHOLD = 100; // meters
 
     constructor() {
         addIcons({
@@ -405,6 +564,12 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
 
     ngOnDestroy() {
         void this.locationSubscription?.unsubscribe();
+        
+        // Clean up navigation watch
+        if (this.navigationWatchId !== null) {
+            navigator.geolocation.clearWatch(this.navigationWatchId);
+            this.navigationWatchId = null;
+        }
     }
 
     private async loadJob() {
@@ -421,6 +586,9 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
             if (!this.job() || this.job()?.id !== id) {
                 const booking = await this.bookingService.getBooking(id);
                 this.driverService.activeJob.set(booking as Booking);
+                
+                // Fetch delivery and errand details
+                await this.loadJobDetails(booking as Booking);
             }
 
             this.initMap();
@@ -429,6 +597,48 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
             this.driverService.activeJob.set(null);
         } finally {
             this.loadingJob.set(false);
+        }
+    }
+
+    private async loadJobDetails(job: Booking) {
+        if (!job?.id) return;
+
+        try {
+            // Fetch delivery details if it's a delivery job
+            if (job.service_slug === 'delivery' || job.service_slug === 'package') {
+                const { data: deliveryData, error: deliveryError } = await this.supabase
+                    .from('delivery_details')
+                    .select('*')
+                    .eq('job_id', job.id)
+                    .maybeSingle();
+
+                if (!deliveryError && deliveryData) {
+                    this.deliveryDetails.set(deliveryData);
+                } else if (deliveryError) {
+                    console.warn('Failed to fetch delivery details:', deliveryError);
+                    // Fallback to metadata
+                    this.deliveryDetails.set((job as any).metadata?.delivery_details || null);
+                }
+            }
+
+            // Fetch errand details if it's an errand job
+            if (job.service_slug === 'errand') {
+                const { data: errandData, error: errandError } = await this.supabase
+                    .from('errand_details')
+                    .select('*')
+                    .eq('job_id', job.id)
+                    .maybeSingle();
+
+                if (!errandError && errandData) {
+                    this.errandDetails.set(errandData);
+                } else if (errandError) {
+                    console.warn('Failed to fetch errand details:', errandError);
+                    // Fallback to metadata
+                    this.errandDetails.set((job as any).metadata?.errand_details || null);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load job details:', error);
         }
     }
 
@@ -852,6 +1062,111 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
         return this.job()?.customer?.phone || null;
     }
 
+    // Delivery and errand detail helpers
+    recipientName(): string | null {
+        const delivery = this.deliveryDetails();
+        const errand = this.errandDetails();
+        
+        return delivery?.recipientName || errand?.recipient_name || null;
+    }
+
+    recipientPhone(): string | null {
+        const delivery = this.deliveryDetails();
+        const errand = this.errandDetails();
+        
+        return delivery?.recipientPhone || errand?.recipient_phone || null;
+    }
+
+    packageDescription(): string | null {
+        const delivery = this.deliveryDetails();
+        return delivery?.itemDescription || null;
+    }
+
+    packageSizeLabel(): string | null {
+        const delivery = this.deliveryDetails();
+        const size = delivery?.packageSize;
+        
+        if (!size) return null;
+        
+        switch (size) {
+            case 'small': return 'Small';
+            case 'medium': return 'Medium';
+            case 'large': return 'Large';
+            case 'extra_large': return 'Extra Large';
+            default: return size;
+        }
+    }
+
+    deliveryInstructions(): string | null {
+        const delivery = this.deliveryDetails();
+        return delivery?.deliveryInstructions || null;
+    }
+
+    errandMode(): string | null {
+        const errand = this.errandDetails();
+        const mode = errand?.mode;
+        
+        if (!mode) return null;
+        
+        switch (mode) {
+            case 'collect_deliver': return 'Collect & Deliver';
+            case 'quick_buy': return 'Quick Buy';
+            case 'shop_deliver': return 'Shop & Deliver';
+            default: return mode;
+        }
+    }
+
+    errandCustomerPhone(): string | null {
+        const errand = this.errandDetails();
+        return errand?.customer_phone || null;
+    }
+
+    errandItems(): string[] {
+        const errand = this.errandDetails();
+        const items = errand?.items_list;
+        
+        if (Array.isArray(items)) {
+            return items.map((item: unknown) => String(item)).filter(Boolean);
+        }
+        
+        if (typeof items === 'string') {
+            try {
+                const parsed = JSON.parse(items);
+                if (Array.isArray(parsed)) {
+                    return parsed.map((item: unknown) => String(item)).filter(Boolean);
+                }
+            } catch {
+                return items
+                    .split(',')
+                    .map((item: string) => item.trim())
+                    .filter(Boolean);
+            }
+        }
+        
+        return [];
+    }
+
+    estimatedBudget(): number | null {
+        const errand = this.errandDetails();
+        const budget = errand?.estimated_budget;
+        return Number.isFinite(Number(budget)) ? Number(budget) : null;
+    }
+
+    substitutionRule(): string | null {
+        const errand = this.errandDetails();
+        const rule = errand?.substitution_rule;
+        
+        if (!rule) return null;
+        
+        switch (rule) {
+            case 'no_substitution': return 'No Substitution';
+            case 'contact_first': return 'Contact First';
+            case 'similar_quality': return 'Similar Quality';
+            case 'any_available': return 'Any Available';
+            default: return rule;
+        }
+    }
+
     serviceTitle(): string {
         const slug = String(this.job()?.service_slug || 'request');
         return this.titleCase(slug);
@@ -869,7 +1184,80 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
         return this.config.formatCurrency(Number(amount || 0));
     }
 
-    openMap(address?: string | null) {
+    formatDistance(meters: number): string {
+        const km = Math.round(meters / 10) / 100;
+        return `${km} km`;
+    }
+
+    formatDuration(seconds: number): string {
+        return `${Math.round(seconds / 60)}`;
+    }
+
+    // In-app navigation methods
+    async startNavigation(type: 'pickup' | 'dropoff') {
+        const currentJob = this.job();
+        if (!currentJob) {
+            await this.showToast('Job details not available.', 'warning');
+            return;
+        }
+
+        const address = type === 'pickup' ? currentJob.pickup_address : currentJob.dropoff_address;
+        if (!address) {
+            await this.showToast(`${type === 'pickup' ? 'Pickup' : 'Dropoff'} address is unavailable.`, 'warning');
+            return;
+        }
+
+        // Get current driver position
+        const currentPosition = await this.getCurrentDriverPosition();
+        if (!currentPosition) {
+            await this.showToast('Unable to get your current location.', 'warning');
+            return;
+        }
+
+        // Geocode the destination address
+        const destination = await this.geocodeAddress(address);
+        if (!destination) {
+            await this.showToast('Unable to locate destination address.', 'warning');
+            return;
+        }
+
+        console.log(`[Navigation] Starting ${type} navigation:`, {
+            from: currentPosition,
+            to: destination
+        });
+
+        this.navigationMode.set(type);
+        this.isNavigating.set(true);
+        this.driverPosition.set(currentPosition);
+
+        // Get initial route
+        await this.updateNavigationRoute(currentPosition, destination);
+
+        // Start watching driver position
+        this.startNavigationWatch(destination);
+
+        // Update map to show navigation view
+        await this.updateNavigationMap();
+    }
+
+    stopNavigation() {
+        console.log('[Navigation] Stopping navigation');
+        
+        if (this.navigationWatchId !== null) {
+            navigator.geolocation.clearWatch(this.navigationWatchId);
+            this.navigationWatchId = null;
+        }
+
+        this.navigationMode.set(null);
+        this.isNavigating.set(false);
+        this.currentRoute.set(null);
+        this.driverPosition.set(null);
+
+        // Reset map to normal view
+        this.resetMapToNormalView();
+    }
+
+    openExternalMaps(address?: string | null) {
         const safeAddress = String(address || '').trim();
 
         if (!safeAddress) {
@@ -878,6 +1266,187 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeAddress)}`, '_blank');
+    }
+
+    private async getCurrentDriverPosition(): Promise<{ lat: number; lng: number } | null> {
+        return new Promise((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+                },
+                (error) => {
+                    console.warn('[Navigation] Could not get current position:', error);
+                    resolve(null);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 30000
+                }
+            );
+        });
+    }
+
+    private async geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+        try {
+            const result = await this.geocoding.geocodeAddress(address).toPromise();
+            if (result && result.length > 0) {
+                return {
+                    lat: result[0].lat,
+                    lng: result[0].lng
+                };
+            }
+        } catch (error) {
+            console.error('[Navigation] Geocoding failed:', error);
+        }
+        return null;
+    }
+
+    private async updateNavigationRoute(from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
+        try {
+            const route = await this.routing.getRoute(from, to).toPromise();
+            if (route) {
+                this.currentRoute.set(route);
+                console.log('[Navigation] Route updated:', {
+                    distance: route.distanceMeters,
+                    duration: route.durationSeconds
+                });
+            }
+        } catch (error) {
+            console.error('[Navigation] Failed to get route:', error);
+        }
+    }
+
+    private startNavigationWatch(destination: { lat: number; lng: number }) {
+        this.navigationWatchId = navigator.geolocation.watchPosition(
+            async (position) => {
+                const newPosition = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+
+                this.driverPosition.set(newPosition);
+
+                // Update driver location in database for customer tracking
+                await this.updateDriverLocationInDatabase(
+                    newPosition.lat,
+                    newPosition.lng,
+                    position.coords.heading || undefined
+                );
+
+                // Update route if driver has moved enough distance
+                const lastPos = this.driverPosition();
+                if (lastPos) {
+                    const distance = this.locationService.calculateDistance(
+                        lastPos.lat, lastPos.lng,
+                        newPosition.lat, newPosition.lng
+                    );
+
+                    const now = Date.now();
+                    if (distance > this.ROUTE_UPDATE_THRESHOLD || 
+                        (now - this.lastRouteUpdate) > 30000) { // Update every 30 seconds minimum
+                        await this.updateNavigationRoute(newPosition, destination);
+                        this.lastRouteUpdate = now;
+                        await this.updateNavigationMap();
+                    }
+                }
+            },
+            (error) => {
+                console.error('[Navigation] Position watch error:', error);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 5000,
+                timeout: 10000
+            }
+        );
+    }
+
+    private async updateDriverLocationInDatabase(lat: number, lng: number, heading?: number) {
+        try {
+            // Direct database update to driver_locations table for customer tracking
+            const { data: { user } } = await this.supabase.client.auth.getUser();
+            if (!user?.id) return;
+
+            const payload = {
+                driver_id: user.id,
+                lat,
+                lng,
+                heading: heading || null,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await this.supabase.client
+                .from('driver_locations')
+                .upsert(payload, { onConflict: 'driver_id' });
+
+            if (error) {
+                console.error('[Navigation] Failed to update driver location:', error);
+            }
+        } catch (error) {
+            console.error('[Navigation] Failed to update driver location:', error);
+        }
+    }
+
+    private async updateNavigationMap() {
+        if (!this.mapComponent || !this.driverPosition() || !this.currentRoute()) return;
+
+        const driverPos = this.driverPosition()!;
+        const route = this.currentRoute()!;
+        const currentJob = this.job();
+        if (!currentJob) return;
+
+        // Clear existing markers
+        this.mapComponent.removeMarker('driver');
+        this.mapComponent.removeMarker('destination');
+
+        // Add driver marker
+        this.mapComponent.addOrUpdateMarker({
+            id: 'driver',
+            kind: 'driver',
+            coordinates: driverPos,
+            serviceType: currentJob.service_slug as ServiceTypeSlug,
+            heading: 0 // Will be updated with actual heading
+        });
+
+        // Add destination marker
+        const destination = this.navigationMode() === 'pickup' 
+            ? await this.geocodeAddress(currentJob.pickup_address || '')
+            : await this.geocodeAddress(currentJob.dropoff_address || '');
+
+        if (destination) {
+            this.mapComponent.addOrUpdateMarker({
+                id: 'destination',
+                kind: 'pickup',
+                coordinates: destination,
+                serviceType: currentJob.service_slug as ServiceTypeSlug
+            });
+        }
+
+        // Draw route
+        if (route.geometry) {
+            this.mapComponent.drawRoute(route);
+        }
+
+        // Fit map to show route
+        if (route.bounds) {
+            this.mapComponent.fitBounds(route.bounds, { padding: 50 });
+        }
+    }
+
+    private resetMapToNormalView() {
+        if (!this.mapComponent) return;
+
+        // Clear navigation markers
+        this.mapComponent.removeMarker('driver');
+        this.mapComponent.removeMarker('destination');
+        this.mapComponent.clearRoute();
+
+        // Reset to original job view
+        this.initMap();
     }
 
     private hasValidCoords(coords: { lat: number; lng: number }): boolean {

@@ -33,7 +33,14 @@ export class MarkerFactoryService {
     }
 
     if (kind === 'driver') {
-      return `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>`;
+      return `<svg viewBox="0 0 32 32" width="24" height="24" fill="none" aria-hidden="true">
+        <path d="M16 2.8 20.2 9h-8.4L16 2.8Z" fill="#fff" opacity=".9"/>
+        <rect x="6.2" y="10" width="19.6" height="12.8" rx="5" fill="#f97316"/>
+        <path d="M10.2 10 12.1 6.8h7.8L21.8 10" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="11.3" cy="23.1" r="2.4" fill="#0f172a" stroke="#fff" stroke-width="1.4"/>
+        <circle cx="20.7" cy="23.1" r="2.4" fill="#0f172a" stroke="#fff" stroke-width="1.4"/>
+        <path d="M9.5 15.6h13" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".95"/>
+      </svg>`;
     }
 
     switch (serviceType) {

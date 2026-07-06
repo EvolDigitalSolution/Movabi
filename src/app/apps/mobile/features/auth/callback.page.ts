@@ -47,18 +47,35 @@ export class AuthCallbackPage implements OnInit {
   callbackTitle = signal('Sign-in could not continue');
   callbackError = signal<string | null>(null);
 
-  async ngOnInit() {
-    const oauthError = this.getOAuthError();
+    async ngOnInit() {
+        const oauthError = this.getOAuthError();
 
-    if (oauthError) {
-      this.callbackTitle.set(oauthError.title);
-      this.callbackError.set(oauthError.message);
-      return;
+        if (oauthError) {
+            this.callbackTitle.set(oauthError.title);
+            this.callbackError.set(oauthError.message);
+            return;
+        }
+
+        const code = this.getCallbackCode();
+        const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+
+        try {
+            if (code) {
+                await this.auth.completeOAuthCallback(code);
+            } else if (accessToken && refreshToken) {
+                await this.auth.completeOAuthHashCallback(accessToken, refreshToken);
+            }
+
+            await this.waitForAuthReady();
+            await this.auth.handlePostAuthRedirect();
+        } catch (error) {
+            console.error('[AuthCallback] callback failed:', error);
+            this.callbackTitle.set('Google sign-in failed');
+            this.callbackError.set('Movabi could not finish Google sign-in. Please try again or use email and password.');
+        }
     }
-
-    await this.waitForAuthReady();
-    await this.auth.handlePostAuthRedirect();
-  }
 
   private getOAuthError(): { title: string; message: string } | null {
     const params = new URLSearchParams(window.location.search);
@@ -87,5 +104,11 @@ export class AuthCallbackPage implements OnInit {
     while (!this.auth.isAuthReady() && Date.now() - startedAt < 8000) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
+  }
+
+  private getCallbackCode(): string | null {
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    return params.get('code') || hashParams.get('code');
   }
 }

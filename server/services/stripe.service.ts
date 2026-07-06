@@ -18,6 +18,14 @@ export const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16' as any
 });
 
+type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
+
+const WEB_DRIVER_URL = 'https://movabi.apps.evolsolution.com/driver';
+const NATIVE_DRIVER_URL = 'com.movabi.app://driver';
+
+const isNativeConnectPlatform = (platform?: ConnectPlatform) =>
+  platform === 'android' || platform === 'ios' || platform === 'native';
+
 export const verifyWebhookSignature = (
   payload: string | Buffer,
   signature: string
@@ -137,12 +145,20 @@ export const getConnectAccountStatus = async (accountId: string) => {
 export const createOnboardingLink = async (
   accountId: string,
   returnUrl: string,
-  refreshUrl: string
+  refreshUrl: string,
+  platform: ConnectPlatform = 'web'
 ) => {
+  const resolvedReturnUrl = isNativeConnectPlatform(platform)
+    ? `${NATIVE_DRIVER_URL}?stripe=success`
+    : `${WEB_DRIVER_URL}?stripe=success`;
+  const resolvedRefreshUrl = isNativeConnectPlatform(platform)
+    ? `${NATIVE_DRIVER_URL}?stripe=refresh`
+    : `${WEB_DRIVER_URL}?stripe=refresh`;
+
   return stripe.accountLinks.create({
     account: accountId,
-    refresh_url: refreshUrl,
-    return_url: returnUrl,
+    refresh_url: resolvedRefreshUrl,
+    return_url: resolvedReturnUrl,
     type: 'account_onboarding'
   });
 };

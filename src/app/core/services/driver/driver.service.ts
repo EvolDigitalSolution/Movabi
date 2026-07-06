@@ -24,6 +24,7 @@ import { JobEventService } from '../job/job-event.service';
 import { NotificationService } from '../notification.service';
 import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
+import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
 
 @Injectable({
     providedIn: 'root'
@@ -39,6 +40,7 @@ export class DriverService {
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
     private vehicleCompatibility = inject(VehicleCompatibilityService);
+    private compliance = inject(ComplianceService);
 
     onlineStatus = signal<DriverStatus>('offline');
     isAvailable = signal<boolean>(true);
@@ -61,6 +63,14 @@ export class DriverService {
             }
 
             const profile = await this.fetchProfile();
+            const vehicle = this.vehicle() || await this.fetchVehicle();
+            const complianceBlockers = this.compliance
+                .getDriverBaseMissingRequirements(profile, vehicle)
+                .filter((item) => item.severity === 'blocker');
+
+            if (complianceBlockers.length) {
+                throw new Error(this.compliance.formatMissingRequirements(complianceBlockers, 'Complete driver requirements before going online.'));
+            }
 
             if (profile.pricing_plan === 'pro' && profile.subscription_status !== 'active') {
                 throw new Error('Active subscription required for Pro Plan to go online');
@@ -224,6 +234,7 @@ export class DriverService {
             return null;
         }
 
+        console.log('[DriverService] Checklist vehicle:', data);
         this.vehicle.set((data as Vehicle) ?? null);
         return (data as Vehicle) ?? null;
     }
@@ -294,6 +305,64 @@ export class DriverService {
         return booking;
     }
 
+    async getAcceptanceBlockers(profile?: DriverProfile | null, vehicle?: Vehicle | null): Promise<string[]> {
+        const resolvedProfile = profile ?? await this.fetchProfile();
+        const resolvedVehicle = vehicle ?? this.vehicle() ?? await this.fetchVehicle();
+        const blockers: string[] = [];
+
+        if (!resolvedProfile.phone?.trim()) {
+            blockers.push('Add your mobile number');
+        }
+
+        if (!resolvedProfile.onboarding_completed) {
+            blockers.push('Complete driver setup');
+        }
+
+        if (!resolvedVehicle) {
+            blockers.push('Add vehicle or bike details');
+        }
+
+        const vehicleClass = this.normaliseVehicleClass(resolvedVehicle);
+
+        if (resolvedVehicle && vehicleClass !== 'bike' && vehicleClass !== 'motorcycle') {
+            if (!resolvedVehicle.make?.trim() || !resolvedVehicle.model?.trim()) {
+                blockers.push('Complete vehicle make and model');
+            }
+
+            if (!resolvedVehicle.license_plate?.trim()) {
+                blockers.push('Add vehicle registration plate');
+            }
+
+            if (!resolvedProfile.insurance_url) {
+                blockers.push('Upload insurance');
+            }
+        }
+
+        if (vehicleClass === 'bike' || vehicleClass === 'motorcycle') {
+            if (!resolvedVehicle?.make?.trim() || !resolvedVehicle?.model?.trim()) {
+                blockers.push('Complete bike details');
+            }
+        } else if (!resolvedProfile.driver_license_url) {
+            blockers.push('Upload driver licence');
+        }
+
+        const approved =
+            resolvedProfile.is_verified === true ||
+            resolvedProfile.verification_status === 'approved' ||
+            resolvedProfile.testing_approval_override === true;
+
+        if (!approved) {
+            blockers.push('Wait for admin approval');
+        }
+
+        return Array.from(new Set(blockers));
+    }
+
+    formatAcceptanceBlockers(blockers: string[]): string {
+        if (!blockers.length) return '';
+        return `Finish driver requirements before accepting jobs: ${blockers.join(', ')}.`;
+    }
+
     async acceptJob(bookingId: string) {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
@@ -303,13 +372,28 @@ export class DriverService {
         }
 
         const profile = await this.fetchProfile();
+        const vehicle = this.vehicle() || await this.fetchVehicle();
+        const blockers = await this.getAcceptanceBlockers(profile, vehicle);
+
+        if (blockers.length) {
+            throw new Error(this.formatAcceptanceBlockers(blockers));
+        }
 
         if (profile.subscription_status !== 'active') {
             throw new Error('Active subscription required to accept requests');
         }
 
         const job = await this.bookingService.getBooking(bookingId);
-        const vehicle = this.vehicle() || await this.fetchVehicle();
+        const compliance = this.compliance.canDriverAcceptService(
+            profile,
+            vehicle,
+            null,
+            (job.service_slug || job.service_type?.slug || job.service_type?.name || 'base') as ComplianceServiceType
+        );
+
+        if (!compliance.allowed) {
+            throw new Error(this.compliance.formatMissingRequirements(compliance.missing, 'Finish service requirements before accepting this job.'));
+        }
 
         if (!this.vehicleCompatibility.isCompatible(job, vehicle)) {
             throw new Error(
@@ -318,6 +402,13 @@ export class DriverService {
         }
 
         if (job.service_slug === 'errand' && job.errand_funding) {
+            if (
+                profile.movabi_pay_card_preference === 'posted' &&
+                profile.movabi_pay_physical_card_status !== 'received'
+            ) {
+                throw new Error('Your posted Movabi Pay card must be marked as received before accepting errand item-budget jobs. Switch to virtual card or confirm the card in Driver Settings.');
+            }
+
             const account = await this.fetchStripeAccount();
 
             const stripeReady =
@@ -351,6 +442,52 @@ export class DriverService {
         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== bookingId));
 
         return fullBooking;
+    }
+
+    private normaliseVehicleClass(vehicle: Vehicle | null): string {
+        const type = String(vehicle?.type || '').toLowerCase();
+        const capacity = String(vehicle?.capacity || '').toLowerCase();
+
+        if (type.includes('bike') || type.includes('motorcycle') || capacity.includes('bike')) return 'bike';
+        if (capacity.includes('large_van') || capacity.includes('large van')) return 'large_van';
+        if (type.includes('van') || capacity.includes('small_van') || capacity.includes('van')) return 'small_van';
+        if (capacity.includes('xl') || capacity.includes('7')) return 'xl';
+        if (type.includes('car') || type.includes('standard')) return 'car';
+        return type || capacity || 'standard';
+    }
+
+    private parseVerificationItems(value: unknown): Record<string, unknown> {
+        if (!value) return {};
+
+        if (Array.isArray(value)) {
+            return value.reduce<Record<string, unknown>>((items, entry) => {
+                if (!entry) return items;
+
+                if (typeof entry === 'string') {
+                    items[entry] = entry;
+                    return items;
+                }
+
+                if (typeof entry === 'object') {
+                    const record = entry as Record<string, unknown>;
+                    const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+                    if (key) items[key] = record['value'] ?? record['label'] ?? '';
+                }
+
+                return items;
+            }, {});
+        }
+
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return this.parseVerificationItems(parsed);
+            } catch {
+                return {};
+            }
+        }
+
+        return typeof value === 'object' ? value as Record<string, unknown> : {};
     }
 
     async getDocumentSignedUrl(path: string): Promise<string | null> {
@@ -421,7 +558,7 @@ export class DriverService {
         this.earnings.set(data || []);
     }
 
-    async completeJob(jobId: string) {
+    async completeJob(jobId: string, completionPin?: string | null) {
         const job = await this.bookingService.getBooking(jobId);
 
         if (job.service_slug === 'errand') {
@@ -435,13 +572,36 @@ export class DriverService {
                 throw new Error('Please wait for the customer to approve or reject your over-budget request before completing.');
             }
 
-            if (details?.actual_spending === undefined || details?.actual_spending === null) {
-                throw new Error('Please record the actual amount spent on items before completing.');
+           
+            //if (details?.estimated_budget > 0 && details?.actual_spending === null) {
+            //    throw new Error('Please record the actual amount spent on items before completing.');
+            //}
+
+            //if (details?.actual_spending > 0 && !details?.receipt_url) {
+            //    throw new Error('Please upload a receipt for the items purchased before completing.');
+            //}
+
+
+            const estimatedBudget = details?.estimated_budget ?? 0;
+            const actualSpending = details?.actual_spending;
+
+            // Shopping budget exists
+            if (estimatedBudget > 0) {
+                // Driver must record what was actually spent
+                if (actualSpending == null || actualSpending <= 0) {
+                    throw new Error(
+                        'Please enter the actual amount spent on the purchased items before completing this request.'
+                    );
+                }
+
+                // Receipt is mandatory whenever money was spent
+                if (!details?.receipt_url) {
+                    throw new Error(
+                        'Please upload the purchase receipt before completing this request.'
+                    );
+                }
             }
 
-            if (details?.actual_spending > 0 && !details?.receipt_url) {
-                throw new Error('Please upload a receipt for the items purchased before completing.');
-            }
         }
 
         const url = this.apiUrlService.getApiUrl('/api/logistics/complete');
@@ -449,7 +609,7 @@ export class DriverService {
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId })
+            body: JSON.stringify({ jobId, completionPin: completionPin || undefined })
         });
 
         if (!response.ok) {
@@ -563,7 +723,8 @@ export class DriverService {
             license_plate: String(vehicleData.license_plate ?? '').trim(),
             color: String(vehicleData.color ?? '').trim(),
             type: this.normalizeVehicleType((vehicleData as any).type),
-            capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim()
+            capacity: String((vehicleData as any).capacity || this.defaultCapacityForType((vehicleData as any).type)).trim(),
+            service_eligibility: this.normalizeServiceEligibility((vehicleData as any).service_eligibility)
         };
 
         const requiresPlate = payload.type !== 'motorcycle';
@@ -595,12 +756,27 @@ export class DriverService {
             error = retry.error;
         }
 
+        if (error && this.isMissingColumnError(error, 'service_eligibility')) {
+            const legacyPayload = { ...payload } as Partial<typeof payload>;
+            delete legacyPayload.service_eligibility;
+            const retry = await this.supabase
+                .from('vehicles')
+                .upsert(legacyPayload, { onConflict: 'user_id' })
+                .select()
+                .single();
+
+            data = retry.data;
+            error = retry.error;
+        }
+
         if (error) {
             console.error('[DriverService] updateVehicle failed:', error);
             throw error;
         }
 
+        console.log('[DriverService] Saved vehicle:', data);
         this.vehicle.set(data as Vehicle);
+        return data as Vehicle;
     }
 
     private isMissingColumnError(error: unknown, column: string): boolean {
@@ -623,6 +799,25 @@ export class DriverService {
         }
         if (type === 'motorcycle') return 'bike';
         return 'standard';
+    }
+
+    private normalizeServiceEligibility(value: unknown): string[] {
+        if (Array.isArray(value)) {
+            return value.map(item => String(item || '').trim()).filter(Boolean);
+        }
+
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) {
+                    return parsed.map(item => String(item || '').trim()).filter(Boolean);
+                }
+            } catch {
+                return value.split(',').map(item => item.trim()).filter(Boolean);
+            }
+        }
+
+        return [];
     }
 
     async uploadDocument(file: File, type: string) {
@@ -738,6 +933,29 @@ export class DriverService {
         const user = this.auth.currentUser();
         if (!user) return null;
 
+        try {
+            const settings = await this.connectService.getPayoutSettings();
+
+            if (!settings.stripeAccountId) {
+                this.stripeAccount.set(null);
+                return null;
+            }
+
+            const account = {
+                user_id: user.id,
+                stripe_account_id: settings.stripeAccountId,
+                onboarding_complete: settings.chargesEnabled === true && settings.payoutsEnabled === true,
+                payouts_enabled: settings.payoutsEnabled === true,
+                charges_enabled: settings.chargesEnabled === true,
+                onboarding_status: settings.connectStatus || 'pending'
+            } as any;
+
+            this.stripeAccount.set(account);
+            return account;
+        } catch (error) {
+            console.warn('[DriverService] payout settings lookup failed; falling back to profile Stripe fields', error);
+        }
+
         const { data: profile, error: profileError } = await this.supabase
             .from('profiles')
             .select('id, stripe_account_id, stripe_connect_status')
@@ -850,6 +1068,23 @@ export class DriverService {
 
             accountId = stripe_account_id;
             await this.fetchStripeAccount();
+        }
+
+        const settings = await this.connectService.getPayoutSettings().catch((error) => {
+            console.warn('[DriverService] payout settings refresh after account creation failed', error);
+            return null;
+        });
+
+        if (settings?.stripeAccountId) {
+            accountId = settings.stripeAccountId;
+            this.stripeAccount.set({
+                user_id: user.id,
+                stripe_account_id: settings.stripeAccountId,
+                onboarding_complete: settings.chargesEnabled === true && settings.payoutsEnabled === true,
+                payouts_enabled: settings.payoutsEnabled === true,
+                charges_enabled: settings.chargesEnabled === true,
+                onboarding_status: settings.connectStatus || 'pending'
+            } as any);
         }
 
         const returnUrl = `${window.location.origin}/driver?stripe=success`;

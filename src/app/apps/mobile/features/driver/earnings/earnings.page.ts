@@ -86,7 +86,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                   Transferred to Stripe
                 </p>
 
-                <h2 class="text-5xl font-display font-black tracking-tighter leading-none text-slate-950">
+                <h2 class="text-xl font-display font-black tracking-tight leading-none text-slate-950">
                   {{ formatPrice(totalBalance()) }}
                 </h2>
 
@@ -96,7 +96,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               </div>
 
               <div class="w-14 h-14 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center shrink-0 text-slate-700">
-                <ion-icon name="wallet-outline" class="text-3xl"></ion-icon>
+                <ion-icon name="wallet-outline" class="text-2xl"></ion-icon>
               </div>
             </div>
 
@@ -133,7 +133,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
               <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
             </div>
-            <p class="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-1">Paid</p>
+            <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Paid</p>
             <p class="text-lg font-display font-black text-slate-950">{{ formatPrice(paidTotal()) }}</p>
           </div>
 
@@ -141,7 +141,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3">
               <ion-icon name="time-outline" class="text-xl"></ion-icon>
             </div>
-            <p class="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-1">Pending</p>
+            <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Pending</p>
             <p class="text-lg font-display font-black text-slate-950">{{ formatPrice(pendingTotal()) }}</p>
           </div>
 
@@ -149,7 +149,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3">
               <ion-icon name="card-outline" class="text-xl"></ion-icon>
             </div>
-            <p class="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-1">Fees</p>
+            <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Fees</p>
             <p class="text-lg font-display font-black text-slate-950">{{ formatPrice(totalCommission()) }}</p>
           </div>
         </div>
@@ -260,16 +260,16 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                       [class.text-amber-600]="getEarningStatus(earning) === 'pending'"
                       [class.border-amber-100]="getEarningStatus(earning) === 'pending'"
                     >
-                      <ion-icon [name]="getEarningStatus(earning) === 'paid' ? 'cash' : 'time-outline'" class="text-2xl"></ion-icon>
+                       <ion-icon [name]="getEarningStatus(earning) === 'paid' ? 'cash' : 'time-outline'" class="text-xl"></ion-icon>
                     </div>
 
                     <div class="flex-1 min-w-0">
                       <div class="flex items-start justify-between gap-3 mb-1">
                         <div class="min-w-0">
-                          <h4 class="font-display font-black text-slate-950 text-base truncate">
+                          <h4 class="font-display font-black text-slate-950 text-base leading-tight whitespace-normal">
                             {{ getEarningTitle(earning) }}
                           </h4>
-                         <p class="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                         <p class="text-[11px] text-slate-400 font-bold uppercase tracking-[0.08em] mt-1">
                           {{ earning.created_at | date:'mediumDate' }} - {{ earning.created_at | date:'shortTime' }}
                      </p>
                         </div>
@@ -376,7 +376,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                             <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
                               Job ID
                             </p>
-                            <p class="text-[10px] font-semibold text-slate-500 break-all">
+                            <p class="text-[10px] font-semibold text-slate-500 break-words">
                               {{ earning.job_id }}
                             </p>
                           </div>
@@ -387,7 +387,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
                             <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
                               Stripe transfer
                             </p>
-                            <p class="text-[10px] font-semibold text-emerald-700 break-all">
+                            <p class="text-[10px] font-semibold text-emerald-700 break-words">
                               {{ $any(earning).stripe_transfer_id }}
                             </p>
                           </div>

@@ -55,6 +55,7 @@ export interface Vehicle {
     is_verified: boolean;
     type: 'bike' | 'car' | 'standard' | 'xl' | 'small_van' | 'large_van' | 'minibus' | 'van' | 'motorcycle';
     capacity?: string;
+    service_eligibility?: string[] | null;
 }
 
 export interface DriverProfile extends Profile {
@@ -327,7 +328,18 @@ export interface Earning {
     created_at: string;
 }
 
-export type AccountStatus = 'active' | 'suspended' | 'banned' | 'disabled' | 'closure_requested';
+export type AccountStatus =
+    | 'active'
+    | 'suspended'
+    | 'banned'
+    | 'disabled'
+    | 'closure_requested'
+    | 'closed'
+    | 'reinstated'
+    | 'draft'
+    | 'pending_review'
+    | 'approved'
+    | 'action_required';
 
 export type VerificationStatus =
     | 'draft'
@@ -344,6 +356,10 @@ export interface Profile {
     email: string;
     phone?: string;
     avatar_url?: string;
+    date_of_birth?: string | null;
+    current_address?: string | null;
+    address_line1?: string | null;
+    home_address?: string | null;
     role: 'customer' | 'driver' | 'admin';
     tenant_id: string;
     pricing_plan: PricingPlan;
@@ -357,23 +373,91 @@ export interface Profile {
     is_available?: boolean;
     last_active_at?: string;
     account_status: AccountStatus;
+    compliance_status?: 'draft' | 'pending_review' | 'approved' | 'action_required' | 'suspended' | null;
     account_closure_requested_at?: string | null;
     account_closure_reason?: string | null;
+    closure_requested_at?: string | null;
+    closed_at?: string | null;
+    closure_reason?: string | null;
+    closure_notes?: string | null;
+    reinstated_at?: string | null;
+    reinstated_by?: string | null;
+    reinstatement_notes?: string | null;
     moderation_reason?: string;
     moderated_at?: string;
     moderated_by?: string;
     created_at: string;
     updated_at?: string;
     stripe_connect_status?: 'not_started' | 'pending' | 'restricted' | 'enabled' | 'connected';
+    email_verified?: boolean | null;
+    email_confirmed_at?: string | null;
+    phone_verified?: boolean | null;
+    phone_verified_at?: string | null;
+    phone_verification_supported?: boolean | null;
+    accepted_terms_at?: string | null;
+    accepted_privacy_at?: string | null;
+    accepted_driver_agreement_at?: string | null;
     driver_license_url?: string | null;
+    driver_license_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    driver_license_expiry?: string | null;
     insurance_url?: string | null;
+    insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    insurance_expiry?: string | null;
+    profile_photo_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    live_selfie_url?: string | null;
+    live_selfie_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    right_to_work_url?: string | null;
+    right_to_work_share_code?: string | null;
+    right_to_work_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    private_hire_driver_license_url?: string | null;
+    private_hire_driver_license_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    private_hire_vehicle_license_url?: string | null;
+    private_hire_vehicle_license_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    private_hire_insurance_url?: string | null;
+    private_hire_insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    council_name?: string | null;
+    council_license_authority?: string | null;
+    council_license_number?: string | null;
+    council_license_expiry?: string | null;
+    taxi_badge_number?: string | null;
+    taxi_license_expiry?: string | null;
+    vehicle_license_url?: string | null;
+    vehicle_license_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    vehicle_license_expiry?: string | null;
+    mot_url?: string | null;
+    mot_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    mot_expiry?: string | null;
+    background_check_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    operator_compliance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    courier_insurance_url?: string | null;
+    courier_insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    courier_insurance_expiry?: string | null;
+    goods_in_transit_insurance_url?: string | null;
+    goods_in_transit_insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    goods_in_transit_insurance_expiry?: string | null;
+    public_liability_insurance_url?: string | null;
+    public_liability_insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    public_liability_insurance_expiry?: string | null;
+    moving_insurance_url?: string | null;
+    moving_insurance_status?: 'missing' | 'uploaded' | 'under_review' | 'approved' | 'rejected' | 'expired' | null;
+    moving_insurance_expiry?: string | null;
+    helper_labour_declaration?: boolean | null;
     verification_status?: VerificationStatus;
     verification_notes?: string | null;
     verification_items?: string[] | null;
     verification_blockers?: string[] | string | null;
+    driver_review_status?: 'pending' | 'action_required' | 'under_review' | 'approved' | 'rejected' | null;
+    driver_review_notes?: string | null;
+    driver_review_blockers?: string[] | string | null;
+    driver_review_sent_at?: string | null;
+    driver_review_sent_by?: string | null;
+    driver_review_history?: Array<Record<string, unknown>> | null;
     testing_approval_override?: boolean | null;
     manual_verification_notes?: string | null;
     verified_at?: string | null;
+    movabi_pay_card_preference?: 'virtual' | 'posted' | null;
+    movabi_pay_physical_card_status?: 'not_requested' | 'requested' | 'posted' | 'received' | null;
+    movabi_pay_physical_card_received_at?: string | null;
 }
 
 export interface DriverAccount {
@@ -560,7 +644,7 @@ export interface Notification {
     user_id: string;
     title: string;
     body: string;
-    type: 'booking' | 'system' | 'payment';
+    type: 'booking' | 'system' | 'payment' | 'booking_update' | 'payment_success' | 'system_alert' | 'chat_message' | 'driver_review_action_required';
     is_read: boolean;
     created_at: string;
     metadata?: Record<string, unknown>;

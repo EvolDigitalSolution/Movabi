@@ -7,6 +7,7 @@
     ViewChild,
     computed
 } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IonicModule, AlertController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -38,7 +39,13 @@ import {
     archiveOutline,
     flagOutline,
     storefrontOutline,
-    homeOutline
+    homeOutline,
+    informationCircleOutline,
+    navigateCircleOutline,
+    documentTextOutline,
+    chatbubbleEllipsesOutline,
+    walletOutline,
+    helpCircleOutline
 } from 'ionicons/icons';
 
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -47,14 +54,19 @@ import { BookingService } from '../../../../../core/services/booking/booking.ser
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
+import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
+import { NativePlatformService } from '../../../../../core/services/native/native-platform.service';
+import { AuthService } from '../../../../../core/services/auth/auth.service';
+import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
 
 import {
     Booking,
     ServiceTypeEnum,
     DriverLocation,
     ErrandFunding,
-    Vehicle
+    Vehicle,
+    JobEvent
 } from '../../../../../shared/models/booking.model';
 
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
@@ -66,8 +78,12 @@ import {
 
 import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
 
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
+type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
+type SheetState = 'collapsed' | 'medium' | 'expanded' | 'full';
+type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment' | 'help';
 
 @Component({
     selector: 'app-booking-tracking',
@@ -90,105 +106,143 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
+    <ion-content class="movabi-page" [fullscreen]="true">
       @if (booking()) {
-        <div class="flex flex-col h-full">
-          <div class="bg-slate-100 relative overflow-hidden h-[64vh] min-h-[430px]">
-            <app-map #map></app-map>
+        <div class="relative h-full overflow-hidden ion-padding-bottom">
+          <div class="absolute inset-0 bg-slate-100 overflow-hidden">
+            <div class="absolute inset-0" (pointerdown)="onMapUserInteraction()" (wheel)="onMapUserInteraction()">
+              <app-map #map></app-map>
+            </div>
 
-            @if (booking()?.status === 'searching') {
-              <div class="absolute left-3 top-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[20rem] pointer-events-none">
-                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-xl shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
-                  <div class="flex items-center gap-3">
-                    <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
-                    <ion-spinner name="crescent" color="primary"></ion-spinner>
+            <!-- Finding driver status card -->
+            @if (booking() && booking()?.status === 'searching') {
+              <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
+                <div class="bg-white/95 backdrop-blur rounded-full shadow-lg px-4 py-3 pointer-events-auto">
+                  <div class="flex items-center justify-center gap-3">
+                    <div class="flex items-center gap-2">
+                      <ion-spinner name="crescent" color="primary" class="w-4 h-4"></ion-spinner>
+                      <span class="text-slate-900 font-semibold text-sm">Finding driver</span>
                     </div>
-
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between gap-3">
-                        <div class="min-w-0">
-                          <h2 class="text-sm font-display font-black text-slate-950 truncate">Finding your driver</h2>
-                          <p class="text-[11px] text-slate-500 font-semibold truncate">Contacting nearby drivers</p>
-                        </div>
-                        <span class="text-sm font-display font-black text-blue-700 shrink-0">
-                          {{ searchCountdownLabel() }}
-                        </span>
-                      </div>
-
-                      <div class="mt-2 w-full h-1.5 bg-blue-100 rounded-full overflow-hidden">
-                        <div
-                          class="h-full bg-blue-600 rounded-full transition-all duration-1000"
-                          [style.width.%]="searchProgressPercent()"
-                        ></div>
-                      </div>
-                    </div>
+                    <span class="text-xs text-slate-600">We're looking for a nearby driver</span>
+                    <span class="text-xs text-blue-600 font-medium">{{ formatFindingDriverTime() }}</span>
                   </div>
                 </div>
               </div>
             }
 
-            @if (booking()?.driver_id && driverLiveLabel()) {
-              <div class="absolute left-3 bottom-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[19rem] pointer-events-none">
-                <div class="bg-white/94 backdrop-blur rounded-xl border border-white/70 shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0 overflow-hidden">
-                        @if (getDriverAvatar()) {
-                          <img [src]="getDriverAvatar()!" alt="Driver photo" class="w-full h-full object-cover" />
-                        } @else {
-                          <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
-                        }
-                      </div>
+            <!-- Recenter button -->
+            @if (!autoFollowEnabled) {
+              <button
+                type="button"
+                (click)="recenterMap()"
+                class="absolute right-3 bottom-3 z-20 w-12 h-12 bg-white rounded-full shadow-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
+                title="Recenter map"
+              >
+                <ion-icon name="navigate-outline" class="text-xl text-slate-700"></ion-icon>
+              </button>
+            }
 
-                      <div class="min-w-0">
-                        <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
-                        <h3 class="text-sm font-display font-black text-slate-950 truncate">{{ getDriverName() }}</h3>
-                        <p class="text-[11px] text-slate-500 font-semibold leading-snug truncate">{{ driverLiveSubtext() }}</p>
-                      </div>
-                    </div>
-
-                    <app-badge variant="success" class="shrink-0">{{ driverLastSeenLabel() }}</app-badge>
+            <!-- Compact status pill -->
+            @if (booking() && isLiveTrackingJob()) {
+              <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
+                <div class="bg-white/95 backdrop-blur rounded-full shadow-lg px-4 py-2 pointer-events-auto">
+                  <div class="flex items-center justify-center gap-3">
+                    <span class="text-slate-900 font-semibold text-sm" style="color: #0f172a;">{{ bookingStatusLabel() }}</span>
+                    @if (etaMinutes() !== null && distanceKm() !== null) {
+                      <span class="text-xs text-slate-600" style="color: #475569;"> • {{ etaMinutes() }} mins • {{ distanceKm() }} km</span>
+                    }
                   </div>
                 </div>
               </div>
             }
+
+
+
+
+
           </div>
-
-          <div
-            class="bg-white rounded-t-[2rem] shadow-2xl p-4 space-y-4 -mt-8 relative z-10 overflow-y-auto border-t border-slate-100 transition-all duration-300"
-            [ngClass]="detailsExpanded() ? 'h-[78vh]' : 'h-[34vh]'"
-          >
-            <button
-              type="button"
-              class="w-full flex items-center justify-center py-1"
-              (click)="detailsExpanded.set(!detailsExpanded())"
-              [attr.aria-label]="detailsExpanded() ? 'Collapse details' : 'Expand details'"
+            <div
+              class="absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[2rem] border-t border-slate-100 bg-white p-3 shadow-2xl transition-all duration-300 ion-padding-bottom"
+              [class.transition-none]="isDraggingSheet()"
+              [style.height.%]="trackingSheetHeight()"
+              (focusin)="expandSheetForFocus()"
             >
-              <span class="w-12 h-1 bg-slate-200 rounded-full"></span>
-            </button>
+            <div class="shrink-0 -mx-3 -mt-3 rounded-t-[2rem] bg-white/95 backdrop-blur border-b border-slate-100">
+              <button
+                type="button"
+                class="flex w-full cursor-grab select-none touch-none items-center justify-center rounded-t-[2rem] py-3 active:cursor-grabbing"
+                (click)="cycleSheetState()"
+                (pointerdown)="startSheetDrag($event)"
+                [attr.aria-label]="sheetState() === 'expanded' ? 'Collapse to 40%' : 'Expand to 80%'"
+              >
+                <span class="w-16 h-1.5 bg-slate-400 rounded-full shadow-md"></span>
+              </button>
 
-            <div class="p-5 rounded-[2rem] border border-slate-100 bg-gradient-to-br from-white to-slate-50 shadow-sm">
+              <div class="px-3 pb-3">
+                <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-1.5 shadow-inner shadow-slate-200/40">
+                  <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  @for (tab of trackingTabs; track tab.id) {
+                    <button
+                      type="button"
+                      (click)="setActiveTrackingTab(tab.id)"
+                      class="relative min-w-0 h-12 rounded-xl px-1.5 py-1 text-[11px] font-semibold leading-tight border transition-all inline-flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] hover:shadow-sm"
+                      [class.bg-amber-500]="activeTrackingTab() === tab.id"
+                      [class.text-white]="activeTrackingTab() === tab.id"
+                      [class.border-amber-500]="activeTrackingTab() === tab.id"
+                      [class.shadow-md]="activeTrackingTab() === tab.id"
+                      [class.shadow-amber-500/20]="activeTrackingTab() === tab.id"
+                      [class.bg-white]="activeTrackingTab() !== tab.id"
+                      [class.text-slate-700]="activeTrackingTab() !== tab.id"
+                      [class.border-slate-200]="activeTrackingTab() !== tab.id"
+                    >
+                      <ion-icon
+                        [name]="tab.icon"
+                        class="text-[17px] shrink-0"
+                        [attr.aria-label]="tab.label + ' tab icon'"
+                      ></ion-icon>
+                      <span class="block max-w-full truncate">{{ tab.label }}</span>
+                      @if (tab.id === 'chat' && unreadMessageCount() > 0) {
+                        <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white/70">
+                          {{ unreadMessageCount() }}
+                        </span>
+                      }
+                    </button>
+                  }
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tracking-sheet-content min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+24px)]">
+
+            <div class="movabi-card-compact bg-gradient-to-br from-white to-slate-50" [class.hidden]="activeTrackingTab() !== 'overview'">
               <div class="flex justify-between items-start gap-4">
                 <div class="min-w-0">
                   <app-badge [variant]="getStatusVariant(booking()?.status || '')" class="mb-3">
                     {{ getStatusLabel(booking()?.status || '') }}
                   </app-badge>
 
-                  <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight">
-                    Booking Details
+                  <h2 class="text-sm font-bold text-slate-900">
+                    Details
                   </h2>
 
-                  <p class="text-xs font-semibold text-slate-500 mt-1">
+                  <p class="text-xs text-slate-500 mt-1">
                     {{ getStatusHint(booking()?.status || '') }}
                   </p>
 
-                  <p class="text-[11px] font-semibold text-slate-400 mt-2">
+                  @if (statusUpdatedLabel()) {
+                    <p class="text-[11px] font-bold text-amber-600 mt-1">
+                      {{ statusUpdatedLabel() }}
+                    </p>
+                  }
+
+                  <p class="text-[11px] font-semibold text-slate-400 mt-2 leading-snug">
                     ID: {{ booking()?.id?.slice(0, 8) }}
                   </p>
                 </div>
 
                 <div class="text-right shrink-0">
-                  <p class="text-3xl font-display font-bold text-slate-900">
+                  <p class="movabi-price">
                     {{ getDisplayedTotal() }}
                   </p>
                   <p class="text-[11px] font-semibold text-emerald-700 mt-1">
@@ -198,29 +252,29 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               </div>
 
               @if (booking()?.status === 'searching') {
-                <div class="mt-5 grid grid-cols-2 gap-3">
-                  <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100">
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                  <div class="movabi-card-compact bg-blue-50 border-blue-100 shadow-none">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="timer-outline" class="text-blue-600"></ion-icon>
-                      <p class="text-xs font-semibold text-blue-700">Time left</p>
+                      <p class="text-xs font-semibold text-blue-700">Time</p>
                     </div>
-                    <p class="text-lg font-display font-bold text-slate-900">
+                    <p class="text-base font-display font-semibold text-slate-900">
                       {{ searchCountdownLabel() }}
                     </p>
                   </div>
 
-                  <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none">
                     <div class="flex items-center gap-2 mb-1">
                       <ion-icon name="refresh-outline" class="text-slate-500"></ion-icon>
-                      <p class="text-xs font-semibold text-slate-500">Search status</p>
+                      <p class="text-xs font-semibold text-slate-500">Search</p>
                     </div>
-                    <p class="text-sm font-bold text-slate-900">Looking nearby</p>
+                    <p class="text-sm font-bold text-slate-900">Looking</p>
                   </div>
                 </div>
               }
             </div>
 
-            <div class="p-5 rounded-[2rem] border border-slate-100 bg-white shadow-sm space-y-4">
+            <div class="movabi-card-compact space-y-3" [class.hidden]="activeTrackingTab() !== 'overview'">
               <div class="flex items-start gap-3">
                 <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
                   <ion-icon [name]="serviceGuideIcon()" class="text-xl"></ion-icon>
@@ -230,10 +284,10 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">
                     {{ serviceGuideEyebrow() }}
                   </p>
-                  <h3 class="mt-1 text-lg font-display font-black text-slate-950">
+                  <h3 class="mt-1 text-sm font-bold text-slate-900">
                     {{ serviceGuideTitle() }}
                   </h3>
-                  <p class="mt-2 text-sm font-semibold text-slate-600 leading-relaxed">
+                  <p class="mt-1 text-xs text-slate-500">
                     {{ serviceGuideMessage() }}
                   </p>
                 </div>
@@ -262,16 +316,26 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       <ion-icon [name]="step.icon"></ion-icon>
                     </div>
                     <div class="min-w-0">
-                      <p class="text-sm font-black text-slate-950 truncate">{{ step.title }}</p>
-                      <p class="text-xs font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
+                      <p class="text-xs font-black text-slate-950 leading-snug break-words">{{ step.title }}</p>
+                      <p class="text-[11px] font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
                     </div>
                   </div>
                 }
               </div>
             </div>
 
+            <div class="movabi-card-compact bg-white border border-slate-100" [class.hidden]="activeTrackingTab() !== 'payment'">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</p>
+                  <h3 class="mt-1 text-sm font-bold text-slate-900">{{ paymentAmountLabel() }}</h3>
+                  <p class="mt-1 text-xs font-semibold text-slate-500 leading-snug">Wallet/card reservation is protected by Movabi until the request is complete.</p>
+                </div>
+                <p class="movabi-price shrink-0">{{ getDisplayedTotal() }}</p>
+              </div>
+            </div>
             @if (showPaymentProtectionPanel()) {
-              <div class="p-5 rounded-[2rem] border border-amber-100 bg-amber-50 space-y-4">
+              <div class="movabi-card-compact border-amber-100 bg-amber-50 space-y-3" [class.hidden]="activeTrackingTab() !== 'payment'">
                 <div class="flex items-start gap-3">
                   <div class="w-11 h-11 rounded-2xl bg-white text-amber-600 border border-amber-100 flex items-center justify-center shadow-sm shrink-0">
                     <ion-icon [name]="paymentProtectionIcon()" class="text-xl"></ion-icon>
@@ -279,12 +343,12 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
                   <div class="min-w-0">
                     <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">
-                      Movabi payment protection
+                      Payment protection
                     </p>
-                    <h3 class="mt-1 text-lg font-display font-black text-slate-950">
+                    <h3 class="mt-1 text-sm font-bold text-slate-900">
                       {{ paymentProtectionTitle() }}
                     </h3>
-                    <p class="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                    <p class="mt-1 text-xs font-semibold text-slate-700 leading-snug">
                       {{ paymentProtectionMessage() }}
                     </p>
                   </div>
@@ -292,11 +356,11 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
                 <div class="rounded-2xl bg-white/85 border border-amber-100 p-3 space-y-2 text-sm font-bold text-slate-700">
                   <div class="flex items-center justify-between gap-3">
-                    <span>Reserved amount</span>
+                    <span>Reserved</span>
                     <span class="text-slate-950">{{ getDisplayedTotal() }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
-                    <span>Where it returns</span>
+                    <span>Returns to</span>
                     <span class="text-right text-slate-950">{{ paymentProtectionDestination() }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-3">
@@ -307,26 +371,53 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               </div>
             }
 
+            @if (showCompletionPinPanel()) {
+              <div class="movabi-card-compact border-emerald-100 bg-emerald-50 space-y-3" [class.hidden]="activeTrackingTab() !== 'overview'">
+                <div class="flex items-start gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-white text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-sm shrink-0">
+                    <ion-icon name="shield-checkmark-outline" class="text-xl"></ion-icon>
+                  </div>
+
+                  <div class="min-w-0 flex-1">
+                    <p class="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                      Handover PIN
+                    </p>
+                    <div class="mt-2 flex items-center justify-between gap-3">
+                      <h3 class="text-sm font-bold text-slate-900">
+                        Complete with PIN
+                      </h3>
+                      <div class="px-4 py-2 rounded-2xl bg-white text-xl font-display font-bold tracking-[0.35em] text-slate-950 border border-emerald-100">
+                        {{ completionPinForCustomer() }}
+                      </div>
+                    </div>
+                    <p class="mt-1 text-xs font-semibold text-slate-700 leading-snug">
+                      Share this PIN only when the service is finished.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            }
+
             @if (booking()?.service_slug === ServiceTypeEnum.ERRAND && errandFunding()) {
-              <div class="grid grid-cols-2 gap-3">
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div class="grid grid-cols-2 gap-3" [class.hidden]="activeTrackingTab() !== 'payment'">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Service Fee</p>
-                  <p class="text-lg font-display font-bold text-slate-900">
+                  <p class="text-base font-display font-semibold text-slate-900">
                     {{ config.formatCurrency(getErrandServiceFee()) }}
                   </p>
                 </div>
 
-                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div class="movabi-card-compact bg-slate-50 shadow-none">
                   <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Budget</p>
-                  <p class="text-lg font-display font-bold text-slate-900">
+                  <p class="text-base font-display font-semibold text-slate-900">
                     {{ config.formatCurrency(getErrandItemBudget()) }}
                   </p>
                 </div>
 
                 @if (getErrandReleasedAmount() > 0) {
-                  <div class="col-span-2 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                  <div class="col-span-2 movabi-card-compact bg-emerald-50 border-emerald-100 shadow-none">
                     <p class="text-[9px] font-bold text-emerald-700 uppercase tracking-widest mb-1">Returned to wallet</p>
-                    <p class="text-lg font-display font-bold text-emerald-700">
+                    <p class="text-base font-display font-semibold text-emerald-700">
                       {{ config.formatCurrency(getErrandReleasedAmount()) }}
                     </p>
                   </div>
@@ -336,7 +427,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 
             @if (booking()?.driver_id) {
               @if (errandFunding()?.over_budget_status === 'requested') {
-                <div class="p-6 bg-rose-50 rounded-[2rem] border border-rose-100">
+                <div class="movabi-card-compact bg-rose-50 border-rose-100" [class.hidden]="activeTrackingTab() !== 'payment'">
                   <div class="flex items-center gap-3 mb-4">
                     <div class="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center text-white shadow-lg shadow-rose-200">
                       <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
@@ -365,7 +456,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     @if (getOverBudgetReason()) {
                       <div class="p-3 bg-white rounded-xl border border-rose-100">
                         <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                          Driver message
+                          Driver note
                         </p>
                         <p class="text-sm font-semibold text-slate-800 leading-relaxed">
                           {{ getOverBudgetReason() }}
@@ -376,7 +467,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     @if (getExtraBudgetShortfall() > 0) {
                       <div class="p-3 bg-amber-50 rounded-xl border border-amber-200">
                         <p class="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">
-                          Wallet top-up needed
+                          Top-up needed
                         </p>
                         <p class="text-sm font-semibold text-slate-700 leading-snug">
                           Add {{ config.formatCurrency(getExtraBudgetShortfall()) }} to approve this extra budget.
@@ -385,7 +476,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                     }
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="grid grid-cols-2 gap-3" [class.hidden]="activeTrackingTab() !== 'payment'">
                     <app-button variant="secondary" color="error" size="md" (clicked)="rejectOverBudget()">
                       Reject
                     </app-button>
@@ -397,7 +488,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 </div>
               }
 
-              <div class="p-4 bg-white rounded-[2rem] border border-slate-100 shadow-sm">
+              <div class="movabi-card-compact" [class.hidden]="activeTrackingTab() !== 'overview'">
                 <div class="flex items-start gap-4">
                   <div class="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white shadow-md shrink-0">
                     @if (getDriverAvatar()) {
@@ -410,18 +501,18 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   </div>
 
                   <div class="flex-1 min-w-0">
-                    <h3 class="text-base font-bold text-slate-900 truncate">
+                    <h3 class="text-base font-bold text-slate-900 leading-tight break-words">
                       {{ getDriverName() }}
                     </h3>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 truncate">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 leading-snug break-words">
                       {{ getDriverStatusText() }}
                     </p>
 
-                    <div class="mt-3 grid grid-cols-1 gap-2">
+                    <div class="mt-2 grid grid-cols-1 gap-2">
                       <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2">
                         <p class="text-[9px] text-slate-400 font-black uppercase tracking-widest">Transport</p>
-                        <p class="text-sm text-slate-900 font-black truncate">{{ getDriverVehicleSummary() }}</p>
-                        <p class="text-[11px] text-slate-500 font-semibold truncate">{{ getDriverVehicleMeta() }}</p>
+                        <p class="text-sm text-slate-900 font-black leading-tight break-words">{{ getDriverVehicleSummary() }}</p>
+                        <p class="text-[11px] text-slate-500 font-semibold leading-snug break-words">{{ getDriverVehicleMeta() }}</p>
                       </div>
                     </div>
                   </div>
@@ -436,42 +527,41 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 </div>
               </div>
 
-              @if (['accepted', 'arrived', 'in_progress', 'heading_to_pickup', 'en_route_to_customer'].includes(booking()?.status || '')) {
-                <div class="pt-2">
-                  <app-button
-                    [variant]="showChat() ? 'outline' : 'secondary'"
-                    (clicked)="showChat.set(!showChat())"
-                    class="w-full"
-                  >
-                    <ion-icon [name]="showChat() ? 'chevron-down' : 'chatbubbles'" class="mr-2 text-xl"></ion-icon>
-                    {{ showChat() ? 'Hide Chat' : 'Message Driver' }}
-                  </app-button>
-
-                  @if (showChat()) {
-                    <div class="mt-6 h-[500px] border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-200/50">
-                      <app-communication-panel
-                        [jobId]="booking()!.id"
-                        [receiverId]="booking()!.driver_id!"
-                        [receiverPhone]="booking()?.driver?.phone"
-                      ></app-communication-panel>
+              <div class="pt-2 space-y-3" [class.hidden]="activeTrackingTab() !== 'chat'">
+                @if (booking()?.driver_id) {
+                  <div class="h-[min(58vh,520px)] min-h-[360px] border border-slate-100 rounded-[1.5rem] overflow-hidden shadow-lg shadow-slate-200/50">
+                    <app-communication-panel
+                      [jobId]="booking()!.id"
+                      [receiverId]="booking()!.driver_id!"
+                      [receiverPhone]="booking()?.driver?.phone"
+                    ></app-communication-panel>
+                  </div>
+                } @else {
+                  <div class="movabi-card-compact bg-slate-50 border border-slate-100 text-center">
+                    <div class="mx-auto mb-3 w-12 h-12 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-amber-600 shadow-sm">
+                      <ion-icon name="chatbubble-ellipses-outline" class="text-2xl"></ion-icon>
                     </div>
-                  }
-                </div>
-              }
+                    <h3 class="text-base font-bold text-slate-900">Chat not available yet</h3>
+                    <p class="mt-2 text-sm font-semibold text-slate-500 leading-relaxed">
+                      Chat will be available when a driver accepts your request.
+                    </p>
+                  </div>
+                }
+              </div>
             }
 
-            <div class="p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
-              <div class="flex items-center gap-2 mb-5">
+            <div class="movabi-card-compact bg-slate-50 shadow-none" [class.hidden]="activeTrackingTab() !== 'route'">
+              <div class="flex items-center gap-2 mb-4">
                 <div class="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                   <ion-icon name="navigate" class="text-xl"></ion-icon>
                 </div>
                 <div>
-                  <h3 class="text-base font-display font-bold text-slate-900">{{ routeCardTitle() }}</h3>
-                  <p class="text-xs font-semibold text-slate-500">{{ routeCardSubtitle() }}</p>
+                  <h3 class="text-sm font-bold text-slate-900">{{ routeCardTitle() }}</h3>
+                  <p class="text-xs text-slate-500">{{ routeCardSubtitle() }}</p>
                 </div>
               </div>
 
-              <div class="relative pl-10 space-y-10">
+              <div class="relative pl-10 space-y-8">
                 <div class="absolute left-[13px] top-2 bottom-2 w-0.5 bg-slate-200"></div>
 
                 <div class="relative">
@@ -496,21 +586,37 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               </div>
             </div>
 
+            <div class="movabi-card-compact bg-white border border-slate-100" [class.hidden]="activeTrackingTab() !== 'details'">
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Request ID</p>
+                  <p class="mt-1 font-bold text-slate-900">{{ booking()?.id?.slice(0, 8) }}</p>
+                </div>
+                <div>
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Service</p>
+                  <p class="mt-1 font-bold text-slate-900 capitalize">{{ booking()?.service_slug || 'Request' }}</p>
+                </div>
+                <div class="col-span-2">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</p>
+                  <p class="mt-1 font-bold text-slate-900">{{ getStatusLabel(booking()?.status || '') }}</p>
+                </div>
+              </div>
+            </div>
             @if (details()) {
-              <div class="pt-2">
+              <div class="pt-2" [class.hidden]="activeTrackingTab() !== 'details'">
                 <div class="flex items-center gap-2 mb-4">
                   <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 shadow-sm">
                     <ion-icon name="sparkles-outline" class="text-xl"></ion-icon>
                   </div>
                   <div>
-                    <h3 class="text-base font-display font-bold text-slate-900">Service Details</h3>
-                    <p class="text-xs font-semibold text-slate-500">Extra information</p>
+                  <h3 class="text-sm font-bold text-slate-900">Details</h3>
+                  <p class="text-xs text-slate-500">More info</p>
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-2">
                   @if (booking()?.service_slug === ServiceTypeEnum.RIDE) {
-                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div class="movabi-card-compact bg-slate-50 shadow-none">
                       <p class="text-xs font-semibold text-slate-500 mb-1">Passengers</p>
                       <p class="text-xl font-display font-bold text-slate-900">
                         {{ details()?.['passenger_count'] || 1 }}
@@ -519,7 +625,7 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                   }
 
                   @if (booking()?.service_slug === ServiceTypeEnum.VAN) {
-                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div class="movabi-card-compact bg-slate-50 shadow-none">
                       <p class="text-xs font-semibold text-slate-500 mb-1">Helpers</p>
                       <p class="text-xl font-display font-bold text-slate-900">
                         {{ details()?.['helper_count'] || 0 }}
@@ -529,9 +635,9 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                 </div>
 
                 @if (booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                  <div class="p-4 bg-slate-50 rounded-[2rem] border border-slate-100 mt-4">
-                    <div class="flex justify-between items-center mb-4 gap-3">
-                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items Requested</p>
+                  <div class="movabi-card-compact bg-slate-50 shadow-none mt-3">
+                    <div class="flex justify-between items-center mb-3 gap-3">
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Items</p>
 
                       @if (details()?.['actual_spending']) {
                         <app-badge variant="success">
@@ -546,9 +652,9 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
                       }
                     </div>
 
-                    <div class="mt-6 pt-6 border-t border-slate-200/50 space-y-4">
+                    <div class="mt-4 pt-4 border-t border-slate-200/50 space-y-3">
                       <div class="flex justify-between items-center">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Initial Budget</span>
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Budget</span>
                         <span class="text-xl font-display font-bold text-emerald-600">
                           {{ config.formatCurrency($any(details()?.['estimated_budget']) || 0) }}
                         </span>
@@ -566,45 +672,92 @@ const DRIVER_SEARCH_WINDOW_SECONDS = 300;
               </div>
             }
 
-            <div class="pt-4 space-y-4">
-              @if (booking()?.status === 'completed') {
-                <app-button variant="primary" size="lg" (clicked)="showRating()" class="w-full">
-                  <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
-                  Rate Experience
-                </app-button>
-              } @else if (canManuallyCancel()) {
-                <app-button variant="outline" color="error" size="lg" (clicked)="cancelBooking()" class="w-full">
-                  <ion-icon name="close-circle-outline" slot="start" class="mr-2"></ion-icon>
-                  Cancel Booking
-                </app-button>
-              }
+            <div class="pt-4 space-y-3" [class.hidden]="activeTrackingTab() !== 'help'">
+              <div class="movabi-card-compact bg-white border border-slate-100 space-y-3">
+                <div class="flex items-start gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                    <ion-icon name="help-circle-outline" class="text-2xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0">
+                    <h3 class="text-base font-bold text-slate-900">Help & support</h3>
+                    <p class="mt-1 text-sm font-semibold text-slate-500 leading-relaxed">
+                      Get help with this booking, safety, cancellation, or lost items.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    (click)="contactSupport()"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="chatbubble-ellipses-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                    <span>Contact support</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    (click)="reportIssue()"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="flag-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                    <span>Report issue</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    (click)="openSafetyHelp()"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="shield-checkmark-outline" class="text-xl text-emerald-600 shrink-0"></ion-icon>
+                    <span>Safety/help</span>
+                  </button>
+
+                  @if (booking()?.status === 'completed') {
+                    <button
+                      type="button"
+                      (click)="reportLostItem()"
+                      class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                    >
+                      <ion-icon name="archive-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                      <span>Lost item</span>
+                    </button>
+                    <app-button variant="primary" size="lg" (clicked)="showRating()" class="w-full">
+                      <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
+                      Rate Experience
+                    </app-button>
+                  } @else {
+                    <button
+                      type="button"
+                      disabled
+                      class="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left font-bold text-slate-400 flex items-start gap-3"
+                    >
+                      <ion-icon name="archive-outline" class="mt-0.5 text-xl shrink-0"></ion-icon>
+                      <span>Lost item <span class="block text-xs font-semibold">{{ lostItemUnavailableReason() }}</span></span>
+                    </button>
+                  }
+
+                  @if (canManuallyCancel()) {
+                    <app-button variant="outline" color="error" size="lg" (clicked)="cancelBooking()" class="w-full">
+                      <ion-icon name="close-circle-outline" slot="start" class="mr-2"></ion-icon>
+                      Cancel request
+                    </app-button>
+                  } @else {
+                    <button
+                      type="button"
+                      disabled
+                      class="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left font-bold text-slate-400 flex items-start gap-3"
+                    >
+                      <ion-icon name="close-circle-outline" class="mt-0.5 text-xl shrink-0"></ion-icon>
+                      <span>Cancel request <span class="block text-xs font-semibold">{{ cancelUnavailableReason() }}</span></span>
+                    </button>
+                  }
+                </div>
+              </div>
+            </div>
             </div>
           </div>
-        </div>
-      } @else {
-        <div class="flex flex-col items-center justify-center h-full p-10 text-center space-y-8">
-          @if (isLoading()) {
-            <div class="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-slate-200/50 border border-slate-100">
-              <ion-spinner name="crescent" color="primary"></ion-spinner>
-            </div>
-            <div class="space-y-2">
-              <h3 class="text-xl font-display font-bold text-slate-900">Loading details</h3>
-              <p class="text-slate-500 font-medium">Retrieving your journey information...</p>
-            </div>
-          } @else {
-            <div class="w-24 h-24 bg-red-50 rounded-[2.5rem] flex items-center justify-center text-red-500 border border-red-100 mb-4">
-              <ion-icon name="alert-circle-outline" class="text-5xl"></ion-icon>
-            </div>
-            <div class="space-y-3">
-              <h3 class="text-2xl font-display font-bold text-slate-900">Booking Not Found</h3>
-              <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                We couldn't find this booking. It may have been completed or cancelled.
-              </p>
-            </div>
-            <app-button variant="secondary" size="lg" (clicked)="router.navigate(['/customer'])" class="w-full">
-              Back to Home
-            </app-button>
-          }
         </div>
       }
     </ion-content>
@@ -621,8 +774,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private alertCtrl = inject(AlertController);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
+    private routingService = inject(RoutingService);
+    private nativePlatform = inject(NativePlatformService);
+    private auth = inject(AuthService);
+    private notificationOrchestrator = inject(NotificationOrchestratorService);
 
     private localSearchFallbackExpiresAt: number | null = null;
+    private messageCountWarningShown = false;
 
     public config = inject(AppConfigService);
 
@@ -635,13 +793,37 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     isLoading = signal(true);
     showChat = signal(false);
+    activeTrackingTab = signal<CustomerTrackingTab>('overview');
+    messageCount = signal(0);
+    unreadMessageCount = computed(() => {
+        const bookingId = this.booking()?.id;
+        return bookingId ? this.notificationOrchestrator.getBadgeCount(bookingId) : 0;
+    });
+    trackingTabs: Array<{ id: CustomerTrackingTab; label: string; icon: string }> = [
+        { id: 'overview', label: 'Overview', icon: 'information-circle-outline' },
+        { id: 'route', label: 'Route', icon: 'navigate-circle-outline' },
+        { id: 'details', label: 'Details', icon: 'document-text-outline' },
+        { id: 'chat', label: 'Chat', icon: 'chatbubble-ellipses-outline' },
+        { id: 'payment', label: 'Payment', icon: 'wallet-outline' },
+        { id: 'help', label: 'Help', icon: 'help-circle-outline' }
+    ];
+    sheetState = signal<SheetState>('medium');
     detailsExpanded = signal(false);
+    trackingSheetHeight = signal(40);
+    isDraggingSheet = signal(false);
+    sheetDragMoved = false;
+    sheetDragStartY = 0;
+    sheetDragStartHeight = 0;
     driverDistanceToPickup = signal<number | null>(null);
     driverEtaToPickup = signal<number | null>(null);
     driverLastSeenAt = signal<Date | null>(null);
+    etaMinutes = signal<number | null>(null);
+    distanceKm = signal<number | null>(null);
 
     searchCountdownSeconds = signal(DRIVER_SEARCH_WINDOW_SECONDS);
+    findingDriverElapsedSeconds = signal(0);
 
+    
     searchProgressPercent = computed(() => {
         const val = Math.max(0, Math.min(DRIVER_SEARCH_WINDOW_SECONDS, this.searchCountdownSeconds()));
         return (val / DRIVER_SEARCH_WINDOW_SECONDS) * 100;
@@ -649,11 +831,33 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private channel?: RealtimeChannel;
     private errandFundingChannel?: RealtimeChannel;
+    private jobEventsChannel?: RealtimeChannel;
+    private messageChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
+    private subscribedDriverLocationId: string | null = null;
+    private latestDriverPoint: { lat: number; lng: number } | null = null;
+    private activeRouteDrawnFor: string | null = null;
+    private hasFitTrackingMap = false;
+    private hasAutoFitted = false;
     private lastDriverCameraUpdateAt = 0;
+    private lastNotifiedStatus: string | null = null;
+    
+    // Map control properties
+    private userIsInteracting = false;
+    private lastUserInteractionTime = 0;
+    autoFollowEnabled = true;
+    private readonly USER_INTERACTION_TIMEOUT = 30000; // 30 seconds
+    
+    // New single tracking renderer properties
+    hasInitialFit = false;
+    userMovedMap = false;
+    followMode = true;
+    didCleanTrackingMarkers = false;
+    private lastStatusEventAt = signal<Date | null>(null);
 
     private pollingInterval?: ReturnType<typeof setInterval>;
     private countdownInterval?: ReturnType<typeof setInterval>;
+    private findingDriverTimerInterval?: ReturnType<typeof setInterval>;
 
     constructor() {
         addIcons({
@@ -682,8 +886,79 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             archiveOutline,
             flagOutline,
             storefrontOutline,
-            homeOutline
+            homeOutline,
+            informationCircleOutline,
+            navigateCircleOutline,
+            documentTextOutline,
+            chatbubbleEllipsesOutline,
+            walletOutline,
+            helpCircleOutline
         });
+    }
+
+    sheetHeightClass(): string {
+        switch (this.sheetState()) {
+            case 'expanded':
+                return 'h-[80vh]';
+            default:
+                return 'h-[40vh]';
+        }
+    }
+
+
+    setActiveTrackingTab(tab: CustomerTrackingTab): void {
+        this.activeTrackingTab.set(tab);
+        if (tab === 'chat') {
+            this.showChat.set(true);
+            // Mark messages as read using NotificationOrchestrator
+            const bookingId = this.booking()?.id;
+            if (bookingId) {
+                void this.notificationOrchestrator.markAsRead(bookingId);
+            }
+        }
+        if (tab === 'route') {
+            setTimeout(() => this.recenterMap(), 120);
+        }
+    }
+    cycleSheetState(): void {
+        if (this.sheetDragMoved) {
+            this.sheetDragMoved = false;
+            return;
+        }
+
+        // Uber/Bolt-style snap points: 40% -> 80% -> 95% -> 40%
+        const currentHeight = this.trackingSheetHeight();
+        let nextHeight: number;
+        
+        if (currentHeight <= 50) {
+            nextHeight = 80; // 40% -> 80%
+        } else if (currentHeight <= 85) {
+            nextHeight = 95; // 80% -> 95%
+        } else {
+            nextHeight = 40; // 95% -> 40%
+        }
+        
+        this.trackingSheetHeight.set(nextHeight);
+        this.updateSheetState(nextHeight);
+    }
+
+    expandSheetForFocus(): void {
+        if (this.trackingSheetHeight() < 80) {
+            this.trackingSheetHeight.set(80);
+            this.updateSheetState(80);
+        }
+    }
+
+    private updateSheetState(height: number): void {
+        let newState: SheetState;
+        if (height <= 50) {
+            newState = 'collapsed';
+        } else if (height <= 85) {
+            newState = 'medium';
+        } else {
+            newState = 'expanded';
+        }
+        this.sheetState.set(newState);
     }
 
     async ngOnInit(): Promise<void> {
@@ -696,6 +971,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.channel = this.bookingService.subscribeToBooking(id);
         this.subscribeToErrandFunding(id);
+        this.subscribeToJobEvents(id);
+        this.subscribeToJobMessages(id);
+
+        // Subscribe to notifications for this job
+        this.notificationOrchestrator.subscribeToJob(id);
 
         await this.walletService.fetchWallet();
         await this.loadBookingAndDetails(id, true);
@@ -712,7 +992,150 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.channel?.unsubscribe();
         this.errandFundingChannel?.unsubscribe();
+        this.jobEventsChannel?.unsubscribe();
+        this.messageChannel?.unsubscribe();
+        
+        // Unsubscribe from notifications
+        const bookingId = this.booking()?.id;
+        if (bookingId) {
+            this.notificationOrchestrator.unsubscribeFromJob(bookingId);
+        }
         this.locationSubscription?.unsubscribe();
+        this.subscribedDriverLocationId = null;
+    }
+
+    
+    startSheetDrag(event: PointerEvent): void {
+        event.preventDefault();
+        this.isDraggingSheet.set(true);
+        this.sheetDragMoved = false;
+        this.sheetDragStartY = event.clientY;
+        this.sheetDragStartHeight = this.trackingSheetHeight();
+
+        const move = (moveEvent: PointerEvent) => {
+            const delta = Math.abs(moveEvent.clientY - this.sheetDragStartY);
+            if (delta > 4) {
+                this.sheetDragMoved = true;
+            }
+
+            const viewportHeight = Math.max(window.innerHeight, 1);
+            const deltaVh = ((this.sheetDragStartY - moveEvent.clientY) / viewportHeight) * 100;
+            const nextHeight = Math.max(40, Math.min(95, this.sheetDragStartHeight + deltaVh));
+            this.trackingSheetHeight.set(nextHeight);
+        };
+
+        const end = () => {
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            document.removeEventListener('pointercancel', end);
+            
+            // Snap to nearest point: 40%, 80%, or 95%
+            const currentHeight = this.trackingSheetHeight();
+            let snapHeight: number;
+            
+            if (currentHeight <= 60) {
+                snapHeight = 40;
+            } else if (currentHeight <= 87) {
+                snapHeight = 80;
+            } else {
+                snapHeight = 95;
+            }
+            
+            this.trackingSheetHeight.set(snapHeight);
+            this.updateSheetState(snapHeight);
+
+            window.setTimeout(() => {
+                this.isDraggingSheet.set(false);
+                this.sheetDragMoved = false;
+            }, 0);
+        };
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', end, { once: true });
+        document.addEventListener('pointercancel', end, { once: true });
+    }
+
+    onSheetDrag(_event: PointerEvent): void {
+        // Kept for template/backward compatibility; drag movement is handled by document listeners.
+    }
+
+    endSheetDrag(): void {
+        // Kept for template/backward compatibility; drag end is handled by document listeners.
+    }
+
+    startDetailsPointerDrag(event: PointerEvent): void {
+        this.startSheetDrag(event);
+    }
+
+    private async notifyStatusChange(previousStatus: string, booking: Booking): Promise<void> {
+        const status = String(booking.status || '');
+        if (!status || !previousStatus || previousStatus === status || this.lastNotifiedStatus === status) return;
+
+        this.lastNotifiedStatus = status;
+        this.lastStatusEventAt.set(this.toDate((booking as any).updated_at) || new Date());
+        
+        // Trigger comprehensive notification using notification manager
+        await this.triggerStatusNotification(status, booking);
+        
+        // Keep existing notification for backward compatibility
+        await this.notifyTrackingUpdate(status, booking.id);
+    }
+
+    private async triggerStatusNotification(status: string, booking: Booking): Promise<void> {
+        const statusLabel = this.getStatusLabel(status);
+        const jobId = booking.id;
+        
+        // Map status to notification event type
+        const notificationTypeMap: Record<string, any> = {
+            'accepted': 'driver_accepted_booking',
+            'arrived': 'driver_arrived',
+            'in_progress': 'driver_started_trip',
+            'shopping_in_progress': 'driver_completed_shopping',
+            'collected': 'driver_collected_items',
+            'en_route_to_customer': 'driver_en_route',
+            'completed': 'driver_completed_trip',
+            'cancelled': 'customer_cancelled',
+            'canceled': 'customer_cancelled',
+            'over_budget_requested': 'extra_budget_requested'
+        };
+
+        const notificationType = notificationTypeMap[status];
+        if (notificationType) {
+            // Notification is now handled by NotificationOrchestrator
+        }
+    }
+
+    private async notifyTrackingUpdate(status: string, bookingId: string): Promise<void> {
+        const title = this.trackingTitle();
+        const body = this.getStatusHint(status) || this.getStatusLabel(status);
+
+        await Promise.allSettled([
+            this.nativePlatform.showForegroundNotification(title, body, {
+                route: `/customer/tracking/${bookingId}`,
+                bookingId,
+                status
+            }),
+            this.playStatusTone()
+        ]);
+    }
+
+    private async playStatusTone(): Promise<void> {
+        if (this.nativePlatform.isNative) return;
+
+        const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextCtor) return;
+
+        const ctx = new AudioContextCtor();
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        gain.gain.value = 0.035;
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.14);
+        setTimeout(() => void ctx.close().catch(() => undefined), 260);
     }
 
     getStatusVariant(
@@ -742,46 +1165,67 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     getStatusLabel(status: string): string {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            const errandMap: Record<string, string> = {
-                searching: 'Finding errand driver',
-                accepted: 'Driver assigned',
-                assigned: 'Driver assigned',
-                heading_to_pickup: 'Heading to store',
-                arrived: 'Driver arrived',
-                arrived_at_store: 'At the store',
-                shopping_in_progress: 'Shopping now',
-                collected: 'Items collected',
-                en_route_to_customer: 'Delivering to you',
-                delivered: 'Delivered',
-                completed: 'Errand complete',
-                settled: 'Errand settled',
-                cancelled: 'Errand cancelled',
-                canceled: 'Errand cancelled',
-                no_driver_found: 'No driver found',
-                requires_review: 'Movabi review'
-            };
+            const errandMap: Record<string, string> = this.isShoppingErrand()
+                ? {
+                    searching: 'Finding driver',
+                    accepted: 'Assigned',
+                    assigned: 'Assigned',
+                    heading_to_pickup: 'To store',
+                    arrived: 'Arrived',
+                    arrived_at_store: 'At store',
+                    shopping_in_progress: 'Shopping',
+                    collected: 'Collected',
+                    en_route_to_customer: 'On the way',
+                    delivered: 'Delivered',
+                    completed: 'Complete',
+                    settled: 'Settled',
+                    over_budget_requested: 'Budget needed',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
+                    no_driver_found: 'No driver',
+                    requires_review: 'Review'
+                }
+                : {
+                    searching: 'Finding driver',
+                    accepted: 'Assigned',
+                    assigned: 'Assigned',
+                    heading_to_pickup: 'To collection',
+                    arrived: 'Arrived',
+                    arrived_at_store: 'At pickup',
+                    shopping_in_progress: 'Collecting',
+                    collected: 'Collected',
+                    en_route_to_customer: 'On the way',
+                    delivered: 'Delivered',
+                    completed: 'Complete',
+                    settled: 'Settled',
+                    over_budget_requested: 'Budget needed',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
+                    no_driver_found: 'No driver',
+                    requires_review: 'Review'
+                };
 
             if (errandMap[status]) return errandMap[status];
         }
 
         const map: Record<string, string> = {
-            searching: 'Searching for driver',
-            accepted: 'Driver assigned',
-            assigned: 'Driver assigned',
-            heading_to_pickup: 'Heading to pickup',
-            arrived: 'Driver arrived',
-            in_progress: 'Trip in progress',
-            arrived_at_store: 'Driver at store',
-            shopping_in_progress: 'Shopping in progress',
-            collected: 'Items collected',
+            searching: 'Searching',
+            accepted: 'Assigned',
+            assigned: 'Assigned',
+            heading_to_pickup: 'To pickup',
+            arrived: 'Arrived',
+            in_progress: 'In progress',
+            arrived_at_store: 'At store',
+            shopping_in_progress: 'Shopping',
+            collected: 'Collected',
             en_route_to_customer: 'On the way',
             delivered: 'Delivered',
             completed: 'Completed',
             settled: 'Settled',
             cancelled: 'Cancelled',
             canceled: 'Cancelled',
-            no_driver_found: 'No driver found',
-            requires_review: 'Movabi review'
+            no_driver_found: 'No driver',
+            requires_review: 'Review'
         };
 
         return map[status] ?? status.replace(/_/g, ' ');
@@ -789,49 +1233,70 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     getStatusHint(status: string): string {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            const errandMap: Record<string, string> = {
-                searching: 'Matching someone to shop and deliver',
-                accepted: 'Driver is heading to the store',
-                assigned: 'Driver is heading to the store',
-                heading_to_pickup: 'Driver is going to the store',
-                arrived: 'Driver reached the store area',
-                arrived_at_store: 'Driver is ready to shop',
-                shopping_in_progress: 'Driver is shopping for your items',
-                collected: 'Items are collected and ready for delivery',
-                en_route_to_customer: 'Driver is bringing your items',
-                delivered: 'Items have been delivered',
-                completed: 'Errand is complete',
-                settled: 'Wallet funds have been settled',
-                cancelled: 'Errand cancelled',
-                canceled: 'Errand cancelled',
-                no_driver_found: 'No available errand driver',
-                requires_review: 'We are checking this errand and payment'
-            };
+            const errandMap: Record<string, string> = this.isShoppingErrand()
+                ? {
+                    searching: 'Finding a shopper.',
+                    accepted: 'Driver is going to the store..',
+                    assigned: 'Driver is going to the store..',
+                    heading_to_pickup: 'Driver is going to the store.',
+                    arrived: 'Driver is at the store.',
+                    arrived_at_store: 'Driver is ready to shop.',
+                    shopping_in_progress: 'Shopping in progress.',
+                    collected: 'Items collected.',
+                    en_route_to_customer: 'Driver is on the way..',
+                    delivered: 'Items have been delivered',
+                    completed: 'Errand is complete',
+                    settled: 'Wallet funds have been settled',
+                    over_budget_requested: 'Extra budget needed.',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
+                    no_driver_found: 'No available errand driver',
+                    requires_review: 'Under review.'
+                }
+                : {
+                    searching: 'Finding a driver.',
+                    accepted: 'Driver is going to collect.',
+                    assigned: 'Driver is going to collect.',
+                    heading_to_pickup: 'Driver is going to collect.',
+                    arrived: 'Driver is at pickup.',
+                    arrived_at_store: 'Driver is collecting.',
+                    shopping_in_progress: 'Collection in progress.',
+                    collected: 'Item collected.',
+                    en_route_to_customer: 'Driver is on the way..',
+                    delivered: 'Item has been delivered',
+                    completed: 'Errand is complete',
+                    settled: 'Payment has been settled',
+                    over_budget_requested: 'Driver needs your approval before continuing',
+                    cancelled: 'Cancelled',
+                    canceled: 'Cancelled',
+                    no_driver_found: 'No available errand driver',
+                    requires_review: 'Under review.'
+                };
 
             if (errandMap[status]) return errandMap[status];
         }
 
         const map: Record<string, string> = {
-            searching: 'Matching nearby drivers',
-            accepted: 'Driver is coming',
-            assigned: 'Driver is coming',
-            heading_to_pickup: 'Driver is on the way',
-            arrived: 'Driver reached pickup',
-            in_progress: 'Journey in progress',
-            arrived_at_store: 'Driver reached the store',
-            shopping_in_progress: 'Driver is shopping',
+            searching: 'Finding nearby drivers.',
+            accepted: 'Driver is coming.',
+            assigned: 'Driver is coming.',
+            heading_to_pickup: 'Driver is on the way.',
+            arrived: 'Driver arrived.',
+            in_progress: 'In progress.',
+            arrived_at_store: 'Driver at store.',
+            shopping_in_progress: 'Shopping.',
             collected: 'Items have been collected',
-            en_route_to_customer: 'Driver is on the way',
-            delivered: 'Delivery completed',
-            completed: 'Trip completed',
-            settled: 'Payment settled',
-            cancelled: 'Booking cancelled',
-            canceled: 'Booking cancelled',
-            no_driver_found: 'No available driver',
-            requires_review: 'We are checking this booking and payment'
+            en_route_to_customer: 'Driver is on the way.',
+            delivered: 'Delivered.',
+            completed: 'Completed.',
+            settled: 'Settled.',
+            cancelled: 'Cancelled.',
+            canceled: 'Cancelled.',
+            no_driver_found: 'No driver available.',
+            requires_review: 'Under review.'
         };
 
-        return map[status] ?? 'Live updates available';
+        return map[status] ?? 'Live updates.';
     }
 
     trackingTitle(): string {
@@ -850,26 +1315,26 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     routeCardTitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand Route';
+                return 'Route';
             case ServiceTypeEnum.DELIVERY:
-                return 'Delivery Route';
+                return 'Route';
             case ServiceTypeEnum.VAN:
-                return 'Move Route';
+                return 'Route';
             default:
-                return 'Trip Route';
+                return 'Route';
         }
     }
 
     routeCardSubtitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store, shopping, and delivery';
+                return this.isShoppingErrand() ? 'Store to delivery' : 'Collection to delivery';
             case ServiceTypeEnum.DELIVERY:
-                return 'Collection and recipient details';
+                return 'Collection to recipient';
             case ServiceTypeEnum.VAN:
-                return 'Moving journey details';
+                return 'Move route';
             default:
-                return 'Live journey details';
+                return 'Route details';
         }
     }
 
@@ -889,26 +1354,28 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     serviceGuideEyebrow(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand journey';
+                return 'Errand';
             case ServiceTypeEnum.DELIVERY:
-                return 'Package journey';
+                return 'Delivery';
             case ServiceTypeEnum.VAN:
-                return 'Move journey';
+                return 'Move';
             default:
-                return 'Ride journey';
+                return 'Ride';
         }
     }
 
     serviceGuideTitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Your shopper is managed step by step';
+                return this.isShoppingErrand()
+                    ? 'Shop & deliver'
+                    : 'Collect & deliver';
             case ServiceTypeEnum.DELIVERY:
-                return 'Collection and delivery are tracked separately';
+                return 'Tracked delivery';
             case ServiceTypeEnum.VAN:
-                return 'Your move is guided from loading to drop-off';
+                return 'Move tracking';
             default:
-                return 'Your driver is matched and tracked';
+                return 'Live tracking';
         }
     }
 
@@ -916,26 +1383,28 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const status = String(this.booking()?.status || '');
 
         if (status === 'no_driver_found') {
-            return 'No driver accepted in this search window. Any reserved payment is protected and released according to the payment method shown below.';
+            return 'No driver accepted. Any reserved payment is protected.';
         }
 
         if (status === 'cancelled' || status === 'canceled') {
-            return 'This booking is cancelled. Movabi keeps the payment record visible so you can see where any reserved funds return.';
+            return 'Booking cancelled. Reserved funds are shown below.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-            return 'Movabi separates the service fee from the item budget. The driver records spending and uploads a receipt before the errand is completed.';
+            return this.isShoppingErrand()
+                ? 'Item budget is separate. Driver records spend and uploads receipt.'
+                : 'Driver collects and delivers. No shopping receipt needed.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
-            return 'You can follow collection, courier movement, and recipient delivery without reading it like a normal ride.';
+            return 'Track collection, courier movement, and delivery.';
         }
 
         if (this.booking()?.service_slug === ServiceTypeEnum.VAN) {
-            return 'The driver follows a move flow: arrive, load, travel, unload, and complete when the move is finished.';
+            return 'Track arrival, loading, travel, unloading, and completion.';
         }
 
-        return 'You can see when the driver is assigned, travelling to pickup, and when the journey is in progress.';
+        return 'See assignment, pickup, and trip progress.';
     }
 
     serviceProgressSteps(): Array<{ title: string; description: string; icon: string; state: 'done' | 'active' | 'pending' }> {
@@ -944,28 +1413,57 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const done = (statuses: string[]) => statuses.includes(status) ? 'active' : this.hasReachedStatus(statuses[statuses.length - 1]) ? 'done' : 'pending';
 
         if (service === ServiceTypeEnum.ERRAND) {
+            if (!this.isShoppingErrand()) {
+                return [
+                    {
+                        title: 'Match errand driver',
+                        description: 'Driver accepts the job.',
+                        icon: 'search-outline',
+                        state: done(['searching', 'accepted', 'assigned'])
+                    },
+                    {
+                        title: 'Collect item',
+                        description: 'Driver collects the item.',
+                        icon: 'cube-outline',
+                        state: done(['heading_to_pickup', 'arrived', 'arrived_at_store', 'collected'])
+                    },
+                    {
+                        title: 'Deliver to you',
+                        description: 'Track the delivery.',
+                        icon: 'navigate-outline',
+                        state: done(['en_route_to_customer', 'delivered'])
+                    },
+                    {
+                        title: 'Complete safely',
+                        description: 'Complete after handover.',
+                        icon: 'shield-checkmark-outline',
+                        state: this.isTerminalTrackingStatus(status) ? 'active' : 'pending'
+                    }
+                ];
+            }
+
             return [
                 {
                     title: 'Match errand driver',
-                    description: 'A nearby eligible driver accepts the shop and delivery.',
+                    description: 'Driver accepts the shop.',
                     icon: 'search-outline',
                     state: done(['searching', 'accepted', 'assigned'])
                 },
                 {
                     title: 'Shop items',
-                    description: 'Driver uses the approved item budget and records spending.',
+                    description: 'Driver shops and records spend.',
                     icon: 'basket-outline',
                     state: done(['heading_to_pickup', 'arrived', 'arrived_at_store', 'shopping_in_progress'])
                 },
                 {
                     title: 'Deliver to you',
-                    description: 'Receipt and live delivery updates are shown here.',
+                    description: 'Receipt and delivery updates show here.',
                     icon: 'navigate-outline',
                     state: done(['collected', 'en_route_to_customer', 'delivered'])
                 },
                 {
                     title: 'Settle safely',
-                    description: 'Unused item budget returns to the wallet or original payment route.',
+                    description: 'Unused budget is returned.',
                     icon: 'shield-checkmark-outline',
                     state: this.isTerminalTrackingStatus(status) ? 'active' : 'pending'
                 }
@@ -974,24 +1472,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (service === ServiceTypeEnum.DELIVERY) {
             return [
-                { title: 'Assign courier', description: 'A compatible driver accepts the package request.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
-                { title: 'Collect package', description: 'The courier confirms collection before travelling.', icon: 'cube-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
-                { title: 'Deliver package', description: 'Recipient delivery is tracked to completion.', icon: 'location-outline', state: done(['en_route_to_customer', 'delivered', 'completed']) }
+                { title: 'Assign courier', description: 'Courier accepts the request.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+                { title: 'Collect package', description: 'Courier confirms collection.', icon: 'cube-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
+                { title: 'Deliver package', description: 'Track to delivery.', icon: 'location-outline', state: done(['en_route_to_customer', 'delivered', 'completed']) }
             ];
         }
 
         if (service === ServiceTypeEnum.VAN) {
             return [
-                { title: 'Assign vehicle', description: 'A driver with the correct vehicle class accepts the move.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
-                { title: 'Load at pickup', description: 'Driver arrives and starts the move once ready.', icon: 'archive-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
-                { title: 'Unload and finish', description: 'The move completes only after work is confirmed.', icon: 'checkmark-circle-outline', state: done(['delivered', 'completed', 'settled']) }
+                { title: 'Assign vehicle', description: 'Correct vehicle accepts the move.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+                { title: 'Load at pickup', description: 'Driver arrives and loads.', icon: 'archive-outline', state: done(['heading_to_pickup', 'arrived', 'in_progress']) },
+                { title: 'Unload and finish', description: 'Complete after unload.', icon: 'checkmark-circle-outline', state: done(['delivered', 'completed', 'settled']) }
             ];
         }
 
         return [
-            { title: 'Match driver', description: 'A nearby driver accepts your ride.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
-            { title: 'Pickup', description: 'Track the driver as they come to you.', icon: 'car-sport-outline', state: done(['heading_to_pickup', 'arrived']) },
-            { title: 'Ride and complete', description: 'Follow the trip until drop-off is confirmed.', icon: 'flag-outline', state: done(['in_progress', 'completed', 'settled']) }
+            { title: 'Match driver', description: 'Driver accepts your ride.', icon: 'search-outline', state: done(['searching', 'accepted', 'assigned']) },
+            { title: 'Pickup', description: 'Track pickup.', icon: 'car-sport-outline', state: done(['heading_to_pickup', 'arrived']) },
+            { title: 'Ride and complete', description: 'Track to drop-off.', icon: 'flag-outline', state: done(['in_progress', 'completed', 'settled']) }
         ];
     }
 
@@ -1020,7 +1518,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     originLabel(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store / pickup point';
+                return this.isShoppingErrand() ? 'Store / pickup point' : 'Collection point';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collection point';
             case ServiceTypeEnum.VAN:
@@ -1046,7 +1544,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private mapOriginMarkerLabel(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'STORE';
+                return this.isShoppingErrand() ? 'STORE' : 'COLLECT';
             case ServiceTypeEnum.DELIVERY:
                 return 'COLLECT';
             case ServiceTypeEnum.VAN:
@@ -1194,13 +1692,31 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     paymentProtectionDestination(): string {
-        if (this.paymentNeedsReview()) return 'Movabi review';
+        if (this.paymentNeedsReview()) return 'Review';
         return this.paidByWallet() ? 'Movabi wallet' : 'Original payment card';
     }
 
     paymentProtectionStatus(): string {
         if (this.paymentNeedsReview()) return 'Review in progress';
         return this.paidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
+    }
+
+    completionPinForCustomer(): string {
+        const metadata = this.bookingMetadata();
+        return this.normalizeCompletionPin(
+            metadata['completion_pin'] ||
+            metadata['service_completion_pin'] ||
+            metadata['delivery_pin']
+        );
+    }
+
+    showCompletionPinPanel(): boolean {
+        const booking = this.booking() as any;
+        const status = String(booking?.status || '').toLowerCase();
+
+        if (!booking?.driver_id || !this.completionPinForCustomer()) return false;
+
+        return !['requested', 'searching', 'completed', 'settled', 'cancelled', 'canceled', 'no_driver_found', 'requires_review'].includes(status);
     }
 
     private paidByWallet(): boolean {
@@ -1233,7 +1749,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return `This ${service} did not complete normally.`;
     }
 
-    private servicePaymentName(): string {
+    servicePaymentName(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
                 return 'errand';
@@ -1244,6 +1760,78 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             default:
                 return 'ride';
         }
+    }
+
+    private bookingMetadata(): Record<string, any> {
+        const raw = (this.booking() as any)?.metadata || {};
+
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch {
+                return {};
+            }
+        }
+
+        return raw && typeof raw === 'object' ? raw : {};
+    }
+
+    private errandMode(): ErrandMode {
+        const metadata = this.bookingMetadata();
+        const details = this.details() || {};
+        const raw = String(
+            metadata['errand_details']?.mode ||
+            metadata['errand_mode'] ||
+            details['errand_mode'] ||
+            details['mode'] ||
+            ''
+        ).toLowerCase();
+
+        if (raw === 'collect_deliver' || raw === 'quick_buy' || raw === 'shop_deliver') {
+            return raw as ErrandMode;
+        }
+
+        const descriptor = [
+            metadata['errand_type'],
+            metadata['errand_details']?.type,
+            metadata['errand_details']?.label,
+            details['errand_type'],
+            details['task_type'],
+            details['type'],
+            details['mode'],
+            details['delivery_instructions']
+        ].map((part) => String(part || '').toLowerCase()).join(' ');
+
+        if (/(collect|collection|pickup|pick up|document|return|deliver only)/.test(descriptor)) {
+            return 'collect_deliver';
+        }
+
+        if (/(shop|shopping|grocery|groceries|buy|purchase|quick buy)/.test(descriptor)) {
+            return 'shop_deliver';
+        }
+
+        const itemBudget = this.toMoney(
+            details['estimated_budget'] ||
+            metadata['payment_split']?.item_budget ||
+            metadata['errand_details']?.budget ||
+            0
+        );
+        const items = details['items_list'];
+        const hasItems = Array.isArray(items)
+            ? items.length > 0
+            : String(items || '').trim().length > 0;
+
+        return hasItems && itemBudget > 0 ? 'shop_deliver' : 'collect_deliver';
+    }
+
+    private isShoppingErrand(): boolean {
+        const mode = this.errandMode();
+        return mode === 'quick_buy' || mode === 'shop_deliver';
+    }
+
+    private normalizeCompletionPin(value: unknown): string {
+        return String(value ?? '').replace(/\D/g, '').slice(0, 8);
     }
 
     getErrandItemBudget(): number {
@@ -1324,7 +1912,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }, 1000);
     }
 
-  
+
 
     private updateSearchCountdownFromBooking(): void {
         const b: any = this.booking();
@@ -1372,6 +1960,30 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+    private startFindingDriverTimer(): void {
+        this.findingDriverElapsedSeconds.set(0);
+        this.findingDriverTimerInterval = setInterval(() => {
+            this.findingDriverElapsedSeconds.set(this.findingDriverElapsedSeconds() + 1);
+        }, 1000);
+    }
+
+    private stopFindingDriverTimer(): void {
+        if (this.findingDriverTimerInterval) {
+            clearInterval(this.findingDriverTimerInterval);
+            this.findingDriverTimerInterval = undefined;
+        }
+    }
+
+    formatFindingDriverTime(): string {
+        const seconds = this.findingDriverElapsedSeconds();
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        if (minutes > 0) {
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+        return `${seconds}s`;
+    }
+
     private resetSearchState(): void {
         this.stopSearchCountdown();
         this.searchCountdownSeconds.set(DRIVER_SEARCH_WINDOW_SECONDS);
@@ -1390,10 +2002,16 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 this.updateSearchCountdownFromBooking();
             }
 
+            // Start finding driver timer
+            if (!this.findingDriverTimerInterval) {
+                this.startFindingDriverTimer();
+            }
+
             return;
         }
 
         this.resetSearchState();
+        this.stopFindingDriverTimer();
     }
 
     private syncDriverLiveState(booking: Booking): void {
@@ -1406,8 +2024,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.driverDistanceToPickup.set(null);
         this.driverEtaToPickup.set(null);
         this.driverLastSeenAt.set(null);
+        this.latestDriverPoint = null;
+        this.activeRouteDrawnFor = null;
+        
+        // Remove tracking driver marker
+        if (this.mapComponent) {
+            this.mapComponent.removeMarker('tracking-driver');
+        }
+        
         this.locationSubscription?.unsubscribe();
         this.locationSubscription = undefined;
+        this.subscribedDriverLocationId = null;
     }
 
     private isTerminalTrackingStatus(status: string): boolean {
@@ -1439,6 +2066,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     if (nextFunding?.job_id === id) {
                         this.errandFunding.set(nextFunding);
                         await this.walletService.fetchWallet();
+                        await this.notifyFundingUpdate(nextFunding);
                     } else {
                         await this.loadBookingAndDetails(id, false);
                     }
@@ -1449,10 +2077,150 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             });
     }
 
+    private subscribeToJobEvents(id: string): void {
+        this.jobEventsChannel?.unsubscribe();
+
+        this.jobEventsChannel = this.supabase
+            .channel(`tracking-job-events-${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'job_events',
+                    filter: `job_id=eq.${id}`
+                },
+                async (payload) => {
+                    const event = payload.new as JobEvent;
+                    this.lastStatusEventAt.set(this.toDate(event.created_at) || new Date());
+
+                    const eventStatus = String(event.metadata?.['to'] || '').trim();
+                    if (eventStatus && this.lastNotifiedStatus !== eventStatus) {
+                        this.lastNotifiedStatus = eventStatus;
+                        await this.notifyTrackingUpdate(eventStatus, id);
+                    }
+
+                    // Update booking status immediately
+                    this.onBookingRealtimeUpdate(payload);
+                    
+                    await this.loadBookingAndDetails(id, false);
+                }
+            )
+            .subscribe((status) => {
+                console.log('[booking-tracking] job events realtime:', status);
+            });
+    }
+
+    private subscribeToJobMessages(id: string): void {
+        this.messageChannel?.unsubscribe();
+        void this.refreshMessageCount(id);
+
+        this.messageChannel = this.supabase
+            .channel(`tracking-job-messages-${id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'job_messages',
+                    filter: `job_id=eq.${id}`
+                },
+                () => {
+                    void this.refreshMessageCount(id);
+                }
+            )
+            .subscribe((status) => {
+                console.log('[booking-tracking] job messages realtime:', status);
+            });
+    }
+
+    private async refreshMessageCount(id: string): Promise<void> {
+        const receiverId = this.currentMessageReceiverId();
+
+        if (!receiverId) {
+            this.messageCount.set(0);
+            // unreadMessageCount is now computed, cannot set directly
+            return;
+        }
+
+        try {
+            const { data, error } = await this.supabase
+                .from('job_messages')
+                .select('id, read_at, receiver_id, created_at')
+                .eq('job_id', id)
+                .eq('receiver_id', receiverId)
+                .is('read_at', null)
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (error) {
+                this.warnMessageCountUnavailable(error);
+                return;
+            }
+
+            const nextCount = data?.length || 0;
+            this.messageCount.set(nextCount);
+            // unreadMessageCount is now computed, cannot set directly
+        } catch (error) {
+            this.warnMessageCountUnavailable(error);
+        }
+    }
+
+    private currentMessageReceiverId(): string {
+        return String(this.auth.currentUser()?.id || this.booking()?.customer_id || '').trim();
+    }
+
+    private async markCurrentMessagesRead(): Promise<void> {
+        const b = this.booking();
+        const receiverId = this.currentMessageReceiverId();
+
+        if (!b?.id || !receiverId) {
+            return;
+        }
+
+        try {
+            const { error } = await this.supabase
+                .from('job_messages')
+                .update({ read_at: new Date().toISOString() })
+                .eq('job_id', b.id)
+                .eq('receiver_id', receiverId)
+                .is('read_at', null);
+
+            if (error) {
+                this.warnMessageCountUnavailable(error);
+                return;
+            }
+
+            this.messageCount.set(0);
+            // unreadMessageCount is now computed, cannot set directly
+        } catch (error) {
+            this.warnMessageCountUnavailable(error);
+        }
+    }
+
+    private warnMessageCountUnavailable(error: unknown): void {
+        this.messageCount.set(0);
+        // unreadMessageCount is now computed, cannot set directly
+
+        if (this.messageCountWarningShown) {
+            return;
+        }
+
+        this.messageCountWarningShown = true;
+        const safeError = error && typeof error === 'object'
+            ? {
+                code: (error as { code?: unknown }).code,
+                message: (error as { message?: unknown }).message,
+                status: (error as { status?: unknown }).status
+            }
+            : undefined;
+        console.warn('[booking-tracking] chat unread badge unavailable; showing 0', safeError);
+    }
     async loadBookingAndDetails(id: string, showLoading = true): Promise<void> {
         if (showLoading) this.isLoading.set(true);
 
         try {
+            const previousStatus = String(this.booking()?.status || '');
             const b = await this.bookingService.getBooking(id);
 
             if (!b) {
@@ -1461,6 +2229,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
 
             this.bookingService.activeBooking.set(b);
+            await this.notifyStatusChange(previousStatus, b);
             this.syncSearchUiState();
             this.syncDriverLiveState(b);
 
@@ -1488,6 +2257,23 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
         } catch (err) {
             console.error('Load booking failed', err);
+            
+            if (err instanceof Error && err.message === 'Booking not found') {
+                const alert = await this.alertCtrl.create({
+                    header: 'Booking Not Found',
+                    message: 'The booking you\'re looking for doesn\'t exist or has been removed.',
+                    buttons: [
+                        {
+                            text: 'Go Back',
+                            handler: () => {
+                                void this.router.navigate(['/customer']);
+                            }
+                        }
+                    ]
+                });
+                
+                await alert.present();
+            }
         } finally {
             this.isLoading.set(false);
         }
@@ -1498,97 +2284,85 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (!b || !this.mapComponent) return;
 
-        const pickupLat = Number(b.pickup_lat);
-        const pickupLng = Number(b.pickup_lng);
+        setTimeout(() => this.renderTrackingMap('init', true), 250);
+    }
 
-        const dropLat = Number(b.dropoff_lat);
-        const dropLng = Number(b.dropoff_lng);
+    private getPickupPoint(booking: Booking): { lat: number; lng: number } | null {
+        const point = { lat: Number(booking.pickup_lat), lng: Number(booking.pickup_lng) };
+        return this.isValidCoordinate(point.lat) && this.isValidCoordinate(point.lng) ? point : null;
+    }
 
-        if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) {
-            return;
-        }
-
-        setTimeout(() => {
-            this.mapComponent?.addOrUpdateMarker({
-                id: 'pickup',
-                coordinates: { lat: pickupLat, lng: pickupLng },
-                kind: 'pickup',
-                serviceType: b.service_slug as ServiceTypeSlug,
-                label: this.mapOriginMarkerLabel()
-            });
-
-            if (this.isValidCoordinate(dropLat) && this.isValidCoordinate(dropLng)) {
-                this.mapComponent?.addOrUpdateMarker({
-                    id: 'dropoff',
-                    coordinates: { lat: dropLat, lng: dropLng },
-                    kind: 'destination',
-                    serviceType: b.service_slug as ServiceTypeSlug,
-                    label: this.mapDestinationMarkerLabel()
-                });
-
-                this.fitTrackingBounds({ lat: pickupLat, lng: pickupLng }, [
-                    [Math.min(pickupLng, dropLng), Math.min(pickupLat, dropLat)],
-                    [Math.max(pickupLng, dropLng), Math.max(pickupLat, dropLat)]
-                ]);
-            }
-
-            this.fitTrackingBounds();
-        }, 300);
+    private getDropoffPoint(booking: Booking): { lat: number; lng: number } | null {
+        const point = { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng) };
+        return this.isValidCoordinate(point.lat) && this.isValidCoordinate(point.lng) ? point : null;
     }
 
     private subscribeToDriverLocation(driverId: string): void {
-        this.locationSubscription?.unsubscribe();
-        this.lastDriverCameraUpdateAt = 0;
-
-        void this.locationService.getLatestDriverLocation(driverId).then((location) => {
-            if (location) {
-                this.updateDriverMarker(location);
-            }
-        });
-
-        this.locationSubscription = this.locationService.subscribeToDriverLocation(
-            driverId,
-            (location: DriverLocation) => {
-                this.updateDriverMarker(location);
-            }
-        );
-    }
-
-    private updateDriverMarker(location: DriverLocation): void {
-        const b = this.booking();
-
-        if (!b || !this.mapComponent) return;
-        if (this.isTerminalTrackingStatus(String(b.status || ''))) {
-            this.clearDriverLiveState();
+        if (this.subscribedDriverLocationId === driverId && this.locationSubscription) {
             return;
         }
 
-        const lat = Number(location.lat);
-        const lng = Number(location.lng);
+        this.locationSubscription?.unsubscribe();
+        this.subscribedDriverLocationId = driverId;
 
-        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) return;
-
-        this.mapComponent.addOrUpdateMarker({
-            id: 'driver',
-            coordinates: { lat, lng },
-            kind: 'driver',
-            serviceType: b.service_slug as ServiceTypeSlug,
-            heading: location.heading == null ? undefined : Number(location.heading)
+        // Get latest location first, then subscribe for updates
+        void this.locationService.getLatestDriverLocation(driverId).then((location) => {
+            if (location) {
+                this.latestDriverPoint = { lat: Number(location.lat), lng: Number(location.lng) };
+                this.renderTrackingMap('driver-initial', false);
+            }
+        }).catch((error) => {
+            console.warn('[booking-tracking] Failed to get latest driver location:', error);
         });
 
-        this.driverLastSeenAt.set(new Date());
+        // Subscribe to real-time location updates
+        this.locationSubscription = this.locationService.subscribeToDriverLocation(
+            driverId,
+            (location: DriverLocation) => {
+                const coords = { lat: Number(location.lat), lng: Number(location.lng) };
+                console.log('[CT] driver location update', coords);
+                this.latestDriverPoint = coords;
+                
+                // Update driver marker and recalculate route
+                this.updateDriverMarkerAndRoute(coords);
+                
+                this.renderTrackingMap('driver-location', false);
+            }
+        );
 
-        const now = Date.now();
-        if (now - this.lastDriverCameraUpdateAt >= 15000) {
-            this.fitTrackingBounds({ lat, lng });
-            this.lastDriverCameraUpdateAt = now;
+        console.log('[booking-tracking] driver location realtime: SUBSCRIBED', driverId);
+    }
+
+    private updateDriverMarkerAndRoute(coords: { lat: number; lng: number }): void {
+        // Update driver marker as car
+        if (this.mapComponent) {
+            this.mapComponent.upsertMarker('ct-driver', coords, { type: 'car' });
         }
+        
+        // Recalculate route from driver to pickup/dropoff based on booking status
+        const driverCoords = coords;
+        const pickupCoords = this.getPickupCoords();
+        const dropoffCoords = this.getDropoffCoords();
+        const booking = this.booking();
+        
+        if (booking && pickupCoords) {
+            // Determine route target based on status
+            let targetCoords = pickupCoords;
+            if (booking.status === 'en_route_to_customer') {
+                targetCoords = dropoffCoords || pickupCoords;
+            }
+            
+            if (targetCoords) {
+                // Draw route and update ETA
+                void this.drawTrackingRoute(driverCoords, targetCoords, 'driver-update');
+            }
+        }
+    }
 
-        const routeTarget = this.getDriverRouteTarget(b);
-
-        if (!routeTarget) return;
-
-        this.updateDriverDistanceEstimate({ lat, lng }, routeTarget);
+    // OLD METHOD DISABLED - replaced by renderTrackingMap
+    private updateDriverMarker(location: DriverLocation): void {
+        // This method is no longer used - replaced by renderTrackingMap
+        console.warn('[booking-tracking] updateDriverMarker called but disabled - using renderTrackingMap instead');
     }
 
     private updateDriverDistanceEstimate(
@@ -1651,7 +2425,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (routeBounds) {
             this.mapComponent.fitBounds(routeBounds, {
-                padding: { top: 72, bottom: 138, left: 34, right: 34 },
+                padding: { top: 86, bottom: this.detailsExpanded() ? 320 : 230, left: 34, right: 34 },
                 maxZoom: 16,
                 duration: 700
             });
@@ -1695,7 +2469,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 [Math.max(...lngs), Math.max(...lats)]
             ],
             {
-                padding: { top: 72, bottom: 138, left: 34, right: 34 },
+                padding: { top: 86, bottom: this.detailsExpanded() ? 320 : 230, left: 34, right: 34 },
                 maxZoom: 16,
                 duration: 700
             }
@@ -1712,9 +2486,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (eta !== null) {
             if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
-                if (['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping now';
+                if (this.isShoppingErrand() && ['shopping_in_progress', 'arrived_at_store'].includes(status)) return 'Shopping';
                 if (['collected', 'en_route_to_customer'].includes(status)) return `${this.formatDuration(eta)} to delivery`;
-                return `${this.formatDuration(eta)} to store`;
+                return `${this.formatDuration(eta)} to ${this.isShoppingErrand() ? 'store' : 'collection point'}`;
             }
 
             if (this.booking()?.service_slug === ServiceTypeEnum.DELIVERY) {
@@ -1761,6 +2535,32 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return `Waiting for the driver GPS update to ${target}.`;
     }
 
+    statusUpdatedLabel(): string {
+        const date = this.lastStatusEventAt() || this.toDate((this.booking() as any)?.updated_at);
+        if (!date) return '';
+
+        const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+        if (seconds < 45) return 'Updated just now';
+        if (seconds < 90) return 'Updated 1 min ago';
+        if (seconds < 3600) return `Updated ${Math.floor(seconds / 60)} mins ago`;
+        return `Updated ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    private async notifyFundingUpdate(funding: ErrandFunding | null): Promise<void> {
+        const booking = this.booking();
+        if (!booking?.id || !funding) return;
+
+        if (String(funding.over_budget_status || '') === 'requested') {
+            await this.notifyTrackingUpdate('over_budget_requested', booking.id);
+        }
+    }
+
+    private toDate(value: unknown): Date | null {
+        if (!value) return null;
+        const date = value instanceof Date ? value : new Date(String(value));
+        return Number.isFinite(date.getTime()) ? date : null;
+    }
+
     driverLastSeenLabel(): string {
         const lastSeen = this.driverLastSeenAt();
 
@@ -1774,12 +2574,47 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return `${Math.round(seconds / 60)}m`;
     }
 
-    private formatDuration(seconds: number | null): string {
+    formatDuration(seconds: number | null): string {
         if (!seconds || !Number.isFinite(seconds)) return 'ETA unavailable';
         const minutes = Math.max(1, Math.round(seconds / 60));
         return `${minutes} min`;
     }
 
+    formatDistance(meters: number | null): string {
+        return this.formatDistanceMeters(meters);
+    }
+
+    bookingStatusLabel(): string {
+        const b = this.booking();
+        const status = String(
+            (b as any)?.delivery_status ||
+            (b as any)?.errand_status ||
+            b?.status ||
+            ''
+        ).toLowerCase();
+
+        switch (status) {
+            case 'pending':
+                return 'Waiting for driver';
+            case 'accepted':
+                return 'Driver accepted';
+            case 'arrived':
+                return 'Driver arrived';
+            case 'collected':
+                return 'Collected';
+            case 'in_progress':
+            case 'on_the_way':
+            case 'enroute':
+                return 'On the way';
+            case 'delivered':
+            case 'completed':
+                return 'Completed';
+            case 'cancelled':
+                return 'Cancelled';
+            default:
+                return 'Tracking active';
+        }
+    }
     private formatDistanceMeters(meters: number | null): string {
         if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
         return `${(meters / 1000).toFixed(1)} km`;
@@ -1797,7 +2632,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         ].includes(status);
 
         if (service === ServiceTypeEnum.ERRAND) {
-            return isHeadingToDestination ? 'delivery address' : 'store';
+            return isHeadingToDestination
+                ? 'delivery address'
+                : this.isShoppingErrand()
+                    ? 'store'
+                    : 'collection point';
         }
 
         if (service === ServiceTypeEnum.DELIVERY) {
@@ -1911,6 +2750,111 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+    contactSupport(): void {
+        const b = this.booking();
+        this.openSupportEmail(
+            'Movabi support request',
+            [
+                'Hello Movabi Support,',
+                '',
+                'I need help with my booking.',
+                '',
+                `Booking ID: ${b?.id || 'Not available'}`,
+                `Status: ${this.getStatusLabel(b?.status || '')}`,
+                `Service: ${b?.service_slug || 'Request'}`
+            ].join('\n')
+        );
+    }
+
+    async reportIssue(): Promise<void> {
+        const alert = await this.alertCtrl.create({
+            header: 'Report an issue',
+            message: 'Tell Movabi support what happened. We will include this booking reference so the team can help faster.',
+            buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Contact Support',
+                    handler: () => this.openSupportEmail(
+                        'Movabi booking issue',
+                        [
+                            'Hello Movabi Support,',
+                            '',
+                            'I want to report an issue with this booking.',
+                            '',
+                            `Booking ID: ${this.booking()?.id || 'Not available'}`,
+                            `Status: ${this.getStatusLabel(this.booking()?.status || '')}`,
+                            '',
+                            'Issue:'
+                        ].join('\n')
+                    )
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    async openSafetyHelp(): Promise<void> {
+        const alert = await this.alertCtrl.create({
+            header: 'Safety help',
+            message: 'If you feel unsafe, move to a safe public place and contact local emergency services. Movabi support can also help with this booking.',
+            buttons: [
+                { text: 'OK', role: 'cancel' },
+                {
+                    text: 'Contact Support',
+                    handler: () => this.openSupportEmail(
+                        'Movabi safety support',
+                        [
+                            'Hello Movabi Support,',
+                            '',
+                            'I need safety help with this booking.',
+                            '',
+                            `Booking ID: ${this.booking()?.id || 'Not available'}`,
+                            `Status: ${this.getStatusLabel(this.booking()?.status || '')}`
+                        ].join('\n')
+                    )
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    reportLostItem(): void {
+        this.openSupportEmail(
+            'Movabi lost item report',
+            [
+                'Hello Movabi Support,',
+                '',
+                'I think I left or lost an item during this booking.',
+                '',
+                `Booking ID: ${this.booking()?.id || 'Not available'}`,
+                `Completed status: ${this.getStatusLabel(this.booking()?.status || '')}`,
+                '',
+                'Item description:'
+            ].join('\n')
+        );
+    }
+
+    cancelUnavailableReason(): string {
+        const status = this.getStatusLabel(this.booking()?.status || '');
+
+        if (this.isTerminalTrackingStatus(String(this.booking()?.status || ''))) {
+            return 'This booking is already finished.';
+        }
+
+        return status ? `Not available while status is ${status}.` : 'Not available for this booking.';
+    }
+
+    lostItemUnavailableReason(): string {
+        return 'Available after the booking is complete.';
+    }
+
+    private openSupportEmail(subject: string, body: string): void {
+        const mailto = `mailto:support@movabi.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(mailto, '_system');
+    }
+
     async approveOverBudget(): Promise<void> {
         const b = this.booking();
         if (!b) return;
@@ -1958,7 +2902,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private async showWalletShortfallAlert(shortfall: number): Promise<void> {
         const alert = await this.alertCtrl.create({
-            header: 'Wallet top-up needed',
+            header: 'Top-up needed',
             message: `Add ${this.config.formatCurrency(shortfall)} to your wallet before approving this extra budget.`,
             buttons: [
                 { text: 'Not now', role: 'cancel' },
@@ -1999,5 +2943,511 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private isValidCoordinate(value: number): boolean {
         return Number.isFinite(value) && !Number.isNaN(value);
+    }
+
+    private toLngLat(input: any): { lat: number; lng: number } | null {
+        if (!input) return null;
+        
+        let lat: number | undefined;
+        let lng: number | undefined;
+        
+        // Handle different coordinate formats
+        if (typeof input === 'object') {
+            // { lat, lng }
+            if (input.lat !== undefined && input.lng !== undefined) {
+                lat = Number(input.lat);
+                lng = Number(input.lng);
+            }
+            // { latitude, longitude }
+            else if (input.latitude !== undefined && input.longitude !== undefined) {
+                lat = Number(input.latitude);
+                lng = Number(input.longitude);
+            }
+            // { coords: { lat, lng } }
+            else if (input.coords && input.coords.lat !== undefined && input.coords.lng !== undefined) {
+                lat = Number(input.coords.lat);
+                lng = Number(input.coords.lng);
+            }
+            // { coordinates: [lng, lat] }
+            else if (Array.isArray(input.coordinates) && input.coordinates.length >= 2) {
+                lng = Number(input.coordinates[0]);
+                lat = Number(input.coordinates[1]);
+            }
+        }
+        // Handle string coordinates
+        else if (typeof input === 'string') {
+            const parts = input.split(',').map(p => p.trim());
+            if (parts.length >= 2) {
+                lat = Number(parts[0]);
+                lng = Number(parts[1]);
+            }
+        }
+        
+        // Validate coordinates
+        if (lat === undefined || lng === undefined) return null;
+        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) return null;
+        if (lat === 0 && lng === 0) return null; // Reject zero coordinates
+        
+        return { lat, lng };
+    }
+
+    private getTrackingMapPadding() {
+        const sheetPercent = this.trackingSheetHeight(); // 40 or 80
+        return {
+            top: 80,
+            left: 48,
+            right: 48,
+            bottom: sheetPercent === 80 ? 520 : 360
+        };
+    }
+
+    // NEW SINGLE TRACKING RENDERER - replaces all old tracking map methods
+    private renderTrackingMap(reason: string, fit = false): void {
+        if (!this.mapComponent) return;
+
+        const driver = this.getDriverCoords();
+        const pickup = this.getPickupCoords();
+        const dropoff = this.getDropoffCoords();
+
+        const routePoints = [
+            ...(driver ? [driver] : []),
+            ...(pickup ? [pickup] : []),
+            ...(dropoff ? [dropoff] : [])
+        ];
+
+        // Clean up old markers only once
+        if (!this.didCleanTrackingMarkers) {
+            const oldMarkerIds = ['driver', 'pickup', 'dropoff', 'customer', 'destination', 'tracking-driver', 'tracking-pickup', 'tracking-dropoff'];
+            oldMarkerIds.forEach(id => {
+                if (this.mapComponent) {
+                    this.mapComponent.removeMarker(id);
+                }
+            });
+            this.didCleanTrackingMarkers = true;
+        }
+
+        // Update ct-* markers with smooth movement (only for live jobs, not searching)
+        if (this.isLiveTrackingJob()) {
+            if (driver) {
+                this.updateMarkerPosition('ct-driver', driver, { type: 'driver' });
+            }
+        } else {
+            // Hide driver marker for searching, completed, and other non-live jobs
+            if (this.mapComponent) {
+                this.mapComponent.removeMarker('ct-driver');
+            }
+        }
+
+        if (pickup) {
+            this.updateMarkerPosition('ct-pickup', pickup, { type: 'pickup' });
+        }
+
+        if (dropoff) {
+            this.updateMarkerPosition('ct-dropoff', dropoff, { type: 'dropoff' });
+        }
+
+        // Draw road route with fallback to direct line (only for live jobs)
+        if (routePoints.length >= 2 && this.isLiveTrackingJob()) {
+            void this.drawTrackingRoadRoute(routePoints);
+        }
+
+        // Fit bounds only on initial load or explicit recenter
+        const shouldFit =
+            fit ||
+            !this.hasInitialFit ||
+            reason === 'recenter';
+
+        if (shouldFit && routePoints.length >= 2) {
+            this.mapComponent.fitTrackingBounds(routePoints);
+            if (!this.hasInitialFit) {
+                this.hasInitialFit = true;
+            }
+        }
+    }
+
+    private updateMarkerPosition(id: string, coords: { lat: number; lng: number }, options: { type: string }): void {
+        // Always use upsertMarker to ensure correct marker type/icon
+        if (this.mapComponent) {
+            this.mapComponent.upsertMarker(id, coords, options);
+        }
+    }
+
+    private onBookingRealtimeUpdate(payload: any): void {
+        if (!payload?.new) return;
+
+        // Update booking signal with new status
+        const currentBooking = this.booking();
+        if (currentBooking) {
+            this.booking.set({
+                ...currentBooking,
+                ...payload.new
+            });
+        }
+
+        // Re-render map with updated status
+        this.renderTrackingMap('booking-update', false);
+    }
+
+    private onDriverLocationUpdate(payload: any): void {
+        // Only process driver updates for live jobs
+        if (!this.isLiveTrackingJob()) return;
+
+        const coords = this.toLngLat(payload?.new || payload);
+        if (!coords) return;
+
+        const previous = this.latestDriverPoint;
+        this.latestDriverPoint = coords;
+        this.driverLastSeenAt.set(new Date());
+
+        // Update driver marker position with correct vehicle icon
+        if (this.mapComponent) {
+            this.mapComponent.upsertMarker('ct-driver', coords, { type: 'driver' });
+        }
+
+        // Only redraw route if driver moved more than 25 metres (but don't fit bounds)
+        if (!previous || this.distanceMeters(previous, coords) > 25) {
+            const routePoints = this.getTrackingPoints();
+            if (routePoints.length >= 2) {
+                void this.drawTrackingRoadRoute(routePoints);
+            }
+        }
+    }
+
+    private getTrackingPoints(): Array<{ lat: number; lng: number }> {
+        const driver = this.getDriverCoords();
+        const pickup = this.getPickupCoords();
+        const dropoff = this.getDropoffCoords();
+
+        return [
+            ...(driver ? [driver] : []),
+            ...(pickup ? [pickup] : []),
+            ...(dropoff ? [dropoff] : [])
+        ];
+    }
+
+    private getRouteGeometry(result: any): number[][] {
+        const coords =
+            result?.geometry?.coordinates ||
+            result?.route?.geometry?.coordinates ||
+            result?.features?.[0]?.geometry?.coordinates ||
+            result?.routes?.[0]?.geometry?.coordinates ||
+            result?.coordinates ||
+            [];
+
+        return Array.isArray(coords) ? coords : [];
+    }
+
+    private async drawTrackingRoadRoute(points: Array<{ lat: number; lng: number }>) {
+        const valid = points.filter(Boolean);
+        if (valid.length < 2) return;
+
+        const allCoords: number[][] = [];
+        let totalDistanceMeters = 0;
+        let totalDurationSeconds = 0;
+
+        try {
+            for (let i = 0; i < valid.length - 1; i++) {
+                const from = valid[i];
+                const to = valid[i + 1];
+
+                const result = await firstValueFrom(
+                    this.routingService.getRoute(from, to)
+                );
+
+                console.log('[CT_ROUTE_DEBUG]', {
+                    from,
+                    to,
+                    result,
+                    geometry: result?.geometry,
+                    distance: result?.distanceMeters,
+                    duration: result?.durationSeconds
+                });
+
+                // Handle geometry - it can be string (encoded polyline) or object (GeoJSON)
+                let coords: number[][] = [];
+                if (result?.geometry) {
+                    if (typeof result.geometry === 'string') {
+                        // Decode polyline string to coordinates
+                        coords = this.decodePolyline(result.geometry);
+                    } else if (result.geometry.coordinates) {
+                        // GeoJSON coordinates
+                        coords = result.geometry.coordinates;
+                    }
+                }
+
+                const distance = result?.distanceMeters ?? 0;
+                const duration = result?.durationSeconds ?? 0;
+
+                console.log('[CT_ROUTE_DEBUG]', {
+                    extractedGeometry: coords,
+                    geometryLength: coords.length
+                });
+
+                if (coords.length >= 2) {
+                    allCoords.push(...(allCoords.length ? coords.slice(1) : coords));
+                }
+
+                totalDistanceMeters += Number(distance) || 0;
+                totalDurationSeconds += Number(duration) || 0;
+            }
+
+            if (allCoords.length >= 2 && this.mapComponent) {
+                console.log('[CT_ROUTE_DEBUG]', {
+                    finalGeometryLength: allCoords.length,
+                    totalDistance: totalDistanceMeters,
+                    totalDuration: totalDurationSeconds
+                });
+                
+                this.mapComponent.drawRouteGeometry('ct-route', allCoords);
+                this.distanceKm.set(Math.round((totalDistanceMeters / 1000) * 10) / 10);
+                this.etaMinutes.set(Math.max(1, Math.round(totalDurationSeconds / 60)));
+                return;
+            }
+
+            throw new Error('No routed geometry returned');
+        } catch (error) {
+            console.error('[CT_ROUTE_FAILED]', error);
+            if (this.mapComponent) {
+                this.mapComponent.drawLineString('ct-route', valid);
+            }
+            if (valid.length >= 2) {
+                this.calculateFallbackEtaAndDistance(valid[0], valid[valid.length - 1]);
+            }
+        }
+    }
+
+    private decodePolyline(encoded: string): number[][] {
+        if (!encoded) return [];
+        
+        const coords: number[][] = [];
+        let index = 0;
+        let lat = 0;
+        let lng = 0;
+        
+        while (index < encoded.length) {
+            let shift = 0;
+            let result = 0;
+            let byte;
+            
+            do {
+                byte = encoded.charCodeAt(index++) - 63;
+                result |= (byte & 0x1f) << shift;
+                shift += 5;
+            } while (byte >= 0x20);
+            
+            const deltaLat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lat += deltaLat;
+            
+            shift = 0;
+            result = 0;
+            
+            do {
+                byte = encoded.charCodeAt(index++) - 63;
+                result |= (byte & 0x1f) << shift;
+                shift += 5;
+            } while (byte >= 0x20);
+            
+            const deltaLng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lng += deltaLng;
+            
+            coords.push([lng / 1e5, lat / 1e5]);
+        }
+        
+        return coords;
+    }
+
+    private distanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+        const R = 6371000; // Earth's radius in meters
+        const dLat = this.toRadians(to.lat - from.lat);
+        const dLng = this.toRadians(to.lng - from.lng);
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(this.toRadians(from.lat)) * Math.cos(this.toRadians(to.lat)) *
+                  Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    private toRadians(degrees: number): number {
+        return degrees * (Math.PI / 180);
+    }
+
+    private getDriverCoords(): { lat: number; lng: number } | null {
+        if (!this.latestDriverPoint) return null;
+        return {
+            lat: Number(this.latestDriverPoint.lat),
+            lng: Number(this.latestDriverPoint.lng)
+        };
+    }
+
+    private getPickupCoords(): { lat: number; lng: number } | null {
+        const booking = this.booking();
+        if (!booking) return null;
+        return this.isValidCoordinate(Number(booking.pickup_lat)) && this.isValidCoordinate(Number(booking.pickup_lng))
+            ? { lat: Number(booking.pickup_lat), lng: Number(booking.pickup_lng) }
+            : null;
+    }
+
+    private getDropoffCoords(): { lat: number; lng: number } | null {
+        const booking = this.booking();
+        if (!booking) return null;
+        return this.isValidCoordinate(Number(booking.dropoff_lat)) && this.isValidCoordinate(Number(booking.dropoff_lng))
+            ? { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng) }
+            : null;
+    }
+
+    isLiveTrackingJob(): boolean {
+        const status = String(
+            this.booking()?.status ||
+            ''
+        ).toLowerCase();
+
+        return [
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'in_progress'
+        ].includes(status);
+    }
+
+    // OLD METHOD DISABLED - replaced by renderTrackingMap with direct drawLineString
+    private async drawRouteWithFallback(routePoints: { lat: number; lng: number }[]): Promise<void> {
+        console.warn('[booking-tracking] drawRouteWithFallback called but disabled - using renderTrackingMap instead');
+    }
+
+    // OLD METHOD DISABLED - replaced by renderTrackingMap with fitTrackingBounds
+    private fitTrackingBoundsWithPadding(points: { lat: number; lng: number }[]): void {
+        console.warn('[booking-tracking] fitTrackingBoundsWithPadding called but disabled - using renderTrackingMap instead');
+    }
+
+    recenterMap(): void {
+        console.log('[booking-tracking] Recentering map and enabling auto-follow');
+        this.userMovedMap = false;
+        this.followMode = true;
+        MapUxHelpers.recenter(this.mapComponent!);
+        this.renderTrackingMap('recenter', true);
+    }
+
+    onMapUserInteraction(): void {
+        console.log('[booking-tracking] User interacting with map, disabling follow mode');
+        this.userMovedMap = true;
+        this.followMode = false;
+        if (this.mapComponent) {
+            MapUxHelpers.pauseFollowOnUserGesture(this.mapComponent);
+        }
+    }
+
+    private async drawRouteBetweenPoints(
+        from: { lat: number; lng: number },
+        to: { lat: number; lng: number }
+    ): Promise<void> {
+        await this.drawTrackingRoute(from, to, 'manual');
+    }
+
+    private async drawTrackingRoute(
+        from: { lat: number; lng: number },
+        to: { lat: number; lng: number },
+        routeScope: string
+    ): Promise<void> {
+        if (!this.mapComponent) return;
+        if (!this.isValidCoordinate(from.lat) || !this.isValidCoordinate(from.lng)) return;
+        if (!this.isValidCoordinate(to.lat) || !this.isValidCoordinate(to.lng)) return;
+
+        const routeKey = [
+            routeScope,
+            from.lat.toFixed(5),
+            from.lng.toFixed(5),
+            to.lat.toFixed(5),
+            to.lng.toFixed(5)
+        ].join(':');
+
+        if (this.activeRouteDrawnFor === routeKey) {
+            return;
+        }
+
+        this.activeRouteDrawnFor = routeKey;
+
+        try {
+            const route = await this.routingService.getRoute(from, to).toPromise();
+            console.log('[CT] route result raw', route);
+            
+            if (route && route.geometry) {
+                this.mapComponent!.drawRoute(route);
+                
+                // Support all route result shapes for duration and distance
+                const durationSeconds =
+                    route?.durationSeconds ??
+                    (route as any)?.duration_seconds ??
+                    (route as any)?.duration ??
+                    (route as any)?.summary?.duration ??
+                    (route as any)?.routes?.[0]?.duration ??
+                    0;
+
+                const distanceMeters =
+                    route?.distanceMeters ??
+                    (route as any)?.distance_meters ??
+                    (route as any)?.distance ??
+                    (route as any)?.summary?.distance ??
+                    (route as any)?.routes?.[0]?.distance ??
+                    0;
+
+                // Store ETA and distance from route result
+                if (durationSeconds > 0 && distanceMeters > 0) {
+                    this.etaMinutes.set(Math.max(1, Math.round(durationSeconds / 60)));
+                    this.distanceKm.set(Math.round((distanceMeters / 1000) * 10) / 10);
+                    console.log('[CT] ETA set', this.etaMinutes(), 'mins, distance:', this.distanceKm(), 'km');
+                } else {
+                    console.log("[booking-tracking] Route drawn successfully but no ETA/distance data, using fallback");
+                    this.calculateFallbackEtaAndDistance(from, to);
+                }
+            } else {
+                throw new Error("No route geometry returned");
+            }
+        } catch (error) {
+            console.warn("[booking-tracking] Failed to draw route, using fallback line:", error);
+            // Calculate fallback straight-line distance and ETA
+            this.calculateFallbackEtaAndDistance(from, to);
+            
+            // Draw simple fallback route object
+            const fallbackRoute = {
+                geometry: {
+                    type: "LineString",
+                    coordinates: [
+                        [from.lng, from.lat],
+                        [to.lng, to.lat]
+                    ]
+                },
+                distanceMeters: 0,
+                durationSeconds: 0
+            };
+            this.mapComponent.drawRoute(fallbackRoute);
+        }
+    }
+
+    private calculateFallbackEtaAndDistance(
+        from: { lat: number; lng: number },
+        to: { lat: number; lng: number }
+    ): void {
+        // Calculate straight-line distance using LocationService
+        const distanceKm = this.locationService.calculateDistance(
+            from.lat,
+            from.lng,
+            to.lat,
+            to.lng
+        );
+        
+        // Estimate ETA using 25 km/h city speed
+        const citySpeedKmh = 25;
+        const estimatedMinutes = Math.max(1, Math.round((distanceKm / citySpeedKmh) * 60));
+        
+        // Store with approximate values (using ~ prefix concept in template)
+        this.distanceKm.set(Math.round(distanceKm * 10) / 10);
+        this.etaMinutes.set(estimatedMinutes);
+        
+        console.log("[booking-tracking] Fallback ETA calculated:", estimatedMinutes, "mins and distance:", Math.round(distanceKm * 10) / 10, "km");
     }
 }

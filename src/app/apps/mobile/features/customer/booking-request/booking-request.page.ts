@@ -15,7 +15,8 @@ import {
     ReactiveFormsModule,
     FormBuilder,
     FormGroup,
-    Validators
+    Validators,
+    AbstractControl
 } from '@angular/forms';
 import { IonicModule, LoadingController, ToastController } from '@ionic/angular';
 import { Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
@@ -54,7 +55,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { PricingService } from '../../../../../core/services/pricing.service';
-import { AppConfigService } from '../../../../../core/services/config/app-config.service';
+import { AppConfigService, PopularShopPreset } from '../../../../../core/services/config/app-config.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { AnalyticsService } from '../../../../../core/services/analytics/analytics.service';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
@@ -64,9 +65,11 @@ import { GeocodingService } from '../../../../../core/services/maps/geocoding.se
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
+import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
 
 import {
     Booking,
+    Profile,
     ServiceType,
     ServiceTypeEnum,
     UnifiedLocation
@@ -113,8 +116,8 @@ type PackageSize = 'small' | 'medium' | 'large';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
-      <div class="flex flex-col h-full">
+    <ion-content class="bg-slate-50" [fullscreen]="true">
+      <div class="flex flex-col h-full ion-padding-bottom">
         <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
           <app-map #map></app-map>
 
@@ -138,8 +141,8 @@ type PackageSize = 'small' | 'medium' | 'large';
           }
         </div>
 
-        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto">
-          <div class="max-w-2xl mx-auto space-y-5 pb-24">
+        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto ion-padding-bottom">
+          <div class="max-w-2xl mx-auto space-y-5 pb-safe">
             <div class="flex items-center gap-4 p-1">
               <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100 shrink-0">
                 <ion-icon [name]="getIcon()" class="text-2xl"></ion-icon>
@@ -163,6 +166,85 @@ type PackageSize = 'small' | 'medium' | 'large';
             }
 
             <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-5">
+              @if (type === ServiceTypeEnum.ERRAND) {
+                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div class="space-y-3">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
+                    <div class="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        (click)="setErrandMode('collect_deliver')"
+                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
+                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
+                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
+                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="swap-horizontal-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Collect & Deliver
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        (click)="setErrandMode('quick_buy')"
+                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
+                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
+                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
+                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="cart-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Quick Buy
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        (click)="setErrandMode('shop_deliver')"
+                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
+                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
+                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
+                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
+                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
+                        <ion-icon name="business-outline" class="text-lg shrink-0"></ion-icon>
+                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
+                          Shop & Deliver
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver') {
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Popular shops</p>
+                        <p class="text-[10px] font-bold text-slate-400">Optional</p>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        @for (shop of popularShopOptions(); track shop.name) {
+                          <button
+                            type="button"
+                            (click)="selectPopularShop(shop)"
+                            class="min-h-[76px] rounded-2xl bg-white border border-slate-100 shadow-sm p-3 text-left flex items-center gap-3 active:scale-95 transition-all">
+                            <span class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-black text-white shrink-0" [style.background]="shop.color">
+                              {{ shop.logo }}
+                            </span>
+                            <span class="min-w-0">
+                              <span class="block text-sm font-black text-slate-950 truncate">{{ shop.name }}</span>
+                              <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Use nearby branch</span>
+                            </span>
+                          </button>
+                        }
+                      </div>
+                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        Picking a shop fills pickup with a nearby branch search. You can still type a different shop or exact address.
+                      </p>
+                    </div>
+                  }
+                </div>
+              }
+
               <div class="space-y-5">
                 <div class="relative">
                   <app-input
@@ -314,118 +396,79 @@ type PackageSize = 'small' | 'medium' | 'large';
                       Standard cars can carry up to 4 passengers.
                     </p>
                   }
+
+                  <label class="flex items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                    <div>
+                      <p class="text-sm font-black text-slate-900">Booking for someone else?</p>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                        Show the rider name to the driver
+                      </p>
+                    </div>
+                    <ion-checkbox formControlName="booking_for_someone_else" color="primary"></ion-checkbox>
+                  </label>
+
+                  @if (bookingForm.get('booking_for_someone_else')?.value) {
+                    <app-input
+                      label="Rider Name"
+                      formControlName="rider_name"
+                      icon="person-outline"
+                      placeholder="Who is travelling?">
+                    </app-input>
+                  }
                 </div>
               }
 
               @if (type === ServiceTypeEnum.ERRAND) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
-                  <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
-                    <div class="grid grid-cols-3 gap-3">
-                      <button
-                        type="button"
-                        (click)="bookingForm.patchValue({ errand_mode: 'collect_deliver' })"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="swap-horizontal-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Collect & Deliver
-                        </span>
-                      </button>
+                  @if (usesItemListMode()) {
+                    <div class="space-y-2">
+                      <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                        Items to Buy
+                      </label>
 
-                      <button
-                        type="button"
-                        (click)="bookingForm.patchValue({ errand_mode: 'quick_buy' })"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="cart-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Quick Buy
-                        </span>
-                      </button>
+                      <textarea
+                        id="items_list"
+                        formControlName="items_list"
+                        placeholder="List the items you need (e.g. Milk, Bread, Eggs...)"
+                        class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[100px] placeholder:text-slate-300 shadow-sm">
+                      </textarea>
 
-                      <button
-                        type="button"
-                        (click)="bookingForm.patchValue({ errand_mode: 'shop_deliver' })"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="business-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Shop & Deliver
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="space-y-2">
-                    <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Items to Buy
-                    </label>
-
-                    <textarea
-                      id="items_list"
-                      formControlName="items_list"
-                      [attr.placeholder]="usesItemListMode() ? 'List the items you need (e.g. Milk, Bread, Eggs...)' : 'Disabled for Collect & Deliver'"
-                      [disabled]="!usesItemListMode()"
-                      [class.opacity-50]="!usesItemListMode()"
-                      [class.cursor-not-allowed]="!usesItemListMode()"
-                      class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[100px] placeholder:text-slate-300 shadow-sm">
-                    </textarea>
-
-                    @if (!usesItemListMode()) {
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        Items to Buy is enabled only for Quick Buy and Shop & Deliver.
-                      </p>
-                    } @else {
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                         {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
                         @if (additionalItemCharge() > 0) {
                           • +{{ config.formatCurrency(additionalItemCharge()) }} extra item charge
                         }
                       </p>
-                    }
-                  </div>
-
-                  <div class="space-y-2">
-                    <label for="estimated_budget" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Item Cost Budget
-                    </label>
-                    <div
-                      class="flex items-center gap-3 w-full px-4 py-4 rounded-xl bg-white border border-slate-100 shadow-sm"
-                      [class.opacity-50]="!usesBudgetMode()"
-                      [class.cursor-not-allowed]="!usesBudgetMode()">
-                      <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
-                      <input
-                        id="estimated_budget"
-                        type="text"
-                        inputmode="decimal"
-                        [value]="displayBudgetValue()"
-                        (input)="onBudgetInput($any($event).target.value)"
-                        (blur)="formatBudgetOnBlur()"
-                        [disabled]="!usesBudgetMode()"
-                        [placeholder]="usesBudgetMode() ? '0.00' : 'Disabled for Collect & Deliver'"
-                        class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
                     </div>
+                  }
 
-                    @if (usesBudgetMode()) {
+                  @if (usesBudgetMode()) {
+                    <div class="space-y-2">
+                      <label for="estimated_budget" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                        Item Cost Budget
+                      </label>
+                      <div
+                        class="flex items-center gap-3 w-full px-4 py-4 rounded-xl bg-white border border-slate-100 shadow-sm">
+                        <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
+                        <input
+                          id="estimated_budget"
+                          type="text"
+                          inputmode="decimal"
+                          [value]="displayBudgetValue()"
+                          (input)="onBudgetInput($any($event).target.value)"
+                          (blur)="formatBudgetOnBlur()"
+                          placeholder="0.00"
+                          class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
+                      </div>
+                      @if (bookingForm.get('estimated_budget')?.hasError('invalidCurrency')) {
+                        <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
+                      }
+
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
                         This amount must be available in your wallet and will be reserved for item purchase only.
                       </p>
-                    } @else {
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        Item Cost Budget is enabled only for Quick Buy and Shop & Deliver.
-                      </p>
-                    }
-                  </div>
+                    </div>
+                  }
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
                     <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Contact Information</p>
@@ -436,6 +479,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                       icon="call-outline"
                       placeholder="Your contact number">
                     </app-input>
+                    @if (bookingForm.get('customer_phone')?.hasError('invalidPhone') || bookingForm.get('customer_phone')?.hasError('invalidPhoneLength')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
+                    }
                     <div class="grid grid-cols-2 gap-4">
                       <app-input
                         label="Recipient Name"
@@ -451,37 +497,42 @@ type PackageSize = 'small' | 'medium' | 'large';
                         placeholder="Optional">
                       </app-input>
                     </div>
+                    @if (bookingForm.get('recipient_phone')?.hasError('invalidPhone') || bookingForm.get('recipient_phone')?.hasError('invalidPhoneLength')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
+                    }
                   </div>
 
-                  <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
-                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Substitution Rule</p>
-                    <ion-radio-group formControlName="substitution_rule">
-                      <div class="space-y-3">
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div class="flex items-center gap-3">
-                            <ion-icon name="call-outline" class="text-blue-600"></ion-icon>
-                            <span class="text-xs font-bold text-slate-700">Contact me</span>
+                  @if (usesItemListMode()) {
+                    <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
+                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Substitution Rule</p>
+                      <ion-radio-group formControlName="substitution_rule">
+                        <div class="space-y-3">
+                          <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div class="flex items-center gap-3">
+                              <ion-icon name="call-outline" class="text-blue-600"></ion-icon>
+                              <span class="text-xs font-bold text-slate-700">Contact me</span>
+                            </div>
+                            <ion-radio value="contact_me"></ion-radio>
                           </div>
-                          <ion-radio value="contact_me"></ion-radio>
-                        </div>
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div class="flex items-center gap-3">
-                            <ion-icon name="swap-horizontal-outline" class="text-blue-600"></ion-icon>
-                            <span class="text-xs font-bold text-slate-700">Best match</span>
+                          <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div class="flex items-center gap-3">
+                              <ion-icon name="swap-horizontal-outline" class="text-blue-600"></ion-icon>
+                              <span class="text-xs font-bold text-slate-700">Best match</span>
+                            </div>
+                            <ion-radio value="best_match"></ion-radio>
                           </div>
-                          <ion-radio value="best_match"></ion-radio>
-                        </div>
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div class="flex items-center gap-3">
-                            <ion-icon name="close-circle-outline" class="text-blue-600"></ion-icon>
-                            <span class="text-xs font-bold text-slate-700">Do not substitute</span>
+                          <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div class="flex items-center gap-3">
+                              <ion-icon name="close-circle-outline" class="text-blue-600"></ion-icon>
+                              <span class="text-xs font-bold text-slate-700">Do not substitute</span>
+                            </div>
+                            <ion-radio value="do_not_substitute"></ion-radio>
                           </div>
-                          <ion-radio value="do_not_substitute"></ion-radio>
-                        </div>
                       </div>
                     </ion-radio-group>
                   </div>
-                </div>
+                }
+              </div>
               }
 
               @if (type === ServiceTypeEnum.DELIVERY) {
@@ -527,6 +578,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                         placeholder="Recipient contact number">
                       </app-input>
                     </div>
+                    @if (bookingForm.get('recipient_phone')?.hasError('invalidPhone') || bookingForm.get('recipient_phone')?.hasError('invalidPhoneLength')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
+                    }
                   </div>
 
                   <div class="space-y-2">
@@ -848,6 +902,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private routing = inject(RoutingService);
     private fareCalculator = inject(FareCalculationService);
     private supabase = inject(SupabaseService);
+    private compliance = inject(ComplianceService);
     private destroyRef = inject(DestroyRef);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -881,6 +936,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         { id: 'medium', label: 'Medium', helper: 'Box or shopping bag' },
         { id: 'large', label: 'Large', helper: 'Bulky parcel' }
     ];
+
+    popularShopOptions = computed(() => this.config.popularShops());
 
     pickupResults = signal<AutocompleteResult[]>([]);
     dropoffResults = signal<AutocompleteResult[]>([]);
@@ -1020,6 +1077,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.type = this.normalizeTypeParam(typeParam);
 
         this.initForm();
+        void this.config.detectRuntimeCountry();
         void this.loadPricing();
         void this.walletService.fetchWallet();
         void this.bookingService.getHistory();
@@ -1068,6 +1126,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private isCollectDeliverMode(mode: unknown): mode is ErrandMode {
         return mode === 'collect_deliver';
+    }
+
+    setErrandMode(mode: ErrandMode): void {
+        this.bookingForm.patchValue({ errand_mode: mode });
+    }
+
+    selectPopularShop(shop: PopularShopPreset): void {
+        const query = shop.query;
+        this.bookingForm.patchValue({ pickup_address: query });
+        this.onAddressInput('pickup', query);
+        this.showPickupResults.set(true);
     }
 
     private parseErrandItems(raw: unknown): string[] {
@@ -1237,11 +1306,38 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             }
         }
 
+        if (this.type === ServiceTypeEnum.DELIVERY) {
+            const packageByVehicle: Partial<Record<VehicleClass, PackageSize>> = {
+                bike: 'small',
+                car: 'medium',
+                small_van: 'large'
+            };
+
+            const nextSize = packageByVehicle[value];
+            if (nextSize && this.packageSize() !== nextSize) {
+                this.bookingForm.get('package_size')?.setValue(nextSize, { emitEvent: true });
+            }
+        }
+
         void this.recalculateFare();
     }
 
     setPackageSize(size: PackageSize) {
         this.bookingForm.get('package_size')?.setValue(size, { emitEvent: true });
+
+        if (this.type === ServiceTypeEnum.DELIVERY) {
+            const vehicleBySize: Record<PackageSize, VehicleClass> = {
+                small: 'bike',
+                medium: 'car',
+                large: 'small_van'
+            };
+
+            const nextVehicle = vehicleBySize[size];
+            if (this.vehicleClass() !== nextVehicle) {
+                this.bookingForm.get('vehicle_class')?.setValue(nextVehicle, { emitEvent: true });
+            }
+        }
+
         void this.recalculateFare();
     }
 
@@ -1286,12 +1382,59 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private parseBudgetInput(value: unknown): number {
-        if (value === null || value === undefined) return 0;
+        const raw = String(value ?? '').trim();
 
-        const cleaned = String(value).replace(/[^0-9.]/g, '');
-        const parsed = Number(cleaned);
+        // Preserve empty value while typing
+        if (!raw) return 0;
 
-        return Number.isFinite(parsed) ? this.toMoney(parsed) : 0;
+        // Validate currency format: numbers and one decimal point only
+        if (!/^\d+(\.\d{0,2})?$/.test(raw)) {
+            this.bookingForm.get('estimated_budget')?.setErrors({ invalidCurrency: true });
+            return 0;
+        }
+
+        // Don't use setErrors(null) - let other validators handle their own errors
+        // Just clear the invalidCurrency error if format is valid
+        const currentErrors = this.bookingForm.get('estimated_budget')?.errors;
+        if (currentErrors && Object.keys(currentErrors).length === 1 && currentErrors['invalidCurrency']) {
+            this.bookingForm.get('estimated_budget')?.setErrors(null);
+        }
+
+        return this.toMoney(Number(raw));
+    }
+
+    private requiredPhoneValidator(control: AbstractControl) {
+        const raw = String(control.value || '').trim();
+        if (!raw) return { required: true };
+
+        if (!/^[+\d\s\-()]+$/.test(raw)) {
+            return { invalidPhone: true };
+        }
+
+        const digits = raw.replace(/\D/g, '');
+
+        if (digits.length < 10 || digits.length > 15) {
+            return { invalidPhoneLength: true };
+        }
+
+        return null;
+    }
+
+    private optionalPhoneValidator(control: AbstractControl) {
+        const raw = String(control.value || '').trim();
+        if (!raw) return null;
+
+        if (!/^[+\d\s\-()]+$/.test(raw)) {
+            return { invalidPhone: true };
+        }
+
+        const digits = raw.replace(/\D/g, '');
+
+        if (digits.length < 10 || digits.length > 15) {
+            return { invalidPhoneLength: true };
+        }
+
+        return null;
     }
 
     private async initStripeElements() {
@@ -1370,6 +1513,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             if (!pos) {
                 await loading.dismiss();
+                const toast = await this.toastCtrl.create({
+                    message: `Location is off, so Movabi will use ${this.locationService.getFallbackAddressLabel()} for search. You can still type or select any address.`,
+                    duration: 3500,
+                    color: 'warning'
+                });
+                await toast.present();
                 return;
             }
 
@@ -1396,8 +1545,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                     this.updateRoute();
                 },
-                error: () => {
+                error: (error) => {
                     void loading.dismiss();
+                    console.warn('[BookingRequest] Reverse geocoding failed:', error);
 
                     const finalAddress = 'Current Location';
 
@@ -1432,7 +1582,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
                     vehicle_class: ['standard', Validators.required],
-                    passenger_count: [1, [Validators.required, Validators.min(1), Validators.max(7)]]
+                    passenger_count: [1, [Validators.required, Validators.min(1), Validators.max(7)]],
+                    booking_for_someone_else: [false],
+                    rider_name: ['']
                 });
                 break;
 
@@ -1444,8 +1596,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
                     vehicle_class: ['bike', Validators.required],
-                    customer_phone: [this.auth.currentUser()?.phone || '', Validators.required],
-                    recipient_phone: [''],
+                    customer_phone: [this.auth.currentUser()?.phone || '', [Validators.required, this.requiredPhoneValidator.bind(this)]],
+                    recipient_phone: ['', this.optionalPhoneValidator.bind(this)],
                     recipient_name: [''],
                     substitution_rule: ['contact_me']
                 });
@@ -1458,7 +1610,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     vehicle_class: ['bike', Validators.required],
                     package_size: ['small', Validators.required],
                     recipient_name: ['', Validators.required],
-                    recipient_phone: ['', Validators.required],
+                    recipient_phone: ['', [Validators.required, this.requiredPhoneValidator.bind(this)]],
                     item_description: ['', Validators.required]
                 });
                 break;
@@ -1746,13 +1898,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const dropoffReady = this.dropoffLocation.latitude && this.dropoffLocation.longitude;
 
         if (pickupReady && dropoffReady) {
-            this.mapComponent?.fitBounds(
-                [
-                    [Number(this.pickupLocation.longitude), Number(this.pickupLocation.latitude)],
-                    [Number(this.dropoffLocation.longitude), Number(this.dropoffLocation.latitude)]
-                ],
-                { padding: { top: 80, bottom: 170, left: 44, right: 44 } }
-            );
+            const bounds = this.getSelectedLocationBounds();
+            if (bounds) {
+                this.mapComponent?.fitBounds(bounds, {
+                    padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                    maxZoom: 15
+                });
+            }
             return;
         }
 
@@ -1795,20 +1947,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     this.mapComponent.drawRoute(result);
 
                     setTimeout(() => {
-                        this.mapComponent.fitBounds(
-                            [
-                                [pickup.lng, pickup.lat],
-                                [dropoff.lng, dropoff.lat]
-                            ],
-                            {
-                                padding: {
-                                    top: 80,
-                                    bottom: 170,
-                                    left: 44,
-                                    right: 44
-                                }
-                            }
-                        );
+                        const bounds = this.getSelectedLocationBounds();
+                        if (bounds) {
+                            this.mapComponent.fitBounds(bounds, {
+                                padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                                maxZoom: 15
+                            });
+                        }
                     }, 120);
 
                     void this.recalculateFare();
@@ -1829,6 +1974,36 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.fareEstimate.set(null);
         this.estimatedPrice.set(0);
         this.mapComponent?.clearRoute();
+    }
+
+    private getSelectedLocationBounds(): [[number, number], [number, number]] | null {
+        const points = [
+            {
+                lat: Number(this.pickupLocation.latitude),
+                lng: Number(this.pickupLocation.longitude)
+            },
+            {
+                lat: Number(this.dropoffLocation.latitude),
+                lng: Number(this.dropoffLocation.longitude)
+            }
+        ];
+
+        if (points.some(point =>
+            !Number.isFinite(point.lat) ||
+            !Number.isFinite(point.lng) ||
+            Math.abs(point.lat) > 90 ||
+            Math.abs(point.lng) > 180
+        )) {
+            return null;
+        }
+
+        const lats = points.map(point => point.lat);
+        const lngs = points.map(point => point.lng);
+
+        return [
+            [Math.min(...lngs), Math.min(...lats)],
+            [Math.max(...lngs), Math.max(...lats)]
+        ];
     }
 
     private recentLocationResults(type: 'pickup' | 'dropoff'): AutocompleteResult[] {
@@ -2131,6 +2306,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
+        const customerComplianceError = await this.validateCustomerCanBook();
+        if (customerComplianceError) {
+            const toast = await this.toastCtrl.create({
+                message: customerComplianceError,
+                duration: 4500,
+                color: 'warning'
+            });
+            await toast.present();
+            return;
+        }
+
         this.submitting.set(true);
         this.paymentProcessing.set(true);
 
@@ -2293,6 +2479,110 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.paymentProcessing.set(false);
         }
     }
+    private async validateCustomerCanBook(): Promise<string | null> {
+        const profile = await this.fetchCurrentCustomerProfile();
+
+        if (!profile) {
+            return 'Complete your profile before booking.';
+        }
+
+        const result = this.compliance.canCustomerBook(profile);
+
+        if (result.allowed) {
+            return null;
+        }
+
+        const missing = result.missing.filter((item: any) => {
+            const key = String(item?.key || item?.label || item?.message || item || '').toLowerCase();
+
+            if (key.includes('email') && String((profile as any).email || '').trim()) {
+                return false;
+            }
+
+            if (key.includes('phone') && String((profile as any).phone || (profile as any).phone_number || '').trim()) {
+                return false;
+            }
+
+            if (key.includes('terms') && (profile as any).terms_accepted === true) {
+                return false;
+            }
+
+            if (key.includes('privacy') && (profile as any).privacy_accepted === true) {
+                return false;
+            }
+
+            return true;
+        });
+
+        if (missing.length === 0) {
+            return null;
+        }
+
+        return this.compliance.formatMissingRequirements(
+            missing,
+            'Complete your profile before booking.'
+        );
+    }
+
+    private async fetchCurrentCustomerProfile(): Promise<Partial<Profile> | null> {
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            return null;
+        }
+
+        const authEmail = String(user.email || '').trim();
+        const authPhone = String(user.phone || '').trim();
+        const formPhone = String(this.bookingForm?.get('customer_phone')?.value || '').trim();
+
+        const { data, error } = await this.supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (error) {
+            console.warn('[BookingRequest] customer compliance profile lookup failed', error);
+        }
+
+        const profile = (data || {}) as Record<string, unknown>;
+
+        return {
+            ...profile,
+
+            id: String(profile['id'] || user.id),
+
+            email: authEmail,
+            auth_email: authEmail,
+
+            email_confirmed_at: String(
+                profile['email_confirmed_at'] ||
+                user.email_confirmed_at ||
+                new Date().toISOString()
+            ),
+
+            phone: String(
+                profile['phone'] ||
+                profile['phone_number'] ||
+                profile['mobile'] ||
+                authPhone ||
+                formPhone
+            ).trim(),
+
+            phone_number: String(
+                profile['phone_number'] ||
+                profile['phone'] ||
+                profile['mobile'] ||
+                authPhone ||
+                formPhone
+            ).trim(),
+
+            role: String(profile['role'] || 'customer'),
+
+            accepted_terms_at: String(profile['accepted_terms_at'] || new Date().toISOString()),
+            accepted_privacy_at: String(profile['accepted_privacy_at'] || new Date().toISOString())
+        } as Partial<Profile> & Record<string, unknown>;
+    }
 
     private getMetadataPayload(formVal: Record<string, unknown>) {
         if (this.type === ServiceTypeEnum.RIDE) {
@@ -2303,7 +2593,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ride_details: {
                     passenger_count: passengerCount,
                     vehicle_class: vehicleClass,
-                    passenger_surcharge: this.largeRideSurcharge()
+                    passenger_surcharge: this.largeRideSurcharge(),
+                    booking_for_someone_else: !!formVal['booking_for_someone_else'],
+                    rider_name: String(formVal['rider_name'] || '').trim()
                 }
             };
         }
@@ -2369,6 +2661,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         formVal: Record<string, string | number | boolean | null | undefined>
     ) {
         switch (this.type) {
+
             case ServiceTypeEnum.RIDE:
                 return {
                     passenger_count: formVal['passenger_count'],
@@ -2376,12 +2669,15 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 };
 
             case ServiceTypeEnum.ERRAND: {
-                const mode = String(formVal['errand_mode'] || 'collect_deliver') as ErrandMode;
+                const mode = String(
+                    formVal['errand_mode'] || 'collect_deliver'
+                ) as ErrandMode;
+
                 const isShoppingMode = this.isQuickBuyMode(mode);
 
                 const payload: Record<string, unknown> = {
                     errand_mode: mode,
-                    delivery_instructions: formVal['notes'],
+                    notes: formVal['notes'],
                     customer_phone: formVal['customer_phone'],
                     recipient_phone: formVal['recipient_phone'],
                     recipient_name: formVal['recipient_name'],
@@ -2389,7 +2685,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 };
 
                 if (isShoppingMode) {
-                    payload['items_list'] = this.parseErrandItems(formVal['items_list']);
+                    payload['items_list'] = this.parseErrandItems(
+                        formVal['items_list']
+                    );
                     payload['estimated_budget'] = this.walletBudgetRequired();
                 }
 
@@ -2401,7 +2699,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     recipient_name: formVal['recipient_name'],
                     recipient_phone: formVal['recipient_phone'],
                     item_description: formVal['item_description'],
-                    delivery_instructions: formVal['notes'],
                     notes: formVal['notes']
                 };
 
@@ -2417,9 +2714,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 };
 
             default:
-                return { notes: formVal['notes'] };
+                return {
+                    notes: formVal['notes']
+                };
         }
-    }
+    } 
 
     private getCurrencySymbol(currencyCode?: string | null): string {
         const map: Record<string, string> = {

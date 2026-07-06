@@ -15,17 +15,17 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@a
     }
   ],
   template: `
-    <div class="mb-5">
+    <div class="mb-4 min-w-0">
       @if (label) {
-        <label [for]="id" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">
+        <label [for]="id" class="block text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 leading-snug">
           {{ label }}
         </label>
       }
-      <div class="relative group">
+      <div class="relative group min-w-0">
         @if (icon) {
           <ion-icon 
             [name]="icon" 
-            class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"
+            class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg group-focus-within:text-blue-600 transition-colors"
           ></ion-icon>
         }
         <input
@@ -36,17 +36,17 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@a
           [disabled]="disabled"
           (input)="onInput($event)"
           (blur)="onBlur()"
-          class="w-full bg-white border border-slate-200 rounded-2xl py-4 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all duration-300 text-slate-900 font-medium placeholder:text-slate-400"
-          [class.pl-12]="icon && !phoneCode"
-          [class.pl-24]="icon && phoneCode"
-          [class.pl-16]="!icon && phoneCode"
-          [class.px-5]="!icon && !phoneCode"
+          class="w-full min-w-0 bg-white border border-slate-300 rounded-[1.1rem] py-3.5 sm:py-4 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all duration-300 text-slate-900 font-medium placeholder:text-slate-400 leading-snug"
+          [class.pl-11]="icon && !phoneCode"
+          [class.pl-[5.5rem]]="icon && phoneCode"
+          [class.pl-[3.75rem]]="!icon && phoneCode"
+          [class.px-4]="!icon && !phoneCode"
           [class.border-red-500]="error"
           [class.focus:ring-red-500/10]="error"
           [class.focus:border-red-500]="error"
         />
         @if (phoneCode && type === 'tel') {
-          <div class="absolute left-12 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm border-r border-slate-100 pr-3 h-6 flex items-center" [class.left-12]="icon" [class.left-4]="!icon">
+          <div class="absolute left-11 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm border-r border-slate-100 pr-2.5 h-6 flex items-center" [class.left-11]="icon" [class.left-3]="!icon">
             {{ phoneCode }}
           </div>
         }

@@ -217,6 +217,15 @@ BEGIN
             ALTER TABLE profiles ADD COLUMN account_closure_reason TEXT;
         END IF;
 
+        ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS closure_requested_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS closure_reason TEXT,
+            ADD COLUMN IF NOT EXISTS closure_notes TEXT,
+            ADD COLUMN IF NOT EXISTS reinstated_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reinstated_by UUID,
+            ADD COLUMN IF NOT EXISTS reinstatement_notes TEXT;
+
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'tenant_id') THEN
             ALTER TABLE profiles ADD COLUMN tenant_id UUID;
         END IF;
@@ -244,6 +253,103 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'payouts_enabled') THEN
             ALTER TABLE profiles ADD COLUMN payouts_enabled BOOLEAN DEFAULT FALSE;
         END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'movabi_pay_card_preference') THEN
+            ALTER TABLE profiles ADD COLUMN movabi_pay_card_preference TEXT DEFAULT 'virtual';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'movabi_pay_physical_card_status') THEN
+            ALTER TABLE profiles ADD COLUMN movabi_pay_physical_card_status TEXT DEFAULT 'not_requested';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'movabi_pay_physical_card_received_at') THEN
+            ALTER TABLE profiles ADD COLUMN movabi_pay_physical_card_received_at TIMESTAMPTZ;
+        END IF;
+
+        ALTER TABLE profiles
+            ADD COLUMN IF NOT EXISTS compliance_status TEXT DEFAULT 'draft',
+            ADD COLUMN IF NOT EXISTS accepted_terms_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS accepted_privacy_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS accepted_driver_agreement_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+            ADD COLUMN IF NOT EXISTS current_address TEXT,
+            ADD COLUMN IF NOT EXISTS address_line1 TEXT,
+            ADD COLUMN IF NOT EXISTS home_address TEXT,
+            ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS email_confirmed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS phone_verification_supported BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS profile_photo_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS live_selfie_url TEXT,
+            ADD COLUMN IF NOT EXISTS live_selfie_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS driver_license_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS driver_license_expiry DATE,
+            ADD COLUMN IF NOT EXISTS insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS insurance_expiry DATE,
+            ADD COLUMN IF NOT EXISTS right_to_work_url TEXT,
+            ADD COLUMN IF NOT EXISTS right_to_work_share_code TEXT,
+            ADD COLUMN IF NOT EXISTS right_to_work_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS private_hire_driver_license_url TEXT,
+            ADD COLUMN IF NOT EXISTS private_hire_driver_license_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS private_hire_vehicle_license_url TEXT,
+            ADD COLUMN IF NOT EXISTS private_hire_vehicle_license_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS private_hire_insurance_url TEXT,
+            ADD COLUMN IF NOT EXISTS private_hire_insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS council_name TEXT,
+            ADD COLUMN IF NOT EXISTS council_license_authority TEXT,
+            ADD COLUMN IF NOT EXISTS council_license_number TEXT,
+            ADD COLUMN IF NOT EXISTS council_license_expiry DATE,
+            ADD COLUMN IF NOT EXISTS taxi_badge_number TEXT,
+            ADD COLUMN IF NOT EXISTS taxi_license_expiry DATE,
+            ADD COLUMN IF NOT EXISTS vehicle_license_url TEXT,
+            ADD COLUMN IF NOT EXISTS vehicle_license_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS vehicle_license_expiry DATE,
+            ADD COLUMN IF NOT EXISTS mot_url TEXT,
+            ADD COLUMN IF NOT EXISTS mot_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS mot_expiry DATE,
+            ADD COLUMN IF NOT EXISTS background_check_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS operator_compliance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS courier_insurance_url TEXT,
+            ADD COLUMN IF NOT EXISTS courier_insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS courier_insurance_expiry DATE,
+            ADD COLUMN IF NOT EXISTS goods_in_transit_insurance_url TEXT,
+            ADD COLUMN IF NOT EXISTS goods_in_transit_insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS goods_in_transit_insurance_expiry DATE,
+            ADD COLUMN IF NOT EXISTS public_liability_insurance_url TEXT,
+            ADD COLUMN IF NOT EXISTS public_liability_insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS public_liability_insurance_expiry DATE,
+            ADD COLUMN IF NOT EXISTS moving_insurance_url TEXT,
+            ADD COLUMN IF NOT EXISTS moving_insurance_status TEXT DEFAULT 'missing',
+            ADD COLUMN IF NOT EXISTS moving_insurance_expiry DATE,
+            ADD COLUMN IF NOT EXISTS helper_labour_declaration BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS driver_review_status TEXT,
+            ADD COLUMN IF NOT EXISTS driver_review_notes TEXT,
+            ADD COLUMN IF NOT EXISTS driver_review_blockers JSONB,
+            ADD COLUMN IF NOT EXISTS driver_review_sent_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS driver_review_sent_by UUID,
+            ADD COLUMN IF NOT EXISTS driver_review_history JSONB;
+
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'council_license_authority') THEN
+            UPDATE public.profiles
+            SET council_name = COALESCE(NULLIF(TRIM(council_name), ''), NULLIF(TRIM(council_license_authority), ''))
+            WHERE NULLIF(TRIM(COALESCE(council_name, '')), '') IS NULL
+              AND NULLIF(TRIM(COALESCE(council_license_authority, '')), '') IS NOT NULL;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'council_license_expiry') THEN
+            UPDATE public.profiles
+            SET taxi_license_expiry = COALESCE(taxi_license_expiry, council_license_expiry)
+            WHERE taxi_license_expiry IS NULL
+              AND council_license_expiry IS NOT NULL;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'vehicle_license_url') THEN
+            UPDATE public.profiles
+            SET private_hire_vehicle_license_url = COALESCE(NULLIF(TRIM(private_hire_vehicle_license_url), ''), NULLIF(TRIM(vehicle_license_url), ''))
+            WHERE NULLIF(TRIM(COALESCE(private_hire_vehicle_license_url, '')), '') IS NULL
+              AND NULLIF(TRIM(COALESCE(vehicle_license_url, '')), '') IS NOT NULL;
+        END IF;
     END IF;
 END $$;
 
@@ -258,6 +364,10 @@ BEGIN
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'capacity') THEN
             ALTER TABLE public.vehicles ADD COLUMN capacity TEXT DEFAULT 'standard';
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'service_eligibility') THEN
+            ALTER TABLE public.vehicles ADD COLUMN service_eligibility JSONB;
         END IF;
 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vehicles' AND column_name = 'color') THEN
@@ -602,6 +712,38 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.system_configs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key TEXT NOT NULL UNIQUE,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO public.system_configs (key, value, updated_at)
+VALUES (
+    'app_version_config',
+    jsonb_build_object(
+        'current_web_version', '1.0.0',
+        'minimum_web_version', '1.0.0',
+        'current_android_version', '1.0.0',
+        'minimum_android_version', '1.0.0',
+        'current_ios_version', '1.0.0',
+        'minimum_ios_version', '1.0.0',
+        'update_required', false,
+        'update_severity', 'optional',
+        'update_title', 'Movabi update available',
+        'update_message', 'A new version of Movabi is available.',
+        'release_notes', '',
+        'android_update_url', '',
+        'ios_update_url', '',
+        'web_reload_required', false,
+        'admin_set_by', null,
+        'updated_at', NOW()
+    ),
+    NOW()
+)
+ON CONFLICT (key) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS stripe_events (
     id TEXT PRIMARY KEY, -- Use Stripe's event ID
     type TEXT,
@@ -782,18 +924,151 @@ BEFORE UPDATE OF actual_spending ON public.errand_details
 FOR EACH ROW
 EXECUTE FUNCTION public.enforce_errand_spending_budget();
 
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'system',
+    route TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'notifications') THEN
+        ALTER TABLE public.notifications
+            ADD COLUMN IF NOT EXISTS route TEXT,
+            ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+ON public.notifications(user_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.notify_admins_account_closure_requested()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_display_name TEXT;
+    v_route TEXT;
+BEGIN
+    IF NEW.account_status = 'closure_requested'
+       AND COALESCE(OLD.account_status, 'active') <> 'closure_requested' THEN
+        v_display_name := COALESCE(
+            NULLIF(to_jsonb(NEW)->>'full_name', ''),
+            NULLIF(to_jsonb(NEW)->>'email', ''),
+            NULLIF(to_jsonb(NEW)->>'phone', ''),
+            NEW.id::TEXT
+        );
+
+        v_route := CASE
+            WHEN COALESCE(to_jsonb(NEW)->>'role', '') = 'driver' THEN '/admin/drivers'
+            ELSE '/admin/users'
+        END;
+
+        INSERT INTO public.notifications (
+            user_id,
+            title,
+            body,
+            type,
+            route,
+            metadata,
+            data
+        )
+        SELECT
+            admin_profile.id,
+            'Account closure requested',
+            v_display_name || ' requested account closure',
+            'account_closure_requested',
+            v_route,
+            jsonb_build_object(
+                'profile_id', NEW.id,
+                'role', to_jsonb(NEW)->>'role',
+                'account_status', NEW.account_status
+            ),
+            jsonb_build_object(
+                'profile_id', NEW.id,
+                'role', to_jsonb(NEW)->>'role',
+                'account_status', NEW.account_status
+            )
+        FROM public.profiles admin_profile
+        WHERE admin_profile.role = 'admin';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_notify_admins_account_closure_requested ON public.profiles;
+CREATE TRIGGER trg_notify_admins_account_closure_requested
+AFTER UPDATE OF account_status ON public.profiles
+FOR EACH ROW
+EXECUTE FUNCTION public.notify_admins_account_closure_requested();
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users read own notifications" ON public.notifications;
+CREATE POLICY "Users read own notifications"
+ON public.notifications
+FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users update own notification read state" ON public.notifications;
+CREATE POLICY "Users update own notification read state"
+ON public.notifications
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users create own notifications" ON public.notifications;
+CREATE POLICY "Users create own notifications"
+ON public.notifications
+FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+GRANT SELECT, INSERT, UPDATE ON public.notifications TO authenticated;
+
 CREATE TABLE IF NOT EXISTS public.device_push_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     token TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL DEFAULT 'capacitor',
+    subscription_id TEXT,
+    external_id TEXT,
     platform TEXT NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'device_push_tokens') THEN
+        ALTER TABLE public.device_push_tokens
+            ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'capacitor',
+            ADD COLUMN IF NOT EXISTS subscription_id TEXT,
+            ADD COLUMN IF NOT EXISTS external_id TEXT,
+            ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_device_push_tokens_user_enabled
 ON public.device_push_tokens(user_id, enabled);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_device_push_tokens_user_provider_subscription
+ON public.device_push_tokens(user_id, provider, subscription_id)
+WHERE subscription_id IS NOT NULL;
 
 ALTER TABLE public.device_push_tokens ENABLE ROW LEVEL SECURITY;
 

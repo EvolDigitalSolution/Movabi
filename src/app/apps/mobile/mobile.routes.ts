@@ -8,12 +8,21 @@ export const MOBILE_ROUTES: Routes = [
         loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)
     },
     {
+        path: 'landing',
+        loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)
+    },
+    {
         path: 'privacy',
         loadComponent: () => import('@mobile/features/legal/privacy.page').then((m) => m.PrivacyPage)
     },
     {
         path: 'help',
         loadComponent: () => import('@mobile/features/help/help.page').then((m) => m.HelpPage)
+    },
+    {
+        path: 'about-movabi',
+        loadComponent: () =>
+            import('@admin/features/landing/movabi-about.component').then((m) => m.AdminMovabiAboutComponent)
     },
     {
         path: 'how-to-use',

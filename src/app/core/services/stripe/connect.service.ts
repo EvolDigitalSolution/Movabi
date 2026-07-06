@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { Capacitor } from '@capacitor/core';
 import { ApiUrlService } from '../api-url.service';
 import { SupabaseService } from '../supabase/supabase.service';
 
@@ -19,6 +20,18 @@ export interface StripeConnectStatusResponse {
         disabled_reason?: string | null;
     };
 }
+
+export interface PayoutSettingsResponse {
+    ok: boolean;
+    stripeAccountId: string | null;
+    connectStatus: 'not_started' | 'pending' | 'restricted' | 'enabled' | 'connected';
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+    detailsSubmitted: boolean;
+    requirementsCurrentlyDue: string[];
+}
+
+type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
 
 @Injectable({
     providedIn: 'root'
@@ -46,12 +59,13 @@ export class ConnectService {
         );
     }
 
-    async getOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string) {
+    async getOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string, platform = this.getConnectPlatform()) {
         return firstValueFrom(
             this.http.post<{ url: string }>(
                 `${this.apiUrl}/onboarding-link`,
                 {
                     accountId,
+                    platform,
                     returnUrl,
                     refreshUrl
                 },
@@ -60,6 +74,20 @@ export class ConnectService {
                 }
             )
         );
+    }
+
+    getConnectPlatform(): ConnectPlatform {
+        try {
+            const platform = Capacitor.getPlatform();
+
+            if (platform === 'android' || platform === 'ios') {
+                return platform;
+            }
+        } catch {
+            // Capacitor may be unavailable in web tests.
+        }
+
+        return 'web';
     }
 
     async getDashboardLink(accountId: string) {
@@ -102,6 +130,17 @@ export class ConnectService {
         );
     }
 
+    async getPayoutSettings() {
+        return firstValueFrom(
+            this.http.get<PayoutSettingsResponse>(
+                `${this.apiUrl}/payout-settings`,
+                {
+                    headers: await this.getAuthHeaders()
+                }
+            )
+        );
+    }
+
     private async getAuthHeaders(): Promise<HttpHeaders> {
         const token = await this.getAccessToken();
 
@@ -118,28 +157,22 @@ export class ConnectService {
 
     private async getAccessToken(): Promise<string | null> {
         try {
-            const client =
-                (this.supabase as any).client ||
-                (this.supabase as any).supabase ||
-                (this.supabase as any).supabaseClient;
-
-            if (client?.auth?.getSession) {
-                const { data } = await client.auth.getSession();
-                const token = data?.session?.access_token;
-
-                if (token) return token;
+            // Use the Supabase client to get the current session
+            const { data, error } = await this.supabase.client.auth.getSession();
+            
+            if (error) {
+                console.warn('[Connect] Failed to get session:', error.message);
+                return null;
             }
 
-            if ((this.supabase as any).getSession) {
-                const session = await (this.supabase as any).getSession();
-                const token = session?.access_token || session?.data?.session?.access_token;
-
-                if (token) return token;
+            const token = data?.session?.access_token;
+            
+            if (token) {
+                return token;
             }
 
-            if ((this.supabase as any).session?.access_token) {
-                return (this.supabase as any).session.access_token;
-            }
+            console.warn('[Connect] No active session found');
+            return null;
         } catch (error) {
             console.warn('[ConnectService] Unable to read Supabase session token:', error);
         }

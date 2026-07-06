@@ -1,5 +1,6 @@
 export const environment = {
     production: true,
+    appVersion: '1.0.0',
     appName: 'Movabi',
     appBrand: 'Movabi',
     appUrl: 'https://movabi.apps.evolsolution.com',

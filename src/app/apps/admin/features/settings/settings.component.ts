@@ -4,24 +4,32 @@ import { IonicModule } from '@ionic/angular';
 import { FormsModule } from '@angular/forms';
 import { addIcons } from 'ionicons';
 import {
-  settingsOutline,
-  globeOutline,
-  trashOutline,
-  addCircleOutline,
-  saveOutline,
-  refreshOutline,
-  checkmarkCircleOutline
+    settingsOutline,
+    globeOutline,
+    trashOutline,
+    addCircleOutline,
+    saveOutline,
+    refreshOutline,
+    checkmarkCircleOutline,
+    helpCircleOutline,
+    notificationsOutline,
+    keyOutline,
+    sendOutline,
+    cloudUploadOutline
 } from 'ionicons/icons';
 import { SystemConfigService } from '../../../../core/services/config/system-config.service';
 import { AppConfigService, CountryConfig } from '../../../../core/services/config/app-config.service';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
+import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
+import { ApiUrlService } from '../../../../core/services/api-url.service';
 
-type SettingsTab = 'general' | 'countries';
+type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
 
 @Component({
-  selector: 'app-admin-settings',
-  standalone: true,
-  imports: [CommonModule, IonicModule, FormsModule],
-  template: `
+    selector: 'app-admin-settings',
+    standalone: true,
+    imports: [CommonModule, IonicModule, FormsModule],
+    template: `
     <div class="w-full min-h-screen bg-slate-50 overflow-y-auto">
       <div class="max-w-6xl mx-auto p-5 md:p-8 space-y-6 pb-12">
 
@@ -29,11 +37,16 @@ type SettingsTab = 'general' | 'countries';
           <div>
             <h1 class="text-2xl md:text-3xl font-display font-bold text-slate-950">System Settings</h1>
             <p class="text-sm text-slate-500 font-medium mt-1">
-              Configure defaults, supported countries, currencies and regional map settings.
+              Configure countries, currencies, regional map settings and push notifications.
             </p>
           </div>
 
           <div class="flex flex-col sm:flex-row gap-3">
+            <button type="button" (click)="restartAdminTour()" class="secondary-btn">
+              <ion-icon name="help-circle-outline"></ion-icon>
+              Restart Tour
+            </button>
+
             <button type="button" (click)="resetChanges()" [disabled]="saving()" class="secondary-btn">
               <ion-icon name="refresh-outline"></ion-icon>
               Reset
@@ -60,6 +73,26 @@ type SettingsTab = 'general' | 'countries';
                 <span class="ml-auto text-[10px] px-2 py-1 rounded-full bg-slate-100 text-slate-500">
                   {{ countries.length }}
                 </span>
+              </button>
+
+              <button type="button" (click)="activeTab.set('notifications')" [class]="activeTab() === 'notifications' ? 'nav-btn active' : 'nav-btn'">
+                <ion-icon name="notifications-outline"></ion-icon>
+                <span>Push Notifications</span>
+                @if (notificationConfig.configured) {
+                  <span class="ml-auto text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                    Ready
+                  </span>
+                }
+              </button>
+
+              <button type="button" (click)="activeTab.set('appVersion')" [class]="activeTab() === 'appVersion' ? 'nav-btn active' : 'nav-btn'">
+                <ion-icon name="cloud-upload-outline"></ion-icon>
+                <span>App Version & Updates</span>
+                @if (appVersionConfig.updateRequired || appVersionConfig.updateSeverity === 'critical') {
+                  <span class="ml-auto text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                    Required
+                  </span>
+                }
               </button>
             </div>
           </div>
@@ -128,6 +161,194 @@ type SettingsTab = 'general' | 'countries';
                           Changing the default country also updates the map latitude and longitude from that country’s saved centre.
                         </p>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (activeTab() === 'notifications') {
+                <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-hidden">
+                  <div class="p-6 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-950">Push Notifications</h3>
+                    <p class="text-sm text-slate-500 font-medium mt-1">
+                      Configure OneSignal securely. The REST API key is never displayed after saving.
+                    </p>
+                  </div>
+
+                  <div class="p-6 space-y-6">
+                    <div class="rounded-2xl bg-amber-50 border border-amber-100 p-5">
+                      <h4 class="text-sm font-bold text-amber-900">Security Notice</h4>
+                      <p class="text-sm text-amber-800 font-medium mt-1 leading-relaxed">
+                        The OneSignal REST API key must stay on the server only. This page sends it to a secure backend endpoint and never stores it in frontend code or localStorage.
+                      </p>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-5">
+                      <div>
+                        <label class="field-label">Provider</label>
+                        <div class="field-control bg-slate-50 flex items-center justify-between">
+                          <span>OneSignal</span>
+                          <ion-icon name="notifications-outline"></ion-icon>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label class="field-label">Push Notifications</label>
+                        <select [(ngModel)]="notificationConfig.enabled" class="field-control">
+                          <option [ngValue]="true">Enabled</option>
+                          <option [ngValue]="false">Disabled</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="field-label">OneSignal App ID</label>
+                        <input [(ngModel)]="notificationConfig.appId" class="field-control" placeholder="OneSignal App ID">
+                      </div>
+
+                      <div>
+                        <label class="field-label">REST API Key Status</label>
+                        <div class="field-control bg-slate-50 flex items-center justify-between">
+                          <span>{{ notificationConfig.configured ? 'REST API key configured' : 'Not configured' }}</span>
+                          <ion-icon name="key-outline"></ion-icon>
+                        </div>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Paste New REST API Key</label>
+                        <input
+                          type="password"
+                          [(ngModel)]="notificationConfig.restApiKey"
+                          autocomplete="new-password"
+                          class="field-control"
+                          placeholder="Paste new REST API key to update"
+                        >
+                        <p class="text-xs text-slate-500 font-medium mt-2">
+                          Leave blank to keep the existing server key.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="pt-5 border-t border-slate-100 space-y-4">
+                      <h4 class="text-sm font-bold text-slate-900">Test Notification</h4>
+
+                      <div class="grid md:grid-cols-[1fr_auto] gap-4">
+                        <div>
+                          <label class="field-label">Test User ID</label>
+                          <input [(ngModel)]="notificationConfig.testUserId" class="field-control" placeholder="Driver/customer user ID">
+                        </div>
+
+                        <button type="button" (click)="sendTestNotification()" [disabled]="testingNotification()" class="primary-btn self-end">
+                          <ion-icon name="send-outline"></ion-icon>
+                          {{ testingNotification() ? 'Sending...' : 'Send Test' }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (activeTab() === 'appVersion') {
+                <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-hidden">
+                  <div class="p-6 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-950">App Version & Updates</h3>
+                    <p class="text-sm text-slate-500 font-medium mt-1">
+                      Control minimum supported app versions and require refresh/update when production releases need it.
+                    </p>
+                  </div>
+
+                  <div class="p-6 space-y-6">
+                    <div class="rounded-2xl bg-slate-50 border border-slate-100 p-5">
+                      <div class="grid md:grid-cols-3 gap-4">
+                        <div>
+                          <label class="field-label">Current Web Version</label>
+                          <input [(ngModel)]="appVersionConfig.currentWebVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Minimum Web Version</label>
+                          <input [(ngModel)]="appVersionConfig.minimumWebVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Web Reload Required</label>
+                          <select [(ngModel)]="appVersionConfig.webReloadRequired" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label class="field-label">Current Android Version</label>
+                          <input [(ngModel)]="appVersionConfig.currentAndroidVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Minimum Android Version</label>
+                          <input [(ngModel)]="appVersionConfig.minimumAndroidVersion" class="field-control" placeholder="1.0.7">
+                        </div>
+                        <div>
+                          <label class="field-label">Android Update URL</label>
+                          <input [(ngModel)]="appVersionConfig.androidUpdateUrl" class="field-control" placeholder="https://play.google.com/store/apps/details?id=com.movabi.app">
+                        </div>
+
+                        <div>
+                          <label class="field-label">Current iOS Version</label>
+                          <input [(ngModel)]="appVersionConfig.currentIosVersion" class="field-control" placeholder="1.0.8">
+                        </div>
+                        <div>
+                          <label class="field-label">Minimum iOS Version</label>
+                          <input [(ngModel)]="appVersionConfig.minimumIosVersion" class="field-control" placeholder="1.0.7">
+                        </div>
+                        <div>
+                          <label class="field-label">iOS Update URL</label>
+                          <input [(ngModel)]="appVersionConfig.iosUpdateUrl" class="field-control" placeholder="https://apps.apple.com/app/movabi">
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-5">
+                      <div>
+                        <label class="field-label">Update Severity</label>
+                        <select [(ngModel)]="appVersionConfig.updateSeverity" class="field-control">
+                          <option value="optional">Optional</option>
+                          <option value="recommended">Recommended</option>
+                          <option value="required">Required</option>
+                          <option value="critical">Critical</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="field-label">Force Update</label>
+                        <select [(ngModel)]="appVersionConfig.updateRequired" class="field-control">
+                          <option [ngValue]="false">No</option>
+                          <option [ngValue]="true">Yes</option>
+                        </select>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Update Title</label>
+                        <input [(ngModel)]="appVersionConfig.updateTitle" class="field-control" placeholder="Important Movabi update">
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Update Message</label>
+                        <textarea [(ngModel)]="appVersionConfig.updateMessage" rows="3" class="field-control min-h-24" placeholder="A new version is required to continue using Movabi."></textarea>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="field-label">Release Notes</label>
+                        <textarea [(ngModel)]="appVersionConfig.releaseNotes" rows="4" class="field-control min-h-28" placeholder="Improved driver verification and push notifications."></textarea>
+                      </div>
+                    </div>
+
+                    <div class="rounded-2xl bg-amber-50 border border-amber-100 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 class="text-sm font-bold text-amber-950">Notify users</h4>
+                        <p class="text-sm text-amber-800 font-medium mt-1">
+                          Sends an in-app/push notice when the update is required. Saving still succeeds if push is unavailable.
+                        </p>
+                      </div>
+                      <label class="inline-flex items-center gap-3 text-sm font-bold text-amber-950">
+                        <input type="checkbox" [(ngModel)]="appVersionConfig.sendNotification" class="w-5 h-5 accent-amber-500">
+                        Send notification on save
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -225,16 +446,6 @@ type SettingsTab = 'general' | 'countries';
                         </div>
                       </div>
                     }
-
-                    @if (countries.length === 0) {
-                      <div class="py-16 text-center">
-                        <div class="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-300 mx-auto mb-4">
-                          <ion-icon name="globe-outline" class="text-3xl"></ion-icon>
-                        </div>
-                        <h4 class="text-base font-bold text-slate-900">No countries configured</h4>
-                        <p class="text-sm text-slate-500 font-medium mt-1">Add your first supported country.</p>
-                      </div>
-                    }
                   </div>
                 </div>
               }
@@ -278,7 +489,7 @@ type SettingsTab = 'general' | 'countries';
       </div>
     }
   `,
-  styles: [`
+    styles: [`
     :host {
       display: block;
       width: 100%;
@@ -353,10 +564,6 @@ type SettingsTab = 'general' | 'countries';
       gap: 0.5rem;
     }
 
-    .primary-btn:hover {
-      background: rgb(29 78 216);
-    }
-
     .secondary-btn {
       min-height: 2.75rem;
       padding: 0 1.25rem;
@@ -393,431 +600,678 @@ type SettingsTab = 'general' | 'countries';
   `]
 })
 export class AdminSettingsComponent implements OnInit {
-  private systemConfig = inject(SystemConfigService);
-  private appConfig = inject(AppConfigService);
+    private systemConfig = inject(SystemConfigService);
+    private appConfig = inject(AppConfigService);
+    private tour = inject(OnboardingTourService);
+    private supabase = inject(SupabaseService);
+    private apiUrl = inject(ApiUrlService);
 
-  activeTab = signal<SettingsTab>('general');
-  saving = signal(false);
-  loading = signal(true);
-  confirmRemoveIndex = signal<number | null>(null);
+    activeTab = signal<SettingsTab>('general');
+    saving = signal(false);
+    loading = signal(true);
+    testingNotification = signal(false);
+    confirmRemoveIndex = signal<number | null>(null);
 
-  toastMessage = signal('');
-  toastColor = signal<'success' | 'danger' | 'warning'>('success');
-  showToast = signal(false);
+    toastMessage = signal('');
+    toastColor = signal<'success' | 'danger' | 'warning'>('success');
+    showToast = signal(false);
 
-  generalConfig = {
-    defaultCountryCode: 'GB',
-    mapLat: 51.5074,
-    mapLng: -0.1278
-  };
+    generalConfig = {
+        defaultCountryCode: 'GB',
+        mapLat: 51.5074,
+        mapLng: -0.1278
+    };
 
-  countries: CountryConfig[] = [];
-  private originalCountries: CountryConfig[] = [];
+    notificationConfig = {
+        provider: 'onesignal',
+        appId: '952c6d19-656c-4dab-90f3-6e253e2c9151',
+        restApiKey: '',
+        enabled: true,
+        configured: false,
+        testUserId: ''
+    };
 
-  constructor() {
-    addIcons({
-      settingsOutline,
-      globeOutline,
-      trashOutline,
-      addCircleOutline,
-      saveOutline,
-      refreshOutline,
-      checkmarkCircleOutline
-    });
-  }
+    appVersionConfig = {
+        currentWebVersion: '1.0.0',
+        minimumWebVersion: '1.0.0',
+        currentAndroidVersion: '1.0.0',
+        minimumAndroidVersion: '1.0.0',
+        currentIosVersion: '1.0.0',
+        minimumIosVersion: '1.0.0',
+        updateRequired: false,
+        updateSeverity: 'optional' as 'optional' | 'recommended' | 'required' | 'critical',
+        updateTitle: 'Movabi update available',
+        updateMessage: 'A new version of Movabi is available.',
+        releaseNotes: '',
+        androidUpdateUrl: '',
+        iosUpdateUrl: '',
+        webReloadRequired: false,
+        sendNotification: false
+    };
 
-  async ngOnInit() {
-    await this.loadSettings();
-  }
+    countries: CountryConfig[] = [];
+    private originalCountries: CountryConfig[] = [];
 
-  async loadSettings() {
-    this.loading.set(true);
-
-    try {
-      await this.systemConfig.loadConfigs();
-
-      const appCountries = this.appConfig.countries();
-      const loadedCountries = Array.isArray(appCountries) && appCountries.length
-        ? appCountries
-        : this.getDefaultCountries();
-
-      this.countries = this.mergeCountries(
-        this.cloneCountries(loadedCountries).map(country => this.normaliseCountry(country)),
-        this.getDefaultCountries().map(country => this.normaliseCountry(country))
-      );
-
-      this.originalCountries = this.cloneCountries(this.countries);
-
-      this.generalConfig.defaultCountryCode = this.normaliseCode(
-        this.systemConfig.getConfig('default_country_code', this.countries[0]?.code || 'GB')
-      );
-
-      if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
-        this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
-      }
-
-      this.onDefaultCountryChange();
-    } catch (error) {
-      console.error('Failed to load settings:', error);
-
-      this.countries = this.getDefaultCountries();
-      this.originalCountries = this.cloneCountries(this.countries);
-      this.generalConfig.defaultCountryCode = 'GB';
-      this.onDefaultCountryChange();
-
-      this.triggerToast('Settings loaded with defaults.', 'warning');
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  private mergeCountries(saved: CountryConfig[], defaults: CountryConfig[]): CountryConfig[] {
-    const map = new Map<string, CountryConfig>();
-
-    for (const country of defaults) {
-      map.set(country.code, country);
+    constructor() {
+        addIcons({
+            settingsOutline,
+            globeOutline,
+            trashOutline,
+            addCircleOutline,
+            saveOutline,
+            refreshOutline,
+            checkmarkCircleOutline,
+            helpCircleOutline,
+            notificationsOutline,
+            keyOutline,
+            sendOutline,
+            cloudUploadOutline
+        });
     }
 
-    for (const country of saved) {
-      map.set(country.code, {
-        ...map.get(country.code),
-        ...country,
-        defaultCenter: {
-          ...(map.get(country.code)?.defaultCenter || { lat: 0, lng: 0 }),
-          ...(country.defaultCenter || { lat: 0, lng: 0 })
+    async ngOnInit() {
+        await this.loadSettings();
+        this.tour.startIfNeeded('admin');
+    }
+
+    restartAdminTour() {
+        this.tour.restart('admin');
+    }
+
+    async loadSettings() {
+        this.loading.set(true);
+
+        try {
+            await this.systemConfig.loadConfigs();
+
+            const appCountries = this.appConfig.countries();
+            const loadedCountries = Array.isArray(appCountries) && appCountries.length
+                ? appCountries
+                : this.getDefaultCountries();
+
+            this.countries = this.mergeCountries(
+                this.cloneCountries(loadedCountries).map(country => this.normaliseCountry(country)),
+                this.getDefaultCountries().map(country => this.normaliseCountry(country))
+            );
+
+            this.originalCountries = this.cloneCountries(this.countries);
+
+            this.generalConfig.defaultCountryCode = this.normaliseCode(
+                this.systemConfig.getConfig('default_country_code', this.countries[0]?.code || 'GB')
+            );
+
+            if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
+                this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
+            }
+
+            this.notificationConfig.appId = this.systemConfig.getConfig(
+                'onesignal_app_id',
+                '952c6d19-656c-4dab-90f3-6e253e2c9151'
+            );
+
+            this.notificationConfig.enabled = Boolean(this.systemConfig.getConfig('push_notifications_enabled', true));
+            await this.loadNotificationSecretStatus();
+            await this.loadAppVersionConfig();
+
+            this.onDefaultCountryChange();
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+
+            this.countries = this.getDefaultCountries();
+            this.originalCountries = this.cloneCountries(this.countries);
+            this.generalConfig.defaultCountryCode = 'GB';
+            this.onDefaultCountryChange();
+
+            this.triggerToast('Settings loaded with defaults.', 'warning');
+        } finally {
+            this.loading.set(false);
         }
-      });
     }
 
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }
+    async saveAll() {
+        if (!this.validateSettings()) return;
+        if (!this.validateNotificationSettings()) return;
+        if (!this.validateAppVersionSettings()) return;
 
-  addCountry() {
-    this.countries.push({
-      code: 'GB',
-      name: 'New Country',
-      currency: 'GBP',
-      currencySymbol: '£',
-      locale: 'en-GB',
-      phoneCode: '+44',
-      defaultCenter: { lat: 51.5074, lng: -0.1278 }
-    });
+        this.saving.set(true);
 
-    this.activeTab.set('countries');
-  }
+        try {
+            const normalisedCountries = this.countries.map(country => this.normaliseCountry(country));
 
-  askRemoveCountry(index: number) {
-    this.confirmRemoveIndex.set(index);
-  }
+            await this.systemConfig.setConfig('countries', normalisedCountries);
+            await this.systemConfig.setConfig('default_country_code', this.normaliseCode(this.generalConfig.defaultCountryCode));
+            await this.systemConfig.setConfig('default_map_center', {
+                lat: Number(this.generalConfig.mapLat || 0),
+                lng: Number(this.generalConfig.mapLng || 0)
+            });
 
-  removeCountryNow() {
-    const index = this.confirmRemoveIndex();
+            await this.systemConfig.setConfig('onesignal_app_id', this.notificationConfig.appId.trim());
+            await this.systemConfig.setConfig('push_notifications_enabled', this.notificationConfig.enabled);
 
-    if (index === null || index < 0 || index >= this.countries.length) {
-      this.confirmRemoveIndex.set(null);
-      return;
+            await this.saveNotificationSecret();
+            await this.saveAppVersionConfig();
+
+            await this.appConfig.refreshConfigs();
+
+            this.countries = this.cloneCountries(normalisedCountries);
+            this.originalCountries = this.cloneCountries(normalisedCountries);
+            this.notificationConfig.restApiKey = '';
+            this.appVersionConfig.sendNotification = false;
+
+            this.triggerToast('Settings saved successfully.', 'success');
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            this.triggerToast(error instanceof Error ? error.message : JSON.stringify(error), 'danger');
+        } finally {
+            this.saving.set(false);
+        }
     }
 
-    this.countries.splice(index, 1);
+    private async loadNotificationSecretStatus(): Promise<void> {
 
-    if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
-      this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
-      this.onDefaultCountryChange();
+        try {
+
+            const headers = await this.getAdminApiHeaders();
+
+            const response = await fetch(
+                `${this.apiUrl.getBaseUrl()}/api/admin/settings/secrets/onesignal/status`,
+                {
+                    method: 'GET',
+                    headers
+                }
+            );
+
+            if (response.status === 401) {
+                throw new Error('Administrator authentication required.');
+            }
+
+            if (!response.ok) {
+                throw new Error('Unable to load OneSignal configuration.');
+            }
+
+            const data = await response.json();
+
+            this.notificationConfig.configured = !!data.configured;
+
+            if (data.appId) {
+                this.notificationConfig.appId = data.appId;
+            }
+
+            if (typeof data.enabled === 'boolean') {
+                this.notificationConfig.enabled = data.enabled;
+            }
+
+        } catch (err) {
+
+            console.error(err);
+
+            this.notificationConfig.configured = false;
+        }
     }
 
-    this.confirmRemoveIndex.set(null);
-    this.triggerToast('Country removed.', 'success');
-  }
+    private async saveNotificationSecret(): Promise<void> {
 
-  resetChanges() {
-    this.countries = this.cloneCountries(this.originalCountries);
-    this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
-    this.onDefaultCountryChange();
-    this.triggerToast('Changes reset.', 'success');
-  }
+        const headers = await this.getAdminApiHeaders(true);
 
-  onDefaultCountryChange() {
-    const country = this.getDefaultCountry();
+        const response = await fetch(
+            `${this.apiUrl.getBaseUrl()}/api/admin/settings/secrets/onesignal`,
+            {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    appId: this.notificationConfig.appId.trim(),
+                    restApiKey: this.notificationConfig.restApiKey.trim() || undefined,
+                    enabled: this.notificationConfig.enabled
+                })
+            }
+        );
 
-    if (country?.defaultCenter) {
-      this.generalConfig.mapLat = Number(country.defaultCenter.lat || 0);
-      this.generalConfig.mapLng = Number(country.defaultCenter.lng || 0);
-    }
-  }
+        if (response.status === 401) {
+            throw new Error('Administrator authentication required.');
+        }
 
-  onCurrencyChange(country: CountryConfig) {
-    country.currency = this.normaliseCode(country.currency);
-    country.currencySymbol = this.symbolFromCode(country.currency);
+        if (!response.ok) {
 
-    if (!country.locale) {
-      country.locale = this.localeFromCountry(country.code);
-    }
-  }
+            let message = 'Unable to save OneSignal configuration.';
 
-  async saveAll() {
-    if (!this.validateSettings()) return;
+            try {
+                const body = await response.json();
+                message = body.error || body.message || message;
+            } catch { }
 
-    this.saving.set(true);
+            throw new Error(message);
+        }
 
-    try {
-      const normalisedCountries = this.countries.map(country => this.normaliseCountry(country));
+        const data = await response.json();
 
-      await this.systemConfig.setConfig('countries', normalisedCountries);
-      await this.systemConfig.setConfig('default_country_code', this.normaliseCode(this.generalConfig.defaultCountryCode));
-      await this.systemConfig.setConfig('default_map_center', {
-        lat: Number(this.generalConfig.mapLat || 0),
-        lng: Number(this.generalConfig.mapLng || 0)
-      });
+        this.notificationConfig.configured = !!data.configured;
+        this.notificationConfig.restApiKey = '';
 
-      await this.appConfig.refreshConfigs();
-
-      this.countries = this.cloneCountries(normalisedCountries);
-      this.originalCountries = this.cloneCountries(normalisedCountries);
-
-      this.triggerToast('Settings saved successfully.', 'success');
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      this.triggerToast(error instanceof Error ? error.message : JSON.stringify(error), 'danger');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  validateSettings(): boolean {
-    if (!this.countries.length) {
-      this.triggerToast('Add at least one country.', 'warning');
-      return false;
+        this.triggerToast(
+            data.message || 'OneSignal configuration saved.',
+            'success'
+        );
     }
 
-    const codes = new Set<string>();
+    async sendTestNotification(): Promise<void> {
 
-    for (const country of this.countries) {
-      const normalised = this.normaliseCountry(country);
-      Object.assign(country, normalised);
+        const userId = this.notificationConfig.testUserId.trim();
 
-      if (!country.code || !country.name || !country.currency || !country.currencySymbol) {
-        this.triggerToast('Country name, code, currency and symbol are required.', 'warning');
-        return false;
-      }
+        if (!userId) {
+            this.triggerToast('Enter a user ID first.', 'warning');
+            return;
+        }
 
-      if (codes.has(country.code)) {
-        this.triggerToast(`Duplicate country code: ${country.code}`, 'warning');
-        return false;
-      }
+        this.testingNotification.set(true);
 
-      codes.add(country.code);
+        try {
+
+            const headers = await this.getAdminApiHeaders(true);
+
+            const response = await fetch(
+                `${this.apiUrl.getBaseUrl()}/api/admin/notifications/test`,
+                {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        userId,
+                        title: 'Movabi Test Notification',
+                        body: 'Push notifications are configured correctly.'
+                    })
+                }
+            );
+
+            if (!response.ok) {
+
+                let message = 'Test notification failed.';
+
+                try {
+                    const body = await response.json();
+                    message = body.error || body.message || message;
+                } catch { }
+
+                throw new Error(message);
+            }
+
+            this.triggerToast(
+                'Test notification sent successfully.',
+                'success'
+            );
+
+        } catch (err: any) {
+
+            this.triggerToast(
+                err?.message || 'Unable to send test notification.',
+                'danger'
+            );
+
+        } finally {
+
+            this.testingNotification.set(false);
+        }
     }
 
-    this.generalConfig.defaultCountryCode = this.normaliseCode(this.generalConfig.defaultCountryCode);
+    validateNotificationSettings(): boolean {
+        if (!this.notificationConfig.appId.trim()) {
+            this.triggerToast('OneSignal App ID is required.', 'warning');
+            this.activeTab.set('notifications');
+            return false;
+        }
 
-    if (!codes.has(this.generalConfig.defaultCountryCode)) {
-      this.triggerToast('Default country must exist in countries list.', 'warning');
-      return false;
+        if (!this.notificationConfig.configured && !this.notificationConfig.restApiKey.trim()) {
+            this.triggerToast('No REST API key entered. If the server env is configured, Movabi will keep using it.', 'warning');
+        }
+
+        return true;
     }
 
-    return true;
-  }
+    validateAppVersionSettings(): boolean {
+        const fields = [
+            this.appVersionConfig.currentWebVersion,
+            this.appVersionConfig.minimumWebVersion,
+            this.appVersionConfig.currentAndroidVersion,
+            this.appVersionConfig.minimumAndroidVersion,
+            this.appVersionConfig.currentIosVersion,
+            this.appVersionConfig.minimumIosVersion
+        ];
 
-  getDefaultCountry(): CountryConfig | undefined {
-    return this.countries.find(c => c.code === this.generalConfig.defaultCountryCode) || this.countries[0];
-  }
+        if (fields.some(value => !String(value || '').trim())) {
+            this.triggerToast('All current and minimum app versions are required.', 'warning');
+            this.activeTab.set('appVersion');
+            return false;
+        }
 
-  trackCountry(country: CountryConfig, index: number): string {
-    return `${country.code || 'new'}-${index}`;
-  }
+        if (!this.appVersionConfig.updateTitle.trim() || !this.appVersionConfig.updateMessage.trim()) {
+            this.triggerToast('Update title and message are required.', 'warning');
+            this.activeTab.set('appVersion');
+            return false;
+        }
 
-  normaliseCode(value?: string | null): string {
-    return String(value || '').trim().toUpperCase();
-  }
+        return true;
+    }
 
-  symbolFromCode(code?: string | null): string {
-    const map: Record<string, string> = {
-      GBP: '£',
-      USD: '$',
-      EUR: '€',
-      NGN: '₦',
-      CAD: '$',
-      AUD: '$',
-      AED: 'د.إ'
-    };
+    private normaliseUpdateSeverity(value: unknown): 'optional' | 'recommended' | 'required' | 'critical' {
+        const severity = String(value || '').toLowerCase();
+        return ['optional', 'recommended', 'required', 'critical'].includes(severity)
+            ? severity as 'optional' | 'recommended' | 'required' | 'critical'
+            : 'optional';
+    }
 
-    return map[this.normaliseCode(code)] || '£';
-  }
+    private async loadAppVersionConfig(): Promise<void> {
+        try {
+            const headers = await this.getAdminApiHeaders();
+            const response = await fetch(`${this.apiUrl.getBaseUrl()}/api/admin/app-version`, {
+                method: 'GET',
+                headers
+            });
 
-  localeFromCountry(code?: string | null): string {
-    const map: Record<string, string> = {
-      GB: 'en-GB',
-      US: 'en-US',
-      NG: 'en-NG',
-      CA: 'en-CA',
-      AU: 'en-AU',
-      AE: 'ar-AE',
-      EU: 'en-IE'
-    };
+            if (!response.ok) {
+                throw new Error('Unable to load app version settings.');
+            }
 
-    return map[this.normaliseCode(code)] || 'en-GB';
-  }
+            const data = await response.json();
+            const config = data.config || {};
 
-  private normaliseCountry(country: CountryConfig): CountryConfig {
-    const code = this.normaliseCode(country?.code || 'GB');
-    const currency = this.normaliseCode(country?.currency || 'GBP');
+            this.appVersionConfig = {
+                ...this.appVersionConfig,
+                currentWebVersion: config.current_web_version || this.appVersionConfig.currentWebVersion,
+                minimumWebVersion: config.minimum_web_version || this.appVersionConfig.minimumWebVersion,
+                currentAndroidVersion: config.current_android_version || this.appVersionConfig.currentAndroidVersion,
+                minimumAndroidVersion: config.minimum_android_version || this.appVersionConfig.minimumAndroidVersion,
+                currentIosVersion: config.current_ios_version || this.appVersionConfig.currentIosVersion,
+                minimumIosVersion: config.minimum_ios_version || this.appVersionConfig.minimumIosVersion,
+                updateRequired: !!config.update_required,
+                updateSeverity: this.normaliseUpdateSeverity(config.update_severity),
+                updateTitle: config.update_title || this.appVersionConfig.updateTitle,
+                updateMessage: config.update_message || this.appVersionConfig.updateMessage,
+                releaseNotes: config.release_notes || '',
+                androidUpdateUrl: config.android_update_url || '',
+                iosUpdateUrl: config.ios_update_url || '',
+                webReloadRequired: !!config.web_reload_required,
+                sendNotification: false
+            };
+        } catch (error) {
+            console.error('Failed to load app version settings:', error);
+            this.triggerToast('App version settings loaded with defaults.', 'warning');
+        }
+    }
 
-    return {
-      code,
-      name: country?.name || code,
-      currency,
-      currencySymbol: country?.currencySymbol || this.symbolFromCode(currency),
-      locale: country?.locale || this.localeFromCountry(code),
-      phoneCode: country?.phoneCode || '',
-      defaultCenter: {
-        lat: Number(country?.defaultCenter?.lat || 0),
-        lng: Number(country?.defaultCenter?.lng || 0)
-      }
-    };
-  }
+    private async saveAppVersionConfig(): Promise<void> {
+        const headers = await this.getAdminApiHeaders(true);
+        const response = await fetch(`${this.apiUrl.getBaseUrl()}/api/admin/app-version`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                currentWebVersion: this.appVersionConfig.currentWebVersion.trim(),
+                minimumWebVersion: this.appVersionConfig.minimumWebVersion.trim(),
+                currentAndroidVersion: this.appVersionConfig.currentAndroidVersion.trim(),
+                minimumAndroidVersion: this.appVersionConfig.minimumAndroidVersion.trim(),
+                currentIosVersion: this.appVersionConfig.currentIosVersion.trim(),
+                minimumIosVersion: this.appVersionConfig.minimumIosVersion.trim(),
+                updateRequired: this.appVersionConfig.updateRequired,
+                updateSeverity: this.appVersionConfig.updateSeverity,
+                updateTitle: this.appVersionConfig.updateTitle.trim(),
+                updateMessage: this.appVersionConfig.updateMessage.trim(),
+                releaseNotes: this.appVersionConfig.releaseNotes.trim(),
+                androidUpdateUrl: this.appVersionConfig.androidUpdateUrl.trim(),
+                iosUpdateUrl: this.appVersionConfig.iosUpdateUrl.trim(),
+                webReloadRequired: this.appVersionConfig.webReloadRequired,
+                sendNotification: this.appVersionConfig.sendNotification
+            })
+        });
 
-  private cloneCountries(countries: CountryConfig[]): CountryConfig[] {
-    return JSON.parse(JSON.stringify(countries || []));
-  }
+        if (!response.ok) {
+            let message = 'Unable to save app version settings.';
+            try {
+                const body = await response.json();
+                message = body.error || body.message || message;
+            } catch { }
+            throw new Error(message);
+        }
 
-  private getDefaultCountries(): CountryConfig[] {
-    return [
-      {
-        code: 'GB',
-        name: 'United Kingdom',
-        currency: 'GBP',
-        currencySymbol: '£',
-        locale: 'en-GB',
-        phoneCode: '+44',
-        defaultCenter: { lat: 51.5074, lng: -0.1278 }
-      },
-      {
-        code: 'US',
-        name: 'United States',
-        currency: 'USD',
-        currencySymbol: '$',
-        locale: 'en-US',
-        phoneCode: '+1',
-        defaultCenter: { lat: 38.9072, lng: -77.0369 }
-      },
-      {
-        code: 'NG',
-        name: 'Nigeria',
-        currency: 'NGN',
-        currencySymbol: '₦',
-        locale: 'en-NG',
-        phoneCode: '+234',
-        defaultCenter: { lat: 6.5244, lng: 3.3792 }
-      },
-      {
-        code: 'IE',
-        name: 'Ireland',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'en-IE',
-        phoneCode: '+353',
-        defaultCenter: { lat: 53.3498, lng: -6.2603 }
-      },
-      {
-        code: 'FR',
-        name: 'France',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'fr-FR',
-        phoneCode: '+33',
-        defaultCenter: { lat: 48.8566, lng: 2.3522 }
-      },
-      {
-        code: 'DE',
-        name: 'Germany',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'de-DE',
-        phoneCode: '+49',
-        defaultCenter: { lat: 52.52, lng: 13.405 }
-      },
-      {
-        code: 'ES',
-        name: 'Spain',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'es-ES',
-        phoneCode: '+34',
-        defaultCenter: { lat: 40.4168, lng: -3.7038 }
-      },
-      {
-        code: 'IT',
-        name: 'Italy',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'it-IT',
-        phoneCode: '+39',
-        defaultCenter: { lat: 41.9028, lng: 12.4964 }
-      },
-      {
-        code: 'NL',
-        name: 'Netherlands',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'nl-NL',
-        phoneCode: '+31',
-        defaultCenter: { lat: 52.3676, lng: 4.9041 }
-      },
-      {
-        code: 'BE',
-        name: 'Belgium',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'nl-BE',
-        phoneCode: '+32',
-        defaultCenter: { lat: 50.8503, lng: 4.3517 }
-      },
-      {
-        code: 'PT',
-        name: 'Portugal',
-        currency: 'EUR',
-        currencySymbol: '€',
-        locale: 'pt-PT',
-        phoneCode: '+351',
-        defaultCenter: { lat: 38.7223, lng: -9.1393 }
-      },
-      {
-        code: 'CA',
-        name: 'Canada',
-        currency: 'CAD',
-        currencySymbol: '$',
-        locale: 'en-CA',
-        phoneCode: '+1',
-        defaultCenter: { lat: 45.4215, lng: -75.6972 }
-      },
-      {
-        code: 'AU',
-        name: 'Australia',
-        currency: 'AUD',
-        currencySymbol: '$',
-        locale: 'en-AU',
-        phoneCode: '+61',
-        defaultCenter: { lat: -35.2809, lng: 149.13 }
-      },
-      {
-        code: 'AE',
-        name: 'United Arab Emirates',
-        currency: 'AED',
-        currencySymbol: 'د.إ',
-        locale: 'ar-AE',
-        phoneCode: '+971',
-        defaultCenter: { lat: 25.2048, lng: 55.2708 }
-      }
-    ];
-  }
+        const data = await response.json();
+        const config = data.config || {};
+        this.appVersionConfig.sendNotification = false;
+        this.appVersionConfig.updateRequired = !!config.update_required;
+        this.appVersionConfig.updateSeverity = this.normaliseUpdateSeverity(config.update_severity);
+    }
 
-  triggerToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
-    this.toastMessage.set(message);
-    this.toastColor.set(color);
-    this.showToast.set(true);
+    private async getAdminApiHeaders(
+        includeJson = false
+    ): Promise<Record<string, string>> {
 
-    setTimeout(() => {
-      this.showToast.set(false);
-    }, 2500);
-  }
+        const {
+            data: { session }
+        } = await this.supabase.auth.getSession();
+
+        if (!session?.access_token) {
+            throw new Error('Your administrator session has expired. Please sign in again.');
+        }
+
+        const headers: Record<string, string> = {
+            Authorization: `Bearer ${session.access_token}`
+        };
+
+        if (includeJson) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        return headers;
+    }
+
+    private mergeCountries(saved: CountryConfig[], defaults: CountryConfig[]): CountryConfig[] {
+        const map = new Map<string, CountryConfig>();
+
+        for (const country of defaults) map.set(country.code, country);
+
+        for (const country of saved) {
+            map.set(country.code, {
+                ...map.get(country.code),
+                ...country,
+                defaultCenter: {
+                    ...(map.get(country.code)?.defaultCenter || { lat: 0, lng: 0 }),
+                    ...(country.defaultCenter || { lat: 0, lng: 0 })
+                }
+            });
+        }
+
+        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    addCountry() {
+        this.countries.push({
+            code: 'GB',
+            name: 'New Country',
+            currency: 'GBP',
+            currencySymbol: '£',
+            locale: 'en-GB',
+            phoneCode: '+44',
+            defaultCenter: { lat: 51.5074, lng: -0.1278 }
+        });
+
+        this.activeTab.set('countries');
+    }
+
+    askRemoveCountry(index: number) {
+        this.confirmRemoveIndex.set(index);
+    }
+
+    removeCountryNow() {
+        const index = this.confirmRemoveIndex();
+
+        if (index === null || index < 0 || index >= this.countries.length) {
+            this.confirmRemoveIndex.set(null);
+            return;
+        }
+
+        this.countries.splice(index, 1);
+
+        if (!this.countries.find(c => c.code === this.generalConfig.defaultCountryCode)) {
+            this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
+            this.onDefaultCountryChange();
+        }
+
+        this.confirmRemoveIndex.set(null);
+        this.triggerToast('Country removed.', 'success');
+    }
+
+    resetChanges() {
+        this.countries = this.cloneCountries(this.originalCountries);
+        this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
+        this.onDefaultCountryChange();
+        this.notificationConfig.restApiKey = '';
+        this.triggerToast('Changes reset.', 'success');
+    }
+
+    onDefaultCountryChange() {
+        const country = this.getDefaultCountry();
+
+        if (country?.defaultCenter) {
+            this.generalConfig.mapLat = Number(country.defaultCenter.lat || 0);
+            this.generalConfig.mapLng = Number(country.defaultCenter.lng || 0);
+        }
+    }
+
+    onCurrencyChange(country: CountryConfig) {
+        country.currency = this.normaliseCode(country.currency);
+        country.currencySymbol = this.symbolFromCode(country.currency);
+
+        if (!country.locale) {
+            country.locale = this.localeFromCountry(country.code);
+        }
+    }
+
+    validateSettings(): boolean {
+        if (!this.countries.length) {
+            this.triggerToast('Add at least one country.', 'warning');
+            return false;
+        }
+
+        const codes = new Set<string>();
+
+        for (const country of this.countries) {
+            const normalised = this.normaliseCountry(country);
+            Object.assign(country, normalised);
+
+            if (!country.code || !country.name || !country.currency || !country.currencySymbol) {
+                this.triggerToast('Country name, code, currency and symbol are required.', 'warning');
+                return false;
+            }
+
+            if (codes.has(country.code)) {
+                this.triggerToast(`Duplicate country code: ${country.code}`, 'warning');
+                return false;
+            }
+
+            codes.add(country.code);
+        }
+
+        this.generalConfig.defaultCountryCode = this.normaliseCode(this.generalConfig.defaultCountryCode);
+
+        if (!codes.has(this.generalConfig.defaultCountryCode)) {
+            this.triggerToast('Default country must exist in countries list.', 'warning');
+            return false;
+        }
+
+        return true;
+    }
+
+    getDefaultCountry(): CountryConfig | undefined {
+        return this.countries.find(c => c.code === this.generalConfig.defaultCountryCode) || this.countries[0];
+    }
+
+    trackCountry(country: CountryConfig, index: number): string {
+        return `${country.code || 'new'}-${index}`;
+    }
+
+    normaliseCode(value?: string | null): string {
+        return String(value || '').trim().toUpperCase();
+    }
+
+    symbolFromCode(code?: string | null): string {
+        const map: Record<string, string> = {
+            GBP: '£',
+            USD: '$',
+            EUR: '€',
+            NGN: '₦',
+            CAD: '$',
+            AUD: '$',
+            AED: 'د.إ'
+        };
+
+        return map[this.normaliseCode(code)] || '£';
+    }
+
+    localeFromCountry(code?: string | null): string {
+        const map: Record<string, string> = {
+            GB: 'en-GB',
+            US: 'en-US',
+            NG: 'en-NG',
+            CA: 'en-CA',
+            AU: 'en-AU',
+            AE: 'ar-AE',
+            EU: 'en-IE',
+            IE: 'en-IE',
+            FR: 'fr-FR',
+            DE: 'de-DE',
+            ES: 'es-ES',
+            IT: 'it-IT',
+            NL: 'nl-NL',
+            BE: 'nl-BE',
+            PT: 'pt-PT'
+        };
+
+        return map[this.normaliseCode(code)] || 'en-GB';
+    }
+
+    private normaliseCountry(country: CountryConfig): CountryConfig {
+        const code = this.normaliseCode(country?.code || 'GB');
+        const currency = this.normaliseCode(country?.currency || 'GBP');
+
+        return {
+            code,
+            name: country?.name || code,
+            currency,
+            currencySymbol: country?.currencySymbol || this.symbolFromCode(currency),
+            locale: country?.locale || this.localeFromCountry(code),
+            phoneCode: country?.phoneCode || '',
+            defaultCenter: {
+                lat: Number(country?.defaultCenter?.lat || 0),
+                lng: Number(country?.defaultCenter?.lng || 0)
+            }
+        };
+    }
+
+    private cloneCountries(countries: CountryConfig[]): CountryConfig[] {
+        return JSON.parse(JSON.stringify(countries || []));
+    }
+
+    private getDefaultCountries(): CountryConfig[] {
+        return [
+            { code: 'GB', name: 'United Kingdom', currency: 'GBP', currencySymbol: '£', locale: 'en-GB', phoneCode: '+44', defaultCenter: { lat: 51.5074, lng: -0.1278 } },
+            { code: 'US', name: 'United States', currency: 'USD', currencySymbol: '$', locale: 'en-US', phoneCode: '+1', defaultCenter: { lat: 38.9072, lng: -77.0369 } },
+            { code: 'NG', name: 'Nigeria', currency: 'NGN', currencySymbol: '₦', locale: 'en-NG', phoneCode: '+234', defaultCenter: { lat: 6.5244, lng: 3.3792 } },
+            { code: 'IE', name: 'Ireland', currency: 'EUR', currencySymbol: '€', locale: 'en-IE', phoneCode: '+353', defaultCenter: { lat: 53.3498, lng: -6.2603 } },
+            { code: 'FR', name: 'France', currency: 'EUR', currencySymbol: '€', locale: 'fr-FR', phoneCode: '+33', defaultCenter: { lat: 48.8566, lng: 2.3522 } },
+            { code: 'DE', name: 'Germany', currency: 'EUR', currencySymbol: '€', locale: 'de-DE', phoneCode: '+49', defaultCenter: { lat: 52.52, lng: 13.405 } },
+            { code: 'ES', name: 'Spain', currency: 'EUR', currencySymbol: '€', locale: 'es-ES', phoneCode: '+34', defaultCenter: { lat: 40.4168, lng: -3.7038 } },
+            { code: 'IT', name: 'Italy', currency: 'EUR', currencySymbol: '€', locale: 'it-IT', phoneCode: '+39', defaultCenter: { lat: 41.9028, lng: 12.4964 } },
+            { code: 'NL', name: 'Netherlands', currency: 'EUR', currencySymbol: '€', locale: 'nl-NL', phoneCode: '+31', defaultCenter: { lat: 52.3676, lng: 4.9041 } },
+            { code: 'BE', name: 'Belgium', currency: 'EUR', currencySymbol: '€', locale: 'nl-BE', phoneCode: '+32', defaultCenter: { lat: 50.8503, lng: 4.3517 } },
+            { code: 'PT', name: 'Portugal', currency: 'EUR', currencySymbol: '€', locale: 'pt-PT', phoneCode: '+351', defaultCenter: { lat: 38.7223, lng: -9.1393 } },
+            { code: 'CA', name: 'Canada', currency: 'CAD', currencySymbol: '$', locale: 'en-CA', phoneCode: '+1', defaultCenter: { lat: 45.4215, lng: -75.6972 } },
+            { code: 'AU', name: 'Australia', currency: 'AUD', currencySymbol: '$', locale: 'en-AU', phoneCode: '+61', defaultCenter: { lat: -35.2809, lng: 149.13 } },
+            { code: 'AE', name: 'United Arab Emirates', currency: 'AED', currencySymbol: 'د.إ', locale: 'ar-AE', phoneCode: '+971', defaultCenter: { lat: 25.2048, lng: 55.2708 } }
+        ];
+    }
+
+    triggerToast(message: string, color: 'success' | 'danger' | 'warning' = 'success') {
+        this.toastMessage.set(message);
+        this.toastColor.set(color);
+        this.showToast.set(true);
+
+        setTimeout(() => {
+            this.showToast.set(false);
+        }, 2500);
+    }
 }

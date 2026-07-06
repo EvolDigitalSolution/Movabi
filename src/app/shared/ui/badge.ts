@@ -7,7 +7,6 @@ import { CommonModule } from '@angular/common';
   imports: [CommonModule],
   template: `
     <span
-      class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border"
       [class]="badgeClasses"
     >
       <ng-content></ng-content>
@@ -27,6 +26,6 @@ export class BadgeComponent {
       info: 'bg-indigo-50 text-indigo-600 border-indigo-100'
     };
 
-    return variants[this.variant];
+    return `movabi-badge-sm ${variants[this.variant]}`;
   }
 }

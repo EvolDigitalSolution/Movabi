@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 import {
   IonBackButton,
   IonButtons,
@@ -87,6 +88,10 @@ import {
             Use in-app support with the booking ID shown on the tracking screen. Include what happened,
             the service type, and any payment or driver issue so Movabi can check the job faster.
           </p>
+          <div class="tour-actions" aria-label="Restart onboarding tours">
+            <button type="button" (click)="restartTour('customer')">Restart customer tour</button>
+            <button type="button" (click)="restartTour('driver')">Restart driver tour</button>
+          </div>
           <a routerLink="/privacy">Read privacy and data use</a>
         </section>
       </article>
@@ -188,6 +193,21 @@ import {
       margin-bottom: 14px;
     }
 
+    .tour-actions {
+      display: grid;
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .tour-actions button {
+      min-height: 44px;
+      border: 1px solid #fed7aa;
+      border-radius: 14px;
+      background: #fff;
+      color: #9a3412;
+      font-weight: 900;
+    }
+
     .support-card a {
       color: #c2410c;
       font-weight: 900;
@@ -202,6 +222,12 @@ import {
   `]
 })
 export class HelpPage {
+  private tour = inject(OnboardingTourService);
+
+  restartTour(audience: 'customer' | 'driver') {
+    this.tour.restart(audience);
+  }
+
   customerGuide = [
     {
       title: 'Service cards',

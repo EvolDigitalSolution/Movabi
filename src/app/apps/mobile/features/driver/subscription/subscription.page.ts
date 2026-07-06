@@ -100,7 +100,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
                   Current Plan
                 </p>
 
-                <h2 class="text-4xl font-display font-black tracking-tight leading-none text-slate-950">
+                <h2 class="text-2xl font-display font-black tracking-tight leading-none text-slate-950">
                   {{ currentPlanName() }}
                 </h2>
 
@@ -133,7 +133,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
             <div class="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
               <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
             </div>
-            <p class="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-1">Starter Fee</p>
+            <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Starter Fee</p>
             <p class="text-lg font-display font-black text-slate-950">15%</p>
             <p class="text-xs text-slate-500 font-semibold">commission</p>
           </div>
@@ -142,7 +142,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
             <div class="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
               <ion-icon name="sparkles-outline" class="text-xl"></ion-icon>
             </div>
-            <p class="text-[9px] uppercase tracking-widest font-black text-slate-400 mb-1">Pro Fee</p>
+            <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Pro Fee</p>
             <p class="text-lg font-display font-black text-slate-950">0%</p>
             <p class="text-xs text-slate-500 font-semibold">commission</p>
           </div>
@@ -186,9 +186,9 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
 
               <div class="p-6">
                 <div class="mb-6">
-                  <h4 class="text-2xl font-display font-black text-slate-950 mb-2">Starter</h4>
+                  <h4 class="text-lg font-display font-black text-slate-950 mb-2">Starter</h4>
                   <div class="flex items-baseline">
-                    <span class="text-5xl font-display font-black text-slate-950">{{ formatPrice(0) }}</span>
+                    <span class="text-xl font-display font-black text-slate-950">{{ formatPrice(0) }}</span>
                     <span class="text-slate-400 font-bold ml-2">/month</span>
                   </div>
                   <p class="text-sm text-slate-500 font-semibold mt-3">
@@ -208,7 +208,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
                 </div>
 
                 @if (!isProActive()) {
-                  <div class="w-full h-14 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-black uppercase tracking-widest border border-slate-100">
+                  <div class="w-full h-14 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-black uppercase tracking-[0.08em] border border-slate-100">
                     Active
                   </div>
                 } @else {
@@ -242,12 +242,12 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
 
                 <div class="p-6">
                   <div class="mb-6 pr-20">
-                    <h4 class="text-2xl font-display font-black text-slate-950 mb-2">
+                    <h4 class="text-lg font-display font-black text-slate-950 mb-2">
                       {{ plan.display_name || 'Pro' }}
                     </h4>
 
                     <div class="flex items-baseline">
-                      <span class="text-5xl font-display font-black text-slate-950">
+                      <span class="text-xl font-display font-black text-slate-950">
                         {{ formatPrice(planAmount(plan)) }}
                       </span>
                       <span class="text-slate-400 font-bold ml-2">

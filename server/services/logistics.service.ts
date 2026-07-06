@@ -106,7 +106,7 @@ export class LogisticsService {
   /**
    * Complete a job and finalize payout
    */
-  static async completeJob(jobId: string) {
+  static async completeJob(jobId: string, completionPin?: string | null) {
     const rawJobId = String(jobId || '').trim();
 
     if (!rawJobId) {
@@ -133,6 +133,8 @@ export class LogisticsService {
     if (!driverId) {
       throw new Error('Cannot complete job without an assigned driver');
     }
+
+    const completionMetadata = this.assertCompletionPin(job, completionPin);
 
     const requestedTotalPrice = Number(job.total_price ?? job.price ?? job.estimated_price ?? 0);
 
@@ -245,6 +247,13 @@ export class LogisticsService {
     }
 
     const now = new Date().toISOString();
+    const completedMetadata = this.getCompletionPin(completionMetadata)
+      ? {
+        ...completionMetadata,
+        completion_pin_required: true,
+        completion_pin_verified_at: now
+      }
+      : completionMetadata;
 
     const { data: updatedJob, error: updateError } = await supabaseAdmin
       .from('jobs')
@@ -260,6 +269,7 @@ export class LogisticsService {
         stripe_transfer_status: 'paid',
         transferred_at: job.transferred_at || now,
         completed_at: job.completed_at || now,
+        metadata: completedMetadata,
         updated_at: now
       })
       .eq('id', job.id)
@@ -321,6 +331,54 @@ export class LogisticsService {
     }
 
     return updatedJob;
+  }
+
+  private static assertCompletionPin(job: any, submittedPin?: string | null): Record<string, any> {
+    const metadata = this.getMetadata(job);
+    const expectedPin = this.getCompletionPin(metadata);
+
+    if (!expectedPin) {
+      return metadata;
+    }
+
+    const providedPin = this.normalizeCompletionPin(submittedPin);
+
+    if (!providedPin) {
+      throw new Error('Customer PIN is required to complete this request.');
+    }
+
+    if (providedPin !== expectedPin) {
+      throw new Error('The customer PIN is incorrect. Ask the customer for the current 4-digit PIN and try again.');
+    }
+
+    return metadata;
+  }
+
+  private static getMetadata(job: any): Record<string, any> {
+    const raw = job?.metadata || {};
+
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    return raw && typeof raw === 'object' ? raw : {};
+  }
+
+  private static getCompletionPin(metadata: Record<string, any>): string {
+    return this.normalizeCompletionPin(
+      metadata.completion_pin ||
+      metadata.service_completion_pin ||
+      metadata.delivery_pin
+    );
+  }
+
+  private static normalizeCompletionPin(value: unknown): string {
+    return String(value ?? '').replace(/\D/g, '').slice(0, 8);
   }
 
   private static async resolveWalletSettlementAmount(job: any, fallbackAmount: number): Promise<number> {

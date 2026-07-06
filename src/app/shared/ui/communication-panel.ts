@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { CommunicationService } from '@core/services/communication/communication.service';
 import { AuthService } from '@core/services/auth/auth.service';
+import { UnreadCounterService } from '@core/services/notification/unread-counter.service';
+import { NotificationManagerService } from '@core/services/notification/notification-manager.service';
 import { QUICK_MESSAGES, JobMessage } from '@shared/models/communication.model';
 import { ButtonComponent } from './button';
 import { FormsModule } from '@angular/forms';
@@ -47,10 +49,10 @@ import { Subscription } from 'rxjs';
           <div [class]="'flex ' + (isMe(msg.sender_id) ? 'justify-end' : 'justify-start')">
             <div [class]="'max-w-[80%] rounded-2xl px-4 py-2 text-sm ' + 
               (isMe(msg.sender_id) 
-                ? 'bg-primary text-white rounded-tr-none' 
-                : 'bg-white text-text-primary border border-gray-200 rounded-tl-none')">
-              <p>{{ msg.message }}</p>
-              <p [class]="'text-[8px] mt-1 opacity-70 ' + (isMe(msg.sender_id) ? 'text-right' : 'text-left')">
+                ? 'outgoing-message rounded-tr-none' 
+                : 'incoming-message rounded-tl-none border border-gray-200')">
+              <p class="message-text">{{ msg.message }}</p>
+              <p [class]="'text-[8px] mt-1 timestamp ' + (isMe(msg.sender_id) ? 'text-right' : 'text-left')">
                 {{ msg.created_at | date:'HH:mm' }}
               </p>
             </div>
@@ -98,6 +100,23 @@ import { Subscription } from 'rxjs';
     </div>
   `,
   styles: [`
+    .outgoing-message {
+      background-color: #2563eb !important;
+      color: #ffffff !important;
+    }
+    .outgoing-message * {
+      color: #ffffff !important;
+    }
+    .outgoing-message .timestamp {
+      color: rgba(255, 255, 255, 0.75) !important;
+    }
+    .incoming-message {
+      background-color: #f1f5f9 !important;
+      color: #0f172a !important;
+    }
+    .incoming-message .timestamp {
+      color: #64748b !important;
+    }
     .scrollbar-hide::-webkit-scrollbar {
       display: none;
     }
@@ -117,6 +136,8 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
 
   private commService = inject(CommunicationService);
   private auth = inject(AuthService);
+  private unreadCounter = inject(UnreadCounterService);
+  private notificationManager = inject(NotificationManagerService);
   
   messages = signal<JobMessage[]>([]);
   quickMessages = QUICK_MESSAGES;
@@ -131,9 +152,18 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
     this.commService.getJobMessages(this.jobId);
     this.commService.subscribeToJobMessages(this.jobId);
     
+    // Subscribe to unread counter for this job
+    this.unreadCounter.subscribeToJob(this.jobId);
+    
+    // Mark messages as read when panel is opened
+    this.markMessagesAsRead();
+    
     this.messagesSub = this.commService.messages$.subscribe(msgs => {
       this.messages.set(msgs);
       setTimeout(() => this.scrollToBottom(), 100);
+      
+      // Check for new messages and trigger notifications
+      this.checkForNewMessages(msgs);
     });
   }
 
@@ -146,6 +176,7 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
 
   ngOnDestroy() {
     this.commService.unsubscribeFromJobMessages();
+    this.unreadCounter.unsubscribeFromJob(this.jobId);
     this.messagesSub?.unsubscribe();
   }
 
@@ -199,5 +230,20 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
         behavior: 'smooth'
       });
     }, 120);
+  }
+
+  private markMessagesAsRead(): void {
+    this.unreadCounter.markAsRead(this.jobId);
+  }
+
+  private checkForNewMessages(messages: JobMessage[]): void {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && !this.isMe(lastMessage.sender_id)) {
+      // This is a new message from someone else
+      console.log('[CommunicationPanel] New message received:', lastMessage);
+      
+      // Mark as read since user is actively viewing the chat
+      this.markMessagesAsRead();
+    }
   }
 }

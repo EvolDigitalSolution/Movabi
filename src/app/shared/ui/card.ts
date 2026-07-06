@@ -6,22 +6,22 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div 
-      class="bg-white rounded-3xl p-6 md:p-8 shadow-md shadow-slate-900/7 border border-slate-200 transition-all duration-500"
+    <div
+      class="movabi-card transition-all duration-300 min-w-0"
       [class.hover:shadow-xl]="hoverable"
       [class.hover:shadow-blue-600/5]="hoverable"
       [class.hover:-translate-y-1]="hoverable"
       [class.cursor-pointer]="hoverable"
     >
       @if (title) {
-        <div class="mb-6 flex items-center justify-between">
-          <h3 class="text-xl font-display font-bold text-slate-900 tracking-tight">{{ title }}</h3>
+        <div class="mb-3 flex items-center justify-between gap-3 min-w-0">
+          <h3 class="movabi-card-title min-w-0">{{ title }}</h3>
           <ng-content select="[header-action]"></ng-content>
         </div>
       }
       <ng-content></ng-content>
       @if (hasFooter) {
-        <div class="mt-6 pt-6 border-t border-slate-50">
+        <div class="mt-3 pt-3 border-t border-slate-100">
           <ng-content select="[footer]"></ng-content>
         </div>
       }

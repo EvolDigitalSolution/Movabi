@@ -31,6 +31,8 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
 import { BookingService } from '../../../../core/services/booking/booking.service';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared/ui';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 
 @Component({
     selector: 'app-customer-home',
@@ -43,6 +45,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
         IonButtons,
         IonContent,
         IonIcon,
+        MovabiCarouselComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -98,33 +101,33 @@ import { RealtimeChannel } from '@supabase/supabase-js';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="bg-slate-50">
-      <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-7 pb-12">
-        <div class="relative bg-white rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-7 shadow-xl shadow-slate-900/10 overflow-hidden min-h-[210px] flex items-center border border-slate-200">
-          <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
+    <ion-content class="movabi-page">
+      <div class="max-w-2xl mx-auto p-3 sm:p-5 space-y-5 pb-12">
+        <div class="movabi-hero min-h-[158px] flex items-center p-4">
+          <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
           <div class="relative z-10 w-full">
-            <p class="text-slate-600 font-black text-[10px] uppercase tracking-[0.16em] mb-2">
+            <p class="text-slate-600 font-black text-[10px] uppercase tracking-[0.14em] mb-1">
               Welcome Back
             </p>
 
-            <h1 class="text-2xl sm:text-3xl font-display font-black text-slate-950 mb-2 tracking-tight leading-tight">
+            <h1 class="text-[1.45rem] font-display font-black tracking-tight leading-tight text-slate-950 mb-1">
               Hello, {{ displayName() }}!
             </h1>
 
-            <p class="text-slate-600 font-semibold text-sm sm:text-base">
+            <p class="text-sm font-semibold text-slate-600 leading-snug">
               Where can we take you today?
             </p>
 
-            <div class="mt-5 grid grid-cols-2 gap-3">
+            <div class="mt-4 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 (click)="router.navigate(['/customer/wallet'])"
-                class="bg-slate-50 rounded-2xl p-4 border border-slate-200 cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="rounded-2xl border border-white/80 bg-white/70 px-3 py-2 text-left shadow-sm active:scale-95 transition-all w-full"
               >
-                <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.12em] mb-1">
-                  Wallet Balance
+                <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.1em] mb-1">
+                  Wallet
                 </p>
-                <p class="text-lg sm:text-xl font-display font-black text-slate-950">
+                <p class="text-base font-display font-black text-slate-950 leading-tight">
                   {{ formatCurrency(walletService.wallet()?.available_balance || 0) }}
                 </p>
               </button>
@@ -132,12 +135,12 @@ import { RealtimeChannel } from '@supabase/supabase-js';
               <button
                 type="button"
                 (click)="router.navigate(['/customer/activity'])"
-                class="bg-slate-50 rounded-2xl p-4 border border-slate-200 cursor-pointer active:scale-95 transition-all text-left w-full"
+                class="rounded-2xl border border-white/80 bg-white/70 px-3 py-2 text-left shadow-sm active:scale-95 transition-all w-full"
               >
-                <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.12em] mb-1">
-                  Active Trips
+                <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.1em] mb-1">
+                  Active
                 </p>
-                <p class="text-lg sm:text-xl font-display font-black text-slate-950">
+                <p class="text-base font-display font-black text-slate-950 leading-tight">
                   {{ activeTrips() }}
                 </p>
               </button>
@@ -181,36 +184,37 @@ import { RealtimeChannel } from '@supabase/supabase-js';
           </button>
         }
 
-        <div class="space-y-6">
-          <div class="flex items-center gap-3 ml-1">
-            <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h3 class="text-sm font-black text-slate-700">
+        <app-movabi-carousel [slides]="customerCarouselSlides()"></app-movabi-carousel>
+
+        <div class="space-y-3">
+          <div class="movabi-section-header">
+            <h3 class="movabi-section-title">
               Our Premium Services
             </h3>
           </div>
 
-          <div class="grid grid-cols-1 min-[430px]:grid-cols-2 gap-3 sm:gap-4">
+          <div class="grid grid-cols-2 max-[339px]:grid-cols-1 gap-2" data-tour="customer-services">
             <button
               type="button"
               (click)="goToBooking('ride')"
-              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[130px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-2.5 px-3 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-20 h-20 bg-blue-600 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="car" class="text-5xl"></ion-icon>
+                <div class="w-11 h-11 bg-blue-600 rounded-[1rem] flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="car" class="text-xl"></ion-icon>
                 </div>
 
-                <div class="mt-5 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Book a Ride
+                <div class="mt-2 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Ride
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    Fixed price, no surge pricing.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Fixed fare trips.
                   </p>
                 </div>
 
-                <div class="mt-5 w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-2 w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-base"></ion-icon>
                 </div>
               </div>
             </button>
@@ -218,24 +222,24 @@ import { RealtimeChannel } from '@supabase/supabase-js';
             <button
               type="button"
               (click)="goToBooking('errand')"
-              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[130px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-2.5 px-3 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-20 h-20 bg-emerald-600 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="cart" class="text-5xl"></ion-icon>
+                <div class="w-11 h-11 bg-emerald-600 rounded-[1rem] flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="cart" class="text-xl"></ion-icon>
                 </div>
 
-                <div class="mt-5 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Run an Errand
+                <div class="mt-2 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Errand
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    We shop and deliver for you.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Shop or collect.
                   </p>
                 </div>
 
-                <div class="mt-5 w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-2 w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-base"></ion-icon>
                 </div>
               </div>
             </button>
@@ -243,24 +247,24 @@ import { RealtimeChannel } from '@supabase/supabase-js';
             <button
               type="button"
               (click)="goToBooking('delivery')"
-              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[130px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-2.5 px-3 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-20 h-20 bg-amber-500 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="cube" class="text-5xl"></ion-icon>
+                <div class="w-11 h-11 bg-amber-500 rounded-[1rem] flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="cube" class="text-xl"></ion-icon>
                 </div>
 
-                <div class="mt-5 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Send a Package
+                <div class="mt-2 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Package
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    Bike, car, or van delivery.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Local delivery.
                   </p>
                 </div>
 
-                <div class="mt-5 w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-2 w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-base"></ion-icon>
                 </div>
               </div>
             </button>
@@ -268,24 +272,24 @@ import { RealtimeChannel } from '@supabase/supabase-js';
             <button
               type="button"
               (click)="router.navigate(['/customer/van-moving/create'])"
-              class="w-full min-h-[200px] text-center group relative overflow-hidden bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[130px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-2.5 px-3 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-20 h-20 bg-indigo-600 rounded-[1.75rem] flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="bus" class="text-5xl"></ion-icon>
+                <div class="w-11 h-11 bg-indigo-600 rounded-[1rem] flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+                  <ion-icon name="bus" class="text-xl"></ion-icon>
                 </div>
 
-                <div class="mt-5 min-w-0">
-                  <h2 class="text-lg font-display font-black text-slate-900 leading-tight">
-                    Van Moving
+                <div class="mt-2 min-w-0">
+                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
+                    Move
                   </h2>
-                  <p class="mt-2 text-slate-500 text-xs font-semibold leading-snug">
-                    Professional help for your move.
+                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                    Van and helper.
                   </p>
                 </div>
 
-                <div class="mt-5 w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-xl"></ion-icon>
+                <div class="mt-2 w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
+                  <ion-icon name="chevron-forward" class="text-base"></ion-icon>
                 </div>
               </div>
             </button>
@@ -359,6 +363,7 @@ export class HomePage implements OnInit, OnDestroy {
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
     private toastCtrl = inject(ToastController);
+    private tour = inject(OnboardingTourService);
     private jobsChannel?: RealtimeChannel;
     private readonly directlyActiveStatuses = new Set([
         'assigned',
@@ -382,6 +387,44 @@ export class HomePage implements OnInit, OnDestroy {
     activeBooking = computed(() => this.bookingService.bookingHistory().find(
         booking => this.isDirectlyActiveBooking(booking)
     ) || null);
+    customerCarouselSlides = computed<MovabiCarouselSlide[]>(() => [
+        {
+            eyebrow: 'Quick ride',
+            title: 'Ride with clear fares',
+            subtitle: 'Know the price before the driver accepts.',
+            icon: 'car-sport-outline',
+            cta: 'Book ride',
+            tone: 'amber',
+            accentColor: '#c2410c'
+        },
+        {
+            eyebrow: 'Errands',
+            title: 'Shop, collect, or deliver',
+            subtitle: 'Everyday help with live updates.',
+            icon: 'bag-handle-outline',
+            cta: 'Start errand',
+            tone: 'emerald',
+            accentColor: '#047857'
+        },
+        {
+            eyebrow: 'Delivery',
+            title: 'Send packages locally',
+            subtitle: 'Bike, car, or van based on size.',
+            icon: 'cube-outline',
+            cta: 'Send package',
+            tone: 'blue',
+            accentColor: '#1d4ed8'
+        },
+        {
+            eyebrow: 'Moving',
+            title: 'Move with the right van',
+            subtitle: 'Choose van size and helper needs.',
+            icon: 'storefront-outline',
+            cta: 'Plan move',
+            tone: 'slate',
+            accentColor: '#0f172a'
+        }
+    ]);
 
     constructor() {
         addIcons({
@@ -403,6 +446,7 @@ export class HomePage implements OnInit, OnDestroy {
         void this.walletService.fetchWallet();
         await this.bookingService.getHistory();
         this.subscribeToCustomerJobs();
+        this.tour.startIfNeeded('customer');
     }
 
     ngOnDestroy(): void {

@@ -4,6 +4,38 @@ import { supabaseAdmin } from '../services/supabase.service';
 
 const router = Router();
 
+type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
+
+const WEB_DRIVER_URL = 'https://movabi.apps.evolsolution.com/driver';
+const NATIVE_DRIVER_URL = 'com.movabi.app://driver';
+
+function normalizePlatform(platform: unknown): ConnectPlatform {
+  const value = String(platform || 'web').trim().toLowerCase();
+
+  if (value === 'android' || value === 'ios' || value === 'native') {
+    return value;
+  }
+
+  return 'web';
+}
+
+function buildConnectReturnUrls(req: Request) {
+  const platform = normalizePlatform(req.body?.platform);
+  const isNative = platform === 'android' || platform === 'ios' || platform === 'native';
+
+  if (isNative) {
+    return {
+      refreshUrl: `${NATIVE_DRIVER_URL}?stripe=refresh`,
+      returnUrl: `${NATIVE_DRIVER_URL}?stripe=success`
+    };
+  }
+
+  return {
+    refreshUrl: `${WEB_DRIVER_URL}?stripe=refresh`,
+    returnUrl: `${WEB_DRIVER_URL}?stripe=success`
+  };
+}
+
 async function getUserIdFromRequest(req: Request): Promise<string | null> {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
@@ -82,6 +114,17 @@ function mapStripeStatus(account: any) {
   };
 }
 
+function listRequirementsDue(account: any): string[] {
+  const requirements = account?.requirements || {};
+  const values = [
+    ...(Array.isArray(requirements.currently_due) ? requirements.currently_due : []),
+    ...(Array.isArray(requirements.past_due) ? requirements.past_due : []),
+    ...(Array.isArray(requirements.pending_verification) ? requirements.pending_verification : [])
+  ];
+
+  return Array.from(new Set(values.map((item) => String(item || '').trim()).filter(Boolean)));
+}
+
 async function updateProfileStripeStatus(userId: string, accountId: string, mapped: ReturnType<typeof mapStripeStatus>) {
   const { error } = await supabaseAdmin
     .from('profiles')
@@ -98,6 +141,64 @@ async function updateProfileStripeStatus(userId: string, accountId: string, mapp
     console.error('[Connect] profile Stripe status update failed:', error.message);
   }
 }
+
+router.get('/payout-settings', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromRequest(req);
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const accountId = await getStripeAccountId(req, userId);
+
+    console.log('[Connect] payout-settings route hit', {
+      userId,
+      accountIdPresent: Boolean(accountId)
+    });
+
+    if (!accountId) {
+      return res.json({
+        ok: true,
+        stripeAccountId: null,
+        connectStatus: 'not_started',
+        chargesEnabled: false,
+        payoutsEnabled: false,
+        detailsSubmitted: false,
+        requirementsCurrentlyDue: []
+      });
+    }
+
+    const account = await stripe.accounts.retrieve(accountId);
+    const mapped = mapStripeStatus(account);
+
+    await updateProfileStripeStatus(userId, accountId, mapped);
+
+    console.log('[Connect] payout-settings stripe state', {
+      userId,
+      accountIdPresent: true,
+      chargesEnabled: mapped.charges_enabled,
+      payoutsEnabled: mapped.payouts_enabled,
+      detailsSubmitted: mapped.details_submitted,
+      status: mapped.status
+    });
+
+    return res.json({
+      ok: true,
+      stripeAccountId: accountId,
+      connectStatus: mapped.status,
+      chargesEnabled: mapped.charges_enabled,
+      payoutsEnabled: mapped.payouts_enabled,
+      detailsSubmitted: mapped.details_submitted,
+      requirementsCurrentlyDue: listRequirementsDue(account)
+    });
+  } catch (error: any) {
+    console.error('[Connect] payout-settings failed:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to load payout settings'
+    });
+  }
+});
 
 router.post('/create-account', async (req: Request, res: Response) => {
   try {
@@ -156,8 +257,7 @@ router.post('/onboarding-link', async (req: Request, res: Response) => {
   try {
     const userId = await getUserIdFromRequest(req);
     const accountId = await getStripeAccountId(req, userId);
-    const returnUrl = String(req.body?.returnUrl || '').trim();
-    const refreshUrl = String(req.body?.refreshUrl || '').trim();
+    const { returnUrl, refreshUrl } = buildConnectReturnUrls(req);
 
     if (!accountId) {
       return res.status(400).json({ error: 'Stripe Connect account not found' });

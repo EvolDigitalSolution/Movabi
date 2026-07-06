@@ -10,13 +10,13 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: {
       launchShowDuration: 1400,
-      launchAutoHide: false,
+      launchAutoHide: true,
       backgroundColor: '#F8FAFC',
       androidSplashResourceName: 'splash',
       androidScaleType: 'CENTER_INSIDE',
       showSpinner: false,
-      splashFullScreen: true,
-      splashImmersive: true
+      splashFullScreen: false,
+      splashImmersive: false
     },
     Keyboard: {
       resize: 'body',
@@ -24,7 +24,7 @@ const config: CapacitorConfig = {
       resizeOnFullScreen: true
     },
     StatusBar: {
-      style: 'DARK',
+      style: 'LIGHT',
       backgroundColor: '#F8FAFC',
       overlaysWebView: false
     },
@@ -34,6 +34,9 @@ const config: CapacitorConfig = {
     LocalNotifications: {
       smallIcon: 'ic_stat_movabi',
       iconColor: '#F59E0B'
+    },
+    OneSignal: {
+      appId: '952c6d19-656c-4dab-90f3-6e253e2c9151'
     }
   }
 };

@@ -187,6 +187,9 @@ export class AdminService {
   }
 
   async getDrivers() {
+    const apiDrivers = await this.getDriversFromApi();
+    if (apiDrivers) return apiDrivers;
+
     const { data: drivers, error: driversError } = await this.supabase
       .from('profiles')
       .select('*')
@@ -219,23 +222,105 @@ export class AdminService {
       vehiclesByUser.get(vehicle.user_id)?.push(vehicle as Vehicle);
     });
 
-    return (drivers || []).map((driver: any) => ({
+    return (drivers || []).map((driver: any) => this.normaliseAdminDriver(driver, vehiclesByUser.get(driver.id) || []));
+  }
+
+  private async getDriversFromApi(): Promise<(DriverProfile & { vehicles: Vehicle[] })[] | null> {
+    try {
+      const headers = await this.getAuthenticatedApiHeaders();
+      const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/drivers`, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) return null;
+
+      const payload = await response.json();
+      const drivers = Array.isArray(payload?.drivers) ? payload.drivers : [];
+      return drivers.map((driver: any) => this.normaliseAdminDriver(driver, driver.vehicles || []));
+    } catch (error) {
+      console.warn('[AdminService] Falling back to Supabase driver list:', error);
+      return null;
+    }
+  }
+
+  private normaliseAdminDriver(driver: any, vehicles: Vehicle[]): DriverProfile & { vehicles: Vehicle[] } {
+    const verificationItems = this.parseVerificationItems(driver?.verification_items);
+    const driverWithVerificationItems = { ...verificationItems, ...driver };
+    const authEmail = String(driver?.auth_email || '').trim();
+    const profileEmail = String(driver?.email || '').trim();
+    const phone = String(driver?.phone || driver?.phone_number || driver?.mobile || '').trim();
+
+    return {
       ...(driver as DriverProfile),
-      vehicles: vehiclesByUser.get(driver.id) || []
-    }));
+      email: profileEmail || authEmail || null,
+      auth_email: authEmail || null,
+      date_of_birth: driver?.date_of_birth || null,
+      phone: phone || null,
+      council_name: this.firstValue(driverWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+      council_license_number: this.firstValue(driverWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number']),
+      taxi_badge_number: this.firstValue(driverWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+      taxi_license_expiry: this.firstValue(driverWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry']),
+      private_hire_vehicle_license_url: this.firstValue(driverWithVerificationItems, ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url']),
+      vehicles: vehicles || []
+    } as DriverProfile & { vehicles: Vehicle[] };
   }
 
-  async verifyDriver(driverId: string, isVerified: boolean) {
-    const { error } = await this.supabase
-      .from('profiles')
-      .update({
-        verification_status: isVerified ? 'approved' : 'action_required',
-        verified_at: isVerified ? new Date().toISOString() : null
-      })
-      .eq('id', driverId);
-
-    if (error) throw error;
+  private parseVerificationItems(value: unknown): Record<string, unknown> {
+    if (!value) return {};
+    if (Array.isArray(value)) {
+      return value.reduce<Record<string, unknown>>((items, entry) => {
+        if (!entry || typeof entry !== 'object') return items;
+        const record = entry as Record<string, unknown>;
+        const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+        if (key) items[key] = record['value'] ?? record['label'] ?? '';
+        return items;
+      }, {});
+    }
+    if (typeof value === 'object') return value as Record<string, unknown>;
+    if (typeof value === 'string') {
+      try {
+        return this.parseVerificationItems(JSON.parse(value));
+      } catch {
+        return {};
+      }
+    }
+    return {};
   }
+
+  private firstValue(source: any, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = source?.[key];
+      if (String(value ?? '').trim()) return String(value).trim();
+    }
+    return null;
+  }
+
+    async verifyDriver(driverId: string, approved: boolean) {
+
+        const now = new Date().toISOString();
+
+        const update: any = approved
+            ? {
+                verification_status: 'approved',
+                driver_review_status: 'approved',
+                verified_at: now,
+                verification_blockers: [],
+                driver_review_blockers: [],
+                driver_review_notes: null
+            }
+            : {
+                verification_status: 'action_required',
+                driver_review_status: 'action_required'
+            };
+
+        const { error } = await this.supabase
+            .from('profiles')
+            .update(update)
+            .eq('id', driverId);
+
+        if (error) throw error;
+    }
 
   async getJobs(filters?: { status?: string; payment_status?: string; service_type_id?: string }) {
     let query = this.supabase
@@ -327,14 +412,37 @@ export class AdminService {
   }
 
   async updateAccountStatus(userId: string, status: string, reason: string, adminId: string) {
+    const now = new Date().toISOString();
+    const normalisedStatus = String(status || 'active').trim();
+    const update: any = {
+      account_status: normalisedStatus,
+      moderation_reason: reason,
+      moderated_at: now,
+      moderated_by: adminId
+    };
+
+    if (normalisedStatus === 'closure_requested') {
+      update.closure_requested_at = now;
+      update.account_closure_requested_at = now;
+      update.closure_notes = reason;
+    }
+
+    if (normalisedStatus === 'closed') {
+      update.closed_at = now;
+      update.closure_notes = reason;
+      update.is_online = false;
+      update.is_available = false;
+    }
+
+    if (normalisedStatus === 'active') {
+      update.reinstated_at = now;
+      update.reinstated_by = adminId || null;
+      update.reinstatement_notes = reason;
+    }
+
     const { error } = await this.supabase
       .from('profiles')
-      .update({
-        account_status: status,
-        moderation_reason: reason,
-        moderated_at: new Date().toISOString(),
-        moderated_by: adminId
-      })
+      .update(update)
       .eq('id', userId);
 
     if (error) throw error;
@@ -564,6 +672,32 @@ export class AdminService {
     return result;
   }
 
+  async sendDriverMissingInfoRequest(driverId: string, notes: string, blockers: string[]) {
+    console.log('[admin-driver-review] sending', { driverId, blockers });
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/request-info`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ notes, blockers })
+    });
+
+    const result = await this.readApiResponse(response);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        const fallbackResult = await this.sendDriverMissingInfoViaSupabase(driverId, notes, blockers);
+        console.log('[admin-driver-review] saved', fallbackResult);
+        return fallbackResult;
+      }
+
+      console.warn('[admin-driver-review] failed', result);
+      throw new Error(result?.error || 'Could not send missing information request');
+    }
+
+    console.log('[admin-driver-review] saved', result);
+    return result;
+  }
+
   private async manualApproveDriverViaSupabase(driverId: string, notes: string) {
     const { data, error } = await this.supabase
       .from('profiles')
@@ -573,6 +707,7 @@ export class AdminService {
         account_status: 'active',
         manual_verification_notes: notes || 'Approved manually. External verification APIs are not enabled yet.',
         testing_approval_override: true,
+        driver_review_status: 'approved',
         verification_blockers: [],
         verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -591,6 +726,76 @@ export class AdminService {
       driver: data
     };
   }
+
+    private async sendDriverMissingInfoViaSupabase(
+        driverId: string,
+        notes: string,
+        blockers: string[]
+    ) {
+        const sentAt = new Date().toISOString();
+
+        const cleanBlockers = (blockers || [])
+            .map(x => String(x || '').trim())
+            .filter(Boolean);
+
+        // Update driver profile
+        const { error } = await this.supabase
+            .from('profiles')
+            .update({
+                driver_review_status: 'action_required',
+                driver_review_notes: notes,
+                driver_review_blockers: cleanBlockers,
+                driver_review_sent_at: sentAt,
+
+                verification_status: 'action_required',
+                verification_notes: notes,
+                verification_blockers: cleanBlockers,
+
+                updated_at: sentAt
+            })
+            .eq('id', driverId);
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        //
+        // Create in-app notification
+        //
+        try {
+            await this.supabase
+                .from('notifications')
+                .insert({
+                    user_id: driverId,
+                    title: 'Verification action required',
+                    body: notes,
+                    type: 'driver_review_action_required',
+                    route: '/driver/settings',
+                    data: {
+                        route: '/driver/settings',
+                        blockers: cleanBlockers,
+                        message: notes,
+                        action: 'driver_review_action_required'
+                    },
+                    metadata: {
+                        route: '/driver/settings',
+                        blockers: cleanBlockers,
+                        message: notes,
+                        action: 'driver_review_action_required'
+                    },
+                    is_read: false,
+                    created_at: sentAt
+                });
+        } catch (e) {
+            console.warn('Notification table not available.', e);
+        }
+
+        return {
+            success: true,
+            message: 'Driver notified successfully.',
+            blockers: cleanBlockers
+        };
+    }
 
   private async readApiResponse(response: Response): Promise<any> {
     const text = await response.text();

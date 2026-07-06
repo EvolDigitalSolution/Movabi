@@ -43,8 +43,8 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
         <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
       </ion-toolbar>
     </ion-header>
-    <ion-content class="ion-padding bg-slate-50">
-      <div class="flex flex-col h-full max-w-md mx-auto pt-4">
+    <ion-content class="ion-padding bg-slate-50 auth-scroll-page">
+      <div class="auth-form-shell flex flex-col max-w-md mx-auto pt-4">
         @if (isSuccess()) {
           <div class="bg-emerald-50 border border-emerald-100 rounded-3xl p-8 text-center animate-in fade-in zoom-in duration-300 my-auto">
             <div class="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">

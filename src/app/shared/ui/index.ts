@@ -6,3 +6,4 @@ export * from './price-display';
 export * from './empty-state';
 export * from './rating';
 export * from './performance-badge';
+export * from './movabi-carousel/movabi-carousel.component';

@@ -5,6 +5,16 @@ import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
+import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
+import { ComplianceService } from '../../../../core/services/compliance/compliance.service';
+import {
+    getBlockingRequirements,
+    getVehiclePlateValue,
+    isRideSelected as engineRideSelected,
+    normaliseSelectedServices,
+    normaliseVehicleClass,
+    vehicleRequiresRegistration
+} from '../../../../shared/verification/driver-requirements.engine';
 
 type AdminDriver = DriverProfile & {
     vehicles?: Vehicle[];
@@ -13,10 +23,14 @@ type AdminDriver = DriverProfile & {
     first_name?: string | null;
     last_name?: string | null;
     email?: string | null;
+    auth_email?: string | null;
+    date_of_birth?: string | null;
+    phone?: string | null;
     council_license_number?: string | null;
     council_name?: string | null;
     taxi_badge_number?: string | null;
     taxi_license_expiry?: string | null;
+    private_hire_vehicle_license_url?: string | null;
     stripe_connect_status?: string | null;
     stripe_account_id?: string | null;
     driver_license_url?: string | null;
@@ -28,6 +42,11 @@ type AdminDriver = DriverProfile & {
     mot_check_status?: string | null;
     insurance_check_status?: string | null;
     council_check_status?: string | null;
+    driver_review_status?: 'pending' | 'action_required' | 'under_review' | 'approved' | 'rejected' | null;
+    driver_review_notes?: string | null;
+    driver_review_blockers?: string[] | string | null;
+    driver_review_sent_at?: string | null;
+    driver_review_sent_by?: string | null;
 };
 
 @Component({
@@ -46,7 +65,7 @@ type AdminDriver = DriverProfile & {
         <div>
           <h3 class="text-xl font-display font-bold text-slate-900">Driver Management</h3>
           <p class="text-sm text-slate-500 font-medium mt-1">
-            Review drivers, documents, council licence, manual approval and payout readiness.
+            Scan driver contact, vehicle, documents, payout and review status.
           </p>
         </div>
 
@@ -62,6 +81,9 @@ type AdminDriver = DriverProfile & {
             <option value="approved">Approved</option>
             <option value="under_review">Under Review</option>
             <option value="action_required">Action Required</option>
+            <option value="closure_requested">Closure Requested</option>
+            <option value="closed">Closed</option>
+            <option value="reinstated">Reinstated</option>
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
             <option value="banned">Banned</option>
@@ -113,9 +135,14 @@ type AdminDriver = DriverProfile & {
                         {{ getDriverName(driver) }}
                       </h4>
 
-                      <p class="text-xs text-slate-500 font-medium mt-1 truncate">
-                        {{ getDriverContact(driver) }}
-                      </p>
+                      <div class="mt-1 space-y-0.5">
+                        <p class="text-[11px] text-slate-600 font-semibold leading-tight truncate">
+                          {{ getDriverEmail(driver) }}
+                        </p>
+                        <p class="text-[11px] text-slate-400 font-medium leading-tight truncate">
+                          {{ getDriverPhone(driver) }}
+                        </p>
+                      </div>
 
                       @if (driver.testing_approval_override) {
                         <span class="inline-flex mt-2 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">
@@ -127,18 +154,23 @@ type AdminDriver = DriverProfile & {
                 </td>
 
                 <td class="px-4 py-4">
-                  <div class="space-y-1 min-w-[165px]">
-                    <p class="text-xs font-semibold leading-tight"
-                      [class.text-slate-800]="driver.council_name"
-                      [class.text-rose-600]="!driver.council_name">
-                      {{ driver.council_name || 'Council missing' }}
-                    </p>
+                  <div class="space-y-1 min-w-[155px]">
+                    @if (isRideSelected(driver)) {
+                      <p class="text-xs font-bold leading-tight"
+                        [class.text-slate-800]="driver.council_name"
+                        [class.text-rose-600]="!driver.council_name">
+                        {{ getCouncilSummary(driver) }}
+                      </p>
 
-                    <p class="mini-line">Licence: {{ driver.council_license_number || 'Missing' }}</p>
-                    <p class="mini-line">Badge: {{ driver.taxi_badge_number || 'Missing' }}</p>
-                    <p class="mini-line">
-                      Expiry: {{ formatDate(driver.taxi_license_expiry) }}
-                    </p>
+                      <p class="mini-line">Licence: {{ driver.council_license_number || 'Missing' }}</p>
+                      <p class="mini-line">Badge: {{ driver.taxi_badge_number || 'Missing' }}</p>
+                      <p class="mini-line">Expiry: {{ formatDate(driver.taxi_license_expiry) }}</p>
+                    } @else {
+                      <span class="inline-flex rounded-full bg-slate-100 text-slate-500 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em]">
+                        Not required
+                      </span>
+                      <p class="mini-line mt-1">Ride not selected</p>
+                    }
                   </div>
                 </td>
 
@@ -155,7 +187,7 @@ type AdminDriver = DriverProfile & {
 
                       <div class="flex flex-wrap gap-1.5 mt-2">
                         <span class="vehicle-chip">{{ getVehicleClassLabel(driver) }}</span>
-                        <span class="vehicle-chip">{{ getVehicleCapacityLabel(driver) }}</span>
+                        <span class="vehicle-chip">{{ getSelectedServiceLabels(driver) }}</span>
                       </div>
                     </div>
                   } @else {
@@ -261,7 +293,7 @@ type AdminDriver = DriverProfile & {
 
     @if (selectedDriver()) {
       <div class="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
+        <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden">
           <div class="p-6 border-b border-slate-100 flex items-start justify-between gap-4">
             <div>
               <h2 class="text-xl font-display font-bold text-slate-900">
@@ -277,7 +309,7 @@ type AdminDriver = DriverProfile & {
             </button>
           </div>
 
-          <div class="p-6 overflow-y-auto max-h-[70vh] space-y-5">
+          <div class="p-6 overflow-y-auto max-h-[74vh] space-y-5">
             <div class="grid md:grid-cols-3 gap-4">
               <div class="detail-card">
                 <p class="detail-label">Verification</p>
@@ -304,8 +336,24 @@ type AdminDriver = DriverProfile & {
             <div class="grid md:grid-cols-2 gap-4">
               <div class="detail-card">
                 <p class="detail-label">Contact</p>
-                <p class="detail-value">{{ selectedDriver()?.email || 'No email' }}</p>
-                <p class="detail-muted">{{ selectedDriver()?.phone || 'No phone' }}</p>
+                <div class="space-y-2 mt-2">
+                  <div>
+                    <span class="detail-muted">Registered Email:</span>
+                    <span class="detail-value">{{ getDriverEmail(selectedDriver()) }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-muted">Phone:</span>
+                    <span class="detail-value">{{ getDriverPhone(selectedDriver()) }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-muted">Date of Birth:</span>
+                    <span class="detail-value">{{ formatDate(selectedDriver()?.date_of_birth) }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-muted">Driver ID:</span>
+                    <span class="detail-value break-all">{{ selectedDriver()?.id }}</span>
+                  </div>
+                </div>
               </div>
 
               <div class="detail-card">
@@ -319,27 +367,31 @@ type AdminDriver = DriverProfile & {
             <div class="detail-card">
               <p class="detail-label">Council / Taxi Licence</p>
 
-              <div class="grid sm:grid-cols-2 gap-3 mt-3">
-                <div>
-                  <span class="detail-muted">Council:</span>
-                  <span class="detail-value">{{ selectedDriver()?.council_name || 'Missing' }}</span>
-                </div>
+              @if (isRideSelected(selectedDriver())) {
+                <div class="grid sm:grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <span class="detail-muted">Council:</span>
+                    <span class="detail-value">{{ selectedDriver()?.council_name || 'Missing' }}</span>
+                  </div>
 
-                <div>
-                  <span class="detail-muted">Licence No:</span>
-                  <span class="detail-value">{{ selectedDriver()?.council_license_number || 'Missing' }}</span>
-                </div>
+                  <div>
+                    <span class="detail-muted">Licence No:</span>
+                    <span class="detail-value">{{ selectedDriver()?.council_license_number || 'Missing' }}</span>
+                  </div>
 
-                <div>
-                  <span class="detail-muted">Badge No:</span>
-                  <span class="detail-value">{{ selectedDriver()?.taxi_badge_number || 'Missing' }}</span>
-                </div>
+                  <div>
+                    <span class="detail-muted">Badge No:</span>
+                    <span class="detail-value">{{ selectedDriver()?.taxi_badge_number || 'Missing' }}</span>
+                  </div>
 
-                <div>
-                  <span class="detail-muted">Expiry:</span>
-                  <span class="detail-value">{{ formatDate(selectedDriver()?.taxi_license_expiry) }}</span>
+                  <div>
+                    <span class="detail-muted">Expiry:</span>
+                    <span class="detail-value">{{ formatDate(selectedDriver()?.taxi_license_expiry) }}</span>
+                  </div>
                 </div>
-              </div>
+              } @else {
+                <p class="detail-muted mt-3">Not required for the selected services.</p>
+              }
             </div>
 
             <div class="detail-card">
@@ -375,6 +427,11 @@ type AdminDriver = DriverProfile & {
                   <div>
                     <span class="detail-muted">Capacity:</span>
                     <span class="detail-value">{{ getVehicleCapacityLabel(selectedDriver()) }}</span>
+                  </div>
+
+                  <div class="sm:col-span-2">
+                    <span class="detail-muted">Selected services:</span>
+                    <span class="detail-value">{{ getSelectedServiceLabels(selectedDriver()) }}</span>
                   </div>
 
                   <div class="sm:col-span-2">
@@ -422,6 +479,48 @@ type AdminDriver = DriverProfile & {
                 </ul>
               </div>
             }
+
+            <div class="detail-card border-amber-100 bg-amber-50/50">
+              <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                  <p class="detail-label">Send Missing Information Request</p>
+                  <p class="detail-muted mt-1">
+                    Pick the items the driver must fix. They will see this in the app before resubmitting.
+                  </p>
+                </div>
+
+                @if (selectedDriver()?.driver_review_sent_at) {
+                  <span class="text-xs font-semibold text-amber-700">
+                    Last sent {{ formatDate(selectedDriver()?.driver_review_sent_at) }}
+                  </span>
+                }
+              </div>
+
+              <div class="mt-4 space-y-2">
+                @for (blocker of getReviewFeedbackOptions(selectedDriver()); track blocker) {
+                  <label class="flex items-start gap-3 rounded-xl bg-white border border-amber-100 px-3 py-2 text-sm text-slate-700 font-semibold">
+                    <input
+                      type="checkbox"
+                      class="mt-1 accent-amber-500"
+                      [checked]="isReviewBlockerSelected(blocker)"
+                      (change)="toggleReviewBlocker(blocker, $any($event.target).checked)"
+                    />
+                    <span>{{ blocker }}</span>
+                  </label>
+                }
+              </div>
+
+              <textarea
+                class="mt-4 w-full min-h-28 rounded-2xl border border-amber-100 bg-white p-3 text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-amber-300"
+                [value]="reviewFeedbackNotes()"
+                (input)="reviewFeedbackNotes.set($any($event.target).value)"
+                placeholder="Write a clear message for the driver..."
+              ></textarea>
+
+              <app-button class="mt-4 w-full" variant="primary" (clicked)="sendMissingInfoRequest(selectedDriver())">
+                Send to Driver
+              </app-button>
+            </div>
 
             @if (selectedDriver()?.manual_verification_notes) {
               <div class="detail-card">
@@ -492,7 +591,7 @@ type AdminDriver = DriverProfile & {
           <p class="text-sm font-medium text-slate-700 mt-1">{{ getDriverName(moderationModal()?.driver) }}</p>
 
           <div class="space-y-3 mt-5">
-            @for (status of ['active', 'suspended', 'banned', 'disabled']; track status) {
+            @for (status of ['active', 'closure_requested', 'closed', 'reinstated', 'suspended', 'banned', 'disabled']; track status) {
               <label class="flex items-center gap-3 rounded-2xl border border-slate-100 p-3 cursor-pointer">
                 <input
                   type="radio"
@@ -539,11 +638,11 @@ type AdminDriver = DriverProfile & {
 
     .th-cell {
       padding: 1rem;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 800;
       color: rgb(148 163 184);
       text-transform: uppercase;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.1em;
       white-space: nowrap;
     }
 
@@ -695,9 +794,13 @@ type AdminDriver = DriverProfile & {
 export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
+    private tour = inject(OnboardingTourService);
+    private complianceService = inject(ComplianceService);
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
+    reviewFeedbackNotes = signal('');
+    selectedReviewBlockers = signal<string[]>([]);
 
     toastMessage = signal<string | null>(null);
     toastType = signal<'success' | 'danger' | 'warning'>('success');
@@ -796,6 +899,7 @@ export class DriverListComponent implements OnInit {
 
     async ngOnInit() {
         await this.loadDrivers();
+        this.tour.startIfNeeded('admin');
     }
 
     async loadDrivers() {
@@ -864,8 +968,32 @@ export class DriverListComponent implements OnInit {
         return name.charAt(0).toUpperCase();
     }
 
+    getDriverEmail(driver: any): string {
+        return String(driver?.email || driver?.auth_email || '').trim() || 'No email';
+    }
+
+    getDriverPhone(driver: any): string {
+        return String(driver?.phone || '').trim() || 'No phone';
+    }
+
     getDriverContact(driver: any): string {
-        return driver?.email || driver?.phone || 'No contact';
+        const email = this.getDriverEmail(driver);
+        const phone = this.getDriverPhone(driver);
+
+        if (email !== 'No email' && phone !== 'No phone') return `${email} • ${phone}`;
+        if (email !== 'No email') return email;
+        if (phone !== 'No phone') return phone;
+
+        return 'No email or phone';
+    }
+
+    isRideSelected(driver: any): boolean {
+        return engineRideSelected(driver, this.getVehicle(driver));
+    }
+
+    getCouncilSummary(driver: any): string {
+        if (!this.isRideSelected(driver)) return 'Not required';
+        return String(driver?.council_name || '').trim() || 'Council missing';
     }
 
     getVehicleMakeModel(driver: any): string {
@@ -882,12 +1010,8 @@ export class DriverListComponent implements OnInit {
     getVehiclePlate(driver: any): string {
         const vehicle = this.getVehicle(driver);
 
-        return (
-            vehicle?.license_plate ||
-            vehicle?.registration_number ||
-            vehicle?.plate_number ||
-            'No plate'
-        );
+        const plate = getVehiclePlateValue(vehicle);
+        return plate || 'No plate';
     }
 
     getVehicleColor(driver: any): string {
@@ -897,14 +1021,13 @@ export class DriverListComponent implements OnInit {
 
     getVehicleClassLabel(driver: any): string {
         const vehicle = this.getVehicle(driver);
-        const raw = this.safeLower(vehicle?.type || vehicle?.service_class || vehicle?.capacity);
+        const vehicleClass = normaliseVehicleClass(vehicle);
 
         if (!vehicle) return 'No class';
-        if (raw.includes('bike') || raw.includes('motorcycle') || raw.includes('scooter')) return 'Bike';
-        if (raw.includes('large_van') || raw.includes('large van') || raw.includes('luton')) return 'Large van';
-        if (raw.includes('small_van') || raw.includes('small van')) return 'Small van';
-        if (raw.includes('minibus') || raw.includes('7') || raw.includes('xl')) return 'XL / 7 seater';
-        if (raw.includes('van')) return 'Small van';
+        if (vehicleClass === 'bike') return 'Bike';
+        if (vehicleClass === 'large_van') return 'Large van';
+        if (vehicleClass === 'small_van') return 'Small van';
+        if (vehicleClass === 'xl_7_seater') return 'XL / 7 seater';
         return 'Car';
     }
 
@@ -918,6 +1041,50 @@ export class DriverListComponent implements OnInit {
         return raw
             .replace(/_/g, ' ')
             .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    private getSelectedServices(driver: any): string[] {
+        return normaliseSelectedServices(driver, this.getVehicle(driver));
+    }
+
+    private parseVerificationItems(value: unknown): Record<string, unknown> {
+        if (!value) return {};
+
+        if (Array.isArray(value)) {
+            return value.reduce<Record<string, unknown>>((items, entry) => {
+                if (!entry || typeof entry !== 'object') return items;
+                const record = entry as Record<string, unknown>;
+                const key = String(record['key'] || record['name'] || record['field'] || '').trim();
+                if (key) items[key] = record['value'] ?? record['label'] ?? '';
+                return items;
+            }, {});
+        }
+
+        if (typeof value === 'object') return value as Record<string, unknown>;
+
+        if (typeof value === 'string') {
+            try {
+                return this.parseVerificationItems(JSON.parse(value));
+            } catch {
+                return {};
+            }
+        }
+
+        return {};
+    }
+
+    getSelectedServiceLabels(driver: any): string {
+        const services = this.getSelectedServices(driver);
+        if (!services.length) return 'Legacy defaults';
+
+        const labels: Record<string, string> = {
+            ride: 'Ride',
+            errand: 'Errands',
+            delivery: 'Package delivery',
+            van: 'Van / Moving'
+        };
+
+        return services.map(service => labels[service] || service).join(', ');
     }
 
     getVehicleCapabilitySummary(driver: any): string {
@@ -1006,10 +1173,13 @@ export class DriverListComponent implements OnInit {
     getAccountStatusVariant(status: string): 'success' | 'warning' | 'error' | 'secondary' {
         switch (this.safeLower(status)) {
             case 'active':
+            case 'reinstated':
                 return 'success';
             case 'suspended':
+            case 'closure_requested':
                 return 'warning';
             case 'banned':
+            case 'closed':
                 return 'error';
             case 'disabled':
                 return 'secondary';
@@ -1025,7 +1195,124 @@ export class DriverListComponent implements OnInit {
     }
 
     getBlockers(driver: any): string[] {
-        const raw = driver?.verification_blockers;
+        const raw = driver?.verification_blockers ?? driver?.driver_review_blockers;
+        const engineBlockers = this.getEngineBlockers(driver);
+        return this.filterReviewBlockers(driver, [
+            ...this.parseStringList(raw),
+            ...engineBlockers
+        ]);
+    }
+
+    getReviewFeedbackOptions(driver: any): string[] {
+        const existing = this.filterReviewBlockers(driver, [
+            ...this.parseStringList(driver?.driver_review_blockers),
+            ...this.parseStringList(driver?.verification_blockers)
+        ]);
+
+        return this.filterReviewBlockers(driver, Array.from(new Set([
+            ...existing,
+            ...this.getEngineBlockers(driver)
+        ].filter(Boolean) as string[])));
+    }
+
+    private getEngineBlockers(driver: any): string[] {
+        const vehicle = this.getVehicle(driver);
+        const selectedServices = this.getSelectedServices(driver);
+        
+        // Use ComplianceService as source of truth for all service types
+        const allRequirements = selectedServices.map(serviceType => 
+            this.complianceService.getDriverMissingRequirements(
+                driver,
+                vehicle,
+                { ...driver, ...vehicle },
+                serviceType as any
+            )
+        ).flat();
+        
+        // Also check base requirements
+        const baseRequirements = this.complianceService.getDriverMissingRequirements(
+            driver,
+            vehicle,
+            { ...driver, ...vehicle },
+            'base'
+        );
+        
+        // Combine and filter for blockers only
+        const allBlockers = [...allRequirements, ...baseRequirements]
+            .filter(req => req.severity === 'blocker')
+            .map(req => req.message);
+        
+        // Remove duplicates
+        return Array.from(new Set(allBlockers));
+    }
+
+    private filterReviewBlockers(driver: any, blockers: string[]): string[] {
+        const vehicle = this.getVehicle(driver);
+        const selectedServices = this.getSelectedServices(driver);
+        const plate = getVehiclePlateValue(vehicle);
+        const needsRideReview = this.isRideSelected(driver);
+        const needsRegistration = vehicleRequiresRegistration(
+            normaliseVehicleClass(vehicle),
+            selectedServices,
+            driver?.country_code || driver?.country
+        );
+
+        return blockers.filter((blocker) => {
+            const text = String(blocker || '').toLowerCase();
+
+            if ((!needsRegistration || plate) && (
+                text.includes('vehicle registration number is missing') ||
+                text.includes('registration plate is missing') ||
+                text.includes('vehicle registration is missing')
+            )) {
+                return false;
+            }
+
+            if (!needsRideReview && (
+                text.includes('council') ||
+                text.includes('taxi') ||
+                text.includes('private hire') ||
+                text.includes('badge number') ||
+                text.includes('phv')
+            )) {
+                return false;
+            }
+
+            if (driver?.council_name && (text.includes('council/private hire authority') || text.includes('council name') || text.includes('licensing authority'))) return false;
+            if (driver?.council_license_number && text.includes('council licence number')) return false;
+            if (driver?.taxi_badge_number && text.includes('taxi badge number')) return false;
+            if (driver?.taxi_license_expiry && text.includes('taxi licence expiry')) return false;
+            if (driver?.private_hire_vehicle_license_url && text.includes('private hire vehicle licence')) return false;
+
+            if ((driver?.insurance_url || driver?.courier_insurance_url || driver?.hire_reward_insurance_url) && (
+                text.includes('insurance document is missing') ||
+                text.includes('courier insurance') ||
+                text.includes('hire and reward')
+            )) {
+                return false;
+            }
+
+            return true;
+        });
+    }
+
+    isReviewBlockerSelected(blocker: string): boolean {
+        return this.selectedReviewBlockers().includes(blocker);
+    }
+
+    toggleReviewBlocker(blocker: string, checked: boolean) {
+        const current = new Set(this.selectedReviewBlockers());
+
+        if (checked) {
+            current.add(blocker);
+        } else {
+            current.delete(blocker);
+        }
+
+        this.selectedReviewBlockers.set(Array.from(current));
+    }
+
+    private parseStringList(raw: unknown): string[] {
 
         if (Array.isArray(raw)) {
             return raw.map((item) => String(item)).filter(Boolean);
@@ -1047,12 +1334,31 @@ export class DriverListComponent implements OnInit {
         return [];
     }
 
+    private getVehiclePlateValue(vehicle: any): string {
+        return String(
+            vehicle?.license_plate ??
+            vehicle?.registration_plate ??
+            vehicle?.registration_number ??
+            vehicle?.plate_number ??
+            vehicle?.vehicle_registration ??
+            ''
+        ).trim();
+    }
+
     viewDriver(driver: AdminDriver) {
+        this.reviewFeedbackNotes.set(
+            driver.driver_review_notes ||
+            driver.verification_notes ||
+            'Your verification needs more information. Please update the selected items and resubmit for review.'
+        );
+        this.selectedReviewBlockers.set(this.getReviewFeedbackOptions(driver));
         this.selectedDriver.set(driver);
     }
 
     closeDriverModal() {
         this.selectedDriver.set(null);
+        this.reviewFeedbackNotes.set('');
+        this.selectedReviewBlockers.set([]);
     }
 
     async openDocument(path: string | null | undefined, label: string) {
@@ -1115,10 +1421,15 @@ export class DriverListComponent implements OnInit {
     async manualApproveDriver(driver: any) {
         if (!driver?.id) return;
 
+        const blockers = this.getReviewFeedbackOptions(driver);
+        const blockerMessage = blockers.length
+            ? `Some blockers are still present. Approve anyway?\n\n${blockers.map((item) => `• ${item}`).join('\n')}`
+            : 'This approves the driver manually while external verification APIs are disabled.';
+
         this.confirmModal.set({
             title: 'Manual Approval',
             subtitle: this.getDriverName(driver),
-            message: 'This approves the driver manually while external verification APIs are disabled.',
+            message: blockerMessage,
             notes: 'Approved manually. External verification APIs are not enabled yet.',
             confirmText: 'Approve',
             cancelText: 'Cancel',
@@ -1134,6 +1445,62 @@ export class DriverListComponent implements OnInit {
                 }
             }
         });
+    }
+
+    async sendMissingInfoRequest(driver: any) {
+        if (!driver?.id) return;
+
+        const blockers = this.selectedReviewBlockers().length
+            ? this.selectedReviewBlockers()
+            : this.getReviewFeedbackOptions(driver);
+
+        const notes =
+            this.reviewFeedbackNotes().trim() ||
+            'Your verification needs more information. Please update the selected items and resubmit for review.';
+
+        if (!blockers.length) {
+            await this.showToast('No missing items selected.', 'warning');
+            return;
+        }
+
+        try {
+            console.log('[admin-driver-review] sending', {
+                driverId: driver.id,
+                notes,
+                blockers
+            });
+
+            const result = await this.adminService.sendDriverMissingInfoRequest(
+                driver.id,
+                notes,
+                blockers
+            );
+
+            console.log('[admin-driver-review] saved', result);
+
+            await this.showToast('Missing information request sent to driver.', 'success');
+            await this.loadDrivers();
+
+            const updated = this.drivers().find((d) => d.id === driver.id);
+
+            if (updated) {
+                this.selectedDriver.set(updated);
+                this.reviewFeedbackNotes.set(
+                    updated.driver_review_notes ||
+                    'Your verification needs more information. Please update the selected items and resubmit for review.'
+                );
+                this.selectedReviewBlockers.set(this.getReviewFeedbackOptions(updated));
+            }
+        } catch (error: unknown) {
+            console.error('[admin-driver-review] failed', error);
+
+            await this.showToast(
+                error instanceof Error
+                    ? error.message
+                    : 'Could not send missing information request.',
+                'danger'
+            );
+        }
     }
 
     async toggleVerification(driverId: string, isVerified: boolean) {

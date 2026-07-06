@@ -226,6 +226,7 @@ export class AdminLayoutComponent {
     { label: 'Active Subs', path: '/active-subscriptions', icon: 'shield-checkmark-outline' },
     { label: 'Driver Subs', path: '/driver-subscriptions', icon: 'people-circle-outline' },
     { label: 'Jobs', path: '/van-jobs', icon: 'briefcase-outline' },
+    { label: 'About Movabi', path: '/about-movabi', icon: 'rocket-outline' },
     { label: 'Settings', path: '/settings', icon: 'settings-outline' }
   ];
 

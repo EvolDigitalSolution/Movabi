@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "311357101090",
+    "project_id": "movabi-transport",
+    "storage_bucket": "movabi-transport.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:311357101090:android:a56384da2288b8cca2667b",
+        "android_client_info": {
+          "package_name": "com.movabi.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD46NMGcqh92h7hoWpA7ulGQ-Xv_L8jQ6E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

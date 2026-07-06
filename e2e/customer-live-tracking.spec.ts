@@ -10,6 +10,8 @@ test.describe('customer live tracking', () => {
     await expect(page.getByText(/Live Tracking/i)).toBeVisible();
     await expect(page.getByText(/Dara Driver|Driver/i).first()).toBeVisible();
     await expect(page.getByText(/Toyota|Prius|Silver|MV22/i).first()).toBeVisible();
+    await expect(page.getByText(/Customer handover PIN/i)).toBeVisible();
+    await expect(page.getByText('1234')).toBeVisible();
     await expect(page.getByText(/Trip Route|Booking Details|Active Job/i).first()).toBeVisible();
   });
 });

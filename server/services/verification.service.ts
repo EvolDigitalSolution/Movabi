@@ -5,8 +5,8 @@ export type VerificationResult = {
   data?: any;
 };
 
-export async function checkVehicleRegistration(registrationNumber?: string | null): Promise<VerificationResult> {
-  if (!registrationNumber) {
+export async function checkVehicleRegistration(licensePlate?: string | null): Promise<VerificationResult> {
+  if (!licensePlate) {
     return {
       passed: false,
       status: 'failed',
@@ -19,7 +19,7 @@ export async function checkVehicleRegistration(registrationNumber?: string | nul
     status: 'manual_required',
     blockers: ['Vehicle registration requires manual admin review.'],
     data: {
-      registrationNumber
+      license_plate: licensePlate
     }
   };
 }

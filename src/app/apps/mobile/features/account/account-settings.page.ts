@@ -29,6 +29,7 @@ import {
 import { AuthService } from '@core/services/auth/auth.service';
 import { ProfileService } from '@core/services/profile/profile.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
+import { OneSignalService } from '@core/services/notification/onesignal.service';
 import { ButtonComponent } from '@shared/ui';
 import { Profile } from '@shared/models/booking.model';
 
@@ -150,6 +151,43 @@ import { Profile } from '@shared/models/booking.model';
           </div>
         </form>
 
+        <section class="rounded-[2rem] bg-white border border-slate-200 shadow-sm p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="font-display font-black text-slate-950 text-lg">Push Diagnostics</h2>
+              <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-1">
+                Check this phone's OneSignal subscription when push alerts are not arriving.
+              </p>
+            </div>
+            <button type="button" (click)="refreshPushDiagnostics()" class="text-[10px] font-black uppercase tracking-widest text-amber-600">
+              Refresh
+            </button>
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Platform</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().platform || 'Unknown' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Permission</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().permissionStatus || 'Unknown' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 col-span-2">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Subscription ID</p>
+              <p class="font-bold text-slate-900 break-all">{{ pushDiagnostics().subscriptionId || 'Not ready yet' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Token saved</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().tokenSaved ? 'Yes' : 'No' }}</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
+              <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Last attempt</p>
+              <p class="font-bold text-slate-900">{{ pushDiagnostics().lastPushAttempt || 'None' }}</p>
+            </div>
+          </div>
+        </section>
+
         <section class="rounded-[2rem] bg-white border border-rose-100 shadow-sm p-5">
           <div class="flex items-start gap-4">
             <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -182,6 +220,7 @@ export class AccountSettingsPage implements OnInit {
     private auth = inject(AuthService);
     private profileService = inject(ProfileService);
     private storageUpload = inject(StorageUploadService);
+    private oneSignal = inject(OneSignalService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
@@ -190,6 +229,7 @@ export class AccountSettingsPage implements OnInit {
     saving = signal(false);
     email = signal('');
     photoUrl = signal<string | null>(null);
+    pushDiagnostics = this.oneSignal.diagnostics;
 
     form = this.fb.group({
         full_name: ['', [Validators.required, Validators.minLength(2)]],
@@ -223,6 +263,8 @@ export class AccountSettingsPage implements OnInit {
         if (profile) {
             this.patchProfile(profile);
         }
+
+        await this.refreshPushDiagnostics();
     }
 
     defaultBackHref(): string {
@@ -322,16 +364,44 @@ export class AccountSettingsPage implements OnInit {
         }
     }
 
+    async refreshPushDiagnostics() {
+        await this.oneSignal.getDiagnostics().catch(() => undefined);
+    }
+
     async confirmCloseAccount() {
         const alert = await this.alertCtrl.create({
-            header: 'Close account?',
-            message: 'Your Movabi account will be disabled and the closure request recorded. Active bookings or outstanding payments should be resolved first.',
+            header: 'Request account closure?',
+            message: 'This will disable your Movabi access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
+            inputs: [
+                {
+                    name: 'understood',
+                    type: 'checkbox',
+                    label: 'I understand my account access will be disabled.',
+                    value: 'yes'
+                },
+                {
+                    name: 'reason',
+                    type: 'textarea',
+                    placeholder: 'Optional reason'
+                }
+            ],
             buttons: [
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Request Closure',
                     role: 'destructive',
-                    handler: () => void this.closeAccount()
+                    handler: (value) => {
+                        const understood = Array.isArray(value) ? value.includes('yes') : Boolean(value?.understood);
+                        const reason = Array.isArray(value) ? '' : String(value?.reason || '').trim();
+
+                        if (!understood) {
+                            void this.showToast('Please confirm you understand before continuing.', 'warning');
+                            return false;
+                        }
+
+                        void this.closeAccount(reason);
+                        return true;
+                    }
                 }
             ]
         });
@@ -339,7 +409,7 @@ export class AccountSettingsPage implements OnInit {
         await alert.present();
     }
 
-    private async closeAccount() {
+    private async closeAccount(reason = '') {
         const user = this.auth.currentUser();
 
         if (!user?.id) {
@@ -352,10 +422,16 @@ export class AccountSettingsPage implements OnInit {
         await loading.present();
 
         try {
-            await this.profileService.updateProfile(user.id, { account_status: 'closure_requested' } as Partial<Profile>);
-            await this.showToast('Account closure requested. You have been signed out.', 'success');
-            await this.auth.signOut();
-            await this.router.navigate(['/auth/login'], { replaceUrl: true });
+            const now = new Date().toISOString();
+            await this.profileService.updateProfile(user.id, {
+                account_status: 'closure_requested',
+                closure_requested_at: now,
+                account_closure_requested_at: now,
+                closure_reason: reason || null,
+                account_closure_reason: reason || null
+            } as Partial<Profile>);
+            await this.showToast('Your closure request has been received. You can contact support if this was a mistake.', 'success');
+            await this.router.navigate(['/auth/blocked'], { replaceUrl: true });
         } catch {
             await this.showToast('Could not request account closure.', 'danger');
         } finally {
