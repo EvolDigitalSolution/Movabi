@@ -1016,6 +1016,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         await this.driverService.fetchAvailableJobs();
         await this.loadWalletEarnings();
         this.syncMarketplaceMapMarkers();
+        this.centerMarketplaceMap(true); // Force refit after initial load
         this.knownAvailableJobIds = new Set(this.jobs().map(job => job.id));
 
         this.subscribeToAvailableJobsRealtime();
@@ -1729,6 +1730,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     async refreshAvailableJobs() {
         await this.driverService.fetchAvailableJobs();
         this.syncMarketplaceMapMarkers();
+        this.centerMarketplaceMap(true); // Force refit after refresh
         this.showToast('Requests refreshed.', 'success');
     }
 
@@ -1819,6 +1821,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                         await this.refreshActiveJob();
                         await this.driverService.fetchAvailableJobs();
                         this.syncMarketplaceMapMarkers();
+                        this.centerMarketplaceMap(true); // Force refit after realtime updates
 
                         const visibleJobs = this.jobs();
                         const newVisibleJob = visibleJobs.find(job => job.id === changedJobId);
@@ -1828,6 +1831,13 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                         }
 
                         if (isDriverJob && changedJobId && newStatus && newStatus !== oldStatus) {
+                            // Play sounds for specific status changes
+                            if (newStatus === 'arrived' || newStatus === 'arrived_at_store') {
+                                this.playSound('driver-arrived.mp3');
+                            } else if (newStatus === 'completed') {
+                                this.playSound('trip-completed.mp3');
+                            }
+
                             await this.notifyDriverEventOnce(
                                 `job-status:${changedJobId}:${newStatus}`,
                                 'Request updated',
@@ -1865,6 +1875,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                     const message = payload.new as Record<string, any>;
                     const jobId = String(message['job_id'] || '');
                     const messageId = String(message['id'] || `${jobId}:${message['created_at'] || Date.now()}`);
+
+                    // Play chat notification sound
+                    this.playSound('message-notification.mp3');
 
                     await this.notifyDriverEventOnce(
                         `chat:${messageId}`,
@@ -2244,6 +2257,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 jobs.filter((job: Booking) => job.id !== jobId)
             );
             this.stopRequestAlert();
+            this.playSound('booking-accepted.mp3');
             await this.refreshActiveJob();
             await this.driverService.fetchAvailableJobs();
             this.selectedJobId.set(null);
@@ -2304,14 +2318,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         this.activeRequestId.set(null);
     }
 
-    private async playRequestSound(): Promise<void> {
-        try {
-            const audio = new Audio('/assets/sounds/request-notification.mp3');
-            audio.volume = 0.7;
-            await audio.play();
-        } catch (error) {
-            console.warn('[DriverDashboard] Failed to play request sound:', error);
-        }
+    private playSound(file: string): void {
+        const audio = new Audio(`assets/sounds/${file}`);
+        audio.volume = 0.85;
+        audio.play().catch(err => console.warn('[Sound] play failed', err));
+    }
+
+    private playRequestSound(): void {
+        this.playSound('request-notification.mp3');
     }
 
     private async vibrateNewRequest(): Promise<void> {
@@ -2926,22 +2940,34 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         const map = this.mapComponent() as MapComponent | null;
         if (!map || this.activeHubTab() !== 'requests') return;
 
-        const points = this.getMarketplaceMapPoints();
-        const uniquePoints = this.uniqueCoordinates(points);
+        const driverCoords = this.driverLocation();
+        const availableRequests = this.jobs();
+        
+        // Collect all visible coordinates as specified in requirements
+        const requestCoords = availableRequests
+            .map(r => this.resolveJobCoordinates(r))
+            .filter((coord): coord is MarkerCoordinates => coord !== null);
+        
+        const points = [
+            ...(driverCoords ? [driverCoords] : []),
+            ...requestCoords
+        ];
 
-        if (uniquePoints.length >= 2) {
+        if (points.length >= 2) {
+            // Always fit bounds when we have multiple points (driver + requests)
+            // Only skip if not forced and already fitted
             if (this.hasFitMarketplaceBounds && !force) return;
-
-            const lats = uniquePoints.map(point => point.lat);
-            const lngs = uniquePoints.map(point => point.lng);
+            
+            const lats = points.map(point => point.lat);
+            const lngs = points.map(point => point.lng);
             const bounds: [[number, number], [number, number]] = [
                 [Math.min(...lngs), Math.min(...lats)],
                 [Math.max(...lngs), Math.max(...lats)]
             ];
 
             map.fitBounds(bounds, {
-                padding: { top: 72, bottom: 260, left: 48, right: 48 },
-                maxZoom: 15,
+                padding: { top: 80, bottom: 380, left: 48, right: 48 },
+                maxZoom: 14,
                 duration: force ? 700 : 900
             });
             this.hasFitMarketplaceBounds = true;
@@ -2949,9 +2975,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             return;
         }
 
+        // Only center if we have a single point and haven't centered yet
         if (this.hasCenteredMarketplaceMap && !force) return;
 
-        const center = uniquePoints[0] ?? this.locationService.getFallbackCoordinates();
+        const center = points[0] ?? this.locationService.getFallbackCoordinates();
         if (!center) return;
 
         map.setCenter(center.lng, center.lat, this.driverLocation() ? 14 : 12);

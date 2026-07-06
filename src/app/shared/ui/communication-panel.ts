@@ -49,10 +49,10 @@ import { Subscription } from 'rxjs';
           <div [class]="'flex ' + (isMe(msg.sender_id) ? 'justify-end' : 'justify-start')">
             <div [class]="'max-w-[80%] rounded-2xl px-4 py-2 text-sm ' + 
               (isMe(msg.sender_id) 
-                ? 'bg-primary text-white rounded-tr-none' 
-                : 'bg-white text-slate-900 border border-gray-200 rounded-tl-none')">
-              <p [class]="isMe(msg.sender_id) ? 'text-white' : 'text-slate-900'">{{ msg.message }}</p>
-              <p [class]="'text-[8px] mt-1 ' + (isMe(msg.sender_id) ? 'text-blue-100 text-right' : 'text-slate-500 text-left')">
+                ? 'outgoing-message rounded-tr-none' 
+                : 'incoming-message rounded-tl-none border border-gray-200')">
+              <p class="message-text">{{ msg.message }}</p>
+              <p [class]="'text-[8px] mt-1 timestamp ' + (isMe(msg.sender_id) ? 'text-right' : 'text-left')">
                 {{ msg.created_at | date:'HH:mm' }}
               </p>
             </div>
@@ -100,6 +100,23 @@ import { Subscription } from 'rxjs';
     </div>
   `,
   styles: [`
+    .outgoing-message {
+      background-color: #2563eb !important;
+      color: #ffffff !important;
+    }
+    .outgoing-message * {
+      color: #ffffff !important;
+    }
+    .outgoing-message .timestamp {
+      color: rgba(255, 255, 255, 0.75) !important;
+    }
+    .incoming-message {
+      background-color: #f1f5f9 !important;
+      color: #0f172a !important;
+    }
+    .incoming-message .timestamp {
+      color: #64748b !important;
+    }
     .scrollbar-hide::-webkit-scrollbar {
       display: none;
     }

@@ -113,6 +113,22 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
               <app-map #map></app-map>
             </div>
 
+            <!-- Finding driver status card -->
+            @if (booking() && booking()?.status === 'searching') {
+              <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
+                <div class="bg-white/95 backdrop-blur rounded-full shadow-lg px-4 py-3 pointer-events-auto">
+                  <div class="flex items-center justify-center gap-3">
+                    <div class="flex items-center gap-2">
+                      <ion-spinner name="crescent" color="primary" class="w-4 h-4"></ion-spinner>
+                      <span class="text-slate-900 font-semibold text-sm">Finding driver</span>
+                    </div>
+                    <span class="text-xs text-slate-600">We're looking for a nearby driver</span>
+                    <span class="text-xs text-blue-600 font-medium">{{ formatFindingDriverTime() }}</span>
+                  </div>
+                </div>
+              </div>
+            }
+
             <!-- Recenter button -->
             @if (!autoFollowEnabled) {
               <button
@@ -126,13 +142,13 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
             }
 
             <!-- Compact status pill -->
-            @if (booking()) {
+            @if (booking() && isLiveTrackingJob()) {
               <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
-                <div class="bg-black/75 backdrop-blur-sm rounded-full px-4 py-2 pointer-events-auto">
+                <div class="bg-white/95 backdrop-blur rounded-full shadow-lg px-4 py-2 pointer-events-auto">
                   <div class="flex items-center justify-center gap-3">
-                    <span class="text-white font-semibold text-sm">{{ bookingStatusLabel() }}</span>
+                    <span class="text-slate-900 font-semibold text-sm" style="color: #0f172a;">{{ bookingStatusLabel() }}</span>
                     @if (etaMinutes() !== null && distanceKm() !== null) {
-                      <span> • {{ etaMinutes() }} mins • {{ distanceKm() }} km</span>
+                      <span class="text-xs text-slate-600" style="color: #475569;"> • {{ etaMinutes() }} mins • {{ distanceKm() }} km</span>
                     }
                   </div>
                 </div>
@@ -804,6 +820,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     distanceKm = signal<number | null>(null);
 
     searchCountdownSeconds = signal(DRIVER_SEARCH_WINDOW_SECONDS);
+    findingDriverElapsedSeconds = signal(0);
 
     
     searchProgressPercent = computed(() => {
@@ -839,6 +856,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private pollingInterval?: ReturnType<typeof setInterval>;
     private countdownInterval?: ReturnType<typeof setInterval>;
+    private findingDriverTimerInterval?: ReturnType<typeof setInterval>;
 
     constructor() {
         addIcons({
@@ -1901,6 +1919,30 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+    private startFindingDriverTimer(): void {
+        this.findingDriverElapsedSeconds.set(0);
+        this.findingDriverTimerInterval = setInterval(() => {
+            this.findingDriverElapsedSeconds.set(this.findingDriverElapsedSeconds() + 1);
+        }, 1000);
+    }
+
+    private stopFindingDriverTimer(): void {
+        if (this.findingDriverTimerInterval) {
+            clearInterval(this.findingDriverTimerInterval);
+            this.findingDriverTimerInterval = undefined;
+        }
+    }
+
+    formatFindingDriverTime(): string {
+        const seconds = this.findingDriverElapsedSeconds();
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        if (minutes > 0) {
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+        return `${seconds}s`;
+    }
+
     private resetSearchState(): void {
         this.stopSearchCountdown();
         this.searchCountdownSeconds.set(DRIVER_SEARCH_WINDOW_SECONDS);
@@ -1919,10 +1961,16 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 this.updateSearchCountdownFromBooking();
             }
 
+            // Start finding driver timer
+            if (!this.findingDriverTimerInterval) {
+                this.startFindingDriverTimer();
+            }
+
             return;
         }
 
         this.resetSearchState();
+        this.stopFindingDriverTimer();
     }
 
     private syncDriverLiveState(booking: Booking): void {
@@ -2937,9 +2985,16 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             this.didCleanTrackingMarkers = true;
         }
 
-        // Update ct-* markers with smooth movement
-        if (driver) {
-            this.updateMarkerPosition('ct-driver', driver, { type: 'driver' });
+        // Update ct-* markers with smooth movement (only for live jobs, not searching)
+        if (this.isLiveTrackingJob()) {
+            if (driver) {
+                this.updateMarkerPosition('ct-driver', driver, { type: 'driver' });
+            }
+        } else {
+            // Hide driver marker for searching, completed, and other non-live jobs
+            if (this.mapComponent) {
+                this.mapComponent.removeMarker('ct-driver');
+            }
         }
 
         if (pickup) {
@@ -2950,8 +3005,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             this.updateMarkerPosition('ct-dropoff', dropoff, { type: 'dropoff' });
         }
 
-        // Draw road route with fallback to direct line
-        if (routePoints.length >= 2) {
+        // Draw road route with fallback to direct line (only for live jobs)
+        if (routePoints.length >= 2 && this.isLiveTrackingJob()) {
             void this.drawTrackingRoadRoute(routePoints);
         }
 
@@ -2970,14 +3025,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private updateMarkerPosition(id: string, coords: { lat: number; lng: number }, options: { type: string }): void {
-        // Check if marker already exists and update position smoothly
-        if (this.mapComponent && this.mapComponent.updateMarkerPosition) {
-            this.mapComponent.updateMarkerPosition(id, coords);
-        } else {
-            // Fallback to upsert if updateMarkerPosition not available
-            if (this.mapComponent) {
-                this.mapComponent.upsertMarker(id, coords, options);
-            }
+        // Always use upsertMarker to ensure correct marker type/icon
+        if (this.mapComponent) {
+            this.mapComponent.upsertMarker(id, coords, options);
         }
     }
 
@@ -2998,6 +3048,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private onDriverLocationUpdate(payload: any): void {
+        // Only process driver updates for live jobs
+        if (!this.isLiveTrackingJob()) return;
+
         const coords = this.toLngLat(payload?.new || payload);
         if (!coords) return;
 
@@ -3005,14 +3058,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.latestDriverPoint = coords;
         this.driverLastSeenAt.set(new Date());
 
-        // Update driver marker position without recreating all markers
+        // Update driver marker position with correct vehicle icon
         if (this.mapComponent) {
-            this.mapComponent.updateMarkerPosition('ct-driver', coords);
+            this.mapComponent.upsertMarker('ct-driver', coords, { type: 'driver' });
         }
 
-        // Only redraw route if driver moved more than 25 metres
+        // Only redraw route if driver moved more than 25 metres (but don't fit bounds)
         if (!previous || this.distanceMeters(previous, coords) > 25) {
-            void this.drawTrackingRoadRoute(this.getTrackingPoints());
+            const routePoints = this.getTrackingPoints();
+            if (routePoints.length >= 2) {
+                void this.drawTrackingRoadRoute(routePoints);
+            }
         }
     }
 
@@ -3057,17 +3113,34 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     this.routingService.getRoute(from, to)
                 );
 
-                const coords =
-                    result?.geometry?.coordinates ||
-                    [];
+                console.log('[CT_ROUTE_DEBUG]', {
+                    from,
+                    to,
+                    result,
+                    geometry: result?.geometry,
+                    distance: result?.distanceMeters,
+                    duration: result?.durationSeconds
+                });
 
-                const distance =
-                    result?.distanceMeters ??
-                    0;
+                // Handle geometry - it can be string (encoded polyline) or object (GeoJSON)
+                let coords: number[][] = [];
+                if (result?.geometry) {
+                    if (typeof result.geometry === 'string') {
+                        // Decode polyline string to coordinates
+                        coords = this.decodePolyline(result.geometry);
+                    } else if (result.geometry.coordinates) {
+                        // GeoJSON coordinates
+                        coords = result.geometry.coordinates;
+                    }
+                }
 
-                const duration =
-                    result?.durationSeconds ??
-                    0;
+                const distance = result?.distanceMeters ?? 0;
+                const duration = result?.durationSeconds ?? 0;
+
+                console.log('[CT_ROUTE_DEBUG]', {
+                    extractedGeometry: coords,
+                    geometryLength: coords.length
+                });
 
                 if (coords.length >= 2) {
                     allCoords.push(...(allCoords.length ? coords.slice(1) : coords));
@@ -3078,6 +3151,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
 
             if (allCoords.length >= 2 && this.mapComponent) {
+                console.log('[CT_ROUTE_DEBUG]', {
+                    finalGeometryLength: allCoords.length,
+                    totalDistance: totalDistanceMeters,
+                    totalDuration: totalDurationSeconds
+                });
+                
                 this.mapComponent.drawRouteGeometry('ct-route', allCoords);
                 this.distanceKm.set(Math.round((totalDistanceMeters / 1000) * 10) / 10);
                 this.etaMinutes.set(Math.max(1, Math.round(totalDurationSeconds / 60)));
@@ -3086,7 +3165,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
             throw new Error('No routed geometry returned');
         } catch (error) {
-            console.warn('[Tracking] road route failed, fallback straight line used', error);
+            console.error('[CT_ROUTE_FAILED]', error);
             if (this.mapComponent) {
                 this.mapComponent.drawLineString('ct-route', valid);
             }
@@ -3094,6 +3173,46 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                 this.calculateFallbackEtaAndDistance(valid[0], valid[valid.length - 1]);
             }
         }
+    }
+
+    private decodePolyline(encoded: string): number[][] {
+        if (!encoded) return [];
+        
+        const coords: number[][] = [];
+        let index = 0;
+        let lat = 0;
+        let lng = 0;
+        
+        while (index < encoded.length) {
+            let shift = 0;
+            let result = 0;
+            let byte;
+            
+            do {
+                byte = encoded.charCodeAt(index++) - 63;
+                result |= (byte & 0x1f) << shift;
+                shift += 5;
+            } while (byte >= 0x20);
+            
+            const deltaLat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lat += deltaLat;
+            
+            shift = 0;
+            result = 0;
+            
+            do {
+                byte = encoded.charCodeAt(index++) - 63;
+                result |= (byte & 0x1f) << shift;
+                shift += 5;
+            } while (byte >= 0x20);
+            
+            const deltaLng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+            lng += deltaLng;
+            
+            coords.push([lng / 1e5, lat / 1e5]);
+        }
+        
+        return coords;
     }
 
     private distanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
@@ -3133,6 +3252,25 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return this.isValidCoordinate(Number(booking.dropoff_lat)) && this.isValidCoordinate(Number(booking.dropoff_lng))
             ? { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng) }
             : null;
+    }
+
+    isLiveTrackingJob(): boolean {
+        const status = String(
+            this.booking()?.status ||
+            ''
+        ).toLowerCase();
+
+        return [
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'in_progress'
+        ].includes(status);
     }
 
     // OLD METHOD DISABLED - replaced by renderTrackingMap with direct drawLineString

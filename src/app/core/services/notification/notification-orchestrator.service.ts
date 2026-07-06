@@ -65,14 +65,18 @@ export class NotificationOrchestratorService {
   subscribeToJob(jobId: string): void {
     if (!this.currentUserId) return;
 
-    // Unsubscribe from existing subscription for this job
-    this.unsubscribeFromJob(jobId);
+    // Check for existing subscription to prevent duplicates
+    const existing = this.activeJobSubscriptions.get(jobId);
+    if (existing) {
+      console.log(`[NotificationOrchestrator] Already subscribed to job: ${jobId}`);
+      return;
+    }
 
     console.log(`[NotificationOrchestrator] Subscribing to job: ${jobId}`);
 
-    // Create subscription for job messages
-    const messageChannel = this.supabase.client
-      .channel(`job_notifications:${jobId}:messages`)
+    // Create single channel and register ALL handlers before subscribe
+    const channel = this.supabase.client
+      .channel(`job_notifications:${jobId}`)
       .on(
         'postgres_changes',
         {
@@ -84,11 +88,7 @@ export class NotificationOrchestratorService {
         (payload) => {
           this.handleJobMessage(payload.new as any, jobId);
         }
-      );
-
-    // Create subscription for booking status changes
-    const bookingChannel = this.supabase.client
-      .channel(`job_notifications:${jobId}:bookings`)
+      )
       .on(
         'postgres_changes',
         {
@@ -102,24 +102,25 @@ export class NotificationOrchestratorService {
         }
       );
 
-    // Subscribe both channels
-    messageChannel.subscribe();
-    bookingChannel.subscribe();
+    // Subscribe only after all handlers are registered
+    channel.subscribe((status) => {
+      console.log('[NotificationOrchestrator] channel status', jobId, status);
+    });
 
-    // Store subscription reference
-    this.activeJobSubscriptions.set(jobId, messageChannel);
+    // Store channel reference
+    this.activeJobSubscriptions.set(jobId, channel);
   }
 
   /**
    * Unsubscribe from notifications for a specific job
    */
   unsubscribeFromJob(jobId: string): void {
-    const subscription = this.activeJobSubscriptions.get(jobId);
-    if (subscription) {
-      subscription.unsubscribe();
-      this.activeJobSubscriptions.delete(jobId);
-      console.log(`[NotificationOrchestrator] Unsubscribed from job: ${jobId}`);
-    }
+    const channel = this.activeJobSubscriptions.get(jobId);
+    if (!channel) return;
+
+    this.supabase.client.removeChannel(channel);
+    this.activeJobSubscriptions.delete(jobId);
+    console.log(`[NotificationOrchestrator] Unsubscribed from job: ${jobId}`);
   }
 
   /**

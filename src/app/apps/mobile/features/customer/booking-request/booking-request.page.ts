@@ -15,7 +15,8 @@ import {
     ReactiveFormsModule,
     FormBuilder,
     FormGroup,
-    Validators
+    Validators,
+    AbstractControl
 } from '@angular/forms';
 import { IonicModule, LoadingController, ToastController } from '@ionic/angular';
 import { Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
@@ -468,6 +469,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                         [placeholder]="usesBudgetMode() ? '0.00' : 'Disabled for Collect & Deliver'"
                         class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
                     </div>
+                    @if (bookingForm.get('estimated_budget')?.hasError('invalidCurrency')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
+                    }
 
                     @if (usesBudgetMode()) {
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
@@ -489,6 +493,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                       icon="call-outline"
                       placeholder="Your contact number">
                     </app-input>
+                    @if (bookingForm.get('customer_phone')?.hasError('invalidPhone') || bookingForm.get('customer_phone')?.hasError('invalidPhoneLength')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
+                    }
                     <div class="grid grid-cols-2 gap-4">
                       <app-input
                         label="Recipient Name"
@@ -504,6 +511,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                         placeholder="Optional">
                       </app-input>
                     </div>
+                    @if (bookingForm.get('recipient_phone')?.hasError('invalidPhone') || bookingForm.get('recipient_phone')?.hasError('invalidPhoneLength')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
+                    }
                   </div>
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
@@ -580,6 +590,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                         placeholder="Recipient contact number">
                       </app-input>
                     </div>
+                    @if (bookingForm.get('recipient_phone')?.hasError('invalidPhone') || bookingForm.get('recipient_phone')?.hasError('invalidPhoneLength')) {
+                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
+                    }
                   </div>
 
                   <div class="space-y-2">
@@ -1381,12 +1394,38 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private parseBudgetInput(value: unknown): number {
-        if (value === null || value === undefined) return 0;
+        const raw = String(value ?? '').trim();
 
-        const cleaned = String(value).replace(/[^0-9.]/g, '');
-        const parsed = Number(cleaned);
+        // Preserve empty value while typing
+        if (!raw) return 0;
 
-        return Number.isFinite(parsed) ? this.toMoney(parsed) : 0;
+        // Validate currency format: numbers and one decimal point only
+        if (!/^\d+(\.\d{0,2})?$/.test(raw)) {
+            this.bookingForm.get('estimated_budget')?.setErrors({ invalidCurrency: true });
+            return 0;
+        }
+
+        // Clear any existing errors
+        this.bookingForm.get('estimated_budget')?.setErrors(null);
+
+        return this.toMoney(Number(raw));
+    }
+
+    private phoneValidator(control: AbstractControl) {
+        const raw = String(control.value || '').trim();
+        if (!raw) return { required: true };
+
+        if (!/^[+\d\s\-()]+$/.test(raw)) {
+            return { invalidPhone: true };
+        }
+
+        const digits = raw.replace(/\D/g, '');
+
+        if (digits.length < 10 || digits.length > 15) {
+            return { invalidPhoneLength: true };
+        }
+
+        return null;
     }
 
     private async initStripeElements() {
@@ -1548,8 +1587,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
                     vehicle_class: ['bike', Validators.required],
-                    customer_phone: [this.auth.currentUser()?.phone || '', Validators.required],
-                    recipient_phone: [''],
+                    customer_phone: [this.auth.currentUser()?.phone || '', [Validators.required, this.phoneValidator.bind(this)]],
+                    recipient_phone: ['', this.phoneValidator.bind(this)],
                     recipient_name: [''],
                     substitution_rule: ['contact_me']
                 });
@@ -1562,7 +1601,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     vehicle_class: ['bike', Validators.required],
                     package_size: ['small', Validators.required],
                     recipient_name: ['', Validators.required],
-                    recipient_phone: ['', Validators.required],
+                    recipient_phone: ['', [Validators.required, this.phoneValidator.bind(this)]],
                     item_description: ['', Validators.required]
                 });
                 break;
