@@ -446,7 +446,7 @@ export class LandingPage implements OnDestroy, OnInit {
     {
       eyebrow: 'Cheaper local movement',
       title: 'Move, shop and deliver with clear pricing.',
-      copy: 'Movabi brings rides, errands, package delivery and moving help into one simple app with clear pricing.'
+      copy: 'Movabi brings rides, shop, deliver and move into one simple app with clear pricing.'
     },
     {
       eyebrow: 'Track every step',

@@ -192,11 +192,11 @@ export class ActivityPage implements OnInit {
             case 'ride':
                 return 'Ride';
             case 'errand':
-                return 'Errand';
+                return 'Shop';
             case 'delivery':
-                return 'Delivery';
+                return 'Deliver';
             case 'van-moving':
-                return 'Van Moving';
+                return 'Move';
             default:
                 return booking?.service_type?.name || 'Booking';
         }

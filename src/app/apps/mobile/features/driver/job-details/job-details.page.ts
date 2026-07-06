@@ -229,7 +229,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </div>
             </app-card>
 
-            <!-- Delivery/Errand Contact Details -->
+            <!-- Shop/Deliver Contact Details -->
             @if (recipientName() || recipientPhone()) {
               <app-card class="p-4 space-y-4 bg-blue-50 border-blue-100">
                 <div class="flex items-center gap-3">
@@ -239,7 +239,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   <div class="min-w-0">
                     <h4 class="text-base font-display font-black text-slate-950 leading-tight whitespace-normal">{{ recipientName() }}</h4>
                     <p class="text-xs text-slate-500 font-semibold">
-                      @if (job()?.service_slug === 'errand') { Recipient } @else { Delivery Recipient }
+                      @if (job()?.service_slug === 'errand') { Shop Recipient } @else { Deliver Recipient }
                     </p>
                     @if (recipientPhone()) {
                       <p class="text-xs text-blue-600 font-medium mt-1">{{ recipientPhone() }}</p>
@@ -261,22 +261,22 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </app-card>
             }
 
-            <!-- Delivery Details -->
+            <!-- Deliver Details -->
             @if (job()?.service_slug === 'delivery' || job()?.service_slug === 'package') {
               @if (deliveryPackageSizeLabel() || packageDescription() || deliveryInstructions()) {
                 <app-card class="p-4 space-y-4 bg-amber-50 border-amber-100">
-                  <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Delivery Details</h3>
+                  <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Deliver Details</h3>
                   
                   @if (deliveryPackageSizeLabel()) {
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Package Size</span>
+                      <span class="text-xs font-semibold text-slate-600">Parcel Size</span>
                       <span class="text-xs font-black text-slate-950">{{ deliveryPackageSizeLabel() }}</span>
                     </div>
                   }
 
                   @if (packageDescription()) {
                     <div>
-                      <p class="text-xs font-semibold text-slate-600 mb-2">Package Details</p>
+                      <p class="text-xs font-semibold text-slate-600 mb-2">Parcel Details</p>
                       <p class="text-xs text-slate-700 leading-relaxed">{{ packageDescription() }}</p>
                     </div>
                   }
@@ -291,15 +291,15 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
             }
 
-            <!-- Errand Details -->
+            <!-- Shop Details -->
             @if (job()?.service_slug === 'errand') {
               @if (errandModeDisplay() || errandCustomerPhone() || errandItemsList().length || estimatedBudget() || substitutionRule()) {
                 <app-card class="p-4 space-y-4 bg-purple-50 border-purple-100">
-                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Errand Details</h3>
+                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Shop Details</h3>
                   
                   @if (errandModeDisplay()) {
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Errand Mode</span>
+                      <span class="text-xs font-semibold text-slate-600">Shop Mode</span>
                       <span class="text-xs font-black text-slate-950">{{ errandModeDisplay() }}</span>
                     </div>
                   }
@@ -384,7 +384,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               <app-card class="p-4 space-y-3">
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Collection task</p>
                 <p class="text-sm font-semibold text-slate-600 leading-relaxed">
-                  Go to the collection location, collect the item or documents, then deliver or return them to the customer. No shopping spend or receipt is needed for this errand.
+                  Go to the collection location, collect the item or documents, then deliver or return them to the customer. No shopping spend or receipt is needed for this shop job.
                 </p>
               </app-card>
             }
@@ -394,7 +394,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
             @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
               <app-card class="p-4 space-y-4">
                 <div class="rounded-2xl bg-blue-50 border border-blue-100 p-3 flex justify-between items-center gap-3">
-                  <span class="text-sm font-bold text-blue-700">Errand type</span>
+                  <span class="text-sm font-bold text-blue-700">Shop type</span>
                   <span class="text-sm font-black text-slate-950 text-right">{{ errandModeLabel() }}</span>
                 </div>
 
@@ -628,8 +628,8 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                 }
                 @if (job()?.service_slug === ServiceTypeEnum.DELIVERY) {
                   <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
-                    <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">Package</p>
-                    <p class="mt-1 text-sm font-bold text-slate-950">{{ anyDetails()?.item_description || anyDetails()?.package_description || 'Package details not provided' }}</p>
+                    <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">Parcel</p>
+                    <p class="mt-1 text-sm font-bold text-slate-950">{{ anyDetails()?.item_description || anyDetails()?.package_description || 'Parcel details not provided' }}</p>
                   </div>
                 }
                 @if (job()?.service_slug === ServiceTypeEnum.VAN) {
@@ -1255,10 +1255,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (status === 'needs_cardholder' || status === 'needs_driver_profile') {
-            return 'Tap Set up Movabi Pay card. Movabi will prepare a driver virtual card, then you can activate it for this errand budget.';
+            return 'Tap Set up Movabi Pay card. Movabi will prepare a driver virtual card, then you can activate it for this shop budget.';
         }
 
-        return 'Movabi Pay is not available for this errand yet. Use receipt upload so the spend can still be recorded.';
+        return 'Movabi Pay is not available for this shop yet. Use receipt upload so the spend can still be recorded.';
     }
 
     issuingCardBudgetLimit(): number {
@@ -1402,7 +1402,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 currency: status.currency || 'GBP',
                 spendLimit: this.issuingCardBudgetLimit(),
                 displayName: 'Movabi Pay',
-                description: 'Movabi Pay errand virtual card'
+                description: 'Movabi Pay shop virtual card'
             });
 
             if (result.success) {
@@ -2251,7 +2251,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     serviceWorkEyebrow(): string {
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand workflow';
+                return 'Shop workflow';
             case ServiceTypeEnum.DELIVERY:
                 return 'Courier workflow';
             case ServiceTypeEnum.VAN:
@@ -2283,7 +2283,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                     ? 'Use the approved budget, keep the receipt, record the spend, and request extra budget before paying more than approved.'
                     : 'Go to the collection location, collect the item or documents, and deliver them to the customer. No item spend is needed.';
             case ServiceTypeEnum.DELIVERY:
-                return 'Confirm the package at collection, keep the customer updated, then complete only after delivery.';
+                return 'Confirm the parcel at collection, keep the customer updated, then complete only after delivery.';
             case ServiceTypeEnum.VAN:
                 return 'Confirm pickup, handle loading carefully, and complete when the customer move is fully done.';
             default:
@@ -2309,9 +2309,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 ];
             case ServiceTypeEnum.DELIVERY:
                 return [
-                    { title: 'Collect package', description: 'Confirm the right item and recipient details.', icon: 'cube-outline' },
+                    { title: 'Collect parcel', description: 'Confirm the right item and recipient details.', icon: 'cube-outline' },
                     { title: 'Travel to recipient', description: 'Keep the route and live location active.', icon: 'navigate-outline' },
-                    { title: 'Confirm delivery', description: 'Complete after the package is handed over.', icon: 'checkmark-circle-outline' }
+                    { title: 'Confirm delivery', description: 'Complete after the parcel is handed over.', icon: 'checkmark-circle-outline' }
                 ];
             case ServiceTypeEnum.VAN:
                 return [

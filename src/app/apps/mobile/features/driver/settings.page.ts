@@ -420,9 +420,9 @@ type DocType = 'license' | 'insurance';
             <div class="space-y-3">
               <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
-                  <h3 class="text-sm font-black text-slate-950">Errand item budgets</h3>
+                  <h3 class="text-sm font-black text-slate-950">Shop item budgets</h3>
                   <p class="text-xs text-slate-500 font-semibold leading-relaxed mt-1">
-                    Choose how you want to spend approved customer item budgets. Virtual card is instant. Posted card must be received before budget errands can be accepted.
+                    Choose how you want to spend approved customer item budgets. Virtual card is instant. Posted card must be received before budget shop jobs can be accepted.
                   </p>
                 </div>
                 <app-badge [variant]="cardPreference() === 'posted' && physicalCardStatus() !== 'received' ? 'warning' : 'success'">
@@ -455,7 +455,7 @@ type DocType = 'license' | 'insurance';
               @if (cardPreference() === 'posted') {
                 <div class="rounded-2xl border border-amber-100 bg-amber-50 p-3">
                   <p class="text-xs font-semibold leading-relaxed text-amber-900">
-                    Posted card drivers cannot accept errand item-budget jobs until the card is marked as received.
+                    Posted card drivers cannot accept shop item-budget jobs until the card is marked as received.
                   </p>
                   <app-button class="mt-3" size="sm" color="success" [disabled]="physicalCardStatus() === 'received'" (clicked)="confirmPhysicalCardReceived()">
                     {{ physicalCardStatus() === 'received' ? 'Card Received' : 'I have received my card' }}

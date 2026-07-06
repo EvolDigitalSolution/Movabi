@@ -53,7 +53,7 @@ import { AuthService } from '@core/services/auth/auth.service';
 
             <h1 class="title">Welcome to Movabi!</h1>
             <p class="subtitle">
-              You're ready to book rides, deliveries, errands and van services.
+              You're ready to book rides, shop, deliver and move.
             </p>
           </div>
 

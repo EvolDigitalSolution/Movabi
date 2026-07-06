@@ -425,7 +425,7 @@ export class JobStatusPage implements OnInit, AfterViewInit, OnDestroy {
 
         const alert = await this.alertCtrl.create({
             header: 'Cancel Request',
-            message: 'Are you sure you want to cancel this van moving request?',
+            message: 'Are you sure you want to cancel this move request?',
             buttons: [
                 {
                     text: 'No',

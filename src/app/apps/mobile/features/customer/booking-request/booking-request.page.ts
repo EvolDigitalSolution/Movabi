@@ -169,7 +169,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               @if (type === ServiceTypeEnum.ERRAND) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                   <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Shop Type</p>
                     <div class="grid grid-cols-3 gap-3">
                       <button
                         type="button"
@@ -290,7 +290,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                     label="Dropoff Location"
                     formControlName="dropoff_address"
                     (input)="onAddressInput('dropoff', $any($event).target.value)"
-                    [placeholder]="type === ServiceTypeEnum.DELIVERY ? 'Where should we deliver the package?' : 'Where should we deliver?'"
+                    [placeholder]="type === ServiceTypeEnum.DELIVERY ? 'Where should we deliver the parcel?' : 'Where should we deliver?'"
                     icon="pin-outline"
                     (focus)="showDropoffResults.set(true)"
                     (blur)="hideResults('dropoff')">
@@ -538,7 +538,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               @if (type === ServiceTypeEnum.DELIVERY) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                   <div class="space-y-3">
-                    <p class="text-xs font-black text-slate-700 ml-1">Package size</p>
+                    <p class="text-xs font-black text-slate-700 ml-1">Parcel size</p>
                     <div class="grid grid-cols-3 gap-3">
                       @for (size of packageSizeOptions; track size.id) {
                         <button
@@ -559,7 +559,7 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
                     <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Delivery Contact
+                      Recipient Contact
                     </p>
 
                     <div class="grid grid-cols-1 gap-4">
@@ -585,20 +585,20 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                   <div class="space-y-2">
                     <label for="item_description" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Package Details
+                      Parcel Details
                     </label>
 
                     <textarea
                       id="item_description"
                       formControlName="item_description"
-                      placeholder="Describe the package, size, or handling notes."
+                      placeholder="Describe the parcel, size, or handling notes."
                       class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[90px] placeholder:text-slate-300 shadow-sm">
                     </textarea>
                   </div>
 
                   <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
                     <p class="text-sm leading-7 text-slate-700">
-                      Delivery requests are for parcels, documents, and small-to-medium items. For furniture or large items, use Van Moving.
+                      Deliver requests are for parcels, documents, and small-to-medium items. For furniture or large items, use Move.
                     </p>
                   </div>
                 </div>
@@ -707,7 +707,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <div class="mt-5 p-4 bg-blue-50 rounded-2xl border border-blue-100">
                           <p class="text-sm leading-7 text-slate-700">
                             The <strong>Service Estimate</strong> will be authorised on your card.
-                            You will only be charged once the errand service is completed.
+                            You will only be charged once the shop service is completed.
                           </p>
                         </div>
                       } @else {
@@ -2201,11 +2201,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             case ServiceTypeEnum.RIDE:
                 return 'Ride Request';
             case ServiceTypeEnum.ERRAND:
-                return 'Errand Service';
+                return 'Shop';
             case ServiceTypeEnum.DELIVERY:
-                return 'Package Delivery';
+                return 'Deliver';
             case ServiceTypeEnum.VAN:
-                return 'Van Moving';
+                return 'Move';
             default:
                 return 'Booking Request';
         }

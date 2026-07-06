@@ -54,7 +54,7 @@ import { AuthService } from '@core/services/auth/auth.service';
                 </div>
                 <div class="text-wrapper">
                   <ion-card-title>I'm a Customer</ion-card-title>
-                  <p>I want to book errands, taxis, or moving services.</p>
+                  <p>I want to book rides, shop, deliver, or move.</p>
                 </div>
                 <ion-icon name="chevron-forward-outline" class="arrow-icon"></ion-icon>
               </div>

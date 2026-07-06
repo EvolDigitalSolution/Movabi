@@ -1245,12 +1245,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     collected: 'Items collected.',
                     en_route_to_customer: 'Driver is on the way..',
                     delivered: 'Items have been delivered',
-                    completed: 'Errand is complete',
+                    completed: 'Shop is complete',
                     settled: 'Wallet funds have been settled',
                     over_budget_requested: 'Extra budget needed.',
                     cancelled: 'Cancelled',
                     canceled: 'Cancelled',
-                    no_driver_found: 'No available errand driver',
+                    no_driver_found: 'No available shop driver',
                     requires_review: 'Under review.'
                 }
                 : {
@@ -1264,12 +1264,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     collected: 'Item collected.',
                     en_route_to_customer: 'Driver is on the way..',
                     delivered: 'Item has been delivered',
-                    completed: 'Errand is complete',
+                    completed: 'Shop is complete',
                     settled: 'Payment has been settled',
                     over_budget_requested: 'Driver needs your approval before continuing',
                     cancelled: 'Cancelled',
                     canceled: 'Cancelled',
-                    no_driver_found: 'No available errand driver',
+                    no_driver_found: 'No available shop driver',
                     requires_review: 'Under review.'
                 };
 
@@ -1302,9 +1302,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     trackingTitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand Tracking';
+                return 'Shop Tracking';
             case ServiceTypeEnum.DELIVERY:
-                return 'Delivery Tracking';
+                return 'Deliver Tracking';
             case ServiceTypeEnum.VAN:
                 return 'Move Tracking';
             default:
@@ -1328,7 +1328,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     routeCardSubtitle(): string {
         switch (this.booking()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return this.isShoppingErrand() ? 'Store to delivery' : 'Collection to delivery';
+                return this.isShoppingErrand() ? 'Shop to delivery' : 'Collection to delivery';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collection to recipient';
             case ServiceTypeEnum.VAN:

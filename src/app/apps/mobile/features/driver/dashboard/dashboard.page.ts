@@ -1378,6 +1378,17 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             'Request'
         );
 
+        const normalized = raw
+            .trim()
+            .replace(/_/g, ' ')
+            .replace(/-/g, ' ')
+            .toLowerCase();
+
+        if (normalized.includes('ride')) return 'Ride';
+        if (normalized.includes('errand')) return 'Shop';
+        if (normalized.includes('delivery') || normalized.includes('package')) return 'Deliver';
+        if (normalized.includes('van') || normalized.includes('moving')) return 'Move';
+
         return raw
             .trim()
             .replace(/_/g, ' ')
@@ -1405,7 +1416,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             case ServiceTypeEnum.ERRAND:
                 return `Shop and deliver for ${customer}`;
             case ServiceTypeEnum.DELIVERY:
-                return `Collect and deliver a package`;
+                return `Deliver a parcel`;
             case ServiceTypeEnum.VAN:
                 return `Help with a move`;
             default:
@@ -1468,11 +1479,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     requestOriginLabel(job: Booking): string {
         switch ((job as any)?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store';
+                return 'Shop';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collect from';
             case ServiceTypeEnum.VAN:
-                return 'Moving from';
+                return 'Move from';
             default:
                 return 'Pickup';
         }
@@ -1485,7 +1496,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             case ServiceTypeEnum.DELIVERY:
                 return 'Recipient';
             case ServiceTypeEnum.VAN:
-                return 'Moving to';
+                return 'Move to';
             default:
                 return 'Dropoff';
         }
@@ -2454,7 +2465,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         const status = String(state.status || '').toLowerCase();
 
         if (!state.accountId) {
-            return 'Connect your payout account so earnings from ride, errand, delivery, and moving requests can be processed safely.';
+            return 'Connect your payout account so earnings from ride, shop, deliver, and move requests can be processed safely.';
         }
 
         if (status === 'restricted' || status === 'requires_action') {

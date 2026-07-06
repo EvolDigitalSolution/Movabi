@@ -731,9 +731,9 @@ export class OnboardingPage implements OnInit {
 
     serviceOptions: Array<{ id: DriverServiceSelection; label: string; helper: string; icon: string }> = [
         { id: 'ride', label: 'Ride / Passenger', helper: 'Passenger trips only after taxi/private hire approval', icon: 'people-outline' },
-        { id: 'errand', label: 'Errands', helper: 'Collect, deliver, or shop for customers', icon: 'options-outline' },
-        { id: 'delivery', label: 'Package Delivery', helper: 'Small parcels and local deliveries', icon: 'document-attach-outline' },
-        { id: 'van', label: 'Van / Moving', helper: 'Moving and bulky transport jobs', icon: 'bus-outline' }
+        { id: 'errand', label: 'Shop', helper: 'Collect, deliver, or shop for customers', icon: 'options-outline' },
+        { id: 'delivery', label: 'Deliver', helper: 'Small parcels and local deliveries', icon: 'document-attach-outline' },
+        { id: 'van', label: 'Move', helper: 'Moving and bulky transport jobs', icon: 'bus-outline' }
     ];
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
@@ -1143,7 +1143,7 @@ export class OnboardingPage implements OnInit {
             return 'Moving jobs require vehicle details, registration plate, suitable insurance, goods-in-transit/public-liability documents where required, and payout setup.';
         }
 
-        return 'Errands and delivery require vehicle details, registration plate, suitable insurance, and payout setup. Bike couriers do not need a taxi licence.';
+        return 'Shop and deliver require vehicle details, registration plate, suitable insurance, and payout setup. Bike couriers do not need a taxi licence.';
     }
 
     vehicleMakeLabel(): string {

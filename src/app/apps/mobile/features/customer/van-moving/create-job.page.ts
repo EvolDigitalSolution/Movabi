@@ -144,7 +144,7 @@ type MovingVehicleClass = 'small_van' | 'large_van';
                 <ion-icon name="bus-outline" class="text-2xl"></ion-icon>
               </div>
               <div>
-                <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight mb-0.5">Van Moving</h2>
+                <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight mb-0.5">Move</h2>
                 <p class="text-slate-400 font-medium text-sm">Professional help for your big moves.</p>
               </div>
             </div>

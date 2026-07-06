@@ -30,8 +30,8 @@ import {
         <p class="eyebrow">Simple app guide</p>
         <h1>Get around Movabi without guessing.</h1>
         <p class="intro">
-          This guide explains the main controls customers and drivers use across rides, errands,
-          package delivery, van moving, wallet, tracking, chat, and payments.
+          This guide explains the main controls customers and drivers use across rides, shop,
+          deliver, move, wallet, tracking, chat, and payments.
         </p>
 
         <section>
@@ -231,7 +231,7 @@ export class HelpPage {
   customerGuide = [
     {
       title: 'Service cards',
-      copy: 'Tap Ride, Errand, Package Delivery, or Van Moving. Each service asks for the correct details, vehicle type, budget, and route.'
+      copy: 'Tap Ride, Shop, Deliver, or Move. Each service asks for the correct details, vehicle type, budget, and route.'
     },
     {
       title: 'Pickup and dropoff',
@@ -239,7 +239,7 @@ export class HelpPage {
     },
     {
       title: 'Price and budget',
-      copy: 'Confirm only after pickup and dropoff are set. Errands may include an item budget; rides and delivery focus on route and service fee.'
+      copy: 'Confirm only after pickup and dropoff are set. Shop jobs may include an item budget; rides and deliver focus on route and service fee.'
     },
     {
       title: 'Wallet or card',

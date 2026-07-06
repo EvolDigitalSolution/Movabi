@@ -183,7 +183,7 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
               </app-button>
             </div>
 
-            <!-- Delivery/Errand Contact Details -->
+            <!-- Shop/Deliver Contact Details -->
             @if (recipientName()) {
               <div class="flex items-center p-4 bg-blue-50 rounded-[1.75rem] border border-blue-100 shadow-sm">
                 <div class="w-14 h-14 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0 mr-4">
@@ -193,7 +193,7 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
                 <div class="flex-1 min-w-0">
                   <h3 class="font-black text-slate-950 truncate">{{ recipientName() }}</h3>
                   <p class="text-xs text-slate-500 font-semibold">
-                    @if (job()?.service_slug === 'errand') { Recipient } @else { Delivery Recipient }
+                    @if (job()?.service_slug === 'errand') { Shop Recipient } @else { Deliver Recipient }
                   </p>
                   @if (recipientPhone()) {
                     <p class="text-xs text-blue-600 font-medium mt-1">{{ recipientPhone() }}</p>
@@ -210,21 +210,21 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
               </div>
             }
 
-            <!-- Delivery Details -->
+            <!-- Deliver Details -->
             @if (job()?.service_slug === 'delivery' || job()?.service_slug === 'package') {
               <div class="p-5 bg-amber-50 rounded-[1.75rem] border border-amber-100 space-y-4">
-                <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Delivery Details</h3>
+                <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Deliver Details</h3>
                 
                 @if (packageSizeLabel()) {
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-slate-600">Package Size</span>
+                    <span class="text-xs font-semibold text-slate-600">Parcel Size</span>
                     <span class="text-xs font-black text-slate-950">{{ packageSizeLabel() }}</span>
                   </div>
                 }
 
                 @if (packageDescription()) {
                   <div>
-                    <p class="text-xs font-semibold text-slate-600 mb-2">Package Details</p>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Parcel Details</p>
                     <p class="text-xs text-slate-700 leading-relaxed">{{ packageDescription() }}</p>
                   </div>
                 }
@@ -238,14 +238,14 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
               </div>
             }
 
-            <!-- Errand Details -->
+            <!-- Shop Details -->
             @if (job()?.service_slug === 'errand') {
               <div class="p-5 bg-purple-50 rounded-[1.75rem] border border-purple-100 space-y-4">
-                <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Errand Details</h3>
+                <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Shop Details</h3>
                 
                 @if (errandMode()) {
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-slate-600">Errand Mode</span>
+                    <span class="text-xs font-semibold text-slate-600">Shop Mode</span>
                     <span class="text-xs font-black text-slate-950">{{ errandMode() }}</span>
                   </div>
                 }
@@ -759,12 +759,12 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
             const overBudgetStatus = currentJob.errand_funding?.over_budget_status;
 
             if (spending <= 0) {
-                await this.showToast('Please record actual spending before completing this errand.', 'warning');
+                await this.showToast('Please record actual spending before completing this shop.', 'warning');
                 return;
             }
 
             if (!receiptUrl) {
-                await this.showToast('Please upload a receipt before completing this errand.', 'warning');
+                await this.showToast('Please upload a receipt before completing this shop.', 'warning');
                 return;
             }
 
