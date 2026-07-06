@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
 import { ApiUrlService } from '../api-url.service';
+import { NotificationManagerService } from '../notification/notification-manager.service';
 import { JobMessage, JobMessageType } from '@shared/models/communication.model';
 import { BehaviorSubject } from 'rxjs';
 import { firstValueFrom } from 'rxjs';
@@ -16,6 +17,7 @@ export class CommunicationService {
   private auth = inject(AuthService);
   private http = inject(HttpClient);
   private apiUrlService = inject(ApiUrlService);
+  private notificationManager = inject(NotificationManagerService);
   
   private messagesSubject = new BehaviorSubject<JobMessage[]>([]);
   public messages$ = this.messagesSubject.asObservable();
@@ -93,9 +95,13 @@ export class CommunicationService {
         (payload) => {
           const newMessage = payload.new as JobMessage;
           const currentMessages = this.messagesSubject.value;
+          
           // Avoid duplicates if we just sent it
           if (!currentMessages.find(m => m.id === newMessage.id)) {
             this.messagesSubject.next([...currentMessages, newMessage]);
+            
+            // Trigger chat notification for new messages from others
+            this.triggerChatNotification(newMessage, jobId);
           }
         }
       )
@@ -110,5 +116,25 @@ export class CommunicationService {
       this.subscription = null;
     }
     this.messagesSubject.next([]);
+  }
+
+  private async triggerChatNotification(message: JobMessage, jobId: string): Promise<void> {
+    const currentUser = this.auth.currentUser();
+    if (!currentUser || message.sender_id === currentUser.id) {
+      return; // Don't notify for own messages
+    }
+
+    try {
+      // Get sender name (use default for now, could be enhanced to fetch from user profile)
+      const senderName = 'Driver';
+      
+      await this.notificationManager.triggerChatNotification(
+        jobId,
+        senderName,
+        message.message
+      );
+    } catch (error) {
+      console.warn('[CommunicationService] Failed to trigger chat notification:', error);
+    }
   }
 }

@@ -2613,6 +2613,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         formVal: Record<string, string | number | boolean | null | undefined>
     ) {
         switch (this.type) {
+
             case ServiceTypeEnum.RIDE:
                 return {
                     passenger_count: formVal['passenger_count'],
@@ -2620,12 +2621,15 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 };
 
             case ServiceTypeEnum.ERRAND: {
-                const mode = String(formVal['errand_mode'] || 'collect_deliver') as ErrandMode;
+                const mode = String(
+                    formVal['errand_mode'] || 'collect_deliver'
+                ) as ErrandMode;
+
                 const isShoppingMode = this.isQuickBuyMode(mode);
 
                 const payload: Record<string, unknown> = {
                     errand_mode: mode,
-                    delivery_instructions: formVal['notes'],
+                    notes: formVal['notes'],
                     customer_phone: formVal['customer_phone'],
                     recipient_phone: formVal['recipient_phone'],
                     recipient_name: formVal['recipient_name'],
@@ -2633,7 +2637,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 };
 
                 if (isShoppingMode) {
-                    payload['items_list'] = this.parseErrandItems(formVal['items_list']);
+                    payload['items_list'] = this.parseErrandItems(
+                        formVal['items_list']
+                    );
                     payload['estimated_budget'] = this.walletBudgetRequired();
                 }
 
@@ -2645,7 +2651,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     recipient_name: formVal['recipient_name'],
                     recipient_phone: formVal['recipient_phone'],
                     item_description: formVal['item_description'],
-                    delivery_instructions: formVal['notes'],
                     notes: formVal['notes']
                 };
 
@@ -2661,9 +2666,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 };
 
             default:
-                return { notes: formVal['notes'] };
+                return {
+                    notes: formVal['notes']
+                };
         }
-    }
+    } 
 
     private getCurrencySymbol(currencyCode?: string | null): string {
         const map: Record<string, string> = {

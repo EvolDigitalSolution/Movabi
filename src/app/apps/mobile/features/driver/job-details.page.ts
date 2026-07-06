@@ -183,6 +183,117 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
               </app-button>
             </div>
 
+            <!-- Delivery/Errand Contact Details -->
+            @if (recipientName()) {
+              <div class="flex items-center p-4 bg-blue-50 rounded-[1.75rem] border border-blue-100 shadow-sm">
+                <div class="w-14 h-14 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0 mr-4">
+                  <ion-icon name="location-outline" class="text-xl"></ion-icon>
+                </div>
+
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-black text-slate-950 truncate">{{ recipientName() }}</h3>
+                  <p class="text-xs text-slate-500 font-semibold">
+                    @if (job()?.service_slug === 'errand') { Recipient } @else { Delivery Recipient }
+                  </p>
+                  @if (recipientPhone()) {
+                    <p class="text-xs text-blue-600 font-medium mt-1">{{ recipientPhone() }}</p>
+                  }
+                </div>
+
+                @if (recipientPhone()) {
+                  <a [href]="'tel:' + recipientPhone()" class="ml-2">
+                    <app-button variant="primary" size="sm" [fullWidth]="false">
+                      <ion-icon name="call" slot="icon-only"></ion-icon>
+                    </app-button>
+                  </a>
+                }
+              </div>
+            }
+
+            <!-- Delivery Details -->
+            @if (job()?.service_slug === 'delivery' || job()?.service_slug === 'package') {
+              <div class="p-5 bg-amber-50 rounded-[1.75rem] border border-amber-100 space-y-4">
+                <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Delivery Details</h3>
+                
+                @if (packageSizeLabel()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Package Size</span>
+                    <span class="text-xs font-black text-slate-950">{{ packageSizeLabel() }}</span>
+                  </div>
+                }
+
+                @if (packageDescription()) {
+                  <div>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Package Details</p>
+                    <p class="text-xs text-slate-700 leading-relaxed">{{ packageDescription() }}</p>
+                  </div>
+                }
+
+                @if (deliveryInstructions()) {
+                  <div>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Special Instructions</p>
+                    <p class="text-xs text-slate-700 leading-relaxed">{{ deliveryInstructions() }}</p>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Errand Details -->
+            @if (job()?.service_slug === 'errand') {
+              <div class="p-5 bg-purple-50 rounded-[1.75rem] border border-purple-100 space-y-4">
+                <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Errand Details</h3>
+                
+                @if (errandMode()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Errand Mode</span>
+                    <span class="text-xs font-black text-slate-950">{{ errandMode() }}</span>
+                  </div>
+                }
+
+                @if (errandCustomerPhone()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Customer Phone</span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-slate-700">{{ errandCustomerPhone() }}</span>
+                      <a [href]="'tel:' + errandCustomerPhone()">
+                        <app-button variant="outline" size="sm" [fullWidth]="false">
+                          <ion-icon name="call" slot="icon-only"></ion-icon>
+                        </app-button>
+                      </a>
+                    </div>
+                  </div>
+                }
+
+                @if (errandItems().length > 0) {
+                  <div>
+                    <p class="text-xs font-semibold text-slate-600 mb-2">Items List</p>
+                    <ul class="space-y-1">
+                      @for (item of errandItems(); track item) {
+                        <li class="text-xs text-slate-700 flex items-center gap-2">
+                          <div class="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></div>
+                          {{ item }}
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+
+                @if (estimatedBudget()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Estimated Budget</span>
+                    <span class="text-xs font-black text-slate-950">{{ formatPrice(estimatedBudget()) }}</span>
+                  </div>
+                }
+
+                @if (substitutionRule()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-600">Substitution Rule</span>
+                    <span class="text-xs font-black text-slate-950">{{ substitutionRule() }}</span>
+                  </div>
+                }
+              </div>
+            }
+
             @if (canMessageCustomer()) {
               <div>
                 <app-button variant="secondary" (clicked)="showChat.set(!showChat())">
@@ -405,6 +516,10 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
     showChat = signal(false);
     submitting = signal(false);
     loadingJob = signal(true);
+    
+    // Delivery and errand details
+    deliveryDetails = signal<any>(null);
+    errandDetails = signal<any>(null);
 
     private locationSubscription?: RealtimeChannel;
     private routeId: string | null = null;
@@ -471,6 +586,9 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
             if (!this.job() || this.job()?.id !== id) {
                 const booking = await this.bookingService.getBooking(id);
                 this.driverService.activeJob.set(booking as Booking);
+                
+                // Fetch delivery and errand details
+                await this.loadJobDetails(booking as Booking);
             }
 
             this.initMap();
@@ -479,6 +597,48 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
             this.driverService.activeJob.set(null);
         } finally {
             this.loadingJob.set(false);
+        }
+    }
+
+    private async loadJobDetails(job: Booking) {
+        if (!job?.id) return;
+
+        try {
+            // Fetch delivery details if it's a delivery job
+            if (job.service_slug === 'delivery' || job.service_slug === 'package') {
+                const { data: deliveryData, error: deliveryError } = await this.supabase
+                    .from('delivery_details')
+                    .select('*')
+                    .eq('job_id', job.id)
+                    .maybeSingle();
+
+                if (!deliveryError && deliveryData) {
+                    this.deliveryDetails.set(deliveryData);
+                } else if (deliveryError) {
+                    console.warn('Failed to fetch delivery details:', deliveryError);
+                    // Fallback to metadata
+                    this.deliveryDetails.set((job as any).metadata?.delivery_details || null);
+                }
+            }
+
+            // Fetch errand details if it's an errand job
+            if (job.service_slug === 'errand') {
+                const { data: errandData, error: errandError } = await this.supabase
+                    .from('errand_details')
+                    .select('*')
+                    .eq('job_id', job.id)
+                    .maybeSingle();
+
+                if (!errandError && errandData) {
+                    this.errandDetails.set(errandData);
+                } else if (errandError) {
+                    console.warn('Failed to fetch errand details:', errandError);
+                    // Fallback to metadata
+                    this.errandDetails.set((job as any).metadata?.errand_details || null);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load job details:', error);
         }
     }
 
@@ -900,6 +1060,111 @@ export class JobDetailsPage implements OnInit, OnDestroy, AfterViewInit {
 
     customerPhone(): string | null {
         return this.job()?.customer?.phone || null;
+    }
+
+    // Delivery and errand detail helpers
+    recipientName(): string | null {
+        const delivery = this.deliveryDetails();
+        const errand = this.errandDetails();
+        
+        return delivery?.recipientName || errand?.recipient_name || null;
+    }
+
+    recipientPhone(): string | null {
+        const delivery = this.deliveryDetails();
+        const errand = this.errandDetails();
+        
+        return delivery?.recipientPhone || errand?.recipient_phone || null;
+    }
+
+    packageDescription(): string | null {
+        const delivery = this.deliveryDetails();
+        return delivery?.itemDescription || null;
+    }
+
+    packageSizeLabel(): string | null {
+        const delivery = this.deliveryDetails();
+        const size = delivery?.packageSize;
+        
+        if (!size) return null;
+        
+        switch (size) {
+            case 'small': return 'Small';
+            case 'medium': return 'Medium';
+            case 'large': return 'Large';
+            case 'extra_large': return 'Extra Large';
+            default: return size;
+        }
+    }
+
+    deliveryInstructions(): string | null {
+        const delivery = this.deliveryDetails();
+        return delivery?.deliveryInstructions || null;
+    }
+
+    errandMode(): string | null {
+        const errand = this.errandDetails();
+        const mode = errand?.mode;
+        
+        if (!mode) return null;
+        
+        switch (mode) {
+            case 'collect_deliver': return 'Collect & Deliver';
+            case 'quick_buy': return 'Quick Buy';
+            case 'shop_deliver': return 'Shop & Deliver';
+            default: return mode;
+        }
+    }
+
+    errandCustomerPhone(): string | null {
+        const errand = this.errandDetails();
+        return errand?.customer_phone || null;
+    }
+
+    errandItems(): string[] {
+        const errand = this.errandDetails();
+        const items = errand?.items_list;
+        
+        if (Array.isArray(items)) {
+            return items.map((item: unknown) => String(item)).filter(Boolean);
+        }
+        
+        if (typeof items === 'string') {
+            try {
+                const parsed = JSON.parse(items);
+                if (Array.isArray(parsed)) {
+                    return parsed.map((item: unknown) => String(item)).filter(Boolean);
+                }
+            } catch {
+                return items
+                    .split(',')
+                    .map((item: string) => item.trim())
+                    .filter(Boolean);
+            }
+        }
+        
+        return [];
+    }
+
+    estimatedBudget(): number | null {
+        const errand = this.errandDetails();
+        const budget = errand?.estimated_budget;
+        return Number.isFinite(Number(budget)) ? Number(budget) : null;
+    }
+
+    substitutionRule(): string | null {
+        const errand = this.errandDetails();
+        const rule = errand?.substitution_rule;
+        
+        if (!rule) return null;
+        
+        switch (rule) {
+            case 'no_substitution': return 'No Substitution';
+            case 'contact_first': return 'Contact First';
+            case 'similar_quality': return 'Similar Quality';
+            case 'any_available': return 'Any Available';
+            default: return rule;
+        }
     }
 
     serviceTitle(): string {

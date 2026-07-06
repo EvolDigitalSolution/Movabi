@@ -54,7 +54,6 @@ import {
     CardComponent,
     ButtonComponent,
     BadgeComponent,
-    RatingComponent,
     EmptyStateComponent,
     PerformanceBadgeComponent,
     MovabiCarouselComponent,
@@ -114,7 +113,6 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
         CardComponent,
         ButtonComponent,
         BadgeComponent,
-        RatingComponent,
         EmptyStateComponent,
         PerformanceBadgeComponent,
         MovabiCarouselComponent,
@@ -496,26 +494,54 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
           @if (activeHubTab() === 'earnings') {
             <app-movabi-carousel [slides]="driverCarouselSlides()"></app-movabi-carousel>
 
-            <div class="grid grid-cols-2 gap-3">
-              <app-card class="p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <p class="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Acceptance</p>
-                    <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ acceptanceMetric().display }}</h2>
-                    <p class="mt-1 text-xs font-bold text-slate-500">{{ acceptanceMetric().label }}</p>
+            <div class="grid grid-cols-1 min-[560px]:grid-cols-2 gap-3">
+              <app-card class="p-3 rounded-2xl">
+                <div class="space-y-2.5">
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap leading-none">Acceptance</p>
+                    <div class="shrink-0 scale-90 origin-top-right">
+                      <app-performance-badge [type]="hasAcceptanceRate() ? 'reliable' : 'fast-responder'"></app-performance-badge>
+                    </div>
                   </div>
-                  <app-performance-badge [type]="hasAcceptanceRate() ? 'reliable' : 'fast-responder'"></app-performance-badge>
+                  <div>
+                    <h2 class="text-[1.35rem] leading-none font-display font-black text-slate-950">
+                      {{ acceptanceMetric().display }}
+                    </h2>
+                    <p class="mt-2 text-[11px] leading-snug font-bold text-slate-500 break-normal">
+                      {{ acceptanceMetric().label }}
+                    </p>
+                  </div>
                 </div>
               </app-card>
 
-              <app-card class="p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <p class="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Rating</p>
-                    <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ ratingMetric().isNew ? 'New' : ratingMetric().display }}</h2>
-                    <p class="mt-1 text-xs font-bold text-slate-500">{{ ratingMetric().label }}</p>
+              <app-card class="p-3 rounded-2xl">
+                <div class="space-y-2.5">
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap leading-none">Rating</p>
+                    <div class="w-8 h-8 shrink-0 rounded-xl bg-amber-50 border border-amber-100 text-amber-500 flex items-center justify-center">
+                      <ion-icon name="star-outline" class="text-lg"></ion-icon>
+                    </div>
                   </div>
-                  <app-rating [rating]="ratingMetric().value || undefined"></app-rating>
+                  <div>
+                    <h2 class="text-[1.35rem] leading-none font-display font-black text-slate-950">
+                      {{ ratingMetric().isNew ? 'New' : ratingMetric().display }}
+                    </h2>
+                    @if (!ratingMetric().isNew && ratingMetric().value) {
+                      <div class="mt-2 flex items-center gap-1 overflow-hidden" aria-label="Driver rating stars">
+                        @for (starValue of [1, 2, 3, 4, 5]; track starValue) {
+                          <ion-icon
+                            [name]="starValue <= ratingMetric().value! ? 'star' : 'star-outline'"
+                            class="text-[14px] shrink-0"
+                            [class.text-amber-400]="starValue <= ratingMetric().value!"
+                            [class.text-slate-300]="starValue > ratingMetric().value!"
+                          ></ion-icon>
+                        }
+                      </div>
+                    }
+                    <p class="mt-2 text-[11px] leading-snug font-bold text-slate-500 break-normal">
+                      {{ ratingMetric().label }}
+                    </p>
+                  </div>
                 </div>
               </app-card>
             </div>
@@ -718,6 +744,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     ];
     private readonly passedJobsStorageKey = 'movabi_driver_passed_jobs';
     passedJobIds = signal<Set<string>>(new Set());
+    
+    // Urgent request notification system
+    private requestAlertInterval: any = null;
+    private activeRequestId = signal<string | null>(null);
     jobs = computed(() => {
         const passed = this.passedJobIds();
         return this.driverService.availableJobs().filter(job => !passed.has(job.id));
@@ -1026,6 +1056,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.supabase.client.removeChannel(this.messagesChannel);
             this.messagesChannel = undefined;
         }
+
+        this.stopRequestAlert();
     }
 
     ngAfterViewInit(): void {
@@ -2211,6 +2243,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.driverService.availableJobs.update((jobs: Booking[]) =>
                 jobs.filter((job: Booking) => job.id !== jobId)
             );
+            this.stopRequestAlert();
             await this.refreshActiveJob();
             await this.driverService.fetchAvailableJobs();
             this.selectedJobId.set(null);
@@ -2235,6 +2268,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
     reject(jobId: string) {
         this.rememberPassedJob(jobId);
+        this.stopRequestAlert();
         if (this.selectedJobId() === jobId) {
             this.selectedJobId.set(null);
             this.sheetHeight.set(40);
@@ -2244,6 +2278,68 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         );
         this.syncMarketplaceMapMarkers();
     }
+
+    private startRequestAlert(requestId: string): void {
+        if (this.requestAlertInterval) return;
+
+        this.activeRequestId.set(requestId);
+        this.playRequestSound();
+        this.vibrateNewRequest();
+
+        this.requestAlertInterval = setInterval(() => {
+            if (!this.activeRequestId() || this.activeRequestId() !== requestId) {
+                this.stopRequestAlert();
+                return;
+            }
+
+            this.playRequestSound();
+        }, 4000);
+    }
+
+    private stopRequestAlert(): void {
+        if (this.requestAlertInterval) {
+            clearInterval(this.requestAlertInterval);
+            this.requestAlertInterval = null;
+        }
+        this.activeRequestId.set(null);
+    }
+
+    private async playRequestSound(): Promise<void> {
+        try {
+            const audio = new Audio('/assets/sounds/request-notification.mp3');
+            audio.volume = 0.7;
+            await audio.play();
+        } catch (error) {
+            console.warn('[DriverDashboard] Failed to play request sound:', error);
+        }
+    }
+
+    private async vibrateNewRequest(): Promise<void> {
+        try {
+            await Haptics.notification({
+                type: NotificationType.Success
+            });
+        } catch (error) {
+            console.warn('[DriverDashboard] Failed to vibrate for new request:', error);
+        }
+    }
+
+    // Monitor available jobs for urgent requests
+    private urgentRequestEffect = effect(() => {
+        const availableJobs = this.driverService.availableJobs();
+        const activeJob = this.activeJob();
+        
+        // Only alert if there's no active job and there are available jobs
+        if (!activeJob && availableJobs.length > 0) {
+            const newestJob = availableJobs[0]; // Assume first is newest
+            if (newestJob?.id && this.activeRequestId() !== newestJob.id) {
+                this.startRequestAlert(newestJob.id);
+            }
+        } else {
+            // Stop alert if there's an active job or no available jobs
+            this.stopRequestAlert();
+        }
+    });
 
     async resubmitDriverReview() {
         const profile = this.profileService.profile();

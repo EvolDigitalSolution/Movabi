@@ -282,6 +282,7 @@ export class OneSignalService {
             }
 
             this.attachSubscriptionObserver(oneSignal);
+            this.attachNotificationHandlers(oneSignal);
         } catch (error) {
             console.warn('[OneSignal] native init failed', error);
         }
@@ -303,6 +304,7 @@ export class OneSignalService {
                 }
 
                 this.attachSubscriptionObserver(oneSignal);
+                this.attachNotificationHandlers(oneSignal);
                 await this.evaluateSubscription();
             } catch (error) {
                 console.warn('[OneSignal] web init failed safely', error);
@@ -344,6 +346,73 @@ export class OneSignalService {
             window.OneSignalDeferred.push((oneSignal) => resolve(oneSignal));
             window.setTimeout(() => resolve(null), 3000);
         });
+    }
+
+    private attachNotificationHandlers(oneSignal: any): void {
+        if (!oneSignal) return;
+
+        try {
+            // Handle notification opened/clicked
+            if (typeof oneSignal.Notifications?.addEventListener === 'function') {
+                oneSignal.Notifications.addEventListener('click', (event: any) => {
+                    this.handleNotificationClick(event);
+                });
+            } else if (typeof oneSignal.addEventListener === 'function') {
+                oneSignal.addEventListener('notificationOpened', (event: any) => {
+                    this.handleNotificationClick(event);
+                });
+            }
+
+            // Handle foreground notifications
+            if (typeof oneSignal.Notifications?.addEventListener === 'function') {
+                oneSignal.Notifications.addEventListener('foregroundWillDisplay', (event: any) => {
+                    // Allow foreground notifications to display
+                    event.preventDefault();
+                    event.notification.display();
+                });
+            }
+        } catch (error) {
+            console.warn('[OneSignal] Failed to attach notification handlers:', error);
+        }
+    }
+
+    private handleNotificationClick(event: any): void {
+        try {
+            const data = event.notification?.additionalData || event.data || {};
+            const { job_id, type, open, role } = data;
+
+            console.log('[OneSignal] Notification clicked:', { job_id, type, open, role });
+
+            if (!job_id || !open || !role) {
+                console.warn('[OneSignal] Missing required notification data');
+                return;
+            }
+
+            // Build the correct route based on role and notification type
+            let route = '';
+            if (role === 'customer') {
+                if (open === 'booking_chat') {
+                    route = `/customer/tracking/${job_id}?tab=chat`;
+                } else {
+                    route = `/customer/tracking/${job_id}`;
+                }
+            } else if (role === 'driver') {
+                if (open === 'booking_chat') {
+                    route = `/driver/jobs/${job_id}?tab=chat`;
+                } else if (open === 'driver_marketplace') {
+                    route = `/driver`;
+                } else {
+                    route = `/driver/jobs/${job_id}`;
+                }
+            }
+
+            if (route) {
+                // Use window.location for navigation since we're outside Angular context
+                window.location.href = route;
+            }
+        } catch (error) {
+            console.error('[OneSignal] Failed to handle notification click:', error);
+        }
     }
 
     private attachSubscriptionObserver(oneSignal: any): void {

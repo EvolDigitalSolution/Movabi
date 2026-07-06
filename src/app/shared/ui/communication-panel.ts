@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { CommunicationService } from '@core/services/communication/communication.service';
 import { AuthService } from '@core/services/auth/auth.service';
+import { UnreadCounterService } from '@core/services/notification/unread-counter.service';
+import { NotificationManagerService } from '@core/services/notification/notification-manager.service';
 import { QUICK_MESSAGES, JobMessage } from '@shared/models/communication.model';
 import { ButtonComponent } from './button';
 import { FormsModule } from '@angular/forms';
@@ -48,9 +50,9 @@ import { Subscription } from 'rxjs';
             <div [class]="'max-w-[80%] rounded-2xl px-4 py-2 text-sm ' + 
               (isMe(msg.sender_id) 
                 ? 'bg-primary text-white rounded-tr-none' 
-                : 'bg-white text-text-primary border border-gray-200 rounded-tl-none')">
-              <p>{{ msg.message }}</p>
-              <p [class]="'text-[8px] mt-1 opacity-70 ' + (isMe(msg.sender_id) ? 'text-right' : 'text-left')">
+                : 'bg-white text-slate-900 border border-gray-200 rounded-tl-none')">
+              <p [class]="isMe(msg.sender_id) ? 'text-white' : 'text-slate-900'">{{ msg.message }}</p>
+              <p [class]="'text-[8px] mt-1 ' + (isMe(msg.sender_id) ? 'text-blue-100 text-right' : 'text-slate-500 text-left')">
                 {{ msg.created_at | date:'HH:mm' }}
               </p>
             </div>
@@ -117,6 +119,8 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
 
   private commService = inject(CommunicationService);
   private auth = inject(AuthService);
+  private unreadCounter = inject(UnreadCounterService);
+  private notificationManager = inject(NotificationManagerService);
   
   messages = signal<JobMessage[]>([]);
   quickMessages = QUICK_MESSAGES;
@@ -131,9 +135,18 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
     this.commService.getJobMessages(this.jobId);
     this.commService.subscribeToJobMessages(this.jobId);
     
+    // Subscribe to unread counter for this job
+    this.unreadCounter.subscribeToJob(this.jobId);
+    
+    // Mark messages as read when panel is opened
+    this.markMessagesAsRead();
+    
     this.messagesSub = this.commService.messages$.subscribe(msgs => {
       this.messages.set(msgs);
       setTimeout(() => this.scrollToBottom(), 100);
+      
+      // Check for new messages and trigger notifications
+      this.checkForNewMessages(msgs);
     });
   }
 
@@ -146,6 +159,7 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
 
   ngOnDestroy() {
     this.commService.unsubscribeFromJobMessages();
+    this.unreadCounter.unsubscribeFromJob(this.jobId);
     this.messagesSub?.unsubscribe();
   }
 
@@ -199,5 +213,20 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
         behavior: 'smooth'
       });
     }, 120);
+  }
+
+  private markMessagesAsRead(): void {
+    this.unreadCounter.markAsRead(this.jobId);
+  }
+
+  private checkForNewMessages(messages: JobMessage[]): void {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && !this.isMe(lastMessage.sender_id)) {
+      // This is a new message from someone else
+      console.log('[CommunicationPanel] New message received:', lastMessage);
+      
+      // Mark as read since user is actively viewing the chat
+      this.markMessagesAsRead();
+    }
   }
 }

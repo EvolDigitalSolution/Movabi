@@ -215,4 +215,31 @@ export class MapComponent implements OnInit, OnDestroy {
   resize() {
     this.mapRenderer.resize();
   }
+
+  drawTrackingPolyline(id: string, coords: Array<{lat:number; lng:number}>): void {
+    this.mapRenderer.drawTrackingPolyline(id, coords);
+  }
+
+  drawLineString(
+    id: string,
+    points: Array<{ lat: number; lng: number }>
+  ): void {
+    this.mapRenderer.drawLineString(id, points);
+  }
+
+  fitTrackingBounds(points: Array<{ lat: number; lng: number }>): void {
+    this.mapRenderer.fitTrackingBounds(points);
+  }
+
+  upsertMarker(id: string, coords: { lat: number; lng: number }, options: { type: string }): void {
+    this.mapRenderer.upsertMarker(id, coords, options);
+  }
+
+  updateMarkerPosition(id: string, coords: { lat: number; lng: number }): void {
+    this.mapRenderer.updateMarkerPosition(id, coords);
+  }
+
+  drawRouteGeometry(id: string, coordinates: number[][]): void {
+    this.mapRenderer.drawRouteGeometry(id, coordinates);
+  }
 }

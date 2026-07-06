@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Map, NavigationControl, Marker, AttributionControl } from 'maplibre-gl';
+import { Map, NavigationControl, Marker, AttributionControl, LngLatBounds } from 'maplibre-gl';
 import { MapProviderService } from './map-provider.service';
 import { MarkerFactoryService } from './marker-factory.service';
 import { MarkerOptions } from '../../models/maps/map-marker.model';
@@ -364,5 +364,233 @@ export class MapRendererService {
     if (this.map) {
       this.map.resize();
     }
+  }
+
+  drawTrackingPolyline(id: string, coords: Array<{lat:number; lng:number}>): void {
+    const map = this.map;
+    if (!map || coords.length < 2) return;
+
+    const sourceId = `${id}-source`;
+    const layerId = `${id}-layer`;
+
+    const lineCoords = coords.map(p => [p.lng, p.lat]);
+
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: lineCoords
+        },
+        properties: {}
+      }
+    });
+
+    map.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-width': 5,
+        'line-opacity': 0.9,
+        'line-color': '#2563eb'
+      }
+    });
+  }
+
+  drawLineString(
+    id: string,
+    points: Array<{ lat: number; lng: number }>
+  ): void {
+    const map = this.map;
+    if (!map || points.length < 2) return;
+
+    const sourceId = `${id}-source`;
+    const layerId = `${id}-layer`;
+
+    const coordinates = points
+      .filter(p =>
+        Number.isFinite(Number(p.lat)) &&
+        Number.isFinite(Number(p.lng)) &&
+        Math.abs(Number(p.lat)) > 0 &&
+        Math.abs(Number(p.lng)) > 0
+      )
+      .map(p => [Number(p.lng), Number(p.lat)]);
+
+    if (coordinates.length < 2) return;
+
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
+
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates
+        },
+        properties: {}
+      }
+    });
+
+    map.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-color': '#2563eb',
+        'line-width': 6,
+        'line-opacity': 0.95
+      }
+    });
+  }
+
+  fitTrackingBounds(points: Array<{ lat: number; lng: number }>): void {
+    const map = this.map;
+    if (!map || points.length < 2) return;
+
+    const valid = points.filter(p =>
+      Number.isFinite(Number(p.lat)) &&
+      Number.isFinite(Number(p.lng)) &&
+      Math.abs(Number(p.lat)) > 0 &&
+      Math.abs(Number(p.lng)) > 0
+    );
+
+    if (valid.length < 2) return;
+
+    // Use imported LngLatBounds
+    
+    const bounds = valid.reduce((b, p) => {
+      return b.extend([Number(p.lng), Number(p.lat)]);
+    }, new LngLatBounds(
+      [Number(valid[0].lng), Number(valid[0].lat)],
+      [Number(valid[0].lng), Number(valid[0].lat)]
+    ));
+
+    map.fitBounds(bounds, {
+      padding: {
+        top: 80,
+        left: 48,
+        right: 48,
+        bottom: 420
+      },
+      duration: 600,
+      maxZoom: 16
+    });
+  }
+
+  upsertMarker(id: string, coords: { lat: number; lng: number }, options: { type: string }): void {
+    if (!this.map || !coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+      return;
+    }
+
+    // Remove existing marker if it exists
+    if (this.markers.has(id)) {
+      const marker = this.markers.get(id);
+      if (marker) {
+        marker.remove();
+      }
+      this.markers.delete(id);
+    }
+
+    // Create marker element based on type
+    let kind: 'driver' | 'pickup' | 'destination' = 'destination';
+    if (options.type === 'driver') kind = 'driver';
+    else if (options.type === 'pickup') kind = 'pickup';
+
+    const el = this.markerFactory.createMarkerElement(kind, 'ride' as any, '');
+    
+    const marker = new Marker({ element: el })
+      .setLngLat([coords.lng, coords.lat])
+      .addTo(this.map);
+
+    this.markers.set(id, marker);
+  }
+
+  updateMarkerPosition(id: string, coords: { lat: number; lng: number }): void {
+    if (!this.map || !coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+      return;
+    }
+
+    const marker = this.markers?.get(id);
+    if (!marker) {
+      // Marker doesn't exist, create it with default options
+      this.upsertMarker(id, coords, { type: 'destination' });
+      return;
+    }
+
+    marker.setLngLat([coords.lng, coords.lat]);
+  }
+
+  drawRouteGeometry(id: string, coordinates: number[][]): void {
+    const map = this.map;
+    if (!map || !coordinates?.length || coordinates.length < 2) return;
+
+    const sourceId = `${id}-source`;
+    const layerId = `${id}-layer`;
+
+    const validCoords = coordinates
+      .filter(c =>
+        Array.isArray(c) &&
+        c.length >= 2 &&
+        Number.isFinite(Number(c[0])) &&
+        Number.isFinite(Number(c[1]))
+      )
+      .map(c => [Number(c[0]), Number(c[1])]);
+
+    if (validCoords.length < 2) return;
+
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
+
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: validCoords
+        },
+        properties: {}
+      }
+    });
+
+    map.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-color': '#2563eb',
+        'line-width': 6,
+        'line-opacity': 0.95
+      }
+    });
   }
 }

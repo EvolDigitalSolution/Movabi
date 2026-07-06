@@ -7,6 +7,7 @@
     ViewChild,
     computed
 } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IonicModule, AlertController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -38,7 +39,13 @@ import {
     archiveOutline,
     flagOutline,
     storefrontOutline,
-    homeOutline
+    homeOutline,
+    informationCircleOutline,
+    navigateCircleOutline,
+    documentTextOutline,
+    chatbubbleEllipsesOutline,
+    walletOutline,
+    helpCircleOutline
 } from 'ionicons/icons';
 
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -50,6 +57,8 @@ import { WalletService } from '../../../../../core/services/wallet/wallet.servic
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { NativePlatformService } from '../../../../../core/services/native/native-platform.service';
+import { AuthService } from '../../../../../core/services/auth/auth.service';
+import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
 
 import {
     Booking,
@@ -100,7 +109,9 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
       @if (booking()) {
         <div class="relative h-full overflow-hidden ion-padding-bottom">
           <div class="absolute inset-0 bg-slate-100 overflow-hidden">
-            <app-map #map></app-map>
+            <div class="absolute inset-0" (pointerdown)="onMapUserInteraction()" (wheel)="onMapUserInteraction()">
+              <app-map #map></app-map>
+            </div>
 
             <!-- Recenter button -->
             @if (!autoFollowEnabled) {
@@ -114,63 +125,15 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
               </button>
             }
 
-            @if (booking()?.status === 'searching') {
-              <div class="absolute left-3 top-3 z-20 w-[calc(100%_-_5.5rem)] max-w-[20rem] pointer-events-none">
-                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-xl shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
-                  <div class="flex items-center gap-3">
-                    <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
-                    <ion-spinner name="crescent" color="primary"></ion-spinner>
-                    </div>
-
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between gap-3">
-                        <div class="min-w-0">
-                          <h2 class="text-sm font-display font-black text-slate-950 leading-tight">Finding driver</h2>
-                          <p class="text-[11px] text-slate-500 font-semibold leading-snug">Nearby drivers contacted</p>
-                        </div>
-                        <span class="text-sm font-display font-black text-blue-700 shrink-0">
-                          {{ searchCountdownLabel() }}
-                        </span>
-                      </div>
-
-                      <div class="mt-2 w-full h-1.5 bg-blue-100 rounded-full overflow-hidden">
-                        <div
-                          class="h-full bg-blue-600 rounded-full transition-all duration-1000"
-                          [style.width.%]="searchProgressPercent()"
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            }
-
-            @if (booking()?.driver_id && (driverEtaToPickup() !== null || driverDistanceToPickup() !== null)) {
-              <div class="absolute left-3 top-3 z-20 pointer-events-none">
-                <div class="bg-black/75 backdrop-blur-sm rounded-lg px-3 py-2 pointer-events-auto">
-                  <div class="flex items-center gap-2">
-                    @if (driverEtaToPickup() !== null) {
-                      <span class="text-white font-semibold text-sm">{{ formatDuration(driverEtaToPickup()!) }}</span>
+            <!-- Compact status pill -->
+            @if (booking()) {
+              <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
+                <div class="bg-black/75 backdrop-blur-sm rounded-full px-4 py-2 pointer-events-auto">
+                  <div class="flex items-center justify-center gap-3">
+                    <span class="text-white font-semibold text-sm">{{ bookingStatusLabel() }}</span>
+                    @if (etaMinutes() !== null && distanceKm() !== null) {
+                      <span> • {{ etaMinutes() }} mins • {{ distanceKm() }} km</span>
                     }
-                    @if (driverDistanceToPickup() !== null) {
-                      <span class="text-white/80 text-xs">{{ formatDistance(driverDistanceToPickup()!) }}</span>
-                    }
-                    <span class="bg-emerald-500 text-white text-xs font-bold px-1.5 py-0.5 rounded">NOW</span>
-                  </div>
-                </div>
-              </div>
-            } @else if (booking()?.driver_id) {
-              <div class="absolute left-3 top-3 z-20 pointer-events-none">
-                <div class="bg-white/95 backdrop-blur border border-white/70 rounded-xl shadow-xl shadow-slate-900/12 p-2.5 pointer-events-auto">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center border border-orange-100 shrink-0">
-                      <ion-icon name="car-sport-outline" class="text-xl"></ion-icon>
-                    </div>
-                    <div class="min-w-0">
-                      <p class="text-[11px] text-slate-500 font-semibold">{{ driverLiveLabel() }}</p>
-                      <h3 class="text-sm font-display font-black text-slate-950 leading-tight break-words">{{ getDriverName() }}</h3>
-                      <p class="text-[11px] text-slate-500 font-semibold leading-snug break-words">{{ driverLiveSubtext() }}</p>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -181,15 +144,12 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
 
 
           </div>
-          <div
-            class="absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[2rem] border-t border-slate-100 bg-white p-3 shadow-2xl transition-all duration-300 ion-padding-bottom"
-            [class.transition-none]="isDraggingSheet()"
-            [style.height.%]="trackingSheetHeight()"
-            (window:pointermove)="onSheetDrag($event)"
-            (window:pointerup)="endSheetDrag()"
-            (window:pointercancel)="endSheetDrag()"
-            (focusin)="expandSheetForFocus()"
-          >
+            <div
+              class="absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[2rem] border-t border-slate-100 bg-white p-3 shadow-2xl transition-all duration-300 ion-padding-bottom"
+              [class.transition-none]="isDraggingSheet()"
+              [style.height.%]="trackingSheetHeight()"
+              (focusin)="expandSheetForFocus()"
+            >
             <div class="shrink-0 -mx-3 -mt-3 rounded-t-[2rem] bg-white/95 backdrop-blur border-b border-slate-100">
               <button
                 type="button"
@@ -201,14 +161,14 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                 <span class="w-16 h-1.5 bg-slate-400 rounded-full shadow-md"></span>
               </button>
 
-              <div class="px-4 pb-3">
+              <div class="px-3 pb-3">
                 <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-1.5 shadow-inner shadow-slate-200/40">
-                  <div class="flex gap-3 overflow-x-auto scrollbar-hide overscroll-x-contain">
+                  <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
                   @for (tab of trackingTabs; track tab.id) {
                     <button
                       type="button"
                       (click)="setActiveTrackingTab(tab.id)"
-                      class="relative shrink-0 h-10 rounded-full px-4 text-[13px] font-semibold tracking-normal border transition-all whitespace-nowrap"
+                      class="relative min-w-0 h-12 rounded-xl px-1.5 py-1 text-[11px] font-semibold leading-tight border transition-all inline-flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] hover:shadow-sm"
                       [class.bg-amber-500]="activeTrackingTab() === tab.id"
                       [class.text-white]="activeTrackingTab() === tab.id"
                       [class.border-amber-500]="activeTrackingTab() === tab.id"
@@ -218,9 +178,14 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                       [class.text-slate-700]="activeTrackingTab() !== tab.id"
                       [class.border-slate-200]="activeTrackingTab() !== tab.id"
                     >
-                      {{ tab.label }}
+                      <ion-icon
+                        [name]="tab.icon"
+                        class="text-[17px] shrink-0"
+                        [attr.aria-label]="tab.label + ' tab icon'"
+                      ></ion-icon>
+                      <span class="block max-w-full truncate">{{ tab.label }}</span>
                       @if (tab.id === 'chat' && unreadMessageCount() > 0) {
-                        <span class="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-orange-600 px-1.5 text-[10px] font-black text-white ring-2 ring-white/70">
+                        <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white/70">
                           {{ unreadMessageCount() }}
                         </span>
                       }
@@ -545,28 +510,27 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                 </div>
               </div>
 
-              @if (['accepted', 'arrived', 'in_progress', 'heading_to_pickup', 'en_route_to_customer'].includes(booking()?.status || '')) {
-                <div class="pt-2" [class.hidden]="activeTrackingTab() !== 'chat'">
-                  <app-button
-                    [variant]="showChat() ? 'outline' : 'secondary'"
-                    (clicked)="showChat.set(!showChat())"
-                    class="w-full"
-                  >
-                    <ion-icon [name]="showChat() ? 'chevron-down' : 'chatbubbles'" class="mr-2 text-xl"></ion-icon>
-                    {{ showChat() ? 'Hide Chat' : 'Message Driver' }}
-                  </app-button>
-
-                  @if (showChat()) {
-                    <div class="mt-3 h-[500px] border border-slate-100 rounded-[1.5rem] overflow-hidden shadow-lg shadow-slate-200/50">
-                      <app-communication-panel
-                        [jobId]="booking()!.id"
-                        [receiverId]="booking()!.driver_id!"
-                        [receiverPhone]="booking()?.driver?.phone"
-                      ></app-communication-panel>
+              <div class="pt-2 space-y-3" [class.hidden]="activeTrackingTab() !== 'chat'">
+                @if (booking()?.driver_id) {
+                  <div class="h-[min(58vh,520px)] min-h-[360px] border border-slate-100 rounded-[1.5rem] overflow-hidden shadow-lg shadow-slate-200/50">
+                    <app-communication-panel
+                      [jobId]="booking()!.id"
+                      [receiverId]="booking()!.driver_id!"
+                      [receiverPhone]="booking()?.driver?.phone"
+                    ></app-communication-panel>
+                  </div>
+                } @else {
+                  <div class="movabi-card-compact bg-slate-50 border border-slate-100 text-center">
+                    <div class="mx-auto mb-3 w-12 h-12 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-amber-600 shadow-sm">
+                      <ion-icon name="chatbubble-ellipses-outline" class="text-2xl"></ion-icon>
                     </div>
-                  }
-                </div>
-              }
+                    <h3 class="text-base font-bold text-slate-900">Chat not available yet</h3>
+                    <p class="mt-2 text-sm font-semibold text-slate-500 leading-relaxed">
+                      Chat will be available when a driver accepts your request.
+                    </p>
+                  </div>
+                }
+              </div>
             }
 
             <div class="movabi-card-compact bg-slate-50 shadow-none" [class.hidden]="activeTrackingTab() !== 'route'">
@@ -691,18 +655,89 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
               </div>
             }
 
-            <div class="pt-4 space-y-4" [class.hidden]="activeTrackingTab() !== 'help'">
-              @if (booking()?.status === 'completed') {
-                <app-button variant="primary" size="lg" (clicked)="showRating()" class="w-full">
-                  <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
-                  Rate Experience
-                </app-button>
-              } @else if (canManuallyCancel()) {
-                <app-button variant="outline" color="error" size="lg" (clicked)="cancelBooking()" class="w-full">
-                  <ion-icon name="close-circle-outline" slot="start" class="mr-2"></ion-icon>
-                  Cancel Booking
-                </app-button>
-              }
+            <div class="pt-4 space-y-3" [class.hidden]="activeTrackingTab() !== 'help'">
+              <div class="movabi-card-compact bg-white border border-slate-100 space-y-3">
+                <div class="flex items-start gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                    <ion-icon name="help-circle-outline" class="text-2xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0">
+                    <h3 class="text-base font-bold text-slate-900">Help & support</h3>
+                    <p class="mt-1 text-sm font-semibold text-slate-500 leading-relaxed">
+                      Get help with this booking, safety, cancellation, or lost items.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    (click)="contactSupport()"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="chatbubble-ellipses-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                    <span>Contact support</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    (click)="reportIssue()"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="flag-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                    <span>Report issue</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    (click)="openSafetyHelp()"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="shield-checkmark-outline" class="text-xl text-emerald-600 shrink-0"></ion-icon>
+                    <span>Safety/help</span>
+                  </button>
+
+                  @if (booking()?.status === 'completed') {
+                    <button
+                      type="button"
+                      (click)="reportLostItem()"
+                      class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                    >
+                      <ion-icon name="archive-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                      <span>Lost item</span>
+                    </button>
+                    <app-button variant="primary" size="lg" (clicked)="showRating()" class="w-full">
+                      <ion-icon name="checkmark-circle-outline" slot="start" class="mr-2"></ion-icon>
+                      Rate Experience
+                    </app-button>
+                  } @else {
+                    <button
+                      type="button"
+                      disabled
+                      class="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left font-bold text-slate-400 flex items-start gap-3"
+                    >
+                      <ion-icon name="archive-outline" class="mt-0.5 text-xl shrink-0"></ion-icon>
+                      <span>Lost item <span class="block text-xs font-semibold">{{ lostItemUnavailableReason() }}</span></span>
+                    </button>
+                  }
+
+                  @if (canManuallyCancel()) {
+                    <app-button variant="outline" color="error" size="lg" (clicked)="cancelBooking()" class="w-full">
+                      <ion-icon name="close-circle-outline" slot="start" class="mr-2"></ion-icon>
+                      Cancel request
+                    </app-button>
+                  } @else {
+                    <button
+                      type="button"
+                      disabled
+                      class="w-full rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left font-bold text-slate-400 flex items-start gap-3"
+                    >
+                      <ion-icon name="close-circle-outline" class="mt-0.5 text-xl shrink-0"></ion-icon>
+                      <span>Cancel request <span class="block text-xs font-semibold">{{ cancelUnavailableReason() }}</span></span>
+                    </button>
+                  }
+                </div>
+              </div>
             </div>
             </div>
           </div>
@@ -724,8 +759,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private walletService = inject(WalletService);
     private routingService = inject(RoutingService);
     private nativePlatform = inject(NativePlatformService);
+    private auth = inject(AuthService);
+    private notificationOrchestrator = inject(NotificationOrchestratorService);
 
     private localSearchFallbackExpiresAt: number | null = null;
+    private messageCountWarningShown = false;
 
     public config = inject(AppConfigService);
 
@@ -740,25 +778,34 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     showChat = signal(false);
     activeTrackingTab = signal<CustomerTrackingTab>('overview');
     messageCount = signal(0);
-    unreadMessageCount = signal(0);
-    trackingTabs: Array<{ id: CustomerTrackingTab; label: string }> = [
-        { id: 'overview', label: 'Overview' },
-        { id: 'route', label: 'Route' },
-        { id: 'details', label: 'Details' },
-        { id: 'chat', label: 'Chat' },
-        { id: 'payment', label: 'Payment' },
-        { id: 'help', label: 'Help' }
+    unreadMessageCount = computed(() => {
+        const bookingId = this.booking()?.id;
+        return bookingId ? this.notificationOrchestrator.getBadgeCount(bookingId) : 0;
+    });
+    trackingTabs: Array<{ id: CustomerTrackingTab; label: string; icon: string }> = [
+        { id: 'overview', label: 'Overview', icon: 'information-circle-outline' },
+        { id: 'route', label: 'Route', icon: 'navigate-circle-outline' },
+        { id: 'details', label: 'Details', icon: 'document-text-outline' },
+        { id: 'chat', label: 'Chat', icon: 'chatbubble-ellipses-outline' },
+        { id: 'payment', label: 'Payment', icon: 'wallet-outline' },
+        { id: 'help', label: 'Help', icon: 'help-circle-outline' }
     ];
     sheetState = signal<SheetState>('medium');
     detailsExpanded = signal(false);
     trackingSheetHeight = signal(40);
     isDraggingSheet = signal(false);
+    sheetDragMoved = false;
+    sheetDragStartY = 0;
+    sheetDragStartHeight = 0;
     driverDistanceToPickup = signal<number | null>(null);
     driverEtaToPickup = signal<number | null>(null);
     driverLastSeenAt = signal<Date | null>(null);
+    etaMinutes = signal<number | null>(null);
+    distanceKm = signal<number | null>(null);
 
     searchCountdownSeconds = signal(DRIVER_SEARCH_WINDOW_SECONDS);
 
+    
     searchProgressPercent = computed(() => {
         const val = Math.max(0, Math.min(DRIVER_SEARCH_WINDOW_SECONDS, this.searchCountdownSeconds()));
         return (val / DRIVER_SEARCH_WINDOW_SECONDS) * 100;
@@ -769,13 +816,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private jobEventsChannel?: RealtimeChannel;
     private messageChannel?: RealtimeChannel;
     private locationSubscription?: RealtimeChannel;
+    private subscribedDriverLocationId: string | null = null;
+    private latestDriverPoint: { lat: number; lng: number } | null = null;
+    private activeRouteDrawnFor: string | null = null;
+    private hasFitTrackingMap = false;
+    private hasAutoFitted = false;
     private lastDriverCameraUpdateAt = 0;
-    private dragStartY: number | null = null;
-    private dragDeltaY = 0;
-    private sheetDragStartY = 0;
-    private sheetDragStartHeight = 40;
-    private sheetDragActive = false;
-    private sheetDragMoved = false;
     private lastNotifiedStatus: string | null = null;
     
     // Map control properties
@@ -783,6 +829,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private lastUserInteractionTime = 0;
     autoFollowEnabled = true;
     private readonly USER_INTERACTION_TIMEOUT = 30000; // 30 seconds
+    
+    // New single tracking renderer properties
+    hasInitialFit = false;
+    userMovedMap = false;
+    followMode = true;
+    didCleanTrackingMarkers = false;
     private lastStatusEventAt = signal<Date | null>(null);
 
     private pollingInterval?: ReturnType<typeof setInterval>;
@@ -815,7 +867,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             archiveOutline,
             flagOutline,
             storefrontOutline,
-            homeOutline
+            homeOutline,
+            informationCircleOutline,
+            navigateCircleOutline,
+            documentTextOutline,
+            chatbubbleEllipsesOutline,
+            walletOutline,
+            helpCircleOutline
         });
     }
 
@@ -832,8 +890,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     setActiveTrackingTab(tab: CustomerTrackingTab): void {
         this.activeTrackingTab.set(tab);
         if (tab === 'chat') {
-            this.unreadMessageCount.set(0);
             this.showChat.set(true);
+            // Mark messages as read using NotificationOrchestrator
+            const bookingId = this.booking()?.id;
+            if (bookingId) {
+                void this.notificationOrchestrator.markAsRead(bookingId);
+            }
         }
         if (tab === 'route') {
             setTimeout(() => this.recenterMap(), 120);
@@ -844,13 +906,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             this.sheetDragMoved = false;
             return;
         }
-        if (this.sheetDragActive) return;
-        this.setSheetState(this.trackingSheetHeight() >= 60 ? 'medium' : 'expanded');
+
+        this.trackingSheetHeight.set(this.trackingSheetHeight() >= 70 ? 40 : 80);
     }
 
     expandSheetForFocus(): void {
-        if (this.sheetState() !== 'expanded') {
-            this.setSheetState('expanded');
+        if (this.trackingSheetHeight() < 80) {
+            this.trackingSheetHeight.set(80);
         }
     }
 
@@ -866,6 +928,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.subscribeToErrandFunding(id);
         this.subscribeToJobEvents(id);
         this.subscribeToJobMessages(id);
+
+        // Subscribe to notifications for this job
+        this.notificationOrchestrator.subscribeToJob(id);
 
         await this.walletService.fetchWallet();
         await this.loadBookingAndDetails(id, true);
@@ -884,105 +949,63 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.errandFundingChannel?.unsubscribe();
         this.jobEventsChannel?.unsubscribe();
         this.messageChannel?.unsubscribe();
+        
+        // Unsubscribe from notifications
+        const bookingId = this.booking()?.id;
+        if (bookingId) {
+            this.notificationOrchestrator.unsubscribeFromJob(bookingId);
+        }
         this.locationSubscription?.unsubscribe();
+        this.subscribedDriverLocationId = null;
     }
 
-    startDetailsDrag(event: TouchEvent): void {
-        const touch = event.touches[0];
-        if (!touch) return;
-        this.dragStartY = touch.clientY;
-        this.dragDeltaY = 0;
-    }
-
-    moveDetailsDrag(event: TouchEvent): void {
-        if (this.dragStartY === null) return;
-        const touch = event.touches[0];
-        if (!touch) return;
-        this.dragDeltaY = touch.clientY - this.dragStartY;
-        if (Math.abs(this.dragDeltaY) > 8) event.preventDefault();
-    }
-
-    endDetailsDrag(): void {
-        if (this.dragStartY === null) return;
-        this.applyDetailsDrag();
-    }
-
+    
     startSheetDrag(event: PointerEvent): void {
-        if (event.button !== 0 && event.pointerType === 'mouse') return;
         event.preventDefault();
-
-        this.sheetDragActive = true;
-        this.sheetDragMoved = false;
         this.isDraggingSheet.set(true);
+        this.sheetDragMoved = false;
         this.sheetDragStartY = event.clientY;
         this.sheetDragStartHeight = this.trackingSheetHeight();
-        console.debug('[booking-tracking] sheet drag start', this.sheetDragStartHeight);
+
+        const move = (moveEvent: PointerEvent) => {
+            const delta = Math.abs(moveEvent.clientY - this.sheetDragStartY);
+            if (delta > 4) {
+                this.sheetDragMoved = true;
+            }
+
+            const viewportHeight = Math.max(window.innerHeight, 1);
+            const deltaVh = ((this.sheetDragStartY - moveEvent.clientY) / viewportHeight) * 100;
+            const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaVh));
+            this.trackingSheetHeight.set(nextHeight);
+        };
+
+        const end = () => {
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            document.removeEventListener('pointercancel', end);
+            this.trackingSheetHeight.set(this.trackingSheetHeight() >= 60 ? 80 : 40);
+
+            window.setTimeout(() => {
+                this.isDraggingSheet.set(false);
+                this.sheetDragMoved = false;
+            }, 0);
+        };
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', end, { once: true });
+        document.addEventListener('pointercancel', end, { once: true });
     }
 
-    onSheetDrag(event: PointerEvent): void {
-        if (!this.sheetDragActive) return;
-        event.preventDefault();
-
-        const viewportHeight = Math.max(window.innerHeight, 1);
-        const deltaPercent = ((this.sheetDragStartY - event.clientY) / viewportHeight) * 100;
-        if (Math.abs(deltaPercent) > 1) {
-            this.sheetDragMoved = true;
-        }
-        const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaPercent));
-        this.trackingSheetHeight.set(nextHeight);
-        console.debug('[booking-tracking] sheet drag move', nextHeight);
+    onSheetDrag(_event: PointerEvent): void {
+        // Kept for template/backward compatibility; drag movement is handled by document listeners.
     }
 
     endSheetDrag(): void {
-        if (!this.sheetDragActive) return;
-
-        this.sheetDragActive = false;
-        this.setSheetState(this.trackingSheetHeight() >= 60 ? 'expanded' : 'medium');
-        window.setTimeout(() => this.isDraggingSheet.set(false), 0);
-        console.debug('[booking-tracking] sheet drag end', this.trackingSheetHeight());
-
-        // Don't auto-fit bounds on sheet drag - let user control the map
-        this.onMapUserInteraction();
+        // Kept for template/backward compatibility; drag end is handled by document listeners.
     }
 
     startDetailsPointerDrag(event: PointerEvent): void {
         this.startSheetDrag(event);
-    }
-
-    moveDetailsPointerDrag(event: PointerEvent): void {
-        if (this.dragStartY === null) return;
-        this.dragDeltaY = event.clientY - this.dragStartY;
-        if (Math.abs(this.dragDeltaY) > 8) event.preventDefault();
-    }
-
-    endDetailsPointerDrag(event: PointerEvent): void {
-        (event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId);
-        if (this.dragStartY === null) return;
-        this.applyDetailsDrag();
-    }
-
-    private applyDetailsDrag(): void {
-        if (this.dragDeltaY < -40) this.moveSheetState(1);
-        if (this.dragDeltaY > 40) this.moveSheetState(-1);
-        this.dragStartY = null;
-        this.dragDeltaY = 0;
-
-        // Don't auto-fit bounds on sheet drag - let user control the map
-        this.onMapUserInteraction();
-    }
-
-    private moveSheetState(direction: 1 | -1): void {
-        const states: SheetState[] = ['medium', 'expanded'];
-        const currentIndex = states.indexOf(this.sheetState());
-        const nextIndex = Math.max(0, Math.min(states.length - 1, currentIndex + direction));
-        this.setSheetState(states[nextIndex]);
-    }
-
-    private setSheetState(state: SheetState): void {
-        this.sheetState.set(state);
-        this.detailsExpanded.set(state === 'expanded');
-        this.trackingSheetHeight.set(state === 'expanded' ? 80 : 40);
-        // Don't auto-fit bounds on sheet state change - let user control the map
     }
 
     private async notifyStatusChange(previousStatus: string, booking: Booking): Promise<void> {
@@ -991,7 +1014,36 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.lastNotifiedStatus = status;
         this.lastStatusEventAt.set(this.toDate((booking as any).updated_at) || new Date());
+        
+        // Trigger comprehensive notification using notification manager
+        await this.triggerStatusNotification(status, booking);
+        
+        // Keep existing notification for backward compatibility
         await this.notifyTrackingUpdate(status, booking.id);
+    }
+
+    private async triggerStatusNotification(status: string, booking: Booking): Promise<void> {
+        const statusLabel = this.getStatusLabel(status);
+        const jobId = booking.id;
+        
+        // Map status to notification event type
+        const notificationTypeMap: Record<string, any> = {
+            'accepted': 'driver_accepted_booking',
+            'arrived': 'driver_arrived',
+            'in_progress': 'driver_started_trip',
+            'shopping_in_progress': 'driver_completed_shopping',
+            'collected': 'driver_collected_items',
+            'en_route_to_customer': 'driver_en_route',
+            'completed': 'driver_completed_trip',
+            'cancelled': 'customer_cancelled',
+            'canceled': 'customer_cancelled',
+            'over_budget_requested': 'extra_budget_requested'
+        };
+
+        const notificationType = notificationTypeMap[status];
+        if (notificationType) {
+            // Notification is now handled by NotificationOrchestrator
+        }
     }
 
     private async notifyTrackingUpdate(status: string, bookingId: string): Promise<void> {
@@ -1883,8 +1935,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.driverDistanceToPickup.set(null);
         this.driverEtaToPickup.set(null);
         this.driverLastSeenAt.set(null);
+        this.latestDriverPoint = null;
+        this.activeRouteDrawnFor = null;
+        
+        // Remove tracking driver marker
+        if (this.mapComponent) {
+            this.mapComponent.removeMarker('tracking-driver');
+        }
+        
         this.locationSubscription?.unsubscribe();
         this.locationSubscription = undefined;
+        this.subscribedDriverLocationId = null;
     }
 
     private isTerminalTrackingStatus(status: string): boolean {
@@ -1950,6 +2011,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                         await this.notifyTrackingUpdate(eventStatus, id);
                     }
 
+                    // Update booking status immediately
+                    this.onBookingRealtimeUpdate(payload);
+                    
                     await this.loadBookingAndDetails(id, false);
                 }
             )
@@ -1982,26 +2046,86 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private async refreshMessageCount(id: string): Promise<void> {
+        const receiverId = this.currentMessageReceiverId();
+
+        if (!receiverId) {
+            this.messageCount.set(0);
+            // unreadMessageCount is now computed, cannot set directly
+            return;
+        }
+
         try {
-            const { count, error } = await this.supabase
+            const { data, error } = await this.supabase
                 .from('job_messages')
-                .select('id', { count: 'exact', head: true })
-                .eq('job_id', id);
+                .select('id, read_at, receiver_id, created_at')
+                .eq('job_id', id)
+                .eq('receiver_id', receiverId)
+                .is('read_at', null)
+                .order('created_at', { ascending: false })
+                .limit(50);
 
             if (error) {
+                this.warnMessageCountUnavailable(error);
                 return;
             }
 
-            const nextCount = count || 0;
-            const previousCount = this.messageCount();
+            const nextCount = data?.length || 0;
             this.messageCount.set(nextCount);
-
-            if (this.activeTrackingTab() !== 'chat' && nextCount > previousCount) {
-                this.unreadMessageCount.update((current) => current + (nextCount - previousCount));
-            }
+            // unreadMessageCount is now computed, cannot set directly
         } catch (error) {
-            console.warn('[booking-tracking] message count unavailable', error);
+            this.warnMessageCountUnavailable(error);
         }
+    }
+
+    private currentMessageReceiverId(): string {
+        return String(this.auth.currentUser()?.id || this.booking()?.customer_id || '').trim();
+    }
+
+    private async markCurrentMessagesRead(): Promise<void> {
+        const b = this.booking();
+        const receiverId = this.currentMessageReceiverId();
+
+        if (!b?.id || !receiverId) {
+            return;
+        }
+
+        try {
+            const { error } = await this.supabase
+                .from('job_messages')
+                .update({ read_at: new Date().toISOString() })
+                .eq('job_id', b.id)
+                .eq('receiver_id', receiverId)
+                .is('read_at', null);
+
+            if (error) {
+                this.warnMessageCountUnavailable(error);
+                return;
+            }
+
+            this.messageCount.set(0);
+            // unreadMessageCount is now computed, cannot set directly
+        } catch (error) {
+            this.warnMessageCountUnavailable(error);
+        }
+    }
+
+    private warnMessageCountUnavailable(error: unknown): void {
+        this.messageCount.set(0);
+        // unreadMessageCount is now computed, cannot set directly
+
+        if (this.messageCountWarningShown) {
+            return;
+        }
+
+        this.messageCountWarningShown = true;
+        const safeError = error && typeof error === 'object'
+            ? {
+                code: (error as { code?: unknown }).code,
+                message: (error as { message?: unknown }).message,
+                status: (error as { status?: unknown }).status
+            }
+            : undefined;
+        console.warn('[booking-tracking] chat unread badge unavailable; showing 0', safeError);
     }
     async loadBookingAndDetails(id: string, showLoading = true): Promise<void> {
         if (showLoading) this.isLoading.set(true);
@@ -2071,61 +2195,32 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (!b || !this.mapComponent) return;
 
-        const pickupLat = Number(b.pickup_lat);
-        const pickupLng = Number(b.pickup_lng);
+        setTimeout(() => this.renderTrackingMap('init', true), 250);
+    }
 
-        const dropLat = Number(b.dropoff_lat);
-        const dropLng = Number(b.dropoff_lng);
+    private getPickupPoint(booking: Booking): { lat: number; lng: number } | null {
+        const point = { lat: Number(booking.pickup_lat), lng: Number(booking.pickup_lng) };
+        return this.isValidCoordinate(point.lat) && this.isValidCoordinate(point.lng) ? point : null;
+    }
 
-        if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) {
-            return;
-        }
-
-        setTimeout(() => {
-            this.mapComponent?.addOrUpdateMarker({
-                id: 'pickup',
-                coordinates: { lat: pickupLat, lng: pickupLng },
-                kind: 'pickup',
-                serviceType: b.service_slug as ServiceTypeSlug,
-                label: this.mapOriginMarkerLabel()
-            });
-
-            if (this.isValidCoordinate(dropLat) && this.isValidCoordinate(dropLng)) {
-                this.mapComponent?.addOrUpdateMarker({
-                    id: 'dropoff',
-                    coordinates: { lat: dropLat, lng: dropLng },
-                    kind: 'destination',
-                    serviceType: b.service_slug as ServiceTypeSlug,
-                    label: this.mapDestinationMarkerLabel()
-                });
-
-                // Draw route between pickup and dropoff
-                this.drawRouteBetweenPoints(
-                    { lat: pickupLat, lng: pickupLng },
-                    { lat: dropLat, lng: dropLng }
-                );
-
-                this.fitTrackingBounds({ lat: pickupLat, lng: pickupLng }, [
-                    [Math.min(pickupLng, dropLng), Math.min(pickupLat, dropLat)],
-                    [Math.max(pickupLng, dropLng), Math.max(pickupLat, dropLat)]
-                ]);
-            }
-
-            // Only fit bounds on initial load, not on subsequent updates
-            if (this.lastDriverCameraUpdateAt === 0) {
-                this.fitTrackingBounds();
-            }
-        }, 300);
+    private getDropoffPoint(booking: Booking): { lat: number; lng: number } | null {
+        const point = { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng) };
+        return this.isValidCoordinate(point.lat) && this.isValidCoordinate(point.lng) ? point : null;
     }
 
     private subscribeToDriverLocation(driverId: string): void {
+        if (this.subscribedDriverLocationId === driverId && this.locationSubscription) {
+            return;
+        }
+
         this.locationSubscription?.unsubscribe();
-        this.lastDriverCameraUpdateAt = 0;
+        this.subscribedDriverLocationId = driverId;
 
         // Get latest location first, then subscribe for updates
         void this.locationService.getLatestDriverLocation(driverId).then((location) => {
             if (location) {
-                this.updateDriverMarker(location);
+                this.latestDriverPoint = { lat: Number(location.lat), lng: Number(location.lng) };
+                this.renderTrackingMap('driver-initial', false);
             }
         }).catch((error) => {
             console.warn('[booking-tracking] Failed to get latest driver location:', error);
@@ -2135,62 +2230,50 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.locationSubscription = this.locationService.subscribeToDriverLocation(
             driverId,
             (location: DriverLocation) => {
-                console.log('[booking-tracking] Driver location update received:', location);
-                this.updateDriverMarker(location);
+                const coords = { lat: Number(location.lat), lng: Number(location.lng) };
+                console.log('[CT] driver location update', coords);
+                this.latestDriverPoint = coords;
+                
+                // Update driver marker and recalculate route
+                this.updateDriverMarkerAndRoute(coords);
+                
+                this.renderTrackingMap('driver-location', false);
             }
         );
 
-        console.log('[booking-tracking] Subscribed to driver location updates for driver:', driverId);
+        console.log('[booking-tracking] driver location realtime: SUBSCRIBED', driverId);
     }
 
-    private updateDriverMarker(location: DriverLocation): void {
-        const b = this.booking();
-
-        if (!b || !this.mapComponent) {
-            console.warn('[booking-tracking] Cannot update driver marker - missing booking or map component');
-            return;
+    private updateDriverMarkerAndRoute(coords: { lat: number; lng: number }): void {
+        // Update driver marker as car
+        if (this.mapComponent) {
+            this.mapComponent.upsertMarker('ct-driver', coords, { type: 'car' });
         }
         
-        if (this.isTerminalTrackingStatus(String(b.status || ''))) {
-            console.log('[booking-tracking] Clearing driver state - booking is in terminal status:', b.status);
-            this.clearDriverLiveState();
-            return;
-        }
-
-        const lat = Number(location.lat);
-        const lng = Number(location.lng);
-
-        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) {
-            console.warn('[booking-tracking] Invalid driver location coordinates:', location);
-            return;
-        }
-
-        console.log('[booking-tracking] Updating driver marker to:', { lat, lng, heading: location.heading });
-
-        this.mapComponent.addOrUpdateMarker({
-            id: 'driver',
-            coordinates: { lat, lng },
-            kind: 'driver',
-            serviceType: b.service_slug as ServiceTypeSlug,
-            heading: location.heading == null ? undefined : Number(location.heading)
-        });
-
-        this.driverLastSeenAt.set(new Date());
-
-        // Smart auto-follow: only update camera if user hasn't interacted recently
-        const now = Date.now();
-        if (this.autoFollowEnabled && (now - this.lastUserInteractionTime) > this.USER_INTERACTION_TIMEOUT) {
-            if (now - this.lastDriverCameraUpdateAt >= 15000) {
-                this.fitTrackingBounds({ lat, lng });
-                this.lastDriverCameraUpdateAt = now;
+        // Recalculate route from driver to pickup/dropoff based on booking status
+        const driverCoords = coords;
+        const pickupCoords = this.getPickupCoords();
+        const dropoffCoords = this.getDropoffCoords();
+        const booking = this.booking();
+        
+        if (booking && pickupCoords) {
+            // Determine route target based on status
+            let targetCoords = pickupCoords;
+            if (booking.status === 'en_route_to_customer') {
+                targetCoords = dropoffCoords || pickupCoords;
+            }
+            
+            if (targetCoords) {
+                // Draw route and update ETA
+                void this.drawTrackingRoute(driverCoords, targetCoords, 'driver-update');
             }
         }
+    }
 
-        const routeTarget = this.getDriverRouteTarget(b);
-
-        if (!routeTarget) return;
-
-        this.updateDriverDistanceEstimate({ lat, lng }, routeTarget);
+    // OLD METHOD DISABLED - replaced by renderTrackingMap
+    private updateDriverMarker(location: DriverLocation): void {
+        // This method is no longer used - replaced by renderTrackingMap
+        console.warn('[booking-tracking] updateDriverMarker called but disabled - using renderTrackingMap instead');
     }
 
     private updateDriverDistanceEstimate(
@@ -2411,6 +2494,38 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     formatDistance(meters: number | null): string {
         return this.formatDistanceMeters(meters);
     }
+
+    bookingStatusLabel(): string {
+        const b = this.booking();
+        const status = String(
+            (b as any)?.delivery_status ||
+            (b as any)?.errand_status ||
+            b?.status ||
+            ''
+        ).toLowerCase();
+
+        switch (status) {
+            case 'pending':
+                return 'Waiting for driver';
+            case 'accepted':
+                return 'Driver accepted';
+            case 'arrived':
+                return 'Driver arrived';
+            case 'collected':
+                return 'Collected';
+            case 'in_progress':
+            case 'on_the_way':
+            case 'enroute':
+                return 'On the way';
+            case 'delivered':
+            case 'completed':
+                return 'Completed';
+            case 'cancelled':
+                return 'Cancelled';
+            default:
+                return 'Tracking active';
+        }
+    }
     private formatDistanceMeters(meters: number | null): string {
         if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
         return `${(meters / 1000).toFixed(1)} km`;
@@ -2546,6 +2661,111 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+    contactSupport(): void {
+        const b = this.booking();
+        this.openSupportEmail(
+            'Movabi support request',
+            [
+                'Hello Movabi Support,',
+                '',
+                'I need help with my booking.',
+                '',
+                `Booking ID: ${b?.id || 'Not available'}`,
+                `Status: ${this.getStatusLabel(b?.status || '')}`,
+                `Service: ${b?.service_slug || 'Request'}`
+            ].join('\n')
+        );
+    }
+
+    async reportIssue(): Promise<void> {
+        const alert = await this.alertCtrl.create({
+            header: 'Report an issue',
+            message: 'Tell Movabi support what happened. We will include this booking reference so the team can help faster.',
+            buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                {
+                    text: 'Contact Support',
+                    handler: () => this.openSupportEmail(
+                        'Movabi booking issue',
+                        [
+                            'Hello Movabi Support,',
+                            '',
+                            'I want to report an issue with this booking.',
+                            '',
+                            `Booking ID: ${this.booking()?.id || 'Not available'}`,
+                            `Status: ${this.getStatusLabel(this.booking()?.status || '')}`,
+                            '',
+                            'Issue:'
+                        ].join('\n')
+                    )
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    async openSafetyHelp(): Promise<void> {
+        const alert = await this.alertCtrl.create({
+            header: 'Safety help',
+            message: 'If you feel unsafe, move to a safe public place and contact local emergency services. Movabi support can also help with this booking.',
+            buttons: [
+                { text: 'OK', role: 'cancel' },
+                {
+                    text: 'Contact Support',
+                    handler: () => this.openSupportEmail(
+                        'Movabi safety support',
+                        [
+                            'Hello Movabi Support,',
+                            '',
+                            'I need safety help with this booking.',
+                            '',
+                            `Booking ID: ${this.booking()?.id || 'Not available'}`,
+                            `Status: ${this.getStatusLabel(this.booking()?.status || '')}`
+                        ].join('\n')
+                    )
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    reportLostItem(): void {
+        this.openSupportEmail(
+            'Movabi lost item report',
+            [
+                'Hello Movabi Support,',
+                '',
+                'I think I left or lost an item during this booking.',
+                '',
+                `Booking ID: ${this.booking()?.id || 'Not available'}`,
+                `Completed status: ${this.getStatusLabel(this.booking()?.status || '')}`,
+                '',
+                'Item description:'
+            ].join('\n')
+        );
+    }
+
+    cancelUnavailableReason(): string {
+        const status = this.getStatusLabel(this.booking()?.status || '');
+
+        if (this.isTerminalTrackingStatus(String(this.booking()?.status || ''))) {
+            return 'This booking is already finished.';
+        }
+
+        return status ? `Not available while status is ${status}.` : 'Not available for this booking.';
+    }
+
+    lostItemUnavailableReason(): string {
+        return 'Available after the booking is complete.';
+    }
+
+    private openSupportEmail(subject: string, body: string): void {
+        const mailto = `mailto:support@movabi.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(mailto, '_system');
+    }
+
     async approveOverBudget(): Promise<void> {
         const b = this.booking();
         if (!b) return;
@@ -2636,39 +2856,379 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return Number.isFinite(value) && !Number.isNaN(value);
     }
 
+    private toLngLat(input: any): { lat: number; lng: number } | null {
+        if (!input) return null;
+        
+        let lat: number | undefined;
+        let lng: number | undefined;
+        
+        // Handle different coordinate formats
+        if (typeof input === 'object') {
+            // { lat, lng }
+            if (input.lat !== undefined && input.lng !== undefined) {
+                lat = Number(input.lat);
+                lng = Number(input.lng);
+            }
+            // { latitude, longitude }
+            else if (input.latitude !== undefined && input.longitude !== undefined) {
+                lat = Number(input.latitude);
+                lng = Number(input.longitude);
+            }
+            // { coords: { lat, lng } }
+            else if (input.coords && input.coords.lat !== undefined && input.coords.lng !== undefined) {
+                lat = Number(input.coords.lat);
+                lng = Number(input.coords.lng);
+            }
+            // { coordinates: [lng, lat] }
+            else if (Array.isArray(input.coordinates) && input.coordinates.length >= 2) {
+                lng = Number(input.coordinates[0]);
+                lat = Number(input.coordinates[1]);
+            }
+        }
+        // Handle string coordinates
+        else if (typeof input === 'string') {
+            const parts = input.split(',').map(p => p.trim());
+            if (parts.length >= 2) {
+                lat = Number(parts[0]);
+                lng = Number(parts[1]);
+            }
+        }
+        
+        // Validate coordinates
+        if (lat === undefined || lng === undefined) return null;
+        if (!this.isValidCoordinate(lat) || !this.isValidCoordinate(lng)) return null;
+        if (lat === 0 && lng === 0) return null; // Reject zero coordinates
+        
+        return { lat, lng };
+    }
+
+    private getTrackingMapPadding() {
+        const sheetPercent = this.trackingSheetHeight(); // 40 or 80
+        return {
+            top: 80,
+            left: 48,
+            right: 48,
+            bottom: sheetPercent === 80 ? 520 : 360
+        };
+    }
+
+    // NEW SINGLE TRACKING RENDERER - replaces all old tracking map methods
+    private renderTrackingMap(reason: string, fit = false): void {
+        if (!this.mapComponent) return;
+
+        const driver = this.getDriverCoords();
+        const pickup = this.getPickupCoords();
+        const dropoff = this.getDropoffCoords();
+
+        const routePoints = [
+            ...(driver ? [driver] : []),
+            ...(pickup ? [pickup] : []),
+            ...(dropoff ? [dropoff] : [])
+        ];
+
+        // Clean up old markers only once
+        if (!this.didCleanTrackingMarkers) {
+            const oldMarkerIds = ['driver', 'pickup', 'dropoff', 'customer', 'destination', 'tracking-driver', 'tracking-pickup', 'tracking-dropoff'];
+            oldMarkerIds.forEach(id => {
+                if (this.mapComponent) {
+                    this.mapComponent.removeMarker(id);
+                }
+            });
+            this.didCleanTrackingMarkers = true;
+        }
+
+        // Update ct-* markers with smooth movement
+        if (driver) {
+            this.updateMarkerPosition('ct-driver', driver, { type: 'driver' });
+        }
+
+        if (pickup) {
+            this.updateMarkerPosition('ct-pickup', pickup, { type: 'pickup' });
+        }
+
+        if (dropoff) {
+            this.updateMarkerPosition('ct-dropoff', dropoff, { type: 'dropoff' });
+        }
+
+        // Draw road route with fallback to direct line
+        if (routePoints.length >= 2) {
+            void this.drawTrackingRoadRoute(routePoints);
+        }
+
+        // Fit bounds only on initial load or explicit recenter
+        const shouldFit =
+            fit ||
+            !this.hasInitialFit ||
+            reason === 'recenter';
+
+        if (shouldFit && routePoints.length >= 2) {
+            this.mapComponent.fitTrackingBounds(routePoints);
+            if (!this.hasInitialFit) {
+                this.hasInitialFit = true;
+            }
+        }
+    }
+
+    private updateMarkerPosition(id: string, coords: { lat: number; lng: number }, options: { type: string }): void {
+        // Check if marker already exists and update position smoothly
+        if (this.mapComponent && this.mapComponent.updateMarkerPosition) {
+            this.mapComponent.updateMarkerPosition(id, coords);
+        } else {
+            // Fallback to upsert if updateMarkerPosition not available
+            if (this.mapComponent) {
+                this.mapComponent.upsertMarker(id, coords, options);
+            }
+        }
+    }
+
+    private onBookingRealtimeUpdate(payload: any): void {
+        if (!payload?.new) return;
+
+        // Update booking signal with new status
+        const currentBooking = this.booking();
+        if (currentBooking) {
+            this.booking.set({
+                ...currentBooking,
+                ...payload.new
+            });
+        }
+
+        // Re-render map with updated status
+        this.renderTrackingMap('booking-update', false);
+    }
+
+    private onDriverLocationUpdate(payload: any): void {
+        const coords = this.toLngLat(payload?.new || payload);
+        if (!coords) return;
+
+        const previous = this.latestDriverPoint;
+        this.latestDriverPoint = coords;
+        this.driverLastSeenAt.set(new Date());
+
+        // Update driver marker position without recreating all markers
+        if (this.mapComponent) {
+            this.mapComponent.updateMarkerPosition('ct-driver', coords);
+        }
+
+        // Only redraw route if driver moved more than 25 metres
+        if (!previous || this.distanceMeters(previous, coords) > 25) {
+            void this.drawTrackingRoadRoute(this.getTrackingPoints());
+        }
+    }
+
+    private getTrackingPoints(): Array<{ lat: number; lng: number }> {
+        const driver = this.getDriverCoords();
+        const pickup = this.getPickupCoords();
+        const dropoff = this.getDropoffCoords();
+
+        return [
+            ...(driver ? [driver] : []),
+            ...(pickup ? [pickup] : []),
+            ...(dropoff ? [dropoff] : [])
+        ];
+    }
+
+    private getRouteGeometry(result: any): number[][] {
+        const coords =
+            result?.geometry?.coordinates ||
+            result?.route?.geometry?.coordinates ||
+            result?.features?.[0]?.geometry?.coordinates ||
+            result?.routes?.[0]?.geometry?.coordinates ||
+            result?.coordinates ||
+            [];
+
+        return Array.isArray(coords) ? coords : [];
+    }
+
+    private async drawTrackingRoadRoute(points: Array<{ lat: number; lng: number }>) {
+        const valid = points.filter(Boolean);
+        if (valid.length < 2) return;
+
+        const allCoords: number[][] = [];
+        let totalDistanceMeters = 0;
+        let totalDurationSeconds = 0;
+
+        try {
+            for (let i = 0; i < valid.length - 1; i++) {
+                const from = valid[i];
+                const to = valid[i + 1];
+
+                const result = await firstValueFrom(
+                    this.routingService.getRoute(from, to)
+                );
+
+                const coords =
+                    result?.geometry?.coordinates ||
+                    [];
+
+                const distance =
+                    result?.distanceMeters ??
+                    0;
+
+                const duration =
+                    result?.durationSeconds ??
+                    0;
+
+                if (coords.length >= 2) {
+                    allCoords.push(...(allCoords.length ? coords.slice(1) : coords));
+                }
+
+                totalDistanceMeters += Number(distance) || 0;
+                totalDurationSeconds += Number(duration) || 0;
+            }
+
+            if (allCoords.length >= 2 && this.mapComponent) {
+                this.mapComponent.drawRouteGeometry('ct-route', allCoords);
+                this.distanceKm.set(Math.round((totalDistanceMeters / 1000) * 10) / 10);
+                this.etaMinutes.set(Math.max(1, Math.round(totalDurationSeconds / 60)));
+                return;
+            }
+
+            throw new Error('No routed geometry returned');
+        } catch (error) {
+            console.warn('[Tracking] road route failed, fallback straight line used', error);
+            if (this.mapComponent) {
+                this.mapComponent.drawLineString('ct-route', valid);
+            }
+            if (valid.length >= 2) {
+                this.calculateFallbackEtaAndDistance(valid[0], valid[valid.length - 1]);
+            }
+        }
+    }
+
+    private distanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+        const R = 6371000; // Earth's radius in meters
+        const dLat = this.toRadians(to.lat - from.lat);
+        const dLng = this.toRadians(to.lng - from.lng);
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(this.toRadians(from.lat)) * Math.cos(this.toRadians(to.lat)) *
+                  Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    private toRadians(degrees: number): number {
+        return degrees * (Math.PI / 180);
+    }
+
+    private getDriverCoords(): { lat: number; lng: number } | null {
+        if (!this.latestDriverPoint) return null;
+        return {
+            lat: Number(this.latestDriverPoint.lat),
+            lng: Number(this.latestDriverPoint.lng)
+        };
+    }
+
+    private getPickupCoords(): { lat: number; lng: number } | null {
+        const booking = this.booking();
+        if (!booking) return null;
+        return this.isValidCoordinate(Number(booking.pickup_lat)) && this.isValidCoordinate(Number(booking.pickup_lng))
+            ? { lat: Number(booking.pickup_lat), lng: Number(booking.pickup_lng) }
+            : null;
+    }
+
+    private getDropoffCoords(): { lat: number; lng: number } | null {
+        const booking = this.booking();
+        if (!booking) return null;
+        return this.isValidCoordinate(Number(booking.dropoff_lat)) && this.isValidCoordinate(Number(booking.dropoff_lng))
+            ? { lat: Number(booking.dropoff_lat), lng: Number(booking.dropoff_lng) }
+            : null;
+    }
+
+    // OLD METHOD DISABLED - replaced by renderTrackingMap with direct drawLineString
+    private async drawRouteWithFallback(routePoints: { lat: number; lng: number }[]): Promise<void> {
+        console.warn('[booking-tracking] drawRouteWithFallback called but disabled - using renderTrackingMap instead');
+    }
+
+    // OLD METHOD DISABLED - replaced by renderTrackingMap with fitTrackingBounds
+    private fitTrackingBoundsWithPadding(points: { lat: number; lng: number }[]): void {
+        console.warn('[booking-tracking] fitTrackingBoundsWithPadding called but disabled - using renderTrackingMap instead');
+    }
+
     recenterMap(): void {
         console.log('[booking-tracking] Recentering map and enabling auto-follow');
-        this.autoFollowEnabled = true;
-        this.lastUserInteractionTime = 0;
-        this.lastDriverCameraUpdateAt = 0;
-        
-        // Immediately fit bounds to current positions
-        this.fitTrackingBounds();
+        this.userMovedMap = false;
+        this.followMode = true;
+        this.renderTrackingMap('recenter', true);
     }
 
     onMapUserInteraction(): void {
-        console.log('[booking-tracking] User interacting with map, disabling auto-follow');
-        this.userIsInteracting = true;
-        this.lastUserInteractionTime = Date.now();
-        this.autoFollowEnabled = false;
+        console.log('[booking-tracking] User interacting with map, disabling follow mode');
+        this.userMovedMap = true;
+        this.followMode = false;
     }
 
     private async drawRouteBetweenPoints(
         from: { lat: number; lng: number },
         to: { lat: number; lng: number }
     ): Promise<void> {
+        await this.drawTrackingRoute(from, to, 'manual');
+    }
+
+    private async drawTrackingRoute(
+        from: { lat: number; lng: number },
+        to: { lat: number; lng: number },
+        routeScope: string
+    ): Promise<void> {
         if (!this.mapComponent) return;
+        if (!this.isValidCoordinate(from.lat) || !this.isValidCoordinate(from.lng)) return;
+        if (!this.isValidCoordinate(to.lat) || !this.isValidCoordinate(to.lng)) return;
+
+        const routeKey = [
+            routeScope,
+            from.lat.toFixed(5),
+            from.lng.toFixed(5),
+            to.lat.toFixed(5),
+            to.lng.toFixed(5)
+        ].join(':');
+
+        if (this.activeRouteDrawnFor === routeKey) {
+            return;
+        }
+
+        this.activeRouteDrawnFor = routeKey;
 
         try {
             const route = await this.routingService.getRoute(from, to).toPromise();
+            console.log('[CT] route result raw', route);
+            
             if (route && route.geometry) {
                 this.mapComponent.drawRoute(route);
-                console.log("[booking-tracking] Route drawn successfully");
+                
+                // Support all route result shapes for duration and distance
+                const durationSeconds =
+                    route?.durationSeconds ??
+                    (route as any)?.duration_seconds ??
+                    (route as any)?.duration ??
+                    (route as any)?.summary?.duration ??
+                    (route as any)?.routes?.[0]?.duration ??
+                    0;
+
+                const distanceMeters =
+                    route?.distanceMeters ??
+                    (route as any)?.distance_meters ??
+                    (route as any)?.distance ??
+                    (route as any)?.summary?.distance ??
+                    (route as any)?.routes?.[0]?.distance ??
+                    0;
+
+                // Store ETA and distance from route result
+                if (durationSeconds > 0 && distanceMeters > 0) {
+                    this.etaMinutes.set(Math.max(1, Math.round(durationSeconds / 60)));
+                    this.distanceKm.set(Math.round((distanceMeters / 1000) * 10) / 10);
+                    console.log('[CT] ETA set', this.etaMinutes(), 'mins, distance:', this.distanceKm(), 'km');
+                } else {
+                    console.log("[booking-tracking] Route drawn successfully but no ETA/distance data, using fallback");
+                    this.calculateFallbackEtaAndDistance(from, to);
+                }
             } else {
                 throw new Error("No route geometry returned");
             }
         } catch (error) {
             console.warn("[booking-tracking] Failed to draw route, using fallback line:", error);
+            // Calculate fallback straight-line distance and ETA
+            this.calculateFallbackEtaAndDistance(from, to);
+            
             // Draw simple fallback route object
             const fallbackRoute = {
                 geometry: {
@@ -2683,5 +3243,28 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             };
             this.mapComponent.drawRoute(fallbackRoute);
         }
+    }
+
+    private calculateFallbackEtaAndDistance(
+        from: { lat: number; lng: number },
+        to: { lat: number; lng: number }
+    ): void {
+        // Calculate straight-line distance using LocationService
+        const distanceKm = this.locationService.calculateDistance(
+            from.lat,
+            from.lng,
+            to.lat,
+            to.lng
+        );
+        
+        // Estimate ETA using 25 km/h city speed
+        const citySpeedKmh = 25;
+        const estimatedMinutes = Math.max(1, Math.round((distanceKm / citySpeedKmh) * 60));
+        
+        // Store with approximate values (using ~ prefix concept in template)
+        this.distanceKm.set(Math.round(distanceKm * 10) / 10);
+        this.etaMinutes.set(estimatedMinutes);
+        
+        console.log("[booking-tracking] Fallback ETA calculated:", estimatedMinutes, "mins and distance:", Math.round(distanceKm * 10) / 10, "km");
     }
 }

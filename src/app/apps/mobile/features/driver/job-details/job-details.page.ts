@@ -36,7 +36,13 @@ import {
     storefrontOutline,
     cubeOutline,
     carOutline,
-    homeOutline
+    homeOutline,
+    informationCircleOutline,
+    gitBranchOutline,
+    bagHandleOutline,
+    cardOutline,
+    chatbubbleEllipsesOutline,
+    ellipsisHorizontalCircleOutline
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -49,6 +55,7 @@ import { SupabaseService } from '../../../../../core/services/supabase/supabase.
 import { WalletProvisioningService } from '../../../../../core/services/issuing/wallet-provisioning.service';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
 import { ProfileService } from '../../../../../core/services/profile/profile.service';
+import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
 import {
     Booking,
     BookingStatus,
@@ -103,13 +110,13 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
 
       @if (job()) {
         <div class="bg-slate-50/95 backdrop-blur border-b border-slate-100">
-          <div class="w-full max-w-xl mx-auto px-4 py-2.5">
-            <div class="flex gap-3 overflow-x-auto scrollbar-hide overscroll-x-contain">
+          <div class="w-full max-w-xl mx-auto px-3 py-2.5">
+            <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 rounded-2xl border border-slate-100 bg-slate-100/80 p-1.5">
               @for (tab of requestTabs; track tab.id) {
                 <button
                   type="button"
                   (click)="setActiveRequestTab(tab.id)"
-                  class="relative shrink-0 h-10 rounded-full px-4 text-[13px] font-semibold tracking-normal border transition-all whitespace-nowrap"
+                  class="relative min-w-0 h-12 rounded-xl px-1.5 py-1 text-[11px] font-semibold leading-tight border transition-all inline-flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] hover:shadow-sm"
                   [class.bg-amber-500]="activeRequestTab() === tab.id"
                   [class.text-white]="activeRequestTab() === tab.id"
                   [class.border-amber-500]="activeRequestTab() === tab.id"
@@ -119,9 +126,14 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   [class.text-slate-700]="activeRequestTab() !== tab.id"
                   [class.border-slate-200]="activeRequestTab() !== tab.id"
                 >
-                  {{ tab.label }}
+                  <ion-icon
+                    [name]="tab.icon"
+                    class="text-[17px] shrink-0"
+                    [attr.aria-label]="tab.label + ' tab icon'"
+                  ></ion-icon>
+                  <span class="block max-w-full truncate">{{ tab.label }}</span>
                   @if (tab.id === 'chat' && unreadMessageCount() > 0) {
-                    <span class="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-orange-600 px-1.5 text-[10px] font-black text-white ring-2 ring-white/70">
+                    <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white/70">
                       {{ unreadMessageCount() }}
                     </span>
                   }
@@ -216,6 +228,130 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                 }
               </div>
             </app-card>
+
+            <!-- Delivery/Errand Contact Details -->
+            @if (recipientName() || recipientPhone()) {
+              <app-card class="p-4 space-y-4 bg-blue-50 border-blue-100">
+                <div class="flex items-center gap-3">
+                  <div class="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0">
+                    <ion-icon name="location-outline" class="text-xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0">
+                    <h4 class="text-base font-display font-black text-slate-950 leading-tight whitespace-normal">{{ recipientName() }}</h4>
+                    <p class="text-xs text-slate-500 font-semibold">
+                      @if (job()?.service_slug === 'errand') { Recipient } @else { Delivery Recipient }
+                    </p>
+                    @if (recipientPhone()) {
+                      <p class="text-xs text-blue-600 font-medium mt-1">{{ recipientPhone() }}</p>
+                    }
+                  </div>
+                </div>
+
+                @if (recipientPhone()) {
+                  <a [href]="'tel:' + recipientPhone()" class="block">
+                    <button
+                      type="button"
+                      class="w-full h-11 rounded-2xl bg-blue-500 border border-blue-500 text-white font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
+                    >
+                      <ion-icon name="call"></ion-icon>
+                      Call recipient
+                    </button>
+                  </a>
+                }
+              </app-card>
+            }
+
+            <!-- Delivery Details -->
+            @if (job()?.service_slug === 'delivery' || job()?.service_slug === 'package') {
+              @if (deliveryPackageSizeLabel() || packageDescription() || deliveryInstructions()) {
+                <app-card class="p-4 space-y-4 bg-amber-50 border-amber-100">
+                  <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Delivery Details</h3>
+                  
+                  @if (deliveryPackageSizeLabel()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Package Size</span>
+                      <span class="text-xs font-black text-slate-950">{{ deliveryPackageSizeLabel() }}</span>
+                    </div>
+                  }
+
+                  @if (packageDescription()) {
+                    <div>
+                      <p class="text-xs font-semibold text-slate-600 mb-2">Package Details</p>
+                      <p class="text-xs text-slate-700 leading-relaxed">{{ packageDescription() }}</p>
+                    </div>
+                  }
+
+                  @if (deliveryInstructions()) {
+                    <div>
+                      <p class="text-xs font-semibold text-slate-600 mb-2">Special Instructions</p>
+                      <p class="text-xs text-slate-700 leading-relaxed">{{ deliveryInstructions() }}</p>
+                    </div>
+                  }
+                </app-card>
+              }
+            }
+
+            <!-- Errand Details -->
+            @if (job()?.service_slug === 'errand') {
+              @if (errandModeDisplay() || errandCustomerPhone() || errandItemsList().length || estimatedBudget() || substitutionRule()) {
+                <app-card class="p-4 space-y-4 bg-purple-50 border-purple-100">
+                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Errand Details</h3>
+                  
+                  @if (errandModeDisplay()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Errand Mode</span>
+                      <span class="text-xs font-black text-slate-950">{{ errandModeDisplay() }}</span>
+                    </div>
+                  }
+
+                  @if (errandCustomerPhone()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Customer Phone</span>
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-700">{{ errandCustomerPhone() }}</span>
+                        <a [href]="'tel:' + errandCustomerPhone()">
+                          <button
+                            type="button"
+                            class="h-8 px-3 rounded-xl bg-purple-100 border border-purple-200 text-purple-700 font-black text-xs flex items-center justify-center gap-1 active:scale-95 transition-all"
+                          >
+                            <ion-icon name="call" class="text-sm"></ion-icon>
+                            Call
+                          </button>
+                        </a>
+                      </div>
+                    </div>
+                  }
+
+                  @if (errandItemsList().length > 0) {
+                    <div>
+                      <p class="text-xs font-semibold text-slate-600 mb-2">Items List</p>
+                      <ul class="space-y-1">
+                        @for (item of errandItemsList(); track item) {
+                          <li class="text-xs text-slate-700 flex items-center gap-2">
+                            <div class="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></div>
+                            {{ item }}
+                          </li>
+                        }
+                      </ul>
+                    </div>
+                  }
+
+                  @if (estimatedBudget()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Estimated Budget</span>
+                      <span class="text-xs font-black text-slate-950">{{ formattedEstimatedBudget() }}</span>
+                    </div>
+                  }
+
+                  @if (substitutionRule()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Substitution Rule</span>
+                      <span class="text-xs font-black text-slate-950">{{ substitutionRule() }}</span>
+                    </div>
+                  }
+                </app-card>
+              }
+            }
           }
 
           @if (activeRequestTab() === 'workflow') {
@@ -636,6 +772,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private walletProvisioning = inject(WalletProvisioningService);
     private paymentService = inject(PaymentService);
     private profileService = inject(ProfileService);
+    private notificationOrchestrator = inject(NotificationOrchestratorService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -657,14 +794,17 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     pickupMapReady = signal(false);
     activeRequestTab = signal<DriverRequestTab>('overview');
     messageCount = signal(0);
-    unreadMessageCount = signal(0);
-    requestTabs: Array<{ id: DriverRequestTab; label: string }> = [
-        { id: 'overview', label: 'Overview' },
-        { id: 'workflow', label: 'Workflow' },
-        { id: 'shopping', label: 'Shopping' },
-        { id: 'pay', label: 'Pay' },
-        { id: 'chat', label: 'Chat' },
-        { id: 'more', label: 'More' }
+    unreadMessageCount = computed(() => {
+        const jobId = this.job()?.id;
+        return jobId ? this.notificationOrchestrator.getBadgeCount(jobId) : 0;
+    });
+    requestTabs: Array<{ id: DriverRequestTab; label: string; icon: string }> = [
+        { id: 'overview', label: 'Overview', icon: 'information-circle-outline' },
+        { id: 'workflow', label: 'Workflow', icon: 'git-branch-outline' },
+        { id: 'shopping', label: 'Shopping', icon: 'bag-handle-outline' },
+        { id: 'pay', label: 'Pay', icon: 'card-outline' },
+        { id: 'chat', label: 'Chat', icon: 'chatbubble-ellipses-outline' },
+        { id: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline' }
     ];
     sectionExpanded = signal<Record<string, boolean>>({
         navigation: true,
@@ -832,7 +972,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (tab === 'chat') {
-            this.unreadMessageCount.set(0);
+            // Mark messages as read using NotificationOrchestrator
+            const jobId = this.job()?.id;
+            if (jobId) {
+                void this.notificationOrchestrator.markAsRead(jobId);
+            }
         }
     }
 
@@ -899,7 +1043,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             storefrontOutline,
             cubeOutline,
             carOutline,
-            homeOutline
+            homeOutline,
+            informationCircleOutline,
+            gitBranchOutline,
+            bagHandleOutline,
+            cardOutline,
+            chatbubbleEllipsesOutline,
+            ellipsisHorizontalCircleOutline
         });
     }
 
@@ -916,6 +1066,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             this.channel = this.bookingService.subscribeToBooking(id);
             this.subscribeToErrandFunding(id);
             this.subscribeToJobMessages(id);
+            
+            // Subscribe to notifications for this job
+            this.notificationOrchestrator.subscribeToJob(id);
         }
     }
 
@@ -923,6 +1076,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         void this.channel?.unsubscribe();
         void this.errandFundingChannel?.unsubscribe();
         void this.messagesChannel?.unsubscribe();
+        
+        // Unsubscribe from notifications
+        const jobId = this.job()?.id;
+        if (jobId) {
+            this.notificationOrchestrator.unsubscribeFromJob(jobId);
+        }
+        
         this.unmountIssuingCardElements();
         this.locationService.stopTracking();
     }
@@ -952,6 +1112,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 currentJob.id,
                 currentJob.service_slug as ServiceTypeEnum
             );
+
+            // Debug logs to see actual data structure
+            console.log('[DriverJobDetails] job', currentJob);
+            console.log('[DriverJobDetails] details row', details);
+            console.log('[DriverJobDetails] metadata', currentJob.metadata);
 
             this.details.set(details as JobDetails | null);
 
@@ -1392,7 +1557,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             this.messageCount.set(nextCount);
 
             if (this.activeRequestTab() !== 'chat' && nextCount > previousCount) {
-                this.unreadMessageCount.update((current) => current + (nextCount - previousCount));
+                // unreadMessageCount is now computed, cannot update directly
             }
         } catch (error) {
             console.warn('[driver-job-details] message count unavailable', error);
@@ -2354,6 +2519,154 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         if (!meters || !Number.isFinite(meters)) return 'Distance unavailable';
         if (meters < 1000) return `${Math.round(meters)} m`;
         return `${(meters / 1000).toFixed(1)} km`;
+    }
+
+    // Delivery and errand detail helpers with field name flexibility
+    private pickValue(source: any, keys: string[]): string {
+        if (!source) return '';
+
+        for (const key of keys) {
+            const value = source[key];
+            if (value !== null && value !== undefined && String(value).trim() !== '') {
+                return String(value).trim();
+            }
+        }
+
+        return '';
+    }
+
+    private deliveryDetailsData(): any {
+        return this.anyDetails() || this.job()?.metadata?.['delivery_details'] || {};
+    }
+
+    private errandDetailsData(): any {
+        return this.anyDetails() || this.job()?.metadata?.['errand_details'] || {};
+    }
+
+    recipientName(): string {
+        const delivery = this.deliveryDetailsData();
+        const errand = this.errandDetailsData();
+
+        return this.pickValue(delivery, ['recipient_name', 'recipientName']) ||
+               this.pickValue(errand, ['recipient_name', 'recipientName']);
+    }
+
+    recipientPhone(): string {
+        const delivery = this.deliveryDetailsData();
+        const errand = this.errandDetailsData();
+
+        return this.pickValue(delivery, ['recipient_phone', 'recipientPhone']) ||
+               this.pickValue(errand, ['recipient_phone', 'recipientPhone']);
+    }
+
+    packageDescription(): string {
+        const delivery = this.deliveryDetailsData();
+
+        return this.pickValue(delivery, [
+            'item_description',
+            'itemDescription',
+            'package_description',
+            'description'
+        ]);
+    }
+
+    deliveryPackageSizeLabel(): string {
+        const delivery = this.deliveryDetailsData();
+
+        const raw = this.pickValue(delivery, [
+            'package_size',
+            'packageSize'
+        ]).toLowerCase();
+
+        if (raw === 'small') return 'Small';
+        if (raw === 'medium') return 'Medium';
+        if (raw === 'large') return 'Large';
+        if (raw === 'extra_large') return 'Extra Large';
+
+        return raw || '';
+    }
+
+    deliveryInstructions(): string {
+        const delivery = this.deliveryDetailsData();
+
+        return this.pickValue(delivery, [
+            'notes',
+            'delivery_instructions',
+            'deliveryInstructions',
+            'instructions'
+        ]);
+    }
+
+    errandCustomerPhone(): string {
+        const errand = this.errandDetailsData();
+
+        return this.pickValue(errand, [
+            'customer_phone',
+            'customerPhone'
+        ]);
+    }
+
+    errandModeDisplay(): string {
+        const errand = this.errandDetailsData();
+
+        const raw = this.pickValue(errand, [
+            'errand_mode',
+            'mode',
+            'errandMode'
+        ]);
+
+        if (raw === 'collect_deliver') return 'Collect & Deliver';
+        if (raw === 'quick_buy') return 'Quick Buy';
+        if (raw === 'shop_deliver') return 'Shop & Deliver';
+
+        return raw;
+    }
+
+    errandItemsList(): string[] {
+        const errand = this.errandDetailsData();
+
+        const raw = errand?.items_list ?? errand?.itemsList ?? errand?.items ?? [];
+
+        if (Array.isArray(raw)) return raw.filter(Boolean).map(String);
+
+        return String(raw || '')
+            .split(/[,\n]+/)
+            .map(v => v.trim())
+            .filter(Boolean);
+    }
+
+    estimatedBudget(): string {
+        const errand = this.errandDetailsData();
+
+        return this.pickValue(errand, [
+            'estimated_budget',
+            'estimatedBudget',
+            'budget'
+        ]);
+    }
+
+    formattedEstimatedBudget(): string {
+        const budget = this.estimatedBudget();
+        return this.config.formatCurrency(Number(budget) || 0);
+    }
+
+    substitutionRule(): string {
+        const errand = this.errandDetailsData();
+
+        const raw = this.pickValue(errand, [
+            'substitution_rule',
+            'substitutionRule'
+        ]);
+
+        if (raw === 'contact_me') return 'Contact me';
+        if (raw === 'best_match') return 'Best match';
+        if (raw === 'do_not_substitute') return 'Do not substitute';
+        if (raw === 'contact_first') return 'Contact First';
+        if (raw === 'similar_quality') return 'Similar Quality';
+        if (raw === 'any_available') return 'Any Available';
+        if (raw === 'no_substitution') return 'No Substitution';
+
+        return raw;
     }
 
     private titleCase(value: string): string {

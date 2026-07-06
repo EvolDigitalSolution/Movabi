@@ -284,7 +284,7 @@
               "RelativeDocumentMoniker": "src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
               "ToolTip": "C:\\Users\\fedri\\source\\repos\\Movabi\\src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
               "RelativeToolTip": "src\\app\\apps\\mobile\\features\\customer\\booking-request\\booking-request.page.ts",
-              "ViewState": "AgIAANAJAAAAAAAAAAAswOkJAAAFAAAAAAAAAA==",
+              "ViewState": "AgIAAFcKAAAAAAAAAAAswGYKAAA8AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2026-07-02T19:40:34.228Z",
               "EditorCaption": ""
@@ -299,8 +299,7 @@
               "RelativeToolTip": "src\\app\\apps\\mobile\\features\\auth\\blocked.page.ts",
               "ViewState": "AgIAAA8AAAAAAAAAAAAAABoAAAAQAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-07-01T20:42:14.108Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-07-01T20:42:14.108Z"
             },
             {
               "$type": "Document",
@@ -324,8 +323,7 @@
               "RelativeToolTip": "src\\app\\apps\\admin\\features\\settings\\settings.component.ts",
               "ViewState": "AgIAAHYDAAAAAAAAAAAswI8DAAAFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-25T18:20:07.223Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-25T18:20:07.223Z"
             },
             {
               "$type": "Document",
@@ -349,8 +347,7 @@
               "RelativeToolTip": "src\\app\\apps\\admin\\services\\admin.service.ts",
               "ViewState": "AgIAAN8AAAAAAAAAAAAswPAAAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-24T15:41:33.047Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-24T15:41:33.047Z"
             },
             {
               "$type": "Document",
@@ -362,8 +359,7 @@
               "RelativeToolTip": "src\\app\\apps\\mobile\\features\\customer\\van-moving\\create-job.page.ts",
               "ViewState": "AgIAAGQEAAAAAAAAAAAuwG0EAAA4AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-05-02T12:22:54.273Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-02T12:22:54.273Z"
             },
             {
               "$type": "Document",
@@ -387,8 +383,7 @@
               "RelativeToolTip": "server\\routes\\admin.routes.ts",
               "ViewState": "AgIAAG8CAAAAAAAAAAAswG8CAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-25T19:39:25.437Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-25T19:39:25.437Z"
             },
             {
               "$type": "Document",
@@ -412,8 +407,7 @@
               "RelativeToolTip": "server\\index.ts",
               "ViewState": "AgIAAHIAAAAAAAAAAAAqwHwAAAAmAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-04-30T09:38:17.532Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-30T09:38:17.532Z"
             },
             {
               "$type": "Document",
