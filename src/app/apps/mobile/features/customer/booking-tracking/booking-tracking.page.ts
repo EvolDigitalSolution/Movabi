@@ -78,10 +78,11 @@ import {
 
 import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
 
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
-type SheetState = 'medium' | 'expanded';
+type SheetState = 'collapsed' | 'medium' | 'expanded' | 'full';
 type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment' | 'help';
 
 @Component({
@@ -925,13 +926,39 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             return;
         }
 
-        this.trackingSheetHeight.set(this.trackingSheetHeight() >= 70 ? 40 : 80);
+        // Uber/Bolt-style snap points: 40% -> 80% -> 95% -> 40%
+        const currentHeight = this.trackingSheetHeight();
+        let nextHeight: number;
+        
+        if (currentHeight <= 50) {
+            nextHeight = 80; // 40% -> 80%
+        } else if (currentHeight <= 85) {
+            nextHeight = 95; // 80% -> 95%
+        } else {
+            nextHeight = 40; // 95% -> 40%
+        }
+        
+        this.trackingSheetHeight.set(nextHeight);
+        this.updateSheetState(nextHeight);
     }
 
     expandSheetForFocus(): void {
         if (this.trackingSheetHeight() < 80) {
             this.trackingSheetHeight.set(80);
+            this.updateSheetState(80);
         }
+    }
+
+    private updateSheetState(height: number): void {
+        let newState: SheetState;
+        if (height <= 50) {
+            newState = 'collapsed';
+        } else if (height <= 85) {
+            newState = 'medium';
+        } else {
+            newState = 'expanded';
+        }
+        this.sheetState.set(newState);
     }
 
     async ngOnInit(): Promise<void> {
@@ -993,7 +1020,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
             const viewportHeight = Math.max(window.innerHeight, 1);
             const deltaVh = ((this.sheetDragStartY - moveEvent.clientY) / viewportHeight) * 100;
-            const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaVh));
+            const nextHeight = Math.max(40, Math.min(95, this.sheetDragStartHeight + deltaVh));
             this.trackingSheetHeight.set(nextHeight);
         };
 
@@ -1001,7 +1028,21 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             document.removeEventListener('pointermove', move);
             document.removeEventListener('pointerup', end);
             document.removeEventListener('pointercancel', end);
-            this.trackingSheetHeight.set(this.trackingSheetHeight() >= 60 ? 80 : 40);
+            
+            // Snap to nearest point: 40%, 80%, or 95%
+            const currentHeight = this.trackingSheetHeight();
+            let snapHeight: number;
+            
+            if (currentHeight <= 60) {
+                snapHeight = 40;
+            } else if (currentHeight <= 87) {
+                snapHeight = 80;
+            } else {
+                snapHeight = 95;
+            }
+            
+            this.trackingSheetHeight.set(snapHeight);
+            this.updateSheetState(snapHeight);
 
             window.setTimeout(() => {
                 this.isDraggingSheet.set(false);
@@ -3287,6 +3328,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         console.log('[booking-tracking] Recentering map and enabling auto-follow');
         this.userMovedMap = false;
         this.followMode = true;
+        MapUxHelpers.recenter(this.mapComponent!);
         this.renderTrackingMap('recenter', true);
     }
 
@@ -3294,6 +3336,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         console.log('[booking-tracking] User interacting with map, disabling follow mode');
         this.userMovedMap = true;
         this.followMode = false;
+        if (this.mapComponent) {
+            MapUxHelpers.pauseFollowOnUserGesture(this.mapComponent);
+        }
     }
 
     private async drawRouteBetweenPoints(
@@ -3331,7 +3376,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             console.log('[CT] route result raw', route);
             
             if (route && route.geometry) {
-                this.mapComponent.drawRoute(route);
+                this.mapComponent!.drawRoute(route);
                 
                 // Support all route result shapes for duration and distance
                 const durationSeconds =

@@ -420,69 +420,55 @@ type PackageSize = 'small' | 'medium' | 'large';
 
               @if (type === ServiceTypeEnum.ERRAND) {
                 <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
-                  <div class="space-y-2">
-                    <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Items to Buy
-                    </label>
+                  @if (usesItemListMode()) {
+                    <div class="space-y-2">
+                      <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                        Items to Buy
+                      </label>
 
-                    <textarea
-                      id="items_list"
-                      formControlName="items_list"
-                      [attr.placeholder]="usesItemListMode() ? 'List the items you need (e.g. Milk, Bread, Eggs...)' : 'Disabled for Collect & Deliver'"
-                      [disabled]="!usesItemListMode()"
-                      [class.opacity-50]="!usesItemListMode()"
-                      [class.cursor-not-allowed]="!usesItemListMode()"
-                      class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[100px] placeholder:text-slate-300 shadow-sm">
-                    </textarea>
+                      <textarea
+                        id="items_list"
+                        formControlName="items_list"
+                        placeholder="List the items you need (e.g. Milk, Bread, Eggs...)"
+                        class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[100px] placeholder:text-slate-300 shadow-sm">
+                      </textarea>
 
-                    @if (!usesItemListMode()) {
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        Items to Buy is enabled only for Quick Buy and Shop & Deliver.
-                      </p>
-                    } @else {
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                         {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
                         @if (additionalItemCharge() > 0) {
                           • +{{ config.formatCurrency(additionalItemCharge()) }} extra item charge
                         }
                       </p>
-                    }
-                  </div>
-
-                  <div class="space-y-2">
-                    <label for="estimated_budget" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Item Cost Budget
-                    </label>
-                    <div
-                      class="flex items-center gap-3 w-full px-4 py-4 rounded-xl bg-white border border-slate-100 shadow-sm"
-                      [class.opacity-50]="!usesBudgetMode()"
-                      [class.cursor-not-allowed]="!usesBudgetMode()">
-                      <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
-                      <input
-                        id="estimated_budget"
-                        type="text"
-                        inputmode="decimal"
-                        [value]="displayBudgetValue()"
-                        (input)="onBudgetInput($any($event).target.value)"
-                        (blur)="formatBudgetOnBlur()"
-                        [disabled]="!usesBudgetMode()"
-                        [placeholder]="usesBudgetMode() ? '0.00' : 'Disabled for Collect & Deliver'"
-                        class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
                     </div>
-                    @if (bookingForm.get('estimated_budget')?.hasError('invalidCurrency')) {
-                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
-                    }
+                  }
 
-                    @if (usesBudgetMode()) {
+                  @if (usesBudgetMode()) {
+                    <div class="space-y-2">
+                      <label for="estimated_budget" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                        Item Cost Budget
+                      </label>
+                      <div
+                        class="flex items-center gap-3 w-full px-4 py-4 rounded-xl bg-white border border-slate-100 shadow-sm">
+                        <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
+                        <input
+                          id="estimated_budget"
+                          type="text"
+                          inputmode="decimal"
+                          [value]="displayBudgetValue()"
+                          (input)="onBudgetInput($any($event).target.value)"
+                          (blur)="formatBudgetOnBlur()"
+                          placeholder="0.00"
+                          class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
+                      </div>
+                      @if (bookingForm.get('estimated_budget')?.hasError('invalidCurrency')) {
+                        <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
+                      }
+
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
                         This amount must be available in your wallet and will be reserved for item purchase only.
                       </p>
-                    } @else {
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        Item Cost Budget is enabled only for Quick Buy and Shop & Deliver.
-                      </p>
-                    }
-                  </div>
+                    </div>
+                  }
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
                     <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Contact Information</p>
@@ -516,35 +502,37 @@ type PackageSize = 'small' | 'medium' | 'large';
                     }
                   </div>
 
-                  <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
-                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Substitution Rule</p>
-                    <ion-radio-group formControlName="substitution_rule">
-                      <div class="space-y-3">
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div class="flex items-center gap-3">
-                            <ion-icon name="call-outline" class="text-blue-600"></ion-icon>
-                            <span class="text-xs font-bold text-slate-700">Contact me</span>
+                  @if (usesItemListMode()) {
+                    <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
+                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Substitution Rule</p>
+                      <ion-radio-group formControlName="substitution_rule">
+                        <div class="space-y-3">
+                          <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div class="flex items-center gap-3">
+                              <ion-icon name="call-outline" class="text-blue-600"></ion-icon>
+                              <span class="text-xs font-bold text-slate-700">Contact me</span>
+                            </div>
+                            <ion-radio value="contact_me"></ion-radio>
                           </div>
-                          <ion-radio value="contact_me"></ion-radio>
-                        </div>
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div class="flex items-center gap-3">
-                            <ion-icon name="swap-horizontal-outline" class="text-blue-600"></ion-icon>
-                            <span class="text-xs font-bold text-slate-700">Best match</span>
+                          <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div class="flex items-center gap-3">
+                              <ion-icon name="swap-horizontal-outline" class="text-blue-600"></ion-icon>
+                              <span class="text-xs font-bold text-slate-700">Best match</span>
+                            </div>
+                            <ion-radio value="best_match"></ion-radio>
                           </div>
-                          <ion-radio value="best_match"></ion-radio>
-                        </div>
-                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div class="flex items-center gap-3">
-                            <ion-icon name="close-circle-outline" class="text-blue-600"></ion-icon>
-                            <span class="text-xs font-bold text-slate-700">Do not substitute</span>
+                          <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div class="flex items-center gap-3">
+                              <ion-icon name="close-circle-outline" class="text-blue-600"></ion-icon>
+                              <span class="text-xs font-bold text-slate-700">Do not substitute</span>
+                            </div>
+                            <ion-radio value="do_not_substitute"></ion-radio>
                           </div>
-                          <ion-radio value="do_not_substitute"></ion-radio>
-                        </div>
                       </div>
                     </ion-radio-group>
                   </div>
-                </div>
+                }
+              </div>
               }
 
               @if (type === ServiceTypeEnum.DELIVERY) {
@@ -1405,15 +1393,36 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 0;
         }
 
-        // Clear any existing errors
-        this.bookingForm.get('estimated_budget')?.setErrors(null);
+        // Don't use setErrors(null) - let other validators handle their own errors
+        // Just clear the invalidCurrency error if format is valid
+        const currentErrors = this.bookingForm.get('estimated_budget')?.errors;
+        if (currentErrors && Object.keys(currentErrors).length === 1 && currentErrors['invalidCurrency']) {
+            this.bookingForm.get('estimated_budget')?.setErrors(null);
+        }
 
         return this.toMoney(Number(raw));
     }
 
-    private phoneValidator(control: AbstractControl) {
+    private requiredPhoneValidator(control: AbstractControl) {
         const raw = String(control.value || '').trim();
         if (!raw) return { required: true };
+
+        if (!/^[+\d\s\-()]+$/.test(raw)) {
+            return { invalidPhone: true };
+        }
+
+        const digits = raw.replace(/\D/g, '');
+
+        if (digits.length < 10 || digits.length > 15) {
+            return { invalidPhoneLength: true };
+        }
+
+        return null;
+    }
+
+    private optionalPhoneValidator(control: AbstractControl) {
+        const raw = String(control.value || '').trim();
+        if (!raw) return null;
 
         if (!/^[+\d\s\-()]+$/.test(raw)) {
             return { invalidPhone: true };
@@ -1587,8 +1596,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
                     vehicle_class: ['bike', Validators.required],
-                    customer_phone: [this.auth.currentUser()?.phone || '', [Validators.required, this.phoneValidator.bind(this)]],
-                    recipient_phone: ['', this.phoneValidator.bind(this)],
+                    customer_phone: [this.auth.currentUser()?.phone || '', [Validators.required, this.requiredPhoneValidator.bind(this)]],
+                    recipient_phone: ['', this.optionalPhoneValidator.bind(this)],
                     recipient_name: [''],
                     substitution_rule: ['contact_me']
                 });
@@ -1601,7 +1610,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     vehicle_class: ['bike', Validators.required],
                     package_size: ['small', Validators.required],
                     recipient_name: ['', Validators.required],
-                    recipient_phone: ['', [Validators.required, this.phoneValidator.bind(this)]],
+                    recipient_phone: ['', [Validators.required, this.requiredPhoneValidator.bind(this)]],
                     item_description: ['', Validators.required]
                 });
                 break;

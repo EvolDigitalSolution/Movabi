@@ -60,6 +60,7 @@ import {
     MovabiCarouselSlide
 } from '../../../../../shared/ui';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
 import { Booking, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { MapProviderService } from '../../../../../core/services/maps/map-provider.service';
@@ -2958,18 +2959,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             // Only skip if not forced and already fitted
             if (this.hasFitMarketplaceBounds && !force) return;
             
-            const lats = points.map(point => point.lat);
-            const lngs = points.map(point => point.lng);
-            const bounds: [[number, number], [number, number]] = [
-                [Math.min(...lngs), Math.min(...lats)],
-                [Math.max(...lngs), Math.max(...lats)]
-            ];
-
-            map.fitBounds(bounds, {
-                padding: { top: 80, bottom: 380, left: 48, right: 48 },
-                maxZoom: 14,
-                duration: force ? 700 : 900
-            });
+            // Use shared map helpers for Uber/Bolt-style fitting with bottom sheet consideration
+            const mapPoints: MapCoordinates[] = points.map(p => ({ lat: p.lat, lng: p.lng }));
+            MapUxHelpers.fitVisibleMapBounds(map, mapPoints, 40); // 40% bottom sheet for marketplace
             this.hasFitMarketplaceBounds = true;
             this.hasCenteredMarketplaceMap = true;
             return;
