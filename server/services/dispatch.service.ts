@@ -509,7 +509,24 @@ export class DispatchService {
             return;
         }
 
-        for (const driver of drivers.slice(0, MAX_NOTIFY_DRIVERS)) {
+        const { data: declined } = await this.supabase
+            .from('driver_job_declines')
+            .select('driver_id')
+            .eq('job_id', job.id);
+
+        const declinedIds = new Set((declined || []).map((d: any) => d.driver_id));
+        const eligibleDrivers = drivers.filter(d => !declinedIds.has(d.id));
+
+        if (!eligibleDrivers.length) {
+            await EventService.logEvent(
+                'dispatch_all_drivers_declined',
+                { jobId: job.id },
+                tenantId || (job as any).tenant_id
+            );
+            return;
+        }
+
+        for (const driver of eligibleDrivers.slice(0, MAX_NOTIFY_DRIVERS)) {
             try {
                 await NotificationService.notifyNewJob(driver.id, job.id);
 
@@ -533,48 +550,77 @@ export class DispatchService {
         const attempts = Math.max(1, Number((job as any).dispatch_attempts || 1));
         const radius = BASE_RADIUS_DEGREES + (attempts - 1) * RADIUS_STEP_DEGREES;
 
-        let query = this.supabase
+        let profileQuery = this.supabase
             .from('profiles')
-            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled, vehicles!inner(vehicle_class)')
+            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled')
             .eq('role', 'driver')
             .eq('is_available', true)
             .eq('is_online', true)
             .eq('charges_enabled', true)
             .eq('payouts_enabled', true)
-            .limit(MAX_NOTIFY_DRIVERS);
+            .limit(MAX_NOTIFY_DRIVERS * 2);
 
         if (tenantId) {
-            query = query.eq('tenant_id', tenantId);
+            profileQuery = profileQuery.eq('tenant_id', tenantId);
         }
 
         if (cityId) {
-            query = query.or(`city_id.eq.${cityId},city_id.is.null`);
+            profileQuery = profileQuery.or(`city_id.eq.${cityId},city_id.is.null`);
         }
 
         if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-            query = query
+            profileQuery = profileQuery
                 .gte('lat', pickupLat - radius)
                 .lte('lat', pickupLat + radius)
                 .gte('lng', pickupLng - radius)
                 .lte('lng', pickupLng + radius);
         }
 
-        const { data, error } = await query;
+        const { data: profiles, error: profilesError } = await profileQuery;
 
-        if (error) {
-            console.error('[DispatchService] Failed finding nearby drivers:', error);
+        if (profilesError) {
+            console.error('[DispatchService] Failed finding nearby drivers:', profilesError);
             return [];
         }
 
-        // Filter drivers by vehicle compatibility
-        const compatibleDrivers = ((data || []) as any[]).filter(driver => {
-            const vehicleClass = driver.vehicles?.vehicle_class;
-            const serviceType = job.service_slug;
-            
-            return this.isVehicleCompatible(vehicleClass, serviceType);
+        const drivers = (profiles || []) as any[];
+        if (drivers.length === 0) {
+            return [];
+        }
+
+        const driverIds = drivers.map(d => d.id).filter(Boolean);
+
+        const { data: vehicles, error: vehiclesError } = driverIds.length
+            ? await this.supabase
+                .from('vehicles')
+                .select('user_id, vehicle_class')
+                .in('user_id', driverIds)
+            : { data: [] as any[], error: null };
+
+        if (vehiclesError) {
+            console.error('[DispatchService] Failed fetching driver vehicles:', vehiclesError);
+            return [];
+        }
+
+        const vehiclesByUser = new Map<string, string[]>();
+        (vehicles || []).forEach((vehicle: any) => {
+            const userId = vehicle.user_id as string;
+            const vehicleClass = vehicle.vehicle_class as string;
+            if (!userId || !vehicleClass) return;
+            const classes = vehiclesByUser.get(userId) || [];
+            classes.push(vehicleClass);
+            vehiclesByUser.set(userId, classes);
         });
 
-        console.log(`[DispatchService] Vehicle compatibility filter: ${data?.length || 0} total drivers -> ${compatibleDrivers.length} compatible drivers for service ${job.service_slug}`);
+        // Filter drivers by vehicle compatibility
+        const compatibleDrivers = drivers.filter(driver => {
+            const vehicleClasses = vehiclesByUser.get(driver.id) || [];
+            const serviceType = job.service_slug;
+
+            return vehicleClasses.some(vehicleClass => this.isVehicleCompatible(vehicleClass, serviceType));
+        });
+
+        console.log(`[DispatchService] Vehicle compatibility filter: ${drivers.length} total drivers -> ${compatibleDrivers.length} compatible drivers for service ${job.service_slug}`);
 
         return (compatibleDrivers as NearbyDriver[]).sort((a, b) => {
             const scoreA = distanceScore(job, a);

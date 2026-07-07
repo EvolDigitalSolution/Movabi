@@ -61,7 +61,7 @@ import {
 } from '../../../../../shared/ui';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
-import { Booking, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
+import { Booking, BookingStatus, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { MapProviderService } from '../../../../../core/services/maps/map-provider.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
@@ -92,9 +92,9 @@ type DriverDashboardStats = {
     completedJobs: number;
 };
 
-type PassedJob = {
+type DismissedJob = {
     id: string;
-    passedAt: number;
+    dismissedAt: number;
 };
 
 type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
@@ -743,15 +743,23 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         { key: 'wallet', label: 'Wallet', icon: 'wallet-outline' },
         { key: 'profile', label: 'Profile', icon: 'settings-outline' }
     ];
-    private readonly passedJobsStorageKey = 'movabi_driver_passed_jobs';
-    passedJobIds = signal<Set<string>>(new Set());
-    
+    private readonly dismissedJobsStorageKey = 'movabi_driver_dismissed_jobs';
+    dismissedJobIds = signal<Set<string>>(new Set());
+
     // Urgent request notification system
     private requestAlertInterval: any = null;
+    private activeRequestAudio: HTMLAudioElement | null = null;
     private activeRequestId = signal<string | null>(null);
+
+    private readonly activeRequestStatuses = new Set<string>(['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting']);
+    private readonly terminalRequestStatuses = new Set<string>(['cancelled', 'completed', 'no_driver_found', 'assigned', 'accepted']);
+
     jobs = computed(() => {
-        const passed = this.passedJobIds();
-        return this.driverService.availableJobs().filter(job => !passed.has(job.id));
+        const dismissed = this.dismissedJobIds();
+        return this.driverService.availableJobs().filter(job => {
+            if (dismissed.has(job.id)) return false;
+            return this.isJobRequestActive(job.status);
+        });
     });
     selectedAvailableJob = computed(() => {
         const id = this.selectedJobId();
@@ -1006,7 +1014,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     async ngOnInit() {
         if (!this.supabase.isConfigured) return;
 
-        this.loadPassedJobs();
+        this.loadDismissedJobs();
         await this.refreshStripeUiStateFromDb();
         await this.ensureMovabiPayVirtualCard();
         await this.loadAvailability();
@@ -1059,7 +1067,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.messagesChannel = undefined;
         }
 
-        this.stopRequestAlert();
+        this.stopAllRequestSounds();
     }
 
     ngAfterViewInit(): void {
@@ -1801,10 +1809,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                     const user = this.auth.currentUser();
                     const changedDriverId = String((payload.new as any)?.driver_id || (payload.old as any)?.driver_id || '');
                     const isDriverJob = !!user?.id && changedDriverId === user.id;
+
+                    if (this.dismissedJobIds().has(changedJobId)) {
+                        // Dismissed locally: ignore realtime updates for this job
+                        return;
+                    }
+
+                    // Stop sound if this job is no longer an active request
+                    if (this.activeRequestId() === changedJobId && !this.isJobRequestActive(newStatus)) {
+                        this.stopRequestSound(changedJobId);
+                    }
+
                     const shouldAlert =
-                        newStatus === 'searching' &&
+                        this.isJobRequestActive(newStatus) &&
                         !!changedJobId &&
                         !this.knownAvailableJobIds.has(changedJobId) &&
+                        !this.dismissedJobIds().has(changedJobId) &&
                         this.status() === 'online' &&
                         this.isAvailable();
                     const activeStatuses = [
@@ -1822,7 +1842,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                     ];
 
                     if (
-                        newStatus === 'searching' ||
+                        this.isJobRequestActive(newStatus) ||
                         oldStatus === 'searching' ||
                         activeStatuses.includes(newStatus) ||
                         activeStatuses.includes(oldStatus) ||
@@ -2268,7 +2288,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.driverService.availableJobs.update((jobs: Booking[]) =>
                 jobs.filter((job: Booking) => job.id !== jobId)
             );
-            this.stopRequestAlert();
+            this.stopRequestSound(jobId);
             this.playSound('booking-accepted.mp3');
             await this.refreshActiveJob();
             await this.driverService.fetchAvailableJobs();
@@ -2281,6 +2301,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.submitting.set(false);
             this.showToast('Request accepted. Continue when you are ready.', 'success');
         } catch (e: unknown) {
+            this.stopRequestSound(jobId);
             await loading.dismiss();
             this.submitting.set(false);
 
@@ -2292,42 +2313,78 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     }
 
-    reject(jobId: string) {
-        this.rememberPassedJob(jobId);
-        this.stopRequestAlert();
+    async reject(jobId: string) {
+        this.stopRequestSound(jobId);
+        this.stopAllRequestSounds();
+        this.rememberDismissedJob(jobId);
+
         if (this.selectedJobId() === jobId) {
             this.selectedJobId.set(null);
             this.sheetHeight.set(40);
         }
+
         this.driverService.availableJobs.update((jobs: Booking[]) =>
             jobs.filter((job: Booking) => job.id !== jobId)
         );
+
+        try {
+            await this.driverService.declineJob(jobId, 'driver_passed');
+        } catch (error) {
+            console.warn('[DriverDashboard] Failed to persist decline:', error);
+        }
+
         this.syncMarketplaceMapMarkers();
     }
 
-    private startRequestAlert(requestId: string): void {
-        if (this.requestAlertInterval) return;
+    private isJobRequestActive(status?: BookingStatus | string | null): boolean {
+        return !!status && this.activeRequestStatuses.has(String(status));
+    }
 
+    private isJobRequestTerminal(status?: BookingStatus | string | null): boolean {
+        return !!status && this.terminalRequestStatuses.has(String(status));
+    }
+
+    private startRequestSound(requestId: string): void {
+        if (this.activeRequestId() === requestId) return;
+
+        this.stopAllRequestSounds();
         this.activeRequestId.set(requestId);
-        this.playRequestSound();
+        this.playRequestAudio();
         this.vibrateNewRequest();
 
         this.requestAlertInterval = setInterval(() => {
             if (!this.activeRequestId() || this.activeRequestId() !== requestId) {
-                this.stopRequestAlert();
+                this.stopRequestSound(requestId);
                 return;
             }
 
-            this.playRequestSound();
+            this.playRequestAudio();
         }, 4000);
     }
 
-    private stopRequestAlert(): void {
+    private stopRequestSound(requestId?: string): void {
+        if (requestId && this.activeRequestId() !== requestId) return;
+
         if (this.requestAlertInterval) {
             clearInterval(this.requestAlertInterval);
             this.requestAlertInterval = null;
         }
+
+        if (this.activeRequestAudio) {
+            try {
+                this.activeRequestAudio.pause();
+                this.activeRequestAudio.currentTime = 0;
+            } catch {
+                // ignore
+            }
+            this.activeRequestAudio = null;
+        }
+
         this.activeRequestId.set(null);
+    }
+
+    public stopAllRequestSounds(): void {
+        this.stopRequestSound();
     }
 
     private playSound(file: string): void {
@@ -2336,8 +2393,21 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         audio.play().catch(err => console.warn('[Sound] play failed', err));
     }
 
-    private playRequestSound(): void {
-        this.playSound('request-notification.mp3');
+    private playRequestAudio(): void {
+        if (this.activeRequestAudio) {
+            try {
+                this.activeRequestAudio.pause();
+                this.activeRequestAudio.currentTime = 0;
+            } catch {
+                // ignore
+            }
+        }
+
+        const audio = new Audio('assets/sounds/request-notification.mp3');
+        audio.volume = 0.85;
+        audio.loop = false;
+        this.activeRequestAudio = audio;
+        audio.play().catch(err => console.warn('[Sound] request notification play failed', err));
     }
 
     private async vibrateNewRequest(): Promise<void> {
@@ -2352,18 +2422,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
     // Monitor available jobs for urgent requests
     private urgentRequestEffect = effect(() => {
-        const availableJobs = this.driverService.availableJobs();
+        const availableJobs = this.jobs();
         const activeJob = this.activeJob();
-        
-        // Only alert if there's no active job and there are available jobs
+
+        // Only alert if there's no active job and there are active request jobs
         if (!activeJob && availableJobs.length > 0) {
             const newestJob = availableJobs[0]; // Assume first is newest
             if (newestJob?.id && this.activeRequestId() !== newestJob.id) {
-                this.startRequestAlert(newestJob.id);
+                this.startRequestSound(newestJob.id);
             }
         } else {
             // Stop alert if there's an active job or no available jobs
-            this.stopRequestAlert();
+            this.stopAllRequestSounds();
         }
     });
 
@@ -2395,31 +2465,31 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     }
 
-    private loadPassedJobs() {
+    private loadDismissedJobs() {
         try {
             const maxAgeMs = 60 * 60 * 1000;
-            const parsed = JSON.parse(localStorage.getItem(this.passedJobsStorageKey) || '[]') as PassedJob[];
+            const parsed = JSON.parse(localStorage.getItem(this.dismissedJobsStorageKey) || '[]') as DismissedJob[];
             const now = Date.now();
-            const fresh = parsed.filter(item => item?.id && now - Number(item.passedAt || 0) < maxAgeMs);
-            this.passedJobIds.set(new Set(fresh.map(item => item.id)));
-            localStorage.setItem(this.passedJobsStorageKey, JSON.stringify(fresh));
+            const fresh = parsed.filter(item => item?.id && now - Number(item.dismissedAt || 0) < maxAgeMs);
+            this.dismissedJobIds.set(new Set(fresh.map(item => item.id)));
+            localStorage.setItem(this.dismissedJobsStorageKey, JSON.stringify(fresh));
         } catch {
-            this.passedJobIds.set(new Set());
+            this.dismissedJobIds.set(new Set());
         }
     }
 
-    private rememberPassedJob(jobId: string) {
+    private rememberDismissedJob(jobId: string) {
         const now = Date.now();
-        const next = new Set(this.passedJobIds());
+        const next = new Set(this.dismissedJobIds());
         next.add(jobId);
-        this.passedJobIds.set(next);
+        this.dismissedJobIds.set(next);
 
         const items = Array.from(next).map(id => ({
             id,
-            passedAt: id === jobId ? now : now
+            dismissedAt: id === jobId ? now : now
         }));
 
-        localStorage.setItem(this.passedJobsStorageKey, JSON.stringify(items));
+        localStorage.setItem(this.dismissedJobsStorageKey, JSON.stringify(items));
     }
 
     getMetricLabel(value: number): string {

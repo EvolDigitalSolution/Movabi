@@ -135,16 +135,35 @@ BEGIN
     ADD CONSTRAINT jobs_status_check
     CHECK (status IN (
       'requested',
+      'pending',
+      'pending_payment',
+      'payment_authorized',
       'pending_fare_confirmation',
       'negotiating',
       'fare_agreed',
       'searching',
+      'broadcasting',
+      'waiting',
+      'accepted',
       'assigned',
+      'arrived',
+      'heading_to_pickup',
+      'driver_en_route',
+      'driver_arrived',
+      'picked_up',
       'in_progress',
+      'arrived_at_store',
+      'shopping_in_progress',
+      'collected',
+      'en_route_to_customer',
+      'delivered',
       'completed',
+      'settled',
       'cancelled',
+      'expired',
       'no_driver_found',
-      'requires_review'
+      'requires_review',
+      'failed'
     ));
 END $$;
 
@@ -154,14 +173,30 @@ ALTER TABLE public.job_events
   ADD COLUMN IF NOT EXISTS negotiation_id UUID,
   ADD COLUMN IF NOT EXISTS bid_id UUID;
 
--- 9. RLS policies for marketplace tables (if RLS is enabled)
+-- 9. Driver job declines (so dispatch does not re-notify after a driver passes/declines)
+CREATE TABLE IF NOT EXISTS public.driver_job_declines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_job_declines_job
+  ON public.driver_job_declines(job_id, driver_id);
+CREATE INDEX IF NOT EXISTS idx_driver_job_declines_driver
+  ON public.driver_job_declines(driver_id, created_at DESC);
+
+-- 10. RLS policies for marketplace tables (if RLS is enabled)
 ALTER TABLE public.marketplace_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketplace_commission_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fare_negotiations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.driver_bids ENABLE ROW LEVEL SECURITY;
 
 -- Admins can read all settings
-CREATE POLICY IF NOT EXISTS marketplace_settings_admin_read
+DROP POLICY IF EXISTS marketplace_settings_admin_read ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_read
   ON public.marketplace_settings
   FOR SELECT
   TO authenticated
@@ -171,7 +206,8 @@ CREATE POLICY IF NOT EXISTS marketplace_settings_admin_read
   ));
 
 -- Admins can write all settings
-CREATE POLICY IF NOT EXISTS marketplace_settings_admin_write
+DROP POLICY IF EXISTS marketplace_settings_admin_write ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_write
   ON public.marketplace_settings
   FOR ALL
   TO authenticated
@@ -181,7 +217,8 @@ CREATE POLICY IF NOT EXISTS marketplace_settings_admin_write
   ));
 
 -- Commission overrides admin only
-CREATE POLICY IF NOT EXISTS commission_overrides_admin
+DROP POLICY IF EXISTS commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY commission_overrides_admin
   ON public.marketplace_commission_overrides
   FOR ALL
   TO authenticated
@@ -191,7 +228,8 @@ CREATE POLICY IF NOT EXISTS commission_overrides_admin
   ));
 
 -- Negotiations: participants can read their own
-CREATE POLICY IF NOT EXISTS fare_negotiations_participants_read
+DROP POLICY IF EXISTS fare_negotiations_participants_read ON public.fare_negotiations;
+CREATE POLICY fare_negotiations_participants_read
   ON public.fare_negotiations
   FOR SELECT
   TO authenticated
@@ -204,7 +242,8 @@ CREATE POLICY IF NOT EXISTS fare_negotiations_participants_read
   );
 
 -- Bids: driver can read own, customer can read bids on their job
-CREATE POLICY IF NOT EXISTS driver_bids_participants_read
+DROP POLICY IF EXISTS driver_bids_participants_read ON public.driver_bids;
+CREATE POLICY driver_bids_participants_read
   ON public.driver_bids
   FOR SELECT
   TO authenticated
@@ -216,7 +255,19 @@ CREATE POLICY IF NOT EXISTS driver_bids_participants_read
     )
   );
 
--- 10. Helper function: get effective marketplace commission for a job context
+-- Driver job declines RLS
+ALTER TABLE public.driver_job_declines ENABLE ROW LEVEL SECURITY;
+
+-- Drivers can read/insert their own declines
+DROP POLICY IF EXISTS driver_job_declines_driver_all ON public.driver_job_declines;
+CREATE POLICY driver_job_declines_driver_all
+  ON public.driver_job_declines
+  FOR ALL
+  TO authenticated
+  USING (driver_id = auth.uid())
+  WITH CHECK (driver_id = auth.uid());
+
+-- 11. Helper function: get effective marketplace commission for a job context
 CREATE OR REPLACE FUNCTION public.get_marketplace_commission(
   p_service_type_slug TEXT,
   p_city_zone TEXT,
@@ -258,7 +309,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 11. Helper function: get marketplace setting value
+-- 12. Helper function: get marketplace setting value
 CREATE OR REPLACE FUNCTION public.get_marketplace_setting(
   p_key TEXT,
   p_tenant_id UUID DEFAULT NULL
@@ -279,7 +330,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 12. Trigger to maintain updated_at on marketplace tables
+-- 13. Trigger to maintain updated_at on marketplace tables
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN

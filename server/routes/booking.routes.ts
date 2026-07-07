@@ -744,4 +744,37 @@ router.post('/rate', async (req: Request, res: Response) => {
     }
 });
 
+/**
+ * Record that a driver has declined/passed on a job.
+ * Dispatch will not re-notify the same driver for the same job.
+ */
+router.post('/decline-job', async (req: Request, res: Response) => {
+    try {
+        const { driverId, jobId, reason } = req.body;
+
+        if (!driverId || !jobId) {
+            return res.status(400).json({ error: 'driverId and jobId are required' });
+        }
+
+        const { error: insertError } = await supabaseAdmin
+            .from('driver_job_declines')
+            .upsert({
+                driver_id: driverId,
+                job_id: jobId,
+                reason: reason || 'driver_declined',
+                created_at: new Date().toISOString()
+            }, { onConflict: 'driver_id,job_id' });
+
+        if (insertError) {
+            console.error('[BookingRoutes] decline-job failed:', insertError);
+            return res.status(500).json({ error: insertError.message || 'Failed to record decline' });
+        }
+
+        return res.json({ success: true, declined: true });
+    } catch (error: any) {
+        console.error('[BookingRoutes] decline-job error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to decline job' });
+    }
+});
+
 export default router;

@@ -144,16 +144,15 @@ export class DriverService {
                 {
                     event: 'INSERT',
                     schema: 'public',
-                    table: 'jobs',
-                    filter: 'status=eq.searching'
+                    table: 'jobs'
                 },
                 async (payload) => {
                     const rawJob = payload.new;
+                    const activeRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting'];
 
                     if (
-                        rawJob['payment_status'] === 'paid' ||
-                        rawJob['payment_status'] === 'wallet_funded' ||
-                        rawJob['payment_status'] === 'authorized'
+                        activeRequestStatuses.includes(rawJob['status']) &&
+                        ['paid', 'wallet_funded', 'authorized'].includes(rawJob['payment_status'])
                     ) {
                         try {
                             const newJob = await this.bookingService.getBooking(rawJob['id']);
@@ -194,9 +193,10 @@ export class DriverService {
                     const updatedJob = payload.new;
                     const status = updatedJob['status'];
                     const paymentStatus = updatedJob['payment_status'];
+                    const activeRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting'];
 
                     if (
-                        status !== 'searching' ||
+                        !activeRequestStatuses.includes(status) ||
                         !['paid', 'wallet_funded', 'authorized'].includes(paymentStatus)
                     ) {
                         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== updatedJob['id']));
@@ -442,6 +442,25 @@ export class DriverService {
         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== bookingId));
 
         return fullBooking;
+    }
+
+    async declineJob(bookingId: string, reason = 'driver_declined') {
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+
+        try {
+            await firstValueFrom(
+                this.http.post(`${environment.apiUrl}/booking/decline-job`, {
+                    jobId: bookingId,
+                    driverId: user.id,
+                    reason
+                })
+            );
+        } catch (error: unknown) {
+            const err = error as { error?: { message?: string } };
+            console.error('[DriverService] Failed to persist job decline:', error);
+            throw new Error(err.error?.message || 'Failed to decline request.');
+        }
     }
 
     private normaliseVehicleClass(vehicle: Vehicle | null): string {
