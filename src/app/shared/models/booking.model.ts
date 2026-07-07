@@ -592,6 +592,16 @@ export interface Booking {
 
     errand_details?: ErrandDetails;
     errand_funding?: ErrandFunding;
+
+    // Marketplace negotiation / bidding fields
+    agreed_fare?: number | null;
+    negotiated_fare?: number | null;
+    negotiation_deadline?: string | null;
+    bid_mode_enabled?: boolean;
+    negotiation_mode_enabled?: boolean;
+    marketplace_flags?: Record<string, unknown> | null;
+    fare_breakdown?: Record<string, unknown> | null;
+    dynamic_pricing_multiplier?: number;
 }
 
 export interface RideDetails {

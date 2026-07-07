@@ -450,7 +450,7 @@ export class DriverService {
 
         try {
             await firstValueFrom(
-                this.http.post(`${environment.apiUrl}/booking/decline-job`, {
+                this.http.post(this.apiUrlService.getApiUrl('/api/booking/decline-job'), {
                     jobId: bookingId,
                     driverId: user.id,
                     reason

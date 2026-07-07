@@ -122,6 +122,14 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/customer/booking-tracking/booking-tracking.page').then((m) => m.BookingTrackingPage)
             },
             {
+                path: 'marketplace-fare/:id',
+                loadComponent: () => import('@mobile/features/customer/marketplace-fare/marketplace-fare.page').then((m) => m.MarketplaceFarePage)
+            },
+            {
+                path: 'marketplace-payment/:id',
+                loadComponent: () => import('@mobile/features/customer/marketplace-payment/marketplace-payment.page').then((m) => m.MarketplacePaymentPage)
+            },
+            {
                 path: 'activity',
                 loadComponent: () => import('@mobile/features/customer/activity/activity.page').then((m) => m.ActivityPage)
             },

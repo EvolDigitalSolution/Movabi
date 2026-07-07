@@ -272,8 +272,32 @@ export class NotificationOrchestratorService {
       console.warn('[NotificationOrchestrator] Haptic feedback failed:', error);
     }
 
-    // Sound would be played here - you can add an audio file
-    // await this.playNotificationSound();
+    // Play distinct sound for each lifecycle event
+    await this.playEventSound(eventType);
+  }
+
+  private async playEventSound(eventType: NotificationEventType): Promise<void> {
+    const soundMap: Partial<Record<NotificationEventType, string>> = {
+      driver_accepted: 'booking-accepted.mp3',
+      driver_en_route: 'driver-arrived.mp3',
+      driver_arrived: 'driver-arrived.mp3',
+      trip_started: 'driver-arrived.mp3',
+      shopping_completed: 'request-notification.mp3',
+      items_collected: 'request-notification.mp3',
+      trip_completed: 'trip-completed.mp3',
+      driver_cancelled: 'message-notification.mp3',
+      customer_cancelled: 'message-notification.mp3'
+    };
+
+    const filename = soundMap[eventType];
+    if (!filename) return;
+
+    try {
+      const audio = new Audio(`/assets/sounds/${filename}`);
+      await audio.play();
+    } catch (error) {
+      console.warn('[NotificationOrchestrator] Could not play event sound', eventType, error);
+    }
   }
 
   /**
@@ -319,13 +343,13 @@ export class NotificationOrchestratorService {
   private getNotificationTitle(eventType: NotificationEventType): string {
     const titles: Record<NotificationEventType, string> = {
       'new_chat_message': 'New message',
-      'driver_accepted': 'Driver accepted your booking',
+      'driver_accepted': 'Driver accepted your offer',
       'driver_arrived': 'Driver has arrived',
       'trip_started': 'Trip started',
-      'shopping_completed': 'Shopping completed',
-      'items_collected': 'Items collected',
-      'driver_en_route': 'Driver is on the way',
-      'trip_completed': 'Booking completed',
+      'shopping_completed': 'Shopping has started',
+      'items_collected': 'Your shopping has been collected',
+      'driver_en_route': 'Driver is arriving',
+      'trip_completed': 'Trip completed',
       'customer_cancelled': 'Booking cancelled',
       'driver_cancelled': 'Driver cancelled',
       'extra_budget_requested': 'Extra budget requested',
@@ -343,13 +367,13 @@ export class NotificationOrchestratorService {
   private getNotificationBody(eventType: NotificationEventType): string {
     const bodies: Record<NotificationEventType, string> = {
       'new_chat_message': 'You have a new message',
-      'driver_accepted': 'A driver has accepted your booking',
+      'driver_accepted': 'Your driver has been assigned and is on the way',
       'driver_arrived': 'Your driver has arrived at the pickup location',
       'trip_started': 'Your trip has started',
-      'shopping_completed': 'Shopping has been completed',
-      'items_collected': 'Items have been collected',
-      'driver_en_route': 'Your driver is on the way',
-      'trip_completed': 'Your booking has been completed',
+      'shopping_completed': 'Your driver has started shopping',
+      'items_collected': 'Your shopping has been collected and is on the way',
+      'driver_en_route': 'Your driver is arriving at your location',
+      'trip_completed': 'Your trip has been completed successfully',
       'customer_cancelled': 'Booking was cancelled',
       'driver_cancelled': 'Driver cancelled the booking',
       'extra_budget_requested': 'Extra budget has been requested',

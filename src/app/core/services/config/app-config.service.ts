@@ -46,9 +46,11 @@ interface RuntimeCountryHint {
 export class AppConfigService {
   private systemConfig = inject(SystemConfigService);
   private readonly countryStorageKey = 'movabi_country_code';
+  private readonly geoHintStorageKey = 'movabi_geo_hint';
   private readonly runtimeCountryCode = signal<string | null>(this.readStoredCountryCode());
-  private readonly runtimeCountryHint = signal<RuntimeCountryHint | null>(null);
+  private readonly runtimeCountryHint = signal<RuntimeCountryHint | null>(this.readCachedGeoHint());
   private detectionStarted = false;
+  private geoLookupAttempted = false;
 
   public readonly env = environment;
 
@@ -224,13 +226,38 @@ export class AppConfigService {
     if (this.detectionStarted) return;
     this.detectionStarted = true;
 
+    // If the user has already selected a country, trust that and skip geo lookup.
     if (!this.runtimeCountryCode()) {
       const localeCountry = this.countryFromLocale(this.getBrowserLocale());
       if (localeCountry) this.setRuntimeCountry(localeCountry, false);
     }
 
-    const ipCountry = await this.detectCountryFromIp();
-    if (ipCountry) this.setRuntimeCountry(ipCountry.code, false, ipCountry);
+    // Use a cached geo hint if we have one. This avoids repeated calls to the
+    // external geo service and keeps the app working when the service is rate
+    // limited or blocked by CORS.
+    const cachedHint = this.readCachedGeoHint();
+    if (cachedHint?.code) {
+      this.setRuntimeCountry(cachedHint.code, false, cachedHint);
+      return;
+    }
+
+    // If a user-selected country is already set, don't override it with geo.
+    if (this.runtimeCountryCode()) return;
+
+    // Only attempt the external lookup once per session. On failure we fall back
+    // to the UK defaults, which already power pricing/booking/dashbord.
+    if (this.geoLookupAttempted) return;
+    this.geoLookupAttempted = true;
+
+    try {
+      const ipCountry = await this.detectCountryFromIp();
+      if (ipCountry) {
+        this.writeCachedGeoHint(ipCountry);
+        this.setRuntimeCountry(ipCountry.code, false, ipCountry);
+      }
+    } catch {
+      // Fail silently. Default GB/GBP will be used.
+    }
   }
 
   get currencySymbol() {
@@ -361,21 +388,44 @@ export class AppConfigService {
 
   private countryFromHint(hint: RuntimeCountryHint): CountryConfig {
     const locale = `en-${hint.code}`;
-    const currency = hint.currency || 'USD';
+    // Prefer known defaults for this country; otherwise fall back to the hint
+    // values and finally to the UK default so pricing/booking never break.
+    const defaultCountry = this.defaultCountries.find(c => c.code === hint.code);
+    const currency = hint.currency || defaultCountry?.currency || 'GBP';
+    const phoneCode = hint.phoneCode || defaultCountry?.phoneCode || '+44';
     return {
       code: hint.code,
       name: hint.name || this.countryNameFromCode(hint.code),
       currency,
       currencySymbol: this.symbolFromCurrency(currency, locale),
       locale,
-      phoneCode: hint.phoneCode || '',
+      phoneCode,
       defaultCenter: {
-        lat: typeof hint.lat === 'number' ? hint.lat : this.defaultCountries[0].defaultCenter.lat,
-        lng: typeof hint.lng === 'number' ? hint.lng : this.defaultCountries[0].defaultCenter.lng
+        lat: typeof hint.lat === 'number' ? hint.lat : defaultCountry?.defaultCenter.lat ?? this.defaultCountries[0].defaultCenter.lat,
+        lng: typeof hint.lng === 'number' ? hint.lng : defaultCountry?.defaultCenter.lng ?? this.defaultCountries[0].defaultCenter.lng
       },
-      popularShops: this.defaultCountries[0].popularShops,
-      pricingDefaults: this.defaultCountries[0].pricingDefaults
+      popularShops: defaultCountry?.popularShops ?? this.defaultCountries[0].popularShops,
+      pricingDefaults: defaultCountry?.pricingDefaults ?? this.defaultCountries[0].pricingDefaults
     };
+  }
+
+  private readCachedGeoHint(): RuntimeCountryHint | null {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(this.geoHintStorageKey);
+      return raw ? (JSON.parse(raw) as RuntimeCountryHint) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedGeoHint(hint: RuntimeCountryHint): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(this.geoHintStorageKey, JSON.stringify(hint));
+    } catch {
+      // ignore storage errors
+    }
   }
 
   private isBrokenSymbol(symbol: string | null | undefined): boolean {

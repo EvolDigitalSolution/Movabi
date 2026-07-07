@@ -2379,6 +2379,14 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             booking = await this.bookingService.createBooking(bookingData, details, this.type);
             this.lastBookingTime = Date.now();
 
+            // If marketplace negotiation is enabled for this service, let the customer
+            // review/negotiate the fare before taking payment.
+            if (booking?.id && (booking as any).negotiation_mode_enabled) {
+                await loading.dismiss();
+                await this.router.navigate(['/customer/marketplace-fare', booking.id]);
+                return;
+            }
+
             if (walletWillCover) {
                 if (this.type === ServiceTypeEnum.ERRAND && itemBudget > 0) {
                     loading.message = 'Reserving wallet funds...';

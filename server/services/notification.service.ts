@@ -223,26 +223,41 @@ export class NotificationService {
    * Notify customer of job status update
    */
   static async notifyJobStatusUpdate(userId: string, jobId: string, status: string) {
-    let title = 'Booking Update';
-    let body = `Your booking status is now: ${status}`;
+    const statusMessages: Record<string, { title: string; body: string }> = {
+      accepted: { title: 'Driver Accepted', body: 'A driver has accepted your booking and is on the way.' },
+      heading_to_pickup: { title: 'Driver En Route', body: 'Your driver is heading to the pickup location.' },
+      arrived: { title: 'Driver Arrived', body: 'Your driver has arrived at the pickup location.' },
+      in_progress: { title: 'Trip Started', body: 'Your trip is now in progress.' },
+      arrived_at_store: { title: 'Driver at Store', body: 'Your driver has arrived at the store.' },
+      shopping_in_progress: { title: 'Shopping Started', body: 'Your driver is shopping for your items.' },
+      collected: { title: 'Items Collected', body: 'Your driver has collected your items.' },
+      en_route_to_customer: { title: 'Delivery Arriving', body: 'Your driver is on the way to your delivery location.' },
+      delivered: { title: 'Items Delivered', body: 'Your driver has delivered your items.' },
+      completed: { title: 'Trip Completed', body: 'Thank you for using Movabi! Please rate your experience.' },
+      cancelled: { title: 'Booking Cancelled', body: 'Your booking has been cancelled.' }
+    };
 
-    if (status === 'accepted') {
-      title = 'Driver Found!';
-      body = 'A driver has accepted your booking and is on the way.';
-    } else if (status === 'arrived') {
-      title = 'Driver Arrived';
-      body = 'Your driver has arrived at the pickup location.';
-    } else if (status === 'completed') {
-      title = 'Booking Completed';
-      body = 'Thank you for using Movabi! Please rate your experience.';
-    }
+    const msg = statusMessages[status] || {
+      title: 'Booking Update',
+      body: `Your booking status is now: ${status}`
+    };
 
     return this.sendNotification({
       userId,
-      title,
-      body,
+      title: msg.title,
+      body: msg.body,
       type: 'booking_update',
-      data: { jobId, status }
+      data: { jobId, status, action: 'status_update' }
+    });
+  }
+
+  static async notifyNegotiationCounter(userId: string, jobId: string, amount: number) {
+    return this.sendNotification({
+      userId,
+      title: 'Driver Counter Offer',
+      body: `A driver has countered your fare offer. Open the app to review the new amount.`,
+      type: 'booking_update',
+      data: { jobId, action: 'negotiation_counter', amount }
     });
   }
 

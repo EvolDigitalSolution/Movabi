@@ -9,7 +9,7 @@
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
-import { IonicModule, AlertController } from '@ionic/angular';
+import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
 
@@ -772,6 +772,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
     private alertCtrl = inject(AlertController);
+    private toastCtrl = inject(ToastController);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
     private routingService = inject(RoutingService);
@@ -1106,17 +1107,36 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private async notifyTrackingUpdate(status: string, bookingId: string): Promise<void> {
-        const title = this.trackingTitle();
-        const body = this.getStatusHint(status) || this.getStatusLabel(status);
+        const title = this.getStatusLabel(status);
+        const body = this.getStatusHint(status) || title;
 
-        await Promise.allSettled([
-            this.nativePlatform.showForegroundNotification(title, body, {
-                route: `/customer/tracking/${bookingId}`,
-                bookingId,
-                status
-            }),
-            this.playStatusTone()
-        ]);
+        // Show an in-app toast banner so the status change is obvious.
+        await this.showStatusToast(title, body);
+
+        // Show a foreground notification. The sound is handled by the
+        // NotificationOrchestrator so we don't double-play tones.
+        await this.nativePlatform.showForegroundNotification(title, body, {
+            route: `/customer/tracking/${bookingId}`,
+            bookingId,
+            status
+        });
+    }
+
+    private async showStatusToast(title: string, body: string): Promise<void> {
+        try {
+            const toast = await this.toastCtrl.create({
+                header: title,
+                message: body,
+                duration: 3500,
+                position: 'top',
+                color: 'primary',
+                cssClass: 'status-update-toast',
+                buttons: [{ side: 'end', icon: 'close', role: 'cancel' }]
+            });
+            await toast.present();
+        } catch (error) {
+            console.warn('[booking-tracking] Failed to show status toast', error);
+        }
     }
 
     private async playStatusTone(): Promise<void> {

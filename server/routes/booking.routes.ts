@@ -4,6 +4,7 @@ import { FraudService } from '../services/fraud.service';
 import { NotificationService } from '../services/notification.service';
 import { LogisticsService } from '../services/logistics.service';
 import { IssuingService } from '../services/issuing.service';
+import { PricingService } from '../services/pricing.service';
 import { stripe } from '../services/stripe.service';
 
 const router = Router();
@@ -774,6 +775,421 @@ router.post('/decline-job', async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[BookingRoutes] decline-job error:', error);
         return res.status(500).json({ error: error.message || 'Failed to decline job' });
+    }
+});
+
+/**
+ * Send a customer push notification for a job status change.
+ * The job status itself is saved by the caller; this endpoint only triggers
+ * the push via the existing notification service so it works when the app is
+ * in the background.
+ */
+router.post('/notify-status', async (req: Request, res: Response) => {
+    try {
+        const { jobId, status } = req.body;
+
+        if (!jobId || !status) {
+            return res.status(400).json({ error: 'jobId and status are required' });
+        }
+
+        const { data: job, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select('customer_id')
+            .eq('id', jobId)
+            .single();
+
+        if (jobError || !job?.customer_id) {
+            console.warn('[BookingRoutes] notify-status: job or customer not found', jobError);
+            return res.status(404).json({ error: 'Job or customer not found' });
+        }
+
+        await NotificationService.notifyJobStatusUpdate(job.customer_id, jobId, status);
+
+        return res.json({ success: true, notified: true });
+    } catch (error: any) {
+        console.error('[BookingRoutes] notify-status error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to send status notification' });
+    }
+});
+
+/**
+ * Create a fare negotiation for a job.
+ */
+router.post('/negotiation', async (req: Request, res: Response) => {
+    try {
+        const { jobId, amount, message, proposedByRole, counterToNegotiationId } = req.body;
+
+        if (!jobId || !amount || isNaN(Number(amount))) {
+            return res.status(400).json({ error: 'jobId and amount are required' });
+        }
+
+        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const role = String(proposedByRole || 'customer');
+        if (!['customer', 'driver'].includes(role)) {
+            return res.status(400).json({ error: 'proposedByRole must be customer or driver' });
+        }
+
+        const { data: job, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select('customer_id, driver_id, status')
+            .eq('id', jobId)
+            .single();
+
+        if (jobError || !job) {
+            return res.status(404).json({ error: 'Job not found' });
+        }
+
+        const isParticipant =
+            (role === 'customer' && job.customer_id === userId) ||
+            (role === 'driver' && job.driver_id === userId);
+
+        if (!isParticipant) {
+            return res.status(403).json({ error: 'Only the customer or assigned driver can negotiate' });
+        }
+
+        const round = counterToNegotiationId ? 2 : 1;
+
+        const { data: negotiation, error: insertError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .insert({
+                job_id: jobId,
+                proposed_by: userId,
+                proposed_by_role: role,
+                amount: Number(amount),
+                message: message || null,
+                counter_to_negotiation_id: counterToNegotiationId || null,
+                round_number: round,
+                status: 'pending'
+            })
+            .select('*')
+            .single();
+
+        if (insertError) {
+            console.error('[BookingRoutes] negotiation create failed:', insertError);
+            return res.status(500).json({ error: insertError.message || 'Failed to create negotiation' });
+        }
+
+        await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: role === 'customer' ? 'negotiating' : 'pending_fare_confirmation',
+                negotiated_fare: Number(amount),
+                negotiation_deadline: new Date(Date.now() + 120000).toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        return res.json({ success: true, negotiation });
+    } catch (error: any) {
+        console.error('[BookingRoutes] negotiation create error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to create negotiation' });
+    }
+});
+
+/**
+ * Accept a fare negotiation and lock the agreed fare.
+ */
+router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
+    try {
+        const negotiationId = req.params.id;
+        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const { data: negotiation, error: fetchError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .select('*, job:jobs(id, customer_id, driver_id)')
+            .eq('id', negotiationId)
+            .single();
+
+        if (fetchError || !negotiation) {
+            return res.status(404).json({ error: 'Negotiation not found' });
+        }
+
+        const job = (negotiation as any).job;
+        const isParticipant = job.customer_id === userId || job.driver_id === userId;
+        if (!isParticipant) {
+            return res.status(403).json({ error: 'Only participants can accept this negotiation' });
+        }
+
+        const { error: updateError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .update({ status: 'accepted', updated_at: new Date().toISOString() })
+            .eq('id', negotiationId);
+
+        if (updateError) throw updateError;
+
+        const { data: fullJob, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select('*')
+            .eq('id', negotiation.job_id)
+            .single();
+
+        if (jobError || !fullJob) {
+            return res.status(404).json({ error: 'Job not found' });
+        }
+
+        const agreedFare = Number(negotiation.amount);
+        const fareUpdate = PricingService.applyAgreedFare(fullJob, agreedFare);
+
+        await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: 'fare_agreed',
+                agreed_fare: agreedFare,
+                ...fareUpdate,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', negotiation.job_id);
+
+        return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
+    } catch (error: any) {
+        console.error('[BookingRoutes] negotiation accept error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to accept negotiation' });
+    }
+});
+
+/**
+ * Driver accepts the customer's current offer for a job.
+ * Finds the latest pending customer negotiation, accepts it, assigns the
+ * driver, and locks the agreed fare.
+ */
+router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Response) => {
+    try {
+        const jobId = req.params.jobId;
+        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const { data: job, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select('id, customer_id, status, negotiation_mode_enabled')
+            .eq('id', jobId)
+            .single();
+
+        if (jobError || !job) {
+            return res.status(404).json({ error: 'Job not found' });
+        }
+
+        if (!job.negotiation_mode_enabled) {
+            return res.status(400).json({ error: 'Job is not in negotiation mode' });
+        }
+
+        const { data: negotiations, error: fetchError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .select('*')
+            .eq('job_id', jobId)
+            .eq('proposed_by_role', 'customer')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (fetchError) throw fetchError;
+
+        const negotiation = negotiations?.[0];
+        if (!negotiation) {
+            return res.status(404).json({ error: 'No pending customer offer found' });
+        }
+
+        await supabaseAdmin
+            .from('fare_negotiations')
+            .update({ status: 'accepted', updated_at: new Date().toISOString() })
+            .eq('id', negotiation.id);
+
+        const agreedFare = Number(negotiation.amount);
+        const fareUpdate = PricingService.applyAgreedFare(job, agreedFare);
+
+        await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: 'fare_agreed',
+                driver_id: userId,
+                agreed_fare: agreedFare,
+                ...fareUpdate,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        // Notify customer that driver accepted the offer
+        await NotificationService.notifyJobStatusUpdate(String(job.customer_id), String(jobId), 'accepted');
+
+        return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
+    } catch (error: any) {
+        console.error('[BookingRoutes] driver-accept negotiation error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to accept offer' });
+    }
+});
+
+/**
+ * Driver counters the customer's current offer with a new amount.
+ */
+router.post('/negotiation/:jobId/driver-counter', async (req: Request, res: Response) => {
+    try {
+        const jobId = req.params.jobId;
+        const { amount, message } = req.body;
+        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        if (!amount || isNaN(Number(amount))) {
+            return res.status(400).json({ error: 'amount is required' });
+        }
+
+        const { data: job, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select('id, customer_id, status, negotiation_mode_enabled')
+            .eq('id', jobId)
+            .single();
+
+        if (jobError || !job) {
+            return res.status(404).json({ error: 'Job not found' });
+        }
+
+        if (!job.negotiation_mode_enabled) {
+            return res.status(400).json({ error: 'Job is not in negotiation mode' });
+        }
+
+        const { data: negotiations, error: fetchError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .select('*')
+            .eq('job_id', jobId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (fetchError) throw fetchError;
+
+        const latestNegotiation = negotiations?.[0];
+
+        const { data: counter, error: insertError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .insert({
+                job_id: jobId,
+                proposed_by: userId,
+                proposed_by_role: 'driver',
+                amount: Number(amount),
+                message: message || null,
+                counter_to_negotiation_id: latestNegotiation?.id || null,
+                round_number: (latestNegotiation?.round_number || 1) + 1,
+                status: 'pending'
+            })
+            .select('*')
+            .single();
+
+        if (insertError) {
+            console.error('[BookingRoutes] driver counter failed:', insertError);
+            return res.status(500).json({ error: insertError.message || 'Failed to counter offer' });
+        }
+
+        if (latestNegotiation) {
+            await supabaseAdmin
+                .from('fare_negotiations')
+                .update({ status: 'countered', updated_at: new Date().toISOString() })
+                .eq('id', latestNegotiation.id);
+        }
+
+        await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: 'pending_fare_confirmation',
+                negotiated_fare: Number(amount),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        // Notify customer about the counter offer
+        await NotificationService.notifyNegotiationCounter(String(job.customer_id), String(jobId), Number(amount));
+
+        return res.json({ success: true, negotiation: counter });
+    } catch (error: any) {
+        console.error('[BookingRoutes] driver counter error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to counter offer' });
+    }
+});
+
+/**
+ * Counter a fare negotiation with a new offer.
+ */
+router.post('/negotiation/:id/counter', async (req: Request, res: Response) => {
+    try {
+        const negotiationId = req.params.id;
+        const { amount, message } = req.body;
+        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        if (!amount || isNaN(Number(amount))) {
+            return res.status(400).json({ error: 'amount is required' });
+        }
+
+        const { data: negotiation, error: fetchError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .select('*, job:jobs(id, customer_id, driver_id)')
+            .eq('id', negotiationId)
+            .single();
+
+        if (fetchError || !negotiation) {
+            return res.status(404).json({ error: 'Negotiation not found' });
+        }
+
+        const job = (negotiation as any).job;
+        const isParticipant = job.customer_id === userId || job.driver_id === userId;
+        if (!isParticipant) {
+            return res.status(403).json({ error: 'Only participants can counter this negotiation' });
+        }
+
+        const counterRole = job.customer_id === userId ? 'customer' : 'driver';
+
+        const { data: counter, error: insertError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .insert({
+                job_id: negotiation.job_id,
+                proposed_by: userId,
+                proposed_by_role: counterRole,
+                amount: Number(amount),
+                message: message || null,
+                counter_to_negotiation_id: negotiationId,
+                round_number: (negotiation.round_number || 1) + 1,
+                status: 'pending'
+            })
+            .select('*')
+            .single();
+
+        if (insertError) {
+            console.error('[BookingRoutes] negotiation counter failed:', insertError);
+            return res.status(500).json({ error: insertError.message || 'Failed to counter negotiation' });
+        }
+
+        await supabaseAdmin
+            .from('fare_negotiations')
+            .update({ status: 'countered', updated_at: new Date().toISOString() })
+            .eq('id', negotiationId);
+
+        await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: 'negotiating',
+                negotiated_fare: Number(amount),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', negotiation.job_id);
+
+        return res.json({ success: true, negotiation: counter });
+    } catch (error: any) {
+        console.error('[BookingRoutes] negotiation counter error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to counter negotiation' });
     }
 });
 

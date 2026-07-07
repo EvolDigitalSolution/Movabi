@@ -211,6 +211,9 @@ export class NotificationService {
     if (this.soundedNotificationKeys.has(key)) return;
     this.soundedNotificationKeys.add(key);
 
+    const status = String(data['status'] || '');
+    if (status && this.playStatusSound(status)) return;
+
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
@@ -221,6 +224,40 @@ export class NotificationService {
       window.setTimeout(() => void context.close?.(), 400);
     } catch (error) {
       console.warn('[NotificationService] Could not play notification tone', error);
+    }
+  }
+
+  /**
+   * Play a distinct sound for lifecycle status updates. Returns true when a
+   * specific sound was selected, false when the caller should fall back.
+   */
+  private playStatusSound(status: string): boolean {
+    const soundMap: Record<string, string> = {
+      accepted: 'booking-accepted.mp3',
+      heading_to_pickup: 'driver-arrived.mp3',
+      arrived: 'driver-arrived.mp3',
+      arrived_at_store: 'driver-arrived.mp3',
+      shopping_in_progress: 'request-notification.mp3',
+      collected: 'request-notification.mp3',
+      en_route_to_customer: 'driver-arrived.mp3',
+      delivered: 'trip-completed.mp3',
+      in_progress: 'driver-arrived.mp3',
+      completed: 'trip-completed.mp3',
+      cancelled: 'message-notification.mp3'
+    };
+
+    const filename = soundMap[status];
+    if (!filename) return false;
+
+    try {
+      const audio = new Audio(`/assets/sounds/${filename}`);
+      audio.play().catch(error => {
+        console.warn('[NotificationService] Could not play status sound', status, error);
+      });
+      return true;
+    } catch (error) {
+      console.warn('[NotificationService] Audio creation failed', status, error);
+      return false;
     }
   }
 

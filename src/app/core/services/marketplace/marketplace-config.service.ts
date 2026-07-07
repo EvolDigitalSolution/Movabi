@@ -91,13 +91,13 @@ export class MarketplaceConfigService {
         enabled: true,
         timeoutSeconds: 120,
         maxRounds: 3,
-        minServices: ['ride', 'delivery', 'errand']
+        minServices: ['errand', 'delivery', 'van-moving']
       },
       bidding: {
         enabled: true,
         timeoutSeconds: 300,
         maxBids: 10,
-        defaultServices: ['van', 'van_moving']
+        defaultServices: ['van-moving']
       },
       smartMatching: {
         enabled: true,

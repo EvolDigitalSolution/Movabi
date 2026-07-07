@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ViewChild, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import {
     IonHeader,
     IonToolbar,
@@ -35,7 +36,13 @@ import {
     listOutline,
     navigate,
     chevronDownOutline,
-    settingsOutline
+    settingsOutline,
+    timerOutline,
+    personOutline,
+    trendingUpOutline,
+    sendOutline,
+    closeOutline,
+    closeCircleOutline
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Haptics, NotificationType } from '@capacitor/haptics';
@@ -52,9 +59,7 @@ import { OneSignalService } from '../../../../../core/services/notification/ones
 import { OnboardingTourService } from '../../../../../core/services/onboarding-tour/onboarding-tour.service';
 import {
     CardComponent,
-    ButtonComponent,
     BadgeComponent,
-    EmptyStateComponent,
     PerformanceBadgeComponent,
     MovabiCarouselComponent,
     MovabiCarouselSlide
@@ -69,6 +74,7 @@ import { RoutingService } from '../../../../../core/services/maps/routing.servic
 import { MarkerCoordinates, ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 import { RouteSummary } from '../../../../../core/models/maps/route-result.model';
 import { NotificationService } from '../../../../../core/services/notification.service';
+import { MarketplaceNegotiationService } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -104,17 +110,15 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
     standalone: true,
     imports: [
         CommonModule,
+        FormsModule,
         IonHeader,
         IonToolbar,
         IonTitle,
         IonButtons,
         IonContent,
         IonIcon,
-        IonToggle,
         CardComponent,
-        ButtonComponent,
         BadgeComponent,
-        EmptyStateComponent,
         PerformanceBadgeComponent,
         MovabiCarouselComponent,
         MapComponent
@@ -381,22 +385,163 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                       </div>
                     </div>
 
-                    <div class="-mx-4 shrink-0 grid grid-cols-2 gap-3 bg-white/95 backdrop-blur border-t border-slate-100 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-                      <button
-                        type="button"
-                        (click)="reject(selectedJob!.id)"
-                        class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
-                      >
-                        Pass
-                      </button>
-                      <button
-                        type="button"
-                        [disabled]="submitting()"
-                        (click)="accept(selectedJob!.id)"
-                        class="w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        {{ submitting() ? 'Accepting...' : 'Accept Request' }}
-                      </button>
+                    <div class="-mx-4 shrink-0 bg-white/95 backdrop-blur border-t border-slate-100 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+                      @if (isNegotiationJob(selectedJob!)) {
+                        @if (showNegotiationCounterInput()) {
+                          <div class="space-y-4 mb-4">
+                            <!-- Enhanced Counter Input -->
+                            <div class="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 p-4">
+                              <div class="flex items-center gap-2 mb-3">
+                                <ion-icon name="cash-outline" class="text-amber-600 text-lg"></ion-icon>
+                                <span class="text-sm font-bold text-amber-800">Your Counter Offer</span>
+                              </div>
+                              <div class="relative mb-3">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-amber-600">£</span>
+                                <input
+                                  type="number"
+                                  [ngModel]="negotiationCounterAmount()"
+                                  (ngModelChange)="negotiationCounterAmount.set($event)"
+                                  class="w-full rounded-xl border-2 border-amber-200 pl-8 pr-4 py-3 text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                                  placeholder="Enter your counter amount"
+                                />
+                              </div>
+                              <!-- Earnings Preview -->
+                              <div class="bg-white/60 backdrop-blur rounded-xl p-3 border border-amber-100">
+                                <p class="text-xs text-amber-700 font-medium mb-1">
+                                  <ion-icon name="trending-up-outline" class="text-sm mr-1"></ion-icon>
+                                  Estimated earnings after commission
+                                </p>
+                                <p class="text-xl font-black text-amber-900">
+                                  {{ formatPrice(calculateDriverEarnings(negotiationCounterAmount() || 0)) }}
+                                </p>
+                              </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                              <button
+                                type="button"
+                                (click)="submitNegotiationCounter(selectedJob!.id)"
+                                [disabled]="negotiationSubmitting()"
+                                class="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold text-sm active:scale-95 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                              >
+                                <ion-icon name="send-outline"></ion-icon>
+                                {{ negotiationSubmitting() ? 'Sending...' : 'Send Counter' }}
+                              </button>
+                              <button
+                                type="button"
+                                (click)="showNegotiationCounterInput.set(false)"
+                                class="w-full py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
+                              >
+                                <ion-icon name="close-outline"></ion-icon>
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        } @else {
+                          <!-- Enhanced Negotiation Display -->
+                          <div class="space-y-4">
+                            <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 p-4">
+                              <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Customer Offer</span>
+                                <div class="flex items-center gap-1">
+                                  <ion-icon name="person-outline" class="text-sm text-slate-400"></ion-icon>
+                                  <span class="text-xs text-slate-500">Customer</span>
+                                </div>
+                              </div>
+                              <p class="text-2xl font-display font-black text-slate-900 mb-3">
+                                {{ formatPrice(selectedJob!.negotiated_fare || selectedJob!.total_price) }}
+                              </p>
+                              
+                              <!-- Suggested Fare Comparison -->
+                              <div class="bg-blue-50 rounded-xl p-3 mb-3">
+                                <div class="flex items-center justify-between text-sm">
+                                  <span class="text-blue-600 font-medium">Suggested fare</span>
+                                  <span class="font-bold text-blue-900">{{ formatPrice(selectedJob!.total_price) }}</span>
+                                </div>
+                                <div class="flex items-center justify-between text-sm mt-1">
+                                  <span class="text-slate-600">Difference</span>
+                                  <span class="font-bold" [class]="{
+                                    'text-emerald-600': (selectedJob!.negotiated_fare || selectedJob!.total_price) >= selectedJob!.total_price,
+                                    'text-red-600': (selectedJob!.negotiated_fare || selectedJob!.total_price) < selectedJob!.total_price
+                                  }">
+                                    {{ formatPrice((selectedJob!.negotiated_fare || selectedJob!.total_price) - selectedJob!.total_price) }}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <!-- Earnings Display -->
+                              <div class="bg-emerald-50 rounded-xl p-3">
+                                <p class="text-xs text-emerald-700 font-medium mb-1">
+                                  <ion-icon name="wallet-outline" class="text-sm mr-1"></ion-icon>
+                                  You'll earn approximately
+                                </p>
+                                <p class="text-xl font-black text-emerald-900">
+                                  {{ formatPrice(calculateDriverEarnings(selectedJob!.negotiated_fare || selectedJob!.total_price)) }}
+                                </p>
+                                <p class="text-xs text-emerald-600 mt-1">after platform commission</p>
+                              </div>
+                            </div>
+                            
+                            <!-- Large Countdown Timer -->
+                            @if (selectedAvailableJob()?.negotiation_deadline) {
+                              <div class="bg-gradient-to-r from-red-50 to-orange-50 rounded-2xl border border-red-200 p-4 text-center">
+                                <div class="flex items-center justify-center gap-2 mb-2">
+                                  <ion-icon name="timer-outline" class="text-red-600 text-lg animate-pulse"></ion-icon>
+                                  <span class="text-sm font-bold text-red-800 uppercase tracking-wider">Time Remaining</span>
+                                </div>
+                                <p class="text-3xl font-display font-black text-red-900">
+                                  {{ formatDriverCountdown(selectedAvailableJob()?.negotiation_deadline || '') }}
+                                </p>
+                              </div>
+                            }
+                            
+                            <div class="grid grid-cols-3 gap-3">
+                              <button
+                                type="button"
+                                (click)="reject(selectedJob!.id)"
+                                class="w-full py-3 bg-white border-2 border-red-200 text-red-600 rounded-xl font-bold text-sm active:scale-95 transition-all flex flex-col items-center gap-1"
+                              >
+                                <ion-icon name="close-circle-outline"></ion-icon>
+                                Decline
+                              </button>
+                              <button
+                                type="button"
+                                (click)="showNegotiationCounterInput.set(true); negotiationCounterAmount.set(selectedJob!.total_price)"
+                                class="w-full py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all flex flex-col items-center gap-1"
+                              >
+                                <ion-icon name="cash-outline"></ion-icon>
+                                Counter
+                              </button>
+                              <button
+                                type="button"
+                                [disabled]="negotiationSubmitting()"
+                                (click)="acceptNegotiationOffer(selectedJob!.id)"
+                                class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl font-bold text-sm active:scale-95 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex flex-col items-center gap-1"
+                              >
+                                <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                {{ negotiationSubmitting() ? 'Accepting...' : 'Accept' }}
+                              </button>
+                            </div>
+                          </div>
+                        }
+                      } @else {
+                        <div class="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            (click)="reject(selectedJob!.id)"
+                            class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                          >
+                            Pass
+                          </button>
+                          <button
+                            type="button"
+                            [disabled]="submitting()"
+                            (click)="accept(selectedJob!.id)"
+                            class="w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            {{ submitting() ? 'Accepting...' : 'Accept Request' }}
+                          </button>
+                        </div>
+                      }
                     </div>
                   </div>
               } @else {
@@ -731,6 +876,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
     private notificationService = inject(NotificationService);
+    private negotiationService = inject(MarketplaceNegotiationService);
 
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
@@ -751,8 +897,19 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private activeRequestAudio: HTMLAudioElement | null = null;
     private activeRequestId = signal<string | null>(null);
 
-    private readonly activeRequestStatuses = new Set<string>(['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting']);
-    private readonly terminalRequestStatuses = new Set<string>(['cancelled', 'completed', 'no_driver_found', 'assigned', 'accepted']);
+    private readonly activeRequestStatuses = new Set<string>([
+        'searching',
+        'requested',
+        'pending_fare_confirmation',
+        'negotiating',
+        'fare_agreed',
+        'broadcasting',
+        'waiting'
+    ]);
+    private readonly terminalRequestStatuses = new Set<string>(['cancelled', 'completed', 'no_driver_found', 'assigned', 'accepted', 'expired']);
+
+    // Tracks jobs that have been auto-opened so we only popup once per job
+    private autoShownJobIds = new Set<string>();
 
     jobs = computed(() => {
         const dismissed = this.dismissedJobIds();
@@ -793,6 +950,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     sheetHeight = signal(40); // 40% default height
     isDraggingSheet = signal(false);
     surgeAreas = signal<any[]>([]); // For surge/high-demand areas
+
+    // Negotiation UI signals
+    negotiationCounterAmount = signal<number>(0);
+    showNegotiationCounterInput = signal(false);
+    negotiationSubmitting = signal(false);
 
     private jobsChannel?: RealtimeChannel;
     private messagesChannel?: RealtimeChannel;
@@ -996,7 +1158,13 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             listOutline,
             navigate,
             chevronDownOutline,
-            settingsOutline
+            settingsOutline,
+            timerOutline,
+            personOutline,
+            trendingUpOutline,
+            sendOutline,
+            closeOutline,
+            closeCircleOutline
         });
 
         effect(() => {
@@ -1045,8 +1213,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     ngOnDestroy() {
+        // Stop location tracking
         this.locationService.stopTracking();
 
+        // Clear all intervals
         if (this.jobsRefreshInterval) {
             clearInterval(this.jobsRefreshInterval);
             this.jobsRefreshInterval = undefined;
@@ -1057,6 +1227,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.locationRefreshInterval = undefined;
         }
 
+        if (this.requestAlertInterval) {
+            clearInterval(this.requestAlertInterval);
+            this.requestAlertInterval = undefined;
+        }
+
+        // Remove all Supabase channels
         if (this.jobsChannel) {
             this.supabase.client.removeChannel(this.jobsChannel);
             this.jobsChannel = undefined;
@@ -1067,7 +1243,27 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.messagesChannel = undefined;
         }
 
+        // Stop all request sounds
         this.stopAllRequestSounds();
+
+        // Clear audio element
+        if (this.activeRequestAudio) {
+            this.activeRequestAudio = null;
+        }
+
+        // Clear signals to free memory
+        this.driverService.availableJobs.set([]);
+        this.activeJob.set(null);
+        this.selectedJobId.set(null);
+        this.sheetHeight.set(40);
+        this.activeRequestId.set(null);
+        this.dashboardStats.set({ todayJobs: 0, acceptedJobs: 0, completedJobs: 0 });
+        this.driverLocation.set(null);
+        this.negotiationCounterAmount.set(0);
+        this.showNegotiationCounterInput.set(false);
+        this.negotiationSubmitting.set(false);
+        this.submitting.set(false);
+        this.stripeUiState.set({ accountId: null, status: '', chargesEnabled: false, payoutsEnabled: false });
     }
 
     ngAfterViewInit(): void {
@@ -1815,9 +2011,15 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                         return;
                     }
 
-                    // Stop sound if this job is no longer an active request
-                    if (this.activeRequestId() === changedJobId && !this.isJobRequestActive(newStatus)) {
-                        this.stopRequestSound(changedJobId);
+                    // Stop sound and close popup if this job is no longer an active request
+                    if (!this.isJobRequestActive(newStatus)) {
+                        if (this.activeRequestId() === changedJobId) {
+                            this.stopRequestSound(changedJobId);
+                        }
+                        if (this.selectedJobId() === changedJobId) {
+                            this.selectedJobId.set(null);
+                            this.sheetHeight.set(40);
+                        }
                     }
 
                     const shouldAlert =
@@ -2299,7 +2501,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
             await loading.dismiss();
             this.submitting.set(false);
-            this.showToast('Request accepted. Continue when you are ready.', 'success');
+            this.showToast('Request accepted! The customer has been notified. Continue when you are ready to start.', 'success');
         } catch (e: unknown) {
             this.stopRequestSound(jobId);
             await loading.dismiss();
@@ -2334,6 +2536,96 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.syncMarketplaceMapMarkers();
+    }
+
+    isNegotiationJob(job: Booking): boolean {
+        return job.negotiation_mode_enabled === true && ['pending_fare_confirmation', 'negotiating'].includes(String(job.status));
+    }
+
+    async acceptNegotiationOffer(jobId: string) {
+        if (this.negotiationSubmitting()) return;
+
+        this.negotiationSubmitting.set(true);
+        const loading = await this.loadingCtrl.create({ message: 'Accepting offer...' });
+        await loading.present();
+
+        try {
+            await this.negotiationService.driverAcceptOffer(jobId);
+            this.stopRequestSound(jobId);
+            this.playSound('booking-accepted.mp3');
+            this.driverService.availableJobs.update((jobs: Booking[]) =>
+                jobs.filter((job: Booking) => job.id !== jobId)
+            );
+            this.selectedJobId.set(null);
+            this.sheetHeight.set(40);
+            this.showToast('Excellent! The customer accepted your offer. This job is now assigned to you.', 'success');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : 'Could not accept offer';
+            this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+            this.negotiationSubmitting.set(false);
+            this.syncMarketplaceMapMarkers();
+        }
+    }
+
+    async submitNegotiationCounter(jobId: string) {
+        const amount = this.negotiationCounterAmount();
+        if (!amount || amount <= 0) {
+            this.showToast('Please enter a valid counter offer amount.', 'warning');
+            return;
+        }
+
+        if (this.negotiationSubmitting()) return;
+        this.negotiationSubmitting.set(true);
+
+        const loading = await this.loadingCtrl.create({ message: 'Sending counter offer...' });
+        await loading.present();
+
+        try {
+            await this.negotiationService.driverCounterOffer(jobId, amount, 'Driver counter offer');
+            this.showNegotiationCounterInput.set(false);
+            this.negotiationCounterAmount.set(0);
+            this.stopRequestSound(jobId);
+            this.driverService.availableJobs.update((jobs: Booking[]) =>
+                jobs.filter((job: Booking) => job.id !== jobId)
+            );
+            this.selectedJobId.set(null);
+            this.sheetHeight.set(40);
+            this.showToast('Your counter offer has been sent to the customer. You\'ll be notified if they accept.', 'success');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : 'Could not send counter offer';
+            this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+            this.negotiationSubmitting.set(false);
+            this.syncMarketplaceMapMarkers();
+        }
+    }
+
+    // Enhanced driver earnings and countdown methods
+    calculateDriverEarnings(fareAmount: number): number {
+        // Default commission rate (can be fetched from marketplace settings)
+        const commissionRate = 0.15; // 15% platform commission
+        return fareAmount * (1 - commissionRate);
+    }
+
+    formatDriverCountdown(deadline: string): string {
+        const now = new Date().getTime();
+        const deadlineTime = new Date(deadline).getTime();
+        const remaining = Math.max(0, deadlineTime - now);
+        
+        if (remaining === 0) return 'Expired';
+        
+        const totalSeconds = Math.floor(remaining / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        
+        if (minutes > 0) {
+            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        } else {
+            return `${seconds}s`;
+        }
     }
 
     private isJobRequestActive(status?: BookingStatus | string | null): boolean {
@@ -2420,20 +2712,30 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     }
 
-    // Monitor available jobs for urgent requests
+    // Monitor available jobs for urgent requests and auto-open the request popup
     private urgentRequestEffect = effect(() => {
         const availableJobs = this.jobs();
         const activeJob = this.activeJob();
 
-        // Only alert if there's no active job and there are active request jobs
-        if (!activeJob && availableJobs.length > 0) {
-            const newestJob = availableJobs[0]; // Assume first is newest
-            if (newestJob?.id && this.activeRequestId() !== newestJob.id) {
-                this.startRequestSound(newestJob.id);
-            }
-        } else {
-            // Stop alert if there's an active job or no available jobs
+        // Stop alert if there's an active job or no available jobs
+        if (activeJob || availableJobs.length === 0) {
             this.stopAllRequestSounds();
+            return;
+        }
+
+        const newestJob = availableJobs[0]; // Assume first is newest
+        if (!newestJob?.id) return;
+
+        // Only start sound once per job (startRequestSound guards this)
+        if (this.activeRequestId() !== newestJob.id) {
+            this.startRequestSound(newestJob.id);
+        }
+
+        // Auto-open the popup once per job, but never while another popup is open
+        if (!this.selectedJobId() && !this.autoShownJobIds.has(newestJob.id)) {
+            this.autoShownJobIds.add(newestJob.id);
+            this.selectedJobId.set(newestJob.id);
+            this.sheetHeight.set(80);
         }
     });
 

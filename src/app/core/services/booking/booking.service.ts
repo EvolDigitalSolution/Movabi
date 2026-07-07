@@ -117,10 +117,13 @@ export class BookingService {
         const distanceMeters = Number((bookingData as any).distance_meters || 0);
         const durationSeconds = Number((bookingData as any).duration_seconds || 0);
 
+        const negotiationEnabled = Boolean(pricing?.marketplaceFlags?.negotiationEnabled);
+        const biddingEnabled = Boolean(pricing?.marketplaceFlags?.biddingEnabled);
+
         const insertPayload: Record<string, unknown> = {
             customer_id: user.id,
             service_type_id: bookingData.service_type_id || null,
-            status: 'requested',
+            status: negotiationEnabled ? 'pending_fare_confirmation' : 'requested',
             payment_status: 'pending',
 
             pickup_address: bookingData.pickup_address || '',
@@ -222,8 +225,9 @@ export class BookingService {
 
         if (dError) throw dError;
 
-        await this.logStatusHistory(job.id, 'requested', 'Job created, awaiting payment');
-        await this.eventService.logEvent(job.id, 'job_created', 'Job initialized in requested state');
+        const initialStatus = String(job.status || 'requested') as BookingStatus;
+        await this.logStatusHistory(job.id, initialStatus, 'Job created, awaiting payment');
+        await this.eventService.logEvent(job.id, 'job_created', `Job initialized in ${initialStatus} state`);
 
         const booking = this.mapJobToBooking(job);
         this.activeBooking.set(booking);
@@ -584,7 +588,7 @@ export class BookingService {
             msg.title,
             msg.body,
             'booking',
-            { bookingId: booking.id }
+            { bookingId: booking.id, status: booking.status, action: 'status_update' }
         );
 
         if (booking.driver_id) {
@@ -593,8 +597,21 @@ export class BookingService {
                 msg.title,
                 msg.body,
                 'booking',
-                { bookingId: booking.id }
+                { bookingId: booking.id, status: booking.status, action: 'status_update' }
             );
+        }
+
+        // Also send a native push notification via the backend so the alert
+        // reaches the customer when the app is backgrounded.
+        try {
+            await firstValueFrom(
+                this.http.post(this.apiUrlService.getApiUrl('/api/booking/notify-status'), {
+                    jobId: booking.id,
+                    status: booking.status
+                })
+            );
+        } catch (error) {
+            console.warn('[BookingService] Failed to send backend push notification:', error);
         }
 
         if (booking.status === 'completed') {

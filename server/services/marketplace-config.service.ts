@@ -174,14 +174,14 @@ export class MarketplaceConfigService {
       enabled: true,
       timeoutSeconds: 120,
       maxRounds: 3,
-      minServices: ['ride', 'delivery', 'errand']
+      minServices: ['errand', 'delivery', 'van-moving']
     });
 
     return {
       enabled: Boolean(raw?.enabled ?? true),
       timeoutSeconds: Number(raw?.timeoutSeconds ?? 120),
       maxRounds: Number(raw?.maxRounds ?? 3),
-      minServices: Array.isArray(raw?.minServices) ? (raw.minServices as string[]) : ['ride', 'delivery', 'errand']
+      minServices: Array.isArray(raw?.minServices) ? (raw.minServices as string[]) : ['errand', 'delivery', 'van-moving']
     };
   }
 
@@ -190,14 +190,14 @@ export class MarketplaceConfigService {
       enabled: true,
       timeoutSeconds: 300,
       maxBids: 10,
-      defaultServices: ['van', 'van_moving']
+      defaultServices: ['van-moving']
     });
 
     return {
       enabled: Boolean(raw?.enabled ?? true),
       timeoutSeconds: Number(raw?.timeoutSeconds ?? 300),
       maxBids: Number(raw?.maxBids ?? 10),
-      defaultServices: Array.isArray(raw?.defaultServices) ? (raw.defaultServices as string[]) : ['van', 'van_moving']
+      defaultServices: Array.isArray(raw?.defaultServices) ? (raw.defaultServices as string[]) : ['van-moving']
     };
   }
 

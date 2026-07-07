@@ -112,6 +112,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
         status,
         payment_status,
         payment_intent_id,
+        agreed_fare,
         price,
         total_price,
         estimated_price,
@@ -148,6 +149,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
     }
 
     const amount =
+      money(job.agreed_fare) ||
       money(job.total_price) ||
       money(job.estimated_price) ||
       money(job.price) ||

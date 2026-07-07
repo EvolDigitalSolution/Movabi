@@ -317,7 +317,7 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
 
                     <div class="pt-6 border-t border-slate-100">
                       <h4 class="text-sm font-bold text-slate-900 mb-4">Negotiation</h4>
-                      <div class="grid md:grid-cols-3 gap-5">
+                      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
                         <div>
                           <label class="field-label">Enabled</label>
                           <select [(ngModel)]="marketplaceConfig.negotiation.enabled" class="field-control">
@@ -333,15 +333,25 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                           <label class="field-label">Max Rounds</label>
                           <input type="number" min="1" [(ngModel)]="marketplaceConfig.negotiation.maxRounds" class="field-control">
                         </div>
+                        <div>
+                          <label class="field-label">Services</label>
+                          <input
+                            type="text"
+                            [ngModel]="marketplaceConfig.negotiation.minServices.join(', ')"
+                            (ngModelChange)="updateNegotiationServices($event)"
+                            class="field-control"
+                            placeholder="errand, delivery, van-moving"
+                          >
+                        </div>
                       </div>
                       <p class="text-xs text-slate-500 font-medium mt-2">
-                        Default services: ride, delivery, errand. Configure overrides per service in commission overrides.
+                        Default services: errand, delivery, van-moving. Add ride to enable negotiation for rides.
                       </p>
                     </div>
 
                     <div class="pt-6 border-t border-slate-100">
                       <h4 class="text-sm font-bold text-slate-900 mb-4">Bidding</h4>
-                      <div class="grid md:grid-cols-3 gap-5">
+                      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
                         <div>
                           <label class="field-label">Enabled</label>
                           <select [(ngModel)]="marketplaceConfig.bidding.enabled" class="field-control">
@@ -357,9 +367,19 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                           <label class="field-label">Max Bids Per Job</label>
                           <input type="number" min="1" [(ngModel)]="marketplaceConfig.bidding.maxBids" class="field-control">
                         </div>
+                        <div>
+                          <label class="field-label">Services</label>
+                          <input
+                            type="text"
+                            [ngModel]="marketplaceConfig.bidding.defaultServices.join(', ')"
+                            (ngModelChange)="updateBiddingServices($event)"
+                            class="field-control"
+                            placeholder="van-moving"
+                          >
+                        </div>
                       </div>
                       <p class="text-xs text-slate-500 font-medium mt-2">
-                        Default bidding services: van, van_moving.
+                        Default bidding services: van-moving.
                       </p>
                     </div>
 
@@ -817,13 +837,13 @@ export class AdminSettingsComponent implements OnInit {
             enabled: true,
             timeoutSeconds: 120,
             maxRounds: 3,
-            minServices: ['ride', 'delivery', 'errand']
+            minServices: ['errand', 'delivery', 'van-moving']
         },
         bidding: {
             enabled: true,
             timeoutSeconds: 300,
             maxBids: 10,
-            defaultServices: ['van', 'van_moving']
+            defaultServices: ['van-moving']
         },
         smartMatching: {
             enabled: true,
@@ -1180,6 +1200,20 @@ export class AdminSettingsComponent implements OnInit {
             console.error('Failed to load marketplace settings:', error);
             this.triggerToast('Marketplace settings loaded with defaults.', 'warning');
         }
+    }
+
+    updateNegotiationServices(value: string): void {
+        this.marketplaceConfig.negotiation.minServices = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+    }
+
+    updateBiddingServices(value: string): void {
+        this.marketplaceConfig.bidding.defaultServices = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
     }
 
     private deepCloneMarketplaceSettings(settings: MarketplaceSettings): MarketplaceSettings {

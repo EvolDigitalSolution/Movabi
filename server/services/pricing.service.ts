@@ -554,4 +554,46 @@ export class PricingService {
 
         return map[String(currencyCode || 'GBP').toUpperCase()] || '£';
     }
+
+    /**
+     * Re-derive the price-related fields on a job when the fare has been
+     * negotiated/locked to a different amount. This keeps driver payout,
+     * platform fee and tax proportional to the agreed fare.
+     */
+    static applyAgreedFare(job: any, agreedFare: number): Partial<any> {
+        const originalTotal = Number(job?.total_price || job?.price || agreedFare) || agreedFare;
+        const safeAgreed = Math.max(0, Number(agreedFare) || 0);
+        const ratio = originalTotal > 0 ? safeAgreed / originalTotal : 1;
+
+        const round = this.roundMoney;
+
+        const platformFee = round(Number(job?.platform_fee || 0) * ratio);
+        const driverPayout = round(Number(job?.driver_payout || 0) * ratio);
+        const taxAmount = round(Number(job?.tax_amount || 0) * ratio);
+        const baseFareUsed = round(Number(job?.base_fare_used || job?.base_fare || 0) * ratio);
+        const pricePerKmUsed = Number(job?.price_per_km_used || 0);
+
+        const fareBreakdown = job?.fare_breakdown || {};
+        const scaledBreakdown: Record<string, number> = {};
+        for (const key of Object.keys(fareBreakdown)) {
+            const value = Number(fareBreakdown[key]);
+            scaledBreakdown[key] = Number.isFinite(value) ? round(value * ratio) : fareBreakdown[key];
+        }
+
+        return {
+            price: safeAgreed,
+            total_price: safeAgreed,
+            estimated_price: safeAgreed,
+            app_confirmed_price: safeAgreed,
+            frontend_total_price: safeAgreed,
+            regional_price: round(Number(job?.regional_price || 0) * ratio),
+            platform_fee: platformFee,
+            driver_payout: driverPayout,
+            tax_amount: taxAmount,
+            base_fare_used: baseFareUsed,
+            price_per_km_used: pricePerKmUsed,
+            commission_rate_used: Number(job?.commission_rate_used || 15),
+            fare_breakdown: scaledBreakdown
+        };
+    }
 }
