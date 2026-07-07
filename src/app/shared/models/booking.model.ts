@@ -1,6 +1,9 @@
 ﻿export type BookingStatus =
     | 'pending'
     | 'requested'
+    | 'pending_fare_confirmation'
+    | 'negotiating'
+    | 'fare_agreed'
     | 'searching'
     | 'assigned'
     | 'accepted'

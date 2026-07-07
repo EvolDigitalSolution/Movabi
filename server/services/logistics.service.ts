@@ -3,6 +3,7 @@ import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
 import { calculatePayoutBreakdown } from './payout-calculator';
 import { IssuingService } from './issuing.service';
+import { MarketplaceConfigService } from './marketplace-config.service';
 
 export class LogisticsService {
   private static readonly EARTH_RADIUS_KM = 6371;
@@ -76,7 +77,10 @@ export class LogisticsService {
    */
   static isValidBookingTransition(current: string, next: string): boolean {
     const transitions: Record<string, string[]> = {
-      'requested': ['searching', 'cancelled'],
+      'requested': ['pending_fare_confirmation', 'negotiating', 'fare_agreed', 'searching', 'cancelled'],
+      'pending_fare_confirmation': ['negotiating', 'fare_agreed', 'cancelled'],
+      'negotiating': ['fare_agreed', 'cancelled'],
+      'fare_agreed': ['searching', 'cancelled'],
       'searching': ['assigned', 'no_driver_found', 'cancelled'],
       'assigned': ['in_progress', 'cancelled'],
       'in_progress': ['completed'],
@@ -159,7 +163,21 @@ export class LogisticsService {
     }
 
     const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
-    const commissionRate = plan === 'pro' ? 0 : Number(driverProfile?.commission_rate ?? 15);
+
+    const effectiveCommissionRate = await MarketplaceConfigService.getEffectiveCommissionPercent(
+      String(job.service_slug || '').toLowerCase() || null,
+      String(job.city_zone || '') || null,
+      String(driverProfile?.tier || job.driver_tier_at_assignment || '') || null,
+      String(job.tenant_id || '') || null
+    );
+
+    const storedCommission =
+      (job.fare_breakdown as Record<string, unknown> | null)?.commissionPercent ??
+      job.commission_rate_used ??
+      driverProfile?.commission_rate ??
+      effectiveCommissionRate;
+
+    const commissionRate = plan === 'pro' ? 0 : Number(storedCommission ?? 15);
     const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 15;
 
     let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();

@@ -83,7 +83,7 @@ export class JobService {
             .from('jobs')
             .select('*')
             .is('driver_id', null)
-            .in('status', ['pending', 'requested', 'searching'])
+            .in('status', ['pending', 'requested', 'fare_agreed', 'searching'])
             .in('payment_status', ['pending', 'authorized', 'wallet_funded', 'paid'])
             .or(`driver_search_expires_at.is.null,driver_search_expires_at.gt.${new Date().toISOString()}`)
             .order('created_at', { ascending: false });

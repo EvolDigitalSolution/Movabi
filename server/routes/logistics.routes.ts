@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { LogisticsService } from '../services/logistics.service';
 import { dispatchService } from '../services/dispatch.service';
+import { MarketplaceConfigService } from '../services/marketplace-config.service';
 
 const router = Router();
 
@@ -43,10 +44,17 @@ router.post('/payout-breakdown', async (req: Request, res: Response) => {
     const { data: profile, error } = await LogisticsService.findDriverProfile(driverId);
     if (error || !profile) throw new Error('Driver profile not found');
 
+    const effectiveCommission = await MarketplaceConfigService.getEffectiveCommissionPercent(
+      null,
+      null,
+      String(profile.tier || '') || null,
+      null
+    );
+
     const breakdown = LogisticsService.calculatePayout(
-      totalPrice, 
-      profile.pricing_plan || 'starter', 
-      profile.commission_rate || 15.00
+      totalPrice,
+      profile.pricing_plan || 'starter',
+      profile.commission_rate || effectiveCommission || 15.00
     );
 
     res.json(breakdown);

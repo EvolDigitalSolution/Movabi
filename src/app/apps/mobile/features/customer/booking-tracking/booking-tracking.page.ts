@@ -1142,10 +1142,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         status: string
     ): 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info' {
         switch (status) {
+            case 'pending_fare_confirmation':
+            case 'negotiating':
             case 'searching':
             case 'no_driver_found':
             case 'requires_review':
                 return 'warning';
+            case 'fare_agreed':
             case 'accepted':
             case 'arrived':
             case 'in_progress':
@@ -1167,6 +1170,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             const errandMap: Record<string, string> = this.isShoppingErrand()
                 ? {
+                    pending_fare_confirmation: 'Confirm fare',
+                    negotiating: 'Negotiating',
+                    fare_agreed: 'Fare agreed',
                     searching: 'Finding driver',
                     accepted: 'Assigned',
                     assigned: 'Assigned',
@@ -1186,6 +1192,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     requires_review: 'Review'
                 }
                 : {
+                    pending_fare_confirmation: 'Confirm fare',
+                    negotiating: 'Negotiating',
+                    fare_agreed: 'Fare agreed',
                     searching: 'Finding driver',
                     accepted: 'Assigned',
                     assigned: 'Assigned',
@@ -1209,6 +1218,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         const map: Record<string, string> = {
+            pending_fare_confirmation: 'Confirm fare',
+            negotiating: 'Negotiating',
+            fare_agreed: 'Fare agreed',
             searching: 'Searching',
             accepted: 'Assigned',
             assigned: 'Assigned',
@@ -1235,6 +1247,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             const errandMap: Record<string, string> = this.isShoppingErrand()
                 ? {
+                    pending_fare_confirmation: 'Please confirm the fare.',
+                    negotiating: 'Fare is being negotiated.',
+                    fare_agreed: 'Fare agreed. Finding a driver.',
                     searching: 'Finding a shopper.',
                     accepted: 'Driver is going to the store..',
                     assigned: 'Driver is going to the store..',
@@ -1254,6 +1269,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     requires_review: 'Under review.'
                 }
                 : {
+                    pending_fare_confirmation: 'Please confirm the fare.',
+                    negotiating: 'Fare is being negotiated.',
+                    fare_agreed: 'Fare agreed. Finding a driver.',
                     searching: 'Finding a driver.',
                     accepted: 'Driver is going to collect.',
                     assigned: 'Driver is going to collect.',
@@ -1277,6 +1295,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         const map: Record<string, string> = {
+            pending_fare_confirmation: 'Please confirm the fare.',
+            negotiating: 'Fare is being negotiated.',
+            fare_agreed: 'Fare agreed. Finding a driver.',
             searching: 'Finding nearby drivers.',
             accepted: 'Driver is coming.',
             assigned: 'Driver is coming.',

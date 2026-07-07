@@ -1,5 +1,6 @@
 ﻿import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
+import { MarketplaceConfigService } from './marketplace-config.service';
 
 export interface PricingOptions {
     lat: number;
@@ -12,11 +13,20 @@ export interface PricingOptions {
     currencyCode?: string;
     city?: CityConfig | null;
     pricingPlan?: string;
+    tenantId?: string | null;
+    cityZone?: string | null;
+    driverTier?: string | null;
+    demand?: number;
+    supply?: number;
+    requestedAt?: string;
+    weatherMultiplier?: number;
+    trafficMultiplier?: number;
 }
 
 export interface PricingResult {
     basePrice: number;
     surgeMultiplier: number;
+    dynamicPricingMultiplier: number;
     totalPrice: number;
     source: string;
     city?: string;
@@ -27,10 +37,36 @@ export interface PricingResult {
     regionalPricingRuleId?: string | null;
     taxAmount: number;
     platformFee: number;
+    commissionFee: number;
     driverPayout: number;
     commissionRateUsed: number;
     baseFareUsed: number;
     pricePerKmUsed: number;
+    fareBreakdown: FareBreakdown;
+    marketplaceFlags: {
+        dynamicPricingEnabled: boolean;
+        negotiationEnabled: boolean;
+        biddingEnabled: boolean;
+    };
+}
+
+export interface FareBreakdown {
+    baseFare: number;
+    distanceCost: number;
+    durationCost: number;
+    serviceFee: number;
+    taxAmount: number;
+    dynamicPricingAmount: number;
+    commissionAmount: number;
+    platformFee: number;
+    driverPayout: number;
+    total: number;
+    currencyCode: string;
+    currencySymbol: string;
+    multiplier: number;
+    commissionPercent: number;
+    source: string;
+    extras: Record<string, number>;
 }
 
 export class PricingService {
@@ -41,7 +77,15 @@ export class PricingService {
             durationMinutes = 0,
             basePrice: legacyBasePrice,
             city,
-            pricingPlan = 'starter'
+            pricingPlan = 'starter',
+            tenantId = null,
+            cityZone = null,
+            driverTier = null,
+            demand = 0,
+            supply = 0,
+            requestedAt,
+            weatherMultiplier = 1,
+            trafficMultiplier = 1
         } = options;
 
         const countryCode = String(options.countryCode || 'GB').toUpperCase();
@@ -59,6 +103,9 @@ export class PricingService {
         let commissionRateUsed = 15;
         let baseFareUsed = 0;
         let pricePerKmUsed = 0;
+        let serviceFee = 0;
+        let distanceCost = 0;
+        let durationCost = 0;
 
         try {
             // Admin-managed pricing_config is the operational source of truth for
@@ -78,15 +125,16 @@ export class PricingService {
                 const baseFare = Number(configRule.base_fare || 0);
                 const perKm = Number(configRule.per_km || 0);
                 const perMin = Number(configRule.per_min || 0);
-                const serviceFee = Number(configRule.service_fee || 0);
+                const configServiceFee = Number(configRule.service_fee || 0);
                 const minimumFare = Number(configRule.minimum_fare || 0);
 
-                resolvedBasePrice = this.roundMoney(Math.max(minimumFare, baseFare + distanceKm * perKm + durationMinutes * perMin + serviceFee));
+                distanceCost = distanceKm * perKm;
+                durationCost = durationMinutes * perMin;
+                serviceFee = configServiceFee;
+
+                resolvedBasePrice = this.roundMoney(Math.max(minimumFare, baseFare + distanceCost + durationCost + serviceFee));
                 resolvedCurrencyCode = configRule.currency_code || this.currencyFromCountry(countryCode);
                 currencySymbol = this.symbolFromCurrency(resolvedCurrencyCode);
-                commissionRateUsed = 15;
-                platformFee = this.roundMoney(resolvedBasePrice * (commissionRateUsed / 100));
-                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
                 baseFareUsed = baseFare;
                 pricePerKmUsed = perKm;
                 source = 'pricing_config';
@@ -270,21 +318,145 @@ export class PricingService {
 
             resolvedBasePrice = this.roundMoney(resolvedBasePrice);
 
-            if (source !== 'regional_pricing_rule') {
-                platformFee = this.roundMoney(resolvedBasePrice * (commissionRateUsed / 100));
-                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
+            // Fill in component costs for branches that didn't set them explicitly
+            if (source === 'regional_pricing_rule') {
+                distanceCost = distanceKm * pricePerKmUsed;
+                durationCost = 0;
+                serviceFee = 0;
+            } else if (source !== 'pricing_config') {
+                distanceCost = distanceKm * pricePerKmUsed;
+                durationCost = 0;
+                serviceFee = 0;
             }
+
+            // Marketplace dynamic pricing: demand/supply, time-of-day, weather/traffic
+            const dynamicSettings = await MarketplaceConfigService.getDynamicPricingSettings(tenantId);
+            const surgeMultiplier = dynamicSettings.demandSupplyEnabled
+                ? this.getSurgeMultiplier(demand, supply)
+                : 1.0;
+            const timeMultiplier = dynamicSettings.timeOfDayEnabled
+                ? this.getTimeOfDayMultiplier(requestedAt)
+                : 1.0;
+            const dynamicPricingMultiplier = this.roundMoney(
+                Math.min(
+                    dynamicSettings.maxSurge,
+                    surgeMultiplier * timeMultiplier * weatherMultiplier * trafficMultiplier
+                )
+            );
+            const dynamicPricingAmount = this.roundMoney(resolvedBasePrice * (dynamicPricingMultiplier - 1));
+            const preCommissionTotal = this.roundMoney(resolvedBasePrice + dynamicPricingAmount);
+
+            // Marketplace commission: read from admin config, apply overrides
+            const effectiveCommission = await MarketplaceConfigService.getEffectiveCommissionPercent(
+                serviceSlug,
+                cityZone,
+                driverTier,
+                tenantId
+            );
+            // If a regional rule explicitly defined a commission, it acts as a hard override for that rule.
+            commissionRateUsed = source === 'regional_pricing_rule' && commissionRateUsed !== 15
+                ? commissionRateUsed
+                : effectiveCommission;
+
+            commissionRateUsed = this.roundMoney(commissionRateUsed);
+            const commissionFee = this.roundMoney(preCommissionTotal * (commissionRateUsed / 100));
+            platformFee = commissionFee;
+            driverPayout = this.roundMoney(preCommissionTotal - commissionFee);
+            const totalPrice = preCommissionTotal;
+
+            taxAmount = this.roundMoney(taxAmount);
+
+            const fareBreakdown: FareBreakdown = {
+                baseFare: this.roundMoney(baseFareUsed),
+                distanceCost: this.roundMoney(distanceCost),
+                durationCost: this.roundMoney(durationCost),
+                serviceFee: this.roundMoney(serviceFee),
+                taxAmount,
+                dynamicPricingAmount,
+                commissionAmount: commissionFee,
+                platformFee: commissionFee,
+                driverPayout,
+                total: totalPrice,
+                currencyCode: resolvedCurrencyCode,
+                currencySymbol,
+                multiplier: dynamicPricingMultiplier,
+                commissionPercent: commissionRateUsed,
+                source,
+                extras: {
+                    surgeMultiplier,
+                    timeMultiplier,
+                    weatherMultiplier,
+                    trafficMultiplier
+                }
+            };
+
+            const jobModes = await MarketplaceConfigService.determineJobModes(serviceSlug, tenantId);
+            const marketplaceFlags = {
+                dynamicPricingEnabled: dynamicSettings.enabled,
+                negotiationEnabled: jobModes.negotiation,
+                biddingEnabled: jobModes.bidding
+            };
+
+            console.log(
+                `[PricingService] Price resolved: ${currencySymbol}${totalPrice} (base ${resolvedBasePrice}, multiplier ${dynamicPricingMultiplier}, commission ${commissionRateUsed}%) via ${source} for ${serviceSlug} in ${countryCode}`
+            );
+
+            return {
+                basePrice: resolvedBasePrice,
+                surgeMultiplier,
+                dynamicPricingMultiplier,
+                totalPrice,
+                source,
+                city: city?.name,
+                countryCode,
+                currencyCode: resolvedCurrencyCode,
+                currencySymbol,
+                pricingPlanUsed: pricingPlan,
+                regionalPricingRuleId,
+                taxAmount,
+                platformFee,
+                commissionFee,
+                driverPayout,
+                commissionRateUsed,
+                baseFareUsed,
+                pricePerKmUsed,
+                fareBreakdown,
+                marketplaceFlags
+            };
         } catch (err) {
             console.error('[PricingService] Error resolving price from DB, falling back:', err);
         }
 
+        // Fallback return when the marketplace path throws. Maintains old contract shape.
         console.log(
-            `[PricingService] Price resolved: ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
+            `[PricingService] Price resolved (fallback): ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
         );
+
+        const fallbackCommission = this.roundMoney(15);
+        const fallbackPlatformFee = this.roundMoney(resolvedBasePrice * (fallbackCommission / 100));
+        const fallbackFareBreakdown: FareBreakdown = {
+            baseFare: this.roundMoney(baseFareUsed),
+            distanceCost: this.roundMoney(distanceKm * pricePerKmUsed),
+            durationCost: 0,
+            serviceFee: 0,
+            taxAmount,
+            dynamicPricingAmount: 0,
+            commissionAmount: fallbackPlatformFee,
+            platformFee: fallbackPlatformFee,
+            driverPayout: this.roundMoney(resolvedBasePrice - fallbackPlatformFee),
+            total: resolvedBasePrice,
+            currencyCode: resolvedCurrencyCode,
+            currencySymbol,
+            multiplier: 1,
+            commissionPercent: fallbackCommission,
+            source,
+            extras: {}
+        };
 
         return {
             basePrice: resolvedBasePrice,
             surgeMultiplier: 1.0,
+            dynamicPricingMultiplier: 1.0,
             totalPrice: resolvedBasePrice,
             source,
             city: city?.name,
@@ -294,11 +466,18 @@ export class PricingService {
             pricingPlanUsed: pricingPlan,
             regionalPricingRuleId,
             taxAmount,
-            platformFee,
-            driverPayout,
-            commissionRateUsed,
+            platformFee: fallbackPlatformFee,
+            commissionFee: fallbackPlatformFee,
+            driverPayout: this.roundMoney(resolvedBasePrice - fallbackPlatformFee),
+            commissionRateUsed: fallbackCommission,
             baseFareUsed,
-            pricePerKmUsed
+            pricePerKmUsed,
+            fareBreakdown: fallbackFareBreakdown,
+            marketplaceFlags: {
+                dynamicPricingEnabled: false,
+                negotiationEnabled: false,
+                biddingEnabled: false
+            }
         };
     }
 
@@ -311,6 +490,23 @@ export class PricingService {
         if (ratio > 2) return 1.6;
         if (ratio > 1.5) return 1.3;
         if (ratio > 1.2) return 1.1;
+
+        return 1.0;
+    }
+
+    static getTimeOfDayMultiplier(requestedAt?: string): number {
+        const date = requestedAt ? new Date(requestedAt) : new Date();
+        const hour = date.getHours();
+
+        // Peak hours: 7-9 AM and 5-8 PM
+        if ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 21)) {
+            return 1.15;
+        }
+
+        // Night premium
+        if (hour >= 23 || hour < 5) {
+            return 1.25;
+        }
 
         return 1.0;
     }

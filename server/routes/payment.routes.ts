@@ -30,7 +30,11 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       serviceSlug,
       countryCode,
       currencyCode,
-      pricingPlan
+      pricingPlan,
+      tenantId,
+      cityZone,
+      driverTier,
+      requestedAt
     } = req.body;
 
     if (lat === undefined || lng === undefined) {
@@ -38,6 +42,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
     }
 
     const city = await CityService.findCityForLocation(Number(lat), Number(lng));
+    const stats = await dispatchService.getAreaStats(Number(lat), Number(lng));
 
     const pricing = await PricingService.resolvePrice({
       lat: Number(lat),
@@ -51,18 +56,20 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       countryCode: countryCode || (city as any)?.country_code || (city as any)?.country || 'GB',
       currencyCode,
       pricingPlan: pricingPlan || 'starter',
-      city
+      city,
+      tenantId: tenantId || null,
+      cityZone: cityZone || city?.name || null,
+      driverTier: driverTier || null,
+      demand: stats.demand,
+      supply: stats.supply,
+      requestedAt: requestedAt || new Date().toISOString()
     });
-
-    const stats = await dispatchService.getAreaStats(Number(lat), Number(lng));
-    const surge = PricingService.getSurgeMultiplier(stats.demand, stats.supply);
-
-    const totalPrice = Number((Number(pricing.basePrice || 0) * Number(surge || 1)).toFixed(2));
 
     return res.json({
       basePrice: pricing.basePrice,
-      totalPrice,
-      surgeMultiplier: surge,
+      totalPrice: pricing.totalPrice,
+      surgeMultiplier: pricing.surgeMultiplier,
+      dynamicPricingMultiplier: pricing.dynamicPricingMultiplier,
       demand: stats.demand,
       supply: stats.supply,
       city: city?.name || 'Unknown',
@@ -74,10 +81,13 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       regionalPricingRuleId: pricing.regionalPricingRuleId,
       taxAmount: pricing.taxAmount,
       platformFee: pricing.platformFee,
+      commissionFee: pricing.commissionFee,
       driverPayout: pricing.driverPayout,
       commissionRateUsed: pricing.commissionRateUsed,
       baseFareUsed: pricing.baseFareUsed,
-      pricePerKmUsed: pricing.pricePerKmUsed
+      pricePerKmUsed: pricing.pricePerKmUsed,
+      fareBreakdown: pricing.fareBreakdown,
+      marketplaceFlags: pricing.marketplaceFlags
     });
   } catch (error: any) {
     console.error('[PaymentRoutes] calculate-price failed:', error);
@@ -87,7 +97,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
 
 router.post('/create-intent', async (req: Request, res: Response) => {
   try {
-    const { jobId, tenantId, surgeMultiplier } = req.body;
+    const { jobId, tenantId, surgeMultiplier, fareBreakdown, marketplaceFlags } = req.body;
 
     if (!jobId) {
       return res.status(400).json({ error: 'jobId is required' });
@@ -163,17 +173,31 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       }
     });
 
+    const updatePayload: Record<string, unknown> = {
+      payment_intent_id: pi.id,
+      payment_status: 'authorized',
+      payment_method: 'card',
+      surge_multiplier: Number(surgeMultiplier || 1),
+      price: amount,
+      total_price: amount,
+      estimated_price: amount
+    };
+
+    if (fareBreakdown && typeof fareBreakdown === 'object') {
+      updatePayload.fare_breakdown = fareBreakdown;
+      updatePayload.commission_rate_used = (fareBreakdown as any)?.commissionPercent ?? null;
+      updatePayload.dynamic_pricing_multiplier = (fareBreakdown as any)?.multiplier ?? 1;
+    }
+
+    if (marketplaceFlags && typeof marketplaceFlags === 'object') {
+      updatePayload.marketplace_flags = marketplaceFlags;
+      updatePayload.negotiation_mode_enabled = (marketplaceFlags as any)?.negotiationEnabled ?? false;
+      updatePayload.bid_mode_enabled = (marketplaceFlags as any)?.biddingEnabled ?? false;
+    }
+
     const { error: updateError } = await supabaseAdmin
       .from('jobs')
-      .update({
-        payment_intent_id: pi.id,
-        payment_status: 'authorized',
-        payment_method: 'card',
-        surge_multiplier: Number(surgeMultiplier || 1),
-        price: amount,
-        total_price: amount,
-        estimated_price: amount
-      })
+      .update(updatePayload)
       .eq('id', jobId);
 
     if (updateError) {
