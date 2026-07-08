@@ -37,14 +37,13 @@ export class BookingService {
     activeBooking = signal<Booking | null>(null);
     bookingHistory = signal<Booking[]>([]);
 
+    // van-moving excluded until bidding/payment is hardened
     private readonly safeNegotiationSlugs = new Set([
         'shop',
         'shopping',
         'errand',
         'errands',
-        'delivery',
-        'van',
-        'van_moving'
+        'delivery'
     ]);
 
     private canonicalServiceSlug(slug: string): string {
@@ -140,6 +139,7 @@ export class BookingService {
         const distanceMeters = Number((bookingData as any).distance_meters || 0);
         const durationSeconds = Number((bookingData as any).duration_seconds || 0);
 
+        const canonicalService = this.canonicalServiceSlug(serviceSlug);
         let negotiationEnabled = Boolean(pricing?.marketplaceFlags?.negotiationEnabled);
         let biddingEnabled = Boolean(pricing?.marketplaceFlags?.biddingEnabled);
         let marketplaceFlags = pricing?.marketplaceFlags ?? {
@@ -148,19 +148,28 @@ export class BookingService {
             biddingEnabled: false
         };
 
+        if (!this.safeNegotiationSlugs.has(canonicalService)) {
+            negotiationEnabled = false;
+            biddingEnabled = false;
+            marketplaceFlags = {
+                ...marketplaceFlags,
+                negotiationEnabled: false,
+                biddingEnabled: false
+            };
+        }
+
         // Safe fallback: if the backend pricing response does not mark a known
         // marketplace service as negotiation-eligible (e.g. because of a slug/DB
         // mismatch), still enable negotiation when the admin toggle is on.
         if (!negotiationEnabled) {
             try {
                 const settings = await this.marketplaceConfig.loadSettings();
-                const canonical = this.canonicalServiceSlug(serviceSlug);
                 const fallbackNegotiation =
-                    settings.negotiation.enabled && this.safeNegotiationSlugs.has(canonical);
+                    settings.negotiation.enabled && this.safeNegotiationSlugs.has(canonicalService);
 
                 console.log('[BookingService] marketplace eligibility check', {
                     serviceSlug,
-                    canonicalServiceSlug: canonical,
+                    canonicalServiceSlug: canonicalService,
                     negotiationEnabledFromPricing: Boolean(pricing?.marketplaceFlags?.negotiationEnabled),
                     negotiationServices: settings.negotiation.minServices,
                     negotiationEnabledGlobally: settings.negotiation.enabled,
@@ -177,7 +186,7 @@ export class BookingService {
         } else {
             console.log('[BookingService] marketplace eligibility from pricing', {
                 serviceSlug,
-                canonicalServiceSlug: this.canonicalServiceSlug(serviceSlug),
+                canonicalServiceSlug: canonicalService,
                 negotiationEnabled,
                 biddingEnabled,
                 marketplaceFlags
@@ -765,6 +774,23 @@ export class BookingService {
                     vehicle: vehicles?.[0] || null
                 };
             }
+        }
+
+        const serviceSlug = data?.service_type?.slug || data?.service_slug || '';
+        if (String(serviceSlug).toLowerCase() === 'errand') {
+            const { data: errandDetails } = await this.supabase
+                .from('errand_details')
+                .select('*')
+                .eq('job_id', bookingId)
+                .maybeSingle();
+            data.errand_details = errandDetails;
+
+            const { data: errandFunding } = await this.supabase
+                .from('errand_funding')
+                .select('*')
+                .eq('job_id', bookingId)
+                .maybeSingle();
+            data.errand_funding = errandFunding;
         }
 
         return this.mapJobToBooking(data);

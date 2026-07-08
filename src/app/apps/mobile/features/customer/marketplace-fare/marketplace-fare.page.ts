@@ -4,11 +4,13 @@ import {
     OnInit,
     signal,
     OnDestroy,
-    effect
+    effect,
+    ElementRef,
+    ViewChild
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { IonicModule, ToastController } from '@ionic/angular';
+import { IonicModule, IonContent, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
 import {
@@ -27,7 +29,10 @@ import {
     closeOutline,
     cardOutline,
     informationCircleOutline,
-    checkmarkOutline
+    checkmarkOutline,
+    chevronDownOutline,
+    chevronUpOutline,
+    pricetagOutline
 } from 'ionicons/icons';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
@@ -51,8 +56,9 @@ import { Capacitor } from '@capacitor/core';
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="movabi-page" [fullscreen]="true">
+    <ion-content #ionContent class="movabi-page" [fullscreen]="true">
       @if (booking(); as job) {
+
         <!-- Progress Indicator -->
         <div class="bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 border-b border-amber-100">
           <div class="flex items-center justify-between mb-2">
@@ -70,7 +76,7 @@ import { Capacitor } from '@capacitor/core';
           <div class="flex items-center gap-1">
             @for (step of progressSteps(); track step.status) {
               <div class="flex items-center gap-1">
-                <div 
+                <div
                   class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300"
                   [class]="{
                     'bg-emerald-500 text-white': step.completed,
@@ -85,7 +91,7 @@ import { Capacitor } from '@capacitor/core';
                   }
                 </div>
                 @if (!step.isLast) {
-                  <div 
+                  <div
                     class="w-8 h-0.5 transition-all duration-300"
                     [class]="{
                       'bg-emerald-400': step.completed,
@@ -99,7 +105,7 @@ import { Capacitor } from '@capacitor/core';
           </div>
           <div class="flex justify-between mt-1">
             @for (step of progressSteps(); track step.status) {
-              <span 
+              <span
                 class="text-xs font-medium transition-all duration-300"
                 [class]="{
                   'text-emerald-700': step.completed,
@@ -113,13 +119,16 @@ import { Capacitor } from '@capacitor/core';
           </div>
         </div>
 
-        
-        <!-- Premium Fare Card -->
-          <div class="bg-gradient-to-br from-white to-amber-50 rounded-3xl border border-amber-100 shadow-lg p-6 mb-6 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-amber-200/20 to-transparent rounded-full -mr-16 -mt-16"></div>
+        <div class="px-4 pt-4 pb-8">
+
+          <!-- ── FARE SUMMARY CARD (always visible) ── -->
+          <div class="bg-gradient-to-br from-white to-amber-50 rounded-3xl border border-amber-100 shadow-lg p-5 mb-4 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-28 h-28 bg-gradient-to-bl from-amber-200/20 to-transparent rounded-full -mr-14 -mt-14"></div>
             <div class="relative">
-              <div class="flex items-center justify-between mb-3">
-                <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">Final Suggested Fare</p>
+
+              <!-- Header row -->
+              <div class="flex items-center justify-between mb-4">
+                <p class="text-[10px] font-black uppercase tracking-widest text-amber-600">Suggested Fare</p>
                 @if (dynamicMultiplier() > 1) {
                   <div class="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-100 rounded-full px-3 py-1">
                     <ion-icon name="trending-up-outline"></ion-icon>
@@ -127,230 +136,284 @@ import { Capacitor } from '@capacitor/core';
                   </div>
                 }
               </div>
-              <h1 class="text-4xl font-display font-black text-slate-900 mb-2">
-                {{ formatPrice(suggestedFare()) }}
-              </h1>
-              <p class="text-sm text-slate-600 mb-4">Premium marketplace pricing</p>
 
-              <!-- Enhanced Fare Breakdown -->
-              @if (fareBreakdown()) {
-                <div class="bg-white/60 backdrop-blur rounded-2xl p-4 border border-amber-100/50">
-                  <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Fare Breakdown</p>
-                  <div class="space-y-3">
-                    @if (fareBreakdown().baseFare !== undefined) {
-                      <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                          <div class="w-2 h-2 bg-slate-400 rounded-full"></div>
-                          <span class="text-sm text-slate-600">Base fare</span>
-                        </div>
-                        <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().baseFare) }}</span>
-                      </div>
-                    }
-                    <div class="flex justify-between items-center">
-                      <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 bg-blue-400 rounded-full"></div>
-                        <span class="text-sm text-slate-600">Distance &amp; time estimate</span>
-                      </div>
-                      <span class="font-semibold text-slate-900">{{ distanceKm().toFixed(1) }} km · {{ formatDuration(durationSeconds()) }}</span>
+              <!-- Always-visible key figures -->
+              @if (isErrand()) {
+                <!-- Errand: show all three lines prominently -->
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Authorisation</p>
+                      <p class="text-3xl font-display font-black text-slate-900">{{ formatPrice(paymentTotal()) }}</p>
                     </div>
-                    @if (fareBreakdown().distanceCost !== undefined) {
-                      <div class="flex justify-between items-center pl-5">
-                        <span class="text-xs text-slate-500">Distance/time cost</span>
-                        <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().distanceCost) }}</span>
-                      </div>
-                    }
-                    @if (fareBreakdown().dynamicPricingAmount) {
-                      <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                          <div class="w-2 h-2 bg-amber-400 rounded-full"></div>
-                          <span class="text-sm text-slate-600">Marketplace adjustment</span>
-                        </div>
-                        <span class="font-semibold text-amber-700">{{ formatPrice(fareBreakdown().dynamicPricingAmount) }}</span>
-                      </div>
-                    }
-                    @if (fareBreakdown().serviceFee || fareBreakdown().platformFee) {
-                      <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                          <div class="w-2 h-2 bg-purple-400 rounded-full"></div>
-                          <span class="text-sm text-slate-600">Platform / booking fee</span>
-                        </div>
-                        <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().serviceFee || fareBreakdown().platformFee) }}</span>
-                      </div>
-                    }
-                    <div class="pt-2 border-t border-amber-100/50 flex justify-between items-center">
-                      <span class="text-sm font-bold text-slate-700">Total suggested fare</span>
-                      <span class="text-lg font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</span>
+                    <div class="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                      <ion-icon name="pricetag-outline" class="text-amber-600 text-lg"></ion-icon>
                     </div>
+                  </div>
+                  <div class="h-px bg-amber-100/60"></div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-white/70 rounded-2xl px-3 py-2.5 border border-amber-100/60">
+                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Service Fare</p>
+                      <p class="text-lg font-display font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</p>
+                    </div>
+                    <div class="bg-emerald-50 rounded-2xl px-3 py-2.5 border border-emerald-100">
+                      <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Shopping Budget</p>
+                      <p class="text-lg font-display font-bold text-emerald-900">{{ formatPrice(itemBudget()) }}</p>
+                    </div>
+                  </div>
+                  <p class="text-[10px] text-slate-400 text-center">Shopping budget is reserved separately and not part of the service fare.</p>
+                </div>
+              } @else {
+                <!-- Non-errand: single fare amount -->
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fare</p>
+                    <p class="text-4xl font-display font-black text-slate-900">{{ formatPrice(suggestedFare()) }}</p>
+                  </div>
+                  <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                    <ion-icon name="pricetag-outline" class="text-amber-600 text-xl"></ion-icon>
                   </div>
                 </div>
               }
 
-              <!-- Trip Details -->
-              <div class="grid grid-cols-2 gap-3 mt-4">
-                <div class="bg-white/60 backdrop-blur rounded-xl p-3 border border-amber-100/50">
-                  <div class="flex items-center gap-2 text-slate-600 mb-1">
-                    <ion-icon name="navigate-outline" class="text-amber-500 text-sm"></ion-icon>
-                    <span class="text-xs font-medium">Distance</span>
-                  </div>
-                  <p class="text-lg font-bold text-slate-900">{{ distanceKm().toFixed(1) }} km</p>
+              <!-- Trip meta -->
+              <div class="flex gap-3 mt-4">
+                <div class="flex items-center gap-1.5 text-slate-500 text-xs">
+                  <ion-icon name="navigate-outline" class="text-amber-500"></ion-icon>
+                  <span class="font-medium">{{ distanceKm().toFixed(1) }} km</span>
                 </div>
-                <div class="bg-white/60 backdrop-blur rounded-xl p-3 border border-amber-100/50">
-                  <div class="flex items-center gap-2 text-slate-600 mb-1">
-                    <ion-icon name="time-outline" class="text-amber-500 text-sm"></ion-icon>
-                    <span class="text-xs font-medium">Duration</span>
-                  </div>
-                  <p class="text-lg font-bold text-slate-900">{{ formatDuration(durationSeconds()) }}</p>
+                <div class="flex items-center gap-1.5 text-slate-500 text-xs">
+                  <ion-icon name="time-outline" class="text-amber-500"></ion-icon>
+                  <span class="font-medium">{{ formatDuration(durationSeconds()) }}</span>
                 </div>
+                @if (dynamicMultiplier() > 1) {
+                  <div class="flex items-center gap-1.5 text-amber-600 text-xs">
+                    <ion-icon name="flash-outline" class="text-amber-500"></ion-icon>
+                    <span class="font-medium">×{{ dynamicMultiplier() }} surge</span>
+                  </div>
+                }
               </div>
 
-              @if (dynamicMultiplier() > 1) {
-                <div class="mt-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-3 border border-amber-200">
-                  <div class="flex items-center gap-2 text-amber-700">
-                    <ion-icon name="flash-outline" class="text-lg"></ion-icon>
-                    <div>
-                      <p class="text-sm font-bold">Dynamic pricing active</p>
-                      <p class="text-xs text-amber-600">High demand in your area (×{{ dynamicMultiplier() }})</p>
+              <!-- Collapsible breakdown toggle -->
+              <button
+                type="button"
+                (click)="showBreakdown.set(!showBreakdown())"
+                class="mt-4 w-full flex items-center justify-between py-2.5 px-3 bg-white/70 border border-amber-100 rounded-2xl text-sm font-semibold text-slate-600 active:bg-amber-50 transition-all"
+              >
+                <span>View fare breakdown</span>
+                <ion-icon [name]="showBreakdown() ? 'chevron-up-outline' : 'chevron-down-outline'" class="text-base text-amber-500"></ion-icon>
+              </button>
+
+              <!-- Expanded breakdown -->
+              @if (showBreakdown() && fareBreakdown()) {
+                <div class="mt-3 bg-white/70 rounded-2xl border border-amber-100/60 p-4 space-y-2.5">
+                  @if (fareBreakdown().baseFare !== undefined) {
+                    <div class="flex justify-between items-center">
+                      <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 bg-slate-400 rounded-full"></div>
+                        <span class="text-sm text-slate-600">Base fare</span>
+                      </div>
+                      <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().baseFare) }}</span>
                     </div>
+                  }
+                  <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                      <div class="w-2 h-2 bg-blue-400 rounded-full"></div>
+                      <span class="text-sm text-slate-600">Distance &amp; time</span>
+                    </div>
+                    <span class="font-semibold text-slate-900">{{ distanceKm().toFixed(1) }} km · {{ formatDuration(durationSeconds()) }}</span>
                   </div>
+                  @if (fareBreakdown().distanceCost !== undefined) {
+                    <div class="flex justify-between items-center pl-5">
+                      <span class="text-xs text-slate-500">Distance/time cost</span>
+                      <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().distanceCost) }}</span>
+                    </div>
+                  }
+                  @if (fareBreakdown().dynamicPricingAmount) {
+                    <div class="flex justify-between items-center">
+                      <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 bg-amber-400 rounded-full"></div>
+                        <span class="text-sm text-slate-600">Marketplace adjustment</span>
+                      </div>
+                      <span class="font-semibold text-amber-700">{{ formatPrice(fareBreakdown().dynamicPricingAmount) }}</span>
+                    </div>
+                  }
+                  @if (fareBreakdown().serviceFee || fareBreakdown().platformFee) {
+                    <div class="flex justify-between items-center">
+                      <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 bg-purple-400 rounded-full"></div>
+                        <span class="text-sm text-slate-600">Platform / booking fee</span>
+                      </div>
+                      <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().serviceFee || fareBreakdown().platformFee) }}</span>
+                    </div>
+                  }
+                  <div class="pt-2 border-t border-amber-100/60 flex justify-between items-center">
+                    <span class="text-sm font-bold text-slate-700">Total service fare</span>
+                    <span class="text-base font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</span>
+                  </div>
+                  @if (isErrand() && itemBudget() > 0) {
+                    <div class="flex justify-between items-center">
+                      <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                        <span class="text-sm text-slate-600">Shopping budget reserved</span>
+                      </div>
+                      <span class="font-semibold text-emerald-700">{{ formatPrice(itemBudget()) }}</span>
+                    </div>
+                  }
                 </div>
-               }
-           </div>
+              }
+
+            </div>
           </div>
 
-          <!-- Enhanced Negotiation Section -->
+          <!-- ── LATEST NEGOTIATION CARD ── -->
           @if (latestNegotiation(); as offer) {
-            <div class="bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-slate-200 shadow-md p-5 mb-6 relative overflow-hidden">
-              <div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-{{ offer.proposed_by_role === 'driver' ? 'blue' : 'green' }}-100/30 to-transparent rounded-full -mr-12 -mt-12"></div>
-              <div class="relative">
-                <div class="flex items-center justify-between mb-3">
-                  <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    {{ offer.proposed_by_role === 'driver' ? 'Driver Offer' : 'Your Offer' }}
-                  </p>
-                  <div class="flex items-center gap-1">
-                    <ion-icon name="person-outline" class="text-sm text-slate-400"></ion-icon>
-                    <span class="text-xs text-slate-500">{{ offer.proposed_by_role === 'driver' ? 'Driver' : 'You' }}</span>
-                  </div>
-                </div>
-                <p class="text-3xl font-display font-black text-slate-900 mb-2">{{ formatPrice(offer.amount) }}</p>
-                @if (offer.message) {
-                  <div class="bg-slate-50 rounded-xl p-3 mb-4">
-                    <p class="text-sm text-slate-600 italic">"{{ offer.message }}"</p>
-                  </div>
-                }
-
-                @if (offer.proposed_by_role === 'driver' && offer.status === 'pending') {
-                  <div class="space-y-3">
-                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">What would you like to do?</p>
-                    <div class="flex gap-3">
-                      <button
-                        type="button"
-                        (click)="acceptOffer(offer)"
-                        class="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                      >
-                        <ion-icon name="checkmark-circle-outline"></ion-icon>
-                        Accept Offer
-                      </button>
-                      <button
-                        type="button"
-                        (click)="counterAmount.set(suggestedFare()); showCounterInput.set(true)"
-                        class="flex-1 py-3.5 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
-                      >
-                        <ion-icon name="cash-outline"></ion-icon>
-                        Counter
-                      </button>
-                    </div>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Enhanced Counter Offer Input -->
-          @if (showCounterInput()) {
-            <div class="bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl border border-amber-200 shadow-md p-5 mb-6">
-              <div class="flex items-center gap-2 mb-4">
-                <ion-icon name="cash-outline" class="text-amber-600 text-lg"></ion-icon>
-                <label class="text-sm font-bold text-amber-800">Your Counter Offer</label>
-              </div>
-              <div class="relative mb-4">
-                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-amber-600">£</span>
-                <input
-                  type="number"
-                  [ngModel]="counterAmount()"
-                  (ngModelChange)="counterAmount.set($event)"
-                  class="w-full rounded-2xl border-2 border-amber-200 pl-8 pr-4 py-4 text-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                  placeholder="Enter amount"
-                />
-              </div>
-              <div class="bg-white/60 backdrop-blur rounded-xl p-3 mb-4 border border-amber-100">
-                <p class="text-xs text-amber-700">
-                  <ion-icon name="information-circle-outline" class="text-sm mr-1"></ion-icon>
-                  This offer will be sent to nearby drivers for consideration
+            <div class="bg-white rounded-3xl border border-slate-200 shadow-md p-5 mb-4">
+              <div class="flex items-center justify-between mb-3">
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  {{ offer.proposed_by_role === 'driver' ? 'Driver Offer' : 'Your Offer' }}
                 </p>
+                <div class="flex items-center gap-1">
+                  <ion-icon name="person-outline" class="text-sm text-slate-400"></ion-icon>
+                  <span class="text-xs text-slate-500">{{ offer.proposed_by_role === 'driver' ? 'Driver' : 'You' }}</span>
+                </div>
               </div>
-              <div class="flex gap-3">
-                <button
-                  type="button"
-                  (click)="submitCounterOffer()"
-                  class="flex-1 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                >
-                  <ion-icon name="send-outline"></ion-icon>
-                  Send Counter Offer
-                </button>
-                <button
-                  type="button"
-                  (click)="showCounterInput.set(false)"
-                  class="flex-1 py-3.5 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
-                  <ion-icon name="close-outline"></ion-icon>
-                  Cancel
-                </button>
-              </div>
+              <p class="text-3xl font-display font-black text-slate-900 mb-2">{{ formatPrice(offer.amount) }}</p>
+              @if (offer.message) {
+                <div class="bg-slate-50 rounded-xl p-3 mb-4">
+                  <p class="text-sm text-slate-600 italic">"{{ offer.message }}"</p>
+                </div>
+              }
+              @if (offer.proposed_by_role === 'driver' && offer.status === 'pending') {
+                <div class="flex gap-3 mt-3">
+                  <button
+                    type="button"
+                    (click)="acceptOffer(offer)"
+                    class="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow flex items-center justify-center gap-2"
+                  >
+                    <ion-icon name="checkmark-circle-outline"></ion-icon>
+                    Accept Offer
+                  </button>
+                  <button
+                    type="button"
+                    (click)="openCounterInput()"
+                    class="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    <ion-icon name="cash-outline"></ion-icon>
+                    Challenge Price
+                  </button>
+                </div>
+              }
             </div>
           }
 
-          <!-- Enhanced Primary Action Buttons -->
+          <!-- ── PRIMARY ACTION BUTTONS (negotiating / pending_fare_confirmation) ── -->
           @if (job.status === 'negotiating' || job.status === 'pending_fare_confirmation') {
-            <div class="space-y-4">
+            <div class="space-y-3 mb-4">
+              <!-- Accept -->
               <button
                 type="button"
                 (click)="acceptSuggestedFare()"
-                class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
+                class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
               >
                 <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
                 Accept Suggested Fare
               </button>
+
+              <!-- Challenge – always a real button, never just text -->
               <button
                 type="button"
-                (click)="showCounterInput.set(true)"
-                class="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-3xl font-black text-lg active:scale-95 transition-all flex items-center justify-center gap-3"
+                (click)="openCounterInput()"
+                class="w-full py-4 bg-gradient-to-r from-amber-400 to-orange-400 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-md flex items-center justify-center gap-3"
               >
                 <ion-icon name="cash-outline" class="text-xl"></ion-icon>
-                Make Counter Offer
+                Make an Offer / Challenge Price
               </button>
+
+              @if (isErrand()) {
+                <p class="text-xs text-center text-slate-400 px-4">You can suggest a different service fare. Your shopping budget stays reserved separately.</p>
+              }
             </div>
           }
 
-          <!-- Enhanced Fare Agreed State -->
+          <!-- ── COUNTER OFFER INPUT (appears below action buttons) ── -->
+          @if (showCounterInput()) {
+            <div #counterInputSection class="bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl border border-amber-200 shadow-md p-5 mb-4">
+              <div class="flex items-center gap-2 mb-1">
+                <ion-icon name="cash-outline" class="text-amber-600 text-lg"></ion-icon>
+                <p class="text-sm font-bold text-amber-800">Your Service Fare Offer</p>
+              </div>
+              @if (isErrand()) {
+                <p class="text-xs text-amber-600 mb-3">This offer applies to the service fare only. Shopping budget ({{ formatPrice(itemBudget()) }}) stays reserved.</p>
+              }
+              <div class="relative mb-4">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-amber-600">£</span>
+                <input
+                  type="number"
+                  [ngModel]="counterAmount()"
+                  (ngModelChange)="counterAmount.set(+$event)"
+                  class="w-full rounded-2xl border-2 border-amber-200 pl-10 pr-4 py-4 text-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                  placeholder="Enter service fare amount"
+                  inputmode="decimal"
+                />
+              </div>
+              @if (isErrand() && counterAmount() > 0) {
+                <div class="bg-white/70 rounded-xl px-3 py-2 mb-4 border border-amber-100 flex justify-between items-center">
+                  <span class="text-xs text-slate-500">Total authorisation after agreement</span>
+                  <span class="text-sm font-bold text-slate-900">{{ formatPrice(counterAmount() + itemBudget()) }}</span>
+                </div>
+              }
+              <div class="flex gap-3">
+                <button
+                  type="button"
+                  (click)="submitCounterOffer()"
+                  class="flex-1 py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                >
+                  <ion-icon name="send-outline"></ion-icon>
+                  Send Offer
+                </button>
+                <button
+                  type="button"
+                  (click)="showCounterInput.set(false)"
+                  class="py-4 px-5 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold text-base active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <ion-icon name="close-outline"></ion-icon>
+                </button>
+              </div>
+            </div>
+          }
+
+          <!-- ── FARE AGREED STATE ── -->
           @if (job.status === 'fare_agreed') {
-            <div class="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-3xl p-6 text-center relative overflow-hidden">
+            <div class="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-3xl p-6 text-center relative overflow-hidden mb-4">
               <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-emerald-200/30 to-transparent rounded-full -mr-16 -mt-16"></div>
               <div class="relative">
-                <div class="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <div class="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
                   <ion-icon name="checkmark-circle-outline" class="text-white text-2xl"></ion-icon>
                 </div>
                 <h3 class="text-xl font-bold text-emerald-900 mb-2">Fare Successfully Agreed!</h3>
-                <p class="text-emerald-700 mb-6">Your fare has been locked in. Continue to payment to confirm your booking.</p>
-                <div class="bg-white/60 backdrop-blur rounded-2xl p-4 mb-6 border border-emerald-100">
-                  <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm text-emerald-600">Final Agreed Fare</span>
-                    <span class="text-2xl font-black text-emerald-900">{{ formatPrice(job.agreed_fare || suggestedFare()) }}</span>
+                <p class="text-emerald-700 mb-4">Your fare is locked in. Continue to payment to confirm your booking.</p>
+                <div class="bg-white/70 rounded-2xl p-4 mb-5 border border-emerald-100 space-y-2 text-left">
+                  @if (isErrand()) {
+                    <div class="flex justify-between items-center">
+                      <span class="text-sm text-emerald-600">Shopping Budget Reserved</span>
+                      <span class="font-semibold text-emerald-900">{{ formatPrice(itemBudget()) }}</span>
+                    </div>
+                  }
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-emerald-600">{{ isErrand() ? 'Service Fare' : 'Agreed Fare' }}</span>
+                    <span class="font-semibold text-emerald-900">{{ formatPrice(job.agreed_fare || suggestedFare()) }}</span>
+                  </div>
+                  <div class="h-px bg-emerald-100"></div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-emerald-800">{{ isErrand() ? 'Total Authorisation' : 'Total to Pay' }}</span>
+                    <span class="text-2xl font-black text-emerald-900">{{ formatPrice(paymentTotal()) }}</span>
                   </div>
                 </div>
                 <button
                   type="button"
                   (click)="continueToPayment()"
-                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
                 >
                   <ion-icon name="card-outline"></ion-icon>
                   Continue to Payment
@@ -358,6 +421,8 @@ import { Capacitor } from '@capacitor/core';
               </div>
             </div>
           }
+
+        </div>
       } @else {
         <div class="h-full flex items-center justify-center p-6">
           <p class="text-slate-500 font-semibold">Loading fare details...</p>
@@ -375,10 +440,14 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
     private negotiationService = inject(MarketplaceNegotiationService);
     private toastCtrl = inject(ToastController);
 
+    @ViewChild('ionContent') ionContent?: IonContent;
+    @ViewChild('counterInputSection') counterInputSection?: ElementRef;
+
     booking = signal<Booking | null>(null);
     negotiations = signal<FareNegotiation[]>([]);
     counterAmount = signal<number>(0);
     showCounterInput = signal(false);
+    showBreakdown = signal(false);
     countdown = signal<number>(0);
     private jobChannel?: RealtimeChannel;
     private negotiationChannel?: RealtimeChannel;
@@ -401,7 +470,10 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
             closeOutline,
             cardOutline,
             informationCircleOutline,
-            checkmarkOutline
+            checkmarkOutline,
+            chevronDownOutline,
+            chevronUpOutline,
+            pricetagOutline
         });
 
         effect(() => {
@@ -441,12 +513,31 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
         this.negotiations.set([]);
         this.counterAmount.set(0);
         this.showCounterInput.set(false);
+        this.showBreakdown.set(false);
         this.countdown.set(0);
+    }
+
+    isErrand(): boolean {
+        return String(this.booking()?.service_slug || '').toLowerCase() === 'errand';
+    }
+
+    itemBudget(): number {
+        if (!this.isErrand()) return 0;
+        const job = this.booking();
+        return Number(
+            job?.errand_funding?.amount_reserved ||
+            job?.errand_details?.estimated_budget ||
+            0
+        );
     }
 
     suggestedFare() {
         const job = this.booking();
         return job?.agreed_fare || job?.negotiated_fare || job?.total_price || 0;
+    }
+
+    paymentTotal(): number {
+        return Number(this.suggestedFare()) + this.itemBudget();
     }
 
     fareBreakdown() {
@@ -555,6 +646,16 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    openCounterInput() {
+        this.counterAmount.set(this.suggestedFare());
+        this.showCounterInput.set(true);
+        setTimeout(() => {
+            if (this.ionContent) {
+                this.ionContent.scrollToBottom(400);
+            }
+        }, 80);
     }
 
     async acceptSuggestedFare() {

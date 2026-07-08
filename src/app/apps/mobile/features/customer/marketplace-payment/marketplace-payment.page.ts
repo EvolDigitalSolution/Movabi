@@ -2,9 +2,12 @@ import {
     Component,
     inject,
     OnInit,
+    AfterViewInit,
     signal,
     OnDestroy,
-    effect
+    effect,
+    ElementRef,
+    ViewChild
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -32,8 +35,7 @@ import { WalletService } from '../../../../../core/services/wallet/wallet.servic
 import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { Booking } from '../../../../../shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { loadStripe, Stripe } from '@stripe/stripe-js';
-import { environment } from '../../../../../../environments/environment';
+import { StripeCardElement } from '@stripe/stripe-js';
 
 @Component({
     selector: 'app-marketplace-payment',
@@ -50,7 +52,14 @@ import { environment } from '../../../../../../environments/environment';
     </ion-header>
 
     <ion-content class="movabi-page" [fullscreen]="true">
-      @if (booking(); as job) {
+      @if (redirectingToTracking()) {
+        <div class="h-full flex items-center justify-center p-6">
+          <div class="text-center">
+            <ion-spinner name="crescent" class="text-amber-500 mb-3"></ion-spinner>
+            <p class="text-slate-600 font-semibold">Opening tracking...</p>
+          </div>
+        </div>
+      } @else if (booking(); as job) {
         <div class="ion-padding">
           <!-- Fare Locked Animation Card -->
           <div class="bg-gradient-to-br from-emerald-50 to-green-50 rounded-3xl border border-emerald-200 shadow-lg p-6 mb-6 relative overflow-hidden">
@@ -64,12 +73,23 @@ import { environment } from '../../../../../../environments/environment';
               <h2 class="text-xl font-bold text-emerald-900 text-center mb-2">Fare Successfully Locked!</h2>
               <p class="text-emerald-700 text-center mb-4">Your agreed fare has been secured. Complete payment to confirm your booking.</p>
               
-              <div class="bg-white/60 backdrop-blur rounded-2xl p-4 border border-emerald-100">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm font-medium text-emerald-600">Final Agreed Fare</span>
+              <div class="bg-white/60 backdrop-blur rounded-2xl p-4 border border-emerald-100 space-y-3">
+                @if (isErrand()) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium text-emerald-600">Shopping Budget Reserved</span>
+                    <span class="text-lg font-display font-bold text-emerald-900">{{ formatPrice(itemBudget()) }}</span>
+                  </div>
+                }
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-emerald-600">Service Fare</span>
+                  <span class="text-lg font-display font-bold text-emerald-900">{{ formatPrice(serviceFare()) }}</span>
+                </div>
+                <div class="h-px bg-emerald-100"></div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-bold text-emerald-800">{{ isErrand() ? 'Total Authorisation' : 'Total to Pay' }}</span>
                   <div class="flex items-center gap-1">
                     <ion-icon name="sparkles-outline" class="text-emerald-500 text-sm"></ion-icon>
-                    <span class="text-3xl font-display font-black text-emerald-900">{{ formatPrice(job.agreed_fare || job.total_price || 0) }}</span>
+                    <span class="text-3xl font-display font-black text-emerald-900">{{ formatPrice(paymentTotal()) }}</span>
                   </div>
                 </div>
               </div>
@@ -99,6 +119,15 @@ import { environment } from '../../../../../../environments/environment';
                     <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().distanceCost) }}</span>
                   </div>
                 }
+                @if (fareBreakdown().durationCost !== undefined) {
+                  <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                      <div class="w-2 h-2 bg-sky-400 rounded-full"></div>
+                      <span class="text-sm text-slate-600">Time</span>
+                    </div>
+                    <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().durationCost) }}</span>
+                  </div>
+                }
                 @if (fareBreakdown().dynamicPricingAmount) {
                   <div class="flex justify-between items-center">
                     <div class="flex items-center gap-2">
@@ -115,6 +144,15 @@ import { environment } from '../../../../../../environments/environment';
                       <span class="text-sm text-slate-600">Platform fee</span>
                     </div>
                     <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().platformFee) }}</span>
+                  </div>
+                }
+                @if (isErrand() && itemBudget() > 0) {
+                  <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+                    <div class="flex items-center gap-2">
+                      <div class="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                      <span class="text-sm text-slate-600">Shopping budget reserved</span>
+                    </div>
+                    <span class="font-semibold text-emerald-700">{{ formatPrice(itemBudget()) }}</span>
                   </div>
                 }
               </div>
@@ -140,7 +178,7 @@ import { environment } from '../../../../../../environments/environment';
           }
 
           <!-- Enhanced Wallet Payment -->
-          @if (wallet() && wallet().available_balance >= agreedFare()) {
+          @if (wallet() && wallet().available_balance >= paymentTotal()) {
             <div class="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-3xl p-5 mb-6">
               <div class="flex items-center gap-3 mb-4">
                 <div class="w-12 h-12 bg-emerald-500 rounded-full flex items-center justify-center">
@@ -162,7 +200,7 @@ import { environment } from '../../../../../../environments/environment';
                   <span>Processing payment...</span>
                 } @else {
                   <ion-icon name="wallet-outline"></ion-icon>
-                  <span>Pay {{ formatPrice(agreedFare()) }} from Wallet</span>
+                  <span>Pay {{ formatPrice(paymentTotal()) }} from Wallet</span>
                 }
               </button>
             </div>
@@ -181,15 +219,34 @@ import { environment } from '../../../../../../environments/environment';
             </div>
             
             <div class="mb-4">
-              <div id="card-element" class="p-4 border-2 border-slate-200 rounded-2xl bg-slate-50 focus-within:border-blue-500 focus-within:bg-white transition-all">
-                <!-- Stripe Elements will be mounted here -->
-              </div>
+              @if (!cardReady()) {
+                <div class="p-4 border-2 border-slate-200 rounded-2xl bg-slate-50 flex items-center gap-3">
+                  <ion-spinner name="crescent" class="text-blue-500"></ion-spinner>
+                  <span class="text-sm text-slate-500">Loading card input...</span>
+                </div>
+              }
+              <div
+                #cardElementHost
+                [class.hidden]="!cardReady()"
+                class="p-4 border-2 border-slate-200 rounded-2xl bg-slate-50 focus-within:border-blue-500 focus-within:bg-white transition-all"
+              ></div>
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Billing ZIP / Postal Code</label>
+              <input
+                type="text"
+                [ngModel]="postalCode()"
+                (ngModelChange)="postalCode.set($event)"
+                placeholder="e.g. SW1A 1AA"
+                class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              >
             </div>
 
             <button
               type="button"
               (click)="payWithCard()"
-              [disabled]="paymentProcessing() || !cardComplete()"
+              [disabled]="paymentProcessing() || !cardComplete() || !cardReady()"
               class="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               @if (paymentProcessing()) {
@@ -197,7 +254,7 @@ import { environment } from '../../../../../../environments/environment';
                 <span>Processing payment...</span>
               } @else {
                 <ion-icon name="card-outline"></ion-icon>
-                <span>Pay {{ formatPrice(agreedFare()) }} with Card</span>
+                <span>Pay {{ formatPrice(paymentTotal()) }} with Card</span>
               }
             </button>
           </div>
@@ -229,7 +286,7 @@ import { environment } from '../../../../../../environments/environment';
     </ion-content>
   `
 })
-export class MarketplacePaymentPage implements OnInit, OnDestroy {
+export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy {
     private route = inject(ActivatedRoute);
     private router = inject(Router);
     private supabase = inject(SupabaseService);
@@ -241,14 +298,21 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
     private toastCtrl = inject(ToastController);
     private loadingCtrl = inject(LoadingController);
 
+    @ViewChild('cardElementHost') cardElementHost?: ElementRef<HTMLElement>;
+
     booking = signal<Booking | null>(null);
     wallet = signal<any>(null);
     paymentProcessing = signal(false);
     paymentError = signal<string | null>(null);
-    private jobChannel?: RealtimeChannel;
-    private stripe: Stripe | null = null;
-    private cardElement: any = null;
+    cardError = signal<string | null>(null);
     cardComplete = signal(false);
+    cardReady = signal(false);
+    postalCode = signal('');
+    redirectingToTracking = signal(false);
+    private jobChannel?: RealtimeChannel;
+    private card: StripeCardElement | null = null;
+    private cardMounted = false;
+    private stripeInitializing = false;
 
     constructor() {
         addIcons({
@@ -267,9 +331,8 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
 
         effect(() => {
             const job = this.booking();
-            if (job?.status === 'searching' || job?.status === 'assigned') {
-                // Payment successful and job is being dispatched
-                this.router.navigate(['/customer/tracking', job.id]);
+            if (this.isPaymentHandled(job)) {
+                this.redirectToTracking(job!.id);
             }
         });
     }
@@ -284,19 +347,48 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
         await this.loadBooking(id);
         await this.loadWallet();
         this.subscribeToJob(id);
+    }
+
+    async ngAfterViewInit() {
+        if (this.redirectingToTracking() || this.isPaymentHandled(this.booking())) return;
         await this.initializeStripe();
     }
 
     ngOnDestroy() {
         this.jobChannel?.unsubscribe();
-        if (this.cardElement) {
-            this.cardElement.destroy();
+        if (this.card) {
+            this.card.destroy();
+            this.card = null;
         }
+        this.cardMounted = false;
     }
 
-    agreedFare() {
+    isErrand(): boolean {
+        return String(this.booking()?.service_slug || '').toLowerCase() === 'errand';
+    }
+
+    serviceFare(): number {
         const job = this.booking();
-        return job?.agreed_fare || job?.total_price || 0;
+        return Number(job?.agreed_fare || job?.total_price || 0);
+    }
+
+    itemBudget(): number {
+        if (!this.isErrand()) return 0;
+        const job = this.booking();
+        return Number(
+            job?.errand_funding?.amount_reserved ||
+            job?.errand_details?.estimated_budget ||
+            0
+        );
+    }
+
+    paymentTotal(): number {
+        return this.serviceFare() + this.itemBudget();
+    }
+
+    // Backward-compatible alias used by existing UI references
+    agreedFare() {
+        return this.serviceFare();
     }
 
     fareBreakdown() {
@@ -318,32 +410,47 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
         const job = this.booking();
         if (!job || !this.wallet()) return;
 
+        if (this.isPaymentHandled(job)) {
+            await this.redirectToTracking(job.id);
+            return;
+        }
+
         this.paymentProcessing.set(true);
         this.paymentError.set(null);
 
+        const loading = await this.loadingCtrl.create({
+            message: 'Processing wallet payment...'
+        });
+
         try {
-            const loading = await this.loadingCtrl.create({
-                message: 'Processing wallet payment...'
-            });
             await loading.present();
 
-            await this.walletService.payJobFromWallet(
-                job.id,
-                this.agreedFare(),
-                job.currency_code || 'GBP'
-            );
+            if (this.isErrand() && this.itemBudget() > 0) {
+                await this.walletService.reserveErrandFunds(
+                    job.id,
+                    this.itemBudget(),
+                    this.serviceFare()
+                );
+            } else {
+                await this.walletService.payJobFromWallet(
+                    job.id,
+                    this.paymentTotal(),
+                    job.currency_code || 'GBP'
+                );
+            }
 
             await this.bookingService.confirmJobPayment(job.id, 'wallet_funded');
 
             await loading.dismiss();
             await this.showToast('Payment successful! Finding your driver...', 'success');
-            
+
             // Navigate to tracking - the effect will handle the transition
             await this.router.navigate(['/customer/tracking', job.id]);
         } catch (error: any) {
             console.error('[MarketplacePayment] wallet payment failed', error);
             this.paymentError.set(error.message || 'Wallet payment failed. Please try again.');
             await this.showToast('Payment failed. Please try again.', 'danger');
+            try { await loading.dismiss(); } catch { /* noop */ }
         } finally {
             this.paymentProcessing.set(false);
         }
@@ -351,65 +458,88 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
 
     async payWithCard() {
         const job = this.booking();
-        if (!job || !this.stripe || !this.cardElement) return;
+        if (!job || !this.card || !this.cardReady()) return;
+
+        if (this.isPaymentHandled(job)) {
+            await this.redirectToTracking(job.id);
+            return;
+        }
+
+        if (!this.cardComplete()) {
+            this.paymentError.set('Please complete your card details.');
+            await this.showToast('Please complete your card details.', 'danger');
+            return;
+        }
 
         this.paymentProcessing.set(true);
         this.paymentError.set(null);
 
+        const loading = await this.loadingCtrl.create({
+            message: 'Initializing card payment...'
+        });
+
         try {
-            const loading = await this.loadingCtrl.create({
-                message: 'Processing card payment...'
-            });
             await loading.present();
 
-            // Create payment intent with agreed fare
+            loading.message = 'Creating payment intent...';
             const { clientSecret } = await this.paymentService.createPaymentIntent(
                 job.id,
-                this.agreedFare(),
+                this.paymentTotal(),
                 job.currency_code || 'GBP',
                 this.auth.tenantId() || '',
-                1 // surge multiplier (not relevant for marketplace)
+                1
             );
 
-            // Confirm payment with Stripe
-            const { error: stripeError, paymentIntent } = await this.stripe.confirmCardPayment(clientSecret, {
-                payment_method: {
-                    card: this.cardElement,
-                    billing_details: {
-                        address: {
-                            country: job.country_code || 'GB'
-                        }
-                    }
-                }
-            });
+            loading.message = 'Charging card...';
+            // Use the same shared confirmPayment path as booking-request
+            const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card);
 
-            if (stripeError) {
-                throw new Error(stripeError.message);
-            }
-
-            if (paymentIntent?.status === 'succeeded' || paymentIntent?.status === 'requires_capture') {
+            if (
+                paymentIntent.status === 'succeeded' ||
+                paymentIntent.status === 'requires_capture'
+            ) {
+                loading.message = 'Activating booking...';
                 await this.bookingService.confirmJobPayment(job.id, paymentIntent.id);
                 await loading.dismiss();
                 await this.showToast('Payment successful! Finding your driver...', 'success');
-
-                // Navigate to tracking - the effect will handle the transition
                 await this.router.navigate(['/customer/tracking', job.id]);
             } else {
-                throw new Error(`Payment was not successful (status: ${paymentIntent?.status || 'unknown'})`);
+                throw new Error(`Payment not completed (status: ${paymentIntent.status})`);
             }
         } catch (error: any) {
             console.error('[MarketplacePayment] card payment failed', error);
             this.paymentError.set(error.message || 'Card payment failed. Please try again.');
             await this.showToast('Payment failed. Please try again.', 'danger');
+            try { await loading.dismiss(); } catch { /* noop */ }
         } finally {
             this.paymentProcessing.set(false);
         }
+    }
+
+    private readonly alreadyPaidStatuses = new Set(['authorized', 'requires_capture', 'succeeded', 'wallet_funded']);
+    private readonly dispatchedStatuses = new Set(['searching', 'assigned', 'in_progress', 'completed']);
+
+    private isPaymentHandled(job: Booking | null | undefined): boolean {
+        if (!job) return false;
+
+        const paymentStatus = String(job.payment_status || '').toLowerCase();
+        const jobStatus = String(job.status || '').toLowerCase();
+
+        return this.alreadyPaidStatuses.has(paymentStatus) || this.dispatchedStatuses.has(jobStatus);
+    }
+
+    private async redirectToTracking(jobId: string): Promise<void> {
+        if (this.redirectingToTracking()) return;
+        this.redirectingToTracking.set(true);
+        console.log('[MarketplacePayment] job already paid, redirecting to tracking', jobId);
+        await this.router.navigate(['/customer/tracking', jobId], { replaceUrl: true });
     }
 
     private async loadBooking(id: string) {
         try {
             const job = await this.bookingService.getBooking(id);
             this.booking.set(job);
+            if (this.isPaymentHandled(job)) await this.redirectToTracking(id);
         } catch (error) {
             console.error('[MarketplacePayment] load booking failed', error);
             await this.showToast('Could not load booking details.', 'danger');
@@ -427,37 +557,58 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
     }
 
     private async initializeStripe() {
+        if (this.cardMounted || this.stripeInitializing) return;
+        if (this.redirectingToTracking() || this.isPaymentHandled(this.booking())) return;
+        if (!this.cardElementHost?.nativeElement) return;
+
+        this.stripeInitializing = true;
+        this.cardReady.set(false);
+        this.cardComplete.set(false);
+        this.cardError.set(null);
+
         try {
-            this.stripe = await loadStripe(environment.stripePublicKey);
-            if (!this.stripe) {
-                throw new Error('Failed to load Stripe');
+            const stripe = await this.paymentService.getStripe();
+            if (!stripe) {
+                this.cardError.set('Payment service is unavailable right now.');
+                return;
             }
 
-            const elements = this.stripe.elements();
-            this.cardElement = elements.create('card', {
-                style: {
-                    base: {
-                        fontSize: '16px',
-                        color: '#424770',
-                        '::placeholder': {
-                            color: '#aab7c4',
+            if (!this.card) {
+                const elements = stripe.elements();
+                this.card = elements.create('card', {
+                    hidePostalCode: true,
+                    style: {
+                        base: {
+                            fontSize: '16px',
+                            color: '#0f172a',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                            lineHeight: '24px',
+                            '::placeholder': { color: '#94a3b8' }
                         },
-                    },
-                },
-            });
+                        invalid: { color: '#ef4444', iconColor: '#ef4444' }
+                    }
+                });
 
-            this.cardElement.mount('#card-element');
-            this.cardElement.on('change', (event: any) => {
-                this.cardComplete.set(event.complete);
-                if (event.error) {
-                    this.paymentError.set(event.error.message);
-                } else {
-                    this.paymentError.set(null);
-                }
-            });
+                this.card.on('ready', () => {
+                    this.cardReady.set(true);
+                    this.cardError.set(null);
+                });
+
+                this.card.on('change', (event: any) => {
+                    this.cardError.set(event.error?.message ?? null);
+                    this.cardComplete.set(!!event.complete && !event.error);
+                });
+            }
+
+            this.card.mount(this.cardElementHost.nativeElement);
+            this.cardMounted = true;
         } catch (error) {
-            console.error('[MarketplacePayment] Stripe initialization failed', error);
-            this.paymentError.set('Payment system unavailable. Please try again later.');
+            console.error('[MarketplacePayment] Stripe init failed', error);
+            this.paymentError.set('Unable to load card input right now.');
+            this.cardReady.set(false);
+            this.cardMounted = false;
+        } finally {
+            this.stripeInitializing = false;
         }
     }
 

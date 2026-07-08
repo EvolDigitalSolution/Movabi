@@ -755,7 +755,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                         @if (type === ServiceTypeEnum.ERRAND) {
                           <div class="flex items-center justify-between">
                             <div>
-                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Shopping Budget</p>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Shopping Budget (Reserved)</p>
                               <p class="text-sm font-bold text-slate-900">Reserved for item purchase</p>
                             </div>
                             <p class="text-lg font-display font-bold text-slate-900">
@@ -767,7 +767,7 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                           <div class="flex items-center justify-between">
                             <div>
-                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Service Fee</p>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Service Fare</p>
                               <p class="text-sm font-bold text-slate-900">Booking, distance &amp; time</p>
                             </div>
                             <p class="text-lg font-display font-bold text-slate-900">
@@ -780,7 +780,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <div class="flex items-center justify-between">
                             <div>
                               <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estimated Total</p>
-                              <p class="text-sm font-bold text-slate-900">Budget + Service Fee</p>
+                              <p class="text-sm font-bold text-slate-900">Budget + Service Fare</p>
                             </div>
                             <p class="text-lg font-display font-bold text-blue-600">
                               {{ config.formatCurrency(walletPaymentRequired()) }}
@@ -1034,9 +1034,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         const canonical = this.canonicalServiceSlug(this.getServiceSlug());
         const configured = settings.minServices.some(s => this.canonicalServiceSlug(s) === canonical);
-        const safeList = ['shop', 'shopping', 'errand', 'errands', 'delivery', 'van', 'van_moving'].includes(canonical);
+        // van-moving is NOT in the safe list until bidding/payment is hardened.
+        // Only services on this allow-list may enter marketplace, even if old
+        // admin settings still contain van/move.
+        const safeList = ['errand', 'delivery'].includes(canonical);
 
-        return configured || safeList;
+        return safeList && (configured || safeList);
     });
 
     usesItemListMode = computed(() => {

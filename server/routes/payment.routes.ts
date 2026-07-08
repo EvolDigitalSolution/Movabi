@@ -112,6 +112,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
         status,
         payment_status,
         payment_intent_id,
+        service_slug,
         agreed_fare,
         price,
         total_price,
@@ -148,19 +149,30 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       });
     }
 
-    const amount =
+    const serviceFare =
       money(job.agreed_fare) ||
       money(job.total_price) ||
       money(job.estimated_price) ||
       money(job.price) ||
       money(req.body.amount);
 
-    if (!amount) {
+    let itemBudget = 0;
+    if (String(job.service_slug || '').toLowerCase() === 'errand') {
+      const [{ data: errandDetails }, { data: errandFunding }] = await Promise.all([
+        supabaseAdmin.from('errand_details').select('estimated_budget').eq('job_id', jobId).maybeSingle(),
+        supabaseAdmin.from('errand_funding').select('amount_reserved').eq('job_id', jobId).maybeSingle()
+      ]);
+      itemBudget = money(errandFunding?.amount_reserved) || money(errandDetails?.estimated_budget) || 0;
+    }
+
+    const totalAuthorisation = serviceFare + itemBudget;
+
+    if (!totalAuthorisation) {
       return res.status(400).json({ error: 'Invalid job amount' });
     }
 
     const pi = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100),
+      amount: Math.round(totalAuthorisation * 100),
       currency: currency(job.currency_code || req.body.currency || 'GBP'),
       payment_method_types: ['card'],
       capture_method: 'manual',
@@ -180,9 +192,9 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       payment_status: 'authorized',
       payment_method: 'card',
       surge_multiplier: Number(surgeMultiplier || 1),
-      price: amount,
-      total_price: amount,
-      estimated_price: amount
+      price: totalAuthorisation,
+      total_price: totalAuthorisation,
+      estimated_price: totalAuthorisation
     };
 
     if (fareBreakdown && typeof fareBreakdown === 'object') {
@@ -207,10 +219,30 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to update job payment', details: updateError.message });
     }
 
+    if (String(job.service_slug || '').toLowerCase() === 'errand' && itemBudget > 0) {
+      const { error: fundingError } = await supabaseAdmin
+        .from('errand_funding')
+        .upsert({
+          job_id: jobId,
+          customer_id: job.customer_id,
+          amount_reserved: itemBudget,
+          status: 'reserved',
+          over_budget_status: 'none',
+          over_budget_amount: 0,
+          metadata: { source: 'card_authorisation', service_fare: serviceFare }
+        }, { onConflict: 'job_id' });
+
+      if (fundingError) {
+        console.warn('[PaymentRoutes] errand_funding upsert failed:', fundingError);
+      }
+    }
+
     return res.json({
       clientSecret: pi.client_secret,
       paymentIntentId: pi.id,
-      amount,
+      amount: totalAuthorisation,
+      serviceFare,
+      itemBudget,
       currency: currency(job.currency_code || req.body.currency || 'GBP').toUpperCase()
     });
   } catch (error: any) {
