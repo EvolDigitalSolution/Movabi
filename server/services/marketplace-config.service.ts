@@ -301,12 +301,24 @@ export class MarketplaceConfigService {
     return winner?.commission_percent ?? base.percent;
   }
 
+  private static canonicalServiceSlug(slug: string): string {
+    const raw = String(slug || '').trim().toLowerCase();
+
+    if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+    if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+    if (['van', 'moving', 'move', 'van-moving', 'van moving'].includes(raw)) return 'van-moving';
+    if (['ride', 'rides'].includes(raw)) return 'ride';
+
+    return raw;
+  }
+
   static async shouldEnableNegotiation(
     serviceTypeSlug: string,
     tenantId: string | null = null
   ): Promise<boolean> {
     const settings = await this.getNegotiationSettings(tenantId);
-    return settings.enabled && settings.minServices.includes(serviceTypeSlug);
+    const canonical = this.canonicalServiceSlug(serviceTypeSlug);
+    return settings.enabled && settings.minServices.some(s => this.canonicalServiceSlug(s) === canonical);
   }
 
   static async shouldEnableBidding(
@@ -314,7 +326,8 @@ export class MarketplaceConfigService {
     tenantId: string | null = null
   ): Promise<boolean> {
     const settings = await this.getBiddingSettings(tenantId);
-    return settings.enabled && settings.defaultServices.includes(serviceTypeSlug);
+    const canonical = this.canonicalServiceSlug(serviceTypeSlug);
+    return settings.enabled && settings.defaultServices.some(s => this.canonicalServiceSlug(s) === canonical);
   }
 
   static async determineJobModes(

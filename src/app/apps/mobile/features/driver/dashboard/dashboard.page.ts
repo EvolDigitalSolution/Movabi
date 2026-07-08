@@ -1431,8 +1431,19 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!active) return;
 
         const pickup = this.resolveJobCoordinates(active) || await this.ensureJobCoordinates(active);
-        if (pickup) {
-            this.mapComponent()?.setCenter(pickup.lng, pickup.lat, 15);
+        const dropoff = this.resolveJobDestinationCoordinates(active);
+        const points: MapCoordinates[] = [];
+        const driver = this.driverLocation();
+
+        if (driver) points.push(driver);
+        if (pickup) points.push(pickup);
+        if (dropoff) points.push(dropoff);
+
+        if (points.length) {
+            const map = this.mapComponent();
+            if (map) {
+                MapUxHelpers.fitVisibleMapBounds(map, points, this.sheetHeight());
+            }
         }
 
         this.syncMarketplaceMapMarkers();
@@ -3223,7 +3234,24 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!coordinates) return;
 
         this.selectedJobId.set(job.id);
-        this.mapComponent()?.setCenter(coordinates.lng, coordinates.lat, 15);
+
+        const map = this.mapComponent();
+        if (map) {
+            const expanded: [[number, number], [number, number]] = [
+                [coordinates.lng - 0.005, coordinates.lat - 0.005],
+                [coordinates.lng + 0.005, coordinates.lat + 0.005]
+            ];
+            map.fitBounds(expanded, {
+                padding: {
+                    top: 80,
+                    bottom: MapUxHelpers.getBottomSheetPadding(this.sheetHeight()),
+                    left: 48,
+                    right: 48
+                },
+                maxZoom: 16
+            });
+        }
+
         this.syncMarketplaceMapMarkers();
     }
 
@@ -3324,39 +3352,36 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         const map = this.mapComponent() as MapComponent | null;
         if (!map || this.activeHubTab() !== 'requests') return;
 
-        const driverCoords = this.driverLocation();
-        const availableRequests = this.jobs();
-        
-        // Collect all visible coordinates as specified in requirements
-        const requestCoords = availableRequests
-            .map(r => this.resolveJobCoordinates(r))
-            .filter((coord): coord is MarkerCoordinates => coord !== null);
-        
-        const points = [
-            ...(driverCoords ? [driverCoords] : []),
-            ...requestCoords
-        ];
+        const points = this.getMarketplaceMapPoints();
 
-        if (points.length >= 2) {
-            // Always fit bounds when we have multiple points (driver + requests)
-            // Only skip if not forced and already fitted
+        if (points.length) {
             if (this.hasFitMarketplaceBounds && !force) return;
-            
-            // Use shared map helpers for Uber/Bolt-style fitting with bottom sheet consideration
+
             const mapPoints: MapCoordinates[] = points.map(p => ({ lat: p.lat, lng: p.lng }));
-            MapUxHelpers.fitVisibleMapBounds(map, mapPoints, 40); // 40% bottom sheet for marketplace
+            MapUxHelpers.fitVisibleMapBounds(map, mapPoints, this.sheetHeight());
             this.hasFitMarketplaceBounds = true;
             this.hasCenteredMarketplaceMap = true;
             return;
         }
 
-        // Only center if we have a single point and haven't centered yet
         if (this.hasCenteredMarketplaceMap && !force) return;
 
-        const center = points[0] ?? this.locationService.getFallbackCoordinates();
+        const center = this.driverLocation() ?? this.locationService.getFallbackCoordinates();
         if (!center) return;
 
-        map.setCenter(center.lng, center.lat, this.driverLocation() ? 14 : 12);
+        const expanded: [[number, number], [number, number]] = [
+            [center.lng - 0.005, center.lat - 0.005],
+            [center.lng + 0.005, center.lat + 0.005]
+        ];
+        map.fitBounds(expanded, {
+            padding: {
+                top: 80,
+                bottom: MapUxHelpers.getBottomSheetPadding(this.sheetHeight()),
+                left: 48,
+                right: 48
+            },
+            maxZoom: 16
+        });
         this.hasCenteredMarketplaceMap = true;
     }
 

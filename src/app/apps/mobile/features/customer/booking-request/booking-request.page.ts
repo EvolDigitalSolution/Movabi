@@ -1113,9 +1113,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private normalizeTypeParam(value: unknown): ServiceTypeEnum {
         const raw = String(value || '').trim().toLowerCase();
 
-        if (raw === ServiceTypeEnum.ERRAND || raw === 'errand') return ServiceTypeEnum.ERRAND;
+        if (raw === ServiceTypeEnum.ERRAND || raw === 'errand' || raw === 'shop' || raw === 'shopping') return ServiceTypeEnum.ERRAND;
         if (raw === ServiceTypeEnum.DELIVERY || raw === 'delivery' || raw === 'courier' || raw === 'parcel' || raw === 'package') return ServiceTypeEnum.DELIVERY;
-        if (raw === ServiceTypeEnum.VAN || raw === 'van' || raw === 'van-moving' || raw === 'moving') return ServiceTypeEnum.VAN;
+        if (raw === ServiceTypeEnum.VAN || raw === 'van' || raw === 'van-moving' || raw === 'moving' || raw === 'move') return ServiceTypeEnum.VAN;
 
         return ServiceTypeEnum.RIDE;
     }
@@ -2041,6 +2041,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             if (serviceSlug === slug) return true;
             if (slug === 'van-moving' && (serviceSlug === 'van' || serviceSlug === 'van moving')) return true;
             if (slug === 'delivery' && ['courier', 'package', 'parcel', 'delivery'].includes(serviceSlug)) return true;
+            if (slug === 'errand' && ['shop', 'shopping', 'errand', 'errands'].includes(serviceSlug)) return true;
 
             return false;
         });

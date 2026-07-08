@@ -428,6 +428,7 @@ export class PricingService {
         }
 
         // Fallback return when the marketplace path throws. Maintains old contract shape.
+        const fallbackJobModes = await MarketplaceConfigService.determineJobModes(serviceSlug, tenantId);
         console.log(
             `[PricingService] Price resolved (fallback): ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
         );
@@ -475,8 +476,8 @@ export class PricingService {
             fareBreakdown: fallbackFareBreakdown,
             marketplaceFlags: {
                 dynamicPricingEnabled: false,
-                negotiationEnabled: false,
-                biddingEnabled: false
+                negotiationEnabled: fallbackJobModes.negotiation,
+                biddingEnabled: fallbackJobModes.bidding
             }
         };
     }

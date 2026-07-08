@@ -134,6 +134,22 @@ export class DriverService {
         return data as DriverProfile;
     }
 
+    private readonly availableRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting', 'pending_fare_confirmation', 'negotiating'];
+    private readonly paidRequestPaymentStatuses = ['paid', 'wallet_funded', 'authorized'];
+
+    private isAvailableRequest(job: { status?: string; payment_status?: string }): boolean {
+        const status = String(job?.status || '');
+        const paymentStatus = String(job?.payment_status || '');
+
+        if (!this.availableRequestStatuses.includes(status)) return false;
+
+        if (['pending_fare_confirmation', 'negotiating'].includes(status)) {
+            return paymentStatus === 'pending';
+        }
+
+        return this.paidRequestPaymentStatuses.includes(paymentStatus);
+    }
+
     private subscribeToJobs() {
         this.supabase.channel('available-jobs').unsubscribe();
 
@@ -148,12 +164,8 @@ export class DriverService {
                 },
                 async (payload) => {
                     const rawJob = payload.new;
-                    const activeRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting'];
 
-                    if (
-                        activeRequestStatuses.includes(rawJob['status']) &&
-                        ['paid', 'wallet_funded', 'authorized'].includes(rawJob['payment_status'])
-                    ) {
+                    if (this.isAvailableRequest(rawJob)) {
                         try {
                             const newJob = await this.bookingService.getBooking(rawJob['id']);
 
@@ -191,16 +203,28 @@ export class DriverService {
                 },
                 (payload) => {
                     const updatedJob = payload.new;
-                    const status = updatedJob['status'];
-                    const paymentStatus = updatedJob['payment_status'];
-                    const activeRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting'];
+                    const updatedId = updatedJob['id'];
 
-                    if (
-                        !activeRequestStatuses.includes(status) ||
-                        !['paid', 'wallet_funded', 'authorized'].includes(paymentStatus)
-                    ) {
-                        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== updatedJob['id']));
+                    if (!this.isAvailableRequest(updatedJob)) {
+                        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== updatedId));
+                        return;
                     }
+
+                    // Job transitioned into an available state; add it if not already present
+                    const exists = this.availableJobs().find((job) => job.id === updatedId);
+                    if (exists) return;
+
+                    void (async () => {
+                        try {
+                            const newJob = await this.bookingService.getBooking(updatedId);
+                            const vehicle = this.vehicle() || await this.fetchVehicle();
+                            if (!this.vehicleCompatibility.isCompatible(newJob, vehicle)) return;
+
+                            this.availableJobs.update((jobs) => [newJob, ...jobs]);
+                        } catch (error) {
+                            console.error('[DriverService] Failed to fetch updated available job', error);
+                        }
+                    })();
                 }
             )
             .on(
@@ -243,8 +267,7 @@ export class DriverService {
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*, service_type:service_types(*)')
-            .eq('status', 'searching')
-            .in('payment_status', ['paid', 'wallet_funded', 'authorized'])
+            .or(`and(status.in.(searching,requested,broadcasting,waiting,fare_agreed),payment_status.in.(paid,wallet_funded,authorized)),and(status.in.(pending_fare_confirmation,negotiating),payment_status.eq.pending)`)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
