@@ -55,6 +55,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { PricingService } from '../../../../../core/services/pricing.service';
+import { MarketplaceConfigService, MarketplaceSettings } from '../../../../../core/services/marketplace/marketplace-config.service';
 import { AppConfigService, PopularShopPreset } from '../../../../../core/services/config/app-config.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { AnalyticsService } from '../../../../../core/services/analytics/analytics.service';
@@ -683,7 +684,47 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </textarea>
               </div>
 
-                @if (fareEstimate()) {
+                @if (shouldShowMarketplaceFare()) {
+                  <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
+                    <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
+                      <div class="flex items-start justify-between gap-4">
+                        <div>
+                          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                            Marketplace Fare
+                          </p>
+                          <h3 class="text-4xl font-display font-black text-blue-600 tracking-tight">
+                            {{ config.formatCurrency(cardChargeRequired()) }}
+                          </h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                          <ion-icon name="storefront-outline" class="text-2xl"></ion-icon>
+                        </div>
+                      </div>
+
+                      <div class="mt-5 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                        <p class="text-sm leading-7 text-slate-700">
+                          This is the <strong>suggested fare</strong> for your request.
+                          On the next screen you can <strong>Accept Fare</strong> or <strong>Make an Offer</strong>.
+                          Payment is only collected after the fare is agreed.
+                        </p>
+                      </div>
+
+                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Suggested Fare</p>
+                            <p class="text-sm font-bold text-slate-900">Driver fare and platform fee</p>
+                          </div>
+                          <p class="text-lg font-display font-bold text-slate-900">
+                            {{ config.formatCurrency(cardChargeRequired()) }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                }
+
+                @if (fareEstimate() && !shouldShowMarketplaceFare()) {
                   <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
 
                     <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
@@ -890,6 +931,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     public router = inject(Router);
     private bookingService = inject(BookingService);
     private pricingService = inject(PricingService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private paymentService = inject(PaymentService);
@@ -956,6 +998,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
+    negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
+
+    shouldShowMarketplaceFare = computed(() => {
+        const settings = this.negotiationSettings();
+        if (!settings?.enabled) return false;
+
+        const canonical = this.canonicalServiceSlug(this.getServiceSlug());
+        const configured = settings.minServices.some(s => this.canonicalServiceSlug(s) === canonical);
+        const safeList = ['shop', 'shopping', 'errand', 'errands', 'delivery', 'van', 'van_moving'].includes(canonical);
+
+        return configured || safeList;
+    });
 
     usesItemListMode = computed(() => {
         if (this.type !== ServiceTypeEnum.ERRAND) return false;
@@ -1020,6 +1074,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     canSubmit = computed(() => {
         if (!this.formValidSignal() || this.submitting() || this.paymentProcessing()) {
             return false;
+        }
+
+        if (this.shouldShowMarketplaceFare()) {
+            return true;
         }
 
         if (this.cardFallbackRequired()) {
@@ -1120,6 +1178,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return ServiceTypeEnum.RIDE;
     }
 
+    private canonicalServiceSlug(slug: string): string {
+        const raw = String(slug || '').trim().toLowerCase();
+
+        if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+        if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+        if (['van', 'moving', 'move', 'van-moving', 'van moving', 'van_moving'].includes(raw)) return 'van-moving';
+        if (['ride', 'rides'].includes(raw)) return 'ride';
+
+        return raw;
+    }
+
     private isQuickBuyMode(mode: unknown): mode is ErrandMode {
         return mode === 'quick_buy' || mode === 'shop_deliver';
     }
@@ -1210,12 +1279,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 'Processing...';
         }
 
+        if (this.shouldShowMarketplaceFare()) {
+            return 'Continue to Marketplace Fare';
+        }
+
         return this.walletCoversPayment()
             ? 'Request with Wallet'
             : 'Request & Pay by Card';
     }
 
     paymentSecurityLabel(): string {
+        if (this.shouldShowMarketplaceFare()) {
+            return 'Review and negotiate the fare before payment';
+        }
+
         return this.walletCoversPayment()
             ? 'Secure wallet reservation via Movabi Pay'
             : 'Secure card fallback via Movabi Pay';
@@ -2035,6 +2112,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const types = await this.bookingService.getServiceTypes();
         const slug = this.getServiceSlug();
 
+        try {
+            const marketplaceSettings = await this.marketplaceConfig.loadSettings();
+            this.negotiationSettings.set(marketplaceSettings.negotiation);
+        } catch (e) {
+            console.warn('[BookingRequest] Could not load marketplace settings', e);
+        }
+
         const selected = types.find((t: ServiceType) => {
             const serviceSlug = String((t as any).slug || (t as any).name || '').toLowerCase();
 
@@ -2254,6 +2338,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return errandSubmissionError;
         }
 
+        if (this.shouldShowMarketplaceFare()) {
+            return null;
+        }
+
         const wallet = await this.walletService.fetchWallet();
         const required = this.walletPaymentRequired();
         const walletBalance = this.toMoney(wallet?.available_balance || 0);
@@ -2382,7 +2470,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             // If marketplace negotiation is enabled for this service, let the customer
             // review/negotiate the fare before taking payment.
-            if (booking?.id && (booking as any).negotiation_mode_enabled) {
+            const shouldShowMarketplaceFare = Boolean((booking as any).negotiation_mode_enabled);
+            console.log('[BookingRequest] eligibility decision before routing', {
+                serviceSlug: this.getServiceSlug(),
+                canonicalServiceSlug: this.canonicalServiceSlug(this.getServiceSlug()),
+                negotiationEnabled: (booking as any).negotiation_mode_enabled,
+                negotiationServices: this.negotiationSettings()?.minServices,
+                shouldShowMarketplaceFare
+            });
+
+            if (booking?.id && shouldShowMarketplaceFare) {
                 await loading.dismiss();
                 await this.router.navigate(['/customer/marketplace-fare', booking.id]);
                 return;

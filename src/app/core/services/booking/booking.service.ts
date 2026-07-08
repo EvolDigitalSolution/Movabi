@@ -17,6 +17,7 @@ import { NotificationService } from '../notification.service';
 import { JobEventService } from '../job/job-event.service';
 import { EmailService } from '../notification/email.service';
 import { ApiUrlService } from '../api-url.service';
+import { MarketplaceConfigService } from '../marketplace/marketplace-config.service';
 
 @Injectable({
     providedIn: 'root'
@@ -31,9 +32,31 @@ export class BookingService {
     private eventService = inject(JobEventService);
     private emailService = inject(EmailService);
     private apiUrlService = inject(ApiUrlService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
 
     activeBooking = signal<Booking | null>(null);
     bookingHistory = signal<Booking[]>([]);
+
+    private readonly safeNegotiationSlugs = new Set([
+        'shop',
+        'shopping',
+        'errand',
+        'errands',
+        'delivery',
+        'van',
+        'van_moving'
+    ]);
+
+    private canonicalServiceSlug(slug: string): string {
+        const raw = String(slug || '').trim().toLowerCase();
+
+        if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+        if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+        if (['van', 'moving', 'move', 'van-moving', 'van moving', 'van_moving'].includes(raw)) return 'van-moving';
+        if (['ride', 'rides'].includes(raw)) return 'ride';
+
+        return raw;
+    }
 
     async getServiceTypes(): Promise<ServiceType[]> {
         const { data, error } = await this.supabase
@@ -117,8 +140,49 @@ export class BookingService {
         const distanceMeters = Number((bookingData as any).distance_meters || 0);
         const durationSeconds = Number((bookingData as any).duration_seconds || 0);
 
-        const negotiationEnabled = Boolean(pricing?.marketplaceFlags?.negotiationEnabled);
-        const biddingEnabled = Boolean(pricing?.marketplaceFlags?.biddingEnabled);
+        let negotiationEnabled = Boolean(pricing?.marketplaceFlags?.negotiationEnabled);
+        let biddingEnabled = Boolean(pricing?.marketplaceFlags?.biddingEnabled);
+        let marketplaceFlags = pricing?.marketplaceFlags ?? {
+            dynamicPricingEnabled: false,
+            negotiationEnabled: false,
+            biddingEnabled: false
+        };
+
+        // Safe fallback: if the backend pricing response does not mark a known
+        // marketplace service as negotiation-eligible (e.g. because of a slug/DB
+        // mismatch), still enable negotiation when the admin toggle is on.
+        if (!negotiationEnabled) {
+            try {
+                const settings = await this.marketplaceConfig.loadSettings();
+                const canonical = this.canonicalServiceSlug(serviceSlug);
+                const fallbackNegotiation =
+                    settings.negotiation.enabled && this.safeNegotiationSlugs.has(canonical);
+
+                console.log('[BookingService] marketplace eligibility check', {
+                    serviceSlug,
+                    canonicalServiceSlug: canonical,
+                    negotiationEnabledFromPricing: Boolean(pricing?.marketplaceFlags?.negotiationEnabled),
+                    negotiationServices: settings.negotiation.minServices,
+                    negotiationEnabledGlobally: settings.negotiation.enabled,
+                    fallbackNegotiationEnabled: fallbackNegotiation
+                });
+
+                if (fallbackNegotiation) {
+                    negotiationEnabled = true;
+                    marketplaceFlags = { ...marketplaceFlags, negotiationEnabled: true };
+                }
+            } catch (e) {
+                console.warn('[BookingService] Could not load marketplace settings for fallback', e);
+            }
+        } else {
+            console.log('[BookingService] marketplace eligibility from pricing', {
+                serviceSlug,
+                canonicalServiceSlug: this.canonicalServiceSlug(serviceSlug),
+                negotiationEnabled,
+                biddingEnabled,
+                marketplaceFlags
+            });
+        }
 
         const insertPayload: Record<string, unknown> = {
             customer_id: user.id,
@@ -152,9 +216,9 @@ export class BookingService {
             surge_multiplier: Number(pricing?.surgeMultiplier ?? 1),
             dynamic_pricing_multiplier: Number(pricing?.dynamicPricingMultiplier ?? 1),
             fare_breakdown: pricing?.fareBreakdown ?? null,
-            marketplace_flags: pricing?.marketplaceFlags ?? {},
-            bid_mode_enabled: Boolean(pricing?.marketplaceFlags?.biddingEnabled),
-            negotiation_mode_enabled: Boolean(pricing?.marketplaceFlags?.negotiationEnabled),
+            marketplace_flags: marketplaceFlags,
+            bid_mode_enabled: biddingEnabled,
+            negotiation_mode_enabled: negotiationEnabled,
             agreed_fare: null,
 
             scheduled_time: bookingData.scheduled_time || new Date().toISOString(),
