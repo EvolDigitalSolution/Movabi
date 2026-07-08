@@ -42,14 +42,11 @@ export class MarketplaceNegotiationService {
     private apiUrlService = inject(ApiUrlService);
 
     async createNegotiation(payload: NegotiationCreatePayload): Promise<FareNegotiation> {
-        const url = this.apiUrlService.getApiUrl('/api/booking/negotiation');
+        const url = this.apiUrlService.getApiUrl(`/api/booking/negotiation/${payload.jobId}/customer-offer`);
         const result = await firstValueFrom(
             this.http.post<{ negotiation: FareNegotiation }>(url, {
-                jobId: payload.jobId,
                 amount: payload.amount,
-                message: payload.message,
-                proposedByRole: payload.proposedByRole || 'customer',
-                counterToNegotiationId: payload.counterToNegotiationId || null
+                message: payload.message || payload.proposedByRole || 'Customer offer'
             })
         );
         return result.negotiation;

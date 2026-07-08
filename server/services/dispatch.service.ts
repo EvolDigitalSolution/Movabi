@@ -497,7 +497,7 @@ export class DispatchService {
         return result;
     }
 
-    private async notifyNearbyDrivers(job: Job, tenantId?: string | null, cityId?: string | null) {
+    async notifyNearbyDrivers(job: Job, tenantId?: string | null, cityId?: string | null) {
         const drivers = await this.findNearbyDrivers(job, tenantId, cityId);
 
         if (!drivers.length) {

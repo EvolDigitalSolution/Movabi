@@ -387,15 +387,15 @@ export class MarketplacePaymentPage implements OnInit, OnDestroy {
                 throw new Error(stripeError.message);
             }
 
-            if (paymentIntent?.status === 'succeeded') {
+            if (paymentIntent?.status === 'succeeded' || paymentIntent?.status === 'requires_capture') {
                 await this.bookingService.confirmJobPayment(job.id, paymentIntent.id);
                 await loading.dismiss();
                 await this.showToast('Payment successful! Finding your driver...', 'success');
-                
+
                 // Navigate to tracking - the effect will handle the transition
                 await this.router.navigate(['/customer/tracking', job.id]);
             } else {
-                throw new Error('Payment was not successful');
+                throw new Error(`Payment was not successful (status: ${paymentIntent?.status || 'unknown'})`);
             }
         } catch (error: any) {
             console.error('[MarketplacePayment] card payment failed', error);

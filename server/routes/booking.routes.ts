@@ -5,6 +5,7 @@ import { NotificationService } from '../services/notification.service';
 import { LogisticsService } from '../services/logistics.service';
 import { IssuingService } from '../services/issuing.service';
 import { PricingService } from '../services/pricing.service';
+import { DispatchService } from '../services/dispatch.service';
 import { stripe } from '../services/stripe.service';
 
 const router = Router();
@@ -1114,6 +1115,108 @@ router.post('/negotiation/:jobId/driver-counter', async (req: Request, res: Resp
     } catch (error: any) {
         console.error('[BookingRoutes] driver counter error:', error);
         return res.status(500).json({ error: error.message || 'Failed to counter offer' });
+    }
+});
+
+/**
+ * Customer submits a new offer for a job in negotiation mode.
+ */
+router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Response) => {
+    try {
+        const jobId = req.params.jobId;
+        const { amount, message } = req.body;
+        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        if (!amount || isNaN(Number(amount))) {
+            return res.status(400).json({ error: 'amount is required' });
+        }
+
+        const { data: job, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select('id, customer_id, status, negotiation_mode_enabled, tenant_id, city_id, pickup_lat, pickup_lng')
+            .eq('id', jobId)
+            .single();
+
+        if (jobError || !job) {
+            return res.status(404).json({ error: 'Job not found' });
+        }
+
+        if (job.customer_id !== userId) {
+            return res.status(403).json({ error: 'Only the customer can make an offer for this job' });
+        }
+
+        if (!job.negotiation_mode_enabled) {
+            return res.status(400).json({ error: 'Job is not in negotiation mode' });
+        }
+
+        const status = String(job.status || '').toLowerCase();
+        if (!['pending_fare_confirmation', 'negotiating'].includes(status)) {
+            return res.status(400).json({ error: 'Job is not open for negotiation' });
+        }
+
+        const { data: negotiations, error: fetchError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .select('*')
+            .eq('job_id', jobId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (fetchError) throw fetchError;
+
+        const latestNegotiation = negotiations?.[0];
+
+        const { data: negotiation, error: insertError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .insert({
+                job_id: jobId,
+                proposed_by: userId,
+                proposed_by_role: 'customer',
+                amount: Number(amount),
+                message: message || null,
+                counter_to_negotiation_id: latestNegotiation?.id || null,
+                round_number: (latestNegotiation?.round_number || 1) + 1,
+                status: 'pending'
+            })
+            .select('*')
+            .single();
+
+        if (insertError) {
+            console.error('[BookingRoutes] customer offer failed:', insertError);
+            return res.status(500).json({ error: insertError.message || 'Failed to create offer' });
+        }
+
+        if (latestNegotiation?.status === 'pending') {
+            await supabaseAdmin
+                .from('fare_negotiations')
+                .update({ status: 'countered', updated_at: new Date().toISOString() })
+                .eq('id', latestNegotiation.id);
+        }
+
+        await supabaseAdmin
+            .from('jobs')
+            .update({
+                status: 'negotiating',
+                negotiated_fare: Number(amount),
+                negotiation_deadline: new Date(Date.now() + 120000).toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        // Alert nearby drivers so they can see the updated offer
+        try {
+            await new DispatchService().notifyNearbyDrivers(job as any, job.tenant_id, job.city_id);
+        } catch (notifyError) {
+            console.warn('[BookingRoutes] customer offer driver notification failed:', notifyError);
+        }
+
+        return res.json({ success: true, negotiation });
+    } catch (error: any) {
+        console.error('[BookingRoutes] customer offer error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to create offer' });
     }
 });
 

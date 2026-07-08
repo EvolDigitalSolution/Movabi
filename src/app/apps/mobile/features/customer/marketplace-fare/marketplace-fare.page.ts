@@ -146,12 +146,16 @@ import { Capacitor } from '@capacitor/core';
                         <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().baseFare) }}</span>
                       </div>
                     }
+                    <div class="flex justify-between items-center">
+                      <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 bg-blue-400 rounded-full"></div>
+                        <span class="text-sm text-slate-600">Distance &amp; time estimate</span>
+                      </div>
+                      <span class="font-semibold text-slate-900">{{ distanceKm().toFixed(1) }} km · {{ formatDuration(durationSeconds()) }}</span>
+                    </div>
                     @if (fareBreakdown().distanceCost !== undefined) {
-                      <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                          <div class="w-2 h-2 bg-blue-400 rounded-full"></div>
-                          <span class="text-sm text-slate-600">Distance</span>
-                        </div>
+                      <div class="flex justify-between items-center pl-5">
+                        <span class="text-xs text-slate-500">Distance/time cost</span>
                         <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().distanceCost) }}</span>
                       </div>
                     }
@@ -159,20 +163,24 @@ import { Capacitor } from '@capacitor/core';
                       <div class="flex justify-between items-center">
                         <div class="flex items-center gap-2">
                           <div class="w-2 h-2 bg-amber-400 rounded-full"></div>
-                          <span class="text-sm text-slate-600">Dynamic pricing</span>
+                          <span class="text-sm text-slate-600">Marketplace adjustment</span>
                         </div>
                         <span class="font-semibold text-amber-700">{{ formatPrice(fareBreakdown().dynamicPricingAmount) }}</span>
                       </div>
                     }
-                    @if (fareBreakdown().platformFee !== undefined) {
+                    @if (fareBreakdown().serviceFee || fareBreakdown().platformFee) {
                       <div class="flex justify-between items-center">
                         <div class="flex items-center gap-2">
                           <div class="w-2 h-2 bg-purple-400 rounded-full"></div>
-                          <span class="text-sm text-slate-600">Platform fee</span>
+                          <span class="text-sm text-slate-600">Platform / booking fee</span>
                         </div>
-                        <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().platformFee) }}</span>
+                        <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().serviceFee || fareBreakdown().platformFee) }}</span>
                       </div>
                     }
+                    <div class="pt-2 border-t border-amber-100/50 flex justify-between items-center">
+                      <span class="text-sm font-bold text-slate-700">Total suggested fare</span>
+                      <span class="text-lg font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</span>
+                    </div>
                   </div>
                 </div>
               }
@@ -184,14 +192,14 @@ import { Capacitor } from '@capacitor/core';
                     <ion-icon name="navigate-outline" class="text-amber-500 text-sm"></ion-icon>
                     <span class="text-xs font-medium">Distance</span>
                   </div>
-                  <p class="text-lg font-bold text-slate-900">{{ (booking()?.distance_km || 0).toFixed(1) }} km</p>
+                  <p class="text-lg font-bold text-slate-900">{{ distanceKm().toFixed(1) }} km</p>
                 </div>
                 <div class="bg-white/60 backdrop-blur rounded-xl p-3 border border-amber-100/50">
                   <div class="flex items-center gap-2 text-slate-600 mb-1">
                     <ion-icon name="time-outline" class="text-amber-500 text-sm"></ion-icon>
                     <span class="text-xs font-medium">Duration</span>
                   </div>
-                  <p class="text-lg font-bold text-slate-900">{{ formatDuration(booking()?.duration_seconds) }}</p>
+                  <p class="text-lg font-bold text-slate-900">{{ formatDuration(durationSeconds()) }}</p>
                 </div>
               </div>
 
@@ -447,6 +455,18 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
 
     dynamicMultiplier() {
         return (this.booking() as any)?.dynamic_pricing_multiplier || 1;
+    }
+
+    distanceKm() {
+        const job = this.booking() as any;
+        if (!job) return 0;
+        return job.distance_km ?? job.estimated_distance_km ?? job.metadata?.distance_km ?? 0;
+    }
+
+    durationSeconds() {
+        const job = this.booking() as any;
+        if (!job) return null;
+        return job.duration_seconds ?? job.estimated_duration ?? job.metadata?.duration_seconds ?? null;
     }
 
     latestNegotiation() {

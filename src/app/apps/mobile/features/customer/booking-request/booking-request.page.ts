@@ -472,17 +472,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                   }
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
-                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Contact Information</p>
-                    <app-input
-                      label="Your Phone"
-                      type="tel"
-                      formControlName="customer_phone"
-                      icon="call-outline"
-                      placeholder="Your contact number">
-                    </app-input>
-                    @if (bookingForm.get('customer_phone')?.hasError('invalidPhone') || bookingForm.get('customer_phone')?.hasError('invalidPhoneLength')) {
-                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
-                    }
+                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Recipient Contact (optional)</p>
                     <div class="grid grid-cols-2 gap-4">
                       <app-input
                         label="Recipient Name"
@@ -1499,7 +1489,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private optionalPhoneValidator(control: AbstractControl) {
         const raw = String(control.value || '').trim();
-        if (!raw) return null;
+        if (!raw || raw === '0') return null;
 
         if (!/^[+\d\s\-()]+$/.test(raw)) {
             return { invalidPhone: true };
@@ -1673,7 +1663,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
                     vehicle_class: ['bike', Validators.required],
-                    customer_phone: [this.auth.currentUser()?.phone || '', [Validators.required, this.requiredPhoneValidator.bind(this)]],
                     recipient_phone: ['', this.optionalPhoneValidator.bind(this)],
                     recipient_name: [''],
                     substitution_rule: ['contact_me']
@@ -2729,11 +2718,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ? this.parseErrandItems(formVal['items_list'])
                 : [];
 
+            const profile = this.auth.profileService.profile();
+            const user = this.auth.currentUser();
+            const customerPhone = profile?.phone || user?.phone || '';
+            const customerName = profile?.full_name ||
+                (profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : '') ||
+                (user?.user_metadata?.['full_name'] as string) ||
+                user?.email ||
+                '';
+
             return {
                 errand_details: {
                     mode,
                     vehicleClass: this.vehicleClass(),
                     itemCount: items.length,
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
                     ...(isShoppingMode ? { items, budget } : {})
                 },
                 payment_split: {
@@ -2780,13 +2780,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ) as ErrandMode;
 
                 const isShoppingMode = this.isQuickBuyMode(mode);
+                const profile = this.auth.profileService.profile();
+                const user = this.auth.currentUser();
+                const customerPhone = profile?.phone || user?.phone || '';
+                const customerName = profile?.full_name ||
+                    (profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : '') ||
+                    (user?.user_metadata?.['full_name'] as string) ||
+                    user?.email ||
+                    '';
 
                 const payload: Record<string, unknown> = {
                     errand_mode: mode,
                     notes: formVal['notes'],
-                    customer_phone: formVal['customer_phone'],
-                    recipient_phone: formVal['recipient_phone'],
-                    recipient_name: formVal['recipient_name'],
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
+                    recipient_phone: formVal['recipient_phone'] || null,
+                    recipient_name: formVal['recipient_name'] || null,
                     substitution_rule: formVal['substitution_rule']
                 };
 
