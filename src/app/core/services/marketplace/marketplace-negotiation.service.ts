@@ -33,6 +33,10 @@ export interface NegotiationResponsePayload {
     message?: string;
 }
 
+type AuthHttpOptions = {
+    headers?: Record<string, string>;
+};
+
 @Injectable({
     providedIn: 'root'
 })
@@ -43,11 +47,12 @@ export class MarketplaceNegotiationService {
 
     async createNegotiation(payload: NegotiationCreatePayload): Promise<FareNegotiation> {
         const url = this.apiUrlService.getApiUrl(`/api/booking/negotiation/${payload.jobId}/customer-offer`);
+        const options = await this.authOptions();
         const result = await firstValueFrom(
             this.http.post<{ negotiation: FareNegotiation }>(url, {
                 amount: payload.amount,
                 message: payload.message || payload.proposedByRole || 'Customer offer'
-            })
+            }, options)
         );
         return result.negotiation;
     }
@@ -65,19 +70,21 @@ export class MarketplaceNegotiationService {
 
     async acceptNegotiation(negotiationId: string): Promise<FareNegotiation> {
         const url = this.apiUrlService.getApiUrl(`/api/booking/negotiation/${negotiationId}/accept`);
+        const options = await this.authOptions();
         const result = await firstValueFrom(
-            this.http.post<{ negotiation: FareNegotiation }>(url, {})
+            this.http.post<{ negotiation: FareNegotiation }>(url, {}, options)
         );
         return result.negotiation;
     }
 
     async counterNegotiation(payload: NegotiationResponsePayload): Promise<FareNegotiation> {
         const url = this.apiUrlService.getApiUrl(`/api/booking/negotiation/${payload.negotiationId}/counter`);
+        const options = await this.authOptions();
         const result = await firstValueFrom(
             this.http.post<{ negotiation: FareNegotiation }>(url, {
                 amount: payload.amount,
                 message: payload.message
-            })
+            }, options)
         );
         return result.negotiation;
     }
@@ -97,17 +104,34 @@ export class MarketplaceNegotiationService {
 
     async driverAcceptOffer(jobId: string): Promise<FareNegotiation> {
         const url = this.apiUrlService.getApiUrl(`/api/booking/negotiation/${jobId}/driver-accept`);
+        const options = await this.authOptions();
         const result = await firstValueFrom(
-            this.http.post<{ negotiation: FareNegotiation }>(url, {})
+            this.http.post<{ negotiation: FareNegotiation }>(url, {}, options)
         );
         return result.negotiation;
     }
 
     async driverCounterOffer(jobId: string, amount: number, message?: string): Promise<FareNegotiation> {
         const url = this.apiUrlService.getApiUrl(`/api/booking/negotiation/${jobId}/driver-counter`);
+        const options = await this.authOptions();
         const result = await firstValueFrom(
-            this.http.post<{ negotiation: FareNegotiation }>(url, { amount, message })
+            this.http.post<{ negotiation: FareNegotiation }>(url, { amount, message }, options)
         );
         return result.negotiation;
+    }
+
+    private async authOptions(): Promise<AuthHttpOptions> {
+        const { data } = await this.supabase.auth.getSession();
+        const token = data.session?.access_token;
+
+        if (!token) {
+            throw new Error('Authentication required. Please sign in again.');
+        }
+
+        return {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        };
     }
 }

@@ -19,6 +19,16 @@ import { EmailService } from '../notification/email.service';
 import { ApiUrlService } from '../api-url.service';
 import { MarketplaceConfigService } from '../marketplace/marketplace-config.service';
 
+export type BookingLifecycleState =
+    | 'draft'
+    | 'negotiating'
+    | 'fare_agreed_unpaid'
+    | 'payment_pending'
+    | 'paid_ready_for_dispatch'
+    | 'active'
+    | 'completed'
+    | 'cancelled';
+
 @Injectable({
     providedIn: 'root'
 })
@@ -55,6 +65,64 @@ export class BookingService {
         if (['ride', 'rides'].includes(raw)) return 'ride';
 
         return raw;
+    }
+
+    getBookingLifecycleState(job: Partial<Booking> | Record<string, any> | null | undefined): BookingLifecycleState {
+        const status = String((job as any)?.status || '').toLowerCase();
+        const paymentStatus = String((job as any)?.payment_status || '').toLowerCase();
+        const hasPaymentIntent = !!String((job as any)?.payment_intent_id || '').trim();
+        const hasDriver = !!String((job as any)?.driver_id || '').trim();
+        const dispatchStarted = !!String((job as any)?.dispatch_started_at || '').trim();
+
+        const paidStatuses = new Set([
+            'authorized',
+            'requires_capture',
+            'succeeded',
+            'wallet_funded',
+            'paid',
+            'captured',
+            'capture_pending'
+        ]);
+        const paymentPendingStatuses = new Set(['pending_payment', 'payment_pending', 'requires_payment_method']);
+        const activeStatuses = new Set([
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'driver_en_route',
+            'driver_arrived',
+            'picked_up',
+            'in_progress',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered'
+        ]);
+        const dispatchStatuses = new Set(['searching', 'broadcasting', 'waiting']);
+
+        const isPaid = paidStatuses.has(paymentStatus) || hasPaymentIntent;
+
+        if (['completed', 'settled'].includes(status)) return 'completed';
+        if (status === 'cancelled') {
+            return isPaid || dispatchStarted || hasDriver ? 'cancelled' : 'draft';
+        }
+        if (activeStatuses.has(status)) return status === 'delivered' ? 'completed' : 'active';
+        if (dispatchStatuses.has(status)) return isPaid ? 'paid_ready_for_dispatch' : 'payment_pending';
+        if (status === 'fare_agreed') return isPaid ? 'paid_ready_for_dispatch' : 'fare_agreed_unpaid';
+        if (['pending_fare_confirmation', 'negotiating'].includes(status)) return 'negotiating';
+        if (paymentPendingStatuses.has(status) || paymentPendingStatuses.has(paymentStatus)) return 'payment_pending';
+
+        return 'draft';
+    }
+
+    isVisibleActivityBooking(job: Partial<Booking> | Record<string, any> | null | undefined): boolean {
+        return [
+            'paid_ready_for_dispatch',
+            'active',
+            'completed',
+            'cancelled'
+        ].includes(this.getBookingLifecycleState(job));
     }
 
     async getServiceTypes(): Promise<ServiceType[]> {
@@ -976,7 +1044,7 @@ export class BookingService {
                 ...job,
                 driver: job.driver_id ? driversById[job.driver_id] || null : null
             })
-        );
+        ).filter((booking: Booking) => this.isVisibleActivityBooking(booking));
 
         this.bookingHistory.set(bookings);
     }

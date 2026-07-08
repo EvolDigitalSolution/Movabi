@@ -516,16 +516,15 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
         }
     }
 
-    private readonly alreadyPaidStatuses = new Set(['authorized', 'requires_capture', 'succeeded', 'wallet_funded']);
-    private readonly dispatchedStatuses = new Set(['searching', 'assigned', 'in_progress', 'completed']);
-
     private isPaymentHandled(job: Booking | null | undefined): boolean {
         if (!job) return false;
 
-        const paymentStatus = String(job.payment_status || '').toLowerCase();
-        const jobStatus = String(job.status || '').toLowerCase();
-
-        return this.alreadyPaidStatuses.has(paymentStatus) || this.dispatchedStatuses.has(jobStatus);
+        return [
+            'paid_ready_for_dispatch',
+            'active',
+            'completed',
+            'cancelled'
+        ].includes(this.bookingService.getBookingLifecycleState(job));
     }
 
     private async redirectToTracking(jobId: string): Promise<void> {
