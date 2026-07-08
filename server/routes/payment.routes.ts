@@ -116,22 +116,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 
     const { data: job, error } = await supabaseAdmin
       .from('jobs')
-      .select(`
-        id,
-        customer_id,
-        tenant_id,
-        status,
-        payment_status,
-        payment_intent_id,
-        service_slug,
-        agreed_fare,
-        price,
-        total_price,
-        estimated_price,
-        currency_code,
-        currency_symbol,
-        country_code
-      `)
+      .select('*')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -151,16 +136,33 @@ router.post('/create-intent', async (req: Request, res: Response) => {
     }
 
     if (job.payment_intent_id) {
-      const existing = await stripe.paymentIntents.retrieve(job.payment_intent_id);
+      try {
+        const existing = await stripe.paymentIntents.retrieve(job.payment_intent_id);
 
-      return res.json({
-        clientSecret: existing.client_secret,
-        paymentIntentId: existing.id,
-        reused: true
-      });
+        return res.json({
+          clientSecret: existing.client_secret,
+          paymentIntentId: existing.id,
+          reused: true
+        });
+      } catch (retrieveError: any) {
+        console.warn('[PaymentRoutes] existing payment intent could not be reused:', {
+          jobId,
+          paymentIntentId: job.payment_intent_id,
+          message: retrieveError?.message
+        });
+        return res.status(400).json({
+          error: 'Existing payment could not be reused',
+          details: 'Please refresh the booking and try payment again.'
+        });
+      }
     }
 
-    const serviceSlug = canonicalServiceSlug(job.service_slug || req.body.serviceSlug || req.body.service_type);
+    const serviceSlug = canonicalServiceSlug(
+      job.service_slug ||
+      job.metadata?.service_slug ||
+      req.body.serviceSlug ||
+      req.body.service_type
+    );
     const isErrandLike = serviceSlug === 'errand';
 
     const serviceFare =
@@ -189,6 +191,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       price: job.price,
       total_price: job.total_price,
       estimated_price: job.estimated_price,
+      requestAmount: req.body.amount,
       itemBudget,
       finalAmount: totalAuthorisation
     });
@@ -200,55 +203,89 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       });
     }
 
-    const pi = await stripe.paymentIntents.create({
-      amount: Math.round(totalAuthorisation * 100),
-      currency: currency(job.currency_code || req.body.currency || 'GBP'),
-      payment_method_types: ['card'],
-      capture_method: 'manual',
-      metadata: {
-        jobId: String(job.id),
-        tenantId: String(tenantId || job.tenant_id || ''),
-        purpose: 'job_payment',
-        capturePolicy: 'capture_only_when_job_completed',
-        surgeMultiplier: String(surgeMultiplier || 1),
-        countryCode: String(job.country_code || ''),
-        currencySymbol: String(job.currency_symbol || '')
-      }
-    });
+    let pi;
+    try {
+      pi = await stripe.paymentIntents.create({
+        amount: Math.round(totalAuthorisation * 100),
+        currency: currency(job.currency_code || req.body.currency || 'GBP'),
+        payment_method_types: ['card'],
+        capture_method: 'manual',
+        metadata: {
+          jobId: String(job.id),
+          tenantId: String(tenantId || job.tenant_id || ''),
+          purpose: 'job_payment',
+          capturePolicy: 'capture_only_when_job_completed',
+          surgeMultiplier: String(surgeMultiplier || 1),
+          countryCode: String(job.country_code || ''),
+          currencySymbol: String(job.currency_symbol || '')
+        }
+      });
+    } catch (stripeError: any) {
+      console.error('[PaymentRoutes] Stripe payment intent create failed:', {
+        jobId,
+        service_slug: job.service_slug,
+        canonical_service_slug: serviceSlug,
+        finalAmount: totalAuthorisation,
+        message: stripeError?.message,
+        type: stripeError?.type
+      });
+      return res.status(400).json({
+        error: stripeError?.message || 'Failed to create card payment',
+        details: 'Stripe could not create a payment for this booking amount.'
+      });
+    }
 
-    const updatePayload: Record<string, unknown> = {
+    const essentialUpdatePayload: Record<string, unknown> = {
       payment_intent_id: pi.id,
       payment_status: 'authorized',
-      payment_method: 'card',
+      payment_method: 'card'
+    };
+
+    const optionalUpdatePayload: Record<string, unknown> = {
       surge_multiplier: Number(surgeMultiplier || 1)
     };
 
     if (isErrandLike && itemBudget > 0) {
-      updatePayload.price = totalAuthorisation;
-      updatePayload.total_price = totalAuthorisation;
-      updatePayload.estimated_price = totalAuthorisation;
+      optionalUpdatePayload.price = totalAuthorisation;
+      optionalUpdatePayload.total_price = totalAuthorisation;
+      optionalUpdatePayload.estimated_price = totalAuthorisation;
     }
 
     if (fareBreakdown && typeof fareBreakdown === 'object') {
-      updatePayload.fare_breakdown = fareBreakdown;
-      updatePayload.commission_rate_used = (fareBreakdown as any)?.commissionPercent ?? null;
-      updatePayload.dynamic_pricing_multiplier = (fareBreakdown as any)?.multiplier ?? 1;
+      optionalUpdatePayload.fare_breakdown = fareBreakdown;
+      optionalUpdatePayload.commission_rate_used = (fareBreakdown as any)?.commissionPercent ?? null;
+      optionalUpdatePayload.dynamic_pricing_multiplier = (fareBreakdown as any)?.multiplier ?? 1;
     }
 
     if (marketplaceFlags && typeof marketplaceFlags === 'object') {
-      updatePayload.marketplace_flags = marketplaceFlags;
-      updatePayload.negotiation_mode_enabled = (marketplaceFlags as any)?.negotiationEnabled ?? false;
-      updatePayload.bid_mode_enabled = (marketplaceFlags as any)?.biddingEnabled ?? false;
+      optionalUpdatePayload.marketplace_flags = marketplaceFlags;
+      optionalUpdatePayload.negotiation_mode_enabled = (marketplaceFlags as any)?.negotiationEnabled ?? false;
+      optionalUpdatePayload.bid_mode_enabled = (marketplaceFlags as any)?.biddingEnabled ?? false;
     }
 
     const { error: updateError } = await supabaseAdmin
       .from('jobs')
-      .update(updatePayload)
+      .update({ ...essentialUpdatePayload, ...optionalUpdatePayload })
       .eq('id', jobId);
 
     if (updateError) {
-      console.error('[PaymentRoutes] update job failed:', updateError);
-      return res.status(500).json({ error: 'Failed to update job payment', details: updateError.message });
+      console.warn('[PaymentRoutes] full payment update failed, retrying essential fields only:', {
+        jobId,
+        message: updateError.message
+      });
+
+      const { error: essentialUpdateError } = await supabaseAdmin
+        .from('jobs')
+        .update(essentialUpdatePayload)
+        .eq('id', jobId);
+
+      if (essentialUpdateError) {
+        console.error('[PaymentRoutes] essential payment update failed:', essentialUpdateError);
+        return res.status(400).json({
+          error: 'Failed to update job payment',
+          details: essentialUpdateError.message
+        });
+      }
     }
 
     if (isErrandLike && itemBudget > 0) {

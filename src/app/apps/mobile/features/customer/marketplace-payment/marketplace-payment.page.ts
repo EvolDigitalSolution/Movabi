@@ -227,7 +227,6 @@ import { StripeCardElement } from '@stripe/stripe-js';
               }
               <div
                 #cardElementHost
-                [class.hidden]="!cardReady()"
                 class="p-4 border-2 border-slate-200 rounded-2xl bg-slate-50 focus-within:border-blue-500 focus-within:bg-white transition-all"
               ></div>
             </div>
@@ -298,7 +297,20 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     private toastCtrl = inject(ToastController);
     private loadingCtrl = inject(LoadingController);
 
-    @ViewChild('cardElementHost') cardElementHost?: ElementRef<HTMLElement>;
+    private cardElementHost: ElementRef<HTMLDivElement> | null = null;
+
+    @ViewChild('cardElementHost')
+    set cardElementHostRef(ref: ElementRef<HTMLDivElement> | undefined) {
+        if (ref && !this.cardElementHost) {
+            this.cardElementHost = ref;
+            void this.initializeStripe();
+        } else if (!ref) {
+            this.cardMounted = false;
+            this.cardReady.set(false);
+            this.cardComplete.set(false);
+            this.cardElementHost = null;
+        }
+    }
 
     booking = signal<Booking | null>(null);
     wallet = signal<any>(null);
