@@ -17,6 +17,17 @@ function currency(value: unknown): string {
   return c.length >= 3 ? c : 'gbp';
 }
 
+function canonicalServiceSlug(value: unknown): string {
+  const raw = String(value || '').trim().toLowerCase();
+
+  if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+  if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+  if (['van', 'moving', 'move', 'van-moving', 'van moving', 'van_moving'].includes(raw)) return 'van-moving';
+  if (['ride', 'rides'].includes(raw)) return 'ride';
+
+  return raw;
+}
+
 router.post('/calculate-price', async (req: Request, res: Response) => {
   try {
     const {
@@ -149,6 +160,9 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       });
     }
 
+    const serviceSlug = canonicalServiceSlug(job.service_slug || req.body.serviceSlug || req.body.service_type);
+    const isErrandLike = serviceSlug === 'errand';
+
     const serviceFare =
       money(job.agreed_fare) ||
       money(job.total_price) ||
@@ -157,7 +171,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       money(req.body.amount);
 
     let itemBudget = 0;
-    if (String(job.service_slug || '').toLowerCase() === 'errand') {
+    if (isErrandLike) {
       const [{ data: errandDetails }, { data: errandFunding }] = await Promise.all([
         supabaseAdmin.from('errand_details').select('estimated_budget').eq('job_id', jobId).maybeSingle(),
         supabaseAdmin.from('errand_funding').select('amount_reserved').eq('job_id', jobId).maybeSingle()
@@ -167,8 +181,23 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 
     const totalAuthorisation = serviceFare + itemBudget;
 
-    if (!totalAuthorisation) {
-      return res.status(400).json({ error: 'Invalid job amount' });
+    console.log('[PaymentRoutes] create-intent amount', {
+      jobId,
+      service_slug: job.service_slug,
+      canonical_service_slug: serviceSlug,
+      agreed_fare: job.agreed_fare,
+      price: job.price,
+      total_price: job.total_price,
+      estimated_price: job.estimated_price,
+      itemBudget,
+      finalAmount: totalAuthorisation
+    });
+
+    if (!Number.isFinite(totalAuthorisation) || totalAuthorisation <= 0) {
+      return res.status(400).json({
+        error: 'Invalid job amount',
+        details: 'The job does not have a valid fare to authorise.'
+      });
     }
 
     const pi = await stripe.paymentIntents.create({
@@ -191,11 +220,14 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       payment_intent_id: pi.id,
       payment_status: 'authorized',
       payment_method: 'card',
-      surge_multiplier: Number(surgeMultiplier || 1),
-      price: totalAuthorisation,
-      total_price: totalAuthorisation,
-      estimated_price: totalAuthorisation
+      surge_multiplier: Number(surgeMultiplier || 1)
     };
+
+    if (isErrandLike && itemBudget > 0) {
+      updatePayload.price = totalAuthorisation;
+      updatePayload.total_price = totalAuthorisation;
+      updatePayload.estimated_price = totalAuthorisation;
+    }
 
     if (fareBreakdown && typeof fareBreakdown === 'object') {
       updatePayload.fare_breakdown = fareBreakdown;
@@ -219,7 +251,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to update job payment', details: updateError.message });
     }
 
-    if (String(job.service_slug || '').toLowerCase() === 'errand' && itemBudget > 0) {
+    if (isErrandLike && itemBudget > 0) {
       const { error: fundingError } = await supabaseAdmin
         .from('errand_funding')
         .upsert({

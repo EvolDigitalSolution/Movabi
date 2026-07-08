@@ -271,7 +271,7 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
 
             <button
               type="button"
-              (click)="router.navigate(['/customer/van-moving/create'])"
+              (click)="goToBooking('van-moving')"
               class="w-full min-h-[145px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-3.5 px-3 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
             >
               <div class="flex h-full flex-col items-center justify-center">
@@ -578,7 +578,7 @@ export class HomePage implements OnInit, OnDestroy {
         void this.router.navigate(['/dashboard']);
     }
 
-    goToBooking(type: 'ride' | 'errand' | 'delivery'): void {
+    goToBooking(type: 'ride' | 'errand' | 'delivery' | 'van-moving'): void {
         void this.router.navigate(['/customer/request'], {
             queryParams: { type }
         });

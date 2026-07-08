@@ -599,6 +599,46 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_status_check;
+
+    ALTER TABLE public.jobs
+        ADD CONSTRAINT jobs_status_check
+        CHECK (status IN (
+            'requested',
+            'pending',
+            'pending_payment',
+            'payment_authorized',
+            'pending_fare_confirmation',
+            'negotiating',
+            'fare_agreed',
+            'searching',
+            'broadcasting',
+            'waiting',
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'driver_en_route',
+            'driver_arrived',
+            'picked_up',
+            'in_progress',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered',
+            'completed',
+            'settled',
+            'cancelled',
+            'expired',
+            'no_driver_found',
+            'requires_review',
+            'failed'
+        ));
+END $$;
+
 CREATE TABLE IF NOT EXISTS job_service_details (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

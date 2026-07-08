@@ -1143,6 +1143,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private pickupSearch$ = new Subject<string>();
     private dropoffSearch$ = new Subject<string>();
     private lastBookingTime = 0;
+    private lastResolvedType: ServiceTypeEnum | null = null;
     readonly passengerOptions = [1, 2, 3, 4, 5, 6, 7];
 
     constructor() {
@@ -1177,14 +1178,15 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     ngOnInit() {
-        const typeParam = this.route.snapshot.queryParams['type'];
-        this.type = this.normalizeTypeParam(typeParam);
-
-        this.initForm();
         void this.config.detectRuntimeCountry();
-        void this.loadPricing();
         void this.walletService.fetchWallet();
         void this.bookingService.getHistory();
+
+        this.route.queryParamMap
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe(params => {
+                this.applyRequestedType(params.get('type'));
+            });
 
         this.pickupSearch$
             .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
@@ -1197,6 +1199,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             .subscribe(query => {
                 this.performSearch('dropoff', query);
             });
+    }
+
+    private applyRequestedType(typeParam: unknown): void {
+        const nextType = this.normalizeTypeParam(typeParam);
+        const changed = this.lastResolvedType !== nextType;
+
+        if (!changed) return;
+
+        this.type = nextType;
+        this.lastResolvedType = nextType;
+        this.serviceType.set(null);
+        this.fareEstimate.set(null);
+        this.estimatedPrice.set(0);
+
+        this.initForm();
+        void this.loadPricing();
     }
 
     ngOnDestroy() {
@@ -2178,8 +2196,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         const selected = types.find((t: ServiceType) => {
             const serviceSlug = String((t as any).slug || (t as any).name || '').toLowerCase();
+            const canonicalCandidate = this.canonicalServiceSlug(serviceSlug);
+            const canonicalRequested = this.canonicalServiceSlug(slug);
 
             if (serviceSlug === slug) return true;
+            if (canonicalCandidate === canonicalRequested) return true;
             if (slug === 'van-moving' && (serviceSlug === 'van' || serviceSlug === 'van moving')) return true;
             if (slug === 'delivery' && ['courier', 'package', 'parcel', 'delivery'].includes(serviceSlug)) return true;
             if (slug === 'errand' && ['shop', 'shopping', 'errand', 'errands'].includes(serviceSlug)) return true;
@@ -2190,6 +2211,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         console.log('AVAILABLE SERVICE TYPES', types);
         console.log('REQUESTED SLUG', slug);
         console.log('SELECTED SERVICE TYPE', selected);
+        console.log('[BookingRequest] resolved service type', {
+            requestedType: this.type,
+            requestedSlug: slug,
+            selectedServiceTypeSlug: selected?.slug || selected?.name || null,
+            resolvedServiceType: selected || null
+        });
 
         if (selected) {
             this.serviceType.set(selected);
