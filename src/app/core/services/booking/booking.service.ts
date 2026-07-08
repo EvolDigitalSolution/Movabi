@@ -252,11 +252,29 @@ export class BookingService {
             }
         };
 
-        const { data: job, error: bError } = await this.supabase
+        let { data: job, error: bError } = await this.supabase
             .from('jobs')
             .insert(insertPayload)
             .select('*, service_type:service_types(*)')
             .single();
+
+        if (bError && this.isMissingColumnError(bError)) {
+            const safePayload = { ...insertPayload };
+            delete safePayload['distance_km'];
+            delete safePayload['estimated_distance_km'];
+            delete safePayload['distance_meters'];
+            delete safePayload['duration_seconds'];
+            delete safePayload['estimated_duration'];
+
+            const retry = await this.supabase
+                .from('jobs')
+                .insert(safePayload)
+                .select('*, service_type:service_types(*)')
+                .single();
+
+            job = retry.data;
+            bError = retry.error;
+        }
 
         if (bError) throw bError;
 
@@ -1032,5 +1050,15 @@ export class BookingService {
                 }
             )
             .subscribe();
+    }
+
+    private isMissingColumnError(error: unknown): boolean {
+        const message = String(
+            (error as any)?.message ||
+            (error as any)?.error?.message ||
+            (error as any)?.error_description ||
+            (error instanceof Error ? error.message : '')
+        ).toLowerCase();
+        return message.includes('column') && message.includes('does not exist');
     }
 }
