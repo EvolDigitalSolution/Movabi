@@ -65,6 +65,7 @@ import { WalletService } from '../../../../../core/services/wallet/wallet.servic
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
+import { PricingConfigService } from '../../../../../core/services/pricing/pricing-config.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
 
@@ -466,7 +467,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                       }
 
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        This amount must be available in your wallet and will be reserved for item purchase only.
+                        {{ itemBudgetDescription() }}
                       </p>
                     </div>
                   }
@@ -750,20 +751,56 @@ type PackageSize = 'small' | 'medium' | 'large';
                         </div>
                       }
 
-                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
-                        <div class="flex items-center justify-between">
-                          <div>
-                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                              Fare
-                            </p>
-                            <p class="text-sm font-bold text-slate-900">
-                              Driver fare and platform fee
+                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm space-y-3">
+                        @if (type === ServiceTypeEnum.ERRAND) {
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Shopping Budget</p>
+                              <p class="text-sm font-bold text-slate-900">Reserved for item purchase</p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-slate-900">
+                              {{ config.formatCurrency(walletBudgetRequired()) }}
                             </p>
                           </div>
-                          <p class="text-lg font-display font-bold text-slate-900">
-                            {{ config.formatCurrency(cardChargeRequired()) }}
-                          </p>
-                        </div>
+
+                          <div class="h-px bg-slate-100"></div>
+
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Service Fee</p>
+                              <p class="text-sm font-bold text-slate-900">Booking, distance &amp; time</p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-slate-900">
+                              {{ config.formatCurrency(cardChargeRequired()) }}
+                            </p>
+                          </div>
+
+                          <div class="h-px bg-slate-100"></div>
+
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estimated Total</p>
+                              <p class="text-sm font-bold text-slate-900">Budget + Service Fee</p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-blue-600">
+                              {{ config.formatCurrency(walletPaymentRequired()) }}
+                            </p>
+                          </div>
+                        } @else {
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                Fare
+                              </p>
+                              <p class="text-sm font-bold text-slate-900">
+                                Driver fare and platform fee
+                              </p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-slate-900">
+                              {{ config.formatCurrency(cardChargeRequired()) }}
+                            </p>
+                          </div>
+                        }
                       </div>
 
                       @if (fareEstimate()?.minimumFareApplied) {
@@ -933,6 +970,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
     private fareCalculator = inject(FareCalculationService);
+    private pricingConfig = inject(PricingConfigService);
     private supabase = inject(SupabaseService);
     private compliance = inject(ComplianceService);
     private destroyRef = inject(DestroyRef);
@@ -1020,8 +1058,23 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (this.type !== ServiceTypeEnum.ERRAND) return 0;
         if (!this.usesItemListMode()) return 0;
 
-        const extraItems = Math.max(0, this.itemCount() - 1);
-        return this.toMoney(extraItems * 0.75);
+        const config = this.pricingConfig.getConfig(this.getServiceSlug());
+        const freeItems = Math.max(0, Math.round(config.freeIncludedItems ?? 1));
+        const extraItemFee = config.extraItemFee ?? 0.75;
+        const extraItems = Math.max(0, this.itemCount() - freeItems);
+        return this.toMoney(extraItems * extraItemFee);
+    });
+
+    largeShoppingSurcharge = computed(() => {
+        if (this.type !== ServiceTypeEnum.ERRAND) return 0;
+        if (!this.usesBudgetMode()) return 0;
+
+        const config = this.pricingConfig.getConfig(this.getServiceSlug());
+        const threshold = config.largeShoppingThreshold || 50;
+        if (this.budgetValue() > threshold) {
+            return this.toMoney(config.largeShoppingSurcharge || 0);
+        }
+        return 0;
     });
 
     driverItemCharge = computed(() => {
@@ -1262,6 +1315,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
 
         return 'Movabi checks wallet first. Because the balance is lower than this request, card payment is used instead.';
+    }
+
+    itemBudgetDescription(): string {
+        if (this.walletCoversPayment()) {
+            return 'This amount will be reserved from your Movabi Wallet to cover the estimated item purchase. Only the actual amount spent will be charged, and any unused balance will be returned automatically.';
+        }
+
+        if (this.cardFallbackRequired()) {
+            return 'This amount will be authorised on your card to cover the estimated item purchase. Only the actual purchase amount will be charged, and any unused authorised amount will be released by your bank after shopping is completed.';
+        }
+
+        return 'The estimated item purchase amount will be reserved using your selected payment method (Wallet or Card). Only the actual amount spent will be charged, and any unused reserved funds will be released automatically.';
     }
 
     checkoutButtonLabel(): string {
@@ -2198,7 +2263,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         const serviceOptionSurcharge = this.vehicleSurcharge(serviceSlug);
         const subtotal = this.toMoney(baseFare + extraDriverCharge + serviceOptionSurcharge);
-        const serviceFee = this.toMoney(baseServiceFee + extraPlatformCharge);
+        const serviceFee = this.toMoney(
+            baseServiceFee + extraPlatformCharge + (serviceSlug === 'errand' ? this.largeShoppingSurcharge() : 0)
+        );
         const finalTotal = this.toMoney(subtotal + serviceFee);
 
         const estimate: FareEstimate = {

@@ -12,6 +12,14 @@ export interface PricingConfig {
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+
+  // Shop / errand specific
+  free_included_items?: number;
+  extra_item_fee?: number;
+  large_shopping_surcharge?: number;
+  large_shopping_threshold?: number;
+  peak_multiplier?: number;
+  weather_multiplier?: number;
 }
 
 export interface FarePricingConfig {
@@ -21,4 +29,12 @@ export interface FarePricingConfig {
   serviceFee: number;
   minimumFare: number;
   label: string;
+
+  // Shop / errand specific
+  freeIncludedItems: number;
+  extraItemFee: number;
+  largeShoppingSurcharge: number;
+  largeShoppingThreshold: number;
+  peakMultiplier: number;
+  weatherMultiplier: number;
 }

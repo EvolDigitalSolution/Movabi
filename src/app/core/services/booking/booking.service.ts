@@ -201,13 +201,17 @@ export class BookingService {
             total_price: safePrice,
             estimated_price: safePrice,
 
-            distance_km: Number.isFinite(distanceKm) ? distanceKm : null,
-            estimated_distance_km: Number.isFinite(distanceKm) ? distanceKm : null,
+            distance_km: Number.isFinite(distanceKm) ? Number(distanceKm) : null,
+            estimated_distance_km: Number.isFinite(distanceKm) ? Number(distanceKm) : null,
             distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
-                ? distanceMeters
+                ? Math.round(distanceMeters)
                 : (Number.isFinite(distanceKm) ? Math.round(distanceKm * 1000) : null),
-            duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
-            estimated_duration: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
+            duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Math.round(durationSeconds)
+                : null,
+            estimated_duration: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Math.round(durationSeconds / 60)
+                : null,
 
             country_code: countryCode,
             currency_code: currencyCode,

@@ -13,6 +13,12 @@ type PricingServiceType = AdminPricingRule & {
     per_min?: number | string | null;
     service_fee?: number | string | null;
     minimum_fare?: number | string | null;
+    free_included_items?: number | string | null;
+    extra_item_fee?: number | string | null;
+    large_shopping_surcharge?: number | string | null;
+    large_shopping_threshold?: number | string | null;
+    peak_multiplier?: number | string | null;
+    weather_multiplier?: number | string | null;
 };
 
 @Component({
@@ -262,6 +268,92 @@ type PricingServiceType = AdminPricingRule & {
                 </div>
               </div>
 
+              <div class="pt-4 border-t border-slate-100">
+                <h4 class="text-sm font-bold text-slate-900 mb-4">Shop / Errand Settings</h4>
+                <div class="grid md:grid-cols-3 gap-5">
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Free Included Items</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      formControlName="free_included_items"
+                      class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                    >
+                  </div>
+
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Extra Item Fee</label>
+                    <div class="relative">
+                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                        {{ editForm.value.currency_symbol || symbolFromCode(editForm.value.currency_code) }}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        formControlName="extra_item_fee"
+                        class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                      >
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Large Shop Surcharge</label>
+                    <div class="relative">
+                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                        {{ editForm.value.currency_symbol || symbolFromCode(editForm.value.currency_code) }}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        formControlName="large_shopping_surcharge"
+                        class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                      >
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Large Shop Threshold</label>
+                    <div class="relative">
+                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
+                        {{ editForm.value.currency_symbol || symbolFromCode(editForm.value.currency_code) }}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        formControlName="large_shopping_threshold"
+                        class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                      >
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Peak Multiplier</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      formControlName="peak_multiplier"
+                      class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                    >
+                  </div>
+
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Weather Multiplier</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      formControlName="weather_multiplier"
+                      class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none"
+                    >
+                  </div>
+                </div>
+              </div>
+
               <div class="grid md:grid-cols-2 gap-5">
                 <div>
                   <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Currency Code</label>
@@ -410,6 +502,12 @@ export class PricingRulesComponent implements OnInit {
         per_min: [0, [Validators.required, Validators.min(0)]],
         service_fee: [0, [Validators.required, Validators.min(0)]],
         minimum_fare: [0, [Validators.required, Validators.min(0)]],
+        free_included_items: [1, [Validators.required, Validators.min(0)]],
+        extra_item_fee: [0.75, [Validators.required, Validators.min(0)]],
+        large_shopping_surcharge: [0, [Validators.required, Validators.min(0)]],
+        large_shopping_threshold: [50, [Validators.required, Validators.min(0)]],
+        peak_multiplier: [1, [Validators.required, Validators.min(0)]],
+        weather_multiplier: [1, [Validators.required, Validators.min(0)]],
         currency_code: ['GBP', Validators.required],
         currency_symbol: ['£', Validators.required],
         is_active: [true]
@@ -440,6 +538,12 @@ export class PricingRulesComponent implements OnInit {
             per_min: 0,
             service_fee: 0,
             minimum_fare: 0,
+            free_included_items: 1,
+            extra_item_fee: 0.75,
+            large_shopping_surcharge: 0,
+            large_shopping_threshold: 50,
+            peak_multiplier: 1,
+            weather_multiplier: 1,
             currency_code: 'GBP',
             currency_symbol: '£',
             is_active: true
@@ -462,6 +566,12 @@ export class PricingRulesComponent implements OnInit {
             per_min: Number(service.per_min || 0),
             service_fee: Number(service.service_fee || 0),
             minimum_fare: Number(service.minimum_fare || service.base_price || 0),
+            free_included_items: Number(service.free_included_items ?? 1),
+            extra_item_fee: Number(service.extra_item_fee ?? 0.75),
+            large_shopping_surcharge: Number(service.large_shopping_surcharge ?? 0),
+            large_shopping_threshold: Number(service.large_shopping_threshold ?? 50),
+            peak_multiplier: Number(service.peak_multiplier ?? 1),
+            weather_multiplier: Number(service.weather_multiplier ?? 1),
             currency_code: currencyCode,
             currency_symbol: service.currency_symbol || this.symbolFromCode(currencyCode),
             is_active: service.is_active ?? true

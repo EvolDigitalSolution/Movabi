@@ -21,6 +21,8 @@ export interface PricingOptions {
     requestedAt?: string;
     weatherMultiplier?: number;
     trafficMultiplier?: number;
+    itemCount?: number;
+    budget?: number;
 }
 
 export interface PricingResult {
@@ -128,9 +130,23 @@ export class PricingService {
                 const configServiceFee = Number(configRule.service_fee || 0);
                 const minimumFare = Number(configRule.minimum_fare || 0);
 
+                const freeIncludedItems = Math.max(0, Math.round(Number(configRule.free_included_items ?? 1)));
+                const extraItemFee = Number(configRule.extra_item_fee ?? 0);
+                const largeShoppingSurcharge = Number(configRule.large_shopping_surcharge ?? 0);
+                const largeShoppingThreshold = Number(configRule.large_shopping_threshold ?? 50);
+
                 distanceCost = distanceKm * perKm;
                 durationCost = durationMinutes * perMin;
                 serviceFee = configServiceFee;
+
+                const extraItemCharge = options.itemCount
+                    ? Math.max(0, (options.itemCount || 0) - freeIncludedItems) * extraItemFee
+                    : 0;
+                const largeShopCharge = (options.budget && options.budget > largeShoppingThreshold)
+                    ? largeShoppingSurcharge
+                    : 0;
+
+                serviceFee += extraItemCharge + largeShopCharge;
 
                 resolvedBasePrice = this.roundMoney(Math.max(minimumFare, baseFare + distanceCost + durationCost + serviceFee));
                 resolvedCurrencyCode = configRule.currency_code || this.currencyFromCountry(countryCode);

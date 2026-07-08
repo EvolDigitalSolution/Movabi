@@ -37,6 +37,14 @@ export interface AdminPricingRule extends ServiceType {
   per_min?: number | string | null;
   service_fee?: number | string | null;
   minimum_fare?: number | string | null;
+
+  // Shop / errand pricing
+  free_included_items?: number | string | null;
+  extra_item_fee?: number | string | null;
+  large_shopping_surcharge?: number | string | null;
+  large_shopping_threshold?: number | string | null;
+  peak_multiplier?: number | string | null;
+  weather_multiplier?: number | string | null;
 }
 
 @Injectable({
@@ -481,7 +489,13 @@ export class AdminService {
         minimum_fare: config?.minimum_fare ?? service.base_price,
         currency_code: config?.currency_code ?? service.currency_code ?? 'GBP',
         currency_symbol: service.currency_symbol ?? this.symbolFromCode(config?.currency_code || service.currency_code || 'GBP'),
-        is_active: config?.is_active ?? service.is_active ?? true
+        is_active: config?.is_active ?? service.is_active ?? true,
+        free_included_items: config?.free_included_items ?? 1,
+        extra_item_fee: config?.extra_item_fee ?? 0.75,
+        large_shopping_surcharge: config?.large_shopping_surcharge ?? 0,
+        large_shopping_threshold: config?.large_shopping_threshold ?? 50,
+        peak_multiplier: config?.peak_multiplier ?? 1,
+        weather_multiplier: config?.weather_multiplier ?? 1
       } as AdminPricingRule;
     });
   }
@@ -877,7 +891,14 @@ export class AdminService {
       minimum_fare: Number(payload?.minimum_fare || payload?.base_price || 0),
       currency_code: String(payload?.currency_code || 'GBP').trim().toUpperCase(),
       is_active: payload?.is_active === true,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+
+      free_included_items: Math.max(0, Math.round(Number(payload?.free_included_items ?? 1))),
+      extra_item_fee: Number(payload?.extra_item_fee ?? 0.75),
+      large_shopping_surcharge: Number(payload?.large_shopping_surcharge ?? 0),
+      large_shopping_threshold: Number(payload?.large_shopping_threshold ?? 50),
+      peak_multiplier: Number(payload?.peak_multiplier ?? 1),
+      weather_multiplier: Number(payload?.weather_multiplier ?? 1)
     };
 
     const { error } = await this.supabase

@@ -1122,6 +1122,7 @@ router.post('/negotiation/:jobId/driver-counter', async (req: Request, res: Resp
  * Customer submits a new offer for a job in negotiation mode.
  */
 router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Response) => {
+    console.log('[BookingRoutes] customer-offer route hit', req.params.jobId);
     try {
         const jobId = req.params.jobId;
         const { amount, message } = req.body;

@@ -19,7 +19,13 @@ export class PricingConfigService {
             timeRatePerMinute: 0.12,
             serviceFee: 0.25,
             minimumFare: 3.99,
-            label: 'Ride'
+            label: 'Ride',
+            freeIncludedItems: 1,
+            extraItemFee: 0.75,
+            largeShoppingSurcharge: 0,
+            largeShoppingThreshold: 50,
+            peakMultiplier: 1.0,
+            weatherMultiplier: 1.0
         },
 
         delivery: {
@@ -28,7 +34,13 @@ export class PricingConfigService {
             timeRatePerMinute: 0.04,
             serviceFee: 0.1,
             minimumFare: 2.99,
-            label: 'Delivery'
+            label: 'Delivery',
+            freeIncludedItems: 1,
+            extraItemFee: 0.75,
+            largeShoppingSurcharge: 0,
+            largeShoppingThreshold: 50,
+            peakMultiplier: 1.0,
+            weatherMultiplier: 1.0
         },
 
         errand: {
@@ -37,7 +49,13 @@ export class PricingConfigService {
             timeRatePerMinute: 0.12,
             serviceFee: 0.5,
             minimumFare: 6.5,
-            label: 'Errand'
+            label: 'Errand',
+            freeIncludedItems: 1,
+            extraItemFee: 0.75,
+            largeShoppingSurcharge: 0,
+            largeShoppingThreshold: 50,
+            peakMultiplier: 1.0,
+            weatherMultiplier: 1.0
         },
 
         'van-moving': {
@@ -46,7 +64,13 @@ export class PricingConfigService {
             timeRatePerMinute: 0.25,
             serviceFee: 1.5,
             minimumFare: 30,
-            label: 'Van Moving'
+            label: 'Van Moving',
+            freeIncludedItems: 1,
+            extraItemFee: 0.75,
+            largeShoppingSurcharge: 0,
+            largeShoppingThreshold: 50,
+            peakMultiplier: 1.0,
+            weatherMultiplier: 1.0
         }
     };
 
@@ -79,13 +103,20 @@ export class PricingConfigService {
 
                     if (!this.isSupportedServiceType(serviceType)) return;
 
+                    const defaults = this.DEFAULT_CONFIGS[serviceType];
                     this.configs.set(serviceType, {
-                        baseFare: this.safeMoney(item.base_fare, this.DEFAULT_CONFIGS[serviceType].baseFare),
-                        distanceRatePerKm: this.safeMoney(item.per_km, this.DEFAULT_CONFIGS[serviceType].distanceRatePerKm),
-                        timeRatePerMinute: this.safeMoney(item.per_min, this.DEFAULT_CONFIGS[serviceType].timeRatePerMinute),
-                        serviceFee: this.safeMoney(item.service_fee, this.DEFAULT_CONFIGS[serviceType].serviceFee),
-                        minimumFare: this.safeMoney(item.minimum_fare, this.DEFAULT_CONFIGS[serviceType].minimumFare),
-                        label: this.getLabelForService(serviceType)
+                        baseFare: this.safeMoney(item.base_fare, defaults.baseFare),
+                        distanceRatePerKm: this.safeMoney(item.per_km, defaults.distanceRatePerKm),
+                        timeRatePerMinute: this.safeMoney(item.per_min, defaults.timeRatePerMinute),
+                        serviceFee: this.safeMoney(item.service_fee, defaults.serviceFee),
+                        minimumFare: this.safeMoney(item.minimum_fare, defaults.minimumFare),
+                        label: this.getLabelForService(serviceType),
+                        freeIncludedItems: this.safeInt(item.free_included_items, defaults.freeIncludedItems),
+                        extraItemFee: this.safeMoney(item.extra_item_fee, defaults.extraItemFee),
+                        largeShoppingSurcharge: this.safeMoney(item.large_shopping_surcharge, defaults.largeShoppingSurcharge),
+                        largeShoppingThreshold: this.safeMoney(item.large_shopping_threshold, defaults.largeShoppingThreshold),
+                        peakMultiplier: this.safeMultiplier(item.peak_multiplier, defaults.peakMultiplier),
+                        weatherMultiplier: this.safeMultiplier(item.weather_multiplier, defaults.weatherMultiplier)
                     });
                 });
             }
@@ -155,6 +186,16 @@ export class PricingConfigService {
         }
 
         return Math.round(parsed * 100) / 100;
+    }
+
+    private safeInt(value: unknown, fallback = 0): number {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : fallback;
+    }
+
+    private safeMultiplier(value: unknown, fallback = 1): number {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     }
 
     private getLabelForService(serviceType: ServiceTypeSlug): string {
