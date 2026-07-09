@@ -175,7 +175,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
         serviceClient: 'supabaseAdmin',
         queryError: error
       });
-      const statusCode = error.code === '22P02' ? 400 : 500;
+      const statusCode = error.code === '22P02' || error.code === '42703' ? 400 : 500;
       return res.status(statusCode).json({
         error: 'Failed to fetch job with service role',
         details: error.message,
@@ -387,7 +387,9 @@ router.post('/create-intent', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[PaymentRoutes] create-intent failed:', error);
-    return res.status(500).json({ error: error.message || 'Failed to create payment intent' });
+    const message = String(error?.message || '');
+    const statusCode = message.includes('service_slug') || message.includes('amount') ? 400 : 500;
+    return res.status(statusCode).json({ error: message || 'Failed to create payment intent' });
   }
 });
 

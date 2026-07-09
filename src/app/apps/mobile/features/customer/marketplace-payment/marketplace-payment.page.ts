@@ -98,8 +98,16 @@ import { StripeCardElement } from '@stripe/stripe-js';
           <!-- Enhanced Fare Breakdown -->
           @if (fareBreakdown()) {
             <div class="bg-white rounded-3xl border border-slate-200 shadow-md p-5 mb-6">
-              <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Fare Breakdown</p>
-              <div class="space-y-3">
+              <button
+                type="button"
+                (click)="showBreakdown.set(!showBreakdown())"
+                class="w-full flex items-center justify-between text-left"
+              >
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Fare Breakdown</span>
+                <span class="text-sm font-bold text-amber-600">{{ showBreakdown() ? 'Hide fare breakdown' : 'View fare breakdown' }}</span>
+              </button>
+              @if (showBreakdown()) {
+              <div class="space-y-3 mt-4">
                 @if (fareBreakdown().baseFare !== undefined) {
                   <div class="flex justify-between items-center">
                     <div class="flex items-center gap-2">
@@ -155,7 +163,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   </div>
                 }
               </div>
-              
+               
               <!-- Trip Details -->
               <div class="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-100">
                 <div class="bg-slate-50 rounded-xl p-3">
@@ -173,6 +181,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   <p class="text-lg font-bold text-slate-900">{{ formatDuration(booking()?.duration_seconds) }}</p>
                 </div>
               </div>
+              }
             </div>
           }
 
@@ -308,6 +317,7 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     cardComplete = signal(false);
     cardReady = signal(false);
     redirectingToTracking = signal(false);
+    showBreakdown = signal(false);
     private jobChannel?: RealtimeChannel;
     private card: StripeCardElement | null = null;
     private cardMounted = false;

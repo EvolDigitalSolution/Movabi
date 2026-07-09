@@ -200,7 +200,7 @@ import { Capacitor } from '@capacitor/core';
                 (click)="showBreakdown.set(!showBreakdown())"
                 class="mt-4 w-full flex items-center justify-between py-2.5 px-3 bg-white/70 border border-amber-100 rounded-2xl text-sm font-semibold text-slate-600 active:bg-amber-50 transition-all"
               >
-                <span>View fare breakdown</span>
+                <span>{{ showBreakdown() ? 'Hide fare breakdown' : 'View fare breakdown' }}</span>
                 <ion-icon [name]="showBreakdown() ? 'chevron-up-outline' : 'chevron-down-outline'" class="text-base text-amber-500"></ion-icon>
               </button>
 

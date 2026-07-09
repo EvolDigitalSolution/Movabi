@@ -130,7 +130,8 @@ export class MarketplaceNegotiationService {
 
         return {
             headers: {
-                Authorization: `Bearer ${token}`
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         };
     }
