@@ -10,7 +10,6 @@ import {
     ViewChild
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { IonicModule, ToastController, LoadingController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
@@ -40,7 +39,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
 @Component({
     selector: 'app-marketplace-payment',
     standalone: true,
-    imports: [CommonModule, FormsModule, IonicModule],
+    imports: [CommonModule, IonicModule],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 bg-white">
@@ -231,17 +230,6 @@ import { StripeCardElement } from '@stripe/stripe-js';
               ></div>
             </div>
 
-            <div class="mb-4">
-              <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Billing ZIP / Postal Code</label>
-              <input
-                type="text"
-                [ngModel]="postalCode()"
-                (ngModelChange)="postalCode.set($event)"
-                placeholder="e.g. SW1A 1AA"
-                class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
-              >
-            </div>
-
             <button
               type="button"
               (click)="payWithCard()"
@@ -319,7 +307,6 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     cardError = signal<string | null>(null);
     cardComplete = signal(false);
     cardReady = signal(false);
-    postalCode = signal('');
     redirectingToTracking = signal(false);
     private jobChannel?: RealtimeChannel;
     private card: StripeCardElement | null = null;

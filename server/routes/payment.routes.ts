@@ -44,6 +44,33 @@ function canonicalServiceSlug(value: unknown): string {
   return raw;
 }
 
+function metadataObject(value: unknown): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, any>;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function resolveJobServiceSlug(job: any, body: any): string {
+  const serviceType = Array.isArray(job?.service_type) ? job.service_type[0] : job?.service_type;
+  const metadata = metadataObject(job?.metadata);
+
+  return canonicalServiceSlug(
+    serviceType?.slug ||
+    metadata.serviceSlug ||
+    metadata.service_slug ||
+    body?.serviceSlug ||
+    body?.service_type
+  );
+}
+
 router.post('/calculate-price', async (req: Request, res: Response) => {
   try {
     const {
@@ -137,7 +164,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 
     const { data: job, error } = await supabaseAdmin
       .from('jobs')
-      .select('*')
+      .select('*, service_type:service_types(*)')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -206,12 +233,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       }
     }
 
-    const serviceSlug = canonicalServiceSlug(
-      job.service_slug ||
-      job.metadata?.service_slug ||
-      req.body.serviceSlug ||
-      req.body.service_type
-    );
+    const serviceSlug = resolveJobServiceSlug(job, req.body);
     const isErrandLike = serviceSlug === 'errand';
 
     const serviceFare =
@@ -234,8 +256,8 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 
     console.log('[PaymentRoutes] create-intent amount', {
       jobId,
-      service_slug: job.service_slug,
-      canonical_service_slug: serviceSlug,
+      service_type_slug: (Array.isArray(job.service_type) ? job.service_type[0] : job.service_type)?.slug || null,
+      resolved_service_slug: serviceSlug,
       agreed_fare: job.agreed_fare,
       price: job.price,
       total_price: job.total_price,
@@ -272,8 +294,8 @@ router.post('/create-intent', async (req: Request, res: Response) => {
     } catch (stripeError: any) {
       console.error('[PaymentRoutes] Stripe payment intent create failed:', {
         jobId,
-        service_slug: job.service_slug,
-        canonical_service_slug: serviceSlug,
+        service_type_slug: (Array.isArray(job.service_type) ? job.service_type[0] : job.service_type)?.slug || null,
+        resolved_service_slug: serviceSlug,
         finalAmount: totalAuthorisation,
         message: stripeError?.message,
         type: stripeError?.type
