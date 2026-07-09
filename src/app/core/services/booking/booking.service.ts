@@ -46,6 +46,7 @@ export class BookingService {
 
     activeBooking = signal<Booking | null>(null);
     bookingHistory = signal<Booking[]>([]);
+    pendingMarketplaceBookings = signal<Booking[]>([]);
 
     // van-moving excluded until bidding/payment is hardened
     private readonly safeNegotiationSlugs = new Set([
@@ -123,6 +124,11 @@ export class BookingService {
             'completed',
             'cancelled'
         ].includes(this.getBookingLifecycleState(job));
+    }
+
+    isPendingMarketplaceBooking(job: Partial<Booking> | Record<string, any> | null | undefined): boolean {
+        const state = this.getBookingLifecycleState(job);
+        return ['negotiating', 'fare_agreed_unpaid'].includes(state);
     }
 
     async getServiceTypes(): Promise<ServiceType[]> {
@@ -1039,14 +1045,15 @@ export class BookingService {
             }, {});
         }
 
-        const bookings = (jobs || []).map((job: any) =>
+        const allBookings = (jobs || []).map((job: any) =>
             this.mapJobToBooking({
                 ...job,
                 driver: job.driver_id ? driversById[job.driver_id] || null : null
             })
-        ).filter((booking: Booking) => this.isVisibleActivityBooking(booking));
+        );
 
-        this.bookingHistory.set(bookings);
+        this.bookingHistory.set(allBookings.filter((booking: Booking) => this.isVisibleActivityBooking(booking)));
+        this.pendingMarketplaceBookings.set(allBookings.filter((booking: Booking) => this.isPendingMarketplaceBooking(booking)));
     }
 
     async rateBooking(bookingId: string, score: number, comment: string): Promise<void> {

@@ -31,8 +31,12 @@ export class CommunicationService {
       .eq('job_id', jobId)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
-    
+    if (error) {
+      console.warn('[CommunicationService] job_messages unavailable, chat disabled:', error);
+      this.messagesSubject.next([]);
+      return [];
+    }
+
     const messages = data as JobMessage[];
     this.messagesSubject.next(messages);
     return messages;

@@ -160,7 +160,7 @@ export class UnreadCounterService {
 
       this.updateSubject();
     } catch (error) {
-      console.error('[UnreadCounter] Failed to calculate initial unread count:', error);
+      console.warn('[UnreadCounter] job_messages unavailable, returning 0 unread count:', error);
     }
   }
 

@@ -664,19 +664,25 @@ export class DispatchService {
     private isVehicleCompatible(vehicleClass: string | null | undefined, serviceType: string | null | undefined): boolean {
         if (!vehicleClass || !serviceType) return false;
 
+        const normalizedService = String(serviceType).toLowerCase().replace(/[-_]/g, '');
+        const isVanService = normalizedService.includes('van') || normalizedService.includes('moving');
+        const isDelivery = normalizedService.includes('delivery');
+        const isErrand = normalizedService.includes('errand');
+        const isRide = normalizedService.includes('ride');
+
         // Bike drivers can receive bike and small delivery/errand jobs
         if (vehicleClass === 'bike') {
-            return ['delivery', 'errand'].includes(serviceType);
+            return isDelivery || isErrand;
         }
 
         // Car drivers can receive rides and car-compatible delivery/errand jobs
         if (vehicleClass === 'car' || vehicleClass === 'standard') {
-            return ['ride', 'delivery', 'errand'].includes(serviceType);
+            return isRide || isDelivery || isErrand;
         }
 
         // Van drivers can receive moving and large delivery jobs
         if (vehicleClass === 'van' || vehicleClass === 'large_van') {
-            return ['van_moving', 'delivery'].includes(serviceType);
+            return isVanService || isDelivery;
         }
 
         // Default to compatible for unknown vehicle classes

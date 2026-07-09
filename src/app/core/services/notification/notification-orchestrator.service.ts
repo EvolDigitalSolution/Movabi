@@ -140,7 +140,7 @@ export class NotificationOrchestratorService {
       if (error) throw error;
       return data?.length || 0;
     } catch (error) {
-      console.error('[NotificationOrchestrator] Failed to get unread count:', error);
+      console.warn('[NotificationOrchestrator] job_messages unavailable, returning 0 unread count:', error);
       return 0;
     }
   }
@@ -165,7 +165,7 @@ export class NotificationOrchestratorService {
       this.updateBadgeCount(jobId, 0);
       console.log(`[NotificationOrchestrator] Marked messages as read for job: ${jobId}`);
     } catch (error) {
-      console.error('[NotificationOrchestrator] Failed to mark messages as read:', error);
+      console.warn('[NotificationOrchestrator] job_messages unavailable, could not mark as read:', error);
     }
   }
 

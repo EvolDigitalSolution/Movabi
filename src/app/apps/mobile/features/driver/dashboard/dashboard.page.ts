@@ -1517,6 +1517,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     getRequestFare(job: Booking): number {
         const raw = job as any;
 
+        // For marketplace negotiation jobs, prefer the live customer offer (negotiated_fare).
+        const isNegotiation = raw?.negotiation_mode_enabled === true &&
+            ['pending_fare_confirmation', 'negotiating'].includes(String(raw?.status || '').toLowerCase());
+        const negotiated = Number(raw?.negotiated_fare);
+        if (isNegotiation && Number.isFinite(negotiated) && negotiated > 0) return negotiated;
+
         const total = Number(raw.total_price);
         if (Number.isFinite(total) && total > 0) return total;
 
@@ -2569,7 +2575,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             );
             this.selectedJobId.set(null);
             this.sheetHeight.set(40);
-            this.showToast('Excellent! The customer accepted your offer. This job is now assigned to you.', 'success');
+            this.showToast('Excellent! You accepted the customer offer. This job is now assigned to you.', 'success');
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : 'Could not accept offer';
             this.showToast(message, 'danger');

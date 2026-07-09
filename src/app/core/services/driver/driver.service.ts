@@ -135,16 +135,20 @@ export class DriverService {
     }
 
     private readonly availableRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting', 'pending_fare_confirmation', 'negotiating'];
-    private readonly paidRequestPaymentStatuses = ['paid', 'wallet_funded', 'authorized'];
+    private readonly paidRequestPaymentStatuses = ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded'];
 
-    private isAvailableRequest(job: { status?: string; payment_status?: string }): boolean {
+    private isAvailableRequest(job: { status?: string; payment_status?: string; driver_id?: string | null; negotiation_mode_enabled?: boolean }): boolean {
         const status = String(job?.status || '');
         const paymentStatus = String(job?.payment_status || '');
+        const hasDriver = !!String(job?.driver_id || '').trim();
+
+        if (hasDriver) return false;
 
         if (!this.availableRequestStatuses.includes(status)) return false;
 
+        // Pre-payment marketplace negotiation jobs are visible to drivers before payment is authorized.
         if (['pending_fare_confirmation', 'negotiating'].includes(status)) {
-            return paymentStatus === 'pending';
+            return job?.negotiation_mode_enabled === true;
         }
 
         return this.paidRequestPaymentStatuses.includes(paymentStatus);
@@ -273,7 +277,7 @@ export class DriverService {
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*, service_type:service_types(*)')
-            .or(`and(status.in.(searching,requested,broadcasting,waiting,fare_agreed),payment_status.in.(paid,wallet_funded,authorized)),and(status.in.(pending_fare_confirmation,negotiating),payment_status.eq.pending)`)
+            .or(`and(status.in.(searching,requested,broadcasting,waiting,fare_agreed),payment_status.in.(paid,wallet_funded,authorized,requires_capture,succeeded),driver_id.is.null),and(status.in.(pending_fare_confirmation,negotiating),negotiation_mode_enabled.eq.true,driver_id.is.null)`)
             .order('created_at', { ascending: false });
 
         if (error) throw error;

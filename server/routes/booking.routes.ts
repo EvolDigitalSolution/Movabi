@@ -954,12 +954,16 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
 
         const agreedFare = Number(negotiation.amount);
         const fareUpdate = PricingService.applyAgreedFare(fullJob, agreedFare);
+        const acceptedDriverId = (negotiation as any).proposed_by_role === 'driver'
+            ? (negotiation as any).proposed_by
+            : job?.driver_id;
 
         await supabaseAdmin
             .from('jobs')
             .update({
                 status: 'fare_agreed',
                 agreed_fare: agreedFare,
+                driver_id: acceptedDriverId,
                 ...fareUpdate,
                 updated_at: new Date().toISOString()
             })
@@ -988,7 +992,7 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
 
         const { data: job, error: jobError } = await supabaseAdmin
             .from('jobs')
-            .select('id, customer_id, status, negotiation_mode_enabled')
+            .select('*')
             .eq('id', jobId)
             .single();
 
@@ -1154,7 +1158,7 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
 
         const { data: job, error: jobError } = await supabaseAdmin
             .from('jobs')
-            .select('id, customer_id, status, negotiation_mode_enabled, tenant_id, city_id, pickup_lat, pickup_lng')
+            .select('id, customer_id, status, negotiation_mode_enabled, tenant_id, city_id, pickup_lat, pickup_lng, service_slug, driver_id')
             .eq('id', jobId)
             .single();
 

@@ -296,6 +296,41 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
           </div>
         </div>
 
+        @if (pendingMarketplaceBookings().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-amber-500 rounded-full shadow-lg shadow-amber-500/20"></div>
+              <h3 class="text-sm font-black text-slate-700">
+                Pending Marketplace Requests
+              </h3>
+            </div>
+
+            <div class="space-y-3">
+              @for (booking of pendingMarketplaceBookings(); track booking.id) {
+                <button
+                  type="button"
+                  (click)="continuePendingMarketplaceBooking(booking)"
+                  class="w-full bg-white rounded-2xl border border-amber-200 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                >
+                  <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                    <p class="text-xs font-semibold text-amber-700 truncate">
+                      {{ formatStatus(booking.status) }} — continue negotiation
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-sm font-black text-slate-900">{{ formatCurrency(booking.negotiated_fare || booking.agreed_fare || booking.total_price || 0) }}</p>
+                    <ion-icon name="chevron-forward" class="text-slate-300 text-lg"></ion-icon>
+                  </div>
+                </button>
+              }
+            </div>
+          </div>
+        }
+
         <div class="space-y-6">
           <div class="flex items-center justify-between px-1">
             <div class="flex items-center gap-3">
@@ -381,6 +416,7 @@ export class HomePage implements OnInit, OnDestroy {
 
     signingOut = signal(false);
     recentBookings = computed(() => this.bookingService.bookingHistory().slice(0, 2));
+    pendingMarketplaceBookings = computed(() => this.bookingService.pendingMarketplaceBookings());
     activeTrips = computed(() => this.bookingService.bookingHistory().filter(
         booking => this.isDirectlyActiveBooking(booking)
     ).length);
@@ -458,6 +494,19 @@ export class HomePage implements OnInit, OnDestroy {
 
     continueActiveBooking(bookingId: string): void {
         void this.router.navigate(['/customer/tracking', bookingId]);
+    }
+
+    continuePendingMarketplaceBooking(booking: any): void {
+        const status = String(booking?.status || '').toLowerCase();
+        const isPaid = ['authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'paid', 'captured'].includes(
+            String(booking?.payment_status || '').toLowerCase()
+        );
+
+        if (status === 'fare_agreed' && !isPaid) {
+            void this.router.navigate(['/customer/marketplace-payment', booking.id]);
+        } else {
+            void this.router.navigate(['/customer/marketplace-fare', booking.id]);
+        }
     }
 
     private isDirectlyActiveBooking(booking: any): boolean {
