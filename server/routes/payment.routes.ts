@@ -7,6 +7,22 @@ import { CityService } from '../services/city.service';
 
 const router = Router();
 
+async function getAuthUserId(req: Request): Promise<string | null> {
+  const existing = (req as any).user?.id || (req as any).auth?.user?.id;
+  if (existing) return String(existing);
+
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user?.id) {
+    console.warn('[PaymentRoutes] auth token decode failed:', error?.message || 'No user on token');
+    return null;
+  }
+
+  return data.user.id;
+}
+
 function money(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Number(n.toFixed(2)) : 0;
@@ -114,6 +130,11 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'jobId is required' });
     }
 
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const { data: job, error } = await supabaseAdmin
       .from('jobs')
       .select('*')
@@ -121,12 +142,40 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       .maybeSingle();
 
     if (error) {
-      console.error('[PaymentRoutes] fetch job failed:', error);
-      return res.status(500).json({ error: 'Failed to fetch job', details: error.message });
+      console.error('[PaymentRoutes] fetch job failed with service role:', {
+        authUserId,
+        jobId,
+        serviceClient: 'supabaseAdmin',
+        queryError: error
+      });
+      const statusCode = error.code === '22P02' ? 400 : 500;
+      return res.status(statusCode).json({
+        error: 'Failed to fetch job with service role',
+        details: error.message,
+        code: error.code
+      });
     }
 
     if (!job) {
+      console.warn('[PaymentRoutes] create-intent job not found:', {
+        authUserId,
+        jobId,
+        serviceClient: 'supabaseAdmin',
+        queryError: null
+      });
       return res.status(404).json({ error: 'Job not found' });
+    }
+
+    console.log('[PaymentRoutes] create-intent auth/job', {
+      authUserId,
+      jobId,
+      jobCustomerId: job.customer_id,
+      serviceClient: 'supabaseAdmin',
+      queryError: null
+    });
+
+    if (String(job.customer_id || '') !== authUserId) {
+      return res.status(403).json({ error: 'Only the customer can pay for this job' });
     }
 
     const status = String(job.status || '').toLowerCase();

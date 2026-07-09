@@ -13,6 +13,22 @@ const router = Router();
 const capturedStatuses = ['paid', 'captured', 'succeeded'];
 const cancellableStripeStatuses = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'];
 
+async function getAuthUserId(req: Request): Promise<string | null> {
+    const existing = (req as any).user?.id || (req as any).auth?.user?.id;
+    if (existing) return String(existing);
+
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    if (!token) return null;
+
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !data?.user?.id) {
+        console.warn('[BookingRoutes] auth token decode failed:', error?.message || 'No user on token');
+        return null;
+    }
+
+    return data.user.id;
+}
+
 function normalise(value: unknown): string {
     return String(value || '').toLowerCase().trim();
 }
@@ -824,7 +840,7 @@ router.post('/negotiation', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'jobId and amount are required' });
         }
 
-        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        const userId = await getAuthUserId(req);
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
         }
@@ -897,7 +913,7 @@ router.post('/negotiation', async (req: Request, res: Response) => {
 router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
     try {
         const negotiationId = req.params.id;
-        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        const userId = await getAuthUserId(req);
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
@@ -964,7 +980,7 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
 router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Response) => {
     try {
         const jobId = req.params.jobId;
-        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        const userId = await getAuthUserId(req);
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
@@ -1036,7 +1052,7 @@ router.post('/negotiation/:jobId/driver-counter', async (req: Request, res: Resp
     try {
         const jobId = req.params.jobId;
         const { amount, message } = req.body;
-        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        const userId = await getAuthUserId(req);
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
@@ -1126,7 +1142,7 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
     try {
         const jobId = req.params.jobId;
         const { amount, message } = req.body;
-        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        const userId = await getAuthUserId(req);
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
@@ -1143,8 +1159,22 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
             .single();
 
         if (jobError || !job) {
+            console.warn('[BookingRoutes] customer-offer job fetch failed', {
+                authUserId: userId,
+                jobId,
+                serviceClient: 'supabaseAdmin',
+                queryError: jobError
+            });
             return res.status(404).json({ error: 'Job not found' });
         }
+
+        console.log('[BookingRoutes] customer-offer auth/job', {
+            authUserId: userId,
+            jobId,
+            jobCustomerId: job.customer_id,
+            serviceClient: 'supabaseAdmin',
+            queryError: null
+        });
 
         if (job.customer_id !== userId) {
             return res.status(403).json({ error: 'Only the customer can make an offer for this job' });
@@ -1228,7 +1258,7 @@ router.post('/negotiation/:id/counter', async (req: Request, res: Response) => {
     try {
         const negotiationId = req.params.id;
         const { amount, message } = req.body;
-        const userId = (req as any).user?.id || (req as any).auth?.user?.id;
+        const userId = await getAuthUserId(req);
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });

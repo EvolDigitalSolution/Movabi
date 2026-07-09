@@ -9,6 +9,7 @@ import { environment } from '../../../../environments/environment';
 import { firstValueFrom } from 'rxjs';
 import { JobEventService } from '../job/job-event.service';
 import { ApiUrlService } from '../api-url.service';
+import { SupabaseService } from '../supabase/supabase.service';
 
 export interface CreateJobPaymentIntentResponse {
     clientSecret: string;
@@ -26,9 +27,23 @@ export class PaymentService {
     private http = inject(HttpClient);
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
+    private supabase = inject(SupabaseService);
 
     private stripePromise: Promise<Stripe | null> | null = null;
     private readonly apiUrl = this.apiUrlService.getApiUrl('/api/payment');
+
+    private async getAuthHeaders(): Promise<Record<string, string>> {
+        const { data } = await this.supabase.auth.getSession();
+        const token = data.session?.access_token;
+
+        if (!token) {
+            throw new Error('Please sign in again before starting payment.');
+        }
+
+        return {
+            Authorization: `Bearer ${token}`
+        };
+    }
 
     // ✅ Safe singleton Stripe loader
     async getStripe(): Promise<Stripe | null> {
@@ -78,6 +93,7 @@ export class PaymentService {
         );
 
         try {
+            const headers = await this.getAuthHeaders();
             const response = await firstValueFrom(
                 this.http.post<CreateJobPaymentIntentResponse>(
                     `${this.apiUrl}/create-intent`,
@@ -87,7 +103,8 @@ export class PaymentService {
                         currency,
                         tenantId,
                         surgeMultiplier
-                    }
+                    },
+                    { headers }
                 )
             );
 
