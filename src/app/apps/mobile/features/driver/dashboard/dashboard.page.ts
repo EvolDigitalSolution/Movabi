@@ -2750,6 +2750,42 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     });
 
+    private marketplaceOfferEffect = effect(() => {
+        if (this.activeJob()) return;
+
+        const offerJob = this.jobs().find((job) => {
+            const status = String(job.status || '').toLowerCase();
+            const fare = Number((job as any).negotiated_fare || 0);
+            return status === 'negotiating' && fare > 0;
+        });
+
+        if (!offerJob?.id) return;
+
+        const offerAmount = Number((offerJob as any).negotiated_fare || offerJob.total_price || offerJob.price || 0);
+        const alertKey = [
+            'marketplace-offer',
+            offerJob.id,
+            offerJob.status,
+            offerAmount,
+            (offerJob as any).updated_at || ''
+        ].join(':');
+
+        void this.notifyDriverEventOnce(
+            alertKey,
+            'Customer Offer',
+            `${this.formatPrice(offerAmount)} offer received`,
+            { bookingId: offerJob.id, route: '/driver', type: 'marketplace_customer_offer' }
+        );
+
+        if (this.selectedJobId() !== offerJob.id) {
+            this.selectedJobId.set(offerJob.id);
+        }
+
+        if (this.sheetHeight() < 70) {
+            this.sheetHeight.set(80);
+        }
+    });
+
     async resubmitDriverReview() {
         const profile = this.profileService.profile();
 

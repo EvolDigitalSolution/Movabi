@@ -210,17 +210,23 @@ export class DriverService {
                         return;
                     }
 
-                    // Job transitioned into an available state; add it if not already present
-                    const exists = this.availableJobs().find((job) => job.id === updatedId);
-                    if (exists) return;
-
+                    // Job transitioned into, or was updated within, an available state.
+                    // Refresh existing rows too so negotiated fares/customer offers are visible immediately.
                     void (async () => {
                         try {
                             const newJob = await this.bookingService.getBooking(updatedId);
                             const vehicle = this.vehicle() || await this.fetchVehicle();
                             if (!this.vehicleCompatibility.isCompatible(newJob, vehicle)) return;
 
-                            this.availableJobs.update((jobs) => [newJob, ...jobs]);
+                            this.availableJobs.update((jobs) => {
+                                const exists = jobs.some((job) => job.id === updatedId);
+                                const shouldPromote = ['pending_fare_confirmation', 'negotiating']
+                                    .includes(String(newJob.status || '').toLowerCase());
+
+                                if (!exists) return [newJob, ...jobs];
+                                if (shouldPromote) return [newJob, ...jobs.filter((job) => job.id !== updatedId)];
+                                return jobs.map((job) => job.id === updatedId ? newJob : job);
+                            });
                         } catch (error) {
                             console.error('[DriverService] Failed to fetch updated available job', error);
                         }

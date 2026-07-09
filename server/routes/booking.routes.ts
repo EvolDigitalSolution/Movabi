@@ -1239,7 +1239,12 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
 
         // Alert nearby drivers so they can see the updated offer
         try {
-            await new DispatchService().notifyNearbyDrivers(job as any, job.tenant_id, job.city_id);
+            await new DispatchService().notifyNearbyDrivers({
+                ...job,
+                status: 'negotiating',
+                negotiated_fare: Number(amount),
+                negotiation_deadline: new Date(Date.now() + 120000).toISOString()
+            } as any, job.tenant_id, job.city_id);
         } catch (notifyError) {
             console.warn('[BookingRoutes] customer offer driver notification failed:', notifyError);
         }

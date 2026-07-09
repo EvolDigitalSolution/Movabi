@@ -2,6 +2,7 @@ import {
     Component,
     inject,
     OnInit,
+    AfterViewInit,
     signal,
     OnDestroy,
     effect,
@@ -10,7 +11,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { IonicModule, IonContent, ToastController } from '@ionic/angular';
+import { IonicModule, IonContent, LoadingController, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
 import {
@@ -38,9 +39,12 @@ import { SupabaseService } from '../../../../../core/services/supabase/supabase.
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { MarketplaceNegotiationService, FareNegotiation } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
+import { PaymentService } from '../../../../../core/services/stripe/payment.service';
+import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { Booking } from '../../../../../shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
+import { StripeCardElement } from '@stripe/stripe-js';
 
 @Component({
     selector: 'app-marketplace-fare',
@@ -308,6 +312,23 @@ import { Capacitor } from '@capacitor/core';
           }
 
           <!-- ── PRIMARY ACTION BUTTONS (negotiating / pending_fare_confirmation) ── -->
+          @if (job.status === 'negotiating') {
+            <div class="bg-amber-50 rounded-3xl border border-amber-200 shadow-md p-5 mb-4">
+              <div class="flex items-start gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0">
+                  <ion-icon name="time-outline" class="text-xl text-amber-600"></ion-icon>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-sm font-black text-slate-900">Waiting for drivers</p>
+                  <p class="text-sm text-slate-600 mt-1">Waiting for drivers to accept or counter your offer.</p>
+                  @if (latestNegotiation(); as pendingOffer) {
+                    <p class="text-xs font-bold text-amber-700 mt-2">Your current offer: {{ formatPrice(pendingOffer.amount) }}</p>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+
           @if (job.status === 'negotiating' || job.status === 'pending_fare_confirmation') {
             <div class="space-y-3 mb-4">
               <!-- Accept -->
@@ -317,7 +338,7 @@ import { Capacitor } from '@capacitor/core';
                 class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
               >
                 <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
-                Accept Suggested Fare
+                Accept Fare &amp; Pay
               </button>
 
               <!-- Challenge – always a real button, never just text -->
@@ -392,7 +413,7 @@ import { Capacitor } from '@capacitor/core';
                   <ion-icon name="checkmark-circle-outline" class="text-white text-2xl"></ion-icon>
                 </div>
                 <h3 class="text-xl font-bold text-emerald-900 mb-2">Fare Successfully Agreed!</h3>
-                <p class="text-emerald-700 mb-4">Your fare is locked in. Continue to payment to confirm your booking.</p>
+                <p class="text-emerald-700 mb-4">Your fare is locked in. Pay here to confirm your booking and start finding a driver.</p>
                 <div class="bg-white/70 rounded-2xl p-4 mb-5 border border-emerald-100 space-y-2 text-left">
                   @if (isErrand()) {
                     <div class="flex justify-between items-center">
@@ -410,14 +431,43 @@ import { Capacitor } from '@capacitor/core';
                     <span class="text-2xl font-black text-emerald-900">{{ formatPrice(paymentTotal()) }}</span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  (click)="continueToPayment()"
-                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
-                >
-                  <ion-icon name="card-outline"></ion-icon>
-                  Continue to Payment
-                </button>
+                <div class="bg-white rounded-2xl border border-emerald-100 p-4 text-left">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Secure card payment</p>
+                      <p class="text-sm font-bold text-slate-900">Pay {{ formatPrice(paymentTotal()) }} with card</p>
+                    </div>
+                    <ion-icon name="card-outline" class="text-xl text-emerald-600"></ion-icon>
+                  </div>
+
+                  <div class="relative rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 min-h-[52px] flex items-center">
+                    <div
+                      #cardElementHost
+                      class="w-full"
+                      [class.opacity-50]="!cardReady()"
+                    ></div>
+                    @if (!cardReady()) {
+                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">Loading card input...</span>
+                    }
+                  </div>
+
+                  @if (cardError()) {
+                    <p class="mt-2 text-xs font-semibold text-red-600">{{ cardError() }}</p>
+                  }
+                  @if (paymentError()) {
+                    <p class="mt-2 text-xs font-semibold text-red-600">{{ paymentError() }}</p>
+                  }
+
+                  <button
+                    type="button"
+                    (click)="payWithCard()"
+                    [disabled]="paymentProcessing() || !cardReady() || !cardComplete()"
+                    class="mt-4 w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <ion-icon name="card-outline"></ion-icon>
+                    {{ paymentProcessing() ? 'Processing...' : 'Pay ' + formatPrice(paymentTotal()) + ' with Card' }}
+                  </button>
+                </div>
               </div>
             </div>
           }
@@ -431,14 +481,32 @@ import { Capacitor } from '@capacitor/core';
     </ion-content>
   `
 })
-export class MarketplaceFarePage implements OnInit, OnDestroy {
+export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     private route = inject(ActivatedRoute);
     private router = inject(Router);
     private supabase = inject(SupabaseService);
     private config = inject(AppConfigService);
     private bookingService = inject(BookingService);
     private negotiationService = inject(MarketplaceNegotiationService);
+    private paymentService = inject(PaymentService);
+    private auth = inject(AuthService);
     private toastCtrl = inject(ToastController);
+    private loadingCtrl = inject(LoadingController);
+
+    private cardElementHost: ElementRef<HTMLDivElement> | null = null;
+
+    @ViewChild('cardElementHost')
+    set cardElementHostRef(ref: ElementRef<HTMLDivElement> | undefined) {
+        if (ref && !this.cardElementHost) {
+            this.cardElementHost = ref;
+            void this.initializeStripe();
+        } else if (!ref) {
+            this.cardMounted = false;
+            this.cardReady.set(false);
+            this.cardComplete.set(false);
+            this.cardElementHost = null;
+        }
+    }
 
     @ViewChild('ionContent') ionContent?: IonContent;
     @ViewChild('counterInputSection') counterInputSection?: ElementRef;
@@ -448,10 +516,18 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
     counterAmount = signal<number>(0);
     showCounterInput = signal(false);
     showBreakdown = signal(false);
+    paymentProcessing = signal(false);
+    paymentError = signal<string | null>(null);
+    cardError = signal<string | null>(null);
+    cardComplete = signal(false);
+    cardReady = signal(false);
     countdown = signal<number>(0);
     private jobChannel?: RealtimeChannel;
     private negotiationChannel?: RealtimeChannel;
     private countdownInterval?: any;
+    private card: StripeCardElement | null = null;
+    private cardMounted = false;
+    private stripeInitializing = false;
 
     constructor() {
         addIcons({
@@ -515,6 +591,15 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
         this.showCounterInput.set(false);
         this.showBreakdown.set(false);
         this.countdown.set(0);
+        if (this.card) {
+            this.card.destroy();
+            this.card = null;
+        }
+        this.cardMounted = false;
+    }
+
+    async ngAfterViewInit() {
+        await this.initializeStripe();
     }
 
     isErrand(): boolean {
@@ -664,7 +749,13 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
 
         try {
             await this.negotiationService.lockAgreedFare(job.id, this.suggestedFare());
-            await this.continueToPayment();
+            this.booking.set({
+                ...job,
+                agreed_fare: this.suggestedFare(),
+                status: 'fare_agreed'
+            } as Booking);
+            await this.loadBooking(job.id);
+            setTimeout(() => void this.initializeStripe(), 80);
         } catch (error) {
             console.error('[MarketplaceFare] accept failed', error);
             await this.showToast('Unable to accept fare. Please check your connection and try again.', 'danger');
@@ -674,7 +765,16 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
     async acceptOffer(offer: FareNegotiation) {
         try {
             await this.negotiationService.acceptNegotiation(offer.id);
-            await this.continueToPayment();
+            const job = this.booking();
+            if (job) {
+                this.booking.set({
+                    ...job,
+                    agreed_fare: Number(offer.amount),
+                    status: 'fare_agreed'
+                } as Booking);
+                await this.loadBooking(job.id);
+                setTimeout(() => void this.initializeStripe(), 80);
+            }
         } catch (error) {
             console.error('[MarketplaceFare] accept offer failed', error);
             await this.showToast('Unable to accept driver offer. Please try again.', 'danger');
@@ -698,8 +798,34 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
                 proposedByRole: 'customer',
                 counterToNegotiationId: latest?.id || null
             });
+            const now = new Date().toISOString();
+            this.booking.set({
+                ...job,
+                status: 'negotiating',
+                negotiated_fare: amount,
+                negotiation_deadline: new Date(Date.now() + 120000).toISOString(),
+                updated_at: now
+            } as Booking);
+            this.negotiations.update((list) => [
+                ...list,
+                {
+                    id: `local-${now}`,
+                    job_id: job.id,
+                    proposed_by: this.auth.currentUser()?.id || '',
+                    proposed_by_role: 'customer',
+                    amount,
+                    message: 'Customer counter offer',
+                    status: 'pending',
+                    counter_to_negotiation_id: latest?.id || null,
+                    round_number: (latest?.round_number || 1) + 1,
+                    created_at: now,
+                    updated_at: now
+                } as FareNegotiation
+            ]);
             this.showCounterInput.set(false);
-            await this.showToast('Your counter offer has been sent to nearby drivers. You\'ll be notified if they accept.', 'success');
+            await this.showToast('Offer sent. Waiting for drivers to accept or counter.', 'success');
+            await this.loadBooking(job.id);
+            await this.loadNegotiations(job.id);
         } catch (error) {
             console.error('[MarketplaceFare] counter offer failed', error);
             await this.showToast('Unable to send counter offer. Please check your connection and try again.', 'danger');
@@ -709,7 +835,62 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
     async continueToPayment() {
         const job = this.booking();
         if (!job) return;
-        await this.router.navigate(['/customer/marketplace-payment', job.id]);
+        await this.payWithCard();
+    }
+
+    async payWithCard() {
+        const job = this.booking();
+        if (!job || !this.card || !this.cardReady()) return;
+
+        if (this.isPaymentHandled(job)) {
+            await this.router.navigate(['/customer/tracking', job.id], { replaceUrl: true });
+            return;
+        }
+
+        if (!this.cardComplete()) {
+            this.paymentError.set('Please complete your card details.');
+            await this.showToast('Please complete your card details.', 'danger');
+            return;
+        }
+
+        this.paymentProcessing.set(true);
+        this.paymentError.set(null);
+
+        const loading = await this.loadingCtrl.create({
+            message: 'Creating secure payment...'
+        });
+
+        try {
+            await loading.present();
+            const { clientSecret } = await this.paymentService.createPaymentIntent(
+                job.id,
+                this.paymentTotal(),
+                job.currency_code || 'GBP',
+                this.auth.tenantId() || '',
+                1
+            );
+
+            loading.message = 'Confirming payment...';
+            const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card);
+
+            if (paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture') {
+                loading.message = 'Finding your driver...';
+                await this.bookingService.confirmJobPayment(job.id, paymentIntent.id);
+                await loading.dismiss();
+                await this.showToast('Payment successful! Finding your driver...', 'success');
+                await this.router.navigate(['/customer/tracking', job.id], { replaceUrl: true });
+                return;
+            }
+
+            throw new Error(`Payment not completed (status: ${paymentIntent.status})`);
+        } catch (error: any) {
+            console.error('[MarketplaceFare] card payment failed', error);
+            this.paymentError.set(error.message || 'Card payment failed. Please try again.');
+            await this.showToast('Payment failed. Please try again.', 'danger');
+            try { await loading.dismiss(); } catch { /* noop */ }
+        } finally {
+            this.paymentProcessing.set(false);
+        }
     }
 
     private async loadBooking(id: string) {
@@ -718,9 +899,78 @@ export class MarketplaceFarePage implements OnInit, OnDestroy {
             this.booking.set(job);
             await this.loadNegotiations(id);
             this.startCountdown();
+            if (job.status === 'fare_agreed') {
+                setTimeout(() => void this.initializeStripe(), 80);
+            }
         } catch (error) {
             console.error('[MarketplaceFare] load booking failed', error);
             await this.showToast('Unable to load booking details. Please refresh the page.', 'danger');
+        }
+    }
+
+    private isPaymentHandled(job: Booking | null | undefined): boolean {
+        if (!job) return false;
+        return [
+            'paid_ready_for_dispatch',
+            'active',
+            'completed',
+            'cancelled'
+        ].includes(this.bookingService.getBookingLifecycleState(job));
+    }
+
+    private async initializeStripe() {
+        if (this.cardMounted || this.stripeInitializing) return;
+        if (!this.cardElementHost?.nativeElement) return;
+        if (this.booking()?.status !== 'fare_agreed') return;
+
+        this.stripeInitializing = true;
+        this.cardReady.set(false);
+        this.cardComplete.set(false);
+        this.cardError.set(null);
+
+        try {
+            const stripe = await this.paymentService.getStripe();
+            if (!stripe) {
+                this.cardError.set('Payment service is unavailable right now.');
+                return;
+            }
+
+            if (!this.card) {
+                const elements = stripe.elements();
+                this.card = elements.create('card', {
+                    hidePostalCode: true,
+                    style: {
+                        base: {
+                            fontSize: '16px',
+                            color: '#0f172a',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                            lineHeight: '24px',
+                            '::placeholder': { color: '#94a3b8' }
+                        },
+                        invalid: { color: '#ef4444', iconColor: '#ef4444' }
+                    }
+                });
+
+                this.card.on('ready', () => {
+                    this.cardReady.set(true);
+                    this.cardError.set(null);
+                });
+
+                this.card.on('change', (event: any) => {
+                    this.cardError.set(event.error?.message ?? null);
+                    this.cardComplete.set(!!event.complete && !event.error);
+                });
+            }
+
+            this.card.mount(this.cardElementHost.nativeElement);
+            this.cardMounted = true;
+        } catch (error) {
+            console.error('[MarketplaceFare] Stripe init failed', error);
+            this.paymentError.set('Unable to load card input right now.');
+            this.cardReady.set(false);
+            this.cardMounted = false;
+        } finally {
+            this.stripeInitializing = false;
         }
     }
 
