@@ -69,7 +69,7 @@ import { SubscriptionPlan } from '@shared/models/booking.model';
               </tr>
               <tr>
                 <td class="p-4 font-medium text-slate-700 border-b border-slate-50">Service Fee</td>
-                <td class="p-4 text-center text-slate-600 border-b border-slate-50 bg-slate-50/50">15%</td>
+                <td class="p-4 text-center text-slate-600 border-b border-slate-50 bg-slate-50/50">Admin configured</td>
                 <td class="p-4 text-center text-emerald-600 font-bold border-b border-blue-50 bg-blue-50/30">0%</td>
               </tr>
               <tr>

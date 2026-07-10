@@ -1142,8 +1142,8 @@ router.post('/negotiation/:jobId/driver-counter', async (req: Request, res: Resp
  * Customer submits a new offer for a job in negotiation mode.
  */
 router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Response) => {
-    console.log('[BookingRoutes] customer-offer route hit', req.params.jobId);
     try {
+        console.log('[BookingRoutes] customer-offer route hit', req.params.jobId);
         const jobId = req.params.jobId;
         const { amount, message } = req.body;
         const userId = await getAuthUserId(req);
@@ -1162,6 +1162,14 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
             .eq('id', jobId)
             .single();
 
+        console.log('[BookingRoutes] customer-offer auth/job', {
+            authUserId: userId,
+            jobId,
+            jobCustomerId: job?.customer_id,
+            serviceClient: 'supabaseAdmin',
+            queryError: null
+        });
+
         if (jobError || !job) {
             console.warn('[BookingRoutes] customer-offer job fetch failed', {
                 authUserId: userId,
@@ -1171,14 +1179,6 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
             });
             return res.status(404).json({ error: 'Job not found' });
         }
-
-        console.log('[BookingRoutes] customer-offer auth/job', {
-            authUserId: userId,
-            jobId,
-            jobCustomerId: job.customer_id,
-            serviceClient: 'supabaseAdmin',
-            queryError: null
-        });
 
         if (job.customer_id !== userId) {
             return res.status(403).json({ error: 'Only the customer can make an offer for this job' });
@@ -1257,6 +1257,63 @@ router.post('/negotiation/:jobId/customer-offer', async (req: Request, res: Resp
     } catch (error: any) {
         console.error('[BookingRoutes] customer offer error:', error);
         return res.status(500).json({ error: error.message || 'Failed to create offer' });
+    }
+});
+
+/**
+ * Send a push notification for a hybrid marketplace event.
+ * Used by the frontend hybrid service because some RPC flows run directly
+ * against Supabase and cannot trigger server-side dispatch.
+ */
+router.post('/notify-hybrid', async (req: Request, res: Response) => {
+    try {
+        const userId = await getAuthUserId(req);
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const { action, jobId, recipientUserId, title, body, type = 'booking_update', data } = req.body;
+
+        if (!jobId) {
+            return res.status(400).json({ error: 'jobId is required' });
+        }
+
+        if (action === 'notify_drivers') {
+            const { data: job, error: jobError } = await supabaseAdmin
+                .from('jobs')
+                .select('*, service_type:service_types(*)')
+                .eq('id', jobId)
+                .single();
+
+            if (jobError || !job) {
+                return res.status(404).json({ error: 'Job not found' });
+            }
+
+            try {
+                await new DispatchService().notifyNearbyDrivers(job, job.tenant_id, job.city_id);
+            } catch (notifyError) {
+                console.warn('[BookingRoutes] notify-hybrid driver dispatch failed:', notifyError);
+            }
+
+            return res.json({ success: true });
+        }
+
+        if (!recipientUserId || !title || !body) {
+            return res.status(400).json({ error: 'recipientUserId, title and body are required' });
+        }
+
+        await NotificationService.sendNotification({
+            userId: recipientUserId,
+            title,
+            body,
+            type,
+            data: { jobId, ...data }
+        });
+
+        return res.json({ success: true });
+    } catch (error: any) {
+        console.error('[BookingRoutes] notify-hybrid error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to send notification' });
     }
 });
 

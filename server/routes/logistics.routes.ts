@@ -54,7 +54,7 @@ router.post('/payout-breakdown', async (req: Request, res: Response) => {
     const breakdown = LogisticsService.calculatePayout(
       totalPrice,
       profile.pricing_plan || 'starter',
-      profile.commission_rate || effectiveCommission || 15.00
+      profile.commission_rate || effectiveCommission || MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT
     );
 
     res.json(breakdown);

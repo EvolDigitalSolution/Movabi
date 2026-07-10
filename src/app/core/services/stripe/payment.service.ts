@@ -13,6 +13,9 @@ import { SupabaseService } from '../supabase/supabase.service';
 
 export interface CreateJobPaymentIntentResponse {
     clientSecret: string;
+    paymentIntentId?: string;
+    status?: string;
+    reused?: boolean;
 }
 
 export interface CreateWalletTopupIntentResponse {
@@ -113,7 +116,7 @@ export class PaymentService {
                 throw new Error('Invalid payment response');
             }
 
-            return response;
+            return response as CreateJobPaymentIntentResponse;
 
         } catch (error: any) {
             console.error('[PaymentService] createPaymentIntent failed:', error);

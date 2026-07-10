@@ -193,6 +193,10 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    if (String(job.customer_id || '') !== authUserId) {
+      return res.status(403).json({ error: 'Only the customer can pay for this job' });
+    }
+
     console.log('[PaymentRoutes] create-intent auth/job', {
       authUserId,
       jobId,
@@ -201,14 +205,18 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       queryError: null
     });
 
-    if (String(job.customer_id || '') !== authUserId) {
-      return res.status(403).json({ error: 'Only the customer can pay for this job' });
-    }
-
     const status = String(job.status || '').toLowerCase();
 
     if (['completed', 'cancelled', 'canceled', 'settled'].includes(status)) {
       return res.status(400).json({ error: `Cannot pay job with status ${job.status}` });
+    }
+
+    const paymentStatus = String(job.payment_status || '').toLowerCase();
+    const alreadyPaid = ['authorized', 'requires_capture', 'succeeded', 'captured', 'paid', 'wallet_funded'].includes(paymentStatus);
+    const alreadyDispatched = ['searching', 'broadcasting', 'waiting', 'assigned', 'accepted', 'arrived', 'heading_to_pickup', 'driver_en_route', 'driver_arrived', 'picked_up', 'in_progress', 'arrived_at_store', 'shopping_in_progress', 'collected', 'en_route_to_customer', 'delivered', 'paid', 'paid_ready_for_dispatch'].includes(status);
+
+    if (alreadyPaid || alreadyDispatched) {
+      return res.status(400).json({ error: 'Payment has already been handled for this job' });
     }
 
     if (job.payment_intent_id) {
@@ -218,6 +226,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
         return res.json({
           clientSecret: existing.client_secret,
           paymentIntentId: existing.id,
+          status: existing.status,
           reused: true
         });
       } catch (retrieveError: any) {
@@ -308,7 +317,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 
     const essentialUpdatePayload: Record<string, unknown> = {
       payment_intent_id: pi.id,
-      payment_status: 'authorized',
+      payment_status: 'pending',
       payment_method: 'card'
     };
 
@@ -316,11 +325,8 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       surge_multiplier: Number(surgeMultiplier || 1)
     };
 
-    if (isErrandLike && itemBudget > 0) {
-      optionalUpdatePayload.price = totalAuthorisation;
-      optionalUpdatePayload.total_price = totalAuthorisation;
-      optionalUpdatePayload.estimated_price = totalAuthorisation;
-    }
+    // The job's price/total_price remains the agreed service fare; the payment intent
+    // authorises serviceFare + itemBudget. Shopping budget is reserved separately in errand_funding.
 
     if (fareBreakdown && typeof fareBreakdown === 'object') {
       optionalUpdatePayload.fare_breakdown = fareBreakdown;

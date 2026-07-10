@@ -11,9 +11,11 @@ import { IonicModule, LoadingController, ToastController } from '@ionic/angular'
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
 import {
+    callOutline,
     checkmarkCircleOutline,
     chevronBackOutline,
     closeCircleOutline,
+    navigateOutline,
     personOutline,
     pricetagOutline,
     sendOutline,
@@ -24,7 +26,6 @@ import { MarketplaceHybridService } from '@core/services/marketplace/marketplace
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { AuthService } from '@core/services/auth/auth.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
-import { HYBRID_MARKETPLACE_ENABLED } from '@core/services/marketplace/marketplace-hybrid.constants';
 
 @Component({
     selector: 'app-hybrid-negotiation',
@@ -58,6 +59,18 @@ import { HYBRID_MARKETPLACE_ENABLED } from '@core/services/marketplace/marketpla
                 <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rating</p>
               </div>
             </div>
+            @if (customerPhone()) {
+              <p class="text-sm text-slate-600 font-medium mt-3 flex items-center gap-2">
+                <ion-icon name="call-outline" class="text-amber-500"></ion-icon>
+                {{ customerPhone() }}
+              </p>
+            }
+            @if (jobDistanceEta()) {
+              <p class="text-xs text-slate-500 font-medium mt-2 flex items-center gap-2">
+                <ion-icon name="navigate-outline" class="text-amber-500"></ion-icon>
+                {{ jobDistanceEta() }}
+              </p>
+            }
           </div>
 
           <!-- Fare details -->
@@ -187,20 +200,25 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
 
-    readonly hybridEnabled = HYBRID_MARKETPLACE_ENABLED;
+    get hybridEnabled(): boolean {
+        return this.hybridService.isHybridEnabledForUser(this.auth.currentUser()?.id);
+    }
 
     jobId = signal<string>('');
     session = signal<any>(null);
     events = signal<any[]>([]);
     counterAmount = signal<number>(0);
     customerProfile = signal<any>(null);
+    jobDetails = signal<any>(null);
     private countdownInterval: any;
     expiresAt = signal<number>(0);
 
     constructor() {
         addIcons({
+            callOutline,
             checkmarkCircleOutline,
             closeCircleOutline,
+            navigateOutline,
             personOutline,
             pricetagOutline,
             sendOutline,
@@ -210,6 +228,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     }
 
     async ngOnInit() {
+        await this.hybridService.loadSettings();
         if (!this.hybridEnabled) {
             await this.router.navigate(['/driver']);
             return;
@@ -236,6 +255,10 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         return p?.first_name || p?.full_name || 'Customer';
     }
 
+    customerPhone(): string {
+        return this.customerProfile()?.phone || this.customerProfile()?.phone_number || '';
+    }
+
     customerRating(): string {
         const p = this.customerProfile();
         const rating = p?.rating || p?.average_rating || 0;
@@ -245,6 +268,19 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     completedTrips(): number {
         const p = this.customerProfile();
         return p?.completed_trips || p?.completed_bookings || 0;
+    }
+
+    jobDistanceEta(): string {
+        const job = this.jobDetails();
+        if (!job) return '';
+        const distance = job.distance_km ?? job.estimated_distance_km ?? 0;
+        const duration = job.duration_seconds ?? job.estimated_duration ?? null;
+        if (distance && duration) {
+            return `${Number(distance).toFixed(1)} km · ${Math.round(duration / 60)} min`;
+        }
+        if (distance) return `${Number(distance).toFixed(1)} km`;
+        if (duration) return `${Math.round(duration / 60)} min`;
+        return '';
     }
 
     formatPrice(amount: number | string | null | undefined): string {
@@ -277,6 +313,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         try {
             const session = await this.hybridService.getSessionByJob(this.jobId());
             this.session.set(session);
+            await this.loadJobDetails(this.jobId());
             if (session) {
                 const events = await this.hybridService.getSessionEvents(session.id);
                 this.events.set(events);
@@ -285,6 +322,19 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         } catch (error) {
             console.error('[HybridNegotiation] load failed', error);
             await this.showToast('Unable to load negotiation.', 'danger');
+        }
+    }
+
+    private async loadJobDetails(jobId: string) {
+        try {
+            const { data, error } = await this.supabase
+                .from('jobs')
+                .select('distance_km, estimated_distance_km, duration_seconds, estimated_duration')
+                .eq('id', jobId)
+                .maybeSingle();
+            if (!error) this.jobDetails.set(data);
+        } catch (error) {
+            console.warn('[HybridNegotiation] job details load failed', error);
         }
     }
 

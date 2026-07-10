@@ -2388,6 +2388,94 @@ BEGIN
     END IF;
 END $$;
 
+-- Marketplace engine settings are admin-managed and provide the single source
+-- of truth for commissions, negotiation, bidding and matching defaults.
+CREATE TABLE IF NOT EXISTS public.marketplace_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NULL,
+    key TEXT NOT NULL,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_commission_overrides (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NULL,
+    service_type_slug TEXT NULL,
+    city_zone TEXT NULL,
+    driver_tier TEXT NULL,
+    promotion_period_id TEXT NULL,
+    commission_percent NUMERIC(8,2) NOT NULL DEFAULT 5,
+    platform_fee_percent NUMERIC(8,2) NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    starts_at TIMESTAMPTZ NULL,
+    ends_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_settings_global_key
+    ON public.marketplace_settings (key)
+    WHERE tenant_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_settings_tenant_key
+    ON public.marketplace_settings (tenant_id, key)
+    WHERE tenant_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_commission_overrides_lookup
+    ON public.marketplace_commission_overrides(tenant_id, service_type_slug, city_zone, driver_tier, is_active, starts_at, ends_at);
+
+ALTER TABLE public.marketplace_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_commission_overrides ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS marketplace_settings_admin_read ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_read
+    ON public.marketplace_settings
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_settings_admin_write ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_write
+    ON public.marketplace_settings
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY marketplace_commission_overrides_admin
+    ON public.marketplace_commission_overrides
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DO $$
+DECLARE
+    v_key TEXT;
+    v_value JSONB;
+BEGIN
+    FOR v_key, v_value IN
+        SELECT *
+        FROM (VALUES
+            ('commission', '{"percent": 5, "minFee": 0, "maxFee": null}'::jsonb),
+            ('dynamic_pricing', '{"enabled": true, "maxSurge": 3, "trafficMultiplier": 1, "weatherMultiplier": 1, "demandMultiplier": 1, "fuelMultiplier": 1}'::jsonb),
+            ('hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "allowlist": [], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'::jsonb),
+            ('bidding', '{"enabled": false, "enabledServices": ["van", "van_moving"]}'::jsonb),
+            ('smart_matching', '{"enabled": true, "maxDistanceKm": 10, "distanceWeight": 0.30, "ratingWeight": 0.25, "completionWeight": 0.35, "responseWeight": 0.10}'::jsonb)
+        ) AS defaults(key, value)
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.marketplace_settings
+            WHERE tenant_id IS NULL
+              AND key = v_key
+        ) THEN
+            INSERT INTO public.marketplace_settings (tenant_id, key, value)
+            VALUES (NULL, v_key, v_value);
+        END IF;
+    END LOOP;
+END $$;
+
 -- Repair incomplete Pro subscription copy without overwriting admin-customized plans.
 DO $$
 BEGIN
@@ -2424,7 +2512,7 @@ BEGIN
               features IS NULL
               OR features = '[]'::jsonb
               OR features @> '["Basic job matching"]'::jsonb
-              OR features @> '["15% Platform fee"]'::jsonb
+              OR features @> '["5% Platform fee"]'::jsonb
           );
     END IF;
 END $$;

@@ -76,7 +76,6 @@ import { RouteSummary } from '../../../../../core/models/maps/route-result.model
 import { NotificationService } from '../../../../../core/services/notification.service';
 import { MarketplaceNegotiationService } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
 import { MarketplaceHybridService } from '../../../../../core/services/marketplace/marketplace-hybrid.service';
-import { HYBRID_MARKETPLACE_ENABLED } from '../../../../../core/services/marketplace/marketplace-hybrid.constants';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -477,7 +476,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                                   You'll earn approximately
                                 </p>
                                 <p class="text-xl font-black text-emerald-900">
-                                  {{ formatPrice(calculateDriverEarnings(selectedJob!.negotiated_fare || selectedJob!.total_price)) }}
+                                  {{ formatPrice(calculateDriverEarnings(selectedJob!.negotiated_fare || selectedJob!.total_price, selectedJob!)) }}
                                 </p>
                                 <p class="text-xs text-emerald-600 mt-1">after platform commission</p>
                               </div>
@@ -922,7 +921,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private negotiationService = inject(MarketplaceNegotiationService);
     private hybridService = inject(MarketplaceHybridService);
 
-    readonly hybridEnabled = HYBRID_MARKETPLACE_ENABLED;
+    get hybridEnabled(): boolean {
+        return this.hybridService.isHybridEnabledForUser(this.auth.currentUser()?.id);
+    }
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
     activeJob = this.driverService.activeJob;
@@ -2686,10 +2687,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     // Enhanced driver earnings and countdown methods
-    calculateDriverEarnings(fareAmount: number): number {
-        // Default commission rate (can be fetched from marketplace settings)
-        const commissionRate = 0.15; // 15% platform commission
-        return fareAmount * (1 - commissionRate);
+    calculateDriverEarnings(fareAmount: number, job?: Partial<Booking> | null): number {
+        const backendPayout = Number((job as any)?.driver_payout ?? (job as any)?.driverNetAmount);
+        if (job && Number.isFinite(backendPayout) && backendPayout > 0) {
+            return backendPayout;
+        }
+
+        const commissionPercent = Number(
+            (job as any)?.commission_rate_used ??
+            (job as any)?.commissionPercent ??
+            ((job as any)?.fare_breakdown as Record<string, unknown> | undefined)?.['commissionPercent'] ??
+            5
+        );
+        const safeCommissionPercent = Number.isFinite(commissionPercent)
+            ? Math.max(0, commissionPercent)
+            : 5;
+        return fareAmount * (1 - safeCommissionPercent / 100);
     }
 
     formatDriverCountdown(deadline: string): string {

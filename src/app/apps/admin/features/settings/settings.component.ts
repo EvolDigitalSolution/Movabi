@@ -312,6 +312,22 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                             <option [ngValue]="false">No</option>
                           </select>
                         </div>
+                        <div>
+                          <label class="field-label">Traffic Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.trafficMultiplier" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Weather Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.weatherMultiplier" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Demand Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.demandMultiplier" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Fuel Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.fuelMultiplier" class="field-control">
+                        </div>
                       </div>
                     </div>
 
@@ -372,22 +388,50 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                           <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.maxDriverAttempts" class="field-control">
                         </div>
                         <div>
-                          <label class="field-label">Long Distance Ride (km)</label>
-                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.longDistanceRideKm" class="field-control">
-                        </div>
-                        <div class="md:col-span-2 lg:col-span-3">
-                          <label class="field-label">Eligible Services</label>
+                          <label class="field-label">Enabled Services</label>
                           <input
                             type="text"
-                            [ngModel]="marketplaceConfig.hybridNegotiation.eligibleServices.join(', ')"
-                            (ngModelChange)="updateHybridNegotiationServices($event)"
+                            [ngModel]="marketplaceConfig.hybridNegotiation.enabledServices.join(', ')"
+                            (ngModelChange)="updateHybridNegotiationEnabledServices($event)"
                             class="field-control"
-                            placeholder="shop, errand, delivery, van, van_moving"
+                            placeholder="shop, errand, delivery, van, ride"
+                          >
+                        </div>
+                        <div>
+                          <label class="field-label">Claim Timeout (seconds)</label>
+                          <input type="number" min="10" [(ngModel)]="marketplaceConfig.hybridNegotiation.claimTimeoutSeconds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Ride Min Distance (km)</label>
+                          <input type="number" min="0" [(ngModel)]="marketplaceConfig.hybridNegotiation.rideMinimumDistanceKm" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Make Offer</label>
+                          <select [(ngModel)]="marketplaceConfig.hybridNegotiation.makeOfferEnabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Accept Fare</label>
+                          <select [(ngModel)]="marketplaceConfig.hybridNegotiation.acceptFareEnabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div class="md:col-span-2 lg:col-span-3">
+                          <label class="field-label">Test Allowlist (User IDs)</label>
+                          <input
+                            type="text"
+                            [ngModel]="(marketplaceConfig.hybridNegotiation.allowlist || []).join(', ')"
+                            (ngModelChange)="updateHybridNegotiationAllowlist($event)"
+                            class="field-control"
+                            placeholder="uuid-1, uuid-2"
                           >
                         </div>
                       </div>
                       <p class="text-xs text-slate-500 font-medium mt-2">
-                        Default rollout: shop/errand, van, delivery, then long-distance ride.
+                        When global hybrid is disabled, only allowlisted users can access the hybrid flow. While the global flag is off, use this list to test the experience with specific customer and driver accounts. Empty allowlist and disabled global flag means hybrid is off for everyone.
                       </p>
                     </div>
 
@@ -413,15 +457,15 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                           <label class="field-label">Services</label>
                           <input
                             type="text"
-                            [ngModel]="marketplaceConfig.bidding.defaultServices.join(', ')"
+                            [ngModel]="marketplaceConfig.bidding.enabledServices.join(', ')"
                             (ngModelChange)="updateBiddingServices($event)"
                             class="field-control"
-                            placeholder="van-moving"
+                            placeholder="van, van_moving"
                           >
                         </div>
                       </div>
                       <p class="text-xs text-slate-500 font-medium mt-2">
-                        Default bidding services: van-moving.
+                        Default bidding services: van, van_moving.
                       </p>
                     </div>
 
@@ -869,6 +913,10 @@ export class AdminSettingsComponent implements OnInit {
         dynamicPricing: {
             enabled: true,
             maxSurge: 3.0,
+            trafficMultiplier: 1,
+            weatherMultiplier: 1,
+            demandMultiplier: 1,
+            fuelMultiplier: 1,
             timeOfDayEnabled: true,
             demandSupplyEnabled: true,
             weatherEnabled: false,
@@ -883,17 +931,22 @@ export class AdminSettingsComponent implements OnInit {
         },
         hybridNegotiation: {
             enabled: false,
-            maxRounds: 5,
+            maxRounds: 3,
             timeoutSeconds: 120,
-            maxDriverAttempts: 10,
-            eligibleServices: ['shop', 'errand', 'shopping', 'van', 'van_moving', 'delivery'],
-            longDistanceRideKm: 25
+            maxDriverAttempts: 5,
+            claimTimeoutSeconds: 60,
+            enabledServices: ['shop', 'errand'],
+            rideMinimumDistanceKm: 30,
+            makeOfferEnabled: true,
+            acceptFareEnabled: true,
+            allowlist: []
         },
         bidding: {
-            enabled: true,
+            enabled: false,
+            enabledServices: ['van', 'van_moving'],
             timeoutSeconds: 300,
             maxBids: 10,
-            defaultServices: ['van-moving']
+            defaultServices: ['van', 'van_moving']
         },
         smartMatching: {
             enabled: true,
@@ -1260,16 +1313,25 @@ export class AdminSettingsComponent implements OnInit {
     }
 
     updateBiddingServices(value: string): void {
-        this.marketplaceConfig.bidding.defaultServices = value
+        const services = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+        this.marketplaceConfig.bidding.enabledServices = services;
+        this.marketplaceConfig.bidding.defaultServices = services;
+    }
+
+    updateHybridNegotiationEnabledServices(value: string): void {
+        this.marketplaceConfig.hybridNegotiation.enabledServices = value
             .split(',')
             .map(s => s.trim().toLowerCase())
             .filter(Boolean);
     }
 
-    updateHybridNegotiationServices(value: string): void {
-        this.marketplaceConfig.hybridNegotiation.eligibleServices = value
+    updateHybridNegotiationAllowlist(value: string): void {
+        this.marketplaceConfig.hybridNegotiation.allowlist = value
             .split(',')
-            .map(s => s.trim().toLowerCase())
+            .map(s => s.trim())
             .filter(Boolean);
     }
 

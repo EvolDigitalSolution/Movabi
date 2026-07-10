@@ -474,12 +474,6 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
             return;
         }
 
-        if (!this.cardComplete()) {
-            this.paymentError.set('Please complete your card details.');
-            await this.showToast('Please complete your card details.', 'danger');
-            return;
-        }
-
         this.paymentProcessing.set(true);
         this.paymentError.set(null);
 
@@ -491,7 +485,7 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
             await loading.present();
 
             loading.message = 'Creating payment intent...';
-            const { clientSecret } = await this.paymentService.createPaymentIntent(
+            const { clientSecret, paymentIntentId, status: intentStatus } = await this.paymentService.createPaymentIntent(
                 job.id,
                 this.paymentTotal(),
                 job.currency_code || 'GBP',
@@ -499,21 +493,34 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
                 1
             );
 
-            loading.message = 'Charging card...';
-            // Use the same shared confirmPayment path as booking-request
-            const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card);
+            let finalPaymentIntentId = paymentIntentId || '';
+            let finalPaymentIntentStatus = intentStatus;
+
+            if (intentStatus !== 'requires_capture' && intentStatus !== 'succeeded') {
+                if (!this.cardComplete()) {
+                    this.paymentError.set('Please complete your card details.');
+                    await this.showToast('Please complete your card details.', 'danger');
+                    try { await loading.dismiss(); } catch { /* noop */ }
+                    return;
+                }
+
+                loading.message = 'Charging card...';
+                const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card);
+                finalPaymentIntentId = paymentIntent.id;
+                finalPaymentIntentStatus = paymentIntent.status;
+            }
 
             if (
-                paymentIntent.status === 'succeeded' ||
-                paymentIntent.status === 'requires_capture'
+                finalPaymentIntentStatus === 'succeeded' ||
+                finalPaymentIntentStatus === 'requires_capture'
             ) {
                 loading.message = 'Activating booking...';
-                await this.bookingService.confirmJobPayment(job.id, paymentIntent.id);
+                await this.bookingService.confirmJobPayment(job.id, finalPaymentIntentId);
                 await loading.dismiss();
                 await this.showToast('Payment successful! Finding your driver...', 'success');
                 await this.router.navigate(['/customer/tracking', job.id]);
             } else {
-                throw new Error(`Payment not completed (status: ${paymentIntent.status})`);
+                throw new Error(`Payment not completed (status: ${finalPaymentIntentStatus})`);
             }
         } catch (error: any) {
             console.error('[MarketplacePayment] card payment failed', error);

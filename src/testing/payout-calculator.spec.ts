@@ -3,22 +3,22 @@ import { calculatePayoutBreakdown } from '../../server/services/payout-calculato
 
 describe('calculatePayoutBreakdown', () => {
   it('calculates starter driver payout with platform service fee and commission', () => {
-    const result = calculatePayoutBreakdown(100, 'starter', 15);
+    const result = calculatePayoutBreakdown(100, 'starter', 5);
 
     expect(result).toEqual({
       total_price: 100,
       base_fare: 90,
       service_fee: 10,
-      commission_fee: 13.5,
-      commission_rate_used: 15,
-      platform_fee: 23.5,
-      driver_payout: 76.5,
+      commission_fee: 4.5,
+      commission_rate_used: 5,
+      platform_fee: 14.5,
+      driver_payout: 85.5,
       pricing_plan_used: 'starter'
     });
   });
 
   it('keeps pro drivers commission-free while retaining customer service fee', () => {
-    const result = calculatePayoutBreakdown(50, 'pro', 15);
+    const result = calculatePayoutBreakdown(50, 'pro', 5);
 
     expect(result.service_fee).toBe(5);
     expect(result.commission_fee).toBe(0);

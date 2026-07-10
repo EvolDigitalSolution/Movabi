@@ -10,6 +10,10 @@ export interface MarketplaceCommissionSettings {
 export interface MarketplaceDynamicPricingSettings {
   enabled: boolean;
   maxSurge: number;
+  trafficMultiplier: number;
+  weatherMultiplier: number;
+  demandMultiplier: number;
+  fuelMultiplier: number;
   timeOfDayEnabled: boolean;
   demandSupplyEnabled: boolean;
   weatherEnabled: boolean;
@@ -26,6 +30,7 @@ export interface MarketplaceNegotiationSettings {
 
 export interface MarketplaceBiddingSettings {
   enabled: boolean;
+  enabledServices: string[];
   timeoutSeconds: number;
   maxBids: number;
   defaultServices: string[];
@@ -45,8 +50,12 @@ export interface MarketplaceHybridNegotiationSettings {
   maxRounds: number;
   timeoutSeconds: number;
   maxDriverAttempts: number;
-  eligibleServices: string[];
-  longDistanceRideKm: number;
+  claimTimeoutSeconds: number;
+  enabledServices: string[];
+  rideMinimumDistanceKm: number;
+  makeOfferEnabled: boolean;
+  acceptFareEnabled: boolean;
+  allowlist?: string[];
 }
 
 export interface MarketplaceCommissionOverride {
@@ -88,11 +97,15 @@ export class MarketplaceConfigService {
   private defaultSettings(): MarketplaceSettings {
     return {
       commission: { percent: 5.0, minFee: 0, maxFee: null },
-      dynamicPricing: {
-        enabled: true,
-        maxSurge: 3.0,
-        timeOfDayEnabled: true,
-        demandSupplyEnabled: true,
+        dynamicPricing: {
+          enabled: true,
+          maxSurge: 3.0,
+          trafficMultiplier: 1,
+          weatherMultiplier: 1,
+          demandMultiplier: 1,
+          fuelMultiplier: 1,
+          timeOfDayEnabled: true,
+          demandSupplyEnabled: true,
         weatherEnabled: false,
         trafficEnabled: false,
         eventMultiplierEnabled: false
@@ -105,17 +118,22 @@ export class MarketplaceConfigService {
       },
       hybridNegotiation: {
         enabled: false,
-        maxRounds: 5,
+        maxRounds: 3,
         timeoutSeconds: 120,
-        maxDriverAttempts: 10,
-        eligibleServices: ['shop', 'errand', 'shopping', 'van', 'van_moving', 'delivery'],
-        longDistanceRideKm: 25
+        maxDriverAttempts: 5,
+        claimTimeoutSeconds: 60,
+        enabledServices: ['shop', 'errand'],
+        rideMinimumDistanceKm: 30,
+        makeOfferEnabled: true,
+        acceptFareEnabled: true,
+        allowlist: []
       },
       bidding: {
-        enabled: true,
+        enabled: false,
+        enabledServices: ['van', 'van_moving'],
         timeoutSeconds: 300,
         maxBids: 10,
-        defaultServices: ['van-moving']
+        defaultServices: ['van', 'van_moving']
       },
       smartMatching: {
         enabled: true,
@@ -144,12 +162,36 @@ export class MarketplaceConfigService {
         return acc;
       }, {});
 
+      const rawHybrid = ((map['hybrid_negotiation'] as Record<string, unknown> || {}) as any);
+      const rawBidding = ((map['bidding'] as Record<string, unknown> || {}) as any);
+      const normalizedHybrid = {
+        ...defaults.hybridNegotiation,
+        ...rawHybrid,
+        enabledServices: (Array.isArray(rawHybrid.enabledServices) ? rawHybrid.enabledServices : (Array.isArray(rawHybrid.eligibleServices) ? rawHybrid.eligibleServices : defaults.hybridNegotiation.enabledServices)) as string[],
+        rideMinimumDistanceKm: Number(rawHybrid.rideMinimumDistanceKm ?? rawHybrid.longDistanceRideKm ?? defaults.hybridNegotiation.rideMinimumDistanceKm),
+        claimTimeoutSeconds: Number(rawHybrid.claimTimeoutSeconds ?? defaults.hybridNegotiation.claimTimeoutSeconds),
+        makeOfferEnabled: rawHybrid.makeOfferEnabled !== undefined ? Boolean(rawHybrid.makeOfferEnabled) : defaults.hybridNegotiation.makeOfferEnabled,
+        acceptFareEnabled: rawHybrid.acceptFareEnabled !== undefined ? Boolean(rawHybrid.acceptFareEnabled) : defaults.hybridNegotiation.acceptFareEnabled,
+        allowlist: Array.isArray(rawHybrid.allowlist) ? (rawHybrid.allowlist as string[]) : defaults.hybridNegotiation.allowlist
+      };
+      const normalizedBidding = {
+        ...defaults.bidding,
+        ...rawBidding,
+        enabled: rawBidding.enabled !== undefined ? Boolean(rawBidding.enabled) : defaults.bidding.enabled,
+        enabledServices: (Array.isArray(rawBidding.enabledServices)
+          ? rawBidding.enabledServices
+          : (Array.isArray(rawBidding.defaultServices) ? rawBidding.defaultServices : defaults.bidding.enabledServices)) as string[],
+        defaultServices: (Array.isArray(rawBidding.defaultServices)
+          ? rawBidding.defaultServices
+          : (Array.isArray(rawBidding.enabledServices) ? rawBidding.enabledServices : defaults.bidding.defaultServices)) as string[]
+      };
+
       const settings: MarketplaceSettings = {
         commission: { ...defaults.commission, ...(map['commission'] as Record<string, unknown> || {}) },
         dynamicPricing: { ...defaults.dynamicPricing, ...(map['dynamic_pricing'] as Record<string, unknown> || {}) },
         negotiation: { ...defaults.negotiation, ...(map['negotiation'] as Record<string, unknown> || {}) },
-        hybridNegotiation: { ...defaults.hybridNegotiation, ...(map['hybrid_negotiation'] as Record<string, unknown> || {}) },
-        bidding: { ...defaults.bidding, ...(map['bidding'] as Record<string, unknown> || {}) },
+        hybridNegotiation: normalizedHybrid,
+        bidding: normalizedBidding,
         smartMatching: { ...defaults.smartMatching, ...(map['smart_matching'] as Record<string, unknown> || {}) }
       };
 
@@ -184,6 +226,7 @@ export class MarketplaceConfigService {
     }
 
     this.settings.set(settings);
+    await this.loadSettings();
   }
 
   async loadOverrides(): Promise<MarketplaceCommissionOverride[]> {

@@ -102,7 +102,8 @@ export class PricingService {
         let taxAmount = 0;
         let platformFee = 0;
         let driverPayout = 0;
-        let commissionRateUsed = 15;
+        let commissionRateUsed = MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT;
+        let regionalCommissionOverride: number | null = null;
         let baseFareUsed = 0;
         let pricePerKmUsed = 0;
         let serviceFee = 0;
@@ -177,7 +178,10 @@ export class PricingService {
                 const perKm = Number(regionalRule.price_per_km || 0);
                 const minimumFare = Number(regionalRule.minimum_fare || 0);
                 const taxPercent = Number(regionalRule.tax_percent || 0);
-                const commissionPercent = Number(regionalRule.platform_commission_percent || 15);
+                const rawCommissionPercent = regionalRule.platform_commission_percent;
+                const commissionPercent = rawCommissionPercent === null || rawCommissionPercent === undefined
+                    ? MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT
+                    : Number(rawCommissionPercent);
 
                 const subtotal = Math.max(minimumFare, baseFare + distanceKm * perKm);
                 taxAmount = this.roundMoney(subtotal * (taxPercent / 100));
@@ -190,6 +194,9 @@ export class PricingService {
                 currencySymbol = regionalRule.currency_symbol || this.symbolFromCurrency(resolvedCurrencyCode);
                 regionalPricingRuleId = regionalRule.id;
                 commissionRateUsed = commissionPercent;
+                regionalCommissionOverride = rawCommissionPercent === null || rawCommissionPercent === undefined
+                    ? null
+                    : commissionPercent;
                 baseFareUsed = baseFare;
                 pricePerKmUsed = perKm;
                 source = 'regional_pricing_rule';
@@ -353,10 +360,23 @@ export class PricingService {
             const timeMultiplier = dynamicSettings.timeOfDayEnabled
                 ? this.getTimeOfDayMultiplier(requestedAt)
                 : 1.0;
+            const configuredWeatherMultiplier = Number(dynamicSettings.weatherMultiplier ?? 1);
+            const configuredTrafficMultiplier = Number(dynamicSettings.trafficMultiplier ?? 1);
+            const configuredDemandMultiplier = Number(dynamicSettings.demandMultiplier ?? 1);
+            const configuredFuelMultiplier = Number(dynamicSettings.fuelMultiplier ?? 1);
+            const effectiveWeatherMultiplier = weatherMultiplier * (Number.isFinite(configuredWeatherMultiplier) ? configuredWeatherMultiplier : 1);
+            const effectiveTrafficMultiplier = trafficMultiplier * (Number.isFinite(configuredTrafficMultiplier) ? configuredTrafficMultiplier : 1);
+            const effectiveDemandMultiplier = Number.isFinite(configuredDemandMultiplier) ? configuredDemandMultiplier : 1;
+            const effectiveFuelMultiplier = Number.isFinite(configuredFuelMultiplier) ? configuredFuelMultiplier : 1;
             const dynamicPricingMultiplier = this.roundMoney(
                 Math.min(
                     dynamicSettings.maxSurge,
-                    surgeMultiplier * timeMultiplier * weatherMultiplier * trafficMultiplier
+                    surgeMultiplier *
+                        timeMultiplier *
+                        effectiveWeatherMultiplier *
+                        effectiveTrafficMultiplier *
+                        effectiveDemandMultiplier *
+                        effectiveFuelMultiplier
                 )
             );
             const dynamicPricingAmount = this.roundMoney(resolvedBasePrice * (dynamicPricingMultiplier - 1));
@@ -370,8 +390,8 @@ export class PricingService {
                 tenantId
             );
             // If a regional rule explicitly defined a commission, it acts as a hard override for that rule.
-            commissionRateUsed = source === 'regional_pricing_rule' && commissionRateUsed !== 15
-                ? commissionRateUsed
+            commissionRateUsed = regionalCommissionOverride !== null
+                ? regionalCommissionOverride
                 : effectiveCommission;
 
             commissionRateUsed = this.roundMoney(commissionRateUsed);
@@ -401,8 +421,10 @@ export class PricingService {
                 extras: {
                     surgeMultiplier,
                     timeMultiplier,
-                    weatherMultiplier,
-                    trafficMultiplier
+                    weatherMultiplier: effectiveWeatherMultiplier,
+                    trafficMultiplier: effectiveTrafficMultiplier,
+                    demandMultiplier: effectiveDemandMultiplier,
+                    fuelMultiplier: effectiveFuelMultiplier
                 }
             };
 
@@ -416,6 +438,15 @@ export class PricingService {
             console.log(
                 `[PricingService] Price resolved: ${currencySymbol}${totalPrice} (base ${resolvedBasePrice}, multiplier ${dynamicPricingMultiplier}, commission ${commissionRateUsed}%) via ${source} for ${serviceSlug} in ${countryCode}`
             );
+            console.log('[MarketplaceCommissionAudit]', {
+                source,
+                serviceSlug,
+                commissionSource: regionalCommissionOverride !== null ? 'regional_pricing_rule' : 'marketplace_settings',
+                commissionPercent: commissionRateUsed,
+                serviceFare: preCommissionTotal,
+                commissionAmount: commissionFee,
+                driverPayout
+            });
 
             return {
                 basePrice: resolvedBasePrice,
@@ -449,7 +480,7 @@ export class PricingService {
             `[PricingService] Price resolved (fallback): ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
         );
 
-        const fallbackCommission = this.roundMoney(15);
+        const fallbackCommission = this.roundMoney(MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT);
         const fallbackPlatformFee = this.roundMoney(resolvedBasePrice * (fallbackCommission / 100));
         const fallbackFareBreakdown: FareBreakdown = {
             baseFare: this.roundMoney(baseFareUsed),
@@ -609,7 +640,7 @@ export class PricingService {
             tax_amount: taxAmount,
             base_fare_used: baseFareUsed,
             price_per_km_used: pricePerKmUsed,
-            commission_rate_used: Number(job?.commission_rate_used || 15),
+            commission_rate_used: Number(job?.commission_rate_used || MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT),
             fare_breakdown: scaledBreakdown
         };
     }

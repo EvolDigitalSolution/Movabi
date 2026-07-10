@@ -466,7 +466,9 @@ export class SubscriptionPlansComponent implements OnInit {
 
   private hasStarterFeatures(features: string[]): boolean {
     const normalized = features.map(feature => feature.toLowerCase());
-    return normalized.includes('basic job matching') || normalized.some(feature => feature.includes('15% platform fee'));
+    return normalized.includes('basic job matching') || normalized.some(feature =>
+      feature.includes('platform fee') || feature.includes('service commission')
+    );
   }
 
   private defaultProFeatures(): string[] {

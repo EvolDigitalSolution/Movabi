@@ -40,9 +40,9 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { MarketplaceNegotiationService, FareNegotiation } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
 import { MarketplaceHybridService } from '../../../../../core/services/marketplace/marketplace-hybrid.service';
-import { HYBRID_MARKETPLACE_ENABLED } from '../../../../../core/services/marketplace/marketplace-hybrid.constants';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
+import { ProfileService } from '../../../../../core/services/profile/profile.service';
 import { Booking } from '../../../../../shared/models/booking.model';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
@@ -275,7 +275,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
           <!-- ── PRIMARY ACTION BUTTONS (pending_fare_confirmation / negotiating) ── -->
           @if (job.status === 'negotiating' || job.status === 'pending_fare_confirmation') {
             <div class="space-y-3 mb-4">
-              @if (hybridEnabled) {
+              @if (acceptFareEnabled) {
                 <button
                   type="button"
                   (click)="acceptSuggestedFare()"
@@ -284,6 +284,8 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
                   Accept Fare &amp; Pay
                 </button>
+              }
+              @if (makeOfferEnabled) {
                 <button
                   type="button"
                   (click)="openHybridOfferInput()"
@@ -291,15 +293,6 @@ import { StripeCardElement } from '@stripe/stripe-js';
                 >
                   <ion-icon name="pricetag-outline" class="text-xl"></ion-icon>
                   Make an Offer
-                </button>
-              } @else {
-                <button
-                  type="button"
-                  (click)="acceptSuggestedFare()"
-                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
-                >
-                  <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
-                  Accept Fare &amp; Pay
                 </button>
               }
             </div>
@@ -346,15 +339,35 @@ import { StripeCardElement } from '@stripe/stripe-js';
               }
               @if (hybridSession().status === 'driver_claimed' || hybridSession().status === 'negotiating') {
                 <div class="space-y-4">
-                  <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
-                      <ion-icon name="person-outline" class="text-xl"></ion-icon>
+                  @if (driverProfile(); as driver) {
+                    <div class="bg-amber-50 rounded-2xl border border-amber-100 p-4">
+                      <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-white flex items-center justify-center text-amber-600">
+                          <ion-icon name="person-outline" class="text-xl"></ion-icon>
+                        </div>
+                        <div class="flex-1">
+                          <p class="text-sm font-bold text-slate-900">{{ driverName() }}</p>
+                          <p class="text-xs text-slate-500">{{ driverCompletedTrips() }} trips · {{ driverRating() }} rating</p>
+                        </div>
+                      </div>
+                      @if (driverVehicleLabel()) {
+                        <p class="text-xs text-slate-600 mt-2 font-medium">{{ driverVehicleLabel() }} · {{ driverEta() }}</p>
+                      }
+                      @if (driverPhone()) {
+                        <p class="text-xs text-slate-600 mt-1 font-medium">{{ driverPhone() }}</p>
+                      }
                     </div>
-                    <div>
-                      <p class="text-sm font-bold text-slate-900">A driver is negotiating</p>
-                      <p class="text-xs text-slate-500">Round {{ hybridSession().round_count || 1 }}</p>
+                  } @else {
+                    <div class="flex items-center gap-3">
+                      <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                        <ion-icon name="person-outline" class="text-xl"></ion-icon>
+                      </div>
+                      <div>
+                        <p class="text-sm font-bold text-slate-900">A driver is negotiating</p>
+                        <p class="text-xs text-slate-500">Round {{ hybridSession().round_count || 1 }}</p>
+                      </div>
                     </div>
-                  </div>
+                  }
 
                   @if (hybridSession().driver_counter_offer) {
                     <div class="bg-amber-50 rounded-2xl border border-amber-100 p-4">
@@ -392,6 +405,22 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   <ion-icon name="checkmark-circle-outline" class="text-4xl text-emerald-500 mb-2"></ion-icon>
                   <p class="text-lg font-bold text-emerald-900">Fare agreed!</p>
                   <p class="text-sm text-emerald-700">Complete payment below to confirm.</p>
+                  @if (driverProfile(); as driver) {
+                    <div class="bg-white/80 rounded-2xl border border-emerald-100 p-3 mt-4 text-left">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                          <ion-icon name="person-outline" class="text-lg"></ion-icon>
+                        </div>
+                        <div class="flex-1">
+                          <p class="text-sm font-bold text-slate-900">{{ driverName() }}</p>
+                          <p class="text-xs text-slate-500">{{ driverCompletedTrips() }} trips · {{ driverRating() }} rating</p>
+                        </div>
+                      </div>
+                      @if (driverVehicleLabel()) {
+                        <p class="text-xs text-slate-600 mt-2 font-medium">{{ driverVehicleLabel() }} · {{ driverEta() }}</p>
+                      }
+                    </div>
+                  }
                 </div>
               }
               <button
@@ -484,10 +513,23 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     private hybridService = inject(MarketplaceHybridService);
     private paymentService = inject(PaymentService);
     private auth = inject(AuthService);
+    private profileService = inject(ProfileService);
     private toastCtrl = inject(ToastController);
     private loadingCtrl = inject(LoadingController);
 
-    readonly hybridEnabled = HYBRID_MARKETPLACE_ENABLED;
+    get hybridEnabled(): boolean {
+        const userId = this.auth.currentUser()?.id;
+        const serviceSlug = this.booking()?.service_slug;
+        return this.hybridService.isHybridEnabledForUser(userId, serviceSlug, this.distanceKm());
+    }
+
+    get acceptFareEnabled(): boolean {
+        return !this.hybridEnabled || this.hybridService.isAcceptFareEnabled();
+    }
+
+    get makeOfferEnabled(): boolean {
+        return this.hybridEnabled && this.hybridService.isMakeOfferEnabled();
+    }
 
     private cardElementHost: ElementRef<HTMLDivElement> | null = null;
 
@@ -522,6 +564,8 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     // Hybrid negotiation state
     hybridSession = signal<any>(null);
     hybridEvents = signal<any[]>([]);
+    driverProfile = signal<any>(null);
+    driverVehicle = signal<any>(null);
     hybridOfferAmount = signal<number>(0);
     showHybridOfferInput = signal(false);
     hybridPaymentVisible = signal(false);
@@ -574,6 +618,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         }
 
         await this.loadBooking(id);
+        await this.hybridService.loadSettings();
         this.subscribeToJob(id);
 
         if (this.hybridEnabled) {
@@ -626,7 +671,8 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     isErrand(): boolean {
-        return String(this.booking()?.service_slug || '').toLowerCase() === 'errand';
+        const slug = String(this.booking()?.service_slug || '').toLowerCase();
+        return ['errand', 'errands', 'shop', 'shopping'].includes(slug);
     }
 
     itemBudget(): number {
@@ -682,6 +728,43 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         if (!seconds) return '—';
         const mins = Math.round(seconds / 60);
         return `${mins} min`;
+    }
+
+    driverName(): string {
+        const p = this.driverProfile();
+        return p?.full_name || p?.first_name || 'Your driver';
+    }
+
+    driverRating(): string {
+        const p = this.driverProfile();
+        const rating = p?.rating || p?.average_rating || 0;
+        return rating ? Number(rating).toFixed(1) : '—';
+    }
+
+    driverCompletedTrips(): number {
+        const p = this.driverProfile();
+        return p?.completed_trips || p?.completed_bookings || 0;
+    }
+
+    driverPhone(): string {
+        return this.driverProfile()?.phone || this.driverProfile()?.phone_number || '';
+    }
+
+    driverVehicleLabel(): string {
+        const v = this.driverVehicle();
+        if (!v) return '';
+        return [v.make, v.model, v.colour, v.color, v.license_plate, v.registration_number]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+    }
+
+    driverEta(): string {
+        const seconds = this.durationSeconds();
+        if (seconds) return this.formatDuration(seconds);
+        const km = this.distanceKm();
+        if (km) return `${km.toFixed(1)} km`;
+        return '—';
     }
 
     // Progress indicator methods
@@ -970,12 +1053,6 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             return;
         }
 
-        if (!this.cardComplete()) {
-            this.paymentError.set('Please complete your card details.');
-            await this.showToast('Please complete your card details.', 'danger');
-            return;
-        }
-
         this.paymentProcessing.set(true);
         this.paymentError.set(null);
 
@@ -985,7 +1062,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
         try {
             await loading.present();
-            const { clientSecret } = await this.paymentService.createPaymentIntent(
+            const { clientSecret, paymentIntentId, status: intentStatus } = await this.paymentService.createPaymentIntent(
                 job.id,
                 this.paymentTotal(),
                 job.currency_code || 'GBP',
@@ -993,19 +1070,33 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
                 1
             );
 
-            loading.message = 'Confirming payment...';
-            const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card);
+            let finalPaymentIntentId = paymentIntentId || '';
+            let finalPaymentIntentStatus = intentStatus;
 
-            if (paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture') {
+            if (intentStatus !== 'requires_capture' && intentStatus !== 'succeeded') {
+                if (!this.cardComplete()) {
+                    this.paymentError.set('Please complete your card details.');
+                    await this.showToast('Please complete your card details.', 'danger');
+                    try { await loading.dismiss(); } catch { /* noop */ }
+                    return;
+                }
+
+                loading.message = 'Confirming payment...';
+                const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card);
+                finalPaymentIntentId = paymentIntent.id;
+                finalPaymentIntentStatus = paymentIntent.status;
+            }
+
+            if (finalPaymentIntentStatus === 'succeeded' || finalPaymentIntentStatus === 'requires_capture') {
                 loading.message = 'Finding your driver...';
-                await this.bookingService.confirmJobPayment(job.id, paymentIntent.id);
+                await this.bookingService.confirmJobPayment(job.id, finalPaymentIntentId);
                 await loading.dismiss();
                 await this.showToast('Payment successful! Finding your driver...', 'success');
                 await this.router.navigate(['/customer/tracking', job.id], { replaceUrl: true });
                 return;
             }
 
-            throw new Error(`Payment not completed (status: ${paymentIntent.status})`);
+            throw new Error(`Payment not completed (status: ${finalPaymentIntentStatus})`);
         } catch (error: any) {
             console.error('[MarketplaceFare] card payment failed', error);
             this.paymentError.set(error.message || 'Card payment failed. Please try again.');
@@ -1033,9 +1124,27 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             if (session) {
                 const events = await this.hybridService.getSessionEvents(session.id);
                 this.hybridEvents.set(events);
+                await this.loadDriverProfile(session.active_driver_id);
             }
         } catch (error) {
             console.warn('[MarketplaceFare] hybrid session not loaded', error);
+        }
+    }
+
+    private async loadDriverProfile(driverId: string | null | undefined): Promise<void> {
+        if (!driverId) {
+            this.driverProfile.set(null);
+            this.driverVehicle.set(null);
+            return;
+        }
+
+        try {
+            const profile = await this.profileService.fetchDriverProfile(driverId);
+            this.driverProfile.set(profile);
+            const vehicles = (profile as any)?.vehicles;
+            this.driverVehicle.set(Array.isArray(vehicles) ? vehicles[0] : (vehicles || null));
+        } catch (error) {
+            console.warn('[MarketplaceFare] driver profile load failed', error);
         }
     }
 
@@ -1045,6 +1154,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
             this.hybridSessionChannel = this.hybridService.subscribeToSession(session.id, (payload: any) => {
                 this.hybridSession.set(payload.new);
+                this.loadDriverProfile(payload.new?.active_driver_id);
             });
 
             this.hybridEventsChannel = this.hybridService.subscribeToEvents(session.id, (payload: any) => {

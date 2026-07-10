@@ -9,6 +9,10 @@ export interface CommissionSettings {
 export interface DynamicPricingSettings {
   enabled: boolean;
   maxSurge: number;
+  trafficMultiplier: number;
+  weatherMultiplier: number;
+  demandMultiplier: number;
+  fuelMultiplier: number;
   timeOfDayEnabled: boolean;
   demandSupplyEnabled: boolean;
   weatherEnabled?: boolean;
@@ -25,6 +29,7 @@ export interface NegotiationSettings {
 
 export interface BiddingSettings {
   enabled: boolean;
+  enabledServices: string[];
   timeoutSeconds: number;
   maxBids: number;
   defaultServices: string[];
@@ -48,8 +53,18 @@ export interface MarketplaceFlags {
   smartMatchingEnabled: boolean;
 }
 
-// TODO: Replace with DB-backed marketplace_hybrid_negotiation_enabled flag once migrations are available.
-export const HYBRID_MARKETPLACE_ENABLED = false;
+export interface HybridNegotiationSettings {
+  enabled: boolean;
+  maxRounds: number;
+  timeoutSeconds: number;
+  maxDriverAttempts: number;
+  claimTimeoutSeconds: number;
+  enabledServices: string[];
+  rideMinimumDistanceKm: number;
+  makeOfferEnabled: boolean;
+  acceptFareEnabled: boolean;
+  allowlist?: string[];
+}
 
 export interface CommissionOverride {
   id?: string;
@@ -66,6 +81,7 @@ export interface CommissionOverride {
 }
 
 export class MarketplaceConfigService {
+  static readonly DEFAULT_COMMISSION_PERCENT = 5;
   private static cache: Map<string, { value: unknown; expiresAt: number }> = new Map();
   private static readonly CACHE_TTL_MS = 30_000; // 30 seconds
 
@@ -140,13 +156,13 @@ export class MarketplaceConfigService {
 
   static async getCommissionSettings(tenantId: string | null = null): Promise<CommissionSettings> {
     const raw = await this.getSetting<CommissionSettings>('commission', tenantId, {
-      percent: 5.0,
+      percent: MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT,
       minFee: 0,
       maxFee: null
     });
 
     return {
-      percent: Number(raw?.percent ?? 5.0),
+      percent: Number(raw?.percent ?? MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT),
       minFee: Number(raw?.minFee ?? 0),
       maxFee: raw?.maxFee === undefined ? null : Number(raw.maxFee)
     };
@@ -158,6 +174,10 @@ export class MarketplaceConfigService {
     const raw = await this.getSetting<DynamicPricingSettings>('dynamic_pricing', tenantId, {
       enabled: true,
       maxSurge: 3.0,
+      trafficMultiplier: 1,
+      weatherMultiplier: 1,
+      demandMultiplier: 1,
+      fuelMultiplier: 1,
       timeOfDayEnabled: true,
       demandSupplyEnabled: true
     });
@@ -165,6 +185,10 @@ export class MarketplaceConfigService {
     return {
       enabled: Boolean(raw?.enabled ?? true),
       maxSurge: Number(raw?.maxSurge ?? 3.0),
+      trafficMultiplier: Number((raw as any)?.trafficMultiplier ?? 1),
+      weatherMultiplier: Number((raw as any)?.weatherMultiplier ?? 1),
+      demandMultiplier: Number((raw as any)?.demandMultiplier ?? 1),
+      fuelMultiplier: Number((raw as any)?.fuelMultiplier ?? 1),
       timeOfDayEnabled: Boolean(raw?.timeOfDayEnabled ?? true),
       demandSupplyEnabled: Boolean(raw?.demandSupplyEnabled ?? true),
       weatherEnabled: Boolean(raw?.weatherEnabled ?? false),
@@ -191,17 +215,24 @@ export class MarketplaceConfigService {
 
   static async getBiddingSettings(tenantId: string | null = null): Promise<BiddingSettings> {
     const raw = await this.getSetting<BiddingSettings>('bidding', tenantId, {
-      enabled: true,
+      enabled: false,
+      enabledServices: ['van', 'van_moving'],
       timeoutSeconds: 300,
       maxBids: 10,
-      defaultServices: ['van-moving']
+      defaultServices: ['van', 'van_moving']
     });
 
+    const asAny = raw as any;
+    const enabledServices = Array.isArray(asAny?.enabledServices)
+      ? (asAny.enabledServices as string[])
+      : (Array.isArray(asAny?.defaultServices) ? (asAny.defaultServices as string[]) : ['van', 'van_moving']);
+
     return {
-      enabled: Boolean(raw?.enabled ?? true),
+      enabled: Boolean(raw?.enabled ?? false),
+      enabledServices,
       timeoutSeconds: Number(raw?.timeoutSeconds ?? 300),
       maxBids: Number(raw?.maxBids ?? 10),
-      defaultServices: Array.isArray(raw?.defaultServices) ? (raw.defaultServices as string[]) : ['van-moving']
+      defaultServices: Array.isArray(raw?.defaultServices) ? (raw.defaultServices as string[]) : enabledServices
     };
   }
 
@@ -227,23 +258,98 @@ export class MarketplaceConfigService {
     };
   }
 
+  static async getHybridNegotiationSettings(tenantId: string | null = null): Promise<HybridNegotiationSettings> {
+    const raw = await this.getSetting<HybridNegotiationSettings>('hybrid_negotiation', tenantId, {
+      enabled: false,
+      maxRounds: 3,
+      timeoutSeconds: 120,
+      maxDriverAttempts: 5,
+      claimTimeoutSeconds: 60,
+      enabledServices: ['shop', 'errand'],
+      rideMinimumDistanceKm: 30,
+      makeOfferEnabled: true,
+      acceptFareEnabled: true,
+      allowlist: []
+    });
+
+    const asAny = raw as any;
+    return {
+      enabled: Boolean(asAny?.enabled ?? false),
+      maxRounds: Number(asAny?.maxRounds ?? 3),
+      timeoutSeconds: Number(asAny?.timeoutSeconds ?? 120),
+      maxDriverAttempts: Number(asAny?.maxDriverAttempts ?? 5),
+      claimTimeoutSeconds: Number(asAny?.claimTimeoutSeconds ?? 60),
+      enabledServices: Array.isArray(asAny?.enabledServices)
+        ? (asAny.enabledServices as string[])
+        : (Array.isArray(asAny?.eligibleServices) ? (asAny.eligibleServices as string[]) : ['shop', 'errand']),
+      rideMinimumDistanceKm: Number(asAny?.rideMinimumDistanceKm ?? asAny?.longDistanceRideKm ?? 30),
+      makeOfferEnabled: asAny?.makeOfferEnabled !== undefined ? Boolean(asAny.makeOfferEnabled) : true,
+      acceptFareEnabled: asAny?.acceptFareEnabled !== undefined ? Boolean(asAny.acceptFareEnabled) : true,
+      allowlist: Array.isArray(asAny?.allowlist) ? (asAny.allowlist as string[]) : []
+    };
+  }
+
   static async getFlags(tenantId: string | null = null): Promise<MarketplaceFlags> {
-    const [commission, dynamic, negotiation, bidding, smart] = await Promise.all([
+    const [commission, dynamic, negotiation, bidding, smart, hybrid] = await Promise.all([
       this.getCommissionSettings(tenantId),
       this.getDynamicPricingSettings(tenantId),
       this.getNegotiationSettings(tenantId),
       this.getBiddingSettings(tenantId),
-      this.getSmartMatchingSettings(tenantId)
+      this.getSmartMatchingSettings(tenantId),
+      this.getHybridNegotiationSettings(tenantId)
     ]);
 
     return {
       marketplaceEnabled: commission.percent >= 0,
       dynamicPricingEnabled: dynamic.enabled,
       negotiationEnabled: negotiation.enabled,
-      hybridNegotiationEnabled: HYBRID_MARKETPLACE_ENABLED,
+      hybridNegotiationEnabled: hybrid.enabled,
       biddingEnabled: bidding.enabled,
       smartMatchingEnabled: smart.enabled
     };
+  }
+
+  static isHybridServiceEnabled(
+    settings: HybridNegotiationSettings,
+    serviceTypeSlug: string | null | undefined,
+    distanceKm?: number | null
+  ): boolean {
+    if (!serviceTypeSlug) return false;
+    const canonical = this.canonicalServiceSlug(serviceTypeSlug);
+    const enabled = settings.enabledServices.map((s) => this.canonicalServiceSlug(s));
+    if (!enabled.includes(canonical)) return false;
+    if (canonical === 'ride' && distanceKm !== undefined && distanceKm !== null && distanceKm < settings.rideMinimumDistanceKm) {
+      return false;
+    }
+    return true;
+  }
+
+  static async isHybridEnabledForUser(
+    userId: string | null | undefined,
+    serviceTypeSlug?: string | null,
+    distanceKm?: number | null,
+    tenantId: string | null = null
+  ): Promise<boolean> {
+    if (!userId) {
+      console.log('[HybridMarketplace] disabled for normal user: no user id');
+      return false;
+    }
+
+    const settings = await this.getHybridNegotiationSettings(tenantId);
+    const allowlist = settings.allowlist || [];
+
+    if (!settings.enabled && !allowlist.includes(userId)) {
+      console.log(`[HybridMarketplace] disabled for normal user ${userId}`);
+      return false;
+    }
+
+    if (serviceTypeSlug !== undefined && serviceTypeSlug !== null && !this.isHybridServiceEnabled(settings, serviceTypeSlug, distanceKm)) {
+      console.log(`[HybridMarketplace] disabled for normal user ${userId}: service ${serviceTypeSlug} not enabled`);
+      return false;
+    }
+
+    console.log(`[HybridMarketplace] enabled for test user ${userId}`);
+    return true;
   }
 
   static async getEffectiveCommissionPercent(
@@ -311,7 +417,7 @@ export class MarketplaceConfigService {
 
     if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
     if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
-    if (['van', 'moving', 'move', 'van-moving', 'van moving'].includes(raw)) return 'van-moving';
+    if (['van', 'moving', 'move', 'van-moving', 'van_moving', 'van moving'].includes(raw)) return 'van-moving';
     if (['ride', 'rides'].includes(raw)) return 'ride';
 
     return raw;
@@ -332,7 +438,8 @@ export class MarketplaceConfigService {
   ): Promise<boolean> {
     const settings = await this.getBiddingSettings(tenantId);
     const canonical = this.canonicalServiceSlug(serviceTypeSlug);
-    return settings.enabled && settings.defaultServices.some(s => this.canonicalServiceSlug(s) === canonical);
+    const services = settings.enabledServices?.length ? settings.enabledServices : settings.defaultServices;
+    return settings.enabled && services.some(s => this.canonicalServiceSlug(s) === canonical);
   }
 
   static async determineJobModes(

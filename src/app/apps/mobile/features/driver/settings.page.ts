@@ -482,7 +482,7 @@ type DocType = 'license' | 'insurance';
                 <div class="min-w-0">
                   <h3 class="text-sm font-black text-slate-950">{{ isProDriver() ? 'Pro Plan' : 'Starter Plan' }}</h3>
                   <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.1em] mt-0.5 leading-snug">
-                    {{ isProDriver() ? '0% service commission while active' : 'Default plan • 15% commission' }}
+                    {{ isProDriver() ? '0% service commission while active' : 'Default plan - admin-configured commission' }}
                   </p>
                 </div>
               </div>

@@ -336,7 +336,7 @@ VALUES ('marketplace_hybrid_negotiation_enabled', 'false', now())
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
 INSERT INTO public.marketplace_settings (tenant_id, key, value)
-VALUES (NULL, 'hybrid_negotiation', '{"enabled": false, "maxRounds": 5, "timeoutSeconds": 120, "maxDriverAttempts": 10, "eligibleServices": ["shop", "errand", "shopping", "van", "van_moving", "delivery"], "longDistanceRideKm": 25}')
+VALUES (NULL, 'hybrid_negotiation', '{"enabled": false, "maxRounds": 5, "timeoutSeconds": 120, "maxDriverAttempts": 10, "claimTimeoutSeconds": 120, "enabledServices": ["shop", "errand"], "rideMinimumDistanceKm": 25, "makeOfferEnabled": true, "acceptFareEnabled": true, "allowlist": []}')
 ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
 -- 15. Hybrid negotiation session tables

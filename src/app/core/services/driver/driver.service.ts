@@ -26,7 +26,6 @@ import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
 import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
 import { MarketplaceHybridService, HybridOpportunity } from '../marketplace/marketplace-hybrid.service';
-import { HYBRID_MARKETPLACE_ENABLED } from '../marketplace/marketplace-hybrid.constants';
 
 @Injectable({
     providedIn: 'root'
@@ -274,6 +273,8 @@ export class DriverService {
     }
 
     async fetchAvailableJobs() {
+        const user = this.auth.currentUser();
+        await this.hybridService.loadSettings();
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*, service_type:service_types(*)')
@@ -288,8 +289,10 @@ export class DriverService {
             .filter((job) => this.vehicleCompatibility.isCompatible(job, vehicle));
         this.availableJobs.set(bookings);
 
-        if (HYBRID_MARKETPLACE_ENABLED) {
+        if (this.hybridService.isHybridEnabledForUser(user?.id)) {
             await this.fetchHybridOpportunities();
+        } else {
+            this.hybridOpportunities.set([]);
         }
     }
 
@@ -302,8 +305,9 @@ export class DriverService {
 
         try {
             const opportunities = await this.hybridService.fetchHybridOpportunities(user.id);
-            this.hybridOpportunities.set(opportunities);
-            return opportunities;
+            const allowed = opportunities.filter((op) => this.hybridService.isHybridEnabledForUser(user.id, op.service_slug, op.distance_km ?? undefined));
+            this.hybridOpportunities.set(allowed);
+            return allowed;
         } catch (error) {
             console.warn('[DriverService] hybrid opportunities not available', error);
             this.hybridOpportunities.set([]);

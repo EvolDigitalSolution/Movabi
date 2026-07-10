@@ -102,7 +102,7 @@ export class BookingService {
         ]);
         const dispatchStatuses = new Set(['searching', 'broadcasting', 'waiting']);
 
-        const isPaid = paidStatuses.has(paymentStatus) || hasPaymentIntent;
+        const isPaid = paidStatuses.has(paymentStatus) || (hasPaymentIntent && !['failed', 'canceled', 'pending', 'requires_payment_method', 'unpaid'].includes(paymentStatus));
 
         if (['completed', 'settled'].includes(status)) return 'completed';
         if (status === 'cancelled') {
@@ -304,7 +304,7 @@ export class BookingService {
             pricing_plan_used: pricing?.pricingPlanUsed || (bookingData as any).pricing_plan || 'starter',
             base_fare_used: Number(pricing?.baseFareUsed || 0),
             price_per_km_used: Number(pricing?.pricePerKmUsed || 0),
-            commission_rate_used: Number(pricing?.commissionRateUsed ?? 15),
+            commission_rate_used: Number(pricing?.commissionRateUsed ?? 5),
             platform_fee: Number(pricing?.platformFee ?? pricing?.commissionFee ?? 0),
             driver_payout: Number(pricing?.driverPayout ?? 0),
             tax_amount: Number(pricing?.taxAmount ?? 0),
@@ -939,15 +939,18 @@ export class BookingService {
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
 
+        const job = await this.getBooking(jobId);
+        const hasLockedDriver = !!job?.driver_id;
+
         const { data, error } = await this.supabase
             .from('jobs')
             .update({
                 payment_status: isWallet ? 'wallet_funded' : 'authorized',
                 payment_intent_id: isWallet ? null : paymentIntentId,
-                status: 'searching',
-                dispatch_started_at: now.toISOString(),
-                driver_search_expires_at: expiresAt,
-                dispatch_attempts: 1,
+                status: hasLockedDriver ? 'assigned' : 'searching',
+                dispatch_started_at: hasLockedDriver ? null : now.toISOString(),
+                driver_search_expires_at: hasLockedDriver ? null : expiresAt,
+                dispatch_attempts: hasLockedDriver ? 0 : 1,
                 no_driver_reason: null
             })
             .eq('id', jobId)

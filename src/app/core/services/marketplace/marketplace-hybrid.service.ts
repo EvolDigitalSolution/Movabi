@@ -1,13 +1,19 @@
 import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
+import { ApiUrlService } from '../api-url.service';
+import { MarketplaceConfigService, MarketplaceHybridNegotiationSettings } from './marketplace-config.service';
 import {
-    HYBRID_MARKETPLACE_ENABLED,
-    HYBRID_ELIGIBLE_SERVICES,
-    HYBRID_MAX_ROUNDS,
-    HYBRID_NEGOTIATION_TIMEOUT_SECONDS,
-    HYBRID_MAX_DRIVER_ATTEMPTS,
-    HYBRID_LONG_DISTANCE_RIDE_KM
+    DEFAULT_HYBRID_ENABLED,
+    DEFAULT_HYBRID_ENABLED_SERVICES,
+    DEFAULT_HYBRID_MAX_ROUNDS,
+    DEFAULT_HYBRID_TIMEOUT_SECONDS,
+    DEFAULT_HYBRID_CLAIM_TIMEOUT_SECONDS,
+    DEFAULT_HYBRID_MAX_DRIVER_ATTEMPTS,
+    DEFAULT_HYBRID_RIDE_MINIMUM_KM,
+    DEFAULT_HYBRID_MAKE_OFFER_ENABLED,
+    DEFAULT_HYBRID_ACCEPT_FARE_ENABLED,
+    DEFAULT_HYBRID_ALLOWLIST
 } from './marketplace-hybrid.constants';
 
 export interface MarketplaceNegotiationSession {
@@ -62,6 +68,8 @@ export interface HybridOpportunity {
 export class MarketplaceHybridService {
     private supabase = inject(SupabaseService);
     private auth = inject(AuthService);
+    private apiUrl = inject(ApiUrlService);
+    private config = inject(MarketplaceConfigService);
 
     private rpc(name: string, args?: Record<string, unknown>) {
         return this.supabase.rpc(name, args);
@@ -71,30 +79,123 @@ export class MarketplaceHybridService {
         return this.auth.currentUser()?.id;
     }
 
-    isEnabled(): boolean {
-        return HYBRID_MARKETPLACE_ENABLED;
+    constructor() {
+        // Ensure DB-backed marketplace settings (including hybrid allowlist) are loaded.
+        if (!this.config.settingsSignal()) {
+            this.config.loadSettings().catch(() => undefined);
+        }
     }
 
-    isServiceEligible(serviceSlug: string): boolean {
-        if (!HYBRID_MARKETPLACE_ENABLED) return false;
-        const slug = String(serviceSlug || '').toLowerCase().replace(/[-\s]/g, '_');
-        return HYBRID_ELIGIBLE_SERVICES.includes(slug);
+    async loadSettings(): Promise<MarketplaceHybridNegotiationSettings> {
+        const settings = await this.config.loadSettings();
+        return settings.hybridNegotiation;
+    }
+
+    private canonicalServiceSlug(slug: string): string {
+        const raw = String(slug || '').trim().toLowerCase().replace(/[-\s]/g, '_');
+        if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+        if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+        if (['van', 'moving', 'move', 'van_moving', 'van-moving', 'van moving'].includes(raw)) return 'van-moving';
+        if (['ride', 'rides'].includes(raw)) return 'ride';
+        return raw;
+    }
+
+    private getHybridSettings() {
+        return this.config.settingsSignal()?.hybridNegotiation;
+    }
+
+    private defaultSettings() {
+        return {
+            enabled: DEFAULT_HYBRID_ENABLED,
+            maxRounds: DEFAULT_HYBRID_MAX_ROUNDS,
+            timeoutSeconds: DEFAULT_HYBRID_TIMEOUT_SECONDS,
+            maxDriverAttempts: DEFAULT_HYBRID_MAX_DRIVER_ATTEMPTS,
+            claimTimeoutSeconds: DEFAULT_HYBRID_CLAIM_TIMEOUT_SECONDS,
+            enabledServices: DEFAULT_HYBRID_ENABLED_SERVICES,
+            rideMinimumDistanceKm: DEFAULT_HYBRID_RIDE_MINIMUM_KM,
+            makeOfferEnabled: DEFAULT_HYBRID_MAKE_OFFER_ENABLED,
+            acceptFareEnabled: DEFAULT_HYBRID_ACCEPT_FARE_ENABLED,
+            allowlist: DEFAULT_HYBRID_ALLOWLIST
+        };
+    }
+
+    private settings() {
+        return this.getHybridSettings() ?? this.defaultSettings();
+    }
+
+    isEnabled(): boolean {
+        return this.isHybridEnabledForUser(this.userId);
+    }
+
+    isServiceEnabled(serviceSlug: string, distanceKm?: number | null): boolean {
+        const settings = this.settings();
+        const enabledServices = settings.enabledServices?.length
+            ? settings.enabledServices
+            : DEFAULT_HYBRID_ENABLED_SERVICES;
+        const canonical = this.canonicalServiceSlug(serviceSlug);
+        const canonicalList = enabledServices.map((s: string) => this.canonicalServiceSlug(s));
+        if (!canonicalList.includes(canonical)) {
+            return false;
+        }
+        if (canonical === 'ride' && distanceKm !== undefined && distanceKm !== null && distanceKm < settings.rideMinimumDistanceKm) {
+            return false;
+        }
+        return true;
+    }
+
+    isHybridEnabledForUser(
+        userId: string | null | undefined,
+        serviceSlug?: string | null,
+        distanceKm?: number | null
+    ): boolean {
+        if (!userId) {
+            console.log('[HybridMarketplace] disabled for normal user: no user id');
+            return false;
+        }
+
+        const settings = this.settings();
+        const allowlist = settings.allowlist ?? [];
+
+        if (!settings.enabled && !allowlist.includes(userId)) {
+            console.log(`[HybridMarketplace] disabled for normal user ${userId}`);
+            return false;
+        }
+
+        if (serviceSlug !== undefined && serviceSlug !== null && !this.isServiceEnabled(serviceSlug, distanceKm)) {
+            console.log(`[HybridMarketplace] disabled for normal user ${userId}: service ${serviceSlug} not enabled`);
+            return false;
+        }
+
+        console.log(`[HybridMarketplace] enabled for test user ${userId}`);
+        return true;
+    }
+
+    isMakeOfferEnabled(): boolean {
+        return this.settings().makeOfferEnabled ?? DEFAULT_HYBRID_MAKE_OFFER_ENABLED;
+    }
+
+    isAcceptFareEnabled(): boolean {
+        return this.settings().acceptFareEnabled ?? DEFAULT_HYBRID_ACCEPT_FARE_ENABLED;
     }
 
     isLongDistanceRide(distanceKm: number): boolean {
-        return distanceKm >= HYBRID_LONG_DISTANCE_RIDE_KM;
+        return distanceKm >= this.settings().rideMinimumDistanceKm;
     }
 
     getNegotiationTimeoutSeconds(): number {
-        return HYBRID_NEGOTIATION_TIMEOUT_SECONDS;
+        return this.settings().timeoutSeconds ?? DEFAULT_HYBRID_TIMEOUT_SECONDS;
+    }
+
+    getClaimTimeoutSeconds(): number {
+        return this.settings().claimTimeoutSeconds ?? DEFAULT_HYBRID_CLAIM_TIMEOUT_SECONDS;
     }
 
     getMaxRounds(): number {
-        return HYBRID_MAX_ROUNDS;
+        return this.settings().maxRounds ?? DEFAULT_HYBRID_MAX_ROUNDS;
     }
 
     getMaxDriverAttempts(): number {
-        return HYBRID_MAX_DRIVER_ATTEMPTS;
+        return this.settings().maxDriverAttempts ?? DEFAULT_HYBRID_MAX_DRIVER_ATTEMPTS;
     }
 
     async getSessionByJob(jobId: string): Promise<MarketplaceNegotiationSession | null> {
@@ -131,7 +232,7 @@ export class MarketplaceHybridService {
     }
 
     async createCustomerOffer(jobId: string, customerId: string, amount: number, suggestedFare: number): Promise<MarketplaceNegotiationSession> {
-        const expiresAt = new Date(Date.now() + HYBRID_NEGOTIATION_TIMEOUT_SECONDS * 1000).toISOString();
+        const expiresAt = new Date(Date.now() + this.getNegotiationTimeoutSeconds() * 1000).toISOString();
         const { data, error } = await this.supabase
             .from('marketplace_negotiation_sessions')
             .insert({
@@ -163,6 +264,7 @@ export class MarketplaceHybridService {
             round_number: 1
         });
 
+        await this.notify({ action: 'notify_drivers', jobId });
         return session;
     }
 
@@ -173,7 +275,20 @@ export class MarketplaceHybridService {
         });
 
         if (error) throw error;
-        return data as MarketplaceNegotiationSession;
+        const session = data as MarketplaceNegotiationSession;
+
+        if (session?.customer_id) {
+            await this.notify({
+                action: 'notify',
+                jobId,
+                recipientUserId: session.customer_id,
+                title: 'A driver is negotiating',
+                body: 'A driver has started negotiating your fare. Open the app to review.',
+                data: { action: 'driver_claimed' }
+            });
+        }
+
+        return session;
     }
 
     async releaseSession(jobId: string, driverId: string, reason: 'pass' | 'decline' | 'timeout' | 'offline' | 'incompatible'): Promise<MarketplaceNegotiationSession> {
@@ -184,7 +299,10 @@ export class MarketplaceHybridService {
         });
 
         if (error) throw error;
-        return data as MarketplaceNegotiationSession;
+        const session = data as MarketplaceNegotiationSession;
+
+        await this.notify({ action: 'notify_drivers', jobId });
+        return session;
     }
 
     async lockFare(jobId: string, driverId: string, amount: number): Promise<MarketplaceNegotiationSession> {
@@ -195,7 +313,20 @@ export class MarketplaceHybridService {
         });
 
         if (error) throw error;
-        return data as MarketplaceNegotiationSession;
+        const session = data as MarketplaceNegotiationSession;
+
+        if (session?.customer_id) {
+            await this.notify({
+                action: 'notify',
+                jobId,
+                recipientUserId: session.customer_id,
+                title: 'Fare agreed!',
+                body: 'Your fare has been agreed. Complete payment to confirm your booking.',
+                data: { action: 'fare_agreed' }
+            });
+        }
+
+        return session;
     }
 
     async driverCounterOffer(sessionId: string, amount: number, message?: string): Promise<MarketplaceNegotiationSession> {
@@ -206,7 +337,7 @@ export class MarketplaceHybridService {
         if (!session) throw new Error('Session not found');
 
         const nextRound = (session.round_count || 0) + 1;
-        if (nextRound > HYBRID_MAX_ROUNDS) {
+        if (nextRound > this.getMaxRounds()) {
             throw new Error('Maximum negotiation rounds reached');
         }
 
@@ -216,7 +347,7 @@ export class MarketplaceHybridService {
                 driver_counter_offer: amount,
                 status: 'negotiating',
                 round_count: nextRound,
-                expires_at: new Date(Date.now() + HYBRID_NEGOTIATION_TIMEOUT_SECONDS * 1000).toISOString(),
+                expires_at: new Date(Date.now() + this.getNegotiationTimeoutSeconds() * 1000).toISOString(),
                 updated_at: new Date().toISOString()
             } as any)
             .eq('id', sessionId)
@@ -236,6 +367,15 @@ export class MarketplaceHybridService {
             round_number: nextRound
         });
 
+        await this.notify({
+            action: 'notify',
+            jobId: session.job_id,
+            recipientUserId: session.customer_id,
+            title: 'Driver counter offer',
+            body: `A driver has countered with ${this.formatCurrency(amount)}. Open the app to review.`,
+            data: { action: 'driver_counter', amount }
+        });
+
         return data as MarketplaceNegotiationSession;
     }
 
@@ -247,7 +387,7 @@ export class MarketplaceHybridService {
         if (!session) throw new Error('Session not found');
 
         const nextRound = (session.round_count || 0) + 1;
-        if (nextRound > HYBRID_MAX_ROUNDS) {
+        if (nextRound > this.getMaxRounds()) {
             throw new Error('Maximum negotiation rounds reached');
         }
 
@@ -257,7 +397,7 @@ export class MarketplaceHybridService {
                 customer_offer: amount,
                 status: 'negotiating',
                 round_count: nextRound,
-                expires_at: new Date(Date.now() + HYBRID_NEGOTIATION_TIMEOUT_SECONDS * 1000).toISOString(),
+                expires_at: new Date(Date.now() + this.getNegotiationTimeoutSeconds() * 1000).toISOString(),
                 updated_at: new Date().toISOString()
             } as any)
             .eq('id', sessionId)
@@ -275,6 +415,15 @@ export class MarketplaceHybridService {
             amount,
             message: 'Customer counter offer',
             round_number: nextRound
+        });
+
+        await this.notify({
+            action: 'notify',
+            jobId: session.job_id,
+            recipientUserId: session.active_driver_id,
+            title: 'Customer counter offer',
+            body: 'The customer has sent a new counter offer. Open the app to review.',
+            data: { action: 'customer_counter', amount }
         });
 
         return data as MarketplaceNegotiationSession;
@@ -330,6 +479,30 @@ export class MarketplaceHybridService {
         });
 
         return data as MarketplaceNegotiationSession;
+    }
+
+    private formatCurrency(amount: number): string {
+        return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+    }
+
+    private async notify(payload: { action: 'notify_drivers'; jobId: string; } | { action: 'notify'; jobId: string; recipientUserId: string | null; title: string; body: string; data?: Record<string, any>; }): Promise<void> {
+        const token = this.auth.session()?.access_token;
+        if (!token) return;
+
+        if (payload.action === 'notify' && !payload.recipientUserId) return;
+
+        try {
+            await fetch(this.apiUrl.getApiUrl('/booking/notify-hybrid'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+        } catch (error) {
+            console.warn('[MarketplaceHybridService] notify failed', error);
+        }
     }
 
     async addEvent(event: Omit<MarketplaceNegotiationEvent, 'id' | 'created_at'>): Promise<void> {
