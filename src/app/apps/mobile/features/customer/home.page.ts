@@ -497,16 +497,7 @@ export class HomePage implements OnInit, OnDestroy {
     }
 
     continuePendingMarketplaceBooking(booking: any): void {
-        const status = String(booking?.status || '').toLowerCase();
-        const isPaid = ['authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'paid', 'captured'].includes(
-            String(booking?.payment_status || '').toLowerCase()
-        );
-
-        if (status === 'fare_agreed' && !isPaid) {
-            void this.router.navigate(['/customer/marketplace-payment', booking.id]);
-        } else {
-            void this.router.navigate(['/customer/marketplace-fare', booking.id]);
-        }
+        void this.router.navigate(['/customer/marketplace-fare', booking.id]);
     }
 
     private isDirectlyActiveBooking(booking: any): boolean {

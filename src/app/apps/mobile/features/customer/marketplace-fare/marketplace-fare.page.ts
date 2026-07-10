@@ -39,6 +39,8 @@ import { SupabaseService } from '../../../../../core/services/supabase/supabase.
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { MarketplaceNegotiationService, FareNegotiation } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
+import { MarketplaceHybridService } from '../../../../../core/services/marketplace/marketplace-hybrid.service';
+import { HYBRID_MARKETPLACE_ENABLED } from '../../../../../core/services/marketplace/marketplace-hybrid.constants';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { Booking } from '../../../../../shared/models/booking.model';
@@ -270,137 +272,135 @@ import { StripeCardElement } from '@stripe/stripe-js';
             </div>
           </div>
 
-          <!-- ── LATEST NEGOTIATION CARD ── -->
-          @if (latestNegotiation(); as offer) {
-            <div class="bg-white rounded-3xl border border-slate-200 shadow-md p-5 mb-4">
-              <div class="flex items-center justify-between mb-3">
-                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  {{ offer.proposed_by_role === 'driver' ? 'Driver Offer' : 'Your Offer' }}
-                </p>
-                <div class="flex items-center gap-1">
-                  <ion-icon name="person-outline" class="text-sm text-slate-400"></ion-icon>
-                  <span class="text-xs text-slate-500">{{ offer.proposed_by_role === 'driver' ? 'Driver' : 'You' }}</span>
-                </div>
-              </div>
-              <p class="text-3xl font-display font-black text-slate-900 mb-2">{{ formatPrice(offer.amount) }}</p>
-              @if (offer.message) {
-                <div class="bg-slate-50 rounded-xl p-3 mb-4">
-                  <p class="text-sm text-slate-600 italic">"{{ offer.message }}"</p>
-                </div>
-              }
-              @if (offer.proposed_by_role === 'driver' && offer.status === 'pending') {
-                <div class="flex gap-3 mt-3">
-                  <button
-                    type="button"
-                    (click)="acceptOffer(offer)"
-                    class="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow flex items-center justify-center gap-2"
-                  >
-                    <ion-icon name="checkmark-circle-outline"></ion-icon>
-                    Accept Offer
-                  </button>
-                  <button
-                    type="button"
-                    (click)="openCounterInput()"
-                    class="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <ion-icon name="cash-outline"></ion-icon>
-                    Challenge Price
-                  </button>
-                </div>
-              }
-            </div>
-          }
-
-          <!-- ── PRIMARY ACTION BUTTONS (negotiating / pending_fare_confirmation) ── -->
-          @if (job.status === 'negotiating') {
-            <div class="bg-amber-50 rounded-3xl border border-amber-200 shadow-md p-5 mb-4">
-              <div class="flex items-start gap-3">
-                <div class="w-11 h-11 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0">
-                  <ion-icon name="time-outline" class="text-xl text-amber-600"></ion-icon>
-                </div>
-                <div class="min-w-0">
-                  <p class="text-sm font-black text-slate-900">Waiting for drivers</p>
-                  <p class="text-sm text-slate-600 mt-1">Waiting for drivers to accept or counter your offer.</p>
-                  @if (latestNegotiation(); as pendingOffer) {
-                    <p class="text-xs font-bold text-amber-700 mt-2">Your current offer: {{ formatPrice(pendingOffer.amount) }}</p>
-                  }
-                </div>
-              </div>
-            </div>
-          }
-
+          <!-- ── PRIMARY ACTION BUTTONS (pending_fare_confirmation / negotiating) ── -->
           @if (job.status === 'negotiating' || job.status === 'pending_fare_confirmation') {
             <div class="space-y-3 mb-4">
-              <!-- Accept -->
-              <button
-                type="button"
-                (click)="acceptSuggestedFare()"
-                class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
-              >
-                <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
-                Accept Fare &amp; Pay
-              </button>
-
-              <!-- Challenge – always a real button, never just text -->
-              <button
-                type="button"
-                (click)="openCounterInput()"
-                class="w-full py-4 bg-gradient-to-r from-amber-400 to-orange-400 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-md flex items-center justify-center gap-3"
-              >
-                <ion-icon name="cash-outline" class="text-xl"></ion-icon>
-                Make an Offer / Challenge Price
-              </button>
-
-              @if (isErrand()) {
-                <p class="text-xs text-center text-slate-400 px-4">You can suggest a different service fare. Your shopping budget stays reserved separately.</p>
+              @if (hybridEnabled) {
+                <button
+                  type="button"
+                  (click)="acceptSuggestedFare()"
+                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
+                >
+                  <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
+                  Accept Fare &amp; Pay
+                </button>
+                <button
+                  type="button"
+                  (click)="openHybridOfferInput()"
+                  class="w-full py-4 bg-white border-2 border-amber-500 text-amber-700 rounded-3xl font-black text-lg active:scale-95 transition-all shadow-sm flex items-center justify-center gap-3"
+                >
+                  <ion-icon name="pricetag-outline" class="text-xl"></ion-icon>
+                  Make an Offer
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  (click)="acceptSuggestedFare()"
+                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
+                >
+                  <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
+                  Accept Fare &amp; Pay
+                </button>
               }
             </div>
           }
 
-          <!-- ── COUNTER OFFER INPUT (appears below action buttons) ── -->
-          @if (showCounterInput()) {
-            <div #counterInputSection class="bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl border border-amber-200 shadow-md p-5 mb-4">
-              <div class="flex items-center gap-2 mb-1">
-                <ion-icon name="cash-outline" class="text-amber-600 text-lg"></ion-icon>
-                <p class="text-sm font-bold text-amber-800">Your Service Fare Offer</p>
-              </div>
-              @if (isErrand()) {
-                <p class="text-xs text-amber-600 mb-3">This offer applies to the service fare only. Shopping budget ({{ formatPrice(itemBudget()) }}) stays reserved.</p>
-              }
-              <div class="relative mb-4">
-                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-amber-600">£</span>
-                <input
-                  type="number"
-                  [ngModel]="counterAmount()"
-                  (ngModelChange)="counterAmount.set(+$event)"
-                  class="w-full rounded-2xl border-2 border-amber-200 pl-10 pr-4 py-4 text-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                  placeholder="Enter service fare amount"
-                  inputmode="decimal"
-                />
-              </div>
-              @if (isErrand() && counterAmount() > 0) {
-                <div class="bg-white/70 rounded-xl px-3 py-2 mb-4 border border-amber-100 flex justify-between items-center">
-                  <span class="text-xs text-slate-500">Total authorisation after agreement</span>
-                  <span class="text-sm font-bold text-slate-900">{{ formatPrice(counterAmount() + itemBudget()) }}</span>
-                </div>
-              }
-              <div class="flex gap-3">
+          <!-- ── HYBRID OFFER INPUT ── -->
+          @if (showHybridOfferInput()) {
+            <div class="bg-white rounded-3xl border border-amber-100 shadow-sm p-5 mb-4">
+              <label class="text-sm font-bold text-slate-700 mb-2 block">Your offer</label>
+              <input
+                type="number"
+                [(ngModel)]="hybridOfferAmount"
+                class="w-full py-3 px-4 border border-slate-200 rounded-2xl font-display font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="Enter your offer amount"
+              />
+              <div class="flex gap-3 mt-4">
                 <button
                   type="button"
-                  (click)="submitCounterOffer()"
-                  class="flex-1 py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                  (click)="submitHybridOffer()"
+                  class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg"
                 >
-                  <ion-icon name="send-outline"></ion-icon>
                   Send Offer
                 </button>
                 <button
                   type="button"
-                  (click)="showCounterInput.set(false)"
-                  class="py-4 px-5 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold text-base active:scale-95 transition-all flex items-center justify-center gap-2"
+                  (click)="showHybridOfferInput.set(false)"
+                  class="flex-1 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-base active:scale-95 transition-all"
                 >
-                  <ion-icon name="close-outline"></ion-icon>
+                  Cancel
                 </button>
               </div>
+            </div>
+          }
+
+          <!-- ── HYBRID NEGOTIATION STATUS ── -->
+          @if (hybridEnabled && hybridSession() && !showHybridOfferInput()) {
+            <div class="bg-white rounded-3xl border border-amber-100 shadow-sm p-5 mb-4">
+              @if (hybridSession().status === 'open' || hybridSession().status === 'released') {
+                <div class="text-center py-6">
+                  <ion-icon name="time-outline" class="text-4xl text-amber-500 mb-2"></ion-icon>
+                  <p class="text-lg font-bold text-slate-900">Waiting for a driver</p>
+                  <p class="text-sm text-slate-500 mt-1">Your offer has been sent. We'll notify you when a driver starts negotiating.</p>
+                </div>
+              }
+              @if (hybridSession().status === 'driver_claimed' || hybridSession().status === 'negotiating') {
+                <div class="space-y-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                      <ion-icon name="person-outline" class="text-xl"></ion-icon>
+                    </div>
+                    <div>
+                      <p class="text-sm font-bold text-slate-900">A driver is negotiating</p>
+                      <p class="text-xs text-slate-500">Round {{ hybridSession().round_count || 1 }}</p>
+                    </div>
+                  </div>
+
+                  @if (hybridSession().driver_counter_offer) {
+                    <div class="bg-amber-50 rounded-2xl border border-amber-100 p-4">
+                      <p class="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-1">Driver Counter</p>
+                      <p class="text-2xl font-display font-black text-amber-900">{{ formatPrice(hybridSession().driver_counter_offer) }}</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        (click)="acceptDriverCounter()"
+                        class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-lg"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        (click)="openHybridOfferInput()"
+                        class="w-full py-3 bg-white border border-amber-500 text-amber-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Counter
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      (click)="tryAnotherDriver()"
+                      class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
+                    >
+                      Try Another Driver
+                    </button>
+                  }
+                </div>
+              }
+              @if (hybridSession().status === 'fare_agreed') {
+                <div class="text-center py-4">
+                  <ion-icon name="checkmark-circle-outline" class="text-4xl text-emerald-500 mb-2"></ion-icon>
+                  <p class="text-lg font-bold text-emerald-900">Fare agreed!</p>
+                  <p class="text-sm text-emerald-700">Complete payment below to confirm.</p>
+                </div>
+              }
+              <button
+                type="button"
+                (click)="cancelHybridRequest()"
+                class="w-full mt-4 py-3 bg-white border border-red-200 text-red-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
+              >
+                Cancel Request
+              </button>
             </div>
           }
 
@@ -431,43 +431,36 @@ import { StripeCardElement } from '@stripe/stripe-js';
                     <span class="text-2xl font-black text-emerald-900">{{ formatPrice(paymentTotal()) }}</span>
                   </div>
                 </div>
-                <div class="bg-white rounded-2xl border border-emerald-100 p-4 text-left">
-                  <div class="flex items-center justify-between mb-3">
-                    <div>
-                      <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Secure card payment</p>
-                      <p class="text-sm font-bold text-slate-900">Pay {{ formatPrice(paymentTotal()) }} with card</p>
-                    </div>
-                    <ion-icon name="card-outline" class="text-xl text-emerald-600"></ion-icon>
-                  </div>
-
-                  <div class="relative rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 min-h-[52px] flex items-center">
-                    <div
-                      #cardElementHost
-                      class="w-full"
-                      [class.opacity-50]="!cardReady()"
-                    ></div>
-                    @if (!cardReady()) {
-                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">Loading card input...</span>
+                @if (hybridEnabled) {
+                  <div class="bg-white rounded-2xl border border-emerald-100 p-4 mb-4 text-left">
+                    <div #cardElementHost class="py-3 px-2 border border-slate-200 rounded-xl bg-white min-h-[50px]"></div>
+                    @if (cardError()) {
+                      <p class="text-xs text-red-500 mt-2 font-medium">{{ cardError() }}</p>
                     }
                   </div>
-
-                  @if (cardError()) {
-                    <p class="mt-2 text-xs font-semibold text-red-600">{{ cardError() }}</p>
-                  }
-                  @if (paymentError()) {
-                    <p class="mt-2 text-xs font-semibold text-red-600">{{ paymentError() }}</p>
-                  }
-
                   <button
                     type="button"
                     (click)="payWithCard()"
-                    [disabled]="paymentProcessing() || !cardReady() || !cardComplete()"
-                    class="mt-4 w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                    [disabled]="!cardReady() || paymentProcessing()"
+                    class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-70"
+                  >
+                    @if (paymentProcessing()) {
+                      <span>Processing...</span>
+                    } @else {
+                      <ion-icon name="card-outline"></ion-icon>
+                      <span>Pay {{ formatPrice(paymentTotal()) }}</span>
+                    }
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    (click)="continueToPayment()"
+                    class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
                   >
                     <ion-icon name="card-outline"></ion-icon>
-                    {{ paymentProcessing() ? 'Processing...' : 'Pay ' + formatPrice(paymentTotal()) + ' with Card' }}
+                    Continue to Payment
                   </button>
-                </div>
+                }
               </div>
             </div>
           }
@@ -488,10 +481,13 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     private config = inject(AppConfigService);
     private bookingService = inject(BookingService);
     private negotiationService = inject(MarketplaceNegotiationService);
+    private hybridService = inject(MarketplaceHybridService);
     private paymentService = inject(PaymentService);
     private auth = inject(AuthService);
     private toastCtrl = inject(ToastController);
     private loadingCtrl = inject(LoadingController);
+
+    readonly hybridEnabled = HYBRID_MARKETPLACE_ENABLED;
 
     private cardElementHost: ElementRef<HTMLDivElement> | null = null;
 
@@ -522,6 +518,16 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     cardComplete = signal(false);
     cardReady = signal(false);
     countdown = signal<number>(0);
+
+    // Hybrid negotiation state
+    hybridSession = signal<any>(null);
+    hybridEvents = signal<any[]>([]);
+    hybridOfferAmount = signal<number>(0);
+    showHybridOfferInput = signal(false);
+    hybridPaymentVisible = signal(false);
+    private hybridSessionChannel?: RealtimeChannel;
+    private hybridEventsChannel?: RealtimeChannel;
+
     private jobChannel?: RealtimeChannel;
     private negotiationChannel?: RealtimeChannel;
     private countdownInterval?: any;
@@ -569,7 +575,11 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
         await this.loadBooking(id);
         this.subscribeToJob(id);
-        this.subscribeToNegotiations(id);
+
+        if (this.hybridEnabled) {
+            await this.loadHybridSession(id);
+            this.subscribeToHybridSession(id);
+        }
     }
 
     ngOnDestroy() {
@@ -582,8 +592,16 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             this.negotiationChannel.unsubscribe();
             this.negotiationChannel = undefined;
         }
+        if (this.hybridSessionChannel) {
+            this.hybridSessionChannel.unsubscribe();
+            this.hybridSessionChannel = undefined;
+        }
+        if (this.hybridEventsChannel) {
+            this.hybridEventsChannel.unsubscribe();
+            this.hybridEventsChannel = undefined;
+        }
         this.stopCountdown();
-        
+
         // Clear signals to free memory
         this.booking.set(null);
         this.negotiations.set([]);
@@ -591,6 +609,11 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         this.showCounterInput.set(false);
         this.showBreakdown.set(false);
         this.countdown.set(0);
+        this.hybridSession.set(null);
+        this.hybridEvents.set([]);
+        this.hybridOfferAmount.set(0);
+        this.showHybridOfferInput.set(false);
+        this.hybridPaymentVisible.set(false);
         if (this.card) {
             this.card.destroy();
             this.card = null;
@@ -618,7 +641,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     suggestedFare() {
         const job = this.booking();
-        return job?.agreed_fare || job?.negotiated_fare || job?.total_price || 0;
+        return job?.agreed_fare || job?.total_price || 0;
     }
 
     paymentTotal(): number {
@@ -668,7 +691,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
         const steps = [
             { number: '1', label: 'Requested', status: 'requested', completed: true, active: false, isLast: false },
-            { number: '2', label: 'Negotiating', status: 'negotiating', completed: false, active: false, isLast: false },
+            { number: '2', label: 'Confirm Fare', status: 'negotiating', completed: false, active: false, isLast: false },
             { number: '3', label: 'Payment', status: 'fare_agreed', completed: false, active: false, isLast: false },
             { number: '4', label: 'Searching', status: 'searching', completed: false, active: false, isLast: false },
             { number: '5', label: 'Assigned', status: 'assigned', completed: false, active: false, isLast: true }
@@ -748,17 +771,117 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         if (!job) return;
 
         try {
+            const loading = await this.loadingCtrl.create({ message: 'Locking fare...' });
+            await loading.present();
             await this.negotiationService.lockAgreedFare(job.id, this.suggestedFare());
-            this.booking.set({
-                ...job,
-                agreed_fare: this.suggestedFare(),
-                status: 'fare_agreed'
-            } as Booking);
-            await this.loadBooking(job.id);
-            setTimeout(() => void this.initializeStripe(), 80);
+            await loading.dismiss();
+
+            if (this.hybridEnabled) {
+                await this.loadBooking(job.id);
+                await this.initializeStripe();
+                return;
+            }
+
+            await this.router.navigate(['/customer/marketplace-payment', job.id]);
         } catch (error) {
             console.error('[MarketplaceFare] accept failed', error);
             await this.showToast('Unable to accept fare. Please check your connection and try again.', 'danger');
+        }
+    }
+
+    openHybridOfferInput() {
+        this.hybridOfferAmount.set(Math.round(this.suggestedFare() * 0.9));
+        this.showHybridOfferInput.set(true);
+    }
+
+    async submitHybridOffer() {
+        const job = this.booking();
+        const amount = this.hybridOfferAmount();
+        if (!job || !amount || amount <= 0) {
+            await this.showToast('Please enter a valid offer amount.', 'warning');
+            return;
+        }
+
+        try {
+            const loading = await this.loadingCtrl.create({ message: 'Sending offer...' });
+            await loading.present();
+            const session = await this.hybridService.createCustomerOffer(
+                job.id,
+                this.auth.currentUser()?.id || '',
+                amount,
+                this.suggestedFare()
+            );
+            await this.supabase
+                .from('jobs')
+                .update({
+                    status: 'pending_fare_confirmation',
+                    negotiation_mode_enabled: true,
+                    updated_at: new Date().toISOString()
+                } as any)
+                .eq('id', job.id);
+            await loading.dismiss();
+            this.hybridSession.set(session);
+            this.showHybridOfferInput.set(false);
+            await this.showToast('Offer sent. Waiting for a driver to start negotiation.', 'success');
+            await this.loadBooking(job.id);
+        } catch (error) {
+            console.error('[MarketplaceFare] submit offer failed', error);
+            await this.showToast('Unable to send offer. Please try again.', 'danger');
+        }
+    }
+
+    async acceptDriverCounter() {
+        const session = this.hybridSession();
+        if (!session) return;
+        try {
+            const updated = await this.hybridService.acceptDriverCounter(session.id, session.driver_counter_offer);
+            this.hybridSession.set(updated);
+            await this.loadBooking(session.job_id);
+            await this.initializeStripe();
+            await this.showToast('Fare agreed! Pay to confirm.', 'success');
+        } catch (error) {
+            console.error('[MarketplaceFare] accept counter failed', error);
+            await this.showToast('Unable to accept. Please try again.', 'danger');
+        }
+    }
+
+    async counterDriverOffer() {
+        const session = this.hybridSession();
+        const amount = this.hybridOfferAmount();
+        if (!session || !amount || amount <= 0) return;
+        try {
+            const updated = await this.hybridService.customerCounterOffer(session.id, amount);
+            this.hybridSession.set(updated);
+            await this.showToast('Counter offer sent.', 'success');
+        } catch (error) {
+            console.error('[MarketplaceFare] counter failed', error);
+            await this.showToast('Unable to send counter. Please try again.', 'danger');
+        }
+    }
+
+    async tryAnotherDriver() {
+        const session = this.hybridSession();
+        if (!session || !session.active_driver_id) return;
+        try {
+            await this.hybridService.releaseSession(session.job_id, session.active_driver_id, 'pass');
+            await this.showToast('Looking for another driver.', 'success');
+            await this.loadHybridSession(session.job_id);
+        } catch (error) {
+            console.error('[MarketplaceFare] release failed', error);
+            await this.showToast('Unable to switch driver. Please try again.', 'danger');
+        }
+    }
+
+    async cancelHybridRequest() {
+        const session = this.hybridSession();
+        if (!session) return;
+        try {
+            await this.hybridService.customerDecline(session.id);
+            await this.showToast('Request cancelled.', 'success');
+            await this.router.navigate(['/customer']);
+        } catch (error) {
+            console.error('[MarketplaceFare] cancel failed', error);
+            await this.showToast('Unable to cancel. Please try again.', 'danger');
         }
     }
 
@@ -835,7 +958,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     async continueToPayment() {
         const job = this.booking();
         if (!job) return;
-        await this.payWithCard();
+        await this.router.navigate(['/customer/marketplace-payment', job.id]);
     }
 
     async payWithCard() {
@@ -897,15 +1020,37 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         try {
             const job = await this.bookingService.getBooking(id);
             this.booking.set(job);
-            await this.loadNegotiations(id);
-            this.startCountdown();
-            if (job.status === 'fare_agreed') {
-                setTimeout(() => void this.initializeStripe(), 80);
-            }
         } catch (error) {
             console.error('[MarketplaceFare] load booking failed', error);
             await this.showToast('Unable to load booking details. Please refresh the page.', 'danger');
         }
+    }
+
+    private async loadHybridSession(jobId: string): Promise<void> {
+        try {
+            const session = await this.hybridService.getSessionByJob(jobId);
+            this.hybridSession.set(session);
+            if (session) {
+                const events = await this.hybridService.getSessionEvents(session.id);
+                this.hybridEvents.set(events);
+            }
+        } catch (error) {
+            console.warn('[MarketplaceFare] hybrid session not loaded', error);
+        }
+    }
+
+    private subscribeToHybridSession(jobId: string): void {
+        this.hybridService.getSessionByJob(jobId).then(session => {
+            if (!session) return;
+
+            this.hybridSessionChannel = this.hybridService.subscribeToSession(session.id, (payload: any) => {
+                this.hybridSession.set(payload.new);
+            });
+
+            this.hybridEventsChannel = this.hybridService.subscribeToEvents(session.id, (payload: any) => {
+                this.hybridEvents.update(events => [...events, payload.new]);
+            });
+        }).catch(() => undefined);
     }
 
     private isPaymentHandled(job: Booking | null | undefined): boolean {

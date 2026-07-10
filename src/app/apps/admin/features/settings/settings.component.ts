@@ -350,6 +350,48 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                     </div>
 
                     <div class="pt-6 border-t border-slate-100">
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Hybrid Negotiation</h4>
+                      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div>
+                          <label class="field-label">Enabled</label>
+                          <select [(ngModel)]="marketplaceConfig.hybridNegotiation.enabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Timeout (seconds)</label>
+                          <input type="number" min="10" [(ngModel)]="marketplaceConfig.hybridNegotiation.timeoutSeconds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Rounds</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.maxRounds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Driver Attempts</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.maxDriverAttempts" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Long Distance Ride (km)</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.longDistanceRideKm" class="field-control">
+                        </div>
+                        <div class="md:col-span-2 lg:col-span-3">
+                          <label class="field-label">Eligible Services</label>
+                          <input
+                            type="text"
+                            [ngModel]="marketplaceConfig.hybridNegotiation.eligibleServices.join(', ')"
+                            (ngModelChange)="updateHybridNegotiationServices($event)"
+                            class="field-control"
+                            placeholder="shop, errand, delivery, van, van_moving"
+                          >
+                        </div>
+                      </div>
+                      <p class="text-xs text-slate-500 font-medium mt-2">
+                        Default rollout: shop/errand, van, delivery, then long-distance ride.
+                      </p>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100">
                       <h4 class="text-sm font-bold text-slate-900 mb-4">Bidding</h4>
                       <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
                         <div>
@@ -839,6 +881,14 @@ export class AdminSettingsComponent implements OnInit {
             maxRounds: 3,
             minServices: ['errand', 'delivery', 'van-moving']
         },
+        hybridNegotiation: {
+            enabled: false,
+            maxRounds: 5,
+            timeoutSeconds: 120,
+            maxDriverAttempts: 10,
+            eligibleServices: ['shop', 'errand', 'shopping', 'van', 'van_moving', 'delivery'],
+            longDistanceRideKm: 25
+        },
         bidding: {
             enabled: true,
             timeoutSeconds: 300,
@@ -1211,6 +1261,13 @@ export class AdminSettingsComponent implements OnInit {
 
     updateBiddingServices(value: string): void {
         this.marketplaceConfig.bidding.defaultServices = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+    }
+
+    updateHybridNegotiationServices(value: string): void {
+        this.marketplaceConfig.hybridNegotiation.eligibleServices = value
             .split(',')
             .map(s => s.trim().toLowerCase())
             .filter(Boolean);

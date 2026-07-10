@@ -42,10 +42,14 @@ export interface SmartMatchingSettings {
 export interface MarketplaceFlags {
   marketplaceEnabled: boolean;
   negotiationEnabled: boolean;
+  hybridNegotiationEnabled: boolean;
   biddingEnabled: boolean;
   dynamicPricingEnabled: boolean;
   smartMatchingEnabled: boolean;
 }
+
+// TODO: Replace with DB-backed marketplace_hybrid_negotiation_enabled flag once migrations are available.
+export const HYBRID_MARKETPLACE_ENABLED = false;
 
 export interface CommissionOverride {
   id?: string;
@@ -236,6 +240,7 @@ export class MarketplaceConfigService {
       marketplaceEnabled: commission.percent >= 0,
       dynamicPricingEnabled: dynamic.enabled,
       negotiationEnabled: negotiation.enabled,
+      hybridNegotiationEnabled: HYBRID_MARKETPLACE_ENABLED,
       biddingEnabled: bidding.enabled,
       smartMatchingEnabled: smart.enabled
     };

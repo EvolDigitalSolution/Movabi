@@ -75,6 +75,8 @@ import { MarkerCoordinates, ServiceTypeSlug } from '../../../../../core/models/m
 import { RouteSummary } from '../../../../../core/models/maps/route-result.model';
 import { NotificationService } from '../../../../../core/services/notification.service';
 import { MarketplaceNegotiationService } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
+import { MarketplaceHybridService } from '../../../../../core/services/marketplace/marketplace-hybrid.service';
+import { HYBRID_MARKETPLACE_ENABLED } from '../../../../../core/services/marketplace/marketplace-hybrid.constants';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -546,6 +548,47 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                   </div>
               } @else {
                 <div class="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+5rem)]">
+                  @if (hybridEnabled && hybridOpportunities().length > 0) {
+                    <div class="mb-4">
+                      <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-display font-bold text-slate-900">
+                          Negotiation Opportunities
+                          <span class="ml-2 px-2 py-1 bg-amber-500 text-slate-950 text-[10px] font-bold rounded-full">
+                            {{ hybridOpportunities().length }}
+                          </span>
+                        </h3>
+                      </div>
+                      <div class="space-y-3">
+                        @for (opportunity of hybridOpportunities(); track opportunity.session_id) {
+                          <button
+                            type="button"
+                            (click)="startHybridNegotiation(opportunity.job_id)"
+                            class="w-full bg-white border border-amber-200 rounded-xl p-4 text-left active:scale-[0.98] transition-all hover:bg-amber-50"
+                          >
+                            <div class="flex items-start justify-between gap-3">
+                              <div class="flex-1 min-w-0">
+                                <p class="text-sm font-bold text-slate-900 truncate">{{ opportunity.service_name }}</p>
+                                <p class="text-xs text-slate-600 mt-1">{{ opportunity.pickup_address || 'Location pending' }}</p>
+                                <div class="flex items-center gap-3 mt-2">
+                                  <span class="text-xs text-slate-500">{{ opportunity.distance_km?.toFixed(1) || '—' }} km</span>
+                                  <span class="text-xs text-slate-500">{{ formatDuration(opportunity.eta_seconds) }}</span>
+                                </div>
+                              </div>
+                              <div class="text-right">
+                                <p class="text-lg font-display font-black text-slate-950">
+                                  {{ formatPrice(opportunity.suggested_fare) }}
+                                </p>
+                                @if (opportunity.customer_offer) {
+                                  <p class="text-xs text-emerald-600 font-bold">Offer {{ formatPrice(opportunity.customer_offer) }}</p>
+                                }
+                              </div>
+                            </div>
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  }
+
                   <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-display font-bold text-slate-900">
                       Available Requests
@@ -877,7 +920,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private routing = inject(RoutingService);
     private notificationService = inject(NotificationService);
     private negotiationService = inject(MarketplaceNegotiationService);
+    private hybridService = inject(MarketplaceHybridService);
 
+    readonly hybridEnabled = HYBRID_MARKETPLACE_ENABLED;
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
     activeJob = this.driverService.activeJob;
@@ -900,9 +945,6 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private readonly activeRequestStatuses = new Set<string>([
         'searching',
         'requested',
-        'pending_fare_confirmation',
-        'negotiating',
-        'fare_agreed',
         'broadcasting',
         'waiting'
     ]);
@@ -923,6 +965,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!id) return null;
         return this.jobs().find(job => job.id === id) || null;
     });
+    hybridOpportunities = computed(() => this.driverService.hybridOpportunities());
+    selectedHybridOpportunity = signal<any>(null);
     locationError = this.locationService.locationError;
 
     submitting = signal(false);
@@ -1780,6 +1824,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         return 'Not set';
     }
 
+    formatDuration(seconds: number | null | undefined): string {
+        if (!seconds || seconds <= 0) return '—';
+        const mins = Math.round(seconds / 60);
+        return `${mins} min`;
+    }
+
     formatJobDuration(job: Booking): string {
         const raw = job as any;
         const metadata = raw.metadata || {};
@@ -1965,6 +2015,21 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         this.syncMarketplaceMapMarkers();
         this.centerMarketplaceMap(true); // Force refit after refresh
         this.showToast('Requests refreshed.', 'success');
+    }
+
+    async startHybridNegotiation(jobId: string) {
+        try {
+            const session = await this.driverService.claimHybridSession(jobId);
+            this.selectedHybridOpportunity.set(session);
+            await this.router.navigate(['/driver/hybrid-negotiation', jobId]);
+        } catch (error: any) {
+            console.error('[DriverDashboard] claim hybrid session failed', error);
+            this.showToast(error.message || 'Unable to start negotiation. It may be claimed by another driver.', 'danger');
+        }
+    }
+
+    navigateToHybridNegotiation(jobId: string) {
+        void this.router.navigate(['/driver/hybrid-negotiation', jobId]);
     }
 
     private async loadWalletEarnings(): Promise<void> {

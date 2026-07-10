@@ -40,6 +40,15 @@ export interface MarketplaceSmartMatchingSettings {
   responseWeight: number;
 }
 
+export interface MarketplaceHybridNegotiationSettings {
+  enabled: boolean;
+  maxRounds: number;
+  timeoutSeconds: number;
+  maxDriverAttempts: number;
+  eligibleServices: string[];
+  longDistanceRideKm: number;
+}
+
 export interface MarketplaceCommissionOverride {
   id?: string;
   service_type_slug: string | null;
@@ -57,6 +66,7 @@ export interface MarketplaceSettings {
   commission: MarketplaceCommissionSettings;
   dynamicPricing: MarketplaceDynamicPricingSettings;
   negotiation: MarketplaceNegotiationSettings;
+  hybridNegotiation: MarketplaceHybridNegotiationSettings;
   bidding: MarketplaceBiddingSettings;
   smartMatching: MarketplaceSmartMatchingSettings;
 }
@@ -92,6 +102,14 @@ export class MarketplaceConfigService {
         timeoutSeconds: 120,
         maxRounds: 3,
         minServices: ['errand', 'delivery', 'van-moving']
+      },
+      hybridNegotiation: {
+        enabled: false,
+        maxRounds: 5,
+        timeoutSeconds: 120,
+        maxDriverAttempts: 10,
+        eligibleServices: ['shop', 'errand', 'shopping', 'van', 'van_moving', 'delivery'],
+        longDistanceRideKm: 25
       },
       bidding: {
         enabled: true,
@@ -130,6 +148,7 @@ export class MarketplaceConfigService {
         commission: { ...defaults.commission, ...(map['commission'] as Record<string, unknown> || {}) },
         dynamicPricing: { ...defaults.dynamicPricing, ...(map['dynamic_pricing'] as Record<string, unknown> || {}) },
         negotiation: { ...defaults.negotiation, ...(map['negotiation'] as Record<string, unknown> || {}) },
+        hybridNegotiation: { ...defaults.hybridNegotiation, ...(map['hybrid_negotiation'] as Record<string, unknown> || {}) },
         bidding: { ...defaults.bidding, ...(map['bidding'] as Record<string, unknown> || {}) },
         smartMatching: { ...defaults.smartMatching, ...(map['smart_matching'] as Record<string, unknown> || {}) }
       };
@@ -146,6 +165,7 @@ export class MarketplaceConfigService {
       { key: 'commission', value: settings.commission },
       { key: 'dynamic_pricing', value: settings.dynamicPricing },
       { key: 'negotiation', value: settings.negotiation },
+      { key: 'hybrid_negotiation', value: settings.hybridNegotiation },
       { key: 'bidding', value: settings.bidding },
       { key: 'smart_matching', value: settings.smartMatching }
     ];

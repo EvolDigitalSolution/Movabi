@@ -25,6 +25,8 @@ import { NotificationService } from '../notification.service';
 import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
 import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
+import { MarketplaceHybridService, HybridOpportunity } from '../marketplace/marketplace-hybrid.service';
+import { HYBRID_MARKETPLACE_ENABLED } from '../marketplace/marketplace-hybrid.constants';
 
 @Injectable({
     providedIn: 'root'
@@ -41,10 +43,13 @@ export class DriverService {
     private apiUrlService = inject(ApiUrlService);
     private vehicleCompatibility = inject(VehicleCompatibilityService);
     private compliance = inject(ComplianceService);
+    private hybridService = inject(MarketplaceHybridService);
 
     onlineStatus = signal<DriverStatus>('offline');
     isAvailable = signal<boolean>(true);
     availableJobs = signal<Booking[]>([]);
+    hybridOpportunities = signal<HybridOpportunity[]>([]);
+    activeHybridSession = signal<any>(null);
     activeJob = signal<Booking | null>(null);
     earnings = signal<Earning[]>([]);
     vehicle = signal<Vehicle | null>(null);
@@ -134,7 +139,7 @@ export class DriverService {
         return data as DriverProfile;
     }
 
-    private readonly availableRequestStatuses = ['searching', 'requested', 'fare_agreed', 'broadcasting', 'waiting', 'pending_fare_confirmation', 'negotiating'];
+    private readonly availableRequestStatuses = ['searching', 'requested', 'broadcasting', 'waiting'];
     private readonly paidRequestPaymentStatuses = ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded'];
 
     private isAvailableRequest(job: { status?: string; payment_status?: string; driver_id?: string | null; negotiation_mode_enabled?: boolean }): boolean {
@@ -145,11 +150,6 @@ export class DriverService {
         if (hasDriver) return false;
 
         if (!this.availableRequestStatuses.includes(status)) return false;
-
-        // Pre-payment marketplace negotiation jobs are visible to drivers before payment is authorized.
-        if (['pending_fare_confirmation', 'negotiating'].includes(status)) {
-            return job?.negotiation_mode_enabled === true;
-        }
 
         return this.paidRequestPaymentStatuses.includes(paymentStatus);
     }
@@ -277,7 +277,7 @@ export class DriverService {
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*, service_type:service_types(*)')
-            .or(`and(status.in.(searching,requested,broadcasting,waiting,fare_agreed),payment_status.in.(paid,wallet_funded,authorized,requires_capture,succeeded),driver_id.is.null),and(status.in.(pending_fare_confirmation,negotiating),negotiation_mode_enabled.eq.true,driver_id.is.null)`)
+            .or(`and(status.in.(searching,requested,broadcasting,waiting),payment_status.in.(paid,wallet_funded,authorized,requires_capture,succeeded),driver_id.is.null)`)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -287,6 +287,55 @@ export class DriverService {
             .map((job) => this.bookingService.mapJobToBooking(job))
             .filter((job) => this.vehicleCompatibility.isCompatible(job, vehicle));
         this.availableJobs.set(bookings);
+
+        if (HYBRID_MARKETPLACE_ENABLED) {
+            await this.fetchHybridOpportunities();
+        }
+    }
+
+    async fetchHybridOpportunities(): Promise<HybridOpportunity[]> {
+        const user = this.auth.currentUser();
+        if (!user?.id) {
+            this.hybridOpportunities.set([]);
+            return [];
+        }
+
+        try {
+            const opportunities = await this.hybridService.fetchHybridOpportunities(user.id);
+            this.hybridOpportunities.set(opportunities);
+            return opportunities;
+        } catch (error) {
+            console.warn('[DriverService] hybrid opportunities not available', error);
+            this.hybridOpportunities.set([]);
+            return [];
+        }
+    }
+
+    async claimHybridSession(jobId: string): Promise<any> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Not authenticated');
+
+        const session = await this.hybridService.claimSession(jobId, user.id);
+        this.activeHybridSession.set(session);
+        return session;
+    }
+
+    async releaseHybridSession(jobId: string, reason: 'pass' | 'decline' | 'timeout' | 'offline' | 'incompatible'): Promise<any> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Not authenticated');
+
+        const session = await this.hybridService.releaseSession(jobId, user.id, reason);
+        this.activeHybridSession.set(session);
+        return session;
+    }
+
+    async lockHybridFare(jobId: string, amount: number): Promise<any> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Not authenticated');
+
+        const session = await this.hybridService.lockFare(jobId, user.id, amount);
+        this.activeHybridSession.set(session);
+        return session;
     }
 
     async fetchActiveJob(): Promise<Booking | null> {

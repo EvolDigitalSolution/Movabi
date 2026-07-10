@@ -330,7 +330,283 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 13. Trigger to maintain updated_at on marketplace tables
+-- 14. Hybrid marketplace feature flag
+INSERT INTO public.system_configs (key, value, updated_at)
+VALUES ('marketplace_hybrid_negotiation_enabled', 'false', now())
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+
+INSERT INTO public.marketplace_settings (tenant_id, key, value)
+VALUES (NULL, 'hybrid_negotiation', '{"enabled": false, "maxRounds": 5, "timeoutSeconds": 120, "maxDriverAttempts": 10, "eligibleServices": ["shop", "errand", "shopping", "van", "van_moving", "delivery"], "longDistanceRideKm": 25}')
+ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+
+-- 15. Hybrid negotiation session tables
+CREATE TABLE IF NOT EXISTS public.marketplace_negotiation_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL UNIQUE REFERENCES public.jobs(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  active_driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'driver_claimed', 'negotiating', 'fare_agreed', 'driver_declined', 'customer_declined', 'released', 'expired', 'payment_pending', 'paid')),
+  suggested_fare NUMERIC(12,2) NOT NULL,
+  customer_offer NUMERIC(12,2),
+  driver_counter_offer NUMERIC(12,2),
+  agreed_fare NUMERIC(12,2),
+  round_count INTEGER NOT NULL DEFAULT 0,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  claimed_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL,
+  payment_deadline TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_sessions_job
+  ON public.marketplace_negotiation_sessions(job_id, status);
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_sessions_driver
+  ON public.marketplace_negotiation_sessions(active_driver_id, status);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_negotiation_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES public.marketplace_negotiation_sessions(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  proposed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  proposed_by_role TEXT NOT NULL CHECK (proposed_by_role IN ('customer', 'driver', 'system')),
+  event_type TEXT NOT NULL CHECK (event_type IN ('customer_offer', 'driver_counter', 'customer_accept', 'driver_accept', 'customer_decline', 'driver_decline', 'session_claimed', 'session_released', 'session_expired', 'payment_completed')),
+  amount NUMERIC(12,2),
+  message TEXT,
+  round_number INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_events_session
+  ON public.marketplace_negotiation_events(session_id, created_at DESC);
+
+-- 16. Atomic claim / release / lock RPCs for hybrid negotiation
+CREATE OR REPLACE FUNCTION public.claim_marketplace_negotiation(
+  p_job_id UUID,
+  p_driver_id UUID
+)
+RETURNS public.marketplace_negotiation_sessions AS $$
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+  v_job public.jobs;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No negotiation session found for this job';
+  END IF;
+
+  IF v_session.status NOT IN ('open', 'released') OR v_session.active_driver_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Session already claimed';
+  END IF;
+
+  SELECT * INTO v_job FROM public.jobs WHERE id = p_job_id;
+
+  IF v_job.status NOT IN ('pending_fare_confirmation', 'negotiating', 'open') THEN
+    RAISE EXCEPTION 'Job is not available for negotiation';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET active_driver_id = p_driver_id,
+      status = 'negotiating',
+      claimed_at = now(),
+      expires_at = now() + interval '120 seconds',
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'session_claimed', v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.release_marketplace_negotiation(
+  p_job_id UUID,
+  p_driver_id UUID,
+  p_reason TEXT
+)
+RETURNS public.marketplace_negotiation_sessions AS $$
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No negotiation session found';
+  END IF;
+
+  IF v_session.active_driver_id IS DISTINCT FROM p_driver_id AND p_reason <> 'system' THEN
+    RAISE EXCEPTION 'Only active driver or system can release session';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET active_driver_id = NULL,
+      status = 'released',
+      attempt_count = attempt_count + 1,
+      driver_counter_offer = NULL,
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  INSERT INTO public.driver_job_declines (driver_id, job_id, reason)
+  VALUES (p_driver_id, p_job_id, p_reason)
+  ON CONFLICT (driver_id, job_id) DO NOTHING;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, message, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'session_released', p_reason, v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.lock_marketplace_fare(
+  p_job_id UUID,
+  p_driver_id UUID,
+  p_amount NUMERIC
+)
+RETURNS public.marketplace_negotiation_sessions AS $$
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_session.active_driver_id IS DISTINCT FROM p_driver_id THEN
+    RAISE EXCEPTION 'Session not active for this driver';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET agreed_fare = p_amount,
+      status = 'fare_agreed',
+      expires_at = now() + interval '300 seconds',
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  UPDATE public.jobs
+  SET agreed_fare = p_amount,
+      status = 'fare_agreed',
+      driver_id = p_driver_id,
+      updated_at = now()
+  WHERE id = p_job_id;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, amount, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'driver_accept', p_amount, v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.fetch_hybrid_opportunities(
+  p_driver_id UUID
+)
+RETURNS TABLE (
+  session_id UUID,
+  job_id UUID,
+  customer_id UUID,
+  suggested_fare NUMERIC,
+  customer_offer NUMERIC,
+  distance_km NUMERIC,
+  eta_seconds INTEGER,
+  service_name TEXT,
+  service_slug TEXT,
+  pickup_address TEXT,
+  dropoff_address TEXT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    s.id AS session_id,
+    s.job_id,
+    s.customer_id,
+    s.suggested_fare,
+    s.customer_offer,
+    (j.metadata->>'distance_km')::NUMERIC AS distance_km,
+    (j.metadata->>'duration_seconds')::INTEGER AS eta_seconds,
+    COALESCE(st.name, 'Request') AS service_name,
+    COALESCE(st.slug, '') AS service_slug,
+    j.pickup_address,
+    j.dropoff_address
+  FROM public.marketplace_negotiation_sessions s
+  JOIN public.jobs j ON j.id = s.job_id
+  LEFT JOIN public.service_types st ON st.id = j.service_type_id
+  WHERE s.status IN ('open', 'released')
+    AND s.active_driver_id IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.driver_job_declines d
+      WHERE d.driver_id = p_driver_id AND d.job_id = s.job_id
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 17. RLS for hybrid negotiation tables
+ALTER TABLE public.marketplace_negotiation_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_negotiation_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS hybrid_sessions_owner_or_driver ON public.marketplace_negotiation_sessions;
+CREATE POLICY hybrid_sessions_owner_or_driver
+  ON public.marketplace_negotiation_sessions
+  FOR SELECT
+  TO authenticated
+  USING (
+    customer_id = auth.uid()
+    OR active_driver_id = auth.uid()
+  );
+
+DROP POLICY IF EXISTS hybrid_sessions_owner_write ON public.marketplace_negotiation_sessions;
+CREATE POLICY hybrid_sessions_owner_write
+  ON public.marketplace_negotiation_sessions
+  FOR UPDATE
+  TO authenticated
+  USING (customer_id = auth.uid() OR active_driver_id = auth.uid())
+  WITH CHECK (customer_id = auth.uid() OR active_driver_id = auth.uid());
+
+DROP POLICY IF EXISTS hybrid_events_participants ON public.marketplace_negotiation_events;
+CREATE POLICY hybrid_events_participants
+  ON public.marketplace_negotiation_events
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.marketplace_negotiation_sessions s
+      WHERE s.id = marketplace_negotiation_events.session_id
+        AND (s.customer_id = auth.uid() OR s.active_driver_id = auth.uid())
+    )
+  );
+
+-- 18. Triggers for updated_at on hybrid tables
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_marketplace_negotiation_sessions_updated_at') THEN
+    CREATE TRIGGER trg_marketplace_negotiation_sessions_updated_at
+      BEFORE UPDATE ON public.marketplace_negotiation_sessions
+      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_marketplace_negotiation_events_updated_at') THEN
+    CREATE TRIGGER trg_marketplace_negotiation_events_updated_at
+      BEFORE UPDATE ON public.marketplace_negotiation_events
+      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  END IF;
+END $$;
+
+-- 19. Trigger to maintain updated_at on marketplace tables
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN

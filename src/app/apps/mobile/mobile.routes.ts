@@ -175,6 +175,10 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/driver/earnings/earnings.page').then((m) => m.EarningsPage)
             },
             {
+                path: 'hybrid-negotiation/:id',
+                loadComponent: () => import('@mobile/features/driver/hybrid-negotiation/hybrid-negotiation.page').then((m) => m.DriverHybridNegotiationPage)
+            },
+            {
                 path: 'subscription',
                 loadComponent: () => import('@mobile/features/driver/subscription/subscription.page').then((m) => m.SubscriptionPage)
             },
