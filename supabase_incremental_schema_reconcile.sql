@@ -20,6 +20,12 @@ SET public = EXCLUDED.public;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN
+        DROP POLICY IF EXISTS profiles_avatar_public_read ON storage.objects;
+        DROP POLICY IF EXISTS profiles_avatar_owner_insert ON storage.objects;
+        DROP POLICY IF EXISTS profiles_avatar_owner_update ON storage.objects;
+        DROP POLICY IF EXISTS profiles_avatar_owner_delete ON storage.objects;
+        DROP POLICY IF EXISTS driver_docs_owner_access ON storage.objects;
+
         IF NOT EXISTS (
             SELECT 1 FROM pg_policies
             WHERE schemaname = 'storage'
@@ -518,6 +524,8 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_details') THEN
         ALTER TABLE public.errand_details ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Job participants can read errand details" ON public.errand_details;
+        DROP POLICY IF EXISTS "Assigned drivers can update errand spend details" ON public.errand_details;
 
         IF NOT EXISTS (
             SELECT 1 FROM pg_policies
@@ -574,6 +582,7 @@ BEGIN
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_funding') THEN
         ALTER TABLE public.errand_funding ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Job participants can read errand funding" ON public.errand_funding;
 
         IF NOT EXISTS (
             SELECT 1 FROM pg_policies
@@ -1242,6 +1251,12 @@ ALTER TABLE public.job_issuing_transactions ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
+    DROP POLICY IF EXISTS "Drivers can read their issuing cards" ON public.driver_issuing_cards;
+    DROP POLICY IF EXISTS "Drivers can read their issuing cardholder" ON public.driver_issuing_cardholders;
+    DROP POLICY IF EXISTS "Job participants can read issuing spend controls" ON public.job_issuing_spend_controls;
+    DROP POLICY IF EXISTS "Job participants can read issuing authorizations" ON public.job_issuing_authorizations;
+    DROP POLICY IF EXISTS "Job participants can read issuing transactions" ON public.job_issuing_transactions;
+
     IF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'public'
@@ -1360,6 +1375,9 @@ ALTER TABLE public.job_messages ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
+    DROP POLICY IF EXISTS "Job participants can read messages" ON public.job_messages;
+    DROP POLICY IF EXISTS "Job participants can insert messages" ON public.job_messages;
+
     IF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'public'
@@ -2332,27 +2350,15 @@ BEGIN
         ADD CONSTRAINT service_type_check
         CHECK (service_type IN ('ride', 'errand', 'delivery', 'van-moving'));
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies
-        WHERE schemaname = 'public'
-          AND tablename = 'pricing_config'
-          AND policyname = 'Allow active pricing read'
-    ) THEN
-        CREATE POLICY "Allow active pricing read" ON pricing_config
-            FOR SELECT USING (is_active = TRUE);
-    END IF;
+    DROP POLICY IF EXISTS "Allow active pricing read" ON public.pricing_config;
+    CREATE POLICY "Allow active pricing read" ON public.pricing_config
+        FOR SELECT USING (is_active = TRUE);
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies
-        WHERE schemaname = 'public'
-          AND tablename = 'pricing_config'
-          AND policyname = 'Allow admin pricing management'
-    ) THEN
-        CREATE POLICY "Allow admin pricing management" ON pricing_config
-            FOR ALL
-            USING (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
-            WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
-    END IF;
+    DROP POLICY IF EXISTS "Allow admin pricing management" ON public.pricing_config;
+    CREATE POLICY "Allow admin pricing management" ON public.pricing_config
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
     INSERT INTO pricing_config (service_type, base_fare, per_km, per_min, service_fee, minimum_fare, currency_code, is_active)
     VALUES ('delivery', 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', TRUE)

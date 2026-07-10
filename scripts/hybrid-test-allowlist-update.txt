@@ -55,7 +55,7 @@ BEGIN
 
   -- Update system_configs only if a hybrid allowlist key is already present
   UPDATE public.system_configs
-  SET value = allowlist_jsonb::text,
+  SET value = allowlist_jsonb,
       updated_at = now()
   WHERE key = 'hybrid_allowlist';
 END $$;
