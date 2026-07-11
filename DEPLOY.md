@@ -51,6 +51,11 @@ To deploy updates:
 ```bash
 git pull
 docker compose build
-docker compose up -d
+docker compose up -d --build --force-recreate
 ```
-Docker Compose will recreate only the containers that have changed.
+Docker Compose will rebuild and recreate the containers, ensuring the fresh admin bundle is served. If you want to update only the admin service:
+```bash
+docker compose up -d --build --force-recreate movabi-admin
+```
+
+After the admin container is recreated, clear the browser cache and hard refresh the admin page to ensure the new `index.html` and hashed bundles are loaded.
