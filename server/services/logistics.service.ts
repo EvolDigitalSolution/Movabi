@@ -42,9 +42,10 @@ export class LogisticsService {
   static calculatePayout(
     totalPrice: number,
     pricingPlan: 'starter' | 'pro',
-    commissionRate: number = MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT
+    commissionRate: number = MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT,
+    serviceFeePercent: number = 0
   ) {
-    return calculatePayoutBreakdown(totalPrice, pricingPlan, commissionRate);
+    return calculatePayoutBreakdown(totalPrice, pricingPlan, commissionRate, serviceFeePercent);
   }
 
   /**

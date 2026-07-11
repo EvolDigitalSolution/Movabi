@@ -5,6 +5,7 @@ export interface MarketplaceCommissionSettings {
   percent: number;
   minFee: number;
   maxFee: number | null;
+  platformFeePercent?: number;
 }
 
 export interface MarketplaceDynamicPricingSettings {
@@ -14,6 +15,17 @@ export interface MarketplaceDynamicPricingSettings {
   weatherMultiplier: number;
   demandMultiplier: number;
   fuelMultiplier: number;
+  supplyScarcityMultiplier?: number;
+  rainMultiplier?: number;
+  floodMultiplier?: number;
+  peakMultiplier?: number;
+  airportSurcharge?: number;
+  publicHolidayMultiplier?: number;
+  eventMultiplier?: number;
+  nearbyDriverDiscount?: number;
+  minimumFare?: number;
+  maximumFareCap?: number;
+  nightMultiplier?: number;
   timeOfDayEnabled: boolean;
   demandSupplyEnabled: boolean;
   weatherEnabled: boolean;
@@ -26,6 +38,8 @@ export interface MarketplaceNegotiationSettings {
   timeoutSeconds: number;
   maxRounds: number;
   minServices: string[];
+  enabledServices?: string[];
+  defaultServices?: string[];
 }
 
 export interface MarketplaceBiddingSettings {
@@ -34,6 +48,13 @@ export interface MarketplaceBiddingSettings {
   timeoutSeconds: number;
   maxBids: number;
   defaultServices: string[];
+  minBid?: number;
+  maxBidPercentageAboveSuggestedFare?: number;
+  customerCanChooseDriver?: boolean;
+  showDriverEta?: boolean;
+  showDriverRating?: boolean;
+  showCompletedTrips?: boolean;
+  autoExpireUnsuccessfulBids?: boolean;
 }
 
 export interface MarketplaceSmartMatchingSettings {
@@ -43,6 +64,16 @@ export interface MarketplaceSmartMatchingSettings {
   completionWeight: number;
   distanceWeight: number;
   responseWeight: number;
+  searchBatchSize?: number;
+  driverClaimBatchSize?: number;
+  etaWeight?: number;
+  acceptanceRateWeight?: number;
+  cancellationRateWeight?: number;
+  responseTimeWeight?: number;
+  vehicleCompatibilityWeight?: number;
+  idleTimeWeight?: number;
+  repeatCustomerBonus?: number;
+  driverTierBonus?: number;
 }
 
 export interface MarketplaceHybridNegotiationSettings {
@@ -52,10 +83,94 @@ export interface MarketplaceHybridNegotiationSettings {
   maxDriverAttempts: number;
   claimTimeoutSeconds: number;
   enabledServices: string[];
+  eligibleServices?: string[];
   rideMinimumDistanceKm: number;
+  rideMode?: 'disabled' | 'long_distance_only' | 'all_rides';
   makeOfferEnabled: boolean;
   acceptFareEnabled: boolean;
+  allowCustomerCounterOffer?: boolean;
+  allowDriverCounterOffer?: boolean;
+  allowCustomerTryAnotherDriver?: boolean;
+  autoReleaseOnTimeout?: boolean;
+  autoReleaseOnDriverOffline?: boolean;
+  paymentDeadlineAfterFareAgreement?: number;
+  assignNegotiatingDriverAfterPayment?: boolean;
   allowlist?: string[];
+}
+
+export interface MarketplaceServiceRule {
+  enabled?: boolean;
+  marketplaceEnabled?: boolean;
+  negotiationEnabled?: boolean;
+  biddingEnabled?: boolean;
+  dynamicPricingEnabled?: boolean;
+  smartMatchingEnabled?: boolean;
+  minimumDistanceKm?: number;
+  maximumDistanceKm?: number;
+  minimumFare?: number;
+  maximumFare?: number;
+  paymentBeforeDispatch?: boolean;
+  allowScheduledJobs?: boolean;
+  allowMultiStop?: boolean;
+  allowHourlyBooking?: boolean;
+}
+
+export type MarketplaceServiceRules = Record<string, Partial<MarketplaceServiceRule>>;
+
+export interface MarketplacePaymentRules {
+  cardEnabled?: boolean;
+  walletEnabled?: boolean;
+  cashEnabled?: boolean;
+  manualCaptureEnabled?: boolean;
+  paymentBeforeDispatch?: boolean;
+  paymentDeadlineAfterFareAgreement?: number;
+  itemBudgetReservationEnabled?: boolean;
+  itemBudgetMaximum?: number;
+  refundReleaseTimeout?: number;
+  duplicatePaymentIntentProtection?: boolean;
+  allowedPaymentStatusesForDispatch?: string[];
+}
+
+export interface MarketplaceNotificationRule {
+  pushEnabled?: boolean;
+  inAppEnabled?: boolean;
+  soundEnabled?: boolean;
+  vibrationEnabled?: boolean;
+  repeatInterval?: number;
+  quietHoursStart?: string | null;
+  quietHoursEnd?: string | null;
+}
+
+export interface MarketplaceNotificationRules {
+  customer?: Record<string, MarketplaceNotificationRule>;
+  driver?: Record<string, MarketplaceNotificationRule>;
+}
+
+export interface MarketplaceDriverRules {
+  minimumDriverRating?: number;
+  minimumCompletedTrips?: number;
+  requiredVerificationStatus?: string;
+  requireActiveVehicle?: boolean;
+  requireStripeConnected?: boolean;
+  requireSufficientWallet?: boolean;
+  maximumActiveNegotiations?: number;
+  maximumActiveJobs?: number;
+  cooldownAfterDeclineSeconds?: number;
+  autoSuspendAfterRepeatedCancellations?: number;
+  allowFavouriteRepeatDrivers?: boolean;
+}
+
+export interface MarketplaceEmergencyControls {
+  disableMarketplaceGlobally?: boolean;
+  disableMakeOffer?: boolean;
+  disableHybridNegotiation?: boolean;
+  disableBidding?: boolean;
+  disableDynamicPricing?: boolean;
+  disableByService?: Record<string, boolean>;
+  forceAcceptFareOnly?: boolean;
+  forceNormalBookingFlow?: boolean;
+  disableCardPayments?: boolean;
+  disableWalletPayments?: boolean;
 }
 
 export interface MarketplaceCommissionOverride {
@@ -78,6 +193,12 @@ export interface MarketplaceSettings {
   hybridNegotiation: MarketplaceHybridNegotiationSettings;
   bidding: MarketplaceBiddingSettings;
   smartMatching: MarketplaceSmartMatchingSettings;
+  serviceRules?: MarketplaceServiceRules;
+  paymentRules?: MarketplacePaymentRules;
+  notificationRules?: MarketplaceNotificationRules;
+  driverRules?: MarketplaceDriverRules;
+  emergencyControls?: MarketplaceEmergencyControls;
+  marketplaceEnabled?: boolean;
 }
 
 @Injectable({
@@ -94,18 +215,29 @@ export class MarketplaceConfigService {
   readonly overridesSignal = this.overrides.asReadonly();
   readonly loadingSignal = this.loading.asReadonly();
 
-  private defaultSettings(): MarketplaceSettings {
+  defaultSettings(): MarketplaceSettings {
     return {
-      commission: { percent: 5.0, minFee: 0, maxFee: null },
-        dynamicPricing: {
-          enabled: true,
-          maxSurge: 3.0,
-          trafficMultiplier: 1,
-          weatherMultiplier: 1,
-          demandMultiplier: 1,
-          fuelMultiplier: 1,
-          timeOfDayEnabled: true,
-          demandSupplyEnabled: true,
+      commission: { percent: 5.0, minFee: 0, maxFee: null, platformFeePercent: 0 },
+      dynamicPricing: {
+        enabled: true,
+        maxSurge: 3.0,
+        trafficMultiplier: 1,
+        weatherMultiplier: 1,
+        demandMultiplier: 1,
+        fuelMultiplier: 1,
+        supplyScarcityMultiplier: 1,
+        rainMultiplier: 1,
+        floodMultiplier: 1,
+        peakMultiplier: 1.15,
+        airportSurcharge: 0,
+        publicHolidayMultiplier: 1,
+        eventMultiplier: 1,
+        nearbyDriverDiscount: 1,
+        minimumFare: 0,
+        maximumFareCap: 0,
+        nightMultiplier: 1.25,
+        timeOfDayEnabled: true,
+        demandSupplyEnabled: true,
         weatherEnabled: false,
         trafficEnabled: false,
         eventMultiplierEnabled: false
@@ -114,7 +246,9 @@ export class MarketplaceConfigService {
         enabled: true,
         timeoutSeconds: 120,
         maxRounds: 3,
-        minServices: ['errand', 'delivery', 'van-moving']
+        minServices: ['errand', 'delivery', 'van-moving'],
+        enabledServices: ['errand', 'delivery', 'van-moving'],
+        defaultServices: ['errand', 'delivery', 'van-moving']
       },
       hybridNegotiation: {
         enabled: false,
@@ -123,9 +257,18 @@ export class MarketplaceConfigService {
         maxDriverAttempts: 5,
         claimTimeoutSeconds: 60,
         enabledServices: ['shop', 'errand'],
+        eligibleServices: ['shop', 'errand'],
         rideMinimumDistanceKm: 30,
+        rideMode: 'long_distance_only',
         makeOfferEnabled: true,
         acceptFareEnabled: true,
+        allowCustomerCounterOffer: true,
+        allowDriverCounterOffer: true,
+        allowCustomerTryAnotherDriver: true,
+        autoReleaseOnTimeout: true,
+        autoReleaseOnDriverOffline: true,
+        paymentDeadlineAfterFareAgreement: 600,
+        assignNegotiatingDriverAfterPayment: true,
         allowlist: []
       },
       bidding: {
@@ -133,7 +276,14 @@ export class MarketplaceConfigService {
         enabledServices: ['van', 'van_moving'],
         timeoutSeconds: 300,
         maxBids: 10,
-        defaultServices: ['van', 'van_moving']
+        defaultServices: ['van', 'van_moving'],
+        minBid: 0,
+        maxBidPercentageAboveSuggestedFare: 50,
+        customerCanChooseDriver: false,
+        showDriverEta: true,
+        showDriverRating: true,
+        showCompletedTrips: true,
+        autoExpireUnsuccessfulBids: true
       },
       smartMatching: {
         enabled: true,
@@ -141,8 +291,143 @@ export class MarketplaceConfigService {
         ratingWeight: 0.25,
         completionWeight: 0.35,
         distanceWeight: 0.30,
-        responseWeight: 0.10
-      }
+        responseWeight: 0.10,
+        searchBatchSize: 15,
+        driverClaimBatchSize: 5,
+        etaWeight: 0,
+        acceptanceRateWeight: 0,
+        cancellationRateWeight: 0,
+        responseTimeWeight: 0,
+        vehicleCompatibilityWeight: 0,
+        idleTimeWeight: 0,
+        repeatCustomerBonus: 0,
+        driverTierBonus: 0
+      },
+      serviceRules: {
+        ride: {
+          enabled: true,
+          marketplaceEnabled: true,
+          negotiationEnabled: false,
+          biddingEnabled: false,
+          dynamicPricingEnabled: true,
+          smartMatchingEnabled: true,
+          minimumDistanceKm: 0,
+          maximumDistanceKm: 100,
+          minimumFare: 0,
+          maximumFare: 0,
+          paymentBeforeDispatch: false,
+          allowScheduledJobs: true,
+          allowMultiStop: true,
+          allowHourlyBooking: false
+        },
+        shop: {
+          enabled: true,
+          marketplaceEnabled: true,
+          negotiationEnabled: true,
+          biddingEnabled: false,
+          dynamicPricingEnabled: true,
+          smartMatchingEnabled: true,
+          minimumDistanceKm: 0,
+          maximumDistanceKm: 100,
+          minimumFare: 0,
+          maximumFare: 0,
+          paymentBeforeDispatch: false,
+          allowScheduledJobs: false,
+          allowMultiStop: false,
+          allowHourlyBooking: false
+        },
+        errand: {
+          enabled: true,
+          marketplaceEnabled: true,
+          negotiationEnabled: true,
+          biddingEnabled: false,
+          dynamicPricingEnabled: true,
+          smartMatchingEnabled: true,
+          minimumDistanceKm: 0,
+          maximumDistanceKm: 100,
+          minimumFare: 0,
+          maximumFare: 0,
+          paymentBeforeDispatch: false,
+          allowScheduledJobs: false,
+          allowMultiStop: false,
+          allowHourlyBooking: false
+        },
+        delivery: {
+          enabled: true,
+          marketplaceEnabled: true,
+          negotiationEnabled: true,
+          biddingEnabled: false,
+          dynamicPricingEnabled: true,
+          smartMatchingEnabled: true,
+          minimumDistanceKm: 0,
+          maximumDistanceKm: 100,
+          minimumFare: 0,
+          maximumFare: 0,
+          paymentBeforeDispatch: false,
+          allowScheduledJobs: false,
+          allowMultiStop: true,
+          allowHourlyBooking: false
+        },
+        'van-moving': {
+          enabled: true,
+          marketplaceEnabled: true,
+          negotiationEnabled: true,
+          biddingEnabled: true,
+          dynamicPricingEnabled: true,
+          smartMatchingEnabled: true,
+          minimumDistanceKm: 0,
+          maximumDistanceKm: 200,
+          minimumFare: 0,
+          maximumFare: 0,
+          paymentBeforeDispatch: false,
+          allowScheduledJobs: true,
+          allowMultiStop: true,
+          allowHourlyBooking: true
+        }
+      },
+      paymentRules: {
+        cardEnabled: true,
+        walletEnabled: true,
+        cashEnabled: false,
+        manualCaptureEnabled: true,
+        paymentBeforeDispatch: true,
+        paymentDeadlineAfterFareAgreement: 600,
+        itemBudgetReservationEnabled: true,
+        itemBudgetMaximum: 0,
+        refundReleaseTimeout: 0,
+        duplicatePaymentIntentProtection: true,
+        allowedPaymentStatusesForDispatch: ['succeeded', 'requires_capture']
+      },
+      notificationRules: {
+        customer: {},
+        driver: {}
+      },
+      driverRules: {
+        minimumDriverRating: 0,
+        minimumCompletedTrips: 0,
+        requiredVerificationStatus: 'verified',
+        requireActiveVehicle: true,
+        requireStripeConnected: true,
+        requireSufficientWallet: false,
+        maximumActiveNegotiations: 5,
+        maximumActiveJobs: 1,
+        cooldownAfterDeclineSeconds: 0,
+        autoSuspendAfterRepeatedCancellations: 0,
+        allowFavouriteRepeatDrivers: true
+      },
+      emergencyControls: {
+        disableMarketplaceGlobally: false,
+        disableMakeOffer: false,
+        disableHybridNegotiation: false,
+        disableBidding: false,
+        disableDynamicPricing: false,
+        disableByService: {},
+        forceAcceptFareOnly: false,
+        forceNormalBookingFlow: false,
+        disableCardPayments: false,
+        disableWalletPayments: false
+      },
+      marketplaceEnabled: true
     };
   }
 
@@ -192,7 +477,15 @@ export class MarketplaceConfigService {
         negotiation: { ...defaults.negotiation, ...(map['negotiation'] as Record<string, unknown> || {}) },
         hybridNegotiation: normalizedHybrid,
         bidding: normalizedBidding,
-        smartMatching: { ...defaults.smartMatching, ...(map['smart_matching'] as Record<string, unknown> || {}) }
+        smartMatching: { ...defaults.smartMatching, ...(map['smart_matching'] as Record<string, unknown> || {}) },
+        serviceRules: { ...defaults.serviceRules, ...(map['service_rules'] as MarketplaceServiceRules || {}) },
+        paymentRules: { ...defaults.paymentRules, ...(map['payment_rules'] as MarketplacePaymentRules || {}) },
+        notificationRules: { ...defaults.notificationRules, ...(map['notification_rules'] as MarketplaceNotificationRules || {}) },
+        driverRules: { ...defaults.driverRules, ...(map['driver_rules'] as MarketplaceDriverRules || {}) },
+        emergencyControls: { ...defaults.emergencyControls, ...(map['emergency_controls'] as MarketplaceEmergencyControls || {}) },
+        marketplaceEnabled: typeof map['marketplace_enabled'] === 'boolean'
+          ? map['marketplace_enabled'] as boolean
+          : defaults.marketplaceEnabled
       };
 
       this.settings.set(settings);
@@ -209,7 +502,13 @@ export class MarketplaceConfigService {
       { key: 'negotiation', value: settings.negotiation },
       { key: 'hybrid_negotiation', value: settings.hybridNegotiation },
       { key: 'bidding', value: settings.bidding },
-      { key: 'smart_matching', value: settings.smartMatching }
+      { key: 'smart_matching', value: settings.smartMatching },
+      { key: 'service_rules', value: settings.serviceRules },
+      { key: 'payment_rules', value: settings.paymentRules },
+      { key: 'notification_rules', value: settings.notificationRules },
+      { key: 'driver_rules', value: settings.driverRules },
+      { key: 'emergency_controls', value: settings.emergencyControls },
+      { key: 'marketplace_enabled', value: settings.marketplaceEnabled }
     ];
 
     for (const row of rows) {
@@ -226,6 +525,10 @@ export class MarketplaceConfigService {
     }
 
     this.settings.set(settings);
+    await this.loadSettings();
+  }
+
+  async reload(): Promise<void> {
     await this.loadSettings();
   }
 

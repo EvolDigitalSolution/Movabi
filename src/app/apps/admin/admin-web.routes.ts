@@ -87,6 +87,18 @@ export const ADMIN_WEB_ROUTES: Routes = [
                         .then(m => m.JobMonitoringComponent)
             },
             {
+                path: 'marketplace/global-ai-pricing',
+                loadComponent: () =>
+                    import('@admin/features/pricing/global-ai-pricing.component')
+                        .then(m => m.GlobalAiPricingComponent)
+            },
+            {
+                path: 'marketplace',
+                loadComponent: () =>
+                    import('@admin/features/marketplace/marketplace-control-center.component')
+                        .then(m => m.MarketplaceControlCenterComponent)
+            },
+            {
                 path: 'settings',
                 loadComponent: () =>
                     import('@admin/features/settings/settings.component')

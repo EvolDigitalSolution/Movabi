@@ -4,6 +4,7 @@ export interface CommissionSettings {
   percent: number;
   minFee: number;
   maxFee: number | null;
+  platformFeePercent: number;
 }
 
 export interface DynamicPricingSettings {
@@ -13,6 +14,17 @@ export interface DynamicPricingSettings {
   weatherMultiplier: number;
   demandMultiplier: number;
   fuelMultiplier: number;
+  supplyScarcityMultiplier: number;
+  rainMultiplier: number;
+  floodMultiplier: number;
+  peakMultiplier: number;
+  airportSurcharge: number;
+  publicHolidayMultiplier: number;
+  eventMultiplier: number;
+  nearbyDriverDiscount: number;
+  minimumFare: number;
+  maximumFareCap: number;
+  nightMultiplier: number;
   timeOfDayEnabled: boolean;
   demandSupplyEnabled: boolean;
   weatherEnabled?: boolean;
@@ -25,6 +37,8 @@ export interface NegotiationSettings {
   timeoutSeconds: number;
   maxRounds: number;
   minServices: string[];
+  enabledServices: string[];
+  defaultServices: string[];
 }
 
 export interface BiddingSettings {
@@ -33,15 +47,32 @@ export interface BiddingSettings {
   timeoutSeconds: number;
   maxBids: number;
   defaultServices: string[];
+  minBid: number;
+  maxBidPercentageAboveSuggestedFare: number;
+  customerCanChooseDriver: boolean;
+  showDriverEta: boolean;
+  showDriverRating: boolean;
+  showCompletedTrips: boolean;
+  autoExpireUnsuccessfulBids: boolean;
 }
 
 export interface SmartMatchingSettings {
   enabled: boolean;
   maxDistanceKm: number;
+  searchBatchSize: number;
+  driverClaimBatchSize: number;
   ratingWeight: number;
   completionWeight: number;
   distanceWeight: number;
   responseWeight: number;
+  etaWeight: number;
+  acceptanceRateWeight: number;
+  cancellationRateWeight: number;
+  responseTimeWeight: number;
+  vehicleCompatibilityWeight: number;
+  idleTimeWeight: number;
+  repeatCustomerBonus: number;
+  driverTierBonus: number;
 }
 
 export interface MarketplaceFlags {
@@ -60,9 +91,18 @@ export interface HybridNegotiationSettings {
   maxDriverAttempts: number;
   claimTimeoutSeconds: number;
   enabledServices: string[];
+  eligibleServices?: string[];
   rideMinimumDistanceKm: number;
+  rideMode: 'disabled' | 'long_distance_only' | 'all_rides';
   makeOfferEnabled: boolean;
   acceptFareEnabled: boolean;
+  allowCustomerCounterOffer: boolean;
+  allowDriverCounterOffer: boolean;
+  allowCustomerTryAnotherDriver: boolean;
+  autoReleaseOnTimeout: boolean;
+  autoReleaseOnDriverOffline: boolean;
+  paymentDeadlineAfterFareAgreement: number;
+  assignNegotiatingDriverAfterPayment: boolean;
   allowlist?: string[];
 }
 
@@ -80,12 +120,91 @@ export interface CommissionOverride {
   ends_at: string | null;
 }
 
+export interface ServiceRule {
+  enabled: boolean;
+  marketplaceEnabled: boolean;
+  negotiationEnabled: boolean;
+  biddingEnabled: boolean;
+  dynamicPricingEnabled: boolean;
+  smartMatchingEnabled: boolean;
+  minimumDistanceKm: number;
+  maximumDistanceKm: number;
+  minimumFare: number;
+  maximumFare: number;
+  paymentBeforeDispatch: boolean;
+  allowScheduledJobs: boolean;
+  allowMultiStop: boolean;
+  allowHourlyBooking: boolean;
+}
+
+export type ServiceRules = Record<string, Partial<ServiceRule>>;
+
+export interface PaymentRules {
+  cardEnabled: boolean;
+  walletEnabled: boolean;
+  cashEnabled: boolean;
+  manualCaptureEnabled: boolean;
+  paymentBeforeDispatch: boolean;
+  paymentDeadlineAfterFareAgreement: number;
+  itemBudgetReservationEnabled: boolean;
+  itemBudgetMaximum: number;
+  refundReleaseTimeout: number;
+  duplicatePaymentIntentProtection: boolean;
+  allowedPaymentStatusesForDispatch: string[];
+}
+
+export interface NotificationRule {
+  pushEnabled: boolean;
+  inAppEnabled: boolean;
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+  repeatInterval: number;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+}
+
+export interface NotificationRules {
+  customer: Record<string, NotificationRule>;
+  driver: Record<string, NotificationRule>;
+}
+
+export interface DriverRules {
+  minimumDriverRating: number;
+  minimumCompletedTrips: number;
+  requiredVerificationStatus: string;
+  requireActiveVehicle: boolean;
+  requireStripeConnected: boolean;
+  requireSufficientWallet: boolean;
+  maximumActiveNegotiations: number;
+  maximumActiveJobs: number;
+  cooldownAfterDeclineSeconds: number;
+  autoSuspendAfterRepeatedCancellations: number;
+  allowFavouriteRepeatDrivers: boolean;
+}
+
+export interface EmergencyControls {
+  disableMarketplaceGlobally: boolean;
+  disableMakeOffer: boolean;
+  disableHybridNegotiation: boolean;
+  disableBidding: boolean;
+  disableDynamicPricing: boolean;
+  disableByService: Record<string, boolean>;
+  forceAcceptFareOnly: boolean;
+  forceNormalBookingFlow: boolean;
+  disableCardPayments: boolean;
+  disableWalletPayments: boolean;
+}
+
 export class MarketplaceConfigService {
   static readonly DEFAULT_COMMISSION_PERCENT = 5;
   private static cache: Map<string, { value: unknown; expiresAt: number }> = new Map();
   private static readonly CACHE_TTL_MS = 30_000; // 30 seconds
 
   static invalidateCache(): void {
+    this.cache.clear();
+  }
+
+  static clearCache(): void {
     this.cache.clear();
   }
 
@@ -137,7 +256,7 @@ export class MarketplaceConfigService {
   static async getSetting<T>(
     key: string,
     tenantId: string | null = null,
-    defaultValue: T | null = null
+    defaultValue: Partial<T> | null = null
   ): Promise<T | null> {
     const cached = this.getCached<T>(tenantId, key);
     if (cached !== undefined) {
@@ -146,10 +265,10 @@ export class MarketplaceConfigService {
 
     const raw = await this.getRawSetting(key, tenantId);
     if (!raw) {
-      return defaultValue;
+      return defaultValue as T;
     }
 
-    const value = raw as unknown as T;
+    const value = { ...(defaultValue ?? {}), ...raw } as unknown as T;
     this.setCached(tenantId, key, value);
     return value;
   }
@@ -158,13 +277,15 @@ export class MarketplaceConfigService {
     const raw = await this.getSetting<CommissionSettings>('commission', tenantId, {
       percent: MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT,
       minFee: 0,
-      maxFee: null
+      maxFee: null,
+      platformFeePercent: 0
     });
 
     return {
       percent: Number(raw?.percent ?? MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT),
       minFee: Number(raw?.minFee ?? 0),
-      maxFee: raw?.maxFee === undefined ? null : Number(raw.maxFee)
+      maxFee: raw?.maxFee === undefined ? null : Number(raw.maxFee),
+      platformFeePercent: Number(raw?.platformFeePercent ?? 0)
     };
   }
 
@@ -178,17 +299,40 @@ export class MarketplaceConfigService {
       weatherMultiplier: 1,
       demandMultiplier: 1,
       fuelMultiplier: 1,
+      supplyScarcityMultiplier: 1,
+      rainMultiplier: 1,
+      floodMultiplier: 1,
+      peakMultiplier: 1.15,
+      airportSurcharge: 0,
+      publicHolidayMultiplier: 1,
+      eventMultiplier: 1,
+      nearbyDriverDiscount: 1,
+      minimumFare: 0,
+      maximumFareCap: 0,
+      nightMultiplier: 1.25,
       timeOfDayEnabled: true,
       demandSupplyEnabled: true
     });
 
+    const asAny = raw as any;
     return {
       enabled: Boolean(raw?.enabled ?? true),
       maxSurge: Number(raw?.maxSurge ?? 3.0),
-      trafficMultiplier: Number((raw as any)?.trafficMultiplier ?? 1),
-      weatherMultiplier: Number((raw as any)?.weatherMultiplier ?? 1),
-      demandMultiplier: Number((raw as any)?.demandMultiplier ?? 1),
-      fuelMultiplier: Number((raw as any)?.fuelMultiplier ?? 1),
+      trafficMultiplier: Number(asAny?.trafficMultiplier ?? 1),
+      weatherMultiplier: Number(asAny?.weatherMultiplier ?? 1),
+      demandMultiplier: Number(asAny?.demandMultiplier ?? 1),
+      fuelMultiplier: Number(asAny?.fuelMultiplier ?? 1),
+      supplyScarcityMultiplier: Number(asAny?.supplyScarcityMultiplier ?? 1),
+      rainMultiplier: Number(asAny?.rainMultiplier ?? 1),
+      floodMultiplier: Number(asAny?.floodMultiplier ?? 1),
+      peakMultiplier: Number(asAny?.peakMultiplier ?? 1),
+      airportSurcharge: Number(asAny?.airportSurcharge ?? 0),
+      publicHolidayMultiplier: Number(asAny?.publicHolidayMultiplier ?? 1),
+      eventMultiplier: Number(asAny?.eventMultiplier ?? 1),
+      nearbyDriverDiscount: Number(asAny?.nearbyDriverDiscount ?? 1),
+      minimumFare: Number(asAny?.minimumFare ?? 0),
+      maximumFareCap: Number(asAny?.maximumFareCap ?? 0),
+      nightMultiplier: Number(asAny?.nightMultiplier ?? 1.25),
       timeOfDayEnabled: Boolean(raw?.timeOfDayEnabled ?? true),
       demandSupplyEnabled: Boolean(raw?.demandSupplyEnabled ?? true),
       weatherEnabled: Boolean(raw?.weatherEnabled ?? false),
@@ -202,14 +346,23 @@ export class MarketplaceConfigService {
       enabled: true,
       timeoutSeconds: 120,
       maxRounds: 3,
-      minServices: ['errand', 'delivery', 'van-moving']
+      minServices: ['errand', 'delivery', 'van-moving'],
+      enabledServices: ['errand', 'delivery', 'van-moving'],
+      defaultServices: ['errand', 'delivery', 'van-moving']
     });
+
+    const asAny = raw as any;
+    const enabledServices = Array.isArray(asAny?.enabledServices)
+      ? (asAny.enabledServices as string[])
+      : (Array.isArray(asAny?.minServices) ? (asAny.minServices as string[]) : ['errand', 'delivery', 'van-moving']);
 
     return {
       enabled: Boolean(raw?.enabled ?? true),
       timeoutSeconds: Number(raw?.timeoutSeconds ?? 120),
       maxRounds: Number(raw?.maxRounds ?? 3),
-      minServices: Array.isArray(raw?.minServices) ? (raw.minServices as string[]) : ['errand', 'delivery', 'van-moving']
+      minServices: Array.isArray(raw?.minServices) ? (raw.minServices as string[]) : enabledServices,
+      enabledServices,
+      defaultServices: Array.isArray(asAny?.defaultServices) ? (asAny.defaultServices as string[]) : enabledServices
     };
   }
 
@@ -219,7 +372,14 @@ export class MarketplaceConfigService {
       enabledServices: ['van', 'van_moving'],
       timeoutSeconds: 300,
       maxBids: 10,
-      defaultServices: ['van', 'van_moving']
+      defaultServices: ['van', 'van_moving'],
+      minBid: 0,
+      maxBidPercentageAboveSuggestedFare: 50,
+      customerCanChooseDriver: false,
+      showDriverEta: false,
+      showDriverRating: false,
+      showCompletedTrips: false,
+      autoExpireUnsuccessfulBids: true
     });
 
     const asAny = raw as any;
@@ -232,7 +392,14 @@ export class MarketplaceConfigService {
       enabledServices,
       timeoutSeconds: Number(raw?.timeoutSeconds ?? 300),
       maxBids: Number(raw?.maxBids ?? 10),
-      defaultServices: Array.isArray(raw?.defaultServices) ? (raw.defaultServices as string[]) : enabledServices
+      defaultServices: Array.isArray(asAny?.defaultServices) ? (asAny.defaultServices as string[]) : enabledServices,
+      minBid: Number(asAny?.minBid ?? 0),
+      maxBidPercentageAboveSuggestedFare: Number(asAny?.maxBidPercentageAboveSuggestedFare ?? 50),
+      customerCanChooseDriver: Boolean(asAny?.customerCanChooseDriver ?? false),
+      showDriverEta: Boolean(asAny?.showDriverEta ?? false),
+      showDriverRating: Boolean(asAny?.showDriverRating ?? false),
+      showCompletedTrips: Boolean(asAny?.showCompletedTrips ?? false),
+      autoExpireUnsuccessfulBids: asAny?.autoExpireUnsuccessfulBids !== undefined ? Boolean(asAny.autoExpireUnsuccessfulBids) : true
     };
   }
 
@@ -242,19 +409,40 @@ export class MarketplaceConfigService {
     const raw = await this.getSetting<SmartMatchingSettings>('smart_matching', tenantId, {
       enabled: true,
       maxDistanceKm: 10,
+      searchBatchSize: 50,
+      driverClaimBatchSize: 5,
       ratingWeight: 0.25,
       completionWeight: 0.35,
       distanceWeight: 0.30,
-      responseWeight: 0.10
+      responseWeight: 0.10,
+      etaWeight: 0.0,
+      acceptanceRateWeight: 0.0,
+      cancellationRateWeight: 0.0,
+      responseTimeWeight: 0.0,
+      vehicleCompatibilityWeight: 0.0,
+      idleTimeWeight: 0.0,
+      repeatCustomerBonus: 0,
+      driverTierBonus: 0
     });
 
+    const asAny = raw as any;
     return {
       enabled: Boolean(raw?.enabled ?? true),
       maxDistanceKm: Number(raw?.maxDistanceKm ?? 10),
+      searchBatchSize: Number(asAny?.searchBatchSize ?? 50),
+      driverClaimBatchSize: Number(asAny?.driverClaimBatchSize ?? 5),
       ratingWeight: Number(raw?.ratingWeight ?? 0.25),
       completionWeight: Number(raw?.completionWeight ?? 0.35),
       distanceWeight: Number(raw?.distanceWeight ?? 0.30),
-      responseWeight: Number(raw?.responseWeight ?? 0.10)
+      responseWeight: Number(raw?.responseWeight ?? 0.10),
+      etaWeight: Number(asAny?.etaWeight ?? 0),
+      acceptanceRateWeight: Number(asAny?.acceptanceRateWeight ?? 0),
+      cancellationRateWeight: Number(asAny?.cancellationRateWeight ?? 0),
+      responseTimeWeight: Number(asAny?.responseTimeWeight ?? 0),
+      vehicleCompatibilityWeight: Number(asAny?.vehicleCompatibilityWeight ?? 0),
+      idleTimeWeight: Number(asAny?.idleTimeWeight ?? 0),
+      repeatCustomerBonus: Number(asAny?.repeatCustomerBonus ?? 0),
+      driverTierBonus: Number(asAny?.driverTierBonus ?? 0)
     };
   }
 
@@ -267,31 +455,79 @@ export class MarketplaceConfigService {
       claimTimeoutSeconds: 60,
       enabledServices: ['shop', 'errand'],
       rideMinimumDistanceKm: 30,
+      rideMode: 'long_distance_only' as const,
       makeOfferEnabled: true,
       acceptFareEnabled: true,
+      allowCustomerCounterOffer: true,
+      allowDriverCounterOffer: true,
+      allowCustomerTryAnotherDriver: true,
+      autoReleaseOnTimeout: true,
+      autoReleaseOnDriverOffline: true,
+      paymentDeadlineAfterFareAgreement: 300,
+      assignNegotiatingDriverAfterPayment: true,
       allowlist: []
     });
 
     const asAny = raw as any;
+    const enabledServices = Array.isArray(asAny?.enabledServices)
+      ? (asAny.enabledServices as string[])
+      : (Array.isArray(asAny?.eligibleServices) ? (asAny.eligibleServices as string[]) : ['shop', 'errand']);
+
+    const rideMode = ['disabled', 'long_distance_only', 'all_rides'].includes(String(asAny?.rideMode))
+      ? (String(asAny.rideMode) as 'disabled' | 'long_distance_only' | 'all_rides')
+      : 'long_distance_only';
+
     return {
       enabled: Boolean(asAny?.enabled ?? false),
       maxRounds: Number(asAny?.maxRounds ?? 3),
       timeoutSeconds: Number(asAny?.timeoutSeconds ?? 120),
       maxDriverAttempts: Number(asAny?.maxDriverAttempts ?? 5),
       claimTimeoutSeconds: Number(asAny?.claimTimeoutSeconds ?? 60),
-      enabledServices: Array.isArray(asAny?.enabledServices)
-        ? (asAny.enabledServices as string[])
-        : (Array.isArray(asAny?.eligibleServices) ? (asAny.eligibleServices as string[]) : ['shop', 'errand']),
+      enabledServices,
+      eligibleServices: Array.isArray(asAny?.eligibleServices) ? (asAny.eligibleServices as string[]) : enabledServices,
       rideMinimumDistanceKm: Number(asAny?.rideMinimumDistanceKm ?? asAny?.longDistanceRideKm ?? 30),
+      rideMode,
       makeOfferEnabled: asAny?.makeOfferEnabled !== undefined ? Boolean(asAny.makeOfferEnabled) : true,
       acceptFareEnabled: asAny?.acceptFareEnabled !== undefined ? Boolean(asAny.acceptFareEnabled) : true,
+      allowCustomerCounterOffer: asAny?.allowCustomerCounterOffer !== undefined ? Boolean(asAny.allowCustomerCounterOffer) : true,
+      allowDriverCounterOffer: asAny?.allowDriverCounterOffer !== undefined ? Boolean(asAny.allowDriverCounterOffer) : true,
+      allowCustomerTryAnotherDriver: asAny?.allowCustomerTryAnotherDriver !== undefined ? Boolean(asAny.allowCustomerTryAnotherDriver) : true,
+      autoReleaseOnTimeout: asAny?.autoReleaseOnTimeout !== undefined ? Boolean(asAny.autoReleaseOnTimeout) : true,
+      autoReleaseOnDriverOffline: asAny?.autoReleaseOnDriverOffline !== undefined ? Boolean(asAny.autoReleaseOnDriverOffline) : true,
+      paymentDeadlineAfterFareAgreement: Number(asAny?.paymentDeadlineAfterFareAgreement ?? 300),
+      assignNegotiatingDriverAfterPayment: asAny?.assignNegotiatingDriverAfterPayment !== undefined ? Boolean(asAny.assignNegotiatingDriverAfterPayment) : true,
       allowlist: Array.isArray(asAny?.allowlist) ? (asAny.allowlist as string[]) : []
     };
   }
 
+  static async getMarketplaceEnabled(tenantId: string | null = null): Promise<boolean> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_configs')
+        .select('value')
+        .eq('key', 'marketplace_enabled')
+        .maybeSingle();
+
+      if (error) {
+        console.warn('[MarketplaceConfig] getMarketplaceEnabled error:', error.message);
+      }
+
+      const systemEnabled = data?.value ?? true;
+      const enabled = typeof systemEnabled === 'boolean'
+        ? systemEnabled
+        : String(systemEnabled).toLowerCase() === 'true';
+
+      const emergency = await this.getEmergencyControls(tenantId);
+      return enabled && !emergency.disableMarketplaceGlobally;
+    } catch (err) {
+      console.warn('[MarketplaceConfig] getMarketplaceEnabled failed:', err);
+      return true;
+    }
+  }
+
   static async getFlags(tenantId: string | null = null): Promise<MarketplaceFlags> {
-    const [commission, dynamic, negotiation, bidding, smart, hybrid] = await Promise.all([
-      this.getCommissionSettings(tenantId),
+    const [marketplaceEnabled, dynamic, negotiation, bidding, smart, hybrid] = await Promise.all([
+      this.getMarketplaceEnabled(tenantId),
       this.getDynamicPricingSettings(tenantId),
       this.getNegotiationSettings(tenantId),
       this.getBiddingSettings(tenantId),
@@ -299,14 +535,215 @@ export class MarketplaceConfigService {
       this.getHybridNegotiationSettings(tenantId)
     ]);
 
+    const emergency = await this.getEmergencyControls(tenantId);
+
     return {
-      marketplaceEnabled: commission.percent >= 0,
-      dynamicPricingEnabled: dynamic.enabled,
+      marketplaceEnabled,
+      dynamicPricingEnabled: dynamic.enabled && !emergency.disableDynamicPricing,
       negotiationEnabled: negotiation.enabled,
-      hybridNegotiationEnabled: hybrid.enabled,
-      biddingEnabled: bidding.enabled,
+      hybridNegotiationEnabled: hybrid.enabled && !emergency.disableHybridNegotiation,
+      biddingEnabled: bidding.enabled && !emergency.disableBidding,
       smartMatchingEnabled: smart.enabled
     };
+  }
+
+  static async getServiceRules(tenantId: string | null = null): Promise<ServiceRules> {
+    const raw = await this.getSetting<ServiceRules>('service_rules', tenantId, {
+      errand: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: false },
+      delivery: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: false, allowMultiStop: true, allowHourlyBooking: false },
+      'van-moving': { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: true, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 200, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: true },
+      ride: { enabled: true, marketplaceEnabled: true, negotiationEnabled: false, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: false }
+    });
+    return raw ?? {};
+  }
+
+  static async getPaymentRules(tenantId: string | null = null): Promise<PaymentRules> {
+    const raw = await this.getSetting<PaymentRules>('payment_rules', tenantId, {
+      cardEnabled: true,
+      walletEnabled: true,
+      cashEnabled: false,
+      manualCaptureEnabled: true,
+      paymentBeforeDispatch: true,
+      paymentDeadlineAfterFareAgreement: 300,
+      itemBudgetReservationEnabled: true,
+      itemBudgetMaximum: 500,
+      refundReleaseTimeout: 86400,
+      duplicatePaymentIntentProtection: true,
+      allowedPaymentStatusesForDispatch: ['succeeded', 'requires_capture', 'authorized']
+    });
+    return raw as PaymentRules;
+  }
+
+  static async getNotificationRules(tenantId: string | null = null): Promise<NotificationRules> {
+    const raw = await this.getSetting<NotificationRules>('notification_rules', tenantId, {
+      customer: {},
+      driver: {}
+    });
+    return raw as NotificationRules;
+  }
+
+  static async getDriverRules(tenantId: string | null = null): Promise<DriverRules> {
+    const raw = await this.getSetting<DriverRules>('driver_rules', tenantId, {
+      minimumDriverRating: 4.0,
+      minimumCompletedTrips: 0,
+      requiredVerificationStatus: 'verified',
+      requireActiveVehicle: true,
+      requireStripeConnected: true,
+      requireSufficientWallet: false,
+      maximumActiveNegotiations: 5,
+      maximumActiveJobs: 1,
+      cooldownAfterDeclineSeconds: 0,
+      autoSuspendAfterRepeatedCancellations: 0,
+      allowFavouriteRepeatDrivers: true
+    });
+    return raw as DriverRules;
+  }
+
+  static async getEmergencyControls(tenantId: string | null = null): Promise<EmergencyControls> {
+    const raw = await this.getSetting<EmergencyControls>('emergency_controls', tenantId, {
+      disableMarketplaceGlobally: false,
+      disableMakeOffer: false,
+      disableHybridNegotiation: false,
+      disableBidding: false,
+      disableDynamicPricing: false,
+      disableByService: {},
+      forceAcceptFareOnly: false,
+      forceNormalBookingFlow: false,
+      disableCardPayments: false,
+      disableWalletPayments: false
+    });
+    return raw as EmergencyControls;
+  }
+
+  static async getAllSettings(tenantId: string | null = null): Promise<Record<string, unknown>> {
+    const [commission, dynamicPricing, negotiation, hybridNegotiation, bidding, smartMatching, serviceRules, paymentRules, notificationRules, driverRules, emergencyControls, marketplaceEnabled] = await Promise.all([
+      this.getCommissionSettings(tenantId),
+      this.getDynamicPricingSettings(tenantId),
+      this.getNegotiationSettings(tenantId),
+      this.getHybridNegotiationSettings(tenantId),
+      this.getBiddingSettings(tenantId),
+      this.getSmartMatchingSettings(tenantId),
+      this.getServiceRules(tenantId),
+      this.getPaymentRules(tenantId),
+      this.getNotificationRules(tenantId),
+      this.getDriverRules(tenantId),
+      this.getEmergencyControls(tenantId),
+      this.getMarketplaceEnabled(tenantId)
+    ]);
+
+    return {
+      commission,
+      dynamicPricing,
+      negotiation,
+      hybridNegotiation,
+      bidding,
+      smartMatching,
+      serviceRules,
+      paymentRules,
+      notificationRules,
+      driverRules,
+      emergencyControls,
+      marketplaceEnabled
+    };
+  }
+
+  static async setSetting<T>(
+    key: string,
+    value: T,
+    tenantId: string | null = null,
+    adminId?: string
+  ): Promise<T> {
+    const existing = await this.getRawSetting(key, tenantId);
+    const merged = this.deepMerge(existing ?? {}, value) as T;
+
+    const { error } = await supabaseAdmin
+      .from('marketplace_settings')
+      .upsert(
+        {
+          tenant_id: tenantId,
+          key,
+          value: merged,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'tenant_id,key' }
+      );
+
+    if (error) {
+      console.error(`[MarketplaceConfig] setSetting error for ${key}:`, error.message);
+      throw new Error(`Unable to save marketplace setting ${key}: ${error.message}`);
+    }
+
+    this.cache.delete(this.cacheKey(tenantId, key));
+
+    const { AuditService } = await import('./audit.service');
+    await AuditService.log({
+      userId: adminId,
+      action: 'admin_marketplace_setting_updated',
+      entityType: 'marketplace_settings',
+      entityId: key,
+      metadata: { previous: existing, value: merged }
+    });
+
+    return merged;
+  }
+
+  static async setSettings(
+    settings: Record<string, unknown>,
+    tenantId: string | null = null,
+    adminId?: string
+  ): Promise<Record<string, unknown>> {
+    const result: Record<string, unknown> = {};
+
+    for (const [camelKey, value] of Object.entries(settings)) {
+      const key = this.camelToSnake(camelKey);
+      const merged = await this.setSetting(key, value, tenantId, adminId);
+      result[camelKey] = merged;
+    }
+
+    this.invalidateCache();
+    return result;
+  }
+
+  static async getAuditLogs(limit = 100, offset = 0, key?: string | null): Promise<unknown[]> {
+    let query = supabaseAdmin
+      .from('audit_logs')
+      .select('*')
+      .eq('entity_type', 'marketplace_settings')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (key) {
+      query = query.eq('entity_id', key);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.warn('[MarketplaceConfig] getAuditLogs error:', error.message);
+      return [];
+    }
+
+    return data ?? [];
+  }
+
+  private static camelToSnake(value: string): string {
+    return value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+  }
+
+  private static deepMerge(target: any, source: any): any {
+    if (source === null || source === undefined) return target;
+    if (Array.isArray(source)) return source;
+    if (typeof source !== 'object') return source;
+    if (target === null || target === undefined || typeof target !== 'object' || Array.isArray(target)) {
+      target = {};
+    }
+
+    const result = { ...target };
+    for (const key of Object.keys(source)) {
+      if (source[key] === undefined) continue;
+      result[key] = this.deepMerge(result[key], source[key]);
+    }
+    return result;
   }
 
   static isHybridServiceEnabled(

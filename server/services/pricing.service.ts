@@ -1,6 +1,6 @@
 ﻿import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
-import { MarketplaceConfigService } from './marketplace-config.service';
+import { MarketplaceConfigService, DynamicPricingSettings } from './marketplace-config.service';
 
 export interface PricingOptions {
     lat: number;
@@ -354,11 +354,12 @@ export class PricingService {
 
             // Marketplace dynamic pricing: demand/supply, time-of-day, weather/traffic
             const dynamicSettings = await MarketplaceConfigService.getDynamicPricingSettings(tenantId);
+            const commissionSettings = await MarketplaceConfigService.getCommissionSettings(tenantId);
             const surgeMultiplier = dynamicSettings.demandSupplyEnabled
                 ? this.getSurgeMultiplier(demand, supply)
                 : 1.0;
             const timeMultiplier = dynamicSettings.timeOfDayEnabled
-                ? this.getTimeOfDayMultiplier(requestedAt)
+                ? this.getTimeOfDayMultiplier(dynamicSettings, requestedAt)
                 : 1.0;
             const configuredWeatherMultiplier = Number(dynamicSettings.weatherMultiplier ?? 1);
             const configuredTrafficMultiplier = Number(dynamicSettings.trafficMultiplier ?? 1);
@@ -396,8 +397,9 @@ export class PricingService {
 
             commissionRateUsed = this.roundMoney(commissionRateUsed);
             const commissionFee = this.roundMoney(preCommissionTotal * (commissionRateUsed / 100));
-            platformFee = commissionFee;
-            driverPayout = this.roundMoney(preCommissionTotal - commissionFee);
+            const platformFeePercent = Number(commissionSettings.platformFeePercent ?? 0);
+            platformFee = this.roundMoney(preCommissionTotal * (platformFeePercent / 100));
+            driverPayout = this.roundMoney(preCommissionTotal - commissionFee - platformFee);
             const totalPrice = preCommissionTotal;
 
             taxAmount = this.roundMoney(taxAmount);
@@ -542,18 +544,24 @@ export class PricingService {
         return 1.0;
     }
 
-    static getTimeOfDayMultiplier(requestedAt?: string): number {
+    static getTimeOfDayMultiplier(
+        dynamicSettings?: DynamicPricingSettings,
+        requestedAt?: string
+    ): number {
         const date = requestedAt ? new Date(requestedAt) : new Date();
         const hour = date.getHours();
 
+        const peakMultiplier = Number(dynamicSettings?.peakMultiplier ?? 1.15);
+        const nightMultiplier = Number(dynamicSettings?.nightMultiplier ?? 1.25);
+
         // Peak hours: 7-9 AM and 5-8 PM
         if ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 21)) {
-            return 1.15;
+            return peakMultiplier;
         }
 
         // Night premium
         if (hour >= 23 || hour < 5) {
-            return 1.25;
+            return nightMultiplier;
         }
 
         return 1.0;

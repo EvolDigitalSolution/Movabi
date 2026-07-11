@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../services/supabase.service';
 import { dispatchService } from '../services/dispatch.service';
 import { PricingService } from '../services/pricing.service';
 import { CityService } from '../services/city.service';
+import { GlobalAiPricingService } from '../services/global-ai-pricing.service';
 
 const router = Router();
 
@@ -31,6 +32,19 @@ function money(value: unknown): number {
 function currency(value: unknown): string {
   const c = String(value || 'GBP').trim().toLowerCase();
   return c.length >= 3 ? c : 'gbp';
+}
+
+function currencyExponent(currencyCode: unknown): number {
+  const zeroDecimal = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+  const threeDecimal = new Set(['BHD', 'JOD', 'KWD', 'OMR', 'TND']);
+  const code = String(currencyCode || '').toUpperCase();
+  if (zeroDecimal.has(code)) return 0;
+  if (threeDecimal.has(code)) return 3;
+  return 2;
+}
+
+function minorToMajor(minor: number, currencyCode: unknown): number {
+  return Number((Number(minor || 0) / Math.pow(10, currencyExponent(currencyCode))).toFixed(currencyExponent(currencyCode)));
 }
 
 function canonicalServiceSlug(value: unknown): string {
@@ -98,7 +112,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
     const city = await CityService.findCityForLocation(Number(lat), Number(lng));
     const stats = await dispatchService.getAreaStats(Number(lat), Number(lng));
 
-    const pricing = await PricingService.resolvePrice({
+    const pricingInput = {
       lat: Number(lat),
       lng: Number(lng),
       basePrice: basePrice !== undefined ? Number(basePrice) : undefined,
@@ -117,11 +131,15 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       demand: stats.demand,
       supply: stats.supply,
       requestedAt: requestedAt || new Date().toISOString()
-    });
+    };
+    const { legacyPricing: pricing, quote: globalAiPricing } = await GlobalAiPricingService.resolveQuote(pricingInput);
+    const aiTotalPrice = globalAiPricing.ai.livePricingEnabled
+      ? minorToMajor(globalAiPricing.ai.finalTotalMinor, globalAiPricing.market.currency)
+      : pricing.totalPrice;
 
     return res.json({
       basePrice: pricing.basePrice,
-      totalPrice: pricing.totalPrice,
+      totalPrice: aiTotalPrice,
       surgeMultiplier: pricing.surgeMultiplier,
       dynamicPricingMultiplier: pricing.dynamicPricingMultiplier,
       demand: stats.demand,
@@ -141,7 +159,8 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       baseFareUsed: pricing.baseFareUsed,
       pricePerKmUsed: pricing.pricePerKmUsed,
       fareBreakdown: pricing.fareBreakdown,
-      marketplaceFlags: pricing.marketplaceFlags
+      marketplaceFlags: pricing.marketplaceFlags,
+      globalAiPricing
     });
   } catch (error: any) {
     console.error('[PaymentRoutes] calculate-price failed:', error);

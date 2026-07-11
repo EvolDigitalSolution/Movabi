@@ -1,0 +1,389 @@
+<div class="global-ai-shell">
+  <div class="page-header">
+    <div>
+      <p class="eyebrow">Marketplace / Global AI Pricing</p>
+      <h1>Global AI Pricing Controls</h1>
+      <p class="summary">
+        Configure market guardrails, shadow mode, service pricing bounds, waiting rules and audit monitoring without redeploying Movabi.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <label class="country-filter">
+        Country
+        <input [ngModel]="selectedCountry()" (ngModelChange)="selectedCountry.set(($event || '').toUpperCase())" maxlength="2" placeholder="All">
+      </label>
+      <button type="button" class="secondary-btn" (click)="resetDrafts()" [disabled]="saving()">Reset Drafts</button>
+      <button type="button" class="secondary-btn" (click)="reload()" [disabled]="loading() || saving()">
+        <ion-icon name="refresh-outline"></ion-icon>
+        Reload From Database
+      </button>
+    </div>
+  </div>
+
+  <div class="emergency-panel">
+    <div>
+      <h2>Emergency Controls</h2>
+      <p>These controls keep live AI pricing reversible. Shadow mode keeps the rule price live while AI quotes are audited.</p>
+    </div>
+    <div class="emergency-actions">
+      <button type="button" class="danger-btn" (click)="emergencyDisable()" [disabled]="saving()">Disable AI Globally</button>
+      <button type="button" class="warning-btn" (click)="forceShadowMode()" [disabled]="saving()">Force Shadow Mode</button>
+    </div>
+  </div>
+
+  <div class="layout-grid">
+    <aside class="side-tabs">
+      @for (tab of tabs; track tab.id) {
+        <button type="button" [class.active]="activeTab() === tab.id" (click)="activeTab.set(tab.id)">
+          <ion-icon [name]="tab.icon"></ion-icon>
+          <span>{{ tab.label }}</span>
+        </button>
+      }
+    </aside>
+
+    <main class="content-area">
+      @if (loading()) {
+        <div class="empty-state">
+          <ion-spinner name="crescent"></ion-spinner>
+          <p>Loading Global AI Pricing controls...</p>
+        </div>
+      } @else {
+        @if (activeTab() === 'overview') {
+          <section class="section-card">
+            <div class="section-heading">
+              <div>
+                <h2>Overview</h2>
+                <p>High-level status from market rows and recent AI pricing audits.</p>
+              </div>
+              <span class="status-pill" [class.live]="overview().aiEnabled && !overview().shadowEnabled">
+                {{ overview().aiEnabled ? (overview().shadowEnabled ? 'Shadow Active' : 'Live AI Enabled') : 'AI Disabled' }}
+              </span>
+            </div>
+
+            <div class="metric-grid">
+              <div class="metric-card"><span>AI Pricing</span><strong>{{ overview().aiEnabled ? 'Enabled' : 'Disabled' }}</strong></div>
+              <div class="metric-card"><span>Shadow Mode</span><strong>{{ overview().shadowEnabled ? 'On' : 'Off' }}</strong></div>
+              <div class="metric-card"><span>Live Traffic</span><strong>{{ overview().liveTraffic }}%</strong></div>
+              <div class="metric-card"><span>Active Markets</span><strong>{{ overview().activeMarkets }}</strong></div>
+              <div class="metric-card"><span>Active Zones</span><strong>{{ overview().activeZones }}</strong></div>
+              <div class="metric-card"><span>Active Services</span><strong>{{ overview().activeServices }}</strong></div>
+              <div class="metric-card"><span>Model Version</span><strong>{{ overview().currentModel }}</strong></div>
+              <div class="metric-card"><span>Confidence</span><strong>{{ overview().confidenceThreshold }}</strong></div>
+              <div class="metric-card warning"><span>Emergency Switch</span><strong>{{ overview().emergencyDisabled ? 'On' : 'Off' }}</strong></div>
+              <div class="metric-card"><span>Last Updated</span><strong>{{ overview().lastUpdated ? (overview().lastUpdated | date:'short') : 'No changes' }}</strong></div>
+              <div class="metric-card"><span>Fallback Rate</span><strong>{{ overview().fallbackRate }}%</strong></div>
+              <div class="metric-card"><span>Capped/Error Rate</span><strong>{{ overview().errorRate }}%</strong></div>
+            </div>
+
+            @if (overview().lastAiQuote; as quote) {
+              <div class="quote-card">
+                <h3>Last AI Quote</h3>
+                <div class="quote-grid">
+                  <span>Service <strong>{{ quote['service_slug'] }}</strong></span>
+                  <span>Market <strong>{{ quote['country_code'] }} / {{ quote['zone_id'] || 'default' }}</strong></span>
+                  <span>Rule Price <strong>{{ formatMoneyMinor(quote['rule_price_minor'], quote['currency_code']) }}</strong></span>
+                  <span>AI Recommended <strong>{{ formatMoneyMinor(quote['recommended_price_minor'], quote['currency_code']) }}</strong></span>
+                  <span>Final <strong>{{ formatMoneyMinor(quote['final_price_minor'], quote['currency_code']) }}</strong></span>
+                  <span>Confidence <strong>{{ quote['confidence'] }}</strong></span>
+                </div>
+              </div>
+            }
+          </section>
+        }
+
+        @if (activeTab() === 'global') {
+          <section class="section-card">
+            <div class="section-heading">
+              <div>
+                <h2>Global Settings</h2>
+                <p>Applies these safe defaults to the loaded markets. Defaults keep AI disabled and shadow mode enabled.</p>
+              </div>
+              <button type="button" class="primary-btn" (click)="applyGlobalSettings()" [disabled]="saving()">
+                <ion-icon name="save-outline"></ion-icon>
+                Apply To Loaded Markets
+              </button>
+            </div>
+
+            <div class="form-grid">
+              <label class="switch-row">Global AI Pricing Enabled <select [(ngModel)]="globalDraft.ai_pricing_enabled"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+              <label class="switch-row">Shadow Mode Enabled <select [(ngModel)]="globalDraft.shadow_mode_enabled"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+              <label class="switch-row">Live Pricing Enabled <select [(ngModel)]="globalDraft.ai_pricing_enabled"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+              <label>Traffic Percentage <input type="number" min="0" max="100" [(ngModel)]="globalDraft.traffic_percentage"></label>
+              <label>Confidence Threshold <input type="number" step="0.01" min="0" max="1" [(ngModel)]="globalDraft.confidence_threshold"></label>
+              <label>AI Request Timeout (ms) <input type="number" min="1" [(ngModel)]="globalDraft.request_timeout_ms"></label>
+              <label>Fallback Strategy <input [(ngModel)]="globalDraft.fallback_strategy"></label>
+              <label>Global Maximum Increase % <input type="number" min="0" [(ngModel)]="globalDraft.global_maximum_increase_percent"></label>
+              <label>Global Maximum Multiplier <input type="number" min="1" step="0.01" [(ngModel)]="globalDraft.global_maximum_multiplier"></label>
+              <label class="switch-row">Emergency Disable <select [(ngModel)]="globalDraft.emergency_pricing_disabled"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+              <label>Model Version <input [(ngModel)]="globalDraft.model_version"></label>
+              <label>Configuration Version <input type="number" min="1" [(ngModel)]="globalDraft.configuration_version"></label>
+            </div>
+          </section>
+        }
+
+        @if (activeTab() === 'markets') {
+          <section class="section-card">
+            <div class="section-heading"><div><h2>Markets</h2><p>Manage country/currency, tax, units and market AI status.</p></div></div>
+            <div class="editor-card highlighted">
+              <h3>Add Market</h3>
+              <div class="form-grid market-grid">
+                <label>Country <input [(ngModel)]="marketDraft['country_code']" maxlength="2"></label>
+                <label>Currency <input [(ngModel)]="marketDraft['currency_code']" maxlength="3"></label>
+                <label>Timezone <input [(ngModel)]="marketDraft['timezone']"></label>
+                <label>Distance Unit <select [(ngModel)]="marketDraft['distance_unit']"><option value="km">km</option><option value="mi">mi</option></select></label>
+                <label>Tax Rate <input type="number" step="0.0001" [(ngModel)]="marketDraft['tax_rate']"></label>
+                <label>Minimum Charge Unit <input type="number" [(ngModel)]="marketDraft['minimum_charge_unit_minor']"></label>
+                <label>Pricing Model <input [(ngModel)]="marketDraft['pricing_model']"></label>
+                <label>Model Version <input [(ngModel)]="marketDraft['model_version']"></label>
+                <label>Confidence <input type="number" step="0.01" [(ngModel)]="marketDraft['confidence_threshold']"></label>
+                <label>Enabled <select [(ngModel)]="marketDraft['market_enabled']"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+                <label>AI Enabled <select [(ngModel)]="marketDraft['ai_pricing_enabled']"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+                <label>Shadow Mode <select [(ngModel)]="marketDraft['shadow_mode_enabled']"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+              </div>
+              <button type="button" class="primary-btn" (click)="saveMarket(marketDraft)" [disabled]="saving()">Save Market</button>
+            </div>
+
+            <div class="row-list">
+              @for (row of markets(); track row['country_code']) {
+                <div class="editor-card">
+                  <div class="row-title"><strong>{{ row['country_code'] }} · {{ row['currency_code'] }}</strong><span>{{ row['market_enabled'] ? 'Enabled' : 'Disabled' }}</span></div>
+                  <div class="form-grid market-grid">
+                    <label>Timezone <input [(ngModel)]="row['timezone']"></label>
+                    <label>Currency <input [(ngModel)]="row['currency_code']" maxlength="3"></label>
+                    <label>Distance Unit <select [(ngModel)]="row['distance_unit']"><option value="km">km</option><option value="mi">mi</option></select></label>
+                    <label>Tax Rate <input type="number" step="0.0001" [(ngModel)]="row['tax_rate']"></label>
+                    <label>Pricing Model <input [(ngModel)]="row['pricing_model']"></label>
+                    <label>Confidence <input type="number" step="0.01" [(ngModel)]="row['confidence_threshold']"></label>
+                    <label>Market Enabled <select [(ngModel)]="row['market_enabled']"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+                    <label>AI Enabled <select [(ngModel)]="row['ai_pricing_enabled']"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+                    <label>Shadow Mode <select [(ngModel)]="row['shadow_mode_enabled']"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="secondary-btn delete" (click)="deleteRow('markets', row)" [disabled]="saving()">Delete</button>
+                    <button type="button" class="primary-btn" (click)="saveMarket(row)" [disabled]="saving()">Save</button>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+        }
+
+        @if (activeTab() === 'zones') {
+          <section class="section-card">
+            <div class="section-heading"><div><h2>Zones</h2><p>Configure city/zone economics, fees, service availability and geofence metadata.</p></div></div>
+            <div class="editor-card highlighted">
+              <h3>Add Zone</h3>
+              <ng-container *ngTemplateOutlet="zoneForm; context: { row: zoneDraft }"></ng-container>
+              <button type="button" class="primary-btn" (click)="saveZone(zoneDraft)" [disabled]="saving()">Save Zone</button>
+            </div>
+            <div class="row-list">
+              @for (row of zones(); track row['id'] || row['zone_id']) {
+                <div class="editor-card">
+                  <div class="row-title"><strong>{{ row['city_name'] || row['country_code'] }} · {{ row['zone_id'] }}</strong><span>{{ row['is_active'] === false ? 'Inactive' : 'Active' }}</span></div>
+                  <ng-container *ngTemplateOutlet="zoneForm; context: { row: row }"></ng-container>
+                  <div class="row-actions">
+                    <button type="button" class="secondary-btn delete" (click)="deleteRow('zones', row)" [disabled]="saving()">Delete</button>
+                    <button type="button" class="primary-btn" (click)="saveZone(row)" [disabled]="saving()">Save</button>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+        }
+
+        @if (activeTab() === 'services' || activeTab() === 'guardrails') {
+          <section class="section-card">
+            <div class="section-heading">
+              <div>
+                <h2>{{ activeTab() === 'guardrails' ? 'AI Guardrails' : 'Service Market Rules' }}</h2>
+                <p>These values cap AI output and keep legal, safety and driver-earnings limits database-controlled.</p>
+              </div>
+            </div>
+            <div class="editor-card highlighted">
+              <h3>Add Service Rule</h3>
+              <ng-container *ngTemplateOutlet="serviceForm; context: { row: serviceRuleDraft }"></ng-container>
+              <button type="button" class="primary-btn" (click)="saveServiceRule(serviceRuleDraft)" [disabled]="saving()">Save Service Rule</button>
+            </div>
+            <div class="row-list">
+              @for (row of serviceRules(); track row['id'] || row['service_slug']) {
+                <div class="editor-card">
+                  <div class="row-title"><strong>{{ row['country_code'] }} · {{ row['service_slug'] }} · {{ row['zone_id'] || 'default zone' }}</strong><span>{{ serviceSummary(row) }}</span></div>
+                  <ng-container *ngTemplateOutlet="serviceForm; context: { row: row }"></ng-container>
+                  <div class="row-actions">
+                    <button type="button" class="secondary-btn delete" (click)="deleteRow('serviceRules', row)" [disabled]="saving()">Delete</button>
+                    <button type="button" class="primary-btn" (click)="saveServiceRule(row)" [disabled]="saving()">Save</button>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+        }
+
+        @if (activeTab() === 'waiting') {
+          <section class="section-card">
+            <div class="section-heading"><div><h2>Waiting Charges</h2><p>Actual waiting charges still depend on verified timestamps; these settings define market/service bounds.</p></div></div>
+            <div class="editor-card highlighted">
+              <h3>Add Waiting Rule</h3>
+              <ng-container *ngTemplateOutlet="waitingForm; context: { row: waitingRuleDraft }"></ng-container>
+              <button type="button" class="primary-btn" (click)="saveWaitingRule(waitingRuleDraft)" [disabled]="saving()">Save Waiting Rule</button>
+            </div>
+            <div class="row-list">
+              @for (row of waitingRules(); track row['id'] || row['service_slug']) {
+                <div class="editor-card">
+                  <div class="row-title"><strong>{{ row['country_code'] }} · {{ row['service_slug'] }} · {{ row['zone_id'] || 'default zone' }}</strong><span>{{ row['free_waiting_minutes'] }} free min</span></div>
+                  <ng-container *ngTemplateOutlet="waitingForm; context: { row: row }"></ng-container>
+                  <div class="row-actions">
+                    <button type="button" class="secondary-btn delete" (click)="deleteRow('waitingRules', row)" [disabled]="saving()">Delete</button>
+                    <button type="button" class="primary-btn" (click)="saveWaitingRule(row)" [disabled]="saving()">Save</button>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+        }
+
+        @if (activeTab() === 'events') {
+          <section class="section-card">
+            <div class="section-heading"><div><h2>Calendar & Events</h2><p>Events influence forecasts only; they do not force surge without demand/supply evidence.</p></div></div>
+            <div class="editor-card highlighted">
+              <h3>Add Event</h3>
+              <ng-container *ngTemplateOutlet="eventForm; context: { row: eventDraft }"></ng-container>
+              <button type="button" class="primary-btn" (click)="saveEvent(eventDraft)" [disabled]="saving()">Save Event</button>
+            </div>
+            <div class="row-list">
+              @for (row of calendarEvents(); track row['id'] || row['title']) {
+                <div class="editor-card">
+                  <div class="row-title"><strong>{{ row['title'] }}</strong><span>{{ row['event_type'] }} · {{ row['starts_at'] | date:'short' }}</span></div>
+                  <ng-container *ngTemplateOutlet="eventForm; context: { row: row }"></ng-container>
+                  <div class="row-actions">
+                    <button type="button" class="secondary-btn delete" (click)="deleteRow('calendarEvents', row)" [disabled]="saving()">Delete</button>
+                    <button type="button" class="primary-btn" (click)="saveEvent(row)" [disabled]="saving()">Save</button>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+        }
+
+        @if (activeTab() === 'shadow' || activeTab() === 'audit') {
+          <section class="section-card">
+            <div class="section-heading">
+              <div>
+                <h2>{{ activeTab() === 'shadow' ? 'Shadow Mode Comparison' : 'Audit & Monitoring' }}</h2>
+                <p>Recent AI quote audits show rule price, AI recommendation, bounded final price, confidence and fallback reasons.</p>
+              </div>
+            </div>
+
+            @if (audits().length === 0) {
+              <div class="empty-state compact">No AI pricing audits found yet.</div>
+            } @else {
+              <div class="audit-list">
+                @for (row of audits(); track row['id']) {
+                  <div class="audit-row">
+                    <div>
+                      <strong>{{ row['service_slug'] }} · {{ row['country_code'] }} · {{ row['zone_id'] || 'default' }}</strong>
+                      <span>{{ row['created_at'] | date:'medium' }} · Model {{ row['model_version'] }} · Config {{ row['configuration_version'] }}</span>
+                    </div>
+                    <div class="audit-prices">
+                      <span>Rule {{ formatMoneyMinor(row['rule_price_minor'], row['currency_code']) }}</span>
+                      <span>AI {{ formatMoneyMinor(row['recommended_price_minor'], row['currency_code']) }}</span>
+                      <span>Final {{ formatMoneyMinor(row['final_price_minor'], row['currency_code']) }}</span>
+                      <span>Confidence {{ row['confidence'] }}</span>
+                    </div>
+                    @if (row['fallback_used'] || row['fallback_reason']) {
+                      <p class="fallback">Fallback: {{ row['fallback_reason'] || 'used' }}</p>
+                    }
+                    @if (row['reasons']) {
+                      <p class="reasons">Reasons: {{ row['reasons'] | json }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </section>
+        }
+      }
+    </main>
+  </div>
+</div>
+
+<ng-template #zoneForm let-row="row">
+  <div class="form-grid">
+    <label>Country <input [(ngModel)]="row['country_code']" maxlength="2"></label>
+    <label>City <input [(ngModel)]="row['city_name']"></label>
+    <label>Zone ID <input [(ngModel)]="row['zone_id']"></label>
+    <label>Base Cost Index <input type="number" step="0.01" [(ngModel)]="row['base_cost_index']"></label>
+    <label>Congestion Index <input type="number" step="0.01" [(ngModel)]="row['congestion_index']"></label>
+    <label>Purchasing Power Index <input type="number" step="0.01" [(ngModel)]="row['purchasing_power_index']"></label>
+    <label>Driver Cost Index <input type="number" step="0.01" [(ngModel)]="row['driver_cost_index']"></label>
+    <label>Fuel Cost Index <input type="number" step="0.01" [(ngModel)]="row['fuel_cost_index']"></label>
+    <label>Insurance Cost Index <input type="number" step="0.01" [(ngModel)]="row['insurance_cost_index']"></label>
+    <label>Regulatory Fee Minor <input type="number" [(ngModel)]="row['regulatory_fee_minor']"></label>
+    <label>Airport Fee Minor <input type="number" [(ngModel)]="row['airport_fee_minor']"></label>
+    <label>Max Surge <input type="number" step="0.01" min="1" [(ngModel)]="row['max_surge_multiplier']"></label>
+    <label>Min Driver Earnings Minor <input type="number" [(ngModel)]="row['minimum_driver_earnings_minor']"></label>
+    <label>Enabled Services <input [ngModel]="asCsv(row['enabled_services'])" (ngModelChange)="setCsv(row, 'enabled_services', $event)"></label>
+    <label>Enabled <select [(ngModel)]="row['is_active']"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+  </div>
+</ng-template>
+
+<ng-template #serviceForm let-row="row">
+  <div class="form-grid">
+    <label>Country <input [(ngModel)]="row['country_code']" maxlength="2"></label>
+    <label>Zone ID <input [(ngModel)]="row['zone_id']" placeholder="optional"></label>
+    <label>Service <input [(ngModel)]="row['service_slug']"></label>
+    <label>Vehicle Class <input [(ngModel)]="row['vehicle_class']" placeholder="optional"></label>
+    <label>Base Fare Minor <input type="number" [(ngModel)]="row['base_fare_minor']"></label>
+    <label>Per Distance Unit Minor <input type="number" [(ngModel)]="row['per_distance_unit_minor']"></label>
+    <label>Per Minute Minor <input type="number" [(ngModel)]="row['per_minute_minor']"></label>
+    <label>Minimum Fare Minor <input type="number" [(ngModel)]="row['minimum_fare_minor']"></label>
+    <label>Maximum Fare Minor <input type="number" [(ngModel)]="row['maximum_fare_minor']"></label>
+    <label>Booking Fee Minor <input type="number" [(ngModel)]="row['booking_fee_minor']"></label>
+    <label>Cancellation Fee Minor <input type="number" [(ngModel)]="row['cancellation_fee_minor']"></label>
+    <label>Waiting Fee / Minute <input type="number" [(ngModel)]="row['waiting_fee_per_minute_minor']"></label>
+    <label>Maximum Surge <input type="number" step="0.01" min="1" [(ngModel)]="row['maximum_surge_multiplier']"></label>
+    <label>Commission % <input type="number" step="0.01" [(ngModel)]="row['commission_percent']"></label>
+    <label>Tax Treatment <input [(ngModel)]="row['tax_treatment']"></label>
+    <label>Toll Treatment <input [(ngModel)]="row['toll_treatment']"></label>
+    <label>AI Pricing <select [(ngModel)]="row['ai_pricing_enabled']"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+    <label>Surge Enabled <select [(ngModel)]="row['surge_enabled']"><option [ngValue]="false">No</option><option [ngValue]="true">Yes</option></select></label>
+    <label>Active <select [(ngModel)]="row['is_active']"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+  </div>
+</ng-template>
+
+<ng-template #waitingForm let-row="row">
+  <div class="form-grid">
+    <label>Country <input [(ngModel)]="row['country_code']" maxlength="2"></label>
+    <label>Zone ID <input [(ngModel)]="row['zone_id']" placeholder="optional"></label>
+    <label>Service <input [(ngModel)]="row['service_slug']"></label>
+    <label>Free Waiting Minutes <input type="number" [(ngModel)]="row['free_waiting_minutes']"></label>
+    <label>Airport Free Minutes <input type="number" [(ngModel)]="row['airport_free_waiting_minutes']"></label>
+    <label>Accessibility Free Minutes <input type="number" [(ngModel)]="row['accessibility_free_waiting_minutes']"></label>
+    <label>Price / Minute Minor <input type="number" [(ngModel)]="row['per_minute_charge_minor']"></label>
+    <label>Maximum Charge Minor <input type="number" [(ngModel)]="row['maximum_charge_minor']"></label>
+    <label>Cancellation Threshold <input type="number" [(ngModel)]="row['cancellation_threshold_minutes']"></label>
+    <label>Partial Minute Rounding <select [(ngModel)]="row['partial_minute_rounding']"><option value="ceil">Ceil</option><option value="floor">Floor</option><option value="nearest">Nearest</option></select></label>
+    <label>Enabled <select [(ngModel)]="row['is_active']"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+  </div>
+</ng-template>
+
+<ng-template #eventForm let-row="row">
+  <div class="form-grid">
+    <label>Name <input [(ngModel)]="row['title']"></label>
+    <label>Country <input [(ngModel)]="row['country_code']" maxlength="2"></label>
+    <label>Region <input [(ngModel)]="row['region_code']"></label>
+    <label>Zone <input [(ngModel)]="row['zone_id']"></label>
+    <label>Event Type <input [(ngModel)]="row['event_type']" placeholder="school_run, festival, commute"></label>
+    <label>Start <input type="datetime-local" [(ngModel)]="row['starts_at']"></label>
+    <label>End <input type="datetime-local" [(ngModel)]="row['ends_at']"></label>
+    <label>Demand Impact <input type="number" step="0.01" [(ngModel)]="row['expected_demand_impact']"></label>
+    <label>Supply Impact <input type="number" step="0.01" [(ngModel)]="row['expected_supply_impact']"></label>
+    <label>Source <input [(ngModel)]="row['source']"></label>
+    <label>Enabled <select [(ngModel)]="row['is_active']"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+  </div>
+</ng-template>
+
+@if (toastMessage()) {
+  <div class="toast" [class]="toastColor()">{{ toastMessage() }}</div>
+}

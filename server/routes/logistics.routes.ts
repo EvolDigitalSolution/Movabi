@@ -51,10 +51,14 @@ router.post('/payout-breakdown', async (req: Request, res: Response) => {
       null
     );
 
+    const commissionSettings = await MarketplaceConfigService.getCommissionSettings();
+    const platformFeePercent = Number(commissionSettings.platformFeePercent ?? 0);
+
     const breakdown = LogisticsService.calculatePayout(
       totalPrice,
       profile.pricing_plan || 'starter',
-      profile.commission_rate || effectiveCommission || MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT
+      profile.commission_rate || effectiveCommission || MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT,
+      platformFeePercent
     );
 
     res.json(breakdown);

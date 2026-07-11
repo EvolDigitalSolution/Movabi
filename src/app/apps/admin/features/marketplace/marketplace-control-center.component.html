@@ -1,0 +1,125 @@
+<div class="w-full min-h-screen bg-slate-50 overflow-y-auto">
+  <div class="max-w-7xl mx-auto p-5 md:p-8 space-y-6 pb-12">
+
+    <div class="bg-white border border-slate-100 rounded-[2rem] shadow-sm p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-display font-bold text-slate-950">Marketplace Control Centre</h1>
+        <p class="text-sm text-slate-500 font-medium mt-1">
+          Configure commission, pricing, service rules, negotiation, bidding, matching, payments and emergency controls.
+        </p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <button type="button" (click)="reloadCache()" [disabled]="saving()" class="secondary-btn">
+          <ion-icon name="refresh-outline"></ion-icon>
+          Reload Cache
+        </button>
+        <button type="button" (click)="reset()" [disabled]="saving()" class="secondary-btn">
+          Reset
+        </button>
+        <button type="button" (click)="save()" [disabled]="saving()" class="primary-btn">
+          <ion-icon name="save-outline"></ion-icon>
+          {{ saving() ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div class="lg:col-span-1">
+        <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm p-3 lg:sticky lg:top-5 space-y-2">
+          <button type="button" (click)="activeTab.set('commission')" [class]="activeTab() === 'commission' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="cash-outline"></ion-icon><span>Commission & Fees</span></button>
+          <button type="button" (click)="activeTab.set('dynamicPricing')" [class]="activeTab() === 'dynamicPricing' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="trending-up-outline"></ion-icon><span>Dynamic Pricing</span></button>
+          <button type="button" (click)="activeTab.set('serviceRules')" [class]="activeTab() === 'serviceRules' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="car-outline"></ion-icon><span>Service Rules</span></button>
+          <button type="button" (click)="activeTab.set('negotiation')" [class]="activeTab() === 'negotiation' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="chatbubbles-outline"></ion-icon><span>Negotiation</span></button>
+          <button type="button" (click)="activeTab.set('hybrid')" [class]="activeTab() === 'hybrid' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="people-outline"></ion-icon><span>Hybrid Negotiation</span></button>
+          <button type="button" (click)="activeTab.set('bidding')" [class]="activeTab() === 'bidding' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="hammer-outline"></ion-icon><span>Bidding</span></button>
+          <button type="button" (click)="activeTab.set('smartMatching')" [class]="activeTab() === 'smartMatching' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="options-outline"></ion-icon><span>Smart Matching</span></button>
+          <button type="button" (click)="activeTab.set('payment')" [class]="activeTab() === 'payment' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="wallet-outline"></ion-icon><span>Payment Rules</span></button>
+          <button type="button" (click)="activeTab.set('notifications')" [class]="activeTab() === 'notifications' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="notifications-outline"></ion-icon><span>Notifications</span></button>
+          <button type="button" (click)="activeTab.set('driver')" [class]="activeTab() === 'driver' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="shield-checkmark-outline"></ion-icon><span>Driver Rules</span></button>
+          <button type="button" (click)="activeTab.set('emergency')" [class]="activeTab() === 'emergency' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="alert-circle-outline"></ion-icon><span>Emergency Controls</span></button>
+          <button type="button" (click)="activeTab.set('marketplace')" [class]="activeTab() === 'marketplace' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="globe-outline"></ion-icon><span>Marketplace Status</span></button>
+          <button type="button" (click)="activeTab.set('audit')" [class]="activeTab() === 'audit' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="document-text-outline"></ion-icon><span>Audit Logs</span></button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-3 space-y-6">
+        @if (loading()) {
+          <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+            <ion-spinner name="crescent"></ion-spinner>
+            <p class="mt-3 font-semibold">Loading marketplace settings...</p>
+          </div>
+        } @else if (activeTab() === 'audit') {
+          <div class="section-card">
+            <h3 class="section-title">Audit Logs</h3>
+            @if (auditLoading()) {
+              <div class="flex justify-center py-10"><ion-spinner name="crescent"></ion-spinner></div>
+            } @else if (auditLogs.length === 0) {
+              <p class="text-slate-500 text-sm">No audit logs found.</p>
+            } @else {
+              <div class="space-y-4">
+                @for (log of auditLogs; track log.id) {
+                  <div class="border border-slate-100 rounded-xl p-4 bg-slate-50">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div class="text-sm font-bold text-slate-900">{{ log.action }}</div>
+                      <div class="text-xs text-slate-500">{{ log.createdAt | date:'medium' }}</div>
+                    </div>
+                    <div class="text-xs text-slate-600 mt-1">User: {{ log.userId || 'system' }} | Key: {{ log.settingKey || log.key || log.action || log.eventType || 'Marketplace update' }}</div>
+                    @if (log.previousValue || log.newValue) {
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                        <div class="text-xs"><strong class="text-slate-500">Before:</strong> <pre class="metadata">{{ log.previousValue | json }}</pre></div>
+                        <div class="text-xs"><strong class="text-slate-500">After:</strong> <pre class="metadata">{{ log.newValue | json }}</pre></div>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+              <button type="button" (click)="loadMoreAuditLogs()" class="secondary-btn mt-4">Load More</button>
+            }
+          </div>
+        } @else {
+          @for (group of fieldGroups; track group.title) {
+            @if (group.tab === activeTab()) {
+              <div class="section-card">
+                <h3 class="section-title">{{ group.title }}</h3>
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  @for (field of group.fields; track field.path) {
+                    <div>
+                      <label class="field-label">{{ field.label }}</label>
+                      @if (field.type === 'number') {
+                        <input type="number" step="any" [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                      } @else if (field.type === 'boolean') {
+                        <select [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                          <option [ngValue]="true">Yes</option>
+                          <option [ngValue]="false">No</option>
+                        </select>
+                      } @else if (field.type === 'select') {
+                        <select [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                          @for (opt of field.options; track opt.value) {
+                            <option [ngValue]="opt.value">{{ opt.label }}</option>
+                          }
+                        </select>
+                      } @else if (field.type === 'text') {
+                        <input [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                      } @else if (field.type === 'array') {
+                        <input [ngModel]="formatStringList(getValue(field.path))" (ngModelChange)="setValue(field.path, parseStringList($event))" class="field-control">
+                      } @else if (field.type === 'json') {
+                        <textarea rows="4" [ngModel]="getValue(field.path) | json" (ngModelChange)="setValueJson(field.path, $event)" class="field-control"></textarea>
+                      }
+                      @if (field.hint) {
+                        <p class="text-xs text-slate-500 mt-1">{{ field.hint }}</p>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          }
+        }
+      </div>
+    </div>
+  </div>
+</div>
+
+@if (showToast()) {
+  <div class="toast" [class]="toastColor()">{{ toastMessage() }}</div>
+}

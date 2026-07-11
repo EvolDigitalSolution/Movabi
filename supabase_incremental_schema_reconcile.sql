@@ -2394,6 +2394,221 @@ BEGIN
     END IF;
 END $$;
 
+-- Global AI pricing foundation. These tables are admin-managed guardrails for
+-- market, zone, service, waiting, calendar and audit data. Live AI pricing is
+-- disabled unless a market and service rule explicitly enable it.
+CREATE TABLE IF NOT EXISTS public.pricing_markets (
+    country_code TEXT PRIMARY KEY,
+    currency_code TEXT NOT NULL,
+    timezone TEXT NOT NULL,
+    distance_unit TEXT NOT NULL CHECK (distance_unit IN ('km', 'mi')),
+    tax_inclusive_display BOOLEAN NOT NULL DEFAULT TRUE,
+    tax_rate NUMERIC(8,4) NOT NULL DEFAULT 0,
+    default_language TEXT NULL,
+    rounding_rule JSONB NOT NULL DEFAULT '{}'::jsonb,
+    minimum_charge_unit_minor INTEGER NOT NULL DEFAULT 1,
+    pricing_model TEXT NOT NULL DEFAULT 'rules_shadow',
+    market_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ai_pricing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    shadow_mode_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    experimentation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    emergency_pricing_disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    confidence_threshold NUMERIC(5,4) NOT NULL DEFAULT 0.75,
+    model_version TEXT NOT NULL DEFAULT 'global-pricing-v1',
+    configuration_version INTEGER NOT NULL DEFAULT 1,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.pricing_zones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL REFERENCES public.pricing_markets(country_code) ON DELETE CASCADE,
+    city_id UUID NULL,
+    city_name TEXT NULL,
+    zone_id TEXT NOT NULL,
+    polygon JSONB NULL,
+    base_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    congestion_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    purchasing_power_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    driver_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    fuel_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    insurance_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    regulatory_fee_minor INTEGER NOT NULL DEFAULT 0,
+    airport_fee_minor INTEGER NOT NULL DEFAULT 0,
+    max_surge_multiplier NUMERIC(6,3) NOT NULL DEFAULT 1,
+    minimum_driver_earnings_minor INTEGER NOT NULL DEFAULT 0,
+    enabled_services TEXT[] NULL,
+    priority INTEGER NOT NULL DEFAULT 100,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (country_code, zone_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.service_market_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL REFERENCES public.pricing_markets(country_code) ON DELETE CASCADE,
+    zone_id TEXT NULL,
+    service_slug TEXT NOT NULL,
+    vehicle_class TEXT NULL,
+    base_fare_minor INTEGER NOT NULL DEFAULT 0,
+    per_distance_unit_minor INTEGER NOT NULL DEFAULT 0,
+    per_minute_minor INTEGER NOT NULL DEFAULT 0,
+    minimum_fare_minor INTEGER NOT NULL DEFAULT 0,
+    booking_fee_minor INTEGER NOT NULL DEFAULT 0,
+    cancellation_fee_minor INTEGER NOT NULL DEFAULT 0,
+    waiting_fee_per_minute_minor INTEGER NOT NULL DEFAULT 0,
+    maximum_fare_minor INTEGER NULL,
+    maximum_surge_multiplier NUMERIC(6,3) NOT NULL DEFAULT 1,
+    commission_percent NUMERIC(8,4) NOT NULL DEFAULT 0,
+    tax_treatment TEXT NOT NULL DEFAULT 'market',
+    toll_treatment TEXT NOT NULL DEFAULT 'actual',
+    payment_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ai_pricing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    surge_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (country_code, zone_id, service_slug, vehicle_class)
+);
+
+CREATE TABLE IF NOT EXISTS public.pricing_waiting_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL REFERENCES public.pricing_markets(country_code) ON DELETE CASCADE,
+    zone_id TEXT NULL,
+    service_slug TEXT NOT NULL,
+    free_waiting_minutes INTEGER NOT NULL DEFAULT 0,
+    airport_free_waiting_minutes INTEGER NOT NULL DEFAULT 0,
+    accessibility_free_waiting_minutes INTEGER NOT NULL DEFAULT 0,
+    per_minute_charge_minor INTEGER NOT NULL DEFAULT 0,
+    maximum_charge_minor INTEGER NOT NULL DEFAULT 0,
+    cancellation_threshold_minutes INTEGER NULL,
+    partial_minute_rounding TEXT NOT NULL DEFAULT 'ceil',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (country_code, zone_id, service_slug)
+);
+
+CREATE TABLE IF NOT EXISTS public.pricing_calendar_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL,
+    region_code TEXT NULL,
+    zone_id TEXT NULL,
+    event_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ NOT NULL,
+    expected_demand_impact NUMERIC(8,4) NOT NULL DEFAULT 0,
+    expected_supply_impact NUMERIC(8,4) NOT NULL DEFAULT 0,
+    source TEXT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.ai_pricing_audits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NULL REFERENCES public.jobs(id) ON DELETE SET NULL,
+    country_code TEXT NOT NULL,
+    currency_code TEXT NOT NULL,
+    service_slug TEXT NOT NULL,
+    zone_id TEXT NULL,
+    input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    rule_price_minor INTEGER NOT NULL DEFAULT 0,
+    recommended_price_minor INTEGER NOT NULL DEFAULT 0,
+    final_price_minor INTEGER NOT NULL DEFAULT 0,
+    guardrails JSONB NOT NULL DEFAULT '{}'::jsonb,
+    confidence NUMERIC(5,4) NOT NULL DEFAULT 0,
+    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    model_version TEXT NOT NULL,
+    configuration_version INTEGER NOT NULL DEFAULT 1,
+    shadow_mode BOOLEAN NOT NULL DEFAULT TRUE,
+    fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
+    fallback_reason TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pricing_zones_country_active
+    ON public.pricing_zones(country_code, is_active, priority);
+CREATE INDEX IF NOT EXISTS idx_service_market_rules_lookup
+    ON public.service_market_rules(country_code, service_slug, zone_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_pricing_calendar_events_lookup
+    ON public.pricing_calendar_events(country_code, region_code, starts_at, ends_at)
+    WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_ai_pricing_audits_market
+    ON public.ai_pricing_audits(country_code, service_slug, created_at DESC);
+
+ALTER TABLE public.pricing_markets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_zones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.service_market_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_waiting_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_calendar_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_pricing_audits ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Allow active pricing markets read" ON public.pricing_markets;
+    CREATE POLICY "Allow active pricing markets read" ON public.pricing_markets
+        FOR SELECT USING (market_enabled = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active pricing zones read" ON public.pricing_zones;
+    CREATE POLICY "Allow active pricing zones read" ON public.pricing_zones
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active service market rules read" ON public.service_market_rules;
+    CREATE POLICY "Allow active service market rules read" ON public.service_market_rules
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active waiting rules read" ON public.pricing_waiting_rules;
+    CREATE POLICY "Allow active waiting rules read" ON public.pricing_waiting_rules
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active pricing events read" ON public.pricing_calendar_events;
+    CREATE POLICY "Allow active pricing events read" ON public.pricing_calendar_events
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow admin pricing markets management" ON public.pricing_markets;
+    CREATE POLICY "Allow admin pricing markets management" ON public.pricing_markets
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin pricing zones management" ON public.pricing_zones;
+    CREATE POLICY "Allow admin pricing zones management" ON public.pricing_zones
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin service market rules management" ON public.service_market_rules;
+    CREATE POLICY "Allow admin service market rules management" ON public.service_market_rules
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin waiting rules management" ON public.pricing_waiting_rules;
+    CREATE POLICY "Allow admin waiting rules management" ON public.pricing_waiting_rules
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin pricing events management" ON public.pricing_calendar_events;
+    CREATE POLICY "Allow admin pricing events management" ON public.pricing_calendar_events
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin pricing audit read" ON public.ai_pricing_audits;
+    CREATE POLICY "Allow admin pricing audit read" ON public.ai_pricing_audits
+        FOR SELECT
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+END $$;
+
 -- Marketplace engine settings are admin-managed and provide the single source
 -- of truth for commissions, negotiation, bidding and matching defaults.
 CREATE TABLE IF NOT EXISTS public.marketplace_settings (

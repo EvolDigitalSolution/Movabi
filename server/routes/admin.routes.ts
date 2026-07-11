@@ -6,6 +6,7 @@ import { stripe } from '../services/stripe.service';
 import { PayoutService } from '../services/payout.service';
 import { NotificationService } from '../services/notification.service';
 import { AppVersionService, normaliseAppVersionConfig } from '../services/app-version.service';
+import { MarketplaceConfigService } from '../services/marketplace-config.service';
 
 const router = Router();
 
@@ -716,6 +717,163 @@ router.get('/validate-push-subscription/:userId', async (req: Request, res: Resp
   } catch (error: any) {
     console.error('[Admin] Validate push subscription failed:', error);
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * Marketplace Control Centre
+ */
+router.get('/marketplace/settings', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req.query.tenantId as string | null) || null;
+    const settings = await MarketplaceConfigService.getAllSettings(tenantId);
+    res.json({ ok: true, settings });
+  } catch (error: any) {
+    console.error('[Admin] Load marketplace settings error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.post('/marketplace/settings', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).adminUserId || null;
+    const tenantId = (req.body?.tenantId as string | null) || null;
+    const updates = req.body?.settings || {};
+
+    const result = await MarketplaceConfigService.setSettings(updates, tenantId, adminId);
+    res.json({ ok: true, settings: result });
+  } catch (error: any) {
+    console.error('[Admin] Save marketplace settings error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.get('/marketplace/audit-logs', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit || 100), 1000);
+    const offset = Math.max(Number(req.query.offset || 0), 0);
+    const key = typeof req.query.key === 'string' ? req.query.key : null;
+    const logs = await MarketplaceConfigService.getAuditLogs(limit, offset, key);
+    res.json({ ok: true, logs });
+  } catch (error: any) {
+    console.error('[Admin] Marketplace audit logs error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.post('/marketplace/reload', requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    MarketplaceConfigService.clearCache();
+    res.json({ ok: true, message: 'Marketplace cache cleared.' });
+  } catch (error: any) {
+    console.error('[Admin] Marketplace reload error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * Global AI Pricing control plane. These endpoints intentionally expose only
+ * admin-guarded configuration rows; live pricing remains disabled unless the
+ * persisted market/service rows explicitly enable it.
+ */
+const globalPricingTables: Record<string, string> = {
+  markets: 'pricing_markets',
+  zones: 'pricing_zones',
+  serviceRules: 'service_market_rules',
+  waitingRules: 'pricing_waiting_rules',
+  calendarEvents: 'pricing_calendar_events',
+  audits: 'ai_pricing_audits'
+};
+
+router.get('/pricing/global-ai/:table', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const table = globalPricingTables[String(req.params.table || '')];
+    if (!table) {
+      return res.status(404).json({ ok: false, error: 'Unknown global pricing table.' });
+    }
+
+    const limit = Math.min(Number(req.query.limit || 100), 500);
+    const countryCode = typeof req.query.countryCode === 'string'
+      ? req.query.countryCode.toUpperCase()
+      : null;
+
+    let query = supabaseAdmin.from(table).select('*').limit(limit);
+    if (countryCode && table !== 'ai_pricing_audits') {
+      query = query.eq('country_code', countryCode);
+    }
+    if (table === 'ai_pricing_audits') {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    }
+
+    return res.json({ ok: true, rows: data || [] });
+  } catch (error: any) {
+    console.error('[Admin] Global AI pricing load error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.post('/pricing/global-ai/:table', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const tableKey = String(req.params.table || '');
+    const table = globalPricingTables[tableKey];
+    if (!table || table === 'ai_pricing_audits') {
+      return res.status(404).json({ ok: false, error: 'Unknown or read-only global pricing table.' });
+    }
+
+    const row = req.body?.row;
+    if (!row || typeof row !== 'object') {
+      return res.status(400).json({ ok: false, error: 'row is required.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .upsert({ ...row, updated_at: new Date().toISOString() })
+      .select('*')
+      .single();
+
+    if (error) {
+      return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    }
+
+    return res.json({ ok: true, row: data });
+  } catch (error: any) {
+    console.error('[Admin] Global AI pricing save error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.delete('/pricing/global-ai/:table/:id', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const tableKey = String(req.params.table || '');
+    const table = globalPricingTables[tableKey];
+    if (!table || table === 'ai_pricing_audits') {
+      return res.status(404).json({ ok: false, error: 'Unknown or read-only global pricing table.' });
+    }
+
+    const id = decodeURIComponent(String(req.params.id || '')).trim();
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'Delete id is required.' });
+    }
+
+    const matchColumn = tableKey === 'markets' ? 'country_code' : 'id';
+    const { error } = await supabaseAdmin
+      .from(table)
+      .delete()
+      .eq(matchColumn, id);
+
+    if (error) {
+      return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    }
+
+    return res.json({ ok: true });
+  } catch (error: any) {
+    console.error('[Admin] Global AI pricing delete error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
   }
 });
 
