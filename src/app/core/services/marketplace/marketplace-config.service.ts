@@ -217,7 +217,7 @@ export class MarketplaceConfigService {
 
   defaultSettings(): MarketplaceSettings {
     return {
-      commission: { percent: 5.0, minFee: 0, maxFee: null, platformFeePercent: 0 },
+      commission: { percent: 0, minFee: 0, maxFee: null, platformFeePercent: 0 },
       dynamicPricing: {
         enabled: true,
         maxSurge: 3.0,
@@ -437,13 +437,16 @@ export class MarketplaceConfigService {
       const { data, error } = await this.supabase
         .from('marketplace_settings')
         .select('key, value')
-        .is('tenant_id', null);
+        .is('tenant_id', null)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       const defaults = this.defaultSettings();
       const map = (data || []).reduce((acc: Record<string, unknown>, row: any) => {
-        acc[row.key] = row.value;
+        if (!(row.key in acc)) {
+          acc[row.key] = row.value;
+        }
         return acc;
       }, {});
 
@@ -512,20 +515,89 @@ export class MarketplaceConfigService {
     ];
 
     for (const row of rows) {
-      const { error } = await this.supabase
-        .from('marketplace_settings')
-        .upsert({
-          key: row.key,
-          value: row.value,
-          tenant_id: null,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'tenant_id,key' });
-
-      if (error) throw error;
+      await this.saveGlobalSetting(row.key, row.value);
     }
 
     this.settings.set(settings);
     await this.loadSettings();
+  }
+
+  private async saveGlobalSetting(key: string, value: unknown): Promise<void> {
+    const now = new Date().toISOString();
+    const { data: existing, error: lookupError } = await this.supabase
+      .from('marketplace_settings')
+      .select('id, value')
+      .is('tenant_id', null)
+      .eq('key', key)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lookupError) throw lookupError;
+
+    const mergedValue = this.mergeJsonValue(existing?.value, value);
+
+    if (existing?.id) {
+      const { error } = await this.supabase
+        .from('marketplace_settings')
+        .update({
+          value: mergedValue,
+          updated_at: now
+        })
+        .eq('id', existing.id);
+
+      if (error) throw error;
+      return;
+    }
+
+    const { error } = await this.supabase
+      .from('marketplace_settings')
+      .insert({
+        key,
+        value: mergedValue,
+        tenant_id: null,
+        updated_at: now
+      });
+
+    if (error?.code === '23505') {
+      const { data: retryExisting, error: retryLookupError } = await this.supabase
+        .from('marketplace_settings')
+        .select('id, value')
+        .is('tenant_id', null)
+        .eq('key', key)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (retryLookupError) throw retryLookupError;
+      if (!retryExisting?.id) throw error;
+
+      const retryValue = this.mergeJsonValue(retryExisting.value, value);
+      const { error: retryError } = await this.supabase
+        .from('marketplace_settings')
+        .update({ value: retryValue, updated_at: now })
+        .eq('id', retryExisting.id);
+
+      if (retryError) throw retryError;
+      return;
+    }
+
+    if (error) throw error;
+  }
+
+  private mergeJsonValue(existing: unknown, incoming: unknown): unknown {
+    if (
+      existing &&
+      incoming &&
+      typeof existing === 'object' &&
+      typeof incoming === 'object' &&
+      !Array.isArray(existing) &&
+      !Array.isArray(incoming)
+    ) {
+      return { ...(existing as Record<string, unknown>), ...(incoming as Record<string, unknown>) };
+    }
+
+    return incoming;
   }
 
   async reload(): Promise<void> {

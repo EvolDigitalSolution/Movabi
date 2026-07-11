@@ -5,7 +5,6 @@
 INSERT INTO public.system_configs (key, value, updated_at)
 VALUES
   ('marketplace_enabled', 'true'::jsonb, now()),
-  ('marketplace_commission_percent', '5.00'::jsonb, now()),
   ('marketplace_negotiation_enabled', 'true'::jsonb, now()),
   ('marketplace_bidding_enabled', 'false'::jsonb, now()),
   ('marketplace_dynamic_pricing_enabled', 'true'::jsonb, now()),
@@ -42,7 +41,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_settings_tenant_key
 -- Seed defaults
 INSERT INTO public.marketplace_settings (tenant_id, key, value)
 VALUES
-  (NULL, 'commission', '{"percent": 5.00, "minFee": 0, "maxFee": null}'),
+  (NULL, 'commission', '{"percent": 0.00, "minFee": 0, "maxFee": null}'),
   (NULL, 'dynamic_pricing', '{"enabled": true, "maxSurge": 3.0, "trafficMultiplier": 1, "weatherMultiplier": 1, "demandMultiplier": 1, "fuelMultiplier": 1}'),
   (NULL, 'hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "allowlist": [], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'),
   (NULL, 'bidding', '{"enabled": false, "enabledServices": ["van", "van_moving"], "defaultServices": ["van", "van_moving"]}'),
@@ -57,7 +56,7 @@ CREATE TABLE IF NOT EXISTS public.marketplace_commission_overrides (
   city_zone TEXT,
   driver_tier TEXT,
   promotion_period_id TEXT,
-  commission_percent NUMERIC(8,4) NOT NULL,
+  commission_percent NUMERIC(8,4) NOT NULL DEFAULT 0,
   platform_fee_percent NUMERIC(8,4) NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
   starts_at TIMESTAMPTZ,
@@ -284,8 +283,8 @@ DECLARE
   base_commission NUMERIC(8,4);
   override_commission NUMERIC(8,4);
 BEGIN
-  -- Base from settings or global default 5%
-  SELECT COALESCE((value->>'percent')::NUMERIC, 5.00)
+  -- Base from settings (safe fallback 0% if row is missing)
+  SELECT COALESCE((value->>'percent')::NUMERIC, 0.00)
   INTO base_commission
   FROM public.marketplace_settings
   WHERE (tenant_id IS NULL OR tenant_id = p_tenant_id)
@@ -310,7 +309,7 @@ BEGIN
     (CASE WHEN driver_tier IS NOT NULL THEN 1 ELSE 0 END) DESC
   LIMIT 1;
 
-  RETURN COALESCE(override_commission, base_commission, 5.00);
+  RETURN COALESCE(override_commission, base_commission, 0.00);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

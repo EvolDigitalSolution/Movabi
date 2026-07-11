@@ -196,7 +196,8 @@ export interface EmergencyControls {
 }
 
 export class MarketplaceConfigService {
-  static readonly DEFAULT_COMMISSION_PERCENT = 5;
+  /** Safe fallback commission percent used when the marketplace_settings 'commission' row cannot be read. */
+  static readonly FALLBACK_COMMISSION_PERCENT = 0;
   private static cache: Map<string, { value: unknown; expiresAt: number }> = new Map();
   private static readonly CACHE_TTL_MS = 30_000; // 30 seconds
 
@@ -231,19 +232,33 @@ export class MarketplaceConfigService {
     key: string,
     tenantId: string | null = null
   ): Promise<Record<string, unknown> | null> {
-    const query = supabaseAdmin
+    if (tenantId) {
+      const { data: tenantRow, error: tenantError } = await supabaseAdmin
+        .from('marketplace_settings')
+        .select('value')
+        .eq('key', key)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (tenantError) {
+        console.warn(`[MarketplaceConfig] getRawSetting tenant error for ${key}:`, tenantError.message);
+      }
+
+      if (tenantRow?.value !== undefined) {
+        return (tenantRow.value as Record<string, unknown>) ?? null;
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
       .from('marketplace_settings')
       .select('value')
       .eq('key', key)
-      .limit(1);
-
-    if (tenantId) {
-      query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
-    } else {
-      query.is('tenant_id', null);
-    }
-
-    const { data, error } = await query.single();
+      .is('tenant_id', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error) {
       console.warn(`[MarketplaceConfig] getRawSetting error for ${key}:`, error.message);
@@ -274,18 +289,30 @@ export class MarketplaceConfigService {
   }
 
   static async getCommissionSettings(tenantId: string | null = null): Promise<CommissionSettings> {
-    const raw = await this.getSetting<CommissionSettings>('commission', tenantId, {
-      percent: MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT,
+    const defaults: CommissionSettings = {
+      percent: MarketplaceConfigService.FALLBACK_COMMISSION_PERCENT,
       minFee: 0,
       maxFee: null,
       platformFeePercent: 0
-    });
+    };
+
+    const raw = await this.getRawSetting('commission', tenantId);
+
+    if (!raw) {
+      console.warn(
+        `[MarketplaceConfig] commission fallback source: FALLBACK_COMMISSION_PERCENT (${MarketplaceConfigService.FALLBACK_COMMISSION_PERCENT}%)`,
+        { tenantId }
+      );
+    }
+
+    const value = { ...defaults, ...(raw ?? {}) } as CommissionSettings;
+    this.setCached(tenantId, 'commission', value);
 
     return {
-      percent: Number(raw?.percent ?? MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT),
-      minFee: Number(raw?.minFee ?? 0),
-      maxFee: raw?.maxFee === undefined ? null : Number(raw.maxFee),
-      platformFeePercent: Number(raw?.platformFeePercent ?? 0)
+      percent: Number(value.percent ?? MarketplaceConfigService.FALLBACK_COMMISSION_PERCENT),
+      minFee: Number(value.minFee ?? 0),
+      maxFee: value.maxFee === undefined ? null : Number(value.maxFee),
+      platformFeePercent: Number(value.platformFeePercent ?? 0)
     };
   }
 
@@ -502,20 +529,32 @@ export class MarketplaceConfigService {
 
   static async getMarketplaceEnabled(tenantId: string | null = null): Promise<boolean> {
     try {
-      const { data, error } = await supabaseAdmin
-        .from('system_configs')
-        .select('value')
-        .eq('key', 'marketplace_enabled')
-        .maybeSingle();
+      let enabled = true;
+      const rawMarketplaceEnabled = await this.getRawSetting('marketplace_enabled', tenantId);
 
-      if (error) {
-        console.warn('[MarketplaceConfig] getMarketplaceEnabled error:', error.message);
+      if (rawMarketplaceEnabled !== null) {
+        const raw = rawMarketplaceEnabled;
+        enabled = typeof raw === 'boolean'
+          ? raw
+          : String(raw).toLowerCase() === 'true';
+      } else {
+        const { data, error } = await supabaseAdmin
+          .from('system_configs')
+          .select('value')
+          .eq('key', 'marketplace_enabled')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('[MarketplaceConfig] getMarketplaceEnabled system_configs fallback error:', error.message);
+        }
+
+        const systemEnabled = data?.value ?? true;
+        enabled = typeof systemEnabled === 'boolean'
+          ? systemEnabled
+          : String(systemEnabled).toLowerCase() === 'true';
       }
-
-      const systemEnabled = data?.value ?? true;
-      const enabled = typeof systemEnabled === 'boolean'
-        ? systemEnabled
-        : String(systemEnabled).toLowerCase() === 'true';
 
       const emergency = await this.getEmergencyControls(tenantId);
       return enabled && !emergency.disableMarketplaceGlobally;
@@ -653,38 +692,109 @@ export class MarketplaceConfigService {
     tenantId: string | null = null,
     adminId?: string
   ): Promise<T> {
-    const existing = await this.getRawSetting(key, tenantId);
-    const merged = this.deepMerge(existing ?? {}, value) as T;
+    const existingRow = await this.getSettingRow(key, tenantId);
+    const existing = (existingRow?.value as Record<string, unknown> | null) ?? null;
+    const cleanValue = this.toJsonSafe(value);
+    const merged = this.deepMerge(existing ?? {}, cleanValue) as T;
+    const now = new Date().toISOString();
 
-    const { error } = await supabaseAdmin
-      .from('marketplace_settings')
-      .upsert(
-        {
+    if (existingRow?.id) {
+      const { error: updateError } = await supabaseAdmin
+        .from('marketplace_settings')
+        .update({ value: merged, updated_at: now })
+        .eq('id', existingRow.id);
+
+      if (updateError) {
+        console.error(`[MarketplaceConfig] setSetting update error for ${key}:`, updateError.message);
+        throw new Error(`Unable to save marketplace setting ${key}: ${updateError.message}`);
+      }
+    } else {
+      const { error: insertError } = await supabaseAdmin
+        .from('marketplace_settings')
+        .insert({
           tenant_id: tenantId,
           key,
           value: merged,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'tenant_id,key' }
-      );
+          created_at: now,
+          updated_at: now
+        });
 
-    if (error) {
-      console.error(`[MarketplaceConfig] setSetting error for ${key}:`, error.message);
-      throw new Error(`Unable to save marketplace setting ${key}: ${error.message}`);
+      if (insertError) {
+        if (insertError.code === '23505') {
+          const retryRow = await this.getSettingRow(key, tenantId);
+          if (retryRow?.id) {
+            const retryExisting = (retryRow.value as Record<string, unknown> | null) ?? null;
+            const retryMerged = this.deepMerge(retryExisting ?? {}, cleanValue) as T;
+            const { error: retryError } = await supabaseAdmin
+              .from('marketplace_settings')
+              .update({ value: retryMerged, updated_at: now })
+              .eq('id', retryRow.id);
+
+            if (retryError) {
+              console.error(`[MarketplaceConfig] setSetting retry update error for ${key}:`, retryError.message);
+              throw new Error(`Unable to save marketplace setting ${key}: ${retryError.message}`);
+            }
+
+            this.cache.delete(this.cacheKey(tenantId, key));
+            try {
+              const { AuditService } = await import('./audit.service');
+              await AuditService.log({
+                userId: adminId,
+                action: 'admin_marketplace_setting_updated',
+                entityType: 'marketplace_settings',
+                entityId: key,
+                metadata: { previous: retryExisting, value: retryMerged, tenantId, updatedAt: now }
+              });
+            } catch (error: any) {
+              console.warn(`[MarketplaceConfig] audit log failed for ${key}:`, error?.message || error);
+            }
+            return retryMerged;
+          }
+        }
+
+        console.error(`[MarketplaceConfig] setSetting insert error for ${key}:`, insertError.message);
+        throw new Error(`Unable to save marketplace setting ${key}: ${insertError.message}`);
+      }
     }
 
     this.cache.delete(this.cacheKey(tenantId, key));
 
-    const { AuditService } = await import('./audit.service');
-    await AuditService.log({
-      userId: adminId,
-      action: 'admin_marketplace_setting_updated',
-      entityType: 'marketplace_settings',
-      entityId: key,
-      metadata: { previous: existing, value: merged }
-    });
+    try {
+      const { AuditService } = await import('./audit.service');
+      await AuditService.log({
+        userId: adminId,
+        action: 'admin_marketplace_setting_updated',
+        entityType: 'marketplace_settings',
+        entityId: key,
+        metadata: { previous: existing, value: merged, tenantId, updatedAt: now }
+      });
+    } catch (error: any) {
+      console.warn(`[MarketplaceConfig] audit log failed for ${key}:`, error?.message || error);
+    }
 
     return merged;
+  }
+
+  private static async getSettingRow(
+    key: string,
+    tenantId: string | null
+  ): Promise<{ id: string; value: unknown } | null> {
+    let query = supabaseAdmin
+      .from('marketplace_settings')
+      .select('id, value')
+      .eq('key', key)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    query = tenantId ? query.eq('tenant_id', tenantId) : query.is('tenant_id', null);
+
+    const { data, error } = await query.maybeSingle();
+    if (error) {
+      console.warn(`[MarketplaceConfig] getSettingRow error for ${key}:`, error.message);
+      return null;
+    }
+
+    return data as { id: string; value: unknown } | null;
   }
 
   static async setSettings(
@@ -702,6 +812,28 @@ export class MarketplaceConfigService {
 
     this.invalidateCache();
     return result;
+  }
+
+  private static toJsonSafe<T>(value: T): T {
+    if (value === undefined || typeof value === 'function' || typeof value === 'symbol') {
+      throw new Error('Marketplace setting values must be valid JSON.');
+    }
+
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.toJsonSafe(entry)) as T;
+    }
+
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (entry === undefined || typeof entry === 'function' || typeof entry === 'symbol') continue;
+      result[key] = this.toJsonSafe(entry);
+    }
+
+    return result as T;
   }
 
   static async getAuditLogs(limit = 100, offset = 0, key?: string | null): Promise<unknown[]> {
@@ -814,11 +946,12 @@ export class MarketplaceConfigService {
     const { data: overrides, error } = await query;
 
     if (error) {
-      console.warn('[MarketplaceConfig] commission override lookup error:', error.message);
+      console.warn('[MarketplaceConfig] commission override lookup error, falling back to base commission from marketplace_settings:', error.message);
       return base.percent;
     }
 
     if (!overrides || overrides.length === 0) {
+      console.warn('[MarketplaceConfig] no active commission overrides, using base commission from marketplace_settings:', base.percent);
       return base.percent;
     }
 
@@ -834,6 +967,7 @@ export class MarketplaceConfigService {
     });
 
     if (matches.length === 0) {
+      console.warn('[MarketplaceConfig] no matching commission override, using base commission from marketplace_settings:', base.percent);
       return base.percent;
     }
 

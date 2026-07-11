@@ -304,7 +304,7 @@ export class BookingService {
             pricing_plan_used: pricing?.pricingPlanUsed || (bookingData as any).pricing_plan || 'starter',
             base_fare_used: Number(pricing?.baseFareUsed || 0),
             price_per_km_used: Number(pricing?.pricePerKmUsed || 0),
-            commission_rate_used: Number(pricing?.commissionRateUsed ?? 5),
+            commission_rate_used: Number(pricing?.commissionRateUsed ?? this.marketplaceConfig.defaultSettings().commission.percent),
             platform_fee: Number(pricing?.platformFee ?? pricing?.commissionFee ?? 0),
             driver_payout: Number(pricing?.driverPayout ?? 0),
             tax_amount: Number(pricing?.taxAmount ?? 0),

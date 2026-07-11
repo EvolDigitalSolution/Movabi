@@ -12,18 +12,17 @@ export interface PayoutBreakdown {
 }
 
 const roundMoney = (value: number): number => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-const DEFAULT_MARKETPLACE_COMMISSION_PERCENT = 5;
 
 export function calculatePayoutBreakdown(
   totalPrice: number,
   pricingPlan: DriverPricingPlan,
-  commissionRate = DEFAULT_MARKETPLACE_COMMISSION_PERCENT,
+  commissionRate: number,
   serviceFeePercent: number = 0
 ): PayoutBreakdown {
   const total = roundMoney(Math.max(0, Number(totalPrice) || 0));
   const safeCommissionRate = Number.isFinite(Number(commissionRate))
     ? Math.max(0, Number(commissionRate))
-    : DEFAULT_MARKETPLACE_COMMISSION_PERCENT;
+    : 0;
   const safeServiceFeePercent = Number.isFinite(Number(serviceFeePercent))
     ? Math.max(0, Number(serviceFeePercent))
     : 0;

@@ -42,7 +42,7 @@ export class LogisticsService {
   static calculatePayout(
     totalPrice: number,
     pricingPlan: 'starter' | 'pro',
-    commissionRate: number = MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT,
+    commissionRate: number,
     serviceFeePercent: number = 0
   ) {
     return calculatePayoutBreakdown(totalPrice, pricingPlan, commissionRate, serviceFeePercent);
@@ -179,13 +179,12 @@ export class LogisticsService {
     const storedCommission =
       (job.fare_breakdown as Record<string, unknown> | null)?.commissionPercent ??
       job.commission_rate_used ??
-      driverProfile?.commission_rate ??
       effectiveCommissionRate;
 
-    const commissionRate = plan === 'pro' ? 0 : Number(storedCommission ?? MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT);
+    const commissionRate = plan === 'pro' ? 0 : Number(storedCommission ?? 0);
     const safeCommissionRate = Number.isFinite(commissionRate)
       ? commissionRate
-      : MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT;
+      : 0;
 
     let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
     const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';

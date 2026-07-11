@@ -740,11 +740,31 @@ router.post('/marketplace/settings', requireAdmin, async (req: Request, res: Res
     const tenantId = (req.body?.tenantId as string | null) || null;
     const updates = req.body?.settings || {};
 
-    const result = await MarketplaceConfigService.setSettings(updates, tenantId, adminId);
-    res.json({ ok: true, settings: result });
+    console.info('[AdminMarketplace] save request received');
+    console.info('[AdminMarketplace] authenticated admin user', adminId);
+
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Failed to save marketplace settings',
+        details: 'settings must be a JSON object.'
+      });
+    }
+
+    console.info('[AdminMarketplace] keys being saved', Object.keys(updates));
+
+    await MarketplaceConfigService.setSettings(updates, tenantId, adminId);
+    MarketplaceConfigService.clearCache();
+    const fresh = await MarketplaceConfigService.getAllSettings(tenantId);
+
+    res.json({ ok: true, settings: fresh, updatedAt: new Date().toISOString() });
   } catch (error: any) {
-    console.error('[Admin] Save marketplace settings error:', error);
-    res.status(500).json({ ok: false, error: error.message });
+    console.error('[AdminMarketplace] save failed:', error?.message || error);
+    res.status(500).json({
+      ok: false,
+      error: 'Failed to save marketplace settings',
+      details: error?.message || 'Unknown marketplace settings save error.'
+    });
   }
 });
 

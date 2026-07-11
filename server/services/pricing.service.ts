@@ -102,8 +102,7 @@ export class PricingService {
         let taxAmount = 0;
         let platformFee = 0;
         let driverPayout = 0;
-        let commissionRateUsed = MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT;
-        let regionalCommissionOverride: number | null = null;
+        let commissionRateUsed = 0;
         let baseFareUsed = 0;
         let pricePerKmUsed = 0;
         let serviceFee = 0;
@@ -178,25 +177,14 @@ export class PricingService {
                 const perKm = Number(regionalRule.price_per_km || 0);
                 const minimumFare = Number(regionalRule.minimum_fare || 0);
                 const taxPercent = Number(regionalRule.tax_percent || 0);
-                const rawCommissionPercent = regionalRule.platform_commission_percent;
-                const commissionPercent = rawCommissionPercent === null || rawCommissionPercent === undefined
-                    ? MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT
-                    : Number(rawCommissionPercent);
 
                 const subtotal = Math.max(minimumFare, baseFare + distanceKm * perKm);
                 taxAmount = this.roundMoney(subtotal * (taxPercent / 100));
                 resolvedBasePrice = this.roundMoney(subtotal + taxAmount);
 
-                platformFee = this.roundMoney(resolvedBasePrice * (commissionPercent / 100));
-                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
-
                 resolvedCurrencyCode = regionalRule.currency_code || this.currencyFromCountry(countryCode);
                 currencySymbol = regionalRule.currency_symbol || this.symbolFromCurrency(resolvedCurrencyCode);
                 regionalPricingRuleId = regionalRule.id;
-                commissionRateUsed = commissionPercent;
-                regionalCommissionOverride = rawCommissionPercent === null || rawCommissionPercent === undefined
-                    ? null
-                    : commissionPercent;
                 baseFareUsed = baseFare;
                 pricePerKmUsed = perKm;
                 source = 'regional_pricing_rule';
@@ -390,12 +378,7 @@ export class PricingService {
                 driverTier,
                 tenantId
             );
-            // If a regional rule explicitly defined a commission, it acts as a hard override for that rule.
-            commissionRateUsed = regionalCommissionOverride !== null
-                ? regionalCommissionOverride
-                : effectiveCommission;
-
-            commissionRateUsed = this.roundMoney(commissionRateUsed);
+            commissionRateUsed = this.roundMoney(effectiveCommission);
             const commissionFee = this.roundMoney(preCommissionTotal * (commissionRateUsed / 100));
             const platformFeePercent = Number(commissionSettings.platformFeePercent ?? 0);
             platformFee = this.roundMoney(preCommissionTotal * (platformFeePercent / 100));
@@ -443,7 +426,7 @@ export class PricingService {
             console.log('[MarketplaceCommissionAudit]', {
                 source,
                 serviceSlug,
-                commissionSource: regionalCommissionOverride !== null ? 'regional_pricing_rule' : 'marketplace_settings',
+                commissionSource: 'marketplace_settings',
                 commissionPercent: commissionRateUsed,
                 serviceFare: preCommissionTotal,
                 commissionAmount: commissionFee,
@@ -478,12 +461,15 @@ export class PricingService {
 
         // Fallback return when the marketplace path throws. Maintains old contract shape.
         const fallbackJobModes = await MarketplaceConfigService.determineJobModes(serviceSlug, tenantId);
-        console.log(
+        console.warn(
             `[PricingService] Price resolved (fallback): ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
         );
 
-        const fallbackCommission = this.roundMoney(MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT);
-        const fallbackPlatformFee = this.roundMoney(resolvedBasePrice * (fallbackCommission / 100));
+        const fallbackCommissionSettings = await MarketplaceConfigService.getCommissionSettings(tenantId);
+        const fallbackCommission = this.roundMoney(fallbackCommissionSettings.percent);
+        const fallbackCommissionFee = this.roundMoney(resolvedBasePrice * (fallbackCommission / 100));
+        const fallbackPlatformFee = this.roundMoney(resolvedBasePrice * ((fallbackCommissionSettings.platformFeePercent ?? 0) / 100));
+        const fallbackDriverPayout = this.roundMoney(resolvedBasePrice - fallbackCommissionFee - fallbackPlatformFee);
         const fallbackFareBreakdown: FareBreakdown = {
             baseFare: this.roundMoney(baseFareUsed),
             distanceCost: this.roundMoney(distanceKm * pricePerKmUsed),
@@ -491,9 +477,9 @@ export class PricingService {
             serviceFee: 0,
             taxAmount,
             dynamicPricingAmount: 0,
-            commissionAmount: fallbackPlatformFee,
+            commissionAmount: fallbackCommissionFee,
             platformFee: fallbackPlatformFee,
-            driverPayout: this.roundMoney(resolvedBasePrice - fallbackPlatformFee),
+            driverPayout: fallbackDriverPayout,
             total: resolvedBasePrice,
             currencyCode: resolvedCurrencyCode,
             currencySymbol,
@@ -517,8 +503,8 @@ export class PricingService {
             regionalPricingRuleId,
             taxAmount,
             platformFee: fallbackPlatformFee,
-            commissionFee: fallbackPlatformFee,
-            driverPayout: this.roundMoney(resolvedBasePrice - fallbackPlatformFee),
+            commissionFee: fallbackCommissionFee,
+            driverPayout: fallbackDriverPayout,
             commissionRateUsed: fallbackCommission,
             baseFareUsed,
             pricePerKmUsed,
@@ -636,6 +622,20 @@ export class PricingService {
             scaledBreakdown[key] = Number.isFinite(value) ? round(value * ratio) : fareBreakdown[key];
         }
 
+        // Commission percent is a rate, not a monetary amount; preserve the original value.
+        const originalCommissionPercent = Number(
+            (job?.fare_breakdown as Record<string, unknown> | undefined)?.['commissionPercent'] ??
+            job?.commission_rate_used ??
+            0
+        );
+        scaledBreakdown['commissionPercent'] = Number.isFinite(originalCommissionPercent)
+            ? originalCommissionPercent
+            : 0;
+
+        const commissionRateUsed = Number.isFinite(job?.commission_rate_used)
+            ? Number(job?.commission_rate_used)
+            : scaledBreakdown['commissionPercent'];
+
         return {
             price: safeAgreed,
             total_price: safeAgreed,
@@ -648,7 +648,7 @@ export class PricingService {
             tax_amount: taxAmount,
             base_fare_used: baseFareUsed,
             price_per_km_used: pricePerKmUsed,
-            commission_rate_used: Number(job?.commission_rate_used || MarketplaceConfigService.DEFAULT_COMMISSION_PERCENT),
+            commission_rate_used: commissionRateUsed,
             fare_breakdown: scaledBreakdown
         };
     }

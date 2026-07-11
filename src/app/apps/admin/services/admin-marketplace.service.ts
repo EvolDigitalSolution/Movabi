@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { ApiUrlService } from '../../../core/services/api-url.service';
 import { SupabaseService } from '../../../core/services/supabase/supabase.service';
 import { MarketplaceSettings } from '../../../core/services/marketplace/marketplace-config.service';
@@ -97,9 +97,14 @@ export class AdminMarketplaceService {
   }
 
   async saveSettings(settings: MarketplaceSettings): Promise<MarketplaceSettings> {
-    return this.http.post<{ settings: MarketplaceSettings }>(this.adminUrl('/settings'), { settings }, { headers: await this.headers() })
-      .toPromise()
-      .then(res => res?.settings ?? settings);
+    try {
+      const payload = JSON.parse(JSON.stringify({ settings }));
+      return await this.http.post<{ settings: MarketplaceSettings }>(this.adminUrl('/settings'), payload, { headers: await this.headers() })
+        .toPromise()
+        .then(res => res?.settings ?? settings);
+    } catch (error) {
+      throw new Error(this.extractErrorMessage(error, 'Failed to save settings.'));
+    }
   }
 
   async getAuditLogs(limit = 100, offset = 0, key?: string): Promise<MarketplaceAuditLog[]> {
@@ -113,5 +118,19 @@ export class AdminMarketplaceService {
 
   async reload(): Promise<void> {
     await this.http.post(this.adminUrl('/reload'), {}, { headers: await this.headers() }).toPromise();
+  }
+
+  private extractErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof HttpErrorResponse) {
+      const body = error.error;
+      if (body && typeof body === 'object') {
+        const details = String((body as Record<string, unknown>)['details'] || '').trim();
+        const message = String((body as Record<string, unknown>)['error'] || '').trim();
+        return details || message || fallback;
+      }
+      return error.message || fallback;
+    }
+
+    return error instanceof Error ? error.message : fallback;
   }
 }

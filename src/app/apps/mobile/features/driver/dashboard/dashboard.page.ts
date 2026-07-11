@@ -76,6 +76,7 @@ import { RouteSummary } from '../../../../../core/models/maps/route-result.model
 import { NotificationService } from '../../../../../core/services/notification.service';
 import { MarketplaceNegotiationService } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
 import { MarketplaceHybridService } from '../../../../../core/services/marketplace/marketplace-hybrid.service';
+import { MarketplaceConfigService } from '../../../../../core/services/marketplace/marketplace-config.service';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -920,6 +921,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private notificationService = inject(NotificationService);
     private negotiationService = inject(MarketplaceNegotiationService);
     private hybridService = inject(MarketplaceHybridService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
 
     get hybridEnabled(): boolean {
         return this.hybridService.isHybridEnabledForUser(this.auth.currentUser()?.id);
@@ -2697,11 +2699,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             (job as any)?.commission_rate_used ??
             (job as any)?.commissionPercent ??
             ((job as any)?.fare_breakdown as Record<string, unknown> | undefined)?.['commissionPercent'] ??
-            5
+            this.marketplaceConfig.defaultSettings().commission.percent
         );
         const safeCommissionPercent = Number.isFinite(commissionPercent)
             ? Math.max(0, commissionPercent)
-            : 5;
+            : this.marketplaceConfig.defaultSettings().commission.percent;
         return fareAmount * (1 - safeCommissionPercent / 100);
     }
 
