@@ -196,10 +196,23 @@ export interface EmergencyControls {
 }
 
 export class MarketplaceConfigService {
-  /** Safe fallback commission percent used when the marketplace_settings 'commission' row cannot be read. */
-  static readonly FALLBACK_COMMISSION_PERCENT = 0;
   private static cache: Map<string, { value: unknown; expiresAt: number }> = new Map();
   private static readonly CACHE_TTL_MS = 30_000; // 30 seconds
+  private static lastKnownCommission: Map<string, CommissionSettings> = new Map();
+
+  static getCommissionFallbackPercent(): number {
+    const env = process.env.MARKETPLACE_COMMISSION_FALLBACK_PERCENT;
+    const parsed = env ? Number(env) : NaN;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+  }
+
+  private static getLastKnownCommission(tenantId: string | null): CommissionSettings | undefined {
+    return this.lastKnownCommission.get(this.cacheKey(tenantId, 'commission'));
+  }
+
+  private static setLastKnownCommission(tenantId: string | null, value: CommissionSettings): void {
+    this.lastKnownCommission.set(this.cacheKey(tenantId, 'commission'), value);
+  }
 
   static invalidateCache(): void {
     this.cache.clear();
@@ -289,8 +302,9 @@ export class MarketplaceConfigService {
   }
 
   static async getCommissionSettings(tenantId: string | null = null): Promise<CommissionSettings> {
+    const fallbackPercent = this.getCommissionFallbackPercent();
     const defaults: CommissionSettings = {
-      percent: MarketplaceConfigService.FALLBACK_COMMISSION_PERCENT,
+      percent: fallbackPercent,
       minFee: 0,
       maxFee: null,
       platformFeePercent: 0
@@ -298,22 +312,34 @@ export class MarketplaceConfigService {
 
     const raw = await this.getRawSetting('commission', tenantId);
 
-    if (!raw) {
-      console.warn(
-        `[MarketplaceConfig] commission fallback source: FALLBACK_COMMISSION_PERCENT (${MarketplaceConfigService.FALLBACK_COMMISSION_PERCENT}%)`,
-        { tenantId }
-      );
+    if (raw !== null) {
+      const value = { ...defaults, ...raw } as CommissionSettings;
+      const maxFee = value.maxFee === null || value.maxFee === undefined ? null : Number(value.maxFee);
+      const settings: CommissionSettings = {
+        percent: Number(value.percent ?? fallbackPercent),
+        minFee: Number(value.minFee ?? 0),
+        maxFee,
+        platformFeePercent: Number(value.platformFeePercent ?? 0)
+      };
+      this.setCached(tenantId, 'commission', settings);
+      this.setLastKnownCommission(tenantId, settings);
+      return settings;
     }
 
-    const value = { ...defaults, ...(raw ?? {}) } as CommissionSettings;
-    this.setCached(tenantId, 'commission', value);
+    const lastKnown = this.getLastKnownCommission(tenantId);
+    if (lastKnown) {
+      console.warn(`[MarketplaceConfig] commission fallback used: last-known-good value`, { tenantId, ...lastKnown });
+      return lastKnown;
+    }
 
-    return {
-      percent: Number(value.percent ?? MarketplaceConfigService.FALLBACK_COMMISSION_PERCENT),
-      minFee: Number(value.minFee ?? 0),
-      maxFee: value.maxFee === undefined ? null : Number(value.maxFee),
-      platformFeePercent: Number(value.platformFeePercent ?? 0)
+    const fallbackSettings: CommissionSettings = {
+      percent: fallbackPercent,
+      minFee: 0,
+      maxFee: null,
+      platformFeePercent: 0
     };
+    console.warn(`[MarketplaceConfig] commission fallback used: environment fallback ${fallbackPercent}%`, { tenantId, ...fallbackSettings });
+    return fallbackSettings;
   }
 
   static async getDynamicPricingSettings(

@@ -283,8 +283,8 @@ DECLARE
   base_commission NUMERIC(8,4);
   override_commission NUMERIC(8,4);
 BEGIN
-  -- Base from settings (safe fallback 0% if row is missing)
-  SELECT COALESCE((value->>'percent')::NUMERIC, 0.00)
+  -- Base from settings (safe fallback 10% if row is missing)
+  SELECT COALESCE((value->>'percent')::NUMERIC, 10.00)
   INTO base_commission
   FROM public.marketplace_settings
   WHERE (tenant_id IS NULL OR tenant_id = p_tenant_id)
@@ -309,7 +309,7 @@ BEGIN
     (CASE WHEN driver_tier IS NOT NULL THEN 1 ELSE 0 END) DESC
   LIMIT 1;
 
-  RETURN COALESCE(override_commission, base_commission, 0.00);
+  RETURN COALESCE(override_commission, base_commission, 10.00);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

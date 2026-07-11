@@ -217,7 +217,7 @@ export class MarketplaceConfigService {
 
   defaultSettings(): MarketplaceSettings {
     return {
-      commission: { percent: 0, minFee: 0, maxFee: null, platformFeePercent: 0 },
+      commission: { percent: 10, minFee: 0, maxFee: null, platformFeePercent: 0 },
       dynamicPricing: {
         enabled: true,
         maxSurge: 3.0,

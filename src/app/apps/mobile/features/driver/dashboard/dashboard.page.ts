@@ -414,7 +414,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                                   Estimated earnings after commission
                                 </p>
                                 <p class="text-xl font-black text-amber-900">
-                                  {{ formatPrice(calculateDriverEarnings(negotiationCounterAmount() || 0)) }}
+                                  {{ formatPrice(calculateDriverEarnings(negotiationCounterAmount() || 0, selectedJob)) }}
                                 </p>
                               </div>
                             </div>
@@ -1230,6 +1230,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!this.supabase.isConfigured) return;
 
         this.loadDismissedJobs();
+        await this.marketplaceConfig.loadSettings();
         await this.refreshStripeUiStateFromDb();
         await this.ensureMovabiPayVirtualCard();
         await this.loadAvailability();
@@ -2695,15 +2696,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             return backendPayout;
         }
 
+        const marketplacePercent = this.marketplaceConfig.settingsSignal()?.commission.percent;
+        const defaultPercent = this.marketplaceConfig.defaultSettings().commission.percent;
         const commissionPercent = Number(
             (job as any)?.commission_rate_used ??
             (job as any)?.commissionPercent ??
             ((job as any)?.fare_breakdown as Record<string, unknown> | undefined)?.['commissionPercent'] ??
-            this.marketplaceConfig.defaultSettings().commission.percent
+            marketplacePercent ??
+            defaultPercent
         );
         const safeCommissionPercent = Number.isFinite(commissionPercent)
             ? Math.max(0, commissionPercent)
-            : this.marketplaceConfig.defaultSettings().commission.percent;
+            : defaultPercent;
         return fareAmount * (1 - safeCommissionPercent / 100);
     }
 
