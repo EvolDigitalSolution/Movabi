@@ -39,6 +39,7 @@ import communicationRoutes from './routes/communication.routes';
 import issuingRoutes from './routes/issuing.routes';
 import verificationRoutes from './routes/verification.routes';
 import globalAiPricingRoutes from './routes/global-ai-pricing.routes';
+import marketplaceRoutes from './routes/marketplace.routes';
 import { dispatchService } from './services/dispatch.service';
 import { marketplaceCleanupService } from './services/marketplace-cleanup.service';
 
@@ -141,6 +142,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/communication', communicationRoutes);
 app.use('/api/issuing', issuingRoutes);
 app.use('/api/verification', verificationRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/pricing/global-ai', globalAiPricingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/stripe/connect', connectRoutes);

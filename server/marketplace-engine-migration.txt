@@ -1,5 +1,6 @@
--- Marketplace Engine Migration
--- Copy this file to supabase/migrations/20260707000000_marketplace_engine.sql and apply it to the database.
+-- MOVABI MARKETPLACE ENGINE — REFERENCE SCHEMA ONLY
+-- This file is documentation/reference. Do not execute on production.
+-- Live DB changes must be added to supabase_incremental_schema_reconcile.sql.
 
 -- 1. Core marketplace settings in system_configs (key/value store)
 INSERT INTO public.system_configs (key, value, updated_at)

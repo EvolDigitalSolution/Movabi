@@ -48,13 +48,13 @@ export class BookingService {
     bookingHistory = signal<Booking[]>([]);
     pendingMarketplaceBookings = signal<Booking[]>([]);
 
-    // van-moving excluded until bidding/payment is hardened
     private readonly safeNegotiationSlugs = new Set([
         'shop',
         'shopping',
         'errand',
         'errands',
-        'delivery'
+        'delivery',
+        'van-moving'
     ]);
 
     private canonicalServiceSlug(slug: string): string {
@@ -248,16 +248,15 @@ export class BookingService {
         // mismatch), still enable negotiation when the admin toggle is on.
         if (!negotiationEnabled) {
             try {
-                const settings = await this.marketplaceConfig.loadSettings();
+                const effectiveStatus = await this.marketplaceConfig.getEffectiveHybridStatus(canonicalService);
                 const fallbackNegotiation =
-                    settings.negotiation.enabled && this.safeNegotiationSlugs.has(canonicalService);
+                    effectiveStatus.enabled && this.safeNegotiationSlugs.has(canonicalService);
 
                 console.log('[BookingService] marketplace eligibility check', {
                     serviceSlug,
                     canonicalServiceSlug: canonicalService,
                     negotiationEnabledFromPricing: Boolean(pricing?.marketplaceFlags?.negotiationEnabled),
-                    negotiationServices: settings.negotiation.minServices,
-                    negotiationEnabledGlobally: settings.negotiation.enabled,
+                    effectiveHybridStatus: effectiveStatus,
                     fallbackNegotiationEnabled: fallbackNegotiation
                 });
 

@@ -1,15 +1,15 @@
--- ==============================================================================
+﻿-- ==============================================================================
 -- MIGRATION: Supabase Incremental Schema Reconcile
 -- DESCRIPTION: Reconciles existing production database with codebase expectations.
 --              Idempotent, non-destructive, and backward-compatible.
 -- DATE: 2026-04-15
 -- ==============================================================================
 
--- PART 1 — Extensions
+-- PART 1 â€” Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- PART 1B — Storage Buckets & Policies
+-- PART 1B â€” Storage Buckets & Policies
 INSERT INTO storage.buckets (id, name, public)
 VALUES
     ('profiles', 'profiles', TRUE),
@@ -108,7 +108,7 @@ BEGIN
     END IF;
 END $$;
 
--- PART 2 — Service Types
+-- PART 2 â€” Service Types
 CREATE TABLE IF NOT EXISTS service_types (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug TEXT UNIQUE NOT NULL,
@@ -126,7 +126,7 @@ VALUES
     ('delivery', 'Package Delivery')
 ON CONFLICT (slug) DO NOTHING;
 
--- PART 3 — Cities (Fixing missing is_active error)
+-- PART 3 â€” Cities (Fixing missing is_active error)
 CREATE TABLE IF NOT EXISTS cities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -155,7 +155,7 @@ END $$;
 
 
 
--- PART 4 — Pricing Rules & Fixed Fare Bands
+-- PART 4 â€” Pricing Rules & Fixed Fare Bands
 CREATE TABLE IF NOT EXISTS pricing_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     service_type_id UUID REFERENCES service_types(id),
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS fixed_fare_bands (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 5 — Profiles Hardening
+-- PART 5 â€” Profiles Hardening
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'profiles') THEN
@@ -347,7 +347,7 @@ BEGIN
     END IF;
 END $$;
 
--- PART 6 — Wallets & Transactions
+-- PART 6 â€” Wallets & Transactions
 -- PART 5B - Driver Vehicle Capability Hardening
 DO $$
 BEGIN
@@ -426,7 +426,7 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 7 — Jobs & Service Details
+-- PART 7 â€” Jobs & Service Details
 CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID,
@@ -682,7 +682,7 @@ CREATE TABLE IF NOT EXISTS job_service_details (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 8 — Driver Earnings & Payouts
+-- PART 8 â€” Driver Earnings & Payouts
 DO $$
 BEGIN
     IF to_regclass('public.van_details') IS NOT NULL THEN
@@ -769,7 +769,7 @@ CREATE TABLE IF NOT EXISTS driver_earnings (
     paid_out_at TIMESTAMP WITH TIME ZONE
 );
 
--- PART 9 — Audit & Events
+-- PART 9 â€” Audit & Events
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID,
@@ -821,7 +821,7 @@ CREATE TABLE IF NOT EXISTS stripe_events (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 10 — Errand Funding
+-- PART 10 â€” Errand Funding
 CREATE TABLE IF NOT EXISTS ratings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
@@ -1451,7 +1451,7 @@ BEGIN
     END IF;
 END $$;
 
--- PART 11 — RPC Functions (Idempotent)
+-- PART 11 â€” RPC Functions (Idempotent)
 
 -- Finalize Wallet Top-up
 CREATE OR REPLACE FUNCTION finalize_wallet_topup(
@@ -2347,7 +2347,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- PART 12 — Indexes
+-- PART 12 â€” Indexes
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_customer ON jobs(customer_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_driver ON jobs(driver_id);
@@ -2811,4 +2811,664 @@ BEGIN
     END IF;
 END $$;
 
+-- PART 18 - Hybrid marketplace negotiation live schema
+-- Merged from the temporary marketplace migration patch. Safe to rerun; preserves existing data.
+CREATE TABLE IF NOT EXISTS public.fare_negotiations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  proposed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  proposed_by_role TEXT NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  counter_to_negotiation_id UUID REFERENCES public.fare_negotiations(id) ON DELETE SET NULL,
+  round_number INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.fare_negotiations
+  ADD COLUMN IF NOT EXISTS proposed_by_role TEXT NOT NULL DEFAULT 'customer',
+  ADD COLUMN IF NOT EXISTS message TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS counter_to_negotiation_id UUID REFERENCES public.fare_negotiations(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+ALTER TABLE public.fare_negotiations DROP CONSTRAINT IF EXISTS fare_negotiations_proposed_by_role_check;
+ALTER TABLE public.fare_negotiations
+  ADD CONSTRAINT fare_negotiations_proposed_by_role_check
+  CHECK (proposed_by_role IN ('customer', 'driver', 'system'));
+
+ALTER TABLE public.fare_negotiations DROP CONSTRAINT IF EXISTS fare_negotiations_status_check;
+ALTER TABLE public.fare_negotiations
+  ADD CONSTRAINT fare_negotiations_status_check
+  CHECK (status IN ('pending', 'accepted', 'rejected', 'countered', 'expired'));
+
+CREATE INDEX IF NOT EXISTS idx_fare_negotiations_job
+  ON public.fare_negotiations(job_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.driver_bids (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  bid_amount NUMERIC(12,2) NOT NULL,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  is_counter_offer BOOLEAN NOT NULL DEFAULT false,
+  counter_to_bid_id UUID REFERENCES public.driver_bids(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  UNIQUE (job_id, driver_id)
+);
+
+ALTER TABLE public.driver_bids
+  ADD COLUMN IF NOT EXISTS message TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS is_counter_offer BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS counter_to_bid_id UUID REFERENCES public.driver_bids(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+ALTER TABLE public.driver_bids DROP CONSTRAINT IF EXISTS driver_bids_status_check;
+ALTER TABLE public.driver_bids
+  ADD CONSTRAINT driver_bids_status_check
+  CHECK (status IN ('pending', 'accepted', 'rejected', 'expired', 'withdrawn'));
+
+CREATE INDEX IF NOT EXISTS idx_driver_bids_job
+  ON public.driver_bids(job_id, status, bid_amount, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_driver_bids_driver
+  ON public.driver_bids(driver_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS public.driver_job_declines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_job_declines_job
+  ON public.driver_job_declines(job_id, driver_id);
+
+CREATE INDEX IF NOT EXISTS idx_driver_job_declines_driver
+  ON public.driver_job_declines(driver_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_negotiation_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL UNIQUE REFERENCES public.jobs(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  active_driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  suggested_fare NUMERIC(12,2) NOT NULL DEFAULT 0,
+  customer_offer NUMERIC(12,2),
+  driver_counter_offer NUMERIC(12,2),
+  agreed_fare NUMERIC(12,2),
+  round_count INTEGER NOT NULL DEFAULT 0,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  claimed_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '120 seconds'),
+  payment_deadline TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.marketplace_negotiation_sessions
+  ADD COLUMN IF NOT EXISTS active_driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open',
+  ADD COLUMN IF NOT EXISTS suggested_fare NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS customer_offer NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS driver_counter_offer NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS agreed_fare NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS round_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '120 seconds'),
+  ADD COLUMN IF NOT EXISTS payment_deadline TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE public.marketplace_negotiation_sessions DROP CONSTRAINT IF EXISTS marketplace_negotiation_sessions_status_check;
+ALTER TABLE public.marketplace_negotiation_sessions
+  ADD CONSTRAINT marketplace_negotiation_sessions_status_check
+  CHECK (status IN ('open', 'driver_claimed', 'negotiating', 'fare_agreed', 'driver_declined', 'customer_declined', 'released', 'expired', 'payment_pending', 'paid'));
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_sessions_job
+  ON public.marketplace_negotiation_sessions(job_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_sessions_driver
+  ON public.marketplace_negotiation_sessions(active_driver_id, status);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_negotiation_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES public.marketplace_negotiation_sessions(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  proposed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  proposed_by_role TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  amount NUMERIC(12,2),
+  message TEXT,
+  round_number INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.marketplace_negotiation_events
+  ADD COLUMN IF NOT EXISTS proposed_by_role TEXT NOT NULL DEFAULT 'system',
+  ADD COLUMN IF NOT EXISTS event_type TEXT NOT NULL DEFAULT 'customer_offer',
+  ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS message TEXT,
+  ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE public.marketplace_negotiation_events DROP CONSTRAINT IF EXISTS marketplace_negotiation_events_proposed_by_role_check;
+ALTER TABLE public.marketplace_negotiation_events
+  ADD CONSTRAINT marketplace_negotiation_events_proposed_by_role_check
+  CHECK (proposed_by_role IN ('customer', 'driver', 'system'));
+
+ALTER TABLE public.marketplace_negotiation_events DROP CONSTRAINT IF EXISTS marketplace_negotiation_events_event_type_check;
+ALTER TABLE public.marketplace_negotiation_events
+  ADD CONSTRAINT marketplace_negotiation_events_event_type_check
+  CHECK (event_type IN ('customer_offer', 'driver_counter', 'customer_accept', 'driver_accept', 'customer_decline', 'driver_decline', 'session_claimed', 'session_released', 'session_expired', 'payment_completed'));
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_events_session
+  ON public.marketplace_negotiation_events(session_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_marketplace_settings_updated_at ON public.marketplace_settings;
+CREATE TRIGGER trg_marketplace_settings_updated_at
+  BEFORE UPDATE ON public.marketplace_settings
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_commission_overrides_updated_at ON public.marketplace_commission_overrides;
+CREATE TRIGGER trg_commission_overrides_updated_at
+  BEFORE UPDATE ON public.marketplace_commission_overrides
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_fare_negotiations_updated_at ON public.fare_negotiations;
+CREATE TRIGGER trg_fare_negotiations_updated_at
+  BEFORE UPDATE ON public.fare_negotiations
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_driver_bids_updated_at ON public.driver_bids;
+CREATE TRIGGER trg_driver_bids_updated_at
+  BEFORE UPDATE ON public.driver_bids
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_marketplace_negotiation_sessions_updated_at ON public.marketplace_negotiation_sessions;
+CREATE TRIGGER trg_marketplace_negotiation_sessions_updated_at
+  BEFORE UPDATE ON public.marketplace_negotiation_sessions
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_marketplace_negotiation_events_updated_at ON public.marketplace_negotiation_events;
+CREATE TRIGGER trg_marketplace_negotiation_events_updated_at
+  BEFORE UPDATE ON public.marketplace_negotiation_events
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE OR REPLACE FUNCTION public.get_marketplace_commission(
+  p_service_type_slug TEXT,
+  p_city_zone TEXT,
+  p_driver_tier TEXT,
+  p_tenant_id UUID DEFAULT NULL
+)
+RETURNS NUMERIC(8,4) AS $
+DECLARE
+  base_commission NUMERIC(8,4);
+  override_commission NUMERIC(8,4);
+BEGIN
+  SELECT COALESCE((value->>'percent')::NUMERIC, 10.00)
+  INTO base_commission
+  FROM public.marketplace_settings
+  WHERE (tenant_id IS NULL OR tenant_id = p_tenant_id)
+    AND key = 'commission'
+  ORDER BY tenant_id NULLS LAST
+  LIMIT 1;
+
+  SELECT commission_percent
+  INTO override_commission
+  FROM public.marketplace_commission_overrides
+  WHERE is_active = true
+    AND (tenant_id IS NULL OR tenant_id = p_tenant_id)
+    AND (service_type_slug IS NULL OR service_type_slug = p_service_type_slug)
+    AND (city_zone IS NULL OR city_zone = p_city_zone)
+    AND (driver_tier IS NULL OR driver_tier = p_driver_tier)
+    AND (starts_at IS NULL OR starts_at <= now())
+    AND (ends_at IS NULL OR ends_at >= now())
+  ORDER BY
+    (CASE WHEN service_type_slug IS NOT NULL THEN 1 ELSE 0 END) +
+    (CASE WHEN city_zone IS NOT NULL THEN 1 ELSE 0 END) +
+    (CASE WHEN driver_tier IS NOT NULL THEN 1 ELSE 0 END) DESC
+  LIMIT 1;
+
+  RETURN COALESCE(override_commission, base_commission, 10.00);
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.get_marketplace_setting(
+  p_key TEXT,
+  p_tenant_id UUID DEFAULT NULL
+)
+RETURNS JSONB AS $
+DECLARE
+  result JSONB;
+BEGIN
+  SELECT value
+  INTO result
+  FROM public.marketplace_settings
+  WHERE key = p_key
+    AND (tenant_id IS NULL OR tenant_id = p_tenant_id)
+  ORDER BY tenant_id NULLS LAST
+  LIMIT 1;
+
+  RETURN COALESCE(result, '{}'::jsonb);
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.claim_marketplace_negotiation(
+  p_job_id UUID,
+  p_driver_id UUID
+)
+RETURNS public.marketplace_negotiation_sessions AS $
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+  v_job public.jobs;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No negotiation session found for this job';
+  END IF;
+
+  IF v_session.status NOT IN ('open', 'released') OR v_session.active_driver_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Session already claimed';
+  END IF;
+
+  SELECT * INTO v_job FROM public.jobs WHERE id = p_job_id;
+
+  IF v_job.status NOT IN ('pending_fare_confirmation', 'negotiating', 'fare_agreed') THEN
+    RAISE EXCEPTION 'Job is not available for negotiation';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET active_driver_id = p_driver_id,
+      status = 'negotiating',
+      claimed_at = now(),
+      expires_at = now() + interval '120 seconds',
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'session_claimed', v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.release_marketplace_negotiation(
+  p_job_id UUID,
+  p_driver_id UUID,
+  p_reason TEXT
+)
+RETURNS public.marketplace_negotiation_sessions AS $
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No negotiation session found';
+  END IF;
+
+  IF v_session.active_driver_id IS DISTINCT FROM p_driver_id AND p_reason <> 'system' THEN
+    RAISE EXCEPTION 'Only active driver or system can release session';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET active_driver_id = NULL,
+      status = 'released',
+      attempt_count = attempt_count + 1,
+      driver_counter_offer = NULL,
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  INSERT INTO public.driver_job_declines (driver_id, job_id, reason)
+  VALUES (p_driver_id, p_job_id, p_reason)
+  ON CONFLICT (driver_id, job_id) DO NOTHING;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, message, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'session_released', p_reason, v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.lock_marketplace_fare(
+  p_job_id UUID,
+  p_driver_id UUID,
+  p_amount NUMERIC
+)
+RETURNS public.marketplace_negotiation_sessions AS $
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_session.active_driver_id IS DISTINCT FROM p_driver_id THEN
+    RAISE EXCEPTION 'Session not active for this driver';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET agreed_fare = p_amount,
+      status = 'fare_agreed',
+      expires_at = now() + interval '300 seconds',
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  UPDATE public.jobs
+  SET agreed_fare = p_amount,
+      status = 'fare_agreed',
+      driver_id = p_driver_id,
+      updated_at = now()
+  WHERE id = p_job_id;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, amount, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'driver_accept', p_amount, v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.fetch_hybrid_opportunities(
+  p_driver_id UUID
+)
+RETURNS TABLE (
+  session_id UUID,
+  job_id UUID,
+  customer_id UUID,
+  suggested_fare NUMERIC,
+  customer_offer NUMERIC,
+  distance_km NUMERIC,
+  eta_seconds INTEGER,
+  service_name TEXT,
+  service_slug TEXT,
+  pickup_address TEXT,
+  dropoff_address TEXT
+) AS $
+BEGIN
+  RETURN QUERY
+  SELECT
+    s.id AS session_id,
+    s.job_id,
+    s.customer_id,
+    s.suggested_fare,
+    s.customer_offer,
+    NULLIF(j.metadata->>'distance_km', '')::NUMERIC AS distance_km,
+    NULLIF(j.metadata->>'duration_seconds', '')::INTEGER AS eta_seconds,
+    COALESCE(st.name, 'Request') AS service_name,
+    COALESCE(st.slug, '') AS service_slug,
+    j.pickup_address,
+    j.dropoff_address
+  FROM public.marketplace_negotiation_sessions s
+  JOIN public.jobs j ON j.id = s.job_id
+  LEFT JOIN public.service_types st ON st.id = j.service_type_id
+  WHERE s.status IN ('open', 'released')
+    AND s.active_driver_id IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.driver_job_declines d
+      WHERE d.driver_id = p_driver_id AND d.job_id = s.job_id
+    );
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+ALTER TABLE public.marketplace_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_commission_overrides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fare_negotiations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.driver_bids ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.driver_job_declines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_negotiation_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_negotiation_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS marketplace_settings_admin_read ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_read
+  ON public.marketplace_settings
+  FOR SELECT
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_settings_admin_write ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_write
+  ON public.marketplace_settings
+  FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY marketplace_commission_overrides_admin
+  ON public.marketplace_commission_overrides
+  FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY commission_overrides_admin
+  ON public.marketplace_commission_overrides
+  FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS fare_negotiations_participants_read ON public.fare_negotiations;
+CREATE POLICY fare_negotiations_participants_read
+  ON public.fare_negotiations
+  FOR SELECT
+  TO authenticated
+  USING (
+    proposed_by = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.jobs
+      WHERE jobs.id = fare_negotiations.job_id
+        AND (jobs.customer_id = auth.uid() OR jobs.driver_id = auth.uid() OR jobs.accepted_driver_id = auth.uid())
+    )
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS fare_negotiations_participants_insert ON public.fare_negotiations;
+CREATE POLICY fare_negotiations_participants_insert
+  ON public.fare_negotiations
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    proposed_by = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.jobs
+      WHERE jobs.id = fare_negotiations.job_id
+        AND (jobs.customer_id = auth.uid() OR jobs.driver_id = auth.uid() OR jobs.accepted_driver_id = auth.uid())
+    )
+  );
+
+DROP POLICY IF EXISTS driver_bids_participants_read ON public.driver_bids;
+CREATE POLICY driver_bids_participants_read
+  ON public.driver_bids
+  FOR SELECT
+  TO authenticated
+  USING (
+    driver_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.jobs
+      WHERE jobs.id = driver_bids.job_id
+        AND jobs.customer_id = auth.uid()
+    )
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS driver_bids_driver_insert ON public.driver_bids;
+CREATE POLICY driver_bids_driver_insert
+  ON public.driver_bids
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (driver_id = auth.uid());
+
+DROP POLICY IF EXISTS driver_job_declines_driver_all ON public.driver_job_declines;
+CREATE POLICY driver_job_declines_driver_all
+  ON public.driver_job_declines
+  FOR ALL
+  TO authenticated
+  USING (driver_id = auth.uid())
+  WITH CHECK (driver_id = auth.uid());
+
+DROP POLICY IF EXISTS hybrid_sessions_owner_or_driver ON public.marketplace_negotiation_sessions;
+CREATE POLICY hybrid_sessions_owner_or_driver
+  ON public.marketplace_negotiation_sessions
+  FOR SELECT
+  TO authenticated
+  USING (
+    customer_id = auth.uid()
+    OR active_driver_id = auth.uid()
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS hybrid_sessions_owner_write ON public.marketplace_negotiation_sessions;
+CREATE POLICY hybrid_sessions_owner_write
+  ON public.marketplace_negotiation_sessions
+  FOR UPDATE
+  TO authenticated
+  USING (customer_id = auth.uid() OR active_driver_id = auth.uid())
+  WITH CHECK (customer_id = auth.uid() OR active_driver_id = auth.uid());
+
+DROP POLICY IF EXISTS hybrid_events_participants ON public.marketplace_negotiation_events;
+CREATE POLICY hybrid_events_participants
+  ON public.marketplace_negotiation_events
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.marketplace_negotiation_sessions s
+      WHERE s.id = marketplace_negotiation_events.session_id
+        AND (s.customer_id = auth.uid() OR s.active_driver_id = auth.uid())
+    )
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS hybrid_events_participants_insert ON public.marketplace_negotiation_events;
+CREATE POLICY hybrid_events_participants_insert
+  ON public.marketplace_negotiation_events
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    proposed_by = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.marketplace_negotiation_sessions s
+      WHERE s.id = marketplace_negotiation_events.session_id
+        AND (s.customer_id = auth.uid() OR s.active_driver_id = auth.uid())
+    )
+  );
+
+DO $
+BEGIN
+  IF to_regclass('public.job_messages') IS NOT NULL THEN
+    ALTER TABLE public.job_messages ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "Job participants can read messages" ON public.job_messages;
+    CREATE POLICY "Job participants can read messages"
+    ON public.job_messages
+    FOR SELECT
+    TO authenticated
+    USING (
+      auth.uid() IN (sender_id, receiver_id)
+      OR EXISTS (
+        SELECT 1
+        FROM public.jobs j
+        WHERE j.id = job_messages.job_id
+          AND auth.uid() IN (j.customer_id, j.driver_id, j.accepted_driver_id)
+      )
+    );
+
+    DROP POLICY IF EXISTS "Job participants can insert messages" ON public.job_messages;
+    CREATE POLICY "Job participants can insert messages"
+    ON public.job_messages
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (
+      auth.uid() = sender_id
+      AND EXISTS (
+        SELECT 1
+        FROM public.jobs j
+        WHERE j.id = job_messages.job_id
+          AND auth.uid() IN (j.customer_id, j.driver_id, j.accepted_driver_id)
+          AND receiver_id IN (j.customer_id, j.driver_id, j.accepted_driver_id)
+      )
+    );
+
+    GRANT SELECT, INSERT, UPDATE ON public.job_messages TO authenticated;
+  END IF;
+END $;
+
+DO $
+BEGIN
+  IF to_regclass('public.pricing_config') IS NOT NULL THEN
+    ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "Allow active pricing read" ON public.pricing_config;
+    CREATE POLICY "Allow active pricing read"
+    ON public.pricing_config
+    FOR SELECT
+    TO authenticated
+    USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow admin pricing management" ON public.pricing_config;
+    CREATE POLICY "Allow admin pricing management"
+    ON public.pricing_config
+    FOR ALL
+    TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+  END IF;
+END $;
+
+GRANT SELECT ON public.marketplace_settings TO authenticated;
+GRANT SELECT ON public.marketplace_commission_overrides TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.fare_negotiations TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.driver_bids TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.driver_job_declines TO authenticated;
+GRANT SELECT, UPDATE ON public.marketplace_negotiation_sessions TO authenticated;
+GRANT SELECT, INSERT ON public.marketplace_negotiation_events TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_marketplace_commission(TEXT, TEXT, TEXT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_marketplace_setting(TEXT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_marketplace_negotiation(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.release_marketplace_negotiation(UUID, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fetch_hybrid_opportunities(UUID) TO authenticated;
+
 NOTIFY pgrst, 'reload schema';
+

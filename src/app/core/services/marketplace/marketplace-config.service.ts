@@ -1,5 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
+import { ApiUrlService } from '../api-url.service';
 
 export interface MarketplaceCommissionSettings {
   percent: number;
@@ -211,11 +212,23 @@ export interface MarketplaceSettings {
   effectiveStatus?: Record<string, unknown>;
 }
 
+export interface MarketplaceEffectiveHybridStatus {
+  enabled: boolean;
+  reason: string | null;
+  marketplaceEnabled: boolean;
+  hybridEnabled: boolean;
+  serviceMarketplaceEnabled: boolean;
+  serviceNegotiationEnabled: boolean;
+  emergencyDisabled: boolean;
+  canonicalServiceSlug: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class MarketplaceConfigService {
   private supabase = inject(SupabaseService);
+  private apiUrl = inject(ApiUrlService);
 
   private readonly settings = signal<MarketplaceSettings | null>(null);
   private readonly overrides = signal<MarketplaceCommissionOverride[]>([]);
@@ -638,6 +651,31 @@ export class MarketplaceConfigService {
 
   async reload(): Promise<void> {
     await this.loadSettings();
+  }
+
+  async getEffectiveHybridStatus(serviceSlug: string): Promise<MarketplaceEffectiveHybridStatus> {
+    const url = new URL(this.apiUrl.getApiUrl('/api/marketplace/effective-status'));
+    url.searchParams.set('service', serviceSlug);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    });
+
+    if (!response.ok) {
+      return {
+        enabled: false,
+        reason: 'config load failed',
+        marketplaceEnabled: false,
+        hybridEnabled: false,
+        serviceMarketplaceEnabled: false,
+        serviceNegotiationEnabled: false,
+        emergencyDisabled: false,
+        canonicalServiceSlug: serviceSlug
+      };
+    }
+
+    return await response.json() as MarketplaceEffectiveHybridStatus;
   }
 
   async loadOverrides(): Promise<MarketplaceCommissionOverride[]> {

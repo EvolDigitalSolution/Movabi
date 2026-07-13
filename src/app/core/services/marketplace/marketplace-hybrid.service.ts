@@ -2,7 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
 import { ApiUrlService } from '../api-url.service';
-import { MarketplaceConfigService, MarketplaceHybridNegotiationSettings } from './marketplace-config.service';
+import {
+    MarketplaceConfigService,
+    MarketplaceEffectiveHybridStatus,
+    MarketplaceHybridNegotiationSettings
+} from './marketplace-config.service';
 import {
     DEFAULT_HYBRID_ENABLED,
     DEFAULT_HYBRID_ENABLED_SERVICES,
@@ -69,6 +73,7 @@ export class MarketplaceHybridService {
     private auth = inject(AuthService);
     private apiUrl = inject(ApiUrlService);
     private config = inject(MarketplaceConfigService);
+    private effectiveStatusCache = new Map<string, MarketplaceEffectiveHybridStatus>();
 
     private rpc(name: string, args?: Record<string, unknown>) {
         return this.supabase.rpc(name, args);
@@ -99,10 +104,6 @@ export class MarketplaceHybridService {
         return raw;
     }
 
-    private getHybridSettings() {
-        return this.config.settingsSignal()?.hybridNegotiation;
-    }
-
     private defaultSettings() {
         return {
             enabled: DEFAULT_HYBRID_ENABLED,
@@ -118,86 +119,14 @@ export class MarketplaceHybridService {
     }
 
     private settings() {
-        return this.getHybridSettings() ?? this.defaultSettings();
+        return this.config.settingsSignal()?.hybridNegotiation ?? this.defaultSettings();
     }
 
-    private currentMarketplaceSettings() {
-        return this.config.settingsSignal() ?? this.config.defaultSettings();
-    }
-
-    isEnabled(): boolean {
-        return this.isHybridEnabledForUser(this.userId);
-    }
-
-    isServiceEnabled(serviceSlug: string, distanceKm?: number | null): boolean {
-        const settings = this.settings();
-        const allSettings = this.currentMarketplaceSettings();
-        const emergency = allSettings.emergencyControls ?? {};
-        const enabledServices = settings.enabledServices?.length
-            ? settings.enabledServices
-            : DEFAULT_HYBRID_ENABLED_SERVICES;
+    async getEffectiveHybridStatus(serviceSlug: string): Promise<MarketplaceEffectiveHybridStatus> {
         const canonical = this.canonicalServiceSlug(serviceSlug);
-
-        if (!allSettings.marketplaceEnabled || emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow || emergency.disableHybridNegotiation) {
-            return false;
-        }
-
-        if (emergency.disableByService?.[canonical]) {
-            return false;
-        }
-
-        const serviceRules = allSettings.serviceRules ?? {};
-        const rule = serviceRules[canonical] || (canonical === 'errand' ? serviceRules['shop'] : undefined);
-        if (rule && (rule.enabled === false || rule.marketplaceEnabled === false || rule.negotiationEnabled === false)) {
-            return false;
-        }
-
-        const canonicalList = enabledServices.map((s: string) => this.canonicalServiceSlug(s));
-        if (!canonicalList.includes(canonical)) {
-            return false;
-        }
-        if (canonical === 'ride' && distanceKm !== undefined && distanceKm !== null && distanceKm < settings.rideMinimumDistanceKm) {
-            return false;
-        }
-        return true;
-    }
-
-    isHybridEnabledForUser(
-        userId: string | null | undefined,
-        serviceSlug?: string | null,
-        distanceKm?: number | null
-    ): boolean {
-        if (!userId) {
-            console.log('[HybridMarketplace] disabled: no user id');
-            return false;
-        }
-
-        const settings = this.settings();
-        const allSettings = this.currentMarketplaceSettings();
-        const emergency = allSettings.emergencyControls ?? {};
-
-        if (!allSettings.marketplaceEnabled) {
-            console.log('[HybridMarketplace] disabled: marketplace disabled');
-            return false;
-        }
-
-        if (emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow || emergency.disableHybridNegotiation) {
-            console.log('[HybridMarketplace] disabled: emergency override');
-            return false;
-        }
-
-        if (!settings.enabled) {
-            console.log('[HybridMarketplace] disabled: hybrid disabled');
-            return false;
-        }
-
-        if (serviceSlug !== undefined && serviceSlug !== null && !this.isServiceEnabled(serviceSlug, distanceKm)) {
-            console.log('[HybridMarketplace] disabled: service disabled');
-            return false;
-        }
-
-        console.log('[HybridMarketplace] enabled');
-        return true;
+        const status = await this.config.getEffectiveHybridStatus(canonical);
+        this.effectiveStatusCache.set(canonical, status);
+        return status;
     }
 
     isMakeOfferEnabled(): boolean {

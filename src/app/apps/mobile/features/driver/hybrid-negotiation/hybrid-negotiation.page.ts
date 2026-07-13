@@ -23,6 +23,7 @@ import {
     timerOutline
 } from 'ionicons/icons';
 import { MarketplaceHybridService } from '@core/services/marketplace/marketplace-hybrid.service';
+import { MarketplaceConfigService, MarketplaceEffectiveHybridStatus } from '@core/services/marketplace/marketplace-config.service';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { AuthService } from '@core/services/auth/auth.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
@@ -194,6 +195,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     private route = inject(ActivatedRoute);
     private router = inject(Router);
     private hybridService = inject(MarketplaceHybridService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
     private supabase = inject(SupabaseService);
     private auth = inject(AuthService);
     private config = inject(AppConfigService);
@@ -201,12 +203,13 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     private toastCtrl = inject(ToastController);
 
     get hybridEnabled(): boolean {
-        return this.hybridService.isHybridEnabledForUser(this.auth.currentUser()?.id);
+        return this.effectiveHybridStatus()?.enabled === true;
     }
 
     jobId = signal<string>('');
     session = signal<any>(null);
     events = signal<any[]>([]);
+    effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
     counterAmount = signal<number>(0);
     customerProfile = signal<any>(null);
     jobDetails = signal<any>(null);
@@ -229,11 +232,6 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
 
     async ngOnInit() {
         await this.hybridService.loadSettings();
-        if (!this.hybridEnabled) {
-            await this.router.navigate(['/driver']);
-            return;
-        }
-
         const id = this.route.snapshot.paramMap.get('id');
         if (!id) {
             await this.router.navigate(['/driver']);
@@ -241,6 +239,10 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         }
         this.jobId.set(id);
         await this.load();
+        if (!this.hybridEnabled) {
+            await this.router.navigate(['/driver']);
+            return;
+        }
         this.startCountdown();
     }
 
@@ -329,10 +331,16 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         try {
             const { data, error } = await this.supabase
                 .from('jobs')
-                .select('distance_km, estimated_distance_km, duration_seconds, estimated_duration')
+                .select('distance_km, estimated_distance_km, duration_seconds, estimated_duration, service_type:service_types(*)')
                 .eq('id', jobId)
                 .maybeSingle();
-            if (!error) this.jobDetails.set(data);
+            if (!error) {
+                this.jobDetails.set(data);
+                const slug = String((data as any)?.service_type?.slug || '').trim();
+                if (slug) {
+                    this.effectiveHybridStatus.set(await this.marketplaceConfig.getEffectiveHybridStatus(slug));
+                }
+            }
         } catch (error) {
             console.warn('[HybridNegotiation] job details load failed', error);
         }

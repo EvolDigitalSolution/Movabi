@@ -59,3 +59,18 @@ docker compose up -d --build --force-recreate movabi-admin
 ```
 
 After the admin container is recreated, clear the browser cache and hard refresh the admin page to ensure the new `index.html` and hashed bundles are loaded.
+
+## 7. Database Migrations
+Use one live incremental migration file for production database updates:
+
+```bash
+docker exec -i movabi-supabase-db \
+  psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  < supabase_incremental_schema_reconcile.sql
+```
+
+Rules:
+- Run only `supabase_incremental_schema_reconcile.sql` against the live database.
+- Do not run `server/marketplace-engine-migration.txt`; it is reference documentation only.
+- Temporary emergency patch files must be merged into the reconcile file and removed after parity is confirmed.
+- Keep the reconcile file idempotent and safe to rerun.

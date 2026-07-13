@@ -289,7 +289,7 @@ export class DriverService {
             .filter((job) => this.vehicleCompatibility.isCompatible(job, vehicle));
         this.availableJobs.set(bookings);
 
-        if (this.hybridService.isHybridEnabledForUser(user?.id)) {
+        if (user?.id) {
             await this.fetchHybridOpportunities();
         } else {
             this.hybridOpportunities.set([]);
@@ -305,7 +305,13 @@ export class DriverService {
 
         try {
             const opportunities = await this.hybridService.fetchHybridOpportunities(user.id);
-            const allowed = opportunities.filter((op) => this.hybridService.isHybridEnabledForUser(user.id, op.service_slug, op.distance_km ?? undefined));
+            const checks = await Promise.all(opportunities.map(async (op) => ({
+                opportunity: op,
+                enabled: (await this.hybridService.getEffectiveHybridStatus(op.service_slug)).enabled
+            })));
+            const allowed = checks
+                .filter((entry) => entry.enabled)
+                .map((entry) => entry.opportunity);
             this.hybridOpportunities.set(allowed);
             return allowed;
         } catch (error) {

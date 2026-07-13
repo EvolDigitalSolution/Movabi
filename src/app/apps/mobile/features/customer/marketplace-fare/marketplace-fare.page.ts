@@ -40,6 +40,7 @@ import { AppConfigService } from '../../../../../core/services/config/app-config
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { MarketplaceNegotiationService, FareNegotiation } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
 import { MarketplaceHybridService } from '../../../../../core/services/marketplace/marketplace-hybrid.service';
+import { MarketplaceConfigService, MarketplaceEffectiveHybridStatus } from '../../../../../core/services/marketplace/marketplace-config.service';
 import { PaymentService } from '../../../../../core/services/stripe/payment.service';
 import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { ProfileService } from '../../../../../core/services/profile/profile.service';
@@ -512,15 +513,14 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     private negotiationService = inject(MarketplaceNegotiationService);
     private hybridService = inject(MarketplaceHybridService);
     private paymentService = inject(PaymentService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
     private auth = inject(AuthService);
     private profileService = inject(ProfileService);
     private toastCtrl = inject(ToastController);
     private loadingCtrl = inject(LoadingController);
 
     get hybridEnabled(): boolean {
-        const userId = this.auth.currentUser()?.id;
-        const serviceSlug = this.booking()?.service_slug;
-        return this.hybridService.isHybridEnabledForUser(userId, serviceSlug, this.distanceKm());
+        return this.effectiveHybridStatus()?.enabled === true;
     }
 
     get acceptFareEnabled(): boolean {
@@ -550,6 +550,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     @ViewChild('counterInputSection') counterInputSection?: ElementRef;
 
     booking = signal<Booking | null>(null);
+    effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
     negotiations = signal<FareNegotiation[]>([]);
     counterAmount = signal<number>(0);
     showCounterInput = signal(false);
@@ -619,6 +620,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
         await this.loadBooking(id);
         await this.hybridService.loadSettings();
+        await this.loadEffectiveHybridStatus();
         this.subscribeToJob(id);
 
         if (this.hybridEnabled) {
@@ -1111,9 +1113,25 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         try {
             const job = await this.bookingService.getBooking(id);
             this.booking.set(job);
+            await this.loadEffectiveHybridStatus();
         } catch (error) {
             console.error('[MarketplaceFare] load booking failed', error);
             await this.showToast('Unable to load booking details. Please refresh the page.', 'danger');
+        }
+    }
+
+    private async loadEffectiveHybridStatus(): Promise<void> {
+        const serviceSlug = this.booking()?.service_slug;
+        if (!serviceSlug) {
+            this.effectiveHybridStatus.set(null);
+            return;
+        }
+
+        try {
+            this.effectiveHybridStatus.set(await this.marketplaceConfig.getEffectiveHybridStatus(serviceSlug));
+        } catch (error) {
+            console.warn('[MarketplaceFare] effective hybrid status unavailable', error);
+            this.effectiveHybridStatus.set(null);
         }
     }
 

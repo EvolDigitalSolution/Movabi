@@ -138,6 +138,17 @@ export interface ServiceRule {
 
 export type ServiceRules = Record<string, Partial<ServiceRule>>;
 
+export interface EffectiveHybridStatus {
+  enabled: boolean;
+  reason: string | null;
+  marketplaceEnabled: boolean;
+  hybridEnabled: boolean;
+  serviceMarketplaceEnabled: boolean;
+  serviceNegotiationEnabled: boolean;
+  emergencyDisabled: boolean;
+  canonicalServiceSlug: string;
+}
+
 export interface PaymentRules {
   cardEnabled: boolean;
   walletEnabled: boolean;
@@ -307,7 +318,7 @@ export class MarketplaceConfigService {
   static async getRawSetting(
     key: string,
     tenantId: string | null = null
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<unknown | null> {
     if (tenantId) {
       const { data: tenantRow, error: tenantError } = await supabaseAdmin
         .from('marketplace_settings')
@@ -323,7 +334,7 @@ export class MarketplaceConfigService {
       }
 
       if (tenantRow?.value !== undefined) {
-        return (tenantRow.value as Record<string, unknown>) ?? null;
+        return tenantRow.value ?? null;
       }
     }
 
@@ -341,7 +352,48 @@ export class MarketplaceConfigService {
       return null;
     }
 
-    return (data?.value as Record<string, unknown>) ?? null;
+    return data?.value ?? null;
+  }
+
+  private static async loadRawSettingForResolver(
+    key: string,
+    tenantId: string | null = null
+  ): Promise<{ value: unknown | null; found: boolean; error: string | null }> {
+    if (tenantId) {
+      const { data: tenantRow, error: tenantError } = await supabaseAdmin
+        .from('marketplace_settings')
+        .select('value')
+        .eq('key', key)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (tenantError) {
+        console.warn(`[MarketplaceConfig] effective hybrid resolver failed loading tenant key ${key}:`, tenantError.message);
+        return { value: null, found: false, error: tenantError.message };
+      }
+
+      if (tenantRow?.value !== undefined) {
+        return { value: tenantRow.value ?? null, found: true, error: null };
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('marketplace_settings')
+      .select('value')
+      .eq('key', key)
+      .is('tenant_id', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`[MarketplaceConfig] effective hybrid resolver failed loading global key ${key}:`, error.message);
+      return { value: null, found: false, error: error.message };
+    }
+
+    return { value: data?.value ?? null, found: data?.value !== undefined, error: null };
   }
 
   static async getSetting<T>(
@@ -355,7 +407,7 @@ export class MarketplaceConfigService {
     }
 
     const raw = await this.getRawSetting(key, tenantId);
-    if (!raw) {
+    if (!this.isJsonObject(raw)) {
       return defaultValue as T;
     }
 
@@ -375,7 +427,7 @@ export class MarketplaceConfigService {
 
     const raw = await this.getRawSetting('commission', tenantId);
 
-    if (raw !== null) {
+    if (this.isJsonObject(raw)) {
       const value = { ...defaults, ...raw } as CommissionSettings;
       const maxFee = value.maxFee === null || value.maxFee === undefined ? null : Number(value.maxFee);
       const settings: CommissionSettings = {
@@ -1045,52 +1097,124 @@ export class MarketplaceConfigService {
     return true;
   }
 
-  static async isHybridEnabledForUser(
-    userId: string | null | undefined,
-    serviceTypeSlug?: string | null,
-    distanceKm?: number | null,
+  static async getEffectiveHybridStatus(
+    serviceSlug: string | null | undefined,
     tenantId: string | null = null
-  ): Promise<boolean> {
-    if (!userId) {
-      console.log('[HybridMarketplace] disabled: no user id');
-      return false;
+  ): Promise<EffectiveHybridStatus> {
+    const canonicalServiceSlug = this.canonicalServiceSlug(serviceSlug || '');
+    const [marketplaceRow, hybridRow, serviceRulesRow, emergencyRow] = await Promise.all([
+      this.loadRawSettingForResolver('marketplace_enabled', tenantId),
+      this.loadRawSettingForResolver('hybrid_negotiation', tenantId),
+      this.loadRawSettingForResolver('service_rules', tenantId),
+      this.loadRawSettingForResolver('emergency_controls', tenantId)
+    ]);
+
+    const failedKey = [
+      ['marketplace_enabled', marketplaceRow],
+      ['hybrid_negotiation', hybridRow],
+      ['service_rules', serviceRulesRow],
+      ['emergency_controls', emergencyRow]
+    ].find(([, row]) => Boolean((row as { error: string | null }).error));
+
+    if (failedKey) {
+      console.warn(`[MarketplaceConfig] effective hybrid status config load failed for ${failedKey[0]}:`, (failedKey[1] as { error: string | null }).error);
+      return {
+        enabled: false,
+        reason: 'config load failed',
+        marketplaceEnabled: false,
+        hybridEnabled: false,
+        serviceMarketplaceEnabled: false,
+        serviceNegotiationEnabled: false,
+        emergencyDisabled: false,
+        canonicalServiceSlug
+      };
     }
 
-    const settings = await this.getHybridNegotiationSettings(tenantId);
-    const marketplaceEnabled = await this.getMarketplaceEnabled(tenantId);
-    const emergency = await this.getEmergencyControls(tenantId);
-    const serviceRules = await this.getServiceRules(tenantId);
+    const marketplaceEnabled = this.parseEnabledValue(marketplaceRow.value, false);
+    const hybridDefaults: HybridNegotiationSettings = {
+      enabled: false,
+      maxRounds: 3,
+      timeoutSeconds: 120,
+      maxDriverAttempts: 5,
+      claimTimeoutSeconds: 60,
+      enabledServices: ['shop', 'errand'],
+      eligibleServices: ['shop', 'errand'],
+      rideMinimumDistanceKm: 30,
+      rideMode: 'long_distance_only',
+      makeOfferEnabled: true,
+      acceptFareEnabled: true,
+      allowCustomerCounterOffer: true,
+      allowDriverCounterOffer: true,
+      allowCustomerTryAnotherDriver: true,
+      autoReleaseOnTimeout: true,
+      autoReleaseOnDriverOffline: true,
+      paymentDeadlineAfterFareAgreement: 300,
+      assignNegotiatingDriverAfterPayment: true
+    };
+    const rawHybrid = this.isJsonObject(hybridRow.value) ? hybridRow.value : {};
+    const hybrid = { ...hybridDefaults, ...rawHybrid } as HybridNegotiationSettings;
+    const enabledServices = Array.isArray((rawHybrid as any).enabledServices)
+      ? ((rawHybrid as any).enabledServices as string[])
+      : (Array.isArray((rawHybrid as any).eligibleServices) ? ((rawHybrid as any).eligibleServices as string[]) : hybridDefaults.enabledServices);
+    hybrid.enabledServices = enabledServices;
+    hybrid.eligibleServices = Array.isArray((rawHybrid as any).eligibleServices) ? ((rawHybrid as any).eligibleServices as string[]) : enabledServices;
+    hybrid.enabled = this.parseEnabledValue((rawHybrid as any).enabled, hybridDefaults.enabled);
 
-    if (!marketplaceEnabled) {
-      console.log('[HybridMarketplace] disabled: marketplace disabled');
-      return false;
-    }
+    const serviceDefaults: ServiceRules = {
+      errand: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: false },
+      shop: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: false, allowMultiStop: false, allowHourlyBooking: false },
+      delivery: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: false, allowMultiStop: true, allowHourlyBooking: false },
+      'van-moving': { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: true, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 200, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: true },
+      ride: { enabled: true, marketplaceEnabled: true, negotiationEnabled: false, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: false }
+    };
+    const serviceRules = this.isJsonObject(serviceRulesRow.value)
+      ? ({ ...serviceDefaults, ...(serviceRulesRow.value as ServiceRules) } as ServiceRules)
+      : serviceDefaults;
 
-    if (emergency.disableHybridNegotiation || emergency.forceNormalBookingFlow) {
-      console.log('[HybridMarketplace] disabled: emergency override');
-      return false;
-    }
+    const emergencyDefaults: EmergencyControls = {
+      disableMarketplaceGlobally: false,
+      disableMakeOffer: false,
+      disableHybridNegotiation: false,
+      disableBidding: false,
+      disableDynamicPricing: false,
+      disableByService: {},
+      forceAcceptFareOnly: false,
+      forceNormalBookingFlow: false,
+      disableCardPayments: false,
+      disableWalletPayments: false
+    };
+    const emergency = this.isJsonObject(emergencyRow.value)
+      ? ({ ...emergencyDefaults, ...(emergencyRow.value as unknown as Partial<EmergencyControls>) } as EmergencyControls)
+      : emergencyDefaults;
 
-    if (!settings.enabled) {
-      console.log('[HybridMarketplace] disabled: hybrid disabled');
-      return false;
-    }
+    const serviceRule = this.serviceRuleFor(serviceRules, canonicalServiceSlug);
+    const serviceExists = Boolean(serviceRule);
+    const serviceMarketplaceEnabled = Boolean(serviceRule) && serviceRule?.enabled !== false && serviceRule?.marketplaceEnabled !== false;
+    const serviceNegotiationEnabled = Boolean(serviceRule) && serviceRule?.negotiationEnabled !== false;
+    const hybridServiceEnabled = this.isHybridServiceEnabled(hybrid, canonicalServiceSlug);
+    const emergencyDisabled = Boolean(
+      emergency.disableMarketplaceGlobally ||
+      emergency.disableHybridNegotiation ||
+      emergency.forceNormalBookingFlow ||
+      emergency.disableByService?.[canonicalServiceSlug]
+    );
 
-    if (serviceTypeSlug !== undefined && serviceTypeSlug !== null) {
-      const canonical = this.canonicalServiceSlug(serviceTypeSlug);
-      const reason = this.getServiceBlockReason(canonical, marketplaceEnabled, settings, serviceRules, emergency);
-      if (reason) {
-        console.log(`[HybridMarketplace] disabled: ${serviceTypeSlug} blocked (${reason})`);
-        return false;
-      }
-      if (!this.isHybridServiceEnabled(settings, canonical, distanceKm)) {
-        console.log(`[HybridMarketplace] disabled: ${serviceTypeSlug} not enabled`);
-        return false;
-      }
-    }
+    let reason: string | null = null;
+    if (!marketplaceEnabled) reason = 'marketplace disabled';
+    else if (emergencyDisabled) reason = 'emergency override';
+    else if (!hybrid.enabled) reason = 'hybrid disabled';
+    else if (!serviceExists || !serviceMarketplaceEnabled || !serviceNegotiationEnabled || !hybridServiceEnabled) reason = 'service disabled';
 
-    console.log('[HybridMarketplace] enabled');
-    return true;
+    return {
+      enabled: reason === null,
+      reason,
+      marketplaceEnabled,
+      hybridEnabled: Boolean(hybrid.enabled),
+      serviceMarketplaceEnabled,
+      serviceNegotiationEnabled,
+      emergencyDisabled,
+      canonicalServiceSlug
+    };
   }
 
   static async getEffectiveCommissionPercent(
@@ -1156,11 +1280,11 @@ export class MarketplaceConfigService {
   }
 
   private static canonicalServiceSlug(slug: string): string {
-    const raw = String(slug || '').trim().toLowerCase();
+    const raw = String(slug || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
 
     if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
-    if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
-    if (['van', 'moving', 'move', 'van-moving', 'van_moving', 'van moving'].includes(raw)) return 'van-moving';
+    if (['courier', 'parcel', 'package', 'package-delivery', 'deliver', 'delivery'].includes(raw)) return 'delivery';
+    if (['van', 'moving', 'move', 'van-moving'].includes(raw)) return 'van-moving';
     if (['ride', 'rides'].includes(raw)) return 'ride';
 
     return raw;
@@ -1189,11 +1313,11 @@ export class MarketplaceConfigService {
     serviceTypeSlug: string,
     tenantId: string | null = null
   ): Promise<{ negotiation: boolean; bidding: boolean }> {
-    const [negotiation, bidding] = await Promise.all([
-      this.shouldEnableNegotiation(serviceTypeSlug, tenantId),
+    const [hybridStatus, bidding] = await Promise.all([
+      this.getEffectiveHybridStatus(serviceTypeSlug, tenantId),
       this.shouldEnableBidding(serviceTypeSlug, tenantId)
     ]);
 
-    return { negotiation, bidding };
+    return { negotiation: hybridStatus.enabled, bidding };
   }
 }

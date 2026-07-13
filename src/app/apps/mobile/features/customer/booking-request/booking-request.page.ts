@@ -55,7 +55,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { PricingService } from '../../../../../core/services/pricing.service';
-import { MarketplaceConfigService, MarketplaceSettings } from '../../../../../core/services/marketplace/marketplace-config.service';
+import { MarketplaceConfigService, MarketplaceEffectiveHybridStatus, MarketplaceSettings } from '../../../../../core/services/marketplace/marketplace-config.service';
 import { AppConfigService, PopularShopPreset } from '../../../../../core/services/config/app-config.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { AnalyticsService } from '../../../../../core/services/analytics/analytics.service';
@@ -1027,19 +1027,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
     negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
+    effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
 
     shouldShowMarketplaceFare = computed(() => {
-        const settings = this.negotiationSettings();
-        if (!settings?.enabled) return false;
-
-        const canonical = this.canonicalServiceSlug(this.getServiceSlug());
-        const configured = settings.minServices.some(s => this.canonicalServiceSlug(s) === canonical);
-        // van-moving is NOT in the safe list until bidding/payment is hardened.
-        // Only services on this allow-list may enter marketplace, even if old
-        // admin settings still contain van/move.
-        const safeList = ['errand', 'delivery'].includes(canonical);
-
-        return safeList && (configured || safeList);
+        return this.effectiveHybridStatus()?.enabled === true;
     });
 
     usesItemListMode = computed(() => {
@@ -2190,8 +2181,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         try {
             const marketplaceSettings = await this.marketplaceConfig.loadSettings();
             this.negotiationSettings.set(marketplaceSettings.negotiation);
+            this.effectiveHybridStatus.set(await this.marketplaceConfig.getEffectiveHybridStatus(slug));
         } catch (e) {
             console.warn('[BookingRequest] Could not load marketplace settings', e);
+            this.effectiveHybridStatus.set(null);
         }
 
         const selected = types.find((t: ServiceType) => {
