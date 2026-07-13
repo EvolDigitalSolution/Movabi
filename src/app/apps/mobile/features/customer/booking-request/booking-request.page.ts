@@ -2503,6 +2503,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const serviceCharge = this.cardChargeRequired();
             const totalDue = this.walletPaymentRequired();
             const walletWillCover = this.walletCoversPayment();
+            const quoteId = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
             const countryCode = this.config.currentCountry()?.code || 'GB';
             const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
@@ -2518,6 +2519,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                 service_type_id: this.serviceType()?.id,
                 total_price: serviceCharge,
+                quote_id: quoteId,
 
                 distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
                 estimated_distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
@@ -2534,6 +2536,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     country_code: countryCode,
                     currency_code: currencyCode,
                     currency_symbol: currencySymbol,
+                    quote_id: quoteId,
+                    customer_service_total: serviceCharge,
+                    total_authorisation: totalDue,
                     pricing_plan: 'starter',
                     service_vehicle_class: this.vehicleClass(),
                     service_option_surcharge: this.vehicleSurcharge(),
@@ -2560,7 +2565,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             if (booking?.id && shouldShowMarketplaceFare) {
                 await loading.dismiss();
-                await this.router.navigate(['/customer/marketplace-fare', booking.id]);
+                await this.router.navigate(['/customer/marketplace-fare', booking.id], {
+                    queryParams: { quoteId }
+                });
                 return;
             }
 

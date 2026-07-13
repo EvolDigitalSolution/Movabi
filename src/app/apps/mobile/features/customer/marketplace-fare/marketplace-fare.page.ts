@@ -725,6 +725,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         const fb = this.fareBreakdown();
         return Number(
             job?.agreed_fare ||
+            fb?.['customerServiceTotal'] ||
             fb?.['serviceFare'] ||
             fb?.['total'] ||
             job?.total_price ||
@@ -734,7 +735,10 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     paymentTotal(): number {
         const fb = this.fareBreakdown();
-        return Number(fb?.['totalAuthorisation'] || (Number(this.suggestedFare()) + this.itemBudget()));
+        return Number(
+            fb?.['totalAuthorisation'] ||
+            (Number(this.suggestedFare()) + this.itemBudget())
+        );
     }
 
     fareBreakdown(): any {
@@ -753,6 +757,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         const minimumFareAdjustment = this.toMoney(fb['minimumFareAdjustment']);
         const maximumFareAdjustment = this.toMoney(fb['maximumFareAdjustment']);
         const platformFee = this.toMoney(fb['platformFeeAmount'] ?? fb['platformFee']);
+        const roundingAdjustment = this.toMoney(fb['roundingAdjustment']);
         let pricingAdjustment = this.toMoney(fb['pricingAdjustmentAmount'] ?? fb['dynamicPricingAmount']);
 
         if (fb['pricingAdjustmentAmount'] === undefined && fb['serviceFare'] === undefined) {
@@ -778,6 +783,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         push('Price cap discount', -Math.abs(maximumFareAdjustment), 'bg-emerald-400', 'text-emerald-700');
         push(pricingAdjustment < 0 ? 'Marketplace discount' : 'Dynamic pricing increase', pricingAdjustment, 'bg-amber-400', pricingAdjustment < 0 ? 'text-emerald-700' : 'text-amber-700');
         push('Platform fee', platformFee, 'bg-purple-400');
+        push('Quote rounding adjustment', roundingAdjustment, 'bg-orange-400', roundingAdjustment < 0 ? 'text-emerald-700' : 'text-orange-700');
 
         return rows;
     }
