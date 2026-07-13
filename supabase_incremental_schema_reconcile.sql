@@ -2979,12 +2979,14 @@ CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_events_session
   ON public.marketplace_negotiation_events(session_id, created_at DESC);
 
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
-RETURNS TRIGGER AS $
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_marketplace_settings_updated_at ON public.marketplace_settings;
 CREATE TRIGGER trg_marketplace_settings_updated_at
@@ -3022,7 +3024,11 @@ CREATE OR REPLACE FUNCTION public.get_marketplace_commission(
   p_driver_tier TEXT,
   p_tenant_id UUID DEFAULT NULL
 )
-RETURNS NUMERIC(8,4) AS $
+RETURNS NUMERIC(8,4)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   base_commission NUMERIC(8,4);
   override_commission NUMERIC(8,4);
@@ -3053,13 +3059,17 @@ BEGIN
 
   RETURN COALESCE(override_commission, base_commission, 10.00);
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$;
 
 CREATE OR REPLACE FUNCTION public.get_marketplace_setting(
   p_key TEXT,
   p_tenant_id UUID DEFAULT NULL
 )
-RETURNS JSONB AS $
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   result JSONB;
 BEGIN
@@ -3073,13 +3083,17 @@ BEGIN
 
   RETURN COALESCE(result, '{}'::jsonb);
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$;
 
 CREATE OR REPLACE FUNCTION public.claim_marketplace_negotiation(
   p_job_id UUID,
   p_driver_id UUID
 )
-RETURNS public.marketplace_negotiation_sessions AS $
+RETURNS public.marketplace_negotiation_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_session public.marketplace_negotiation_sessions;
   v_job public.jobs;
@@ -3119,14 +3133,18 @@ BEGIN
 
   RETURN v_session;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$;
 
 CREATE OR REPLACE FUNCTION public.release_marketplace_negotiation(
   p_job_id UUID,
   p_driver_id UUID,
   p_reason TEXT
 )
-RETURNS public.marketplace_negotiation_sessions AS $
+RETURNS public.marketplace_negotiation_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_session public.marketplace_negotiation_sessions;
 BEGIN
@@ -3163,14 +3181,18 @@ BEGIN
 
   RETURN v_session;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$;
 
 CREATE OR REPLACE FUNCTION public.lock_marketplace_fare(
   p_job_id UUID,
   p_driver_id UUID,
   p_amount NUMERIC
 )
-RETURNS public.marketplace_negotiation_sessions AS $
+RETURNS public.marketplace_negotiation_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_session public.marketplace_negotiation_sessions;
 BEGIN
@@ -3205,7 +3227,7 @@ BEGIN
 
   RETURN v_session;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$;
 
 CREATE OR REPLACE FUNCTION public.fetch_hybrid_opportunities(
   p_driver_id UUID
@@ -3222,7 +3244,11 @@ RETURNS TABLE (
   service_slug TEXT,
   pickup_address TEXT,
   dropoff_address TEXT
-) AS $
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   RETURN QUERY
   SELECT
@@ -3247,7 +3273,7 @@ BEGIN
       WHERE d.driver_id = p_driver_id AND d.job_id = s.job_id
     );
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$;
 
 ALTER TABLE public.marketplace_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketplace_commission_overrides ENABLE ROW LEVEL SECURITY;
