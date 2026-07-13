@@ -180,7 +180,7 @@ const PRICING_SERVICES = [
                   <div class="section-body">
                     <div class="grid md:grid-cols-2 gap-5">
                       <div>
-                        <label class="field-label">Country *</label>
+                        <label class="field-label">Select country *</label>
                         <select formControlName="country_code" [attr.disabled]="isEditMode() ? true : null" (change)="onCountryChange()" class="field-control">
                           @for (country of countries(); track country.code) {
                             <option [value]="country.code">{{ flagFor(country.code) }} {{ country.name }} ({{ country.currency }})</option>
