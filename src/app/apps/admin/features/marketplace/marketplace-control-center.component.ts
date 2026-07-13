@@ -35,7 +35,9 @@ import {
   MarketplaceConfigService,
   MarketplaceSettings,
   MarketplaceServiceRule,
-  MarketplaceNotificationRule
+  MarketplaceNotificationRule,
+  MarketplaceEmergencyControls,
+  MarketplaceHybridNegotiationSettings
 } from '../../../../core/services/marketplace/marketplace-config.service';
 import {
   buildFieldGroups,
@@ -54,11 +56,18 @@ type MarketplaceTab =
   | 'bidding'
   | 'smartMatching'
   | 'payment'
+  | 'cleanup'
   | 'notifications'
   | 'driver'
   | 'emergency'
   | 'marketplace'
   | 'audit';
+
+interface EffectiveStatusRow {
+  label: string;
+  enabled: boolean;
+  reason: string;
+}
 
 @Component({
   selector: 'app-marketplace-control-center',
@@ -262,6 +271,80 @@ export class MarketplaceControlCenterComponent implements OnInit {
       console.error('Invalid JSON at', path, error);
       this.triggerToast('Invalid JSON for ' + path, 'danger');
     }
+  }
+
+  effectiveStatusRows(): EffectiveStatusRow[] {
+    const emergency = this.settings.emergencyControls || {};
+    const hybrid = this.settings.hybridNegotiation;
+    return [
+      this.globalStatusRow(emergency),
+      this.hybridStatusRow(emergency, hybrid),
+      this.serviceStatusRow('Shop/Errand', 'errand', emergency, hybrid),
+      this.serviceStatusRow('Delivery', 'delivery', emergency, hybrid),
+      this.serviceStatusRow('Van/Move', 'van-moving', emergency, hybrid),
+      this.serviceStatusRow('Ride', 'ride', emergency, hybrid)
+    ];
+  }
+
+  private globalStatusRow(emergency: MarketplaceEmergencyControls): EffectiveStatusRow {
+    const reason = emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow
+      ? 'Emergency override'
+      : (!this.settings.marketplaceEnabled ? 'Global disabled' : 'Enabled');
+    return { label: 'Global marketplace', enabled: reason === 'Enabled', reason };
+  }
+
+  private hybridStatusRow(
+    emergency: MarketplaceEmergencyControls,
+    hybrid: MarketplaceHybridNegotiationSettings
+  ): EffectiveStatusRow {
+    let reason = 'Enabled';
+    if (emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow) {
+      reason = 'Emergency override';
+    } else if (!this.settings.marketplaceEnabled) {
+      reason = 'Global disabled';
+    } else if (emergency.disableHybridNegotiation) {
+      reason = 'Emergency override';
+    } else if (!hybrid.enabled) {
+      reason = 'Hybrid disabled';
+    }
+    return { label: 'Hybrid negotiation', enabled: reason === 'Enabled', reason };
+  }
+
+  private serviceStatusRow(
+    label: string,
+    serviceSlug: string,
+    emergency: MarketplaceEmergencyControls,
+    hybrid: MarketplaceHybridNegotiationSettings
+  ): EffectiveStatusRow {
+    const canonical = this.canonicalServiceSlug(serviceSlug);
+    const rule = this.settings.serviceRules?.[canonical] || (canonical === 'errand' ? this.settings.serviceRules?.['shop'] : undefined);
+    const enabledServices = (hybrid.enabledServices || []).map(service => this.canonicalServiceSlug(service));
+
+    let reason = 'Enabled';
+    if (emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow || emergency.disableByService?.[canonical]) {
+      reason = 'Emergency override';
+    } else if (!this.settings.marketplaceEnabled) {
+      reason = 'Global disabled';
+    } else if (emergency.disableHybridNegotiation) {
+      reason = 'Emergency override';
+    } else if (!hybrid.enabled) {
+      reason = 'Hybrid disabled';
+    } else if (!rule || rule.enabled === false || rule.marketplaceEnabled === false || rule.negotiationEnabled === false) {
+      reason = 'Service disabled';
+    } else if (!enabledServices.includes(canonical)) {
+      reason = 'Hybrid disabled';
+    }
+
+    return { label, enabled: reason === 'Enabled', reason };
+  }
+
+  private canonicalServiceSlug(slug: string): string {
+    const raw = String(slug || '').trim().toLowerCase().replace(/[-\s]/g, '_');
+    if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+    if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+    if (['van', 'moving', 'move', 'van_moving', 'van-moving', 'van moving'].includes(raw)) return 'van-moving';
+    if (['ride', 'rides'].includes(raw)) return 'ride';
+    return raw;
   }
 
   private ensureServiceRules(settings: MarketplaceSettings) {

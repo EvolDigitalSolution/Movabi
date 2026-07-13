@@ -97,7 +97,7 @@ BEGIN
     FROM (VALUES
       ('commission', '{"percent": 0, "minFee": 0, "maxFee": null}'::jsonb),
       ('dynamic_pricing', '{"enabled": true, "maxSurge": 3, "trafficMultiplier": 1, "weatherMultiplier": 1, "demandMultiplier": 1, "fuelMultiplier": 1}'::jsonb),
-      ('hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "eligibleServices": ["shop", "errand"], "allowlist": [], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'::jsonb),
+      ('hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "eligibleServices": ["shop", "errand"], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'::jsonb),
       ('bidding', '{"enabled": false, "enabledServices": ["van", "van_moving"], "defaultServices": ["van", "van_moving"]}'::jsonb),
       ('smart_matching', '{"enabled": true, "maxDistanceKm": 10, "distanceWeight": 0.30, "ratingWeight": 0.25, "completionWeight": 0.35, "responseWeight": 0.10}'::jsonb)
     ) AS defaults(key, value)
@@ -111,67 +111,6 @@ BEGIN
         AND key = v_key
     );
   END LOOP;
-END $$;
-
--- Hybrid allowlist repair. Keep global hybrid disabled and preserve other JSON settings.
-DO $$
-DECLARE
-  allowlist_jsonb JSONB := to_jsonb(ARRAY[
-    'e0d535e5-e90f-4a4c-b3f2-6937634517c7',
-    'e0727e87-2fd6-40ab-bdb5-eba509145901',
-    'd0e8e8e8-e8e8-e8e8-e8e8-d0e8e8e8e8e8'
-  ]::text[]);
-  services_jsonb JSONB := '["shop", "errand"]'::jsonb;
-BEGIN
-  UPDATE public.marketplace_settings
-  SET value = jsonb_set(
-                jsonb_set(
-                  jsonb_set(
-                    jsonb_set(
-                      COALESCE(value, '{}'::jsonb),
-                      '{allowlist}', allowlist_jsonb, true
-                    ),
-                    '{enabled}', 'false'::jsonb, true
-                  ),
-                  '{enabledServices}', services_jsonb, true
-                ),
-                '{eligibleServices}', services_jsonb, true
-              ),
-      updated_at = now()
-  WHERE key = 'hybrid_negotiation'
-    AND tenant_id IS NULL;
-
-  IF NOT FOUND THEN
-    INSERT INTO public.marketplace_settings (tenant_id, key, value, updated_at)
-    VALUES (
-      NULL,
-      'hybrid_negotiation',
-      jsonb_build_object(
-        'enabled', false,
-        'maxRounds', 3,
-        'timeoutSeconds', 120,
-        'maxDriverAttempts', 5,
-        'claimTimeoutSeconds', 60,
-        'enabledServices', services_jsonb,
-        'eligibleServices', services_jsonb,
-        'rideMinimumDistanceKm', 30,
-        'makeOfferEnabled', true,
-        'acceptFareEnabled', true,
-        'allowlist', allowlist_jsonb
-      ),
-      now()
-    );
-  END IF;
-
-  UPDATE public.system_configs
-  SET value = 'false'::jsonb,
-      updated_at = now()
-  WHERE key = 'marketplace_hybrid_negotiation_enabled';
-
-  UPDATE public.system_configs
-  SET value = allowlist_jsonb,
-      updated_at = now()
-  WHERE key = 'hybrid_allowlist';
 END $$;
 
 ALTER TABLE public.jobs
@@ -891,5 +830,16 @@ GRANT EXECUTE ON FUNCTION public.claim_marketplace_negotiation(UUID, UUID) TO au
 GRANT EXECUTE ON FUNCTION public.release_marketplace_negotiation(UUID, UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fetch_hybrid_opportunities(UUID) TO authenticated;
+
+DO $$
+BEGIN
+  IF to_regclass('public.van_details') IS NOT NULL THEN
+    ALTER TABLE public.van_details
+      ADD COLUMN IF NOT EXISTS floor_number INTEGER,
+      ADD COLUMN IF NOT EXISTS stairs_involved BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS fragile_items BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS packing_assistance BOOLEAN DEFAULT false;
+  END IF;
+END $$;
 
 NOTIFY pgrst, 'reload schema';

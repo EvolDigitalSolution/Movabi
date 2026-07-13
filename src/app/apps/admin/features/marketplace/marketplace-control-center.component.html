@@ -34,6 +34,7 @@
           <button type="button" (click)="activeTab.set('bidding')" [class]="activeTab() === 'bidding' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="hammer-outline"></ion-icon><span>Bidding</span></button>
           <button type="button" (click)="activeTab.set('smartMatching')" [class]="activeTab() === 'smartMatching' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="options-outline"></ion-icon><span>Smart Matching</span></button>
           <button type="button" (click)="activeTab.set('payment')" [class]="activeTab() === 'payment' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="wallet-outline"></ion-icon><span>Payment Rules</span></button>
+          <button type="button" (click)="activeTab.set('cleanup')" [class]="activeTab() === 'cleanup' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="time-outline"></ion-icon><span>Cleanup Rules</span></button>
           <button type="button" (click)="activeTab.set('notifications')" [class]="activeTab() === 'notifications' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="notifications-outline"></ion-icon><span>Notifications</span></button>
           <button type="button" (click)="activeTab.set('driver')" [class]="activeTab() === 'driver' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="shield-checkmark-outline"></ion-icon><span>Driver Rules</span></button>
           <button type="button" (click)="activeTab.set('emergency')" [class]="activeTab() === 'emergency' ? 'nav-btn active' : 'nav-btn'"><ion-icon name="alert-circle-outline"></ion-icon><span>Emergency Controls</span></button>
@@ -76,6 +77,68 @@
               <button type="button" (click)="loadMoreAuditLogs()" class="secondary-btn mt-4">Load More</button>
             }
           </div>
+        } @else if (activeTab() === 'marketplace') {
+          <div class="section-card">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 class="section-title !mb-1 !border-0 !pb-0">Effective Status</h3>
+                <p class="text-sm text-slate-500 font-medium">This shows the real marketplace gates after global, hybrid, service and emergency controls are combined.</p>
+              </div>
+              <span class="effective-pill" [class.enabled]="effectiveStatusRows()[0].enabled">
+                {{ effectiveStatusRows()[0].enabled ? 'Marketplace Active' : effectiveStatusRows()[0].reason }}
+              </span>
+            </div>
+
+            <div class="effective-grid">
+              @for (row of effectiveStatusRows(); track row.label) {
+                <div class="effective-card" [class.enabled]="row.enabled">
+                  <div>
+                    <p class="effective-label">{{ row.label }}</p>
+                    <p class="effective-reason">{{ row.reason }}</p>
+                  </div>
+                  <span class="effective-state">{{ row.enabled ? 'Enabled' : 'Blocked' }}</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          @for (group of fieldGroups; track group.title) {
+            @if (group.tab === activeTab()) {
+              <div class="section-card">
+                <h3 class="section-title">{{ group.title }}</h3>
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  @for (field of group.fields; track field.path) {
+                    <div>
+                      <label class="field-label">{{ field.label }}</label>
+                      @if (field.type === 'number') {
+                        <input type="number" step="any" [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                      } @else if (field.type === 'boolean') {
+                        <select [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                          <option [ngValue]="true">Yes</option>
+                          <option [ngValue]="false">No</option>
+                        </select>
+                      } @else if (field.type === 'select') {
+                        <select [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                          @for (opt of field.options; track opt.value) {
+                            <option [ngValue]="opt.value">{{ opt.label }}</option>
+                          }
+                        </select>
+                      } @else if (field.type === 'text') {
+                        <input [ngModel]="getValue(field.path, field.type)" (ngModelChange)="setValue(field.path, $event)" class="field-control">
+                      } @else if (field.type === 'array') {
+                        <input [ngModel]="formatStringList(getValue(field.path))" (ngModelChange)="setValue(field.path, parseStringList($event))" class="field-control">
+                      } @else if (field.type === 'json') {
+                        <textarea rows="4" [ngModel]="getValue(field.path) | json" (ngModelChange)="setValueJson(field.path, $event)" class="field-control"></textarea>
+                      }
+                      @if (field.hint) {
+                        <p class="text-xs text-slate-500 mt-1">{{ field.hint }}</p>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          }
         } @else {
           @for (group of fieldGroups; track group.title) {
             @if (group.tab === activeTab()) {

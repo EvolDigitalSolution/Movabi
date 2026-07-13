@@ -10,9 +10,4 @@ export const DEFAULT_HYBRID_RIDE_MINIMUM_KM = 25;
 export const DEFAULT_HYBRID_MAKE_OFFER_ENABLED = true;
 export const DEFAULT_HYBRID_ACCEPT_FARE_ENABLED = true;
 
-// Allowlist fallback. While global hybrid is disabled, users in this list can still
-// access the hybrid flow. Keep it empty for normal operation; use the Admin Test
-// Allowlist as the primary source. Populate here only if DB settings fail to load.
-export const DEFAULT_HYBRID_ALLOWLIST: string[] = [];
-
 // TODO: Remove this file once all callers use MarketplaceConfigService.settingsSignal().hybridNegotiation.

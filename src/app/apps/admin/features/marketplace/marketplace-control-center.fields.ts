@@ -101,7 +101,6 @@ const baseGroups: MarketplaceFieldGroup[] = [
     f('Auto Release On Driver Offline', 'hybridNegotiation.autoReleaseOnDriverOffline', 'boolean'),
     f('Payment Deadline After Fare Agreement (seconds)', 'hybridNegotiation.paymentDeadlineAfterFareAgreement', 'number'),
     f('Assign Negotiating Driver After Payment', 'hybridNegotiation.assignNegotiatingDriverAfterPayment', 'boolean'),
-    f('Allowlist', 'hybridNegotiation.allowlist', 'array'),
   ]),
   g('bidding', 'Bidding', [
     f('Enabled', 'bidding.enabled', 'boolean'),
@@ -147,6 +146,14 @@ const baseGroups: MarketplaceFieldGroup[] = [
     f('Refund Release Timeout', 'paymentRules.refundReleaseTimeout', 'number'),
     f('Duplicate Payment Intent Protection', 'paymentRules.duplicatePaymentIntentProtection', 'boolean'),
     f('Allowed Payment Statuses For Dispatch', 'paymentRules.allowedPaymentStatusesForDispatch', 'array'),
+  ]),
+  g('cleanup', 'Cleanup Rules', [
+    f('Enabled', 'marketplaceDraftRules.enabled', 'boolean'),
+    f('Pending Fare TTL (minutes)', 'marketplaceDraftRules.pendingFareTtlMinutes', 'number'),
+    f('Fare Agreed Unpaid TTL (minutes)', 'marketplaceDraftRules.fareAgreedUnpaidTtlMinutes', 'number'),
+    f('Negotiation Idle TTL (minutes)', 'marketplaceDraftRules.negotiationIdleTtlMinutes', 'number'),
+    f('Cleanup Interval (minutes)', 'marketplaceDraftRules.cleanupIntervalMinutes', 'number'),
+    f('Delete Expired Drafts', 'marketplaceDraftRules.deleteExpiredDrafts', 'boolean'),
   ]),
   g('driver', 'Driver Rules', [
     f('Minimum Driver Rating', 'driverRules.minimumDriverRating', 'number'),

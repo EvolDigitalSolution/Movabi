@@ -12,8 +12,7 @@ import {
     DEFAULT_HYBRID_MAX_DRIVER_ATTEMPTS,
     DEFAULT_HYBRID_RIDE_MINIMUM_KM,
     DEFAULT_HYBRID_MAKE_OFFER_ENABLED,
-    DEFAULT_HYBRID_ACCEPT_FARE_ENABLED,
-    DEFAULT_HYBRID_ALLOWLIST
+    DEFAULT_HYBRID_ACCEPT_FARE_ENABLED
 } from './marketplace-hybrid.constants';
 
 export interface MarketplaceNegotiationSession {
@@ -80,7 +79,7 @@ export class MarketplaceHybridService {
     }
 
     constructor() {
-        // Ensure DB-backed marketplace settings (including hybrid allowlist) are loaded.
+        // Ensure DB-backed marketplace settings are loaded.
         if (!this.config.settingsSignal()) {
             this.config.loadSettings().catch(() => undefined);
         }
@@ -114,13 +113,16 @@ export class MarketplaceHybridService {
             enabledServices: DEFAULT_HYBRID_ENABLED_SERVICES,
             rideMinimumDistanceKm: DEFAULT_HYBRID_RIDE_MINIMUM_KM,
             makeOfferEnabled: DEFAULT_HYBRID_MAKE_OFFER_ENABLED,
-            acceptFareEnabled: DEFAULT_HYBRID_ACCEPT_FARE_ENABLED,
-            allowlist: DEFAULT_HYBRID_ALLOWLIST
+            acceptFareEnabled: DEFAULT_HYBRID_ACCEPT_FARE_ENABLED
         };
     }
 
     private settings() {
         return this.getHybridSettings() ?? this.defaultSettings();
+    }
+
+    private currentMarketplaceSettings() {
+        return this.config.settingsSignal() ?? this.config.defaultSettings();
     }
 
     isEnabled(): boolean {
@@ -129,10 +131,27 @@ export class MarketplaceHybridService {
 
     isServiceEnabled(serviceSlug: string, distanceKm?: number | null): boolean {
         const settings = this.settings();
+        const allSettings = this.currentMarketplaceSettings();
+        const emergency = allSettings.emergencyControls ?? {};
         const enabledServices = settings.enabledServices?.length
             ? settings.enabledServices
             : DEFAULT_HYBRID_ENABLED_SERVICES;
         const canonical = this.canonicalServiceSlug(serviceSlug);
+
+        if (!allSettings.marketplaceEnabled || emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow || emergency.disableHybridNegotiation) {
+            return false;
+        }
+
+        if (emergency.disableByService?.[canonical]) {
+            return false;
+        }
+
+        const serviceRules = allSettings.serviceRules ?? {};
+        const rule = serviceRules[canonical] || (canonical === 'errand' ? serviceRules['shop'] : undefined);
+        if (rule && (rule.enabled === false || rule.marketplaceEnabled === false || rule.negotiationEnabled === false)) {
+            return false;
+        }
+
         const canonicalList = enabledServices.map((s: string) => this.canonicalServiceSlug(s));
         if (!canonicalList.includes(canonical)) {
             return false;
@@ -149,24 +168,35 @@ export class MarketplaceHybridService {
         distanceKm?: number | null
     ): boolean {
         if (!userId) {
-            console.log('[HybridMarketplace] disabled for normal user: no user id');
+            console.log('[HybridMarketplace] disabled: no user id');
             return false;
         }
 
         const settings = this.settings();
-        const allowlist = settings.allowlist ?? [];
+        const allSettings = this.currentMarketplaceSettings();
+        const emergency = allSettings.emergencyControls ?? {};
 
-        if (!settings.enabled && !allowlist.includes(userId)) {
-            console.log(`[HybridMarketplace] disabled for normal user ${userId}`);
+        if (!allSettings.marketplaceEnabled) {
+            console.log('[HybridMarketplace] disabled: marketplace disabled');
+            return false;
+        }
+
+        if (emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow || emergency.disableHybridNegotiation) {
+            console.log('[HybridMarketplace] disabled: emergency override');
+            return false;
+        }
+
+        if (!settings.enabled) {
+            console.log('[HybridMarketplace] disabled: hybrid disabled');
             return false;
         }
 
         if (serviceSlug !== undefined && serviceSlug !== null && !this.isServiceEnabled(serviceSlug, distanceKm)) {
-            console.log(`[HybridMarketplace] disabled for normal user ${userId}: service ${serviceSlug} not enabled`);
+            console.log('[HybridMarketplace] disabled: service disabled');
             return false;
         }
 
-        console.log(`[HybridMarketplace] enabled for test user ${userId}`);
+        console.log('[HybridMarketplace] enabled');
         return true;
     }
 

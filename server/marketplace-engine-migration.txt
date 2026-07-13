@@ -4,7 +4,7 @@
 -- 1. Core marketplace settings in system_configs (key/value store)
 INSERT INTO public.system_configs (key, value, updated_at)
 VALUES
-  ('marketplace_enabled', 'true'::jsonb, now()),
+  ('marketplace_enabled', '{"enabled": true}'::jsonb, now()),
   ('marketplace_negotiation_enabled', 'true'::jsonb, now()),
   ('marketplace_bidding_enabled', 'false'::jsonb, now()),
   ('marketplace_dynamic_pricing_enabled', 'true'::jsonb, now()),
@@ -41,9 +41,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_settings_tenant_key
 -- Seed defaults
 INSERT INTO public.marketplace_settings (tenant_id, key, value)
 VALUES
+  (NULL, 'marketplace_enabled', '{"enabled": true}'),
   (NULL, 'commission', '{"percent": 0.00, "minFee": 0, "maxFee": null}'),
   (NULL, 'dynamic_pricing', '{"enabled": true, "maxSurge": 3.0, "trafficMultiplier": 1, "weatherMultiplier": 1, "demandMultiplier": 1, "fuelMultiplier": 1}'),
-  (NULL, 'hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "allowlist": [], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'),
+  (NULL, 'hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'),
   (NULL, 'bidding', '{"enabled": false, "enabledServices": ["van", "van_moving"], "defaultServices": ["van", "van_moving"]}'),
   (NULL, 'smart_matching', '{"enabled": true, "maxDistanceKm": 10, "ratingWeight": 0.25, "completionWeight": 0.35, "distanceWeight": 0.30, "responseWeight": 0.10}')
 ON CONFLICT DO NOTHING;
@@ -340,7 +341,7 @@ VALUES ('marketplace_hybrid_negotiation_enabled', 'false'::jsonb, now())
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO public.marketplace_settings (tenant_id, key, value)
-VALUES (NULL, 'hybrid_negotiation', '{"enabled": false, "maxRounds": 3, "timeoutSeconds": 120, "maxDriverAttempts": 5, "claimTimeoutSeconds": 60, "enabledServices": ["shop", "errand"], "rideMinimumDistanceKm": 30, "makeOfferEnabled": true, "acceptFareEnabled": true, "allowlist": []}')
+VALUES (NULL, 'hybrid_negotiation', '{"enabled": false, "maxRounds": 3, "timeoutSeconds": 120, "maxDriverAttempts": 5, "claimTimeoutSeconds": 60, "enabledServices": ["shop", "errand"], "rideMinimumDistanceKm": 30, "makeOfferEnabled": true, "acceptFareEnabled": true}')
 ON CONFLICT DO NOTHING;
 
 -- 15. Hybrid negotiation session tables
@@ -639,5 +640,16 @@ BEGIN
     CREATE TRIGGER trg_driver_bids_updated_at
       BEFORE UPDATE ON public.driver_bids
       FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.van_details') IS NOT NULL THEN
+    ALTER TABLE public.van_details
+      ADD COLUMN IF NOT EXISTS floor_number INTEGER,
+      ADD COLUMN IF NOT EXISTS stairs_involved BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS fragile_items BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS packing_assistance BOOLEAN DEFAULT false;
   END IF;
 END $$;

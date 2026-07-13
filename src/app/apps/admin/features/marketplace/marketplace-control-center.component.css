@@ -154,3 +154,58 @@ pre.metadata {
   font-size: 0.75rem;
   color: rgb(71 85 105);
 }
+
+.effective-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.effective-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgb(254 202 202);
+  background: rgb(254 242 242);
+}
+
+.effective-card.enabled {
+  border-color: rgb(187 247 208);
+  background: rgb(240 253 244);
+}
+
+.effective-label {
+  margin: 0;
+  color: rgb(15 23 42);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.effective-reason {
+  margin: 0.125rem 0 0;
+  color: rgb(100 116 139);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.effective-state,
+.effective-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.375rem 0.625rem;
+  background: rgb(254 226 226);
+  color: rgb(185 28 28);
+  font-size: 0.6875rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.effective-card.enabled .effective-state,
+.effective-pill.enabled {
+  background: rgb(220 252 231);
+  color: rgb(4 120 87);
+}

@@ -127,6 +127,17 @@ export class BookingService {
     }
 
     isPendingMarketplaceBooking(job: Partial<Booking> | Record<string, any> | null | undefined): boolean {
+        const status = String((job as any)?.status || '').toLowerCase();
+        const expiredAt = String((job as any)?.expired_at || '').trim();
+
+        if (expiredAt || status === 'expired') {
+            return false;
+        }
+
+        if (status === 'pending_fare_confirmation') {
+            return false;
+        }
+
         const state = this.getBookingLifecycleState(job);
         return ['negotiating', 'fare_agreed_unpaid'].includes(state);
     }
@@ -272,6 +283,10 @@ export class BookingService {
             service_type_id: bookingData.service_type_id || null,
             status: negotiationEnabled ? 'pending_fare_confirmation' : 'requested',
             payment_status: 'pending',
+            is_draft: negotiationEnabled,
+            expires_at: negotiationEnabled ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
+            expired_at: null,
+            expiry_reason: null,
 
             pickup_address: bookingData.pickup_address || '',
             pickup_lat: bookingData.pickup_lat ?? null,
@@ -356,6 +371,10 @@ export class BookingService {
             delete safePayload['distance_meters'];
             delete safePayload['duration_seconds'];
             delete safePayload['estimated_duration'];
+            delete safePayload['is_draft'];
+            delete safePayload['expires_at'];
+            delete safePayload['expired_at'];
+            delete safePayload['expiry_reason'];
 
             const retry = await this.supabase
                 .from('jobs')
@@ -400,11 +419,34 @@ export class BookingService {
                 break;
         }
 
-        const { error: dError } = await this.supabase
+        let detailPayload = this.omitUndefinedFields(detailsInsert);
+        let detailInsertResult = await this.supabase
             .from(detailsTable)
-            .insert(detailsInsert);
+            .insert(detailPayload);
 
-        if (dError) throw dError;
+        if (detailInsertResult.error && this.isMissingColumnError(detailInsertResult.error)) {
+            const missingColumn = this.getMissingColumnName(detailInsertResult.error);
+
+            if (missingColumn && missingColumn in detailPayload) {
+                console.warn('[BookingService] optional detail column missing; retrying without field', {
+                    table: detailsTable,
+                    column: missingColumn
+                });
+
+                const retryPayload = { ...detailPayload };
+                delete retryPayload[missingColumn];
+                detailPayload = retryPayload;
+
+                detailInsertResult = await this.supabase
+                    .from(detailsTable)
+                    .insert(detailPayload);
+            }
+        }
+
+        if (detailInsertResult.error) {
+            await this.cleanupIncompleteJob(job.id, user.id, detailInsertResult.error);
+            throw detailInsertResult.error;
+        }
 
         const initialStatus = String(job.status || 'requested') as BookingStatus;
         await this.logStatusHistory(job.id, initialStatus, 'Job created, awaiting payment');
@@ -584,6 +626,49 @@ export class BookingService {
             default:
                 return details;
         }
+    }
+
+    private omitUndefinedFields(payload: Record<string, unknown>): Record<string, unknown> {
+        return Object.fromEntries(
+            Object.entries(payload).filter(([, value]) => value !== undefined)
+        );
+    }
+
+    private getMissingColumnName(error: unknown): string | null {
+        const message = String((error as any)?.message || '');
+        const match = message.match(/column "([^"]+)"/i);
+        return match?.[1] || null;
+    }
+
+    private async cleanupIncompleteJob(jobId: string, customerId: string, cause: unknown): Promise<void> {
+        console.warn('[BookingService] detail insert failed; cleaning up incomplete job', {
+            jobId,
+            cause
+        });
+
+        const deleteResult = await this.supabase
+            .from('jobs')
+            .delete()
+            .eq('id', jobId)
+            .eq('customer_id', customerId)
+            .eq('payment_status', 'pending');
+
+        if (!deleteResult.error) {
+            return;
+        }
+
+        console.warn('[BookingService] incomplete job delete failed; marking cancelled instead', deleteResult.error);
+
+        await this.supabase
+            .from('jobs')
+            .update({
+                status: 'cancelled',
+                expiry_reason: 'detail_insert_failed',
+                expired_at: new Date().toISOString()
+            })
+            .eq('id', jobId)
+            .eq('customer_id', customerId)
+            .eq('payment_status', 'pending');
     }
 
     private validateDetails(serviceCode: ServiceTypeEnum, details: Record<string, unknown>): void {

@@ -496,7 +496,27 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'accepted_at') THEN
             ALTER TABLE public.jobs ADD COLUMN accepted_at TIMESTAMPTZ;
         END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'is_draft') THEN
+            ALTER TABLE public.jobs ADD COLUMN is_draft BOOLEAN DEFAULT FALSE;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expires_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN expires_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expired_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN expired_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expiry_reason') THEN
+            ALTER TABLE public.jobs ADD COLUMN expiry_reason TEXT;
+        END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS idx_jobs_marketplace_drafts_expiry
+    ON public.jobs(status, expires_at)
+    WHERE is_draft = TRUE;
 
 -- PART 7B - Errand Detail Hardening
 DO $$
@@ -663,6 +683,17 @@ CREATE TABLE IF NOT EXISTS job_service_details (
 );
 
 -- PART 8 — Driver Earnings & Payouts
+DO $$
+BEGIN
+    IF to_regclass('public.van_details') IS NOT NULL THEN
+        ALTER TABLE public.van_details
+            ADD COLUMN IF NOT EXISTS floor_number INTEGER,
+            ADD COLUMN IF NOT EXISTS stairs_involved BOOLEAN DEFAULT false,
+            ADD COLUMN IF NOT EXISTS fragile_items BOOLEAN DEFAULT false,
+            ADD COLUMN IF NOT EXISTS packing_assistance BOOLEAN DEFAULT false;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS job_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -2678,11 +2709,13 @@ BEGIN
     FOR v_key, v_value IN
         SELECT *
         FROM (VALUES
+            ('marketplace_enabled', '{"enabled": true}'::jsonb),
             ('commission', '{"percent": 5, "minFee": 0, "maxFee": null}'::jsonb),
             ('dynamic_pricing', '{"enabled": true, "maxSurge": 3, "trafficMultiplier": 1, "weatherMultiplier": 1, "demandMultiplier": 1, "fuelMultiplier": 1}'::jsonb),
-            ('hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "allowlist": [], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'::jsonb),
+            ('hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'::jsonb),
             ('bidding', '{"enabled": false, "enabledServices": ["van", "van_moving"]}'::jsonb),
-            ('smart_matching', '{"enabled": true, "maxDistanceKm": 10, "distanceWeight": 0.30, "ratingWeight": 0.25, "completionWeight": 0.35, "responseWeight": 0.10}'::jsonb)
+            ('smart_matching', '{"enabled": true, "maxDistanceKm": 10, "distanceWeight": 0.30, "ratingWeight": 0.25, "completionWeight": 0.35, "responseWeight": 0.10}'::jsonb),
+            ('marketplace_draft_rules', '{"enabled": true, "pendingFareTtlMinutes": 30, "fareAgreedUnpaidTtlMinutes": 30, "negotiationIdleTtlMinutes": 15, "cleanupIntervalMinutes": 10, "deleteExpiredDrafts": false}'::jsonb)
         ) AS defaults(key, value)
     LOOP
         IF NOT EXISTS (
@@ -2695,6 +2728,46 @@ BEGIN
             VALUES (NULL, v_key, v_value);
         END IF;
     END LOOP;
+END $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.marketplace_negotiation_sessions') IS NOT NULL THEN
+        UPDATE public.jobs j
+        SET
+            status = 'expired',
+            is_draft = TRUE,
+            expired_at = COALESCE(j.expired_at, NOW()),
+            expiry_reason = COALESCE(j.expiry_reason, 'Stale pending marketplace draft expired by schema reconcile'),
+            updated_at = NOW()
+        WHERE j.status = 'pending_fare_confirmation'
+          AND j.created_at < NOW() - INTERVAL '30 minutes'
+          AND j.payment_intent_id IS NULL
+          AND j.driver_id IS NULL
+          AND j.accepted_driver_id IS NULL
+          AND COALESCE(j.payment_status, 'pending') NOT IN ('paid', 'authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'captured', 'capture_pending')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM public.marketplace_negotiation_sessions s
+              WHERE s.job_id = j.id
+                AND s.status IN ('open', 'driver_claimed', 'negotiating', 'fare_agreed', 'payment_pending')
+                AND s.expires_at > NOW()
+          );
+    ELSE
+        UPDATE public.jobs j
+        SET
+            status = 'expired',
+            is_draft = TRUE,
+            expired_at = COALESCE(j.expired_at, NOW()),
+            expiry_reason = COALESCE(j.expiry_reason, 'Stale pending marketplace draft expired by schema reconcile'),
+            updated_at = NOW()
+        WHERE j.status = 'pending_fare_confirmation'
+          AND j.created_at < NOW() - INTERVAL '30 minutes'
+          AND j.payment_intent_id IS NULL
+          AND j.driver_id IS NULL
+          AND j.accepted_driver_id IS NULL
+          AND COALESCE(j.payment_status, 'pending') NOT IN ('paid', 'authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'captured', 'capture_pending');
+    END IF;
 END $$;
 
 -- Repair incomplete Pro subscription copy without overwriting admin-customized plans.

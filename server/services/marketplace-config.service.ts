@@ -103,7 +103,6 @@ export interface HybridNegotiationSettings {
   autoReleaseOnDriverOffline: boolean;
   paymentDeadlineAfterFareAgreement: number;
   assignNegotiatingDriverAfterPayment: boolean;
-  allowlist?: string[];
 }
 
 export interface CommissionOverride {
@@ -182,6 +181,15 @@ export interface DriverRules {
   allowFavouriteRepeatDrivers: boolean;
 }
 
+export interface MarketplaceDraftRules {
+  enabled: boolean;
+  pendingFareTtlMinutes: number;
+  fareAgreedUnpaidTtlMinutes: number;
+  negotiationIdleTtlMinutes: number;
+  cleanupIntervalMinutes: number;
+  deleteExpiredDrafts: boolean;
+}
+
 export interface EmergencyControls {
   disableMarketplaceGlobally: boolean;
   disableMakeOffer: boolean;
@@ -239,6 +247,61 @@ export class MarketplaceConfigService {
       value,
       expiresAt: Date.now() + this.CACHE_TTL_MS
     });
+  }
+
+  private static parseEnabledValue(value: unknown, fallback = true): boolean {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'enabled', 'on'].includes(normalized)) return true;
+      if (['false', '0', 'no', 'disabled', 'off'].includes(normalized)) return false;
+      return fallback;
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      if ('enabled' in record) return this.parseEnabledValue(record['enabled'], fallback);
+      if ('marketplaceEnabled' in record) return this.parseEnabledValue(record['marketplaceEnabled'], fallback);
+      if ('value' in record) return this.parseEnabledValue(record['value'], fallback);
+    }
+    return fallback;
+  }
+
+  private static isJsonObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private static serviceRuleFor(
+    serviceRules: ServiceRules,
+    serviceTypeSlug: string | null | undefined
+  ): Partial<ServiceRule> | null {
+    if (!serviceTypeSlug) return null;
+    const canonical = this.canonicalServiceSlug(serviceTypeSlug);
+    return serviceRules[canonical] || (canonical === 'errand' ? serviceRules['shop'] : null) || null;
+  }
+
+  private static getServiceBlockReason(
+    serviceTypeSlug: string,
+    marketplaceEnabled: boolean,
+    hybrid: HybridNegotiationSettings,
+    serviceRules: ServiceRules,
+    emergency: EmergencyControls
+  ): string | null {
+    const canonical = this.canonicalServiceSlug(serviceTypeSlug);
+    if (emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow) return 'Emergency override';
+    if (!marketplaceEnabled) return 'Global disabled';
+    if (emergency.disableHybridNegotiation) return 'Emergency override';
+    if (!hybrid.enabled) return 'Hybrid disabled';
+    if (emergency.disableByService?.[canonical]) return 'Emergency override';
+
+    const rule = this.serviceRuleFor(serviceRules, canonical);
+    if (!rule || rule.enabled === false || rule.marketplaceEnabled === false || rule.negotiationEnabled === false) {
+      return 'Service disabled';
+    }
+
+    if (!this.isHybridServiceEnabled(hybrid, canonical)) return 'Hybrid disabled';
+    return null;
   }
 
   static async getRawSetting(
@@ -517,8 +580,7 @@ export class MarketplaceConfigService {
       autoReleaseOnTimeout: true,
       autoReleaseOnDriverOffline: true,
       paymentDeadlineAfterFareAgreement: 300,
-      assignNegotiatingDriverAfterPayment: true,
-      allowlist: []
+      assignNegotiatingDriverAfterPayment: true
     });
 
     const asAny = raw as any;
@@ -548,8 +610,7 @@ export class MarketplaceConfigService {
       autoReleaseOnTimeout: asAny?.autoReleaseOnTimeout !== undefined ? Boolean(asAny.autoReleaseOnTimeout) : true,
       autoReleaseOnDriverOffline: asAny?.autoReleaseOnDriverOffline !== undefined ? Boolean(asAny.autoReleaseOnDriverOffline) : true,
       paymentDeadlineAfterFareAgreement: Number(asAny?.paymentDeadlineAfterFareAgreement ?? 300),
-      assignNegotiatingDriverAfterPayment: asAny?.assignNegotiatingDriverAfterPayment !== undefined ? Boolean(asAny.assignNegotiatingDriverAfterPayment) : true,
-      allowlist: Array.isArray(asAny?.allowlist) ? (asAny.allowlist as string[]) : []
+      assignNegotiatingDriverAfterPayment: asAny?.assignNegotiatingDriverAfterPayment !== undefined ? Boolean(asAny.assignNegotiatingDriverAfterPayment) : true
     };
   }
 
@@ -559,10 +620,7 @@ export class MarketplaceConfigService {
       const rawMarketplaceEnabled = await this.getRawSetting('marketplace_enabled', tenantId);
 
       if (rawMarketplaceEnabled !== null) {
-        const raw = rawMarketplaceEnabled;
-        enabled = typeof raw === 'boolean'
-          ? raw
-          : String(raw).toLowerCase() === 'true';
+        enabled = this.parseEnabledValue(rawMarketplaceEnabled, true);
       } else {
         const { data, error } = await supabaseAdmin
           .from('system_configs')
@@ -577,13 +635,11 @@ export class MarketplaceConfigService {
         }
 
         const systemEnabled = data?.value ?? true;
-        enabled = typeof systemEnabled === 'boolean'
-          ? systemEnabled
-          : String(systemEnabled).toLowerCase() === 'true';
+        enabled = this.parseEnabledValue(systemEnabled, true);
       }
 
       const emergency = await this.getEmergencyControls(tenantId);
-      return enabled && !emergency.disableMarketplaceGlobally;
+      return enabled && !emergency.disableMarketplaceGlobally && !emergency.forceNormalBookingFlow;
     } catch (err) {
       console.warn('[MarketplaceConfig] getMarketplaceEnabled failed:', err);
       return true;
@@ -606,7 +662,7 @@ export class MarketplaceConfigService {
       marketplaceEnabled,
       dynamicPricingEnabled: dynamic.enabled && !emergency.disableDynamicPricing,
       negotiationEnabled: negotiation.enabled,
-      hybridNegotiationEnabled: hybrid.enabled && !emergency.disableHybridNegotiation,
+      hybridNegotiationEnabled: marketplaceEnabled && hybrid.enabled && !emergency.disableHybridNegotiation && !emergency.forceNormalBookingFlow,
       biddingEnabled: bidding.enabled && !emergency.disableBidding,
       smartMatchingEnabled: smart.enabled
     };
@@ -615,6 +671,7 @@ export class MarketplaceConfigService {
   static async getServiceRules(tenantId: string | null = null): Promise<ServiceRules> {
     const raw = await this.getSetting<ServiceRules>('service_rules', tenantId, {
       errand: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: false },
+      shop: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: false, allowMultiStop: false, allowHourlyBooking: false },
       delivery: { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: false, allowMultiStop: true, allowHourlyBooking: false },
       'van-moving': { enabled: true, marketplaceEnabled: true, negotiationEnabled: true, biddingEnabled: true, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 200, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: true },
       ride: { enabled: true, marketplaceEnabled: true, negotiationEnabled: false, biddingEnabled: false, dynamicPricingEnabled: true, smartMatchingEnabled: true, minimumDistanceKm: 0, maximumDistanceKm: 100, minimumFare: 0, maximumFare: 0, paymentBeforeDispatch: false, allowScheduledJobs: true, allowMultiStop: true, allowHourlyBooking: false }
@@ -680,8 +737,29 @@ export class MarketplaceConfigService {
     return raw as EmergencyControls;
   }
 
+  static async getMarketplaceDraftRules(tenantId: string | null = null): Promise<MarketplaceDraftRules> {
+    const raw = await this.getSetting<MarketplaceDraftRules>('marketplace_draft_rules', tenantId, {
+      enabled: true,
+      pendingFareTtlMinutes: 30,
+      fareAgreedUnpaidTtlMinutes: 30,
+      negotiationIdleTtlMinutes: 15,
+      cleanupIntervalMinutes: 10,
+      deleteExpiredDrafts: false
+    });
+
+    const settings = raw as MarketplaceDraftRules;
+    return {
+      enabled: settings?.enabled !== false,
+      pendingFareTtlMinutes: Number(settings?.pendingFareTtlMinutes ?? 30),
+      fareAgreedUnpaidTtlMinutes: Number(settings?.fareAgreedUnpaidTtlMinutes ?? 30),
+      negotiationIdleTtlMinutes: Number(settings?.negotiationIdleTtlMinutes ?? 15),
+      cleanupIntervalMinutes: Number(settings?.cleanupIntervalMinutes ?? 10),
+      deleteExpiredDrafts: Boolean(settings?.deleteExpiredDrafts ?? false)
+    };
+  }
+
   static async getAllSettings(tenantId: string | null = null): Promise<Record<string, unknown>> {
-    const [commission, dynamicPricing, negotiation, hybridNegotiation, bidding, smartMatching, serviceRules, paymentRules, notificationRules, driverRules, emergencyControls, marketplaceEnabled] = await Promise.all([
+    const [commission, dynamicPricing, negotiation, hybridNegotiation, bidding, smartMatching, serviceRules, paymentRules, notificationRules, driverRules, emergencyControls, marketplaceDraftRules, marketplaceEnabled] = await Promise.all([
       this.getCommissionSettings(tenantId),
       this.getDynamicPricingSettings(tenantId),
       this.getNegotiationSettings(tenantId),
@@ -693,8 +771,15 @@ export class MarketplaceConfigService {
       this.getNotificationRules(tenantId),
       this.getDriverRules(tenantId),
       this.getEmergencyControls(tenantId),
+      this.getMarketplaceDraftRules(tenantId),
       this.getMarketplaceEnabled(tenantId)
     ]);
+    const effectiveStatus = this.buildEffectiveMarketplaceStatus(
+      marketplaceEnabled,
+      hybridNegotiation,
+      serviceRules,
+      emergencyControls
+    );
 
     return {
       commission,
@@ -708,7 +793,39 @@ export class MarketplaceConfigService {
       notificationRules,
       driverRules,
       emergencyControls,
-      marketplaceEnabled
+      marketplaceDraftRules,
+      marketplaceEnabled,
+      effectiveStatus
+    };
+  }
+
+  private static buildEffectiveMarketplaceStatus(
+    marketplaceEnabled: boolean,
+    hybrid: HybridNegotiationSettings,
+    serviceRules: ServiceRules,
+    emergency: EmergencyControls
+  ): Record<string, unknown> {
+    const globalReason = emergency.disableMarketplaceGlobally || emergency.forceNormalBookingFlow
+      ? 'Emergency override'
+      : (!marketplaceEnabled ? 'Global disabled' : null);
+    const hybridReason = globalReason
+      || (emergency.disableHybridNegotiation ? 'Emergency override' : null)
+      || (!hybrid.enabled ? 'Hybrid disabled' : null);
+
+    const service = (slug: string) => {
+      const reason = this.getServiceBlockReason(slug, marketplaceEnabled, hybrid, serviceRules, emergency);
+      return { enabled: !reason, reason };
+    };
+
+    return {
+      globalMarketplace: { enabled: marketplaceEnabled && !globalReason, reason: globalReason },
+      hybridNegotiation: { enabled: !hybridReason, reason: hybridReason },
+      services: {
+        shopErrand: service('errand'),
+        delivery: service('delivery'),
+        vanMove: service('van-moving'),
+        ride: service('ride')
+      }
     };
   }
 
@@ -720,8 +837,12 @@ export class MarketplaceConfigService {
   ): Promise<T> {
     const existingRow = await this.getSettingRow(key, tenantId);
     const existing = (existingRow?.value as Record<string, unknown> | null) ?? null;
-    const cleanValue = this.toJsonSafe(value);
-    const merged = this.deepMerge(existing ?? {}, cleanValue) as T;
+    const cleanValue = key === 'marketplace_enabled'
+      ? { enabled: this.parseEnabledValue(value, true) }
+      : this.toJsonSafe(value);
+    const merged = (key === 'marketplace_enabled'
+      ? { ...(this.isJsonObject(existing) ? existing : {}), ...(cleanValue as Record<string, unknown>) }
+      : this.deepMerge(existing ?? {}, cleanValue)) as T;
     const now = new Date().toISOString();
 
     if (existingRow?.id) {
@@ -750,7 +871,9 @@ export class MarketplaceConfigService {
           const retryRow = await this.getSettingRow(key, tenantId);
           if (retryRow?.id) {
             const retryExisting = (retryRow.value as Record<string, unknown> | null) ?? null;
-            const retryMerged = this.deepMerge(retryExisting ?? {}, cleanValue) as T;
+            const retryMerged = (key === 'marketplace_enabled'
+              ? { ...(this.isJsonObject(retryExisting) ? retryExisting : {}), ...(cleanValue as Record<string, unknown>) }
+              : this.deepMerge(retryExisting ?? {}, cleanValue)) as T;
             const { error: retryError } = await supabaseAdmin
               .from('marketplace_settings')
               .update({ value: retryMerged, updated_at: now })
@@ -832,7 +955,10 @@ export class MarketplaceConfigService {
 
     for (const [camelKey, value] of Object.entries(settings)) {
       const key = this.camelToSnake(camelKey);
-      const merged = await this.setSetting(key, value, tenantId, adminId);
+      const normalizedValue = key === 'marketplace_enabled'
+        ? { enabled: this.parseEnabledValue(value, true) }
+        : value;
+      const merged = await this.setSetting(key, normalizedValue, tenantId, adminId);
       result[camelKey] = merged;
     }
 
@@ -926,24 +1052,44 @@ export class MarketplaceConfigService {
     tenantId: string | null = null
   ): Promise<boolean> {
     if (!userId) {
-      console.log('[HybridMarketplace] disabled for normal user: no user id');
+      console.log('[HybridMarketplace] disabled: no user id');
       return false;
     }
 
     const settings = await this.getHybridNegotiationSettings(tenantId);
-    const allowlist = settings.allowlist || [];
+    const marketplaceEnabled = await this.getMarketplaceEnabled(tenantId);
+    const emergency = await this.getEmergencyControls(tenantId);
+    const serviceRules = await this.getServiceRules(tenantId);
 
-    if (!settings.enabled && !allowlist.includes(userId)) {
-      console.log(`[HybridMarketplace] disabled for normal user ${userId}`);
+    if (!marketplaceEnabled) {
+      console.log('[HybridMarketplace] disabled: marketplace disabled');
       return false;
     }
 
-    if (serviceTypeSlug !== undefined && serviceTypeSlug !== null && !this.isHybridServiceEnabled(settings, serviceTypeSlug, distanceKm)) {
-      console.log(`[HybridMarketplace] disabled for normal user ${userId}: service ${serviceTypeSlug} not enabled`);
+    if (emergency.disableHybridNegotiation || emergency.forceNormalBookingFlow) {
+      console.log('[HybridMarketplace] disabled: emergency override');
       return false;
     }
 
-    console.log(`[HybridMarketplace] enabled for test user ${userId}`);
+    if (!settings.enabled) {
+      console.log('[HybridMarketplace] disabled: hybrid disabled');
+      return false;
+    }
+
+    if (serviceTypeSlug !== undefined && serviceTypeSlug !== null) {
+      const canonical = this.canonicalServiceSlug(serviceTypeSlug);
+      const reason = this.getServiceBlockReason(canonical, marketplaceEnabled, settings, serviceRules, emergency);
+      if (reason) {
+        console.log(`[HybridMarketplace] disabled: ${serviceTypeSlug} blocked (${reason})`);
+        return false;
+      }
+      if (!this.isHybridServiceEnabled(settings, canonical, distanceKm)) {
+        console.log(`[HybridMarketplace] disabled: ${serviceTypeSlug} not enabled`);
+        return false;
+      }
+    }
+
+    console.log('[HybridMarketplace] enabled');
     return true;
   }
 

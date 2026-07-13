@@ -95,7 +95,6 @@ export interface MarketplaceHybridNegotiationSettings {
   autoReleaseOnDriverOffline?: boolean;
   paymentDeadlineAfterFareAgreement?: number;
   assignNegotiatingDriverAfterPayment?: boolean;
-  allowlist?: string[];
 }
 
 export interface MarketplaceServiceRule {
@@ -173,6 +172,15 @@ export interface MarketplaceEmergencyControls {
   disableWalletPayments?: boolean;
 }
 
+export interface MarketplaceDraftRules {
+  enabled?: boolean;
+  pendingFareTtlMinutes?: number;
+  fareAgreedUnpaidTtlMinutes?: number;
+  negotiationIdleTtlMinutes?: number;
+  cleanupIntervalMinutes?: number;
+  deleteExpiredDrafts?: boolean;
+}
+
 export interface MarketplaceCommissionOverride {
   id?: string;
   service_type_slug: string | null;
@@ -198,7 +206,9 @@ export interface MarketplaceSettings {
   notificationRules?: MarketplaceNotificationRules;
   driverRules?: MarketplaceDriverRules;
   emergencyControls?: MarketplaceEmergencyControls;
+  marketplaceDraftRules?: MarketplaceDraftRules;
   marketplaceEnabled?: boolean;
+  effectiveStatus?: Record<string, unknown>;
 }
 
 @Injectable({
@@ -214,6 +224,25 @@ export class MarketplaceConfigService {
   readonly settingsSignal = this.settings.asReadonly();
   readonly overridesSignal = this.overrides.asReadonly();
   readonly loadingSignal = this.loading.asReadonly();
+
+  parseMarketplaceEnabled(value: unknown, fallback = true): boolean {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'enabled', 'on'].includes(normalized)) return true;
+      if (['false', '0', 'no', 'disabled', 'off'].includes(normalized)) return false;
+      return fallback;
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      if ('enabled' in record) return this.parseMarketplaceEnabled(record['enabled'], fallback);
+      if ('marketplaceEnabled' in record) return this.parseMarketplaceEnabled(record['marketplaceEnabled'], fallback);
+      if ('value' in record) return this.parseMarketplaceEnabled(record['value'], fallback);
+    }
+    return fallback;
+  }
 
   defaultSettings(): MarketplaceSettings {
     return {
@@ -268,8 +297,7 @@ export class MarketplaceConfigService {
         autoReleaseOnTimeout: true,
         autoReleaseOnDriverOffline: true,
         paymentDeadlineAfterFareAgreement: 600,
-        assignNegotiatingDriverAfterPayment: true,
-        allowlist: []
+        assignNegotiatingDriverAfterPayment: true
       },
       bidding: {
         enabled: false,
@@ -427,6 +455,14 @@ export class MarketplaceConfigService {
         disableCardPayments: false,
         disableWalletPayments: false
       },
+      marketplaceDraftRules: {
+        enabled: true,
+        pendingFareTtlMinutes: 30,
+        fareAgreedUnpaidTtlMinutes: 30,
+        negotiationIdleTtlMinutes: 15,
+        cleanupIntervalMinutes: 10,
+        deleteExpiredDrafts: false
+      },
       marketplaceEnabled: true
     };
   }
@@ -450,17 +486,16 @@ export class MarketplaceConfigService {
         return acc;
       }, {});
 
-      const rawHybrid = ((map['hybrid_negotiation'] as Record<string, unknown> || {}) as any);
+      const rawHybridRest = ((map['hybrid_negotiation'] as Record<string, unknown> || {}) as any);
       const rawBidding = ((map['bidding'] as Record<string, unknown> || {}) as any);
       const normalizedHybrid = {
         ...defaults.hybridNegotiation,
-        ...rawHybrid,
-        enabledServices: (Array.isArray(rawHybrid.enabledServices) ? rawHybrid.enabledServices : (Array.isArray(rawHybrid.eligibleServices) ? rawHybrid.eligibleServices : defaults.hybridNegotiation.enabledServices)) as string[],
-        rideMinimumDistanceKm: Number(rawHybrid.rideMinimumDistanceKm ?? rawHybrid.longDistanceRideKm ?? defaults.hybridNegotiation.rideMinimumDistanceKm),
-        claimTimeoutSeconds: Number(rawHybrid.claimTimeoutSeconds ?? defaults.hybridNegotiation.claimTimeoutSeconds),
-        makeOfferEnabled: rawHybrid.makeOfferEnabled !== undefined ? Boolean(rawHybrid.makeOfferEnabled) : defaults.hybridNegotiation.makeOfferEnabled,
-        acceptFareEnabled: rawHybrid.acceptFareEnabled !== undefined ? Boolean(rawHybrid.acceptFareEnabled) : defaults.hybridNegotiation.acceptFareEnabled,
-        allowlist: Array.isArray(rawHybrid.allowlist) ? (rawHybrid.allowlist as string[]) : defaults.hybridNegotiation.allowlist
+        ...rawHybridRest,
+        enabledServices: (Array.isArray(rawHybridRest.enabledServices) ? rawHybridRest.enabledServices : (Array.isArray(rawHybridRest.eligibleServices) ? rawHybridRest.eligibleServices : defaults.hybridNegotiation.enabledServices)) as string[],
+        rideMinimumDistanceKm: Number(rawHybridRest.rideMinimumDistanceKm ?? rawHybridRest.longDistanceRideKm ?? defaults.hybridNegotiation.rideMinimumDistanceKm),
+        claimTimeoutSeconds: Number(rawHybridRest.claimTimeoutSeconds ?? defaults.hybridNegotiation.claimTimeoutSeconds),
+        makeOfferEnabled: rawHybridRest.makeOfferEnabled !== undefined ? Boolean(rawHybridRest.makeOfferEnabled) : defaults.hybridNegotiation.makeOfferEnabled,
+        acceptFareEnabled: rawHybridRest.acceptFareEnabled !== undefined ? Boolean(rawHybridRest.acceptFareEnabled) : defaults.hybridNegotiation.acceptFareEnabled
       };
       const normalizedBidding = {
         ...defaults.bidding,
@@ -486,9 +521,9 @@ export class MarketplaceConfigService {
         notificationRules: { ...defaults.notificationRules, ...(map['notification_rules'] as MarketplaceNotificationRules || {}) },
         driverRules: { ...defaults.driverRules, ...(map['driver_rules'] as MarketplaceDriverRules || {}) },
         emergencyControls: { ...defaults.emergencyControls, ...(map['emergency_controls'] as MarketplaceEmergencyControls || {}) },
-        marketplaceEnabled: typeof map['marketplace_enabled'] === 'boolean'
-          ? map['marketplace_enabled'] as boolean
-          : defaults.marketplaceEnabled
+        marketplaceDraftRules: { ...defaults.marketplaceDraftRules, ...(map['marketplace_draft_rules'] as MarketplaceDraftRules || {}) },
+        marketplaceEnabled: this.parseMarketplaceEnabled(map['marketplace_enabled'], defaults.marketplaceEnabled),
+        effectiveStatus: (map['effective_status'] as Record<string, unknown>) || undefined
       };
 
       this.settings.set(settings);
@@ -511,7 +546,8 @@ export class MarketplaceConfigService {
       { key: 'notification_rules', value: settings.notificationRules },
       { key: 'driver_rules', value: settings.driverRules },
       { key: 'emergency_controls', value: settings.emergencyControls },
-      { key: 'marketplace_enabled', value: settings.marketplaceEnabled }
+      { key: 'marketplace_draft_rules', value: settings.marketplaceDraftRules },
+      { key: 'marketplace_enabled', value: { enabled: Boolean(settings.marketplaceEnabled) } }
     ];
 
     for (const row of rows) {

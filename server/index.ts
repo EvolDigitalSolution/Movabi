@@ -40,6 +40,7 @@ import issuingRoutes from './routes/issuing.routes';
 import verificationRoutes from './routes/verification.routes';
 import globalAiPricingRoutes from './routes/global-ai-pricing.routes';
 import { dispatchService } from './services/dispatch.service';
+import { marketplaceCleanupService } from './services/marketplace-cleanup.service';
 
 import { HealthService } from './services/health.service';
 
@@ -150,6 +151,8 @@ app.use('/api/webhook', webhookRoutes);
 setInterval(() => {
   dispatchService.runDispatchEngine();
 }, 10000);
+
+marketplaceCleanupService.start();
 
 setInterval(() => {
   HealthService.checkHealth();

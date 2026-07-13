@@ -419,20 +419,7 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                             <option [ngValue]="false">No</option>
                           </select>
                         </div>
-                        <div class="md:col-span-2 lg:col-span-3">
-                          <label class="field-label">Test Allowlist (User IDs)</label>
-                          <input
-                            type="text"
-                            [ngModel]="(marketplaceConfig.hybridNegotiation.allowlist || []).join(', ')"
-                            (ngModelChange)="updateHybridNegotiationAllowlist($event)"
-                            class="field-control"
-                            placeholder="uuid-1, uuid-2"
-                          >
-                        </div>
                       </div>
-                      <p class="text-xs text-slate-500 font-medium mt-2">
-                        When global hybrid is disabled, only allowlisted users can access the hybrid flow. While the global flag is off, use this list to test the experience with specific customer and driver accounts. Empty allowlist and disabled global flag means hybrid is off for everyone.
-                      </p>
                     </div>
 
                     <div class="pt-6 border-t border-slate-100">
@@ -938,8 +925,7 @@ export class AdminSettingsComponent implements OnInit {
             enabledServices: ['shop', 'errand'],
             rideMinimumDistanceKm: 30,
             makeOfferEnabled: true,
-            acceptFareEnabled: true,
-            allowlist: []
+            acceptFareEnabled: true
         },
         bidding: {
             enabled: false,
@@ -1325,13 +1311,6 @@ export class AdminSettingsComponent implements OnInit {
         this.marketplaceConfig.hybridNegotiation.enabledServices = value
             .split(',')
             .map(s => s.trim().toLowerCase())
-            .filter(Boolean);
-    }
-
-    updateHybridNegotiationAllowlist(value: string): void {
-        this.marketplaceConfig.hybridNegotiation.allowlist = value
-            .split(',')
-            .map(s => s.trim())
             .filter(Boolean);
     }
 
