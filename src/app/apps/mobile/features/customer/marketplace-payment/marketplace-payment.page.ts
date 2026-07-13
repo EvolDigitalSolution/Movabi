@@ -135,22 +135,22 @@ import { StripeCardElement } from '@stripe/stripe-js';
                     <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().durationCost) }}</span>
                   </div>
                 }
-                @if (fareBreakdown().dynamicPricingAmount) {
+                @if (pricingAdjustmentAmount()) {
                   <div class="flex justify-between items-center">
                     <div class="flex items-center gap-2">
                       <div class="w-2 h-2 bg-amber-400 rounded-full"></div>
-                      <span class="text-sm text-slate-600">Dynamic pricing</span>
+                      <span class="text-sm text-slate-600">{{ pricingAdjustmentAmount() < 0 ? 'Marketplace discount' : 'Dynamic pricing increase' }}</span>
                     </div>
-                    <span class="font-semibold text-amber-700">{{ formatPrice(fareBreakdown().dynamicPricingAmount) }}</span>
+                    <span class="font-semibold" [class]="pricingAdjustmentAmount() < 0 ? 'text-emerald-700' : 'text-amber-700'">{{ formatPrice(pricingAdjustmentAmount()) }}</span>
                   </div>
                 }
-                @if (fareBreakdown().platformFee !== undefined) {
+                @if (platformFeeAmount()) {
                   <div class="flex justify-between items-center">
                     <div class="flex items-center gap-2">
                       <div class="w-2 h-2 bg-purple-400 rounded-full"></div>
                       <span class="text-sm text-slate-600">Platform fee</span>
                     </div>
-                    <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().platformFee) }}</span>
+                    <span class="font-semibold text-slate-900">{{ formatPrice(platformFeeAmount()) }}</span>
                   </div>
                 }
                 @if (isErrand() && itemBudget() > 0) {
@@ -378,7 +378,14 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
 
     serviceFare(): number {
         const job = this.booking();
-        return Number(job?.agreed_fare || job?.total_price || 0);
+        const fb = this.fareBreakdown();
+        return Number(
+            job?.agreed_fare ||
+            fb?.['serviceFare'] ||
+            fb?.['total'] ||
+            job?.total_price ||
+            0
+        );
     }
 
     itemBudget(): number {
@@ -392,7 +399,8 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     }
 
     paymentTotal(): number {
-        return this.serviceFare() + this.itemBudget();
+        const fb = this.fareBreakdown();
+        return Number(fb?.['totalAuthorisation'] || (this.serviceFare() + this.itemBudget()));
     }
 
     // Backward-compatible alias used by existing UI references
@@ -400,13 +408,29 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
         return this.serviceFare();
     }
 
-    fareBreakdown() {
+    fareBreakdown(): any {
         return (this.booking() as any)?.fare_breakdown || null;
+    }
+
+    platformFeeAmount(): number {
+        const fb = this.fareBreakdown();
+        return this.toMoney(fb?.['platformFeeAmount'] ?? fb?.['platformFee']);
+    }
+
+    pricingAdjustmentAmount(): number {
+        const fb = this.fareBreakdown();
+        if (!fb) return 0;
+        return this.toMoney(fb['pricingAdjustmentAmount'] ?? fb['dynamicPricingAmount']);
     }
 
     formatPrice(amount: number | string | null | undefined): string {
         const value = Number(amount || 0);
         return this.config.formatCurrency(value);
+    }
+
+    toMoney(value: unknown): number {
+        const n = Number(value);
+        return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
     }
 
     formatDuration(seconds: number | null | undefined): string {

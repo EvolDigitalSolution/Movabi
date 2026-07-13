@@ -1,10 +1,67 @@
 import { supabaseAdmin } from './supabase.service';
 
 export interface CommissionSettings {
+  enabled?: boolean;
   percent: number;
   minFee: number;
   maxFee: number | null;
   platformFeePercent: number;
+  source?: string;
+  configVersion?: string | null;
+}
+
+export type PlatformFeeMode = 'fixed' | 'percentage' | 'fixed_plus_percentage';
+
+export interface PlatformFeeSettings {
+  enabled: boolean;
+  type: PlatformFeeMode;
+  percent: number;
+  fixedAmount: number;
+  minFee: number;
+  maxFee: number | null;
+  applyToServices: string[];
+  source: string;
+  configVersion?: string | null;
+}
+
+export interface EffectivePricingConfig {
+  serviceSlug: string;
+  baseFare: number;
+  perKm: number;
+  perMin: number;
+  serviceFee: number;
+  minimumFare: number;
+  currencyCode: string | null;
+  freeIncludedItems: number;
+  extraItemFee: number;
+  largeShoppingSurcharge: number;
+  largeShoppingThreshold: number;
+  peakMultiplier: number;
+  weatherMultiplier: number;
+  source: string;
+  pricingConfigId?: string | null;
+  configVersion?: string | null;
+}
+
+export interface EffectiveDynamicPricingSettings extends DynamicPricingSettings {
+  maxMultiplier: number;
+  minimumDemandRatio: number;
+  shortTripMaxMultiplier: number;
+  shortTripMaxAmount: number;
+  source: string;
+  configVersion?: string | null;
+}
+
+export interface WaitingRulesSettings {
+  enabled: boolean;
+  freeWaitingMinutes: number;
+  pricePerMinute: number;
+  maximumWaitingFee: number;
+  cancellationThresholdMinutes: number;
+  airportFreeWaitingMinutes: number;
+  accessibilityFreeWaitingMinutes: number;
+  source: string;
+  configVersion?: string | null;
 }
 
 export interface DynamicPricingSettings {
@@ -222,7 +279,7 @@ export class MarketplaceConfigService {
   static getCommissionFallbackPercent(): number {
     const env = process.env.MARKETPLACE_COMMISSION_FALLBACK_PERCENT;
     const parsed = env ? Number(env) : NaN;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   }
 
   private static getLastKnownCommission(tenantId: string | null): CommissionSettings | undefined {
@@ -416,13 +473,159 @@ export class MarketplaceConfigService {
     return value;
   }
 
+  private static numberFrom(value: unknown, fallback = 0): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  private static nullableNumberFrom(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private static settingVersion(raw: unknown): string | null {
+    if (!this.isJsonObject(raw)) return null;
+    const value = raw['version'] ?? raw['configVersion'] ?? raw['updatedAt'] ?? raw['updated_at'];
+    return value === null || value === undefined ? null : String(value);
+  }
+
+  static async getEffectivePricingConfig(
+    serviceSlug: string | null | undefined,
+    _market?: unknown,
+    _zone?: unknown
+  ): Promise<EffectivePricingConfig> {
+    const canonical = this.canonicalServiceSlug(serviceSlug || 'ride');
+    const candidates = canonical === 'errand'
+      ? ['errand', 'shop', 'shopping']
+      : canonical === 'van-moving'
+        ? ['van-moving', 'van_moving', 'van', 'move']
+        : [canonical];
+    const market = this.isJsonObject(_market) ? _market : {};
+    const requestedCountry = String(
+      market['countryCode'] ||
+      market['country_code'] ||
+      market['country'] ||
+      'GB'
+    ).trim().toUpperCase();
+    const requestedCity = String(
+      market['city'] ||
+      market['cityName'] ||
+      market['market_city'] ||
+      ''
+    ).trim().toLowerCase();
+    const requestedZone = String(
+      (typeof _zone === 'string' ? _zone : '') ||
+      (this.isJsonObject(_zone) ? (_zone['zone_id'] || _zone['id'] || _zone['name']) : '') ||
+      ''
+    ).trim().toLowerCase();
+
+    const { data, error } = await supabaseAdmin
+      .from('pricing_config')
+      .select('*')
+      .in('service_type', candidates)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false, nullsFirst: false });
+
+    if (error) {
+      console.warn('[MarketplaceConfig] pricing_config lookup failed:', {
+        serviceSlug,
+        canonical,
+        error: error.message
+      });
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const matchingRows = rows
+      .filter((row: any) => {
+        const rowCountry = String(row.country_code || 'GB').trim().toUpperCase();
+        const rowCity = String(row.market_city || '').trim().toLowerCase();
+        const rowZone = String(row.zone_id || '').trim().toLowerCase();
+
+        if (rowCountry && rowCountry !== requestedCountry) return false;
+        if (rowCity && rowCity !== requestedCity) return false;
+        if (rowZone && rowZone !== requestedZone) return false;
+
+        return true;
+      })
+      .sort((a: any, b: any) => this.pricingSpecificityScore(b, requestedCountry, requestedCity, requestedZone) -
+        this.pricingSpecificityScore(a, requestedCountry, requestedCity, requestedZone));
+
+    const selected = matchingRows[0] || rows[0] || null;
+
+    if (!selected) {
+      console.warn('[MarketplaceConfig] pricing_config missing; using safe zero-impact pricing fallback:', {
+        serviceSlug,
+        canonical,
+        requestedCountry,
+        requestedCity,
+        requestedZone
+      });
+      return {
+        serviceSlug: canonical,
+        baseFare: 0,
+        perKm: 0,
+        perMin: 0,
+        serviceFee: 0,
+        minimumFare: 0,
+        currencyCode: null,
+        freeIncludedItems: 0,
+        extraItemFee: 0,
+        largeShoppingSurcharge: 0,
+        largeShoppingThreshold: 0,
+        peakMultiplier: 1,
+        weatherMultiplier: 1,
+        source: 'safe_zero_default',
+        pricingConfigId: null,
+        configVersion: null
+      };
+    }
+
+    return {
+      serviceSlug: canonical,
+      baseFare: this.numberFrom(selected.base_fare),
+      perKm: this.numberFrom(selected.per_km),
+      perMin: this.numberFrom(selected.per_min),
+      serviceFee: this.numberFrom(selected.service_fee),
+      minimumFare: this.numberFrom(selected.minimum_fare),
+      currencyCode: selected.currency_code ? String(selected.currency_code).toUpperCase() : null,
+      freeIncludedItems: Math.max(0, Math.round(this.numberFrom(selected.free_included_items))),
+      extraItemFee: this.numberFrom(selected.extra_item_fee),
+      largeShoppingSurcharge: this.numberFrom(selected.large_shopping_surcharge),
+      largeShoppingThreshold: this.numberFrom(selected.large_shopping_threshold),
+      peakMultiplier: this.numberFrom(selected.peak_multiplier, 1),
+      weatherMultiplier: this.numberFrom(selected.weather_multiplier, 1),
+      source: 'pricing_config',
+      pricingConfigId: selected.id ?? null,
+      configVersion: selected.updated_at ?? null
+    };
+  }
+
+  private static pricingSpecificityScore(row: any, country: string, city: string, zone: string): number {
+    const rowCountry = String(row?.country_code || 'GB').trim().toUpperCase();
+    const rowCity = String(row?.market_city || '').trim().toLowerCase();
+    const rowZone = String(row?.zone_id || '').trim().toLowerCase();
+
+    let score = 0;
+    if (rowCountry === country) score += 100;
+    if (rowCity && rowCity === city) score += 40;
+    if (!rowCity) score += 10;
+    if (rowZone && rowZone === zone) score += 25;
+    if (!rowZone) score += 5;
+
+    return score;
+  }
+
   static async getCommissionSettings(tenantId: string | null = null): Promise<CommissionSettings> {
     const fallbackPercent = this.getCommissionFallbackPercent();
     const defaults: CommissionSettings = {
+      enabled: fallbackPercent > 0,
       percent: fallbackPercent,
       minFee: 0,
       maxFee: null,
-      platformFeePercent: 0
+      platformFeePercent: 0,
+      source: fallbackPercent > 0 ? 'environment' : 'safe_zero_default',
+      configVersion: null
     };
 
     const raw = await this.getRawSetting('commission', tenantId);
@@ -431,10 +634,13 @@ export class MarketplaceConfigService {
       const value = { ...defaults, ...raw } as CommissionSettings;
       const maxFee = value.maxFee === null || value.maxFee === undefined ? null : Number(value.maxFee);
       const settings: CommissionSettings = {
+        enabled: this.parseEnabledValue((value as any).enabled, true),
         percent: Number(value.percent ?? fallbackPercent),
         minFee: Number(value.minFee ?? 0),
         maxFee,
-        platformFeePercent: Number(value.platformFeePercent ?? 0)
+        platformFeePercent: Number(value.platformFeePercent ?? 0),
+        source: 'marketplace_settings',
+        configVersion: this.settingVersion(raw)
       };
       this.setCached(tenantId, 'commission', settings);
       this.setLastKnownCommission(tenantId, settings);
@@ -448,21 +654,75 @@ export class MarketplaceConfigService {
     }
 
     const fallbackSettings: CommissionSettings = {
+      enabled: fallbackPercent > 0,
       percent: fallbackPercent,
       minFee: 0,
       maxFee: null,
-      platformFeePercent: 0
+      platformFeePercent: 0,
+      source: fallbackPercent > 0 ? 'environment' : 'safe_zero_default',
+      configVersion: null
     };
-    console.warn(`[MarketplaceConfig] commission fallback used: environment fallback ${fallbackPercent}%`, { tenantId, ...fallbackSettings });
+    console.warn(`[MarketplaceConfig] commission fallback used: ${fallbackSettings.source}`, { tenantId, ...fallbackSettings });
     return fallbackSettings;
+  }
+
+  static async getEffectivePlatformFeeConfig(
+    serviceSlug: string | null | undefined,
+    _market?: unknown,
+    tenantId: string | null = null
+  ): Promise<PlatformFeeSettings> {
+    const canonical = this.canonicalServiceSlug(serviceSlug || '');
+    const raw = await this.getRawSetting('platform_fee', tenantId);
+    const config = this.isJsonObject(raw) ? raw : null;
+
+    if (!config) {
+      console.warn('[MarketplaceConfig] platform_fee missing; using safe zero-impact platform fee fallback', {
+        serviceSlug,
+        canonical,
+        tenantId
+      });
+      return {
+        enabled: false,
+        type: 'percentage',
+        percent: 0,
+        fixedAmount: 0,
+        minFee: 0,
+        maxFee: null,
+        applyToServices: [],
+        source: 'safe_zero_default',
+        configVersion: null
+      };
+    }
+
+    const rawServices = Array.isArray(config['applyToServices'])
+      ? (config['applyToServices'] as unknown[])
+      : [];
+    const applyToServices = rawServices.map((entry) => this.canonicalServiceSlug(String(entry)));
+    const appliesToService = applyToServices.length === 0 || applyToServices.includes(canonical);
+    const rawType = String(config['type'] || 'percentage');
+    const type: PlatformFeeMode = rawType === 'fixed' || rawType === 'fixed_plus_percentage'
+      ? rawType
+      : 'percentage';
+
+    return {
+      enabled: this.parseEnabledValue(config['enabled'], true) && appliesToService,
+      type,
+      percent: this.numberFrom(config['percent']),
+      fixedAmount: this.numberFrom(config['fixedAmount'] ?? config['fixed_amount']),
+      minFee: this.numberFrom(config['minFee'] ?? config['min_fee']),
+      maxFee: this.nullableNumberFrom(config['maxFee'] ?? config['max_fee']),
+      applyToServices,
+      source: 'marketplace_settings',
+      configVersion: this.settingVersion(raw)
+    };
   }
 
   static async getDynamicPricingSettings(
     tenantId: string | null = null
   ): Promise<DynamicPricingSettings> {
     const raw = await this.getSetting<DynamicPricingSettings>('dynamic_pricing', tenantId, {
-      enabled: true,
-      maxSurge: 3.0,
+      enabled: false,
+      maxSurge: 1,
       trafficMultiplier: 1,
       weatherMultiplier: 1,
       demandMultiplier: 1,
@@ -470,22 +730,23 @@ export class MarketplaceConfigService {
       supplyScarcityMultiplier: 1,
       rainMultiplier: 1,
       floodMultiplier: 1,
-      peakMultiplier: 1.15,
+      peakMultiplier: 1,
       airportSurcharge: 0,
       publicHolidayMultiplier: 1,
       eventMultiplier: 1,
       nearbyDriverDiscount: 1,
       minimumFare: 0,
       maximumFareCap: 0,
-      nightMultiplier: 1.25,
-      timeOfDayEnabled: true,
-      demandSupplyEnabled: true
+      nightMultiplier: 1,
+      timeOfDayEnabled: false,
+      demandSupplyEnabled: false
     });
 
     const asAny = raw as any;
+    const maxMultiplier = Number(asAny?.maxMultiplier ?? raw?.maxSurge ?? 1);
     return {
-      enabled: Boolean(raw?.enabled ?? true),
-      maxSurge: Number(raw?.maxSurge ?? 3.0),
+      enabled: Boolean(raw?.enabled ?? false),
+      maxSurge: Number(raw?.maxSurge ?? maxMultiplier ?? 1),
       trafficMultiplier: Number(asAny?.trafficMultiplier ?? 1),
       weatherMultiplier: Number(asAny?.weatherMultiplier ?? 1),
       demandMultiplier: Number(asAny?.demandMultiplier ?? 1),
@@ -500,12 +761,55 @@ export class MarketplaceConfigService {
       nearbyDriverDiscount: Number(asAny?.nearbyDriverDiscount ?? 1),
       minimumFare: Number(asAny?.minimumFare ?? 0),
       maximumFareCap: Number(asAny?.maximumFareCap ?? 0),
-      nightMultiplier: Number(asAny?.nightMultiplier ?? 1.25),
-      timeOfDayEnabled: Boolean(raw?.timeOfDayEnabled ?? true),
-      demandSupplyEnabled: Boolean(raw?.demandSupplyEnabled ?? true),
+      nightMultiplier: Number(asAny?.nightMultiplier ?? 1),
+      timeOfDayEnabled: Boolean(raw?.timeOfDayEnabled ?? false),
+      demandSupplyEnabled: Boolean(raw?.demandSupplyEnabled ?? false),
       weatherEnabled: Boolean(raw?.weatherEnabled ?? false),
       trafficEnabled: Boolean(raw?.trafficEnabled ?? false),
       eventMultiplierEnabled: Boolean(raw?.eventMultiplierEnabled ?? false)
+    };
+  }
+
+  static async getEffectiveDynamicPricingConfig(
+    _serviceSlug?: string | null,
+    _market?: unknown,
+    _zone?: unknown,
+    tenantId: string | null = null
+  ): Promise<EffectiveDynamicPricingSettings> {
+    const raw = await this.getRawSetting('dynamic_pricing', tenantId);
+    const settings = await this.getDynamicPricingSettings(tenantId);
+    const asAny = this.isJsonObject(raw) ? raw : {};
+    const maxMultiplier = this.numberFrom(asAny['maxMultiplier'] ?? settings.maxSurge, settings.maxSurge || 1);
+
+    return {
+      ...settings,
+      maxSurge: maxMultiplier,
+      maxMultiplier,
+      minimumDemandRatio: this.numberFrom(asAny['minimumDemandRatio'] ?? asAny['minimum_demand_ratio']),
+      shortTripMaxMultiplier: this.numberFrom(asAny['shortTripMaxMultiplier'] ?? asAny['short_trip_max_multiplier'], 1),
+      shortTripMaxAmount: this.numberFrom(asAny['shortTripMaxAmount'] ?? asAny['short_trip_max_amount']),
+      source: this.isJsonObject(raw) ? 'marketplace_settings' : 'safe_zero_default',
+      configVersion: this.settingVersion(raw)
+    };
+  }
+
+  static async getEffectiveWaitingConfig(
+    _serviceSlug?: string | null,
+    _market?: unknown,
+    tenantId: string | null = null
+  ): Promise<WaitingRulesSettings> {
+    const raw = await this.getRawSetting('waiting_rules', tenantId);
+    const config = this.isJsonObject(raw) ? raw : {};
+    return {
+      enabled: this.isJsonObject(raw) ? this.parseEnabledValue(config['enabled'], false) : false,
+      freeWaitingMinutes: this.numberFrom(config['freeWaitingMinutes'] ?? config['free_waiting_minutes']),
+      pricePerMinute: this.numberFrom(config['pricePerMinute'] ?? config['price_per_minute']),
+      maximumWaitingFee: this.numberFrom(config['maximumWaitingFee'] ?? config['maximum_waiting_fee']),
+      cancellationThresholdMinutes: this.numberFrom(config['cancellationThresholdMinutes'] ?? config['cancellation_threshold_minutes']),
+      airportFreeWaitingMinutes: this.numberFrom(config['airportFreeWaitingMinutes'] ?? config['airport_free_waiting_minutes']),
+      accessibilityFreeWaitingMinutes: this.numberFrom(config['accessibilityFreeWaitingMinutes'] ?? config['accessibility_free_waiting_minutes']),
+      source: this.isJsonObject(raw) ? 'marketplace_settings' : 'safe_zero_default',
+      configVersion: this.settingVersion(raw)
     };
   }
 
@@ -1217,13 +1521,14 @@ export class MarketplaceConfigService {
     };
   }
 
-  static async getEffectiveCommissionPercent(
+  static async getEffectiveCommissionConfig(
     serviceTypeSlug: string | null,
     cityZone: string | null,
     driverTier: string | null,
     tenantId: string | null = null
-  ): Promise<number> {
+  ): Promise<CommissionSettings> {
     const base = await this.getCommissionSettings(tenantId);
+    const canonicalService = this.canonicalServiceSlug(serviceTypeSlug || '');
 
     const now = new Date().toISOString();
     let query = supabaseAdmin
@@ -1243,17 +1548,17 @@ export class MarketplaceConfigService {
 
     if (error) {
       console.warn('[MarketplaceConfig] commission override lookup error, falling back to base commission from marketplace_settings:', error.message);
-      return base.percent;
+      return base;
     }
 
     if (!overrides || overrides.length === 0) {
       console.warn('[MarketplaceConfig] no active commission overrides, using base commission from marketplace_settings:', base.percent);
-      return base.percent;
+      return base;
     }
 
     const matches = (overrides as CommissionOverride[]).filter(o => {
       const tenantMatch = o.tenant_id === null || o.tenant_id === tenantId;
-      const serviceMatch = o.service_type_slug === null || o.service_type_slug === serviceTypeSlug;
+      const serviceMatch = o.service_type_slug === null || this.canonicalServiceSlug(o.service_type_slug) === canonicalService;
       const zoneMatch = o.city_zone === null || o.city_zone === cityZone;
       const tierMatch = o.driver_tier === null || o.driver_tier === driverTier;
       const timeMatch =
@@ -1264,7 +1569,7 @@ export class MarketplaceConfigService {
 
     if (matches.length === 0) {
       console.warn('[MarketplaceConfig] no matching commission override, using base commission from marketplace_settings:', base.percent);
-      return base.percent;
+      return base;
     }
 
     // Pick the most specific override (most matching dimensions)
@@ -1276,10 +1581,27 @@ export class MarketplaceConfigService {
     scored.sort((a, b) => b.score - a.score);
     const winner = scored[0];
 
-    return winner?.commission_percent ?? base.percent;
+    return {
+      ...base,
+      enabled: true,
+      percent: Number(winner?.commission_percent ?? base.percent),
+      platformFeePercent: 0,
+      source: 'marketplace_commission_overrides',
+      configVersion: winner?.id ?? base.configVersion ?? null
+    };
   }
 
-  private static canonicalServiceSlug(slug: string): string {
+  static async getEffectiveCommissionPercent(
+    serviceTypeSlug: string | null,
+    cityZone: string | null,
+    driverTier: string | null,
+    tenantId: string | null = null
+  ): Promise<number> {
+    const config = await this.getEffectiveCommissionConfig(serviceTypeSlug, cityZone, driverTier, tenantId);
+    return config.enabled === false ? 0 : config.percent;
+  }
+
+  static canonicalServiceSlug(slug: string): string {
     const raw = String(slug || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
 
     if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';

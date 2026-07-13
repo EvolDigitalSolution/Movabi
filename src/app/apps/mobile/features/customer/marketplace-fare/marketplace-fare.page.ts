@@ -214,6 +214,16 @@ import { StripeCardElement } from '@stripe/stripe-js';
               <!-- Expanded breakdown -->
               @if (showBreakdown() && fareBreakdown()) {
                 <div class="mt-3 bg-white/70 rounded-2xl border border-amber-100/60 p-4 space-y-2.5">
+                  @for (row of fareRows(); track row.label) {
+                    <div class="flex justify-between items-center">
+                      <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full" [class]="row.dotClass"></div>
+                        <span class="text-sm text-slate-600">{{ row.label }}</span>
+                      </div>
+                      <span class="font-semibold" [class]="row.amountClass">{{ formatPrice(row.amount) }}</span>
+                    </div>
+                  }
+                  @if (false) {
                   @if (fareBreakdown().baseFare !== undefined) {
                     <div class="flex justify-between items-center">
                       <div class="flex items-center gap-2">
@@ -253,6 +263,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                       </div>
                       <span class="font-semibold text-slate-900">{{ formatPrice(fareBreakdown().serviceFee || fareBreakdown().platformFee) }}</span>
                     </div>
+                  }
                   }
                   <div class="pt-2 border-t border-amber-100/60 flex justify-between items-center">
                     <span class="text-sm font-bold text-slate-700">Total service fare</span>
@@ -301,11 +312,30 @@ import { StripeCardElement } from '@stripe/stripe-js';
 
           <!-- ── HYBRID OFFER INPUT ── -->
           @if (showHybridOfferInput()) {
-            <div class="bg-white rounded-3xl border border-amber-100 shadow-sm p-5 mb-4">
+            <div #offerForm class="bg-white rounded-3xl border border-amber-100 shadow-sm p-5 mb-4 scroll-mt-24">
               <label class="text-sm font-bold text-slate-700 mb-2 block">Your offer</label>
+              <div class="bg-amber-50 rounded-2xl border border-amber-100 p-3 mb-3 space-y-1">
+                <div class="flex justify-between text-sm">
+                  <span class="text-slate-600">Suggested service fare</span>
+                  <span class="font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</span>
+                </div>
+                @if (isErrand() && itemBudget() > 0) {
+                  <div class="flex justify-between text-sm">
+                    <span class="text-slate-600">Shopping budget reserved</span>
+                    <span class="font-bold text-emerald-700">{{ formatPrice(itemBudget()) }}</span>
+                  </div>
+                }
+                <p class="text-xs text-slate-500">Your offer changes the service fare only. The shopping budget stays reserved separately.</p>
+                <div class="flex justify-between text-sm pt-1 border-t border-amber-100">
+                  <span class="font-semibold text-slate-700">Preview total authorisation</span>
+                  <span class="font-black text-slate-900">{{ formatPrice(hybridOfferTotalPreview()) }}</span>
+                </div>
+              </div>
               <input
+                #offerAmountInput
                 type="number"
-                [(ngModel)]="hybridOfferAmount"
+                [ngModel]="hybridOfferAmount()"
+                (ngModelChange)="setHybridOfferAmount($event)"
                 class="w-full py-3 px-4 border border-slate-200 rounded-2xl font-display font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="Enter your offer amount"
               />
@@ -313,6 +343,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                 <button
                   type="button"
                   (click)="submitHybridOffer()"
+                  [disabled]="!hybridOfferAmount() || hybridOfferAmount() <= 0"
                   class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg"
                 >
                   Send Offer
@@ -548,6 +579,8 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     @ViewChild('ionContent') ionContent?: IonContent;
     @ViewChild('counterInputSection') counterInputSection?: ElementRef;
+    @ViewChild('offerForm') offerForm?: ElementRef<HTMLElement>;
+    @ViewChild('offerAmountInput') offerAmountInput?: ElementRef<HTMLInputElement>;
 
     booking = signal<Booking | null>(null);
     effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
@@ -689,15 +722,64 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     suggestedFare() {
         const job = this.booking();
-        return job?.agreed_fare || job?.total_price || 0;
+        const fb = this.fareBreakdown();
+        return Number(
+            job?.agreed_fare ||
+            fb?.['serviceFare'] ||
+            fb?.['total'] ||
+            job?.total_price ||
+            0
+        );
     }
 
     paymentTotal(): number {
-        return Number(this.suggestedFare()) + this.itemBudget();
+        const fb = this.fareBreakdown();
+        return Number(fb?.['totalAuthorisation'] || (Number(this.suggestedFare()) + this.itemBudget()));
     }
 
-    fareBreakdown() {
+    fareBreakdown(): any {
         return (this.booking() as any)?.fare_breakdown || null;
+    }
+
+    fareRows(): Array<{ label: string; amount: number; dotClass: string; amountClass: string }> {
+        const fb = this.fareBreakdown();
+        if (!fb) return [];
+
+        const serviceFare = this.toMoney(this.suggestedFare());
+        const baseFare = this.toMoney(fb['baseFare']);
+        const distanceFare = this.toMoney(fb['distanceFare'] ?? fb['distanceCost']);
+        const durationFare = this.toMoney(fb['durationFare'] ?? fb['durationCost']);
+        const extrasFare = this.toMoney(fb['extrasFare'] ?? fb['serviceFee']);
+        const minimumFareAdjustment = this.toMoney(fb['minimumFareAdjustment']);
+        const maximumFareAdjustment = this.toMoney(fb['maximumFareAdjustment']);
+        const platformFee = this.toMoney(fb['platformFeeAmount'] ?? fb['platformFee']);
+        let pricingAdjustment = this.toMoney(fb['pricingAdjustmentAmount'] ?? fb['dynamicPricingAmount']);
+
+        if (fb['pricingAdjustmentAmount'] === undefined && fb['serviceFare'] === undefined) {
+            const visibleWithoutAdjustment = this.toMoney(
+                baseFare + distanceFare + durationFare + extrasFare + minimumFareAdjustment - maximumFareAdjustment + platformFee
+            );
+            const legacyTotal = this.toMoney(visibleWithoutAdjustment + pricingAdjustment);
+            if (Math.abs(legacyTotal - serviceFare) > 0.01) {
+                pricingAdjustment = this.toMoney(serviceFare - visibleWithoutAdjustment);
+            }
+        }
+
+        const rows: Array<{ label: string; amount: number; dotClass: string; amountClass: string }> = [];
+        const push = (label: string, amount: number, dotClass: string, amountClass = 'text-slate-900') => {
+            if (Math.abs(amount) >= 0.01) rows.push({ label, amount, dotClass, amountClass });
+        };
+
+        push('Base fare', baseFare, 'bg-slate-400');
+        push('Distance', distanceFare, 'bg-blue-400');
+        push('Time', durationFare, 'bg-sky-400');
+        push('Service extras', extrasFare, 'bg-violet-400');
+        push('Minimum fare adjustment', minimumFareAdjustment, 'bg-amber-400', 'text-amber-700');
+        push('Price cap discount', -Math.abs(maximumFareAdjustment), 'bg-emerald-400', 'text-emerald-700');
+        push(pricingAdjustment < 0 ? 'Marketplace discount' : 'Dynamic pricing increase', pricingAdjustment, 'bg-amber-400', pricingAdjustment < 0 ? 'text-emerald-700' : 'text-amber-700');
+        push('Platform fee', platformFee, 'bg-purple-400');
+
+        return rows;
     }
 
     dynamicMultiplier() {
@@ -724,6 +806,19 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     formatPrice(amount: number | string | null | undefined): string {
         const value = Number(amount || 0);
         return this.config.formatCurrency(value);
+    }
+
+    toMoney(value: unknown): number {
+        const n = Number(value);
+        return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+    }
+
+    setHybridOfferAmount(value: unknown): void {
+        this.hybridOfferAmount.set(this.toMoney(value));
+    }
+
+    hybridOfferTotalPreview(): number {
+        return this.toMoney(this.hybridOfferAmount()) + this.itemBudget();
     }
 
     formatDuration(seconds: number | null | undefined): string {
@@ -877,6 +972,16 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     openHybridOfferInput() {
         this.hybridOfferAmount.set(Math.round(this.suggestedFare() * 0.9));
         this.showHybridOfferInput.set(true);
+        setTimeout(() => {
+            const el = this.offerForm?.nativeElement;
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => this.offerAmountInput?.nativeElement?.focus(), 350);
+                return;
+            }
+
+            void this.ionContent?.scrollToBottom(350);
+        }, 0);
     }
 
     async submitHybridOffer() {

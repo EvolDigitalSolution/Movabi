@@ -51,8 +51,17 @@ router.post('/payout-breakdown', async (req: Request, res: Response) => {
       null
     );
 
-    const commissionSettings = await MarketplaceConfigService.getCommissionSettings();
-    const platformFeePercent = Number(commissionSettings.platformFeePercent ?? 0);
+    const platformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(null);
+    const platformFeeAmount = platformFeeConfig.enabled
+      ? platformFeeConfig.type === 'fixed'
+        ? Number(platformFeeConfig.fixedAmount || 0)
+        : platformFeeConfig.type === 'fixed_plus_percentage'
+          ? Number(platformFeeConfig.fixedAmount || 0) + (Number(totalPrice) * (Number(platformFeeConfig.percent || 0) / 100))
+          : Number(totalPrice) * (Number(platformFeeConfig.percent || 0) / 100)
+      : 0;
+    const platformFeePercent = Number(totalPrice) > 0
+      ? (platformFeeAmount / Number(totalPrice)) * 100
+      : 0;
 
     const breakdown = LogisticsService.calculatePayout(
       totalPrice,

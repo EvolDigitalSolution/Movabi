@@ -31,8 +31,13 @@ export interface WalletTransaction {
 
 export interface AdminPricingRule extends ServiceType {
   pricing_config_id?: string | null;
+  country_code?: string | null;
   currency_code?: string | null;
   currency_symbol?: string | null;
+  locale?: string | null;
+  distance_unit?: string | null;
+  market_city?: string | null;
+  zone_id?: string | null;
   is_active: boolean;
   per_min?: number | string | null;
   service_fee?: number | string | null;
@@ -473,30 +478,63 @@ export class AdminService {
         .in('service_type', slugs)
       : { data: [] as any[] };
 
-    const configsByService = new Map<string, any>();
-    (configs || []).forEach((config: any) => configsByService.set(String(config.service_type), config));
+    const pricingRows = (configs || [])
+      .map((config: any) => {
+        const service = services.find((candidate: any) => String(candidate.slug) === String(config.service_type)) as any;
+        if (!service) return null;
 
-    return services.map((service: any) => {
-      const config = configsByService.get(String(service.slug));
+        return {
+          ...service,
+          pricing_config_id: config?.id || null,
+          base_price: config?.base_fare ?? service.base_price,
+          price_per_km: config?.per_km ?? service.price_per_km,
+          per_min: config?.per_min ?? 0,
+          service_fee: config?.service_fee ?? 0,
+          minimum_fare: config?.minimum_fare ?? service.base_price,
+          country_code: config?.country_code ?? 'GB',
+          currency_code: config?.currency_code ?? service.currency_code ?? 'GBP',
+          currency_symbol: config?.currency_symbol ?? service.currency_symbol ?? this.symbolFromCode(config?.currency_code || service.currency_code || 'GBP'),
+          locale: config?.locale ?? null,
+          distance_unit: config?.distance_unit ?? null,
+          market_city: config?.market_city ?? null,
+          zone_id: config?.zone_id ?? null,
+          is_active: config?.is_active ?? service.is_active ?? true,
+          free_included_items: config?.free_included_items ?? 1,
+          extra_item_fee: config?.extra_item_fee ?? 0.75,
+          large_shopping_surcharge: config?.large_shopping_surcharge ?? 0,
+          large_shopping_threshold: config?.large_shopping_threshold ?? 50,
+          peak_multiplier: config?.peak_multiplier ?? 1,
+          weather_multiplier: config?.weather_multiplier ?? 1
+        } as AdminPricingRule;
+      })
+      .filter(Boolean) as AdminPricingRule[];
 
-      return {
+    const hasDefaultRow = (service: any) => pricingRows.some(row =>
+      String(row.slug) === String(service.slug) &&
+      String(row.country_code || 'GB').toUpperCase() === 'GB' &&
+      !String(row.market_city || '').trim() &&
+      !String(row.zone_id || '').trim()
+    );
+
+    const serviceDefaults = services
+      .filter((service: any) => !hasDefaultRow(service))
+      .map((service: any) => ({
         ...service,
-        pricing_config_id: config?.id || null,
-        base_price: config?.base_fare ?? service.base_price,
-        price_per_km: config?.per_km ?? service.price_per_km,
-        per_min: config?.per_min ?? 0,
-        service_fee: config?.service_fee ?? 0,
-        minimum_fare: config?.minimum_fare ?? service.base_price,
-        currency_code: config?.currency_code ?? service.currency_code ?? 'GBP',
-        currency_symbol: service.currency_symbol ?? this.symbolFromCode(config?.currency_code || service.currency_code || 'GBP'),
-        is_active: config?.is_active ?? service.is_active ?? true,
-        free_included_items: config?.free_included_items ?? 1,
-        extra_item_fee: config?.extra_item_fee ?? 0.75,
-        large_shopping_surcharge: config?.large_shopping_surcharge ?? 0,
-        large_shopping_threshold: config?.large_shopping_threshold ?? 50,
-        peak_multiplier: config?.peak_multiplier ?? 1,
-        weather_multiplier: config?.weather_multiplier ?? 1
-      } as AdminPricingRule;
+        pricing_config_id: null,
+        country_code: 'GB',
+        currency_code: service.currency_code ?? 'GBP',
+        currency_symbol: service.currency_symbol ?? this.symbolFromCode(service.currency_code || 'GBP'),
+        locale: 'en-GB',
+        distance_unit: 'km',
+        market_city: null,
+        zone_id: null,
+        is_active: service.is_active ?? true
+      } as AdminPricingRule));
+
+    return [...pricingRows, ...serviceDefaults].sort((a, b) => {
+      const aKey = `${a.country_code || 'GB'}-${a.market_city || ''}-${a.zone_id || ''}-${a.slug}`;
+      const bKey = `${b.country_code || 'GB'}-${b.market_city || ''}-${b.zone_id || ''}-${b.slug}`;
+      return aKey.localeCompare(bKey);
     });
   }
 
@@ -842,28 +880,29 @@ export class AdminService {
   }
 
   async createServiceType(payload: any) {
-    const servicePayload = this.cleanServiceTypePayload(payload);
     const { data, error } = await this.supabase
       .from('service_types')
-      .insert(servicePayload)
       .select()
-      .single();
+      .eq('slug', String(payload?.slug || '').trim())
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) throw new Error('Select a valid service before saving pricing.');
+
     await this.upsertPricingConfig(data.slug, payload);
     return data;
   }
 
   async updateServiceType(id: string, payload: any) {
-    const servicePayload = this.cleanServiceTypePayload(payload);
     const { data, error } = await this.supabase
       .from('service_types')
-      .update(servicePayload)
-      .eq('id', id)
       .select()
-      .single();
+      .eq('id', id)
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) throw new Error('Service type was not found.');
+
     await this.upsertPricingConfig(data.slug, payload);
     return data;
   }
@@ -877,19 +916,41 @@ export class AdminService {
     if (error) throw error;
   }
 
+  async deletePricingRule(rule: AdminPricingRule) {
+    if (!rule.pricing_config_id) {
+      throw new Error('This default rule has not been saved as a country pricing rule yet.');
+    }
+
+    const { error } = await this.supabase
+      .from('pricing_config')
+      .delete()
+      .eq('id', rule.pricing_config_id);
+
+    if (error) throw error;
+  }
+
   private cleanServiceTypePayload(payload: any) {
     return cleanServiceTypePayload(payload);
   }
 
   private async upsertPricingConfig(serviceType: string, payload: any) {
+    const countryCode = String(payload?.country_code || 'GB').trim().toUpperCase();
+    const marketCity = String(payload?.market_city || '').trim();
+    const zoneId = String(payload?.zone_id || '').trim();
     const cleanPayload = {
       service_type: String(serviceType || payload?.slug || '').trim(),
+      country_code: countryCode,
+      market_city: marketCity || null,
+      zone_id: zoneId || null,
       base_fare: Number(payload?.base_price || 0),
       per_km: Number(payload?.price_per_km || 0),
       per_min: Number(payload?.per_min || 0),
       service_fee: Number(payload?.service_fee || 0),
       minimum_fare: Number(payload?.minimum_fare || payload?.base_price || 0),
       currency_code: String(payload?.currency_code || 'GBP').trim().toUpperCase(),
+      currency_symbol: String(payload?.currency_symbol || this.symbolFromCode(payload?.currency_code || 'GBP')).trim(),
+      locale: String(payload?.locale || '').trim() || null,
+      distance_unit: String(payload?.distance_unit || 'km').trim().toLowerCase(),
       is_active: payload?.is_active === true,
       updated_at: new Date().toISOString(),
 
@@ -901,9 +962,39 @@ export class AdminService {
       weather_multiplier: Number(payload?.weather_multiplier ?? 1)
     };
 
+    const query = this.supabase
+      .from('pricing_config')
+      .select('id')
+      .eq('service_type', cleanPayload.service_type)
+      .eq('country_code', cleanPayload.country_code);
+
+    const scopedQuery = cleanPayload.market_city
+      ? query.eq('market_city', cleanPayload.market_city)
+      : query.is('market_city', null);
+
+    const finalQuery = cleanPayload.zone_id
+      ? scopedQuery.eq('zone_id', cleanPayload.zone_id)
+      : scopedQuery.is('zone_id', null);
+
+    const { data: existing, error: lookupError } = await finalQuery.maybeSingle();
+    if (lookupError) throw lookupError;
+
+    if (existing?.id) {
+      const { error } = await this.supabase
+        .from('pricing_config')
+        .update(cleanPayload)
+        .eq('id', existing.id);
+
+      if (error) throw error;
+      return;
+    }
+
     const { error } = await this.supabase
       .from('pricing_config')
-      .upsert(cleanPayload, { onConflict: 'service_type' });
+      .insert({
+        ...cleanPayload,
+        created_at: new Date().toISOString()
+      });
 
     if (error) throw error;
   }

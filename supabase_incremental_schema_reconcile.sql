@@ -2360,17 +2360,42 @@ CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active) WHERE is_activ
 -- not inherit ride or van-style minimums for sub-1km local jobs.
 CREATE TABLE IF NOT EXISTS pricing_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    service_type TEXT NOT NULL UNIQUE,
+    service_type TEXT NOT NULL,
+    country_code TEXT,
+    market_city TEXT,
+    zone_id TEXT,
     base_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
     per_km NUMERIC(10,2) NOT NULL DEFAULT 0,
     per_min NUMERIC(10,2) NOT NULL DEFAULT 0,
     service_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
     minimum_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
     currency_code TEXT NOT NULL DEFAULT 'GBP',
+    currency_symbol TEXT,
+    locale TEXT,
+    distance_unit TEXT DEFAULT 'km',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.pricing_config
+    DROP CONSTRAINT IF EXISTS pricing_config_service_type_key;
+
+ALTER TABLE public.pricing_config
+    ADD COLUMN IF NOT EXISTS country_code TEXT,
+    ADD COLUMN IF NOT EXISTS market_city TEXT,
+    ADD COLUMN IF NOT EXISTS zone_id TEXT,
+    ADD COLUMN IF NOT EXISTS currency_symbol TEXT,
+    ADD COLUMN IF NOT EXISTS locale TEXT,
+    ADD COLUMN IF NOT EXISTS distance_unit TEXT DEFAULT 'km';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pricing_config_market_service
+    ON public.pricing_config (
+        COALESCE(country_code, 'GB'),
+        COALESCE(NULLIF(BTRIM(market_city), ''), ''),
+        COALESCE(NULLIF(BTRIM(zone_id), ''), ''),
+        service_type
+    );
 
 ALTER TABLE pricing_config ENABLE ROW LEVEL SECURITY;
 
@@ -2391,17 +2416,48 @@ BEGIN
         USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
         WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
-    INSERT INTO pricing_config (service_type, base_fare, per_km, per_min, service_fee, minimum_fare, currency_code, is_active)
-    VALUES ('delivery', 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', TRUE)
-    ON CONFLICT (service_type) DO UPDATE SET
-        base_fare = EXCLUDED.base_fare,
-        per_km = EXCLUDED.per_km,
-        per_min = EXCLUDED.per_min,
-        service_fee = EXCLUDED.service_fee,
-        minimum_fare = EXCLUDED.minimum_fare,
-        currency_code = EXCLUDED.currency_code,
+    INSERT INTO pricing_config (
+        service_type,
+        country_code,
+        market_city,
+        zone_id,
+        base_fare,
+        per_km,
+        per_min,
+        service_fee,
+        minimum_fare,
+        currency_code,
+        currency_symbol,
+        locale,
+        distance_unit,
+        is_active
+    )
+    SELECT 'delivery', 'GB', NULL, NULL, 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', '£', 'en-GB', 'km', TRUE
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM pricing_config
+        WHERE service_type = 'delivery'
+          AND COALESCE(country_code, 'GB') = 'GB'
+          AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+          AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL
+    );
+
+    UPDATE pricing_config
+    SET base_fare = 2.25,
+        per_km = 0.55,
+        per_min = 0.04,
+        service_fee = 0.10,
+        minimum_fare = 2.99,
+        currency_code = 'GBP',
+        currency_symbol = COALESCE(currency_symbol, '£'),
+        locale = COALESCE(locale, 'en-GB'),
+        distance_unit = COALESCE(distance_unit, 'km'),
         is_active = TRUE,
-        updated_at = NOW();
+        updated_at = NOW()
+    WHERE service_type = 'delivery'
+      AND COALESCE(country_code, 'GB') = 'GB'
+      AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+      AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL;
 
     INSERT INTO pricing_rules (service_type_id, currency_code, country_code, base_fare, per_km_rate, minimum_fare)
     SELECT id, 'GBP', 'GB', 2.25, 0.55, 2.99

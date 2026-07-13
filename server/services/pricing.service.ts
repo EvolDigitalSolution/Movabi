@@ -1,6 +1,6 @@
 ﻿import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
-import { MarketplaceConfigService, DynamicPricingSettings } from './marketplace-config.service';
+import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
 
 export interface PricingOptions {
     lat: number;
@@ -69,6 +69,29 @@ export interface FareBreakdown {
     commissionPercent: number;
     source: string;
     extras: Record<string, number>;
+    preAdjustmentFare?: number;
+    pricingAdjustmentType?: 'surge' | 'discount' | 'none';
+    pricingMultiplier?: number;
+    pricingAdjustmentAmount?: number;
+    postAdjustmentFare?: number;
+    minimumFareAdjustment?: number;
+    maximumFareAdjustment?: number;
+    negotiationAdjustment?: number;
+    serviceFareBeforePlatformFee?: number;
+    platformFeeType?: PlatformFeeMode;
+    platformFeeFixed?: number;
+    platformFeePercent?: number;
+    platformFeeAmount?: number;
+    platformFeeSource?: string;
+    platformFeeConfigVersion?: string | null;
+    commissionSource?: string;
+    commissionConfigVersion?: string | null;
+    serviceFare?: number;
+    shoppingBudget?: number;
+    totalAuthorisation?: number;
+    driverGrossEarnings?: number;
+    calculationVersion?: string;
+    reconciliationValid?: boolean;
 }
 
 export class PricingService {
@@ -90,6 +113,7 @@ export class PricingService {
             trafficMultiplier = 1
         } = options;
 
+        const canonicalServiceSlug = MarketplaceConfigService.canonicalServiceSlug(serviceSlug);
         const countryCode = String(options.countryCode || 'GB').toUpperCase();
         const currencyCode = String(options.currencyCode || '').toUpperCase();
 
@@ -110,50 +134,35 @@ export class PricingService {
         let durationCost = 0;
 
         try {
-            // Admin-managed pricing_config is the operational source of truth for
-            // simple per-service pricing. Regional rules remain as fallback.
-            const { data: configRule, error: configError } = await supabaseAdmin
-                .from('pricing_config')
-                .select('*')
-                .eq('service_type', serviceSlug)
-                .eq('is_active', true)
-                .maybeSingle();
+            const pricingConfig = await MarketplaceConfigService.getEffectivePricingConfig(
+                canonicalServiceSlug,
+                { countryCode, currencyCode: currencyCode || undefined, city: city?.name },
+                cityZone
+            );
 
-            if (configError) {
-                console.warn('[PricingService] Pricing config lookup failed:', configError.message);
-            }
-
-            if (configRule) {
-                const baseFare = Number(configRule.base_fare || 0);
-                const perKm = Number(configRule.per_km || 0);
-                const perMin = Number(configRule.per_min || 0);
-                const configServiceFee = Number(configRule.service_fee || 0);
-                const minimumFare = Number(configRule.minimum_fare || 0);
-
-                const freeIncludedItems = Math.max(0, Math.round(Number(configRule.free_included_items ?? 1)));
-                const extraItemFee = Number(configRule.extra_item_fee ?? 0);
-                const largeShoppingSurcharge = Number(configRule.large_shopping_surcharge ?? 0);
-                const largeShoppingThreshold = Number(configRule.large_shopping_threshold ?? 50);
-
-                distanceCost = distanceKm * perKm;
-                durationCost = durationMinutes * perMin;
-                serviceFee = configServiceFee;
+            if (pricingConfig.source === 'pricing_config') {
+                distanceCost = distanceKm * pricingConfig.perKm;
+                durationCost = durationMinutes * pricingConfig.perMin;
+                serviceFee = pricingConfig.serviceFee;
 
                 const extraItemCharge = options.itemCount
-                    ? Math.max(0, (options.itemCount || 0) - freeIncludedItems) * extraItemFee
+                    ? Math.max(0, (options.itemCount || 0) - pricingConfig.freeIncludedItems) * pricingConfig.extraItemFee
                     : 0;
-                const largeShopCharge = (options.budget && options.budget > largeShoppingThreshold)
-                    ? largeShoppingSurcharge
+                const largeShopCharge = (options.budget && options.budget > pricingConfig.largeShoppingThreshold)
+                    ? pricingConfig.largeShoppingSurcharge
                     : 0;
 
                 serviceFee += extraItemCharge + largeShopCharge;
 
-                resolvedBasePrice = this.roundMoney(Math.max(minimumFare, baseFare + distanceCost + durationCost + serviceFee));
-                resolvedCurrencyCode = configRule.currency_code || this.currencyFromCountry(countryCode);
+                resolvedBasePrice = this.roundMoney(Math.max(
+                    pricingConfig.minimumFare,
+                    pricingConfig.baseFare + distanceCost + durationCost + serviceFee
+                ));
+                resolvedCurrencyCode = pricingConfig.currencyCode || this.currencyFromCountry(countryCode);
                 currencySymbol = this.symbolFromCurrency(resolvedCurrencyCode);
-                baseFareUsed = baseFare;
-                pricePerKmUsed = perKm;
-                source = 'pricing_config';
+                baseFareUsed = pricingConfig.baseFare;
+                pricePerKmUsed = pricingConfig.perKm;
+                source = pricingConfig.source;
             }
 
             // 0. New multi-region pricing engine
@@ -162,7 +171,7 @@ export class PricingService {
                     .from('regional_pricing_rules')
                     .select('*')
                     .eq('country_code', countryCode)
-                    .eq('service_slug', serviceSlug)
+                    .eq('service_slug', canonicalServiceSlug)
                     .eq('pricing_plan', pricingPlan)
                     .eq('is_active', true)
                     .maybeSingle()
@@ -289,7 +298,7 @@ export class PricingService {
                             .select('*')
                             .eq('target_country_code', countryCode)
                             .eq('is_active', true)
-                            .or(`service_type_slug.eq.${serviceSlug},service_type_slug.is.null`)
+                                .or(`service_type_slug.eq.${canonicalServiceSlug},service_type_slug.is.null`)
                             .order('service_type_slug', { ascending: false, nullsFirst: false })
                             .limit(1)
                             .maybeSingle();
@@ -341,10 +350,14 @@ export class PricingService {
             }
 
             // Marketplace dynamic pricing: demand/supply, time-of-day, weather/traffic
-            const dynamicSettings = await MarketplaceConfigService.getDynamicPricingSettings(tenantId);
-            const commissionSettings = await MarketplaceConfigService.getCommissionSettings(tenantId);
+            const dynamicSettings = await MarketplaceConfigService.getEffectiveDynamicPricingConfig(
+                canonicalServiceSlug,
+                { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
+                cityZone,
+                tenantId
+            );
             const surgeMultiplier = dynamicSettings.demandSupplyEnabled
-                ? this.getSurgeMultiplier(demand, supply)
+                ? this.getSurgeMultiplier(demand, supply, dynamicSettings)
                 : 1.0;
             const timeMultiplier = dynamicSettings.timeOfDayEnabled
                 ? this.getTimeOfDayMultiplier(dynamicSettings, requestedAt)
@@ -359,7 +372,7 @@ export class PricingService {
             const effectiveFuelMultiplier = Number.isFinite(configuredFuelMultiplier) ? configuredFuelMultiplier : 1;
             const dynamicPricingMultiplier = this.roundMoney(
                 Math.min(
-                    dynamicSettings.maxSurge,
+                    dynamicSettings.maxMultiplier || dynamicSettings.maxSurge || 1,
                     surgeMultiplier *
                         timeMultiplier *
                         effectiveWeatherMultiplier *
@@ -368,34 +381,48 @@ export class PricingService {
                         effectiveFuelMultiplier
                 )
             );
-            const dynamicPricingAmount = this.roundMoney(resolvedBasePrice * (dynamicPricingMultiplier - 1));
-            const preCommissionTotal = this.roundMoney(resolvedBasePrice + dynamicPricingAmount);
+            const displayedBaseFare = this.roundMoney(baseFareUsed);
+            const displayedDistanceCost = this.roundMoney(distanceCost);
+            const displayedDurationCost = this.roundMoney(durationCost);
+            const displayedServiceFee = this.roundMoney(serviceFee);
+            const rawPreAdjustmentFare = this.roundMoney(
+                displayedBaseFare + displayedDistanceCost + displayedDurationCost + displayedServiceFee + taxAmount
+            );
+            const minimumFareAdjustment = this.roundMoney(Math.max(0, resolvedBasePrice - rawPreAdjustmentFare));
+            const preAdjustmentFare = this.roundMoney(rawPreAdjustmentFare + minimumFareAdjustment);
+            const adjustedFare = this.roundMoney(preAdjustmentFare * dynamicPricingMultiplier);
+            const dynamicPricingAmount = this.roundMoney(adjustedFare - preAdjustmentFare);
+            const preCommissionTotal = adjustedFare;
 
-            // Marketplace commission: read from admin config, apply overrides
-            const effectiveCommission = await MarketplaceConfigService.getEffectiveCommissionPercent(
-                serviceSlug,
+            const commissionConfig = await MarketplaceConfigService.getEffectiveCommissionConfig(
+                canonicalServiceSlug,
                 cityZone,
                 driverTier,
                 tenantId
             );
-            commissionRateUsed = this.roundMoney(effectiveCommission);
-            const commissionFee = this.roundMoney(preCommissionTotal * (commissionRateUsed / 100));
-            const platformFeePercent = Number(commissionSettings.platformFeePercent ?? 0);
-            platformFee = this.roundMoney(preCommissionTotal * (platformFeePercent / 100));
-            driverPayout = this.roundMoney(preCommissionTotal - commissionFee - platformFee);
-            const totalPrice = preCommissionTotal;
+            commissionRateUsed = commissionConfig.enabled === false ? 0 : this.roundMoney(commissionConfig.percent);
+            const rawCommissionFee = this.roundMoney(preCommissionTotal * (commissionRateUsed / 100));
+            const commissionFee = this.applyFeeBounds(rawCommissionFee, commissionConfig.minFee, commissionConfig.maxFee);
+            const platformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(
+                canonicalServiceSlug,
+                { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
+                tenantId
+            );
+            platformFee = this.calculatePlatformFee(preCommissionTotal, platformFeeConfig);
+            driverPayout = this.roundMoney(preCommissionTotal - commissionFee);
+            const totalPrice = this.roundMoney(preCommissionTotal + platformFee);
 
             taxAmount = this.roundMoney(taxAmount);
 
             const fareBreakdown: FareBreakdown = {
-                baseFare: this.roundMoney(baseFareUsed),
-                distanceCost: this.roundMoney(distanceCost),
-                durationCost: this.roundMoney(durationCost),
-                serviceFee: this.roundMoney(serviceFee),
+                baseFare: displayedBaseFare,
+                distanceCost: displayedDistanceCost,
+                durationCost: displayedDurationCost,
+                serviceFee: displayedServiceFee,
                 taxAmount,
                 dynamicPricingAmount,
                 commissionAmount: commissionFee,
-                platformFee: commissionFee,
+                platformFee,
                 driverPayout,
                 total: totalPrice,
                 currencyCode: resolvedCurrencyCode,
@@ -410,8 +437,39 @@ export class PricingService {
                     trafficMultiplier: effectiveTrafficMultiplier,
                     demandMultiplier: effectiveDemandMultiplier,
                     fuelMultiplier: effectiveFuelMultiplier
-                }
+                },
+                preAdjustmentFare,
+                pricingAdjustmentType: dynamicPricingAmount > 0 ? 'surge' : (dynamicPricingAmount < 0 ? 'discount' : 'none'),
+                pricingMultiplier: dynamicPricingMultiplier,
+                pricingAdjustmentAmount: dynamicPricingAmount,
+                postAdjustmentFare: preCommissionTotal,
+                minimumFareAdjustment,
+                maximumFareAdjustment: 0,
+                negotiationAdjustment: 0,
+                serviceFareBeforePlatformFee: preCommissionTotal,
+                platformFeeType: platformFeeConfig.type,
+                platformFeeFixed: platformFeeConfig.fixedAmount,
+                platformFeePercent: platformFeeConfig.percent,
+                platformFeeAmount: platformFee,
+                platformFeeSource: platformFeeConfig.source,
+                platformFeeConfigVersion: platformFeeConfig.configVersion,
+                commissionSource: commissionConfig.source,
+                commissionConfigVersion: commissionConfig.configVersion,
+                serviceFare: totalPrice,
+                shoppingBudget: 0,
+                totalAuthorisation: totalPrice,
+                driverGrossEarnings: preCommissionTotal,
+                calculationVersion: 'marketplace-v1'
             };
+            fareBreakdown.reconciliationValid = this.validateFareReconciliation(fareBreakdown);
+
+            if (!fareBreakdown.reconciliationValid) {
+                console.error('[PricingService] fare reconciliation error', {
+                    serviceSlug,
+                    source,
+                    fareBreakdown
+                });
+            }
 
             const jobModes = await MarketplaceConfigService.determineJobModes(serviceSlug, tenantId);
             const marketplaceFlags = {
@@ -421,14 +479,17 @@ export class PricingService {
             };
 
             console.log(
-                `[PricingService] Price resolved: ${currencySymbol}${totalPrice} (base ${resolvedBasePrice}, multiplier ${dynamicPricingMultiplier}, commission ${commissionRateUsed}%) via ${source} for ${serviceSlug} in ${countryCode}`
+                `[PricingService] Price resolved: ${currencySymbol}${totalPrice} (base ${resolvedBasePrice}, multiplier ${dynamicPricingMultiplier}, commission ${commissionRateUsed}%) via ${source} for ${canonicalServiceSlug} in ${countryCode}`
             );
             console.log('[MarketplaceCommissionAudit]', {
                 source,
-                serviceSlug,
-                commissionSource: 'marketplace_settings',
+                serviceSlug: canonicalServiceSlug,
+                commissionSource: commissionConfig.source,
                 commissionPercent: commissionRateUsed,
-                serviceFare: preCommissionTotal,
+                platformFeeSource: platformFeeConfig.source,
+                platformFee,
+                serviceFare: totalPrice,
+                serviceFareBeforePlatformFee: preCommissionTotal,
                 commissionAmount: commissionFee,
                 driverPayout
             });
@@ -465,11 +526,26 @@ export class PricingService {
             `[PricingService] Price resolved (fallback): ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
         );
 
-        const fallbackCommissionSettings = await MarketplaceConfigService.getCommissionSettings(tenantId);
-        const fallbackCommission = this.roundMoney(fallbackCommissionSettings.percent);
-        const fallbackCommissionFee = this.roundMoney(resolvedBasePrice * (fallbackCommission / 100));
-        const fallbackPlatformFee = this.roundMoney(resolvedBasePrice * ((fallbackCommissionSettings.platformFeePercent ?? 0) / 100));
-        const fallbackDriverPayout = this.roundMoney(resolvedBasePrice - fallbackCommissionFee - fallbackPlatformFee);
+        const fallbackCommissionSettings = await MarketplaceConfigService.getEffectiveCommissionConfig(
+            canonicalServiceSlug,
+            cityZone,
+            driverTier,
+            tenantId
+        );
+        const fallbackCommission = fallbackCommissionSettings.enabled === false ? 0 : this.roundMoney(fallbackCommissionSettings.percent);
+        const fallbackCommissionFee = this.applyFeeBounds(
+            this.roundMoney(resolvedBasePrice * (fallbackCommission / 100)),
+            fallbackCommissionSettings.minFee,
+            fallbackCommissionSettings.maxFee
+        );
+        const fallbackPlatformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(
+            canonicalServiceSlug,
+            { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
+            tenantId
+        );
+        const fallbackPlatformFee = this.calculatePlatformFee(resolvedBasePrice, fallbackPlatformFeeConfig);
+        const fallbackDriverPayout = this.roundMoney(resolvedBasePrice - fallbackCommissionFee);
+        const fallbackTotalPrice = this.roundMoney(resolvedBasePrice + fallbackPlatformFee);
         const fallbackFareBreakdown: FareBreakdown = {
             baseFare: this.roundMoney(baseFareUsed),
             distanceCost: this.roundMoney(distanceKm * pricePerKmUsed),
@@ -480,20 +556,43 @@ export class PricingService {
             commissionAmount: fallbackCommissionFee,
             platformFee: fallbackPlatformFee,
             driverPayout: fallbackDriverPayout,
-            total: resolvedBasePrice,
+            total: fallbackTotalPrice,
             currencyCode: resolvedCurrencyCode,
             currencySymbol,
             multiplier: 1,
             commissionPercent: fallbackCommission,
             source,
-            extras: {}
+            extras: {},
+            preAdjustmentFare: resolvedBasePrice,
+            pricingAdjustmentType: 'none',
+            pricingMultiplier: 1,
+            pricingAdjustmentAmount: 0,
+            postAdjustmentFare: resolvedBasePrice,
+            minimumFareAdjustment: 0,
+            maximumFareAdjustment: 0,
+            negotiationAdjustment: 0,
+            serviceFareBeforePlatformFee: resolvedBasePrice,
+            platformFeeType: fallbackPlatformFeeConfig.type,
+            platformFeeFixed: fallbackPlatformFeeConfig.fixedAmount,
+            platformFeePercent: fallbackPlatformFeeConfig.percent,
+            platformFeeAmount: fallbackPlatformFee,
+            platformFeeSource: fallbackPlatformFeeConfig.source,
+            platformFeeConfigVersion: fallbackPlatformFeeConfig.configVersion,
+            commissionSource: fallbackCommissionSettings.source,
+            commissionConfigVersion: fallbackCommissionSettings.configVersion,
+            serviceFare: fallbackTotalPrice,
+            shoppingBudget: 0,
+            totalAuthorisation: fallbackTotalPrice,
+            driverGrossEarnings: resolvedBasePrice,
+            calculationVersion: 'marketplace-v1',
+            reconciliationValid: true
         };
 
         return {
             basePrice: resolvedBasePrice,
             surgeMultiplier: 1.0,
             dynamicPricingMultiplier: 1.0,
-            totalPrice: resolvedBasePrice,
+            totalPrice: fallbackTotalPrice,
             source,
             city: city?.name,
             countryCode,
@@ -517,17 +616,22 @@ export class PricingService {
         };
     }
 
-    static getSurgeMultiplier(demand: number, supply: number): number {
-        if (supply === 0) return 2.0;
+    static getSurgeMultiplier(
+        demand: number,
+        supply: number,
+        dynamicSettings?: EffectiveDynamicPricingSettings
+    ): number {
+        const maxMultiplier = Math.max(1, Number(dynamicSettings?.maxMultiplier ?? dynamicSettings?.maxSurge ?? 1));
+        const minimumDemandRatio = Math.max(0, Number(dynamicSettings?.minimumDemandRatio ?? 0));
+        if (maxMultiplier <= 1 || demand <= 0) return 1.0;
+        if (supply <= 0) return maxMultiplier;
 
         const ratio = demand / supply;
+        if (ratio <= minimumDemandRatio) return 1.0;
 
-        if (ratio > 3) return 2.0;
-        if (ratio > 2) return 1.6;
-        if (ratio > 1.5) return 1.3;
-        if (ratio > 1.2) return 1.1;
-
-        return 1.0;
+        const denominator = Math.max(minimumDemandRatio || 1, 1);
+        const scaled = 1 + ((ratio - minimumDemandRatio) / denominator) * (maxMultiplier - 1);
+        return Math.min(maxMultiplier, Math.max(1, scaled));
     }
 
     static getTimeOfDayMultiplier(
@@ -536,18 +640,16 @@ export class PricingService {
     ): number {
         const date = requestedAt ? new Date(requestedAt) : new Date();
         const hour = date.getHours();
+        const asAny = dynamicSettings as any;
 
-        const peakMultiplier = Number(dynamicSettings?.peakMultiplier ?? 1.15);
-        const nightMultiplier = Number(dynamicSettings?.nightMultiplier ?? 1.25);
-
-        // Peak hours: 7-9 AM and 5-8 PM
-        if ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 21)) {
-            return peakMultiplier;
+        const peakHours = Array.isArray(asAny?.peakHours) ? asAny.peakHours : [];
+        if (peakHours.includes(hour)) {
+            return Number(dynamicSettings?.peakMultiplier ?? 1);
         }
 
-        // Night premium
-        if (hour >= 23 || hour < 5) {
-            return nightMultiplier;
+        const nightHours = Array.isArray(asAny?.nightHours) ? asAny.nightHours : [];
+        if (nightHours.includes(hour)) {
+            return Number(dynamicSettings?.nightMultiplier ?? 1);
         }
 
         return 1.0;
@@ -560,6 +662,43 @@ export class PricingService {
 
     private static roundMoney(value: number): number {
         return Number(Number(value || 0).toFixed(2));
+    }
+
+    private static applyFeeBounds(value: number, minFee?: number | null, maxFee?: number | null): number {
+        let bounded = this.roundMoney(value);
+        const min = Number(minFee ?? 0);
+        const max = maxFee === null || maxFee === undefined ? null : Number(maxFee);
+        if (Number.isFinite(min) && min > 0) bounded = Math.max(bounded, min);
+        if (max !== null && Number.isFinite(max) && max > 0) bounded = Math.min(bounded, max);
+        return this.roundMoney(bounded);
+    }
+
+    private static calculatePlatformFee(amount: number, config: PlatformFeeSettings): number {
+        if (!config.enabled) return 0;
+        const percentFee = this.roundMoney(amount * (Number(config.percent || 0) / 100));
+        const fixedFee = this.roundMoney(Number(config.fixedAmount || 0));
+        const raw = config.type === 'fixed'
+            ? fixedFee
+            : config.type === 'fixed_plus_percentage'
+                ? fixedFee + percentFee
+                : percentFee;
+        return this.applyFeeBounds(raw, config.minFee, config.maxFee);
+    }
+
+    static validateFareReconciliation(result: FareBreakdown): boolean {
+        const tolerance = 0.01;
+        const serviceFareBeforePlatformFee = this.roundMoney(
+            Number(result.serviceFareBeforePlatformFee ?? result.postAdjustmentFare ?? 0)
+        );
+        const platformFee = this.roundMoney(Number(result.platformFeeAmount ?? result.platformFee ?? 0));
+        const serviceFare = this.roundMoney(Number(result.serviceFare ?? result.total ?? 0));
+        const shoppingBudget = this.roundMoney(Number(result.shoppingBudget ?? 0));
+        const totalAuthorisation = this.roundMoney(Number(result.totalAuthorisation ?? serviceFare + shoppingBudget));
+
+        const serviceMatches = Math.abs(this.roundMoney(serviceFareBeforePlatformFee + platformFee) - serviceFare) <= tolerance;
+        const totalMatches = Math.abs(this.roundMoney(serviceFare + shoppingBudget) - totalAuthorisation) <= tolerance;
+
+        return serviceMatches && totalMatches;
     }
 
     private static currencyFromCountry(countryCode: string): string {
@@ -599,8 +738,8 @@ export class PricingService {
 
     /**
      * Re-derive the price-related fields on a job when the fare has been
-     * negotiated/locked to a different amount. This keeps driver payout,
-     * platform fee and tax proportional to the agreed fare.
+     * negotiated/locked to a different amount. The agreed fare is treated as
+     * the customer-visible service fare; any shopping budget remains separate.
      */
     static applyAgreedFare(job: any, agreedFare: number): Partial<any> {
         const originalTotal = Number(job?.total_price || job?.price || agreedFare) || agreedFare;
@@ -609,14 +748,25 @@ export class PricingService {
 
         const round = this.roundMoney;
 
-        const platformFee = round(Number(job?.platform_fee || 0) * ratio);
-        const driverPayout = round(Number(job?.driver_payout || 0) * ratio);
+        const fareBreakdown = job?.fare_breakdown || {};
+        const originalPlatformFee = Number(
+            fareBreakdown.platformFeeAmount ??
+            fareBreakdown.platformFee ??
+            job?.platform_fee ??
+            0
+        );
+        const platformFee = round(originalPlatformFee * ratio);
+        const serviceFareBeforePlatformFee = round(Math.max(0, safeAgreed - platformFee));
+        const commissionRateUsed = Number.isFinite(Number(job?.commission_rate_used))
+            ? Number(job?.commission_rate_used)
+            : Number(fareBreakdown.commissionPercent ?? 0);
+        const commissionFee = round(serviceFareBeforePlatformFee * (commissionRateUsed / 100));
+        const driverPayout = round(Math.max(0, serviceFareBeforePlatformFee - commissionFee));
         const taxAmount = round(Number(job?.tax_amount || 0) * ratio);
         const baseFareUsed = round(Number(job?.base_fare_used || job?.base_fare || 0) * ratio);
         const pricePerKmUsed = Number(job?.price_per_km_used || 0);
 
-        const fareBreakdown = job?.fare_breakdown || {};
-        const scaledBreakdown: Record<string, number> = {};
+        const scaledBreakdown: Record<string, unknown> = {};
         for (const key of Object.keys(fareBreakdown)) {
             const value = Number(fareBreakdown[key]);
             scaledBreakdown[key] = Number.isFinite(value) ? round(value * ratio) : fareBreakdown[key];
@@ -631,10 +781,17 @@ export class PricingService {
         scaledBreakdown['commissionPercent'] = Number.isFinite(originalCommissionPercent)
             ? originalCommissionPercent
             : 0;
-
-        const commissionRateUsed = Number.isFinite(job?.commission_rate_used)
-            ? Number(job?.commission_rate_used)
-            : scaledBreakdown['commissionPercent'];
+        scaledBreakdown['platformFee'] = platformFee;
+        scaledBreakdown['platformFeeAmount'] = platformFee;
+        scaledBreakdown['commissionFee'] = commissionFee;
+        scaledBreakdown['serviceFareBeforePlatformFee'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['serviceFare'] = safeAgreed;
+        scaledBreakdown['total'] = safeAgreed;
+        scaledBreakdown['shoppingBudget'] = Number(fareBreakdown.shoppingBudget ?? 0);
+        scaledBreakdown['totalAuthorisation'] = round(safeAgreed + Number(scaledBreakdown['shoppingBudget'] ?? 0));
+        scaledBreakdown['driverGrossEarnings'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['driverNetEarnings'] = driverPayout;
+        scaledBreakdown['reconciliationValid'] = this.validateFareReconciliation(scaledBreakdown as unknown as FareBreakdown);
 
         return {
             price: safeAgreed,
