@@ -3420,7 +3420,7 @@ CREATE POLICY hybrid_events_participants_insert
     )
   );
 
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.job_messages') IS NOT NULL THEN
     ALTER TABLE public.job_messages ENABLE ROW LEVEL SECURITY;
@@ -3458,9 +3458,9 @@ BEGIN
 
     GRANT SELECT, INSERT, UPDATE ON public.job_messages TO authenticated;
   END IF;
-END $;
+END $$;
 
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.pricing_config') IS NOT NULL THEN
     ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
@@ -3480,7 +3480,7 @@ BEGIN
     USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
     WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
   END IF;
-END $;
+END $$;
 
 GRANT SELECT ON public.marketplace_settings TO authenticated;
 GRANT SELECT ON public.marketplace_commission_overrides TO authenticated;
