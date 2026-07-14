@@ -1375,10 +1375,10 @@ GRANT SELECT ON public.job_issuing_spend_controls TO authenticated;
 GRANT SELECT ON public.job_issuing_authorizations TO authenticated;
 GRANT SELECT ON public.job_issuing_transactions TO authenticated;
 
-CREATE TABLE IF NOT EXISTS job_messages (
+CREATE TABLE IF NOT EXISTS public.job_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID,
-    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
     sender_id UUID NOT NULL,
     receiver_id UUID NOT NULL,
     message TEXT NOT NULL,
@@ -1779,11 +1779,11 @@ CREATE OR REPLACE FUNCTION public.send_job_message(
   p_message TEXT,
   p_message_type TEXT DEFAULT 'text'
 )
-RETURNS job_messages AS $$
+RETURNS public.job_messages AS $$
 DECLARE
   v_sender_id UUID := auth.uid();
   v_job RECORD;
-  v_message job_messages;
+  v_message public.job_messages;
 BEGIN
   IF v_sender_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
@@ -1795,7 +1795,7 @@ BEGIN
 
   SELECT *
   INTO v_job
-  FROM jobs
+  FROM public.jobs
   WHERE id = p_job_id
     AND v_sender_id IN (customer_id, driver_id)
     AND p_receiver_id IN (customer_id, driver_id);
@@ -1804,7 +1804,7 @@ BEGIN
     RAISE EXCEPTION 'You can only message participants on this job';
   END IF;
 
-  INSERT INTO job_messages (
+  INSERT INTO public.job_messages (
     tenant_id,
     job_id,
     sender_id,
@@ -2388,6 +2388,18 @@ ALTER TABLE public.pricing_config
     ADD COLUMN IF NOT EXISTS currency_symbol TEXT,
     ADD COLUMN IF NOT EXISTS locale TEXT,
     ADD COLUMN IF NOT EXISTS distance_unit TEXT DEFAULT 'km';
+
+UPDATE public.pricing_config
+SET
+    country_code = COALESCE(country_code, 'GB'),
+    currency_symbol = COALESCE(currency_symbol, '£'),
+    locale = COALESCE(locale, 'en-GB'),
+    distance_unit = COALESCE(distance_unit, 'km')
+WHERE
+    country_code IS NULL
+    OR currency_symbol IS NULL
+    OR locale IS NULL
+    OR distance_unit IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pricing_config_market_service
     ON public.pricing_config (

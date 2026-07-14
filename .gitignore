@@ -63,6 +63,7 @@ Thumbs.db
 =
 *.bak
 *.sql
+!scripts/audit-auth-duplicate-app-tables.sql
 
 # docker backups
 docker/**/*.bak

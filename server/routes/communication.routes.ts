@@ -26,6 +26,7 @@ router.post('/messages', async (req: Request, res: Response) => {
     }
 
     const { data: job, error: jobError } = await supabaseAdmin
+      .schema('public')
       .from('jobs')
       .select('id, tenant_id, customer_id, driver_id')
       .eq('id', jobId)
@@ -42,6 +43,7 @@ router.post('/messages', async (req: Request, res: Response) => {
     }
 
     const { data, error } = await supabaseAdmin
+      .schema('public')
       .from('job_messages')
       .insert({
         tenant_id: job.tenant_id || null,
