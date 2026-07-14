@@ -278,7 +278,7 @@ export class BookingService {
         }
 
         const fareBreakdown = this.buildCustomerQuoteSnapshot({
-            pricingBreakdown: pricing?.fareBreakdown ?? null,
+            pricingBreakdown: ((bookingData as any)?.fare_breakdown as Record<string, any> | null) ?? pricing?.fareBreakdown ?? null,
             customerServiceTotal: safePrice,
             currencyCode,
             currencySymbol,
@@ -544,27 +544,14 @@ export class BookingService {
         }
 
         const existing = options.pricingBreakdown || {};
-        const previousServiceFare = this.roundMoney(
-            existing['customerServiceTotal'] ??
-            existing['serviceFare'] ??
-            existing['total'] ??
-            0
-        );
         const platformFee = this.roundMoney(existing['platformFeeAmount'] ?? existing['platformFee'] ?? 0);
         const shoppingBudget = this.roundMoney(options.shoppingBudget || existing['shoppingBudget'] || 0);
-        const roundingAdjustment = this.roundMoney(
-            Number(existing['roundingAdjustment'] || 0) +
-            (previousServiceFare > 0 ? customerServiceTotal - previousServiceFare : 0)
-        );
         const quoteId = String(
             options.quoteId ||
             existing['quoteId'] ||
             `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
         );
-        const serviceFareBeforePlatformFee = this.roundMoney(
-            existing['serviceFareBeforePlatformFee'] ??
-            Math.max(0, customerServiceTotal - platformFee)
-        );
+        const serviceFareBeforePlatformFee = this.roundMoney(Math.max(0, customerServiceTotal - platformFee));
 
         return {
             ...existing,
@@ -578,7 +565,6 @@ export class BookingService {
             platformFee,
             shoppingBudget,
             totalAuthorisation: this.roundMoney(customerServiceTotal + shoppingBudget),
-            roundingAdjustment,
             quoteExpiresAt: existing['quoteExpiresAt'] || existing['expiresAt'] || null,
             serviceFareBeforePlatformFee,
             driverGrossEarnings: this.roundMoney(existing['driverGrossEarnings'] ?? serviceFareBeforePlatformFee),

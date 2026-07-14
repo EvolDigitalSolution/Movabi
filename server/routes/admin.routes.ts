@@ -7,6 +7,7 @@ import { PayoutService } from '../services/payout.service';
 import { NotificationService } from '../services/notification.service';
 import { AppVersionService, normaliseAppVersionConfig } from '../services/app-version.service';
 import { MarketplaceConfigService } from '../services/marketplace-config.service';
+import { LocalPlaceSearchService, ProviderBrandService } from '../services/local-place-search.service';
 
 const router = Router();
 
@@ -79,6 +80,48 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
   (req as any).adminUserId = authData.user.id;
   return next();
 };
+
+function cleanLocalServiceCountry(value: unknown): string | null {
+  const country = String(value || '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(country) ? country : null;
+}
+
+function canonicalLocalServiceSlug(value: unknown): string {
+  const slug = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (['shop', 'shopping', 'errands'].includes(slug)) return 'errand';
+  if (['quick-buy', 'quickbuy'].includes(slug)) return 'quick-buy';
+  if (['collect-deliver', 'collectdeliver'].includes(slug)) return 'collect-deliver';
+  if (['deliver', 'package'].includes(slug)) return 'delivery';
+  if (['van', 'move', 'van-moving'].includes(slug)) return 'van-moving';
+  return slug;
+}
+
+function slugifyLocalService(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function parseKeywordArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item || '').trim()).filter(Boolean);
+  }
+  return String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function requireHttpsUrl(value: unknown, field: string): string | null {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (!/^https:\/\/.+/i.test(text)) {
+    throw new Error(`${field} must be an HTTPS URL.`);
+  }
+  return text;
+}
 
 function appVersionBodyToConfig(body: any, adminId?: string | null) {
   return normaliseAppVersionConfig({
@@ -895,6 +938,397 @@ router.delete('/pricing/global-ai/:table/:id', requireAdmin, async (req: Request
     console.error('[Admin] Global AI pricing delete error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
+});
+
+router.get('/local-services/categories', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    let query = supabaseAdmin
+      .from('local_service_categories')
+      .select('*')
+      .order('country_code', { ascending: true })
+      .order('service_slug', { ascending: true })
+      .order('display_order', { ascending: true });
+
+    const countryCode = cleanLocalServiceCountry(req.query.countryCode);
+    const serviceSlug = canonicalLocalServiceSlug(req.query.serviceSlug || req.query.service);
+    const enabled = String(req.query.enabled ?? '').trim();
+
+    if (countryCode) query = query.eq('country_code', countryCode);
+    if (serviceSlug) query = query.eq('service_slug', serviceSlug);
+    if (enabled === 'true' || enabled === 'false') query = query.eq('enabled', enabled === 'true');
+
+    const { data, error } = await query;
+    if (error) return res.status(400).json({ ok: false, error: error.message });
+    return res.json({ ok: true, categories: data || [] });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] load categories failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to load categories.' });
+  }
+});
+
+router.post('/local-services/categories', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const countryCode = cleanLocalServiceCountry(req.body.country_code || req.body.countryCode);
+    if (!countryCode) return res.status(400).json({ ok: false, error: 'Valid country code is required.' });
+
+    const serviceSlug = canonicalLocalServiceSlug(req.body.service_slug || req.body.serviceSlug);
+    if (!serviceSlug) return res.status(400).json({ ok: false, error: 'Service is required.' });
+
+    const categoryName = String(req.body.category_name || req.body.categoryName || '').trim();
+    const categorySlug = slugifyLocalService(req.body.category_slug || req.body.categorySlug || categoryName);
+    if (!categoryName || !categorySlug) return res.status(400).json({ ok: false, error: 'Category name and slug are required.' });
+
+    const payload = {
+      country_code: countryCode,
+      service_slug: serviceSlug,
+      category_slug: categorySlug,
+      category_name: categoryName,
+      category_description: String(req.body.category_description || req.body.categoryDescription || '').trim() || null,
+      icon: String(req.body.icon || '').trim() || null,
+      search_keywords: parseKeywordArray(req.body.search_keywords || req.body.searchKeywords),
+      provider_types: parseKeywordArray(req.body.provider_types || req.body.providerTypes),
+      fallback_keywords: parseKeywordArray(req.body.fallback_keywords || req.body.fallbackKeywords),
+      default_search_radius_km: Number(req.body.default_search_radius_km ?? req.body.searchRadiusKm ?? 10),
+      allow_custom_provider: req.body.allow_custom_provider ?? req.body.allowCustomProvider ?? true,
+      display_order: Number(req.body.display_order ?? req.body.displayOrder ?? 0),
+      enabled: req.body.enabled !== false
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('local_service_categories')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    return res.status(201).json({ ok: true, category: data });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] create category failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to create category.' });
+  }
+});
+
+router.put('/local-services/categories/:id', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const payload: Record<string, unknown> = {
+      category_name: String(req.body.category_name || req.body.categoryName || '').trim(),
+      category_description: String(req.body.category_description || req.body.categoryDescription || '').trim() || null,
+      icon: String(req.body.icon || '').trim() || null,
+      search_keywords: parseKeywordArray(req.body.search_keywords || req.body.searchKeywords),
+      provider_types: parseKeywordArray(req.body.provider_types || req.body.providerTypes),
+      fallback_keywords: parseKeywordArray(req.body.fallback_keywords || req.body.fallbackKeywords),
+      default_search_radius_km: Number(req.body.default_search_radius_km ?? req.body.searchRadiusKm ?? 10),
+      allow_custom_provider: req.body.allow_custom_provider ?? req.body.allowCustomProvider ?? true,
+      display_order: Number(req.body.display_order ?? req.body.displayOrder ?? 0),
+      enabled: req.body.enabled !== false,
+      updated_at: new Date().toISOString()
+    };
+
+    if (req.body.category_slug || req.body.categorySlug) {
+      payload['category_slug'] = slugifyLocalService(req.body.category_slug || req.body.categorySlug);
+    }
+
+    if (!payload['category_name']) return res.status(400).json({ ok: false, error: 'Category name is required.' });
+
+    const { data, error } = await supabaseAdmin
+      .from('local_service_categories')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    return res.json({ ok: true, category: data });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] update category failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to update category.' });
+  }
+});
+
+router.delete('/local-services/categories/:id', requireAdmin, async (req: Request, res: Response) => {
+  const id = String(req.params.id || '').trim();
+  const { error } = await supabaseAdmin
+    .from('local_service_categories')
+    .update({ enabled: false, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return res.status(400).json({ ok: false, error: error.message });
+  return res.json({ ok: true });
+});
+
+router.post('/local-services/search-external', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const countryCode = cleanLocalServiceCountry(req.body.country_code || req.body.countryCode);
+    const serviceSlug = canonicalLocalServiceSlug(req.body.service_slug || req.body.serviceSlug || req.body.service);
+    const categorySlug = slugifyLocalService(req.body.category_slug || req.body.categorySlug || req.body.category);
+    const query = String(req.body.q || req.body.query || '').trim();
+    const lat = Number(req.body.lat ?? req.body.latitude);
+    const lng = Number(req.body.lng ?? req.body.longitude);
+
+    if (!countryCode || !serviceSlug || !categorySlug) {
+      return res.status(400).json({ ok: false, error: 'Country, service and category are required.' });
+    }
+
+    const providers = await LocalPlaceSearchService.search({
+      countryCode,
+      serviceSlug,
+      categorySlug,
+      searchText: query,
+      latitude: Number.isFinite(lat) ? lat : undefined,
+      longitude: Number.isFinite(lng) ? lng : undefined,
+      radiusKm: Number(req.body.radiusKm || req.body.radius_km || 10),
+      limit: Number(req.body.limit || 12)
+    });
+
+    return res.json({
+      ok: true,
+      providers: providers.map(provider => ({
+        country_code: countryCode,
+        category_id: String(req.body.category_id || req.body.categoryId || '').trim(),
+        provider_name: provider.providerName,
+        provider_slug: slugifyLocalService(provider.providerName),
+        logo_url: provider.providerLogoUrl || null,
+        official_website: provider.providerWebsite || null,
+        search_keywords: [provider.providerName, query].filter(Boolean),
+        address: provider.providerAddress || null,
+        latitude: provider.providerLatitude ?? null,
+        longitude: provider.providerLongitude ?? null,
+        external_place_id: provider.externalPlaceId || null,
+        source: provider.source || 'external',
+        verified: provider.verified === true,
+        enabled: true,
+        display_order: 0
+      }))
+    });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] external search failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'External provider search failed.' });
+  }
+});
+
+router.get('/local-services/providers', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    let query = supabaseAdmin
+      .from('local_service_providers')
+      .select('*, category:local_service_categories(*)')
+      .order('country_code', { ascending: true })
+      .order('display_order', { ascending: true });
+
+    const countryCode = cleanLocalServiceCountry(req.query.countryCode);
+    const categoryId = String(req.query.categoryId || '').trim();
+    const enabled = String(req.query.enabled ?? '').trim();
+    if (countryCode) query = query.eq('country_code', countryCode);
+    if (categoryId) query = query.eq('category_id', categoryId);
+    if (enabled === 'true' || enabled === 'false') query = query.eq('enabled', enabled === 'true');
+
+    const { data, error } = await query;
+    if (error) return res.status(400).json({ ok: false, error: error.message });
+    return res.json({ ok: true, providers: data || [] });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] load providers failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to load providers.' });
+  }
+});
+
+router.post('/local-services/import-provider', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const countryCode = cleanLocalServiceCountry(req.body.country_code || req.body.countryCode);
+    const categoryId = String(req.body.category_id || req.body.categoryId || '').trim();
+    const providerName = String(req.body.provider_name || req.body.providerName || req.body.name || '').trim();
+    const providerSlug = slugifyLocalService(req.body.provider_slug || req.body.providerSlug || providerName);
+    if (!countryCode || !categoryId || !providerName || !providerSlug) {
+      return res.status(400).json({ ok: false, error: 'Country, category and provider name are required.' });
+    }
+
+    const brandLogo = await ProviderBrandService.resolveLogo({
+      providerName,
+      countryCode,
+      officialWebsite: req.body.official_website || req.body.officialWebsite || req.body.providerWebsite,
+      logoUrl: req.body.logo_url || req.body.logoUrl || req.body.providerLogoUrl
+    });
+
+    const payload = {
+      country_code: countryCode,
+      category_id: categoryId,
+      provider_name: providerName,
+      provider_slug: providerSlug,
+      provider_description: String(req.body.provider_description || req.body.providerDescription || '').trim() || null,
+      logo_url: brandLogo || null,
+      official_website: requireHttpsUrl(req.body.official_website || req.body.officialWebsite || req.body.providerWebsite, 'Official website'),
+      search_keywords: parseKeywordArray(req.body.search_keywords || req.body.searchKeywords || providerName),
+      address: String(req.body.address || req.body.providerAddress || '').trim() || null,
+      latitude: req.body.latitude === '' || req.body.latitude === undefined ? null : Number(req.body.latitude),
+      longitude: req.body.longitude === '' || req.body.longitude === undefined ? null : Number(req.body.longitude),
+      external_place_id: String(req.body.external_place_id || req.body.externalPlaceId || '').trim() || null,
+      source: String(req.body.source || 'external').trim() || 'external',
+      verified: req.body.verified === true,
+      enabled: req.body.enabled !== false,
+      display_order: Number(req.body.display_order ?? req.body.displayOrder ?? 0)
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('local_service_providers')
+      .insert(payload)
+      .select('*, category:local_service_categories(*)')
+      .single();
+
+    if (error) return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    return res.status(201).json({ ok: true, provider: data });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] import provider failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to import provider.' });
+  }
+});
+
+router.post('/local-services/providers', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const countryCode = cleanLocalServiceCountry(req.body.country_code || req.body.countryCode);
+    const categoryId = String(req.body.category_id || req.body.categoryId || '').trim();
+    const providerName = String(req.body.provider_name || req.body.providerName || '').trim();
+    const providerSlug = slugifyLocalService(req.body.provider_slug || req.body.providerSlug || providerName);
+    if (!countryCode || !categoryId || !providerName || !providerSlug) {
+      return res.status(400).json({ ok: false, error: 'Country, category, provider name and slug are required.' });
+    }
+
+    const payload = {
+      country_code: countryCode,
+      category_id: categoryId,
+      provider_name: providerName,
+      provider_slug: providerSlug,
+      provider_description: String(req.body.provider_description || req.body.providerDescription || '').trim() || null,
+      logo_url: requireHttpsUrl(req.body.logo_url || req.body.logoUrl, 'Logo URL'),
+      official_website: requireHttpsUrl(req.body.official_website || req.body.officialWebsite, 'Official website'),
+      search_keywords: parseKeywordArray(req.body.search_keywords || req.body.searchKeywords),
+      address: String(req.body.address || '').trim() || null,
+      latitude: req.body.latitude === '' || req.body.latitude === undefined ? null : Number(req.body.latitude),
+      longitude: req.body.longitude === '' || req.body.longitude === undefined ? null : Number(req.body.longitude),
+      external_place_id: String(req.body.external_place_id || req.body.externalPlaceId || '').trim() || null,
+      source: String(req.body.source || 'admin').trim() || 'admin',
+      verified: req.body.verified === true,
+      enabled: req.body.enabled !== false,
+      display_order: Number(req.body.display_order ?? req.body.displayOrder ?? 0)
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('local_service_providers')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    return res.status(201).json({ ok: true, provider: data });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] create provider failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to create provider.' });
+  }
+});
+
+router.put('/local-services/providers/:id', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const providerName = String(req.body.provider_name || req.body.providerName || '').trim();
+    if (!providerName) return res.status(400).json({ ok: false, error: 'Provider name is required.' });
+
+    const payload: Record<string, unknown> = {
+      provider_name: providerName,
+      provider_description: String(req.body.provider_description || req.body.providerDescription || '').trim() || null,
+      logo_url: requireHttpsUrl(req.body.logo_url || req.body.logoUrl, 'Logo URL'),
+      official_website: requireHttpsUrl(req.body.official_website || req.body.officialWebsite, 'Official website'),
+      search_keywords: parseKeywordArray(req.body.search_keywords || req.body.searchKeywords),
+      address: String(req.body.address || '').trim() || null,
+      latitude: req.body.latitude === '' || req.body.latitude === undefined ? null : Number(req.body.latitude),
+      longitude: req.body.longitude === '' || req.body.longitude === undefined ? null : Number(req.body.longitude),
+      external_place_id: String(req.body.external_place_id || req.body.externalPlaceId || '').trim() || null,
+      source: String(req.body.source || 'admin').trim() || 'admin',
+      verified: req.body.verified === true,
+      enabled: req.body.enabled !== false,
+      display_order: Number(req.body.display_order ?? req.body.displayOrder ?? 0),
+      updated_at: new Date().toISOString()
+    };
+
+    if (req.body.provider_slug || req.body.providerSlug) {
+      payload['provider_slug'] = slugifyLocalService(req.body.provider_slug || req.body.providerSlug);
+    }
+    if (req.body.category_id || req.body.categoryId) {
+      payload['category_id'] = String(req.body.category_id || req.body.categoryId).trim();
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('local_service_providers')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ ok: false, error: error.message, code: error.code });
+    return res.json({ ok: true, provider: data });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] update provider failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to update provider.' });
+  }
+});
+
+router.post('/local-services/providers/:id/resolve-brand', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const { data: provider, error: loadError } = await supabaseAdmin
+      .from('local_service_providers')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (loadError) return res.status(400).json({ ok: false, error: loadError.message });
+    if (!provider) return res.status(404).json({ ok: false, error: 'Provider not found.' });
+
+    const logoUrl = await ProviderBrandService.resolveLogo({
+      providerName: provider.provider_name,
+      countryCode: provider.country_code,
+      officialWebsite: provider.official_website,
+      logoUrl: provider.logo_url
+    });
+
+    if (!logoUrl) return res.json({ ok: true, provider, logoUrl: null });
+
+    const { data, error } = await supabaseAdmin
+      .from('local_service_providers')
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*, category:local_service_categories(*)')
+      .single();
+
+    if (error) return res.status(400).json({ ok: false, error: error.message });
+    return res.json({ ok: true, provider: data, logoUrl });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] resolve brand failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to resolve brand.' });
+  }
+});
+
+router.post('/local-services/providers/:id/verify', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const verified = req.body.verified !== false;
+    const { data, error } = await supabaseAdmin
+      .from('local_service_providers')
+      .update({ verified, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*, category:local_service_categories(*)')
+      .single();
+    if (error) return res.status(400).json({ ok: false, error: error.message });
+    return res.json({ ok: true, provider: data });
+  } catch (error: any) {
+    console.error('[AdminLocalServices] verify provider failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to verify provider.' });
+  }
+});
+
+router.delete('/local-services/providers/:id', requireAdmin, async (req: Request, res: Response) => {
+  const id = String(req.params.id || '').trim();
+  const { error } = await supabaseAdmin
+    .from('local_service_providers')
+    .update({ enabled: false, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return res.status(400).json({ ok: false, error: error.message });
+  return res.json({ ok: true });
 });
 
 export default router;

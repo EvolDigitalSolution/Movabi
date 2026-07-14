@@ -197,24 +197,20 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
             <button
               type="button"
               (click)="goToBooking('ride')"
-              class="w-full min-h-[145px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-3.5 px-3 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
             >
-              <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-13 h-13 bg-blue-600 rounded-[1.1rem] flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+              <div class="flex h-full flex-col items-center justify-center gap-2">
+                <div class="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
                   <ion-icon name="car" class="text-[22px]"></ion-icon>
                 </div>
 
-                <div class="mt-1.5 min-w-0">
+                <div class="min-w-0">
                   <h2 class="text-base font-display font-black text-slate-900 leading-tight">
                     Ride
                   </h2>
-                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
+                  <p class="mt-1 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700 text-[11px] font-black leading-snug">
                     Everyday rides
                   </p>
-                </div>
-
-                <div class="mt-1.5 w-[30px] h-[30px] rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-sm"></ion-icon>
                 </div>
               </div>
             </button>
@@ -222,24 +218,20 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
             <button
               type="button"
               (click)="goToBooking('errand')"
-              class="w-full min-h-[145px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-3.5 px-3 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
             >
-              <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-13 h-13 bg-emerald-600 rounded-[1.1rem] flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+              <div class="flex h-full flex-col items-center justify-center gap-2">
+                <div class="w-14 h-14 bg-emerald-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
                   <ion-icon name="cart" class="text-[22px]"></ion-icon>
                 </div>
 
-                <div class="mt-1.5 min-w-0">
+                <div class="min-w-0">
                   <h2 class="text-base font-display font-black text-slate-900 leading-tight">
                     Shop
                   </h2>
-                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
-                    Grocery • Pharmacy • Retail
+                  <p class="mt-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700 text-[11px] font-black leading-snug">
+                    Grocery &bull; Pharmacy &bull; Retail
                   </p>
-                </div>
-
-                <div class="mt-1.5 w-[30px] h-[30px] rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-sm"></ion-icon>
                 </div>
               </div>
             </button>
@@ -247,24 +239,20 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
             <button
               type="button"
               (click)="goToBooking('delivery')"
-              class="w-full min-h-[145px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-3.5 px-3 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
             >
-              <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-13 h-13 bg-amber-500 rounded-[1.1rem] flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+              <div class="flex h-full flex-col items-center justify-center gap-2">
+                <div class="w-14 h-14 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
                   <ion-icon name="cube" class="text-[22px]"></ion-icon>
                 </div>
 
-                <div class="mt-1.5 min-w-0">
+                <div class="min-w-0">
                   <h2 class="text-base font-display font-black text-slate-900 leading-tight">
                     Deliver
                   </h2>
-                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
-                    Parcels & Documents
+                  <p class="mt-1 rounded-full bg-amber-50 px-3 py-1.5 text-amber-700 text-[11px] font-black leading-snug">
+                    Parcels &bull; Documents
                   </p>
-                </div>
-
-                <div class="mt-1.5 w-[30px] h-[30px] rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-sm"></ion-icon>
                 </div>
               </div>
             </button>
@@ -272,24 +260,20 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
             <button
               type="button"
               (click)="goToBooking('van-moving')"
-              class="w-full min-h-[145px] text-center group relative overflow-hidden rounded-[1.5rem] bg-white border border-slate-100 py-3.5 px-3 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300"
+              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
             >
-              <div class="flex h-full flex-col items-center justify-center">
-                <div class="w-13 h-13 bg-indigo-600 rounded-[1.1rem] flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
+              <div class="flex h-full flex-col items-center justify-center gap-2">
+                <div class="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
                   <ion-icon name="bus" class="text-[22px]"></ion-icon>
                 </div>
 
-                <div class="mt-1.5 min-w-0">
+                <div class="min-w-0">
                   <h2 class="text-base font-display font-black text-slate-900 leading-tight">
                     Move
                   </h2>
-                  <p class="mt-1 text-slate-500 text-xs font-semibold leading-snug">
-                    Van & Furniture
+                  <p class="mt-1 rounded-full bg-indigo-50 px-3 py-1.5 text-indigo-700 text-[11px] font-black leading-snug">
+                    Van &bull; Furniture
                   </p>
-                </div>
-
-                <div class="mt-1.5 w-[30px] h-[30px] rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
-                  <ion-icon name="chevron-forward" class="text-sm"></ion-icon>
                 </div>
               </div>
             </button>

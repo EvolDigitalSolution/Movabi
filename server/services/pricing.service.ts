@@ -123,6 +123,7 @@ export class PricingService {
         let currencySymbol = this.symbolFromCurrency(currencyCode || 'GBP');
         let resolvedCurrencyCode = currencyCode || 'GBP';
         let regionalPricingRuleId: string | null = null;
+        let pricingConfigId: string | null = null;
         let taxAmount = 0;
         let platformFee = 0;
         let driverPayout = 0;
@@ -132,6 +133,7 @@ export class PricingService {
         let serviceFee = 0;
         let distanceCost = 0;
         let durationCost = 0;
+        let itemCharges = 0;
 
         try {
             const pricingConfig = await MarketplaceConfigService.getEffectivePricingConfig(
@@ -152,7 +154,8 @@ export class PricingService {
                     ? pricingConfig.largeShoppingSurcharge
                     : 0;
 
-                serviceFee += extraItemCharge + largeShopCharge;
+                itemCharges = this.roundMoney(extraItemCharge + largeShopCharge);
+                serviceFee += itemCharges;
 
                 resolvedBasePrice = this.roundMoney(Math.max(
                     pricingConfig.minimumFare,
@@ -162,6 +165,7 @@ export class PricingService {
                 currencySymbol = this.symbolFromCurrency(resolvedCurrencyCode);
                 baseFareUsed = pricingConfig.baseFare;
                 pricePerKmUsed = pricingConfig.perKm;
+                pricingConfigId = pricingConfig.pricingConfigId;
                 source = pricingConfig.source;
             }
 
@@ -385,6 +389,18 @@ export class PricingService {
             const displayedDistanceCost = this.roundMoney(distanceCost);
             const displayedDurationCost = this.roundMoney(durationCost);
             const displayedServiceFee = this.roundMoney(serviceFee);
+            console.log('[Pricing] resolved components', {
+                pricingConfigId,
+                countryCode,
+                serviceSlug: canonicalServiceSlug,
+                dbBaseFare: displayedBaseFare,
+                dbServiceFee: displayedServiceFee - itemCharges,
+                fixedFareInput: Number(legacyBasePrice || 0),
+                serviceOptionSurcharge: 0,
+                itemCharges,
+                baseFareApplied: displayedBaseFare,
+                serviceExtrasApplied: displayedServiceFee
+            });
             const rawPreAdjustmentFare = this.roundMoney(
                 displayedBaseFare + displayedDistanceCost + displayedDurationCost + displayedServiceFee + taxAmount
             );

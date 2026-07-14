@@ -83,6 +83,8 @@ import {
 } from '../../../../../shared/ui';
 
 import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { LocalServiceSelectorComponent } from '../../../../../shared/components/local-service-selector/local-service-selector.component';
+import { LocalServiceCategory, LocalServicesService, LocalServiceSelection } from '../../../../../core/services/local-services.service';
 
 import {
     AutocompleteResult,
@@ -106,7 +108,8 @@ type PackageSize = 'small' | 'medium' | 'large';
         ReactiveFormsModule,
         ButtonComponent,
         InputComponent,
-        MapComponent
+        MapComponent,
+        LocalServiceSelectorComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -247,44 +250,87 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </div>
               }
 
+              @if (showLocalServiceCatalogue()) {
+                <app-local-service-selector
+                  [countryCode]="localServiceCountryCode()"
+                  [serviceSlug]="localServiceCatalogueSlug()"
+                  [currentLocation]="localServiceCurrentLocation()"
+                  [selectedCategoryId]="selectedLocalServiceCategoryId()"
+                  [selectedProviderId]="selectedLocalServiceProviderId()"
+                  [allowCustomEntry]="true"
+                  (categoryChange)="onLocalServiceCategoryChange($event)"
+                  (providerChange)="onLocalServiceProviderChange($event)"
+                  (customProviderChange)="onLocalServiceCustomProvider($event)">
+                </app-local-service-selector>
+              }
+
               <div class="space-y-5">
-                <div class="relative">
-                  <app-input
-                    label="Pickup Location"
-                    formControlName="pickup_address"
-                    (input)="onAddressInput('pickup', $any($event).target.value)"
-                    placeholder="Where should we pick up?"
-                    icon="location-outline"
-                    (focus)="showPickupResults.set(true)"
-                    (blur)="hideResults('pickup')">
-
-                    @if (showPickupResults() && displayPickupResults().length > 0) {
-                      <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of displayPickupResults(); track result.label) {
-                          <button
-                            type="button"
-                            (mousedown)="selectResult('pickup', result)"
-                            class="w-full px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors">
-                            <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                              <ion-icon name="location-outline" class="text-lg"></ion-icon>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                              <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
-                            </div>
-                          </button>
-                        }
-                      </div>
-                    }
-                  </app-input>
-
+                <div class="rounded-3xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
                   <button
                     type="button"
-                    (click)="useCurrentLocation('pickup')"
-                    class="absolute right-4 top-10 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50/50 px-3 py-1 rounded-full z-10">
-                    <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                    Current
+                    (click)="togglePickupExpanded()"
+                    [attr.aria-expanded]="pickupExpanded()"
+                    aria-label="Change pickup address"
+                    class="w-full min-h-11 rounded-2xl bg-white px-4 py-3 text-left shadow-sm border border-slate-100 flex items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 active:scale-[0.99] transition-all">
+                    <span class="w-11 h-11 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+                      <ion-icon name="location-outline" class="text-xl"></ion-icon>
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400">Pickup</span>
+                      <span class="block text-sm font-black text-slate-900">{{ pickupSummaryTitle() }}</span>
+                      <span class="block text-xs font-semibold text-slate-500 truncate">{{ pickupSummaryAddress() }}</span>
+                    </span>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-orange-600 px-3 py-2 rounded-full bg-orange-50">
+                      Change
+                    </span>
                   </button>
+
+                  @if (pickupAutofilling()) {
+                    <p class="mt-2 px-2 text-[11px] font-bold text-slate-500" aria-live="polite">
+                      Finding your current pickup address...
+                    </p>
+                  }
+
+                  @if (pickupExpanded()) {
+                    <div class="mt-3 relative animate-in fade-in slide-in-from-top-2">
+                      <app-input
+                        label="Pickup Location"
+                        formControlName="pickup_address"
+                        (input)="onAddressInput('pickup', $any($event).target.value)"
+                        placeholder="Where should we pick up?"
+                        icon="location-outline"
+                        (focus)="showPickupResults.set(true)"
+                        (blur)="hideResults('pickup')">
+
+                        @if (showPickupResults() && displayPickupResults().length > 0) {
+                          <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
+                            @for (result of displayPickupResults(); track result.label) {
+                              <button
+                                type="button"
+                                (mousedown)="selectResult('pickup', result)"
+                                class="w-full min-h-11 px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+                                <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
+                                  <ion-icon name="location-outline" class="text-lg"></ion-icon>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                  <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
+                                  <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
+                                </div>
+                              </button>
+                            }
+                          </div>
+                        }
+                      </app-input>
+
+                      <button
+                        type="button"
+                        (click)="useCurrentLocation('pickup')"
+                        class="absolute right-4 top-10 min-h-11 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50 px-3 py-1 rounded-full z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+                        <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
+                        Current
+                      </button>
+                    </div>
+                  }
                 </div>
 
                 <div class="relative">
@@ -959,6 +1005,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private bookingService = inject(BookingService);
     private pricingService = inject(PricingService);
     private marketplaceConfig = inject(MarketplaceConfigService);
+    private localServices = inject(LocalServicesService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private paymentService = inject(PaymentService);
@@ -1013,6 +1060,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     dropoffResults = signal<AutocompleteResult[]>([]);
     showPickupResults = signal(false);
     showDropoffResults = signal(false);
+    pickupExpanded = signal(false);
+    pickupAutofilling = signal(false);
+    pickupManuallyChanged = signal(false);
+    selectedLocalService = signal<Record<string, unknown> | null>(null);
 
     displayPickupResults = computed(() => this.pickupResults().length > 0
         ? this.pickupResults()
@@ -1023,6 +1074,50 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         ? this.dropoffResults()
         : this.recentLocationResults('dropoff')
     );
+
+    pickupSummaryTitle = computed(() => {
+        const source = this.pickupLocation.source;
+        if (source === 'gps') return 'Current location';
+        if (source === 'map') return 'Selected on map';
+        return this.pickupLocation.address?.trim() ? 'Saved pickup' : 'Choose pickup';
+    });
+
+    pickupSummaryAddress = computed(() => {
+        const address = this.bookingForm?.get('pickup_address')?.value || this.pickupLocation.address;
+        return String(address || '').trim() || 'Search for an address or use current location';
+    });
+
+    showLocalServiceCatalogue = computed(() => {
+        return this.type === ServiceTypeEnum.ERRAND || this.type === ServiceTypeEnum.DELIVERY;
+    });
+
+    localServiceCountryCode = computed(() => {
+        return this.config.currentCountry()?.code || 'GB';
+    });
+
+    localServiceCatalogueSlug = computed(() => {
+        if (this.type === ServiceTypeEnum.DELIVERY) return 'delivery';
+        const mode = String(this.bookingForm?.get('errand_mode')?.value || 'collect_deliver') as ErrandMode;
+        if (mode === 'quick_buy') return 'quick-buy';
+        if (mode === 'shop_deliver') return 'errand';
+        return 'collect-deliver';
+    });
+
+    localServiceCurrentLocation = computed(() => {
+        const lat = this.pickupLocation.latitude;
+        const lng = this.pickupLocation.longitude;
+        return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+            ? { lat, lng }
+            : null;
+    });
+
+    selectedLocalServiceCategoryId = computed(() => {
+        return String(this.selectedLocalService()?.['categoryId'] || '').trim() || null;
+    });
+
+    selectedLocalServiceProviderId = computed(() => {
+        return String(this.selectedLocalService()?.['providerId'] || '').trim() || null;
+    });
 
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
@@ -1206,6 +1301,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         this.initForm();
         void this.loadPricing();
+        void this.autoPrefillPickupOnce();
+    }
+
+    private async autoPrefillPickupOnce(): Promise<void> {
+        if (this.pickupManuallyChanged() || this.bookingForm?.get('pickup_address')?.value) return;
+
+        this.pickupAutofilling.set(true);
+
+        try {
+            await this.useCurrentLocation('pickup', { silent: true, auto: true });
+        } finally {
+            this.pickupAutofilling.set(false);
+            if (!this.bookingForm?.get('pickup_address')?.value) {
+                this.pickupExpanded.set(true);
+            }
+        }
     }
 
     ngOnDestroy() {
@@ -1258,9 +1369,53 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     selectPopularShop(shop: PopularShopPreset): void {
         const query = shop.query;
+        this.selectedLocalService.set({
+            categorySlug: 'shop-deliver',
+            categoryName: 'Shop & Deliver',
+            providerName: shop.name,
+            providerLogoUrl: shop.logo,
+            providerAddress: query,
+            countryCode: this.config.currentCountry()?.code || 'GB',
+            source: 'configured-popular-shop'
+        });
         this.bookingForm.patchValue({ pickup_address: query });
         this.onAddressInput('pickup', query);
         this.showPickupResults.set(true);
+    }
+
+    onLocalServiceCategoryChange(category: LocalServiceCategory): void {
+        const current = this.selectedLocalService() || {};
+        this.selectedLocalService.set({
+            ...current,
+            categoryId: category.id,
+            categorySlug: category.categorySlug,
+            categoryName: category.categoryName,
+            countryCode: this.localServiceCountryCode(),
+            source: current['source'] || 'catalogue'
+        });
+    }
+
+    onLocalServiceProviderChange(selection: LocalServiceSelection): void {
+        this.selectedLocalService.set(selection as Record<string, unknown>);
+        const address = String(selection.providerAddress || selection.providerName || '').trim();
+        if (address) {
+            this.bookingForm.patchValue({ pickup_address: address });
+            this.onAddressInput('pickup', address);
+            if (Number.isFinite(Number(selection.providerLatitude)) && Number.isFinite(Number(selection.providerLongitude))) {
+                this.pickupLocation = this.locationService.normalizeLocation(
+                    'map',
+                    { lat: Number(selection.providerLatitude), lng: Number(selection.providerLongitude) },
+                    address
+                );
+                this.updateMarker('pickup');
+                this.updateRoute();
+            }
+        }
+    }
+
+    onLocalServiceCustomProvider(selection: LocalServiceSelection): void {
+        this.selectedLocalService.set(selection as Record<string, unknown>);
+        this.pickupExpanded.set(true);
     }
 
     private parseErrandItems(raw: unknown): string[] {
@@ -1644,25 +1799,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
-    async useCurrentLocation(type: 'pickup' | 'dropoff') {
-        const loading = await this.loadingCtrl.create({
-            message: 'Locating...',
-            spinner: 'crescent'
-        });
+    async useCurrentLocation(type: 'pickup' | 'dropoff', options: { silent?: boolean; auto?: boolean } = {}) {
+        if (options.auto && type === 'pickup' && this.pickupManuallyChanged()) return;
 
-        await loading.present();
+        const loading = options.silent
+            ? null
+            : await this.loadingCtrl.create({
+                message: 'Locating...',
+                spinner: 'crescent'
+            });
+
+        await loading?.present();
 
         try {
             const pos = await this.locationService.getCurrentPosition();
 
             if (!pos) {
-                await loading.dismiss();
-                const toast = await this.toastCtrl.create({
-                    message: `Location is off, so Movabi will use ${this.locationService.getFallbackAddressLabel()} for search. You can still type or select any address.`,
-                    duration: 3500,
-                    color: 'warning'
-                });
-                await toast.present();
+                await loading?.dismiss();
+
+                if (!options.silent) {
+                    const toast = await this.toastCtrl.create({
+                        message: `Location is off, so Movabi will use ${this.locationService.getFallbackAddressLabel()} for search. You can still type or select any address.`,
+                        duration: 3500,
+                        color: 'warning'
+                    });
+                    await toast.present();
+                }
                 return;
             }
 
@@ -1673,11 +1835,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             this.geocoding.reverseGeocode(coords.lat, coords.lng).subscribe({
                 next: address => {
-                    void loading.dismiss();
+                    void loading?.dismiss();
 
                     const finalAddress = address || 'Current Location';
 
                     if (type === 'pickup') {
+                        if (options.auto && this.pickupManuallyChanged()) return;
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
@@ -1690,12 +1853,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     this.updateRoute();
                 },
                 error: (error) => {
-                    void loading.dismiss();
+                    void loading?.dismiss();
                     console.warn('[BookingRequest] Reverse geocoding failed:', error);
 
                     const finalAddress = 'Current Location';
 
                     if (type === 'pickup') {
+                        if (options.auto && this.pickupManuallyChanged()) return;
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
@@ -1710,7 +1874,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             });
         } catch (error) {
             console.error('[BookingRequest] useCurrentLocation failed:', error);
-            await loading.dismiss();
+            await loading?.dismiss();
         }
     }
 
@@ -1835,6 +1999,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.itemCount.set(this.getErrandItemCount(items));
     }
 
+    togglePickupExpanded(): void {
+        this.pickupExpanded.update(value => !value);
+        if (!this.pickupExpanded()) {
+            this.showPickupResults.set(false);
+        }
+    }
+
     private applyErrandModeRules(mode: ErrandMode) {
         const itemsControl = this.bookingForm.get('items_list');
         const budgetControl = this.bookingForm.get('estimated_budget');
@@ -1868,6 +2039,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
         if (type === 'pickup') {
+            this.pickupManuallyChanged.set(true);
             this.pickupLocation.address = query;
             this.pickupLocation.latitude = undefined;
             this.pickupLocation.longitude = undefined;
@@ -1921,6 +2093,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     selectResult(type: 'pickup' | 'dropoff', result: AutocompleteResult) {
         if (type === 'pickup') {
+            this.pickupManuallyChanged.set(true);
             this.pickupLocation = this.locationService.normalizeLocation(
                 'map',
                 { lat: result.lat, lng: result.lng },
@@ -2232,17 +2405,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const distanceKm = this.toMoney((route?.distanceMeters || 0) / 1000);
         const durationMinutes = this.toMoney((route?.durationSeconds || 0) / 60);
 
-        let fixedFare = 0;
-
-        if (distanceKm > 0) {
-            fixedFare = await this.getFixedFareBandPrice(
-                serviceSlug,
-                distanceKm,
-                this.config.currentCountry()?.code || 'GB',
-                this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP'
-            );
-        }
-
         const localEstimate = this.fareCalculator.calculateFare({
             serviceType: serviceSlug,
             distanceMeters: route?.distanceMeters || 0,
@@ -2263,40 +2425,39 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 : null
         });
 
-        const baseTotal = fixedFare > 0
-            ? fixedFare
-            : this.toMoney(localEstimate.total);
+        const baseFare = this.toMoney(localEstimate.baseFare || 0);
+        const distanceFare = this.toMoney(localEstimate.distanceFare || 0);
+        const timeFare = this.toMoney(localEstimate.timeFare || 0);
+        const baseServiceFee = this.toMoney(localEstimate.serviceFee || 0);
 
-        const baseServiceFee =
-            serviceSlug === 'errand'
-                ? this.toMoney(baseTotal >= 25 ? 1.5 : 1.0)
-                : this.toMoney(localEstimate.serviceFee || 0);
-
-        const baseFare = this.toMoney(Math.max(0, baseTotal - baseServiceFee));
-
-        const extraDriverCharge =
+        const extraItemCharge =
             serviceSlug === 'errand' && this.usesItemListMode()
-                ? this.driverItemCharge()
-                : 0;
-
-        const extraPlatformCharge =
-            serviceSlug === 'errand' && this.usesItemListMode()
-                ? this.platformItemCharge()
+                ? this.additionalItemCharge()
                 : 0;
 
         const serviceOptionSurcharge = this.vehicleSurcharge(serviceSlug);
-        const subtotal = this.toMoney(baseFare + extraDriverCharge + serviceOptionSurcharge);
+        const subtotal = this.toMoney(baseFare + distanceFare + timeFare);
         const serviceFee = this.toMoney(
-            baseServiceFee + extraPlatformCharge + (serviceSlug === 'errand' ? this.largeShoppingSurcharge() : 0)
+            baseServiceFee +
+            extraItemCharge +
+            serviceOptionSurcharge +
+            (serviceSlug === 'errand' ? this.largeShoppingSurcharge() : 0)
         );
-        const finalTotal = this.toMoney(subtotal + serviceFee);
+        const minimumAdjustment = this.toMoney(Math.max(
+            0,
+            (localEstimate.total || 0) - (localEstimate.subtotal || 0) - (localEstimate.serviceFee || 0)
+        ));
+        const finalTotal = this.toMoney(subtotal + serviceFee + minimumAdjustment);
 
         const estimate: FareEstimate = {
             ...localEstimate,
+            baseFare,
+            distanceFare,
+            timeFare,
             subtotal,
             serviceFee,
             total: finalTotal,
-            minimumFareApplied: localEstimate.minimumFareApplied || fixedFare > 0
+            minimumFareApplied: localEstimate.minimumFareApplied
         };
 
         this.fareEstimate.set(estimate);
@@ -2306,7 +2467,6 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             serviceSlug,
             distanceKm,
             durationMinutes,
-            fixedFare,
             serviceOptionSurcharge,
             passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
             vehicleClass: this.vehicleClass(),
@@ -2317,42 +2477,44 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         });
     }
 
-    private async getFixedFareBandPrice(
-        serviceType: ServiceTypeSlug,
-        distanceKm: number,
-        countryCode: string,
-        currencyCode: string
-    ): Promise<number> {
-        if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
+    private buildQuoteFareBreakdown(
+        quoteId: string,
+        currencyCode: string,
+        currencySymbol: string,
+        customerServiceTotal: number,
+        totalAuthorisation: number
+    ): Record<string, unknown> | null {
+        const estimate = this.fareEstimate();
+        if (!estimate) return null;
 
-        try {
-            const { data, error } = await this.supabase.client
-                .from('fixed_fare_bands')
-                .select('fare, flat_rate, min_distance_km, max_distance_km, priority')
-                .eq('country_code', countryCode)
-                .eq('currency_code', currencyCode)
-                .eq('service_type', serviceType)
-                .eq('is_active', true)
-                .lte('min_distance_km', distanceKm)
-                .gt('max_distance_km', distanceKm)
-                .order('priority', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            if (error) {
-                console.warn('[BookingRequest] fixed fare lookup failed', error);
-                return 0;
-            }
-
-            const price = Number(data?.flat_rate ?? data?.fare ?? 0);
-
-            if (!Number.isFinite(price) || price <= 0) return 0;
-
-            return this.toMoney(price);
-        } catch (error) {
-            console.warn('[BookingRequest] fixed fare lookup crashed', error);
-            return 0;
-        }
+        return {
+            quoteId,
+            currencyCode,
+            currencySymbol,
+            baseFare: this.toMoney(estimate.baseFare || 0),
+            distanceCost: this.toMoney(estimate.distanceFare || 0),
+            durationCost: this.toMoney(estimate.timeFare || 0),
+            serviceFee: this.toMoney(estimate.serviceFee || 0),
+            taxAmount: 0,
+            dynamicPricingAmount: this.toMoney(estimate.surgeAmount || 0),
+            platformFee: 0,
+            platformFeeAmount: 0,
+            serviceFareBeforePlatformFee: this.toMoney(customerServiceTotal),
+            customerServiceTotal: this.toMoney(customerServiceTotal),
+            serviceFare: this.toMoney(customerServiceTotal),
+            total: this.toMoney(customerServiceTotal),
+            shoppingBudget: this.walletBudgetRequired(),
+            totalAuthorisation: this.toMoney(totalAuthorisation),
+            minimumFareAdjustment: estimate.minimumFareApplied
+                ? this.toMoney(Math.max(0, customerServiceTotal - (estimate.subtotal + estimate.serviceFee)))
+                : 0,
+            maximumFareAdjustment: 0,
+            negotiationAdjustment: 0,
+            driverGrossEarnings: this.toMoney(customerServiceTotal),
+            multiplier: estimate.surgeMultiplier || 1,
+            calculationVersion: 'marketplace-v1',
+            reconciliationValid: true
+        };
     }
 
     getValidationError(type: 'pickup' | 'dropoff'): string | null {
@@ -2520,6 +2682,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 service_type_id: this.serviceType()?.id,
                 total_price: serviceCharge,
                 quote_id: quoteId,
+                fare_breakdown: this.buildQuoteFareBreakdown(quoteId, currencyCode, currencySymbol, serviceCharge, totalDue),
 
                 distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
                 estimated_distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
@@ -2542,6 +2705,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     pricing_plan: 'starter',
                     service_vehicle_class: this.vehicleClass(),
                     service_option_surcharge: this.vehicleSurcharge(),
+                    ...(this.selectedLocalService() ? { local_service_selection: this.selectedLocalService() } : {}),
                     ...(this.type === ServiceTypeEnum.DELIVERY ? { package_size: this.packageSize() } : {})
                 }
             };
@@ -2620,6 +2784,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             if (walletWillCover) {
                 paymentIntentId = 'wallet_funded';
             }
+            this.recordLocalServicePreference();
 
             this.analytics.track('booking_created', {
                 job_id: booking.id,
@@ -2670,6 +2835,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.submitting.set(false);
             this.paymentProcessing.set(false);
         }
+    }
+
+    private recordLocalServicePreference(): void {
+        const selection = this.selectedLocalService() as LocalServiceSelection | null;
+        if (!selection?.providerName || !selection.categorySlug) return;
+        this.localServices.saveRecent({
+            ...selection,
+            countryCode: selection.countryCode || this.localServiceCountryCode(),
+            serviceSlug: this.localServiceCatalogueSlug()
+        } as LocalServiceSelection & { serviceSlug?: string }).catch((error) => {
+            console.warn('[BookingRequest] local service preference save skipped', error);
+        });
     }
     private async validateCustomerCanBook(): Promise<string | null> {
         const profile = await this.fetchCurrentCustomerProfile();

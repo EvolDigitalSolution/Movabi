@@ -226,6 +226,34 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                     <span class="text-sm font-black text-slate-950">{{ serviceVehicleLabel() }}</span>
                   </div>
                 }
+                @if (localServiceSelection()) {
+                  <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 flex gap-3">
+                    <div class="h-12 w-12 shrink-0 rounded-2xl border border-emerald-100 bg-white p-1 flex items-center justify-center overflow-hidden">
+                      @if (localServiceSelection()?.providerLogoUrl) {
+                        <img [src]="localServiceSelection()?.providerLogoUrl" alt="" class="max-h-full max-w-full object-contain">
+                      } @else {
+                        <ion-icon name="storefront-outline" class="text-xl text-emerald-700"></ion-icon>
+                      }
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-[10px] uppercase tracking-widest text-emerald-700 font-black">Selected local service</p>
+                      <p class="mt-1 text-sm font-black text-slate-950 leading-snug">
+                        {{ localServiceSelection()?.providerName || localServiceSelection()?.categoryName }}
+                      </p>
+                      @if (localServiceSelection()?.providerAddress) {
+                        <p class="mt-1 text-xs font-semibold text-slate-600 leading-snug">{{ localServiceSelection()?.providerAddress }}</p>
+                      }
+                      @if (localServiceSelection()?.openStatus || localServiceSelection()?.distanceKm) {
+                        <p class="mt-1 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                          {{ localServiceSelection()?.openStatus || 'Selected' }}
+                          @if (localServiceSelection()?.distanceKm) {
+                            <span> · {{ localServiceSelection()?.distanceKm }} km away</span>
+                          }
+                        </p>
+                      }
+                    </div>
+                  </div>
+                }
               </div>
             </app-card>
 
@@ -871,6 +899,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             default:
                 return '';
         }
+    });
+
+    localServiceSelection = computed(() => {
+        const raw = this.jobMetadata()['local_service_selection'];
+        return raw && typeof raw === 'object' ? raw as {
+            categoryName?: string;
+            providerName?: string;
+            providerAddress?: string;
+            providerLogoUrl?: string;
+            openStatus?: string;
+            distanceKm?: number | string;
+        } : null;
     });
 
     packageSizeLabel = computed(() => {

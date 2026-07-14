@@ -106,7 +106,7 @@ BEGIN
             );
         END IF;
     END IF;
-END $$;
+END; $$;
 
 -- PART 2 â€” Service Types
 CREATE TABLE IF NOT EXISTS service_types (
@@ -151,7 +151,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'base_surge_multiplier') THEN
         ALTER TABLE cities ADD COLUMN base_surge_multiplier NUMERIC DEFAULT 1.0;
     END IF;
-END $$;
+END; $$;
 
 
 
@@ -345,7 +345,7 @@ BEGIN
               AND NULLIF(TRIM(COALESCE(vehicle_license_url, '')), '') IS NOT NULL;
         END IF;
     END IF;
-END $$;
+END; $$;
 
 -- PART 6 â€” Wallets & Transactions
 -- PART 5B - Driver Vehicle Capability Hardening
@@ -394,7 +394,7 @@ BEGIN
            OR driver_id IS NULL
            OR created_at IS NULL;
     END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -412,7 +412,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wallets' AND column_name = 'reserved_balance') THEN
         ALTER TABLE wallets ADD COLUMN reserved_balance NUMERIC DEFAULT 0;
     END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS wallet_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -512,7 +512,7 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expiry_reason') THEN
             ALTER TABLE public.jobs ADD COLUMN expiry_reason TEXT;
         END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_jobs_marketplace_drafts_expiry
     ON public.jobs(status, expires_at)
@@ -538,7 +538,7 @@ BEGIN
             ALTER TABLE public.errand_details ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
         END IF;
     END IF;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -626,7 +626,7 @@ BEGIN
 
         GRANT SELECT ON public.errand_funding TO authenticated;
     END IF;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -666,7 +666,7 @@ BEGIN
             'requires_review',
             'failed'
         ));
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS job_service_details (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -692,7 +692,7 @@ BEGIN
             ADD COLUMN IF NOT EXISTS fragile_items BOOLEAN DEFAULT false,
             ADD COLUMN IF NOT EXISTS packing_assistance BOOLEAN DEFAULT false;
     END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS job_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -724,7 +724,7 @@ BEGIN
     ALTER TABLE public.job_queue
         ADD CONSTRAINT job_queue_status_check
         CHECK (status IN ('waiting', 'broadcasting', 'assigned', 'expired', 'ignored'));
-END $$;
+END; $$;
 
 DELETE FROM job_queue a
 USING job_queue b
@@ -862,7 +862,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'created_at') THEN
         ALTER TABLE public.ratings ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     END IF;
-END $$;
+END; $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_job_customer
 ON public.ratings(job_id, customer_id)
@@ -887,7 +887,7 @@ BEGIN
             ALTER TABLE public.profiles ADD COLUMN review_count INTEGER DEFAULT 0;
         END IF;
     END IF;
-END $$;
+END; $$;
 
 UPDATE public.profiles p
 SET rating = r.average_score,
@@ -936,7 +936,7 @@ BEGIN
             END;
         END IF;
     END IF;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -947,7 +947,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_funding' AND column_name = 'over_budget_reason') THEN
         ALTER TABLE public.errand_funding ADD COLUMN over_budget_reason TEXT;
     END IF;
-END $$;
+END; $$;
 
 CREATE OR REPLACE FUNCTION public.enforce_errand_spending_budget()
 RETURNS TRIGGER AS $$
@@ -1016,7 +1016,7 @@ BEGIN
             ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
     END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
 ON public.notifications(user_id, created_at DESC);
@@ -1129,7 +1129,7 @@ BEGIN
             ADD COLUMN IF NOT EXISTS external_id TEXT,
             ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_device_push_tokens_user_enabled
 ON public.device_push_tokens(user_id, enabled);
@@ -1272,7 +1272,7 @@ BEGIN
             WHEN undefined_table THEN NULL;
         END;
     END IF;
-END $$;
+END; $$;
 
 ALTER TABLE public.driver_issuing_cardholders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.driver_issuing_cards ENABLE ROW LEVEL SECURITY;
@@ -1367,7 +1367,7 @@ BEGIN
             OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
         );
     END IF;
-END $$;
+END; $$;
 
 GRANT SELECT ON public.driver_issuing_cardholders TO authenticated;
 GRANT SELECT ON public.driver_issuing_cards TO authenticated;
@@ -1397,7 +1397,7 @@ BEGIN
             WHEN undefined_table THEN NULL;
         END;
     END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_job_messages_job_created
 ON public.job_messages(job_id, created_at);
@@ -1449,7 +1449,7 @@ BEGIN
             )
         );
     END IF;
-END $$;
+END; $$;
 
 -- PART 11 â€” RPC Functions (Idempotent)
 
@@ -2136,7 +2136,7 @@ BEGIN
       'Auto release for stale searching wallet request'
     );
   END LOOP;
-END $$;
+END; $$;
 
 -- Driver Vehicle Compatibility
 CREATE OR REPLACE FUNCTION driver_vehicle_can_accept_job(
@@ -2479,7 +2479,7 @@ BEGIN
               AND pricing_plan IN ('starter', 'pro')
         $sql$;
     END IF;
-END $$;
+END; $$;
 
 -- Global AI pricing foundation. These tables are admin-managed guardrails for
 -- market, zone, service, waiting, calendar and audit data. Live AI pricing is
@@ -2694,7 +2694,7 @@ BEGIN
     CREATE POLICY "Allow admin pricing audit read" ON public.ai_pricing_audits
         FOR SELECT
         USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
-END $$;
+END; $$;
 
 -- Marketplace engine settings are admin-managed and provide the single source
 -- of truth for commissions, negotiation, bidding and matching defaults.
@@ -2784,7 +2784,7 @@ BEGIN
             VALUES (NULL, v_key, v_value);
         END IF;
     END LOOP;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -2824,7 +2824,7 @@ BEGIN
           AND j.accepted_driver_id IS NULL
           AND COALESCE(j.payment_status, 'pending') NOT IN ('paid', 'authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'captured', 'capture_pending');
     END IF;
-END $$;
+END; $$;
 
 -- Repair incomplete Pro subscription copy without overwriting admin-customized plans.
 DO $$
@@ -2865,7 +2865,7 @@ BEGIN
               OR features @> '["5% Platform fee"]'::jsonb
           );
     END IF;
-END $$;
+END; $$;
 
 -- PART 18 - Hybrid marketplace negotiation live schema
 -- Merged from the temporary marketplace migration patch. Safe to rerun; preserves existing data.
@@ -3073,6 +3073,264 @@ DROP TRIGGER IF EXISTS trg_marketplace_negotiation_events_updated_at ON public.m
 CREATE TRIGGER trg_marketplace_negotiation_events_updated_at
   BEFORE UPDATE ON public.marketplace_negotiation_events
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- Local Service Catalogue: country/service/category/provider foundation.
+CREATE TABLE IF NOT EXISTS public.local_service_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL,
+  service_slug TEXT NOT NULL,
+  category_slug TEXT NOT NULL,
+  category_name TEXT NOT NULL,
+  category_description TEXT,
+  icon TEXT,
+  search_keywords TEXT[] DEFAULT '{}',
+  default_search_radius_km NUMERIC DEFAULT 10,
+  allow_custom_provider BOOLEAN DEFAULT true,
+  display_order INTEGER DEFAULT 0,
+  enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT local_service_categories_unique_slug UNIQUE (country_code, service_slug, category_slug)
+);
+
+CREATE TABLE IF NOT EXISTS public.local_service_providers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL,
+  category_id UUID REFERENCES public.local_service_categories(id) ON DELETE CASCADE,
+  provider_name TEXT NOT NULL,
+  provider_slug TEXT NOT NULL,
+  provider_description TEXT,
+  logo_url TEXT,
+  official_website TEXT,
+  search_keywords TEXT[] DEFAULT '{}',
+  address TEXT,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  external_place_id TEXT,
+  source TEXT DEFAULT 'admin',
+  verified BOOLEAN DEFAULT false,
+  enabled BOOLEAN DEFAULT true,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT local_service_providers_unique_slug UNIQUE (country_code, category_id, provider_slug)
+);
+
+ALTER TABLE public.local_service_categories
+  ADD COLUMN IF NOT EXISTS provider_types TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS fallback_keywords TEXT[] DEFAULT '{}';
+
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_country ON public.local_service_categories(country_code);
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_service ON public.local_service_categories(service_slug);
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_enabled ON public.local_service_categories(enabled);
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_order ON public.local_service_categories(display_order);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_country ON public.local_service_providers(country_code);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_category ON public.local_service_providers(category_id);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_enabled ON public.local_service_providers(enabled);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_order ON public.local_service_providers(display_order);
+
+CREATE TABLE IF NOT EXISTS public.provider_brand_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_id UUID REFERENCES public.local_service_providers(id) ON DELETE SET NULL,
+  external_place_id TEXT,
+  provider_name TEXT NOT NULL,
+  country_code TEXT NOT NULL DEFAULT 'GB',
+  official_domain TEXT,
+  logo_url TEXT,
+  favicon_url TEXT,
+  source TEXT DEFAULT 'admin',
+  verified BOOLEAN DEFAULT false,
+  confidence NUMERIC DEFAULT 0,
+  last_checked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.local_place_search_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL,
+  service_slug TEXT NOT NULL,
+  category_slug TEXT NOT NULL,
+  search_text TEXT DEFAULT '',
+  latitude_bucket TEXT NOT NULL,
+  longitude_bucket TEXT NOT NULL,
+  radius_km NUMERIC NOT NULL DEFAULT 10,
+  result JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source TEXT DEFAULT 'cache',
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.customer_local_service_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  country_code TEXT NOT NULL DEFAULT 'GB',
+  service_slug TEXT NOT NULL,
+  category_slug TEXT NOT NULL,
+  provider_id UUID REFERENCES public.local_service_providers(id) ON DELETE SET NULL,
+  external_place_id TEXT,
+  provider_name TEXT NOT NULL,
+  provider_address TEXT,
+  provider_logo_url TEXT,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  use_count INTEGER DEFAULT 1,
+  last_used_at TIMESTAMPTZ DEFAULT now(),
+  is_favourite BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_provider ON public.provider_brand_assets(provider_id);
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_external_place ON public.provider_brand_assets(external_place_id);
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_domain ON public.provider_brand_assets(official_domain);
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_name_country ON public.provider_brand_assets(lower(provider_name), country_code);
+CREATE INDEX IF NOT EXISTS idx_local_place_search_cache_lookup ON public.local_place_search_cache(country_code, service_slug, category_slug, latitude_bucket, longitude_bucket, radius_km);
+CREATE INDEX IF NOT EXISTS idx_local_place_search_cache_expires ON public.local_place_search_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_customer_local_service_preferences_customer ON public.customer_local_service_preferences(customer_id, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_customer_local_service_preferences_lookup ON public.customer_local_service_preferences(customer_id, country_code, service_slug, category_slug);
+
+ALTER TABLE public.local_service_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.local_service_providers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_brand_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.local_place_search_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_local_service_preferences ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enabled local service categories are readable" ON public.local_service_categories;
+CREATE POLICY "Enabled local service categories are readable"
+  ON public.local_service_categories FOR SELECT
+  TO authenticated
+  USING (enabled = true);
+
+DROP POLICY IF EXISTS "Enabled local service providers are readable" ON public.local_service_providers;
+CREATE POLICY "Enabled local service providers are readable"
+  ON public.local_service_providers FOR SELECT
+  TO authenticated
+  USING (enabled = true);
+
+DROP POLICY IF EXISTS "Admins manage local service categories" ON public.local_service_categories;
+CREATE POLICY "Admins manage local service categories"
+  ON public.local_service_categories FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+DROP POLICY IF EXISTS "Admins manage local service providers" ON public.local_service_providers;
+CREATE POLICY "Admins manage local service providers"
+  ON public.local_service_providers FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+DROP POLICY IF EXISTS "Verified brand assets are readable" ON public.provider_brand_assets;
+CREATE POLICY "Verified brand assets are readable"
+  ON public.provider_brand_assets FOR SELECT
+  TO authenticated
+  USING (verified = true OR provider_id IS NOT NULL);
+
+DROP POLICY IF EXISTS "Admins manage provider brand assets" ON public.provider_brand_assets;
+CREATE POLICY "Admins manage provider brand assets"
+  ON public.provider_brand_assets FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+DROP POLICY IF EXISTS "Customers manage own local service preferences" ON public.customer_local_service_preferences;
+CREATE POLICY "Customers manage own local service preferences"
+  ON public.customer_local_service_preferences FOR ALL
+  TO authenticated
+  USING (customer_id = auth.uid())
+  WITH CHECK (customer_id = auth.uid());
+
+DROP POLICY IF EXISTS "Admins read local search cache" ON public.local_place_search_cache;
+CREATE POLICY "Admins read local search cache"
+  ON public.local_place_search_cache FOR SELECT
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+GRANT SELECT ON public.local_service_categories TO authenticated;
+GRANT SELECT ON public.local_service_providers TO authenticated;
+GRANT ALL ON public.local_service_categories TO service_role;
+GRANT ALL ON public.local_service_providers TO service_role;
+GRANT SELECT ON public.provider_brand_assets TO authenticated;
+GRANT ALL ON public.provider_brand_assets TO service_role;
+GRANT ALL ON public.local_place_search_cache TO service_role;
+GRANT ALL ON public.customer_local_service_preferences TO authenticated;
+GRANT ALL ON public.customer_local_service_preferences TO service_role;
+
+DROP TRIGGER IF EXISTS trg_local_service_categories_updated_at ON public.local_service_categories;
+CREATE TRIGGER trg_local_service_categories_updated_at
+  BEFORE UPDATE ON public.local_service_categories
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_local_service_providers_updated_at ON public.local_service_providers;
+CREATE TRIGGER trg_local_service_providers_updated_at
+  BEFORE UPDATE ON public.local_service_providers
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_provider_brand_assets_updated_at ON public.provider_brand_assets;
+CREATE TRIGGER trg_provider_brand_assets_updated_at
+  BEFORE UPDATE ON public.provider_brand_assets
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_local_place_search_cache_updated_at ON public.local_place_search_cache;
+CREATE TRIGGER trg_local_place_search_cache_updated_at
+  BEFORE UPDATE ON public.local_place_search_cache
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_customer_local_service_preferences_updated_at ON public.customer_local_service_preferences;
+CREATE TRIGGER trg_customer_local_service_preferences_updated_at
+  BEFORE UPDATE ON public.customer_local_service_preferences
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+INSERT INTO public.local_service_categories (
+  country_code,
+  service_slug,
+  category_slug,
+  category_name,
+  category_description,
+  icon,
+  search_keywords,
+  display_order
+)
+VALUES
+  ('GB','errand','grocery-pickup','Grocery pickup','Collect groceries from a local supermarket or shop.','basket-outline',ARRAY['grocery','supermarket','food'],10),
+  ('GB','errand','pharmacy-pickup','Pharmacy pickup','Collect prescriptions or pharmacy essentials.','medkit-outline',ARRAY['pharmacy','chemist','medicine'],20),
+  ('GB','errand','retail-collection','Retail collection','Collect paid retail orders from stores.','bag-handle-outline',ARRAY['retail','shop','collection'],30),
+  ('GB','errand','click-and-collect','Click and collect','Collect click-and-collect orders.','receipt-outline',ARRAY['click and collect','order','collection'],40),
+  ('GB','errand','document-collection','Document collection','Collect documents and paperwork.','document-text-outline',ARRAY['document','paperwork','office'],50),
+  ('GB','errand','post-office','Post Office','Post office collection or drop-off.','mail-outline',ARRAY['post office','parcel','mail'],60),
+  ('GB','errand','laundry-dry-cleaning','Laundry and dry cleaning','Collect or deliver laundry and dry cleaning.','shirt-outline',ARRAY['laundry','dry cleaning','clothes'],70),
+  ('GB','errand','restaurant-pickup','Restaurant pickup','Collect food or restaurant orders.','restaurant-outline',ARRAY['restaurant','food','takeaway'],80),
+  ('GB','errand','parcel-return','Parcel return','Return parcels to shops or drop-off points.','cube-outline',ARRAY['parcel','return','drop off'],90),
+  ('GB','errand','custom-errand','Custom errand','Describe a custom errand manually.','sparkles-outline',ARRAY['custom','other','errand'],100),
+  ('GB','quick-buy','grocery','Grocery','Buy groceries and essentials.','basket-outline',ARRAY['grocery','supermarket','food'],10),
+  ('GB','quick-buy','pharmacy','Pharmacy','Buy pharmacy essentials.','medkit-outline',ARRAY['pharmacy','chemist','medicine'],20),
+  ('GB','quick-buy','convenience','Convenience','Buy convenience-store items.','storefront-outline',ARRAY['convenience','corner shop'],30),
+  ('GB','quick-buy','bakery','Bakery','Buy bakery items.','cafe-outline',ARRAY['bakery','bread','cakes'],40),
+  ('GB','quick-buy','electronics','Electronics','Buy electronics or accessories.','hardware-chip-outline',ARRAY['electronics','charger','phone'],50),
+  ('GB','quick-buy','home-essentials','Home essentials','Buy household essentials.','home-outline',ARRAY['home','household'],60),
+  ('GB','quick-buy','beauty','Beauty','Buy beauty or personal-care items.','rose-outline',ARRAY['beauty','personal care'],70),
+  ('GB','quick-buy','baby-essentials','Baby essentials','Buy baby essentials.','happy-outline',ARRAY['baby','nappies','formula'],80),
+  ('GB','quick-buy','pet-supplies','Pet supplies','Buy pet supplies.','paw-outline',ARRAY['pet','dog','cat'],90),
+  ('GB','quick-buy','gifts','Gifts','Buy gifts or cards.','gift-outline',ARRAY['gift','card','present'],100),
+  ('GB','quick-buy','other','Other','Buy another item manually.','sparkles-outline',ARRAY['other','custom'],110),
+  ('GB','collect-deliver','retail-collection','Retail collection','Collect an order from a retail store.','bag-handle-outline',ARRAY['retail','collection'],10),
+  ('GB','collect-deliver','personal-item','Personal item','Collect a personal item.','person-outline',ARRAY['personal','item'],20),
+  ('GB','collect-deliver','business-documents','Business documents','Collect or deliver business documents.','document-text-outline',ARRAY['business','documents'],30),
+  ('GB','collect-deliver','laundry-dry-cleaning','Laundry and dry cleaning','Collect laundry or dry cleaning.','shirt-outline',ARRAY['laundry','dry cleaning'],40),
+  ('GB','collect-deliver','repair-collection','Repair collection','Collect repair items.','construct-outline',ARRAY['repair','collection'],50),
+  ('GB','collect-deliver','food-collection','Food collection','Collect prepared food.','restaurant-outline',ARRAY['food','collection'],60),
+  ('GB','collect-deliver','custom-collection','Custom collection','Describe a custom collection.','sparkles-outline',ARRAY['custom','collection'],70),
+  ('GB','delivery','parcel','Parcel','Deliver a parcel.','cube-outline',ARRAY['parcel','package'],10),
+  ('GB','delivery','documents','Documents','Deliver documents.','document-text-outline',ARRAY['documents','paperwork'],20),
+  ('GB','delivery','food-perishables','Food and perishables','Deliver food or perishables.','restaurant-outline',ARRAY['food','perishable'],30),
+  ('GB','delivery','business-delivery','Business delivery','Business delivery request.','briefcase-outline',ARRAY['business','delivery'],40),
+  ('GB','delivery','personal-items','Personal items','Deliver personal items.','person-outline',ARRAY['personal','items'],50),
+  ('GB','delivery','fragile-special-handling','Fragile or special handling','Fragile items needing care.','shield-checkmark-outline',ARRAY['fragile','special handling'],60),
+  ('GB','delivery','other','Other','Describe another delivery.','sparkles-outline',ARRAY['other','custom'],70)
+ON CONFLICT (country_code, service_slug, category_slug) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION public.get_marketplace_commission(
   p_service_type_slug TEXT,
@@ -3514,7 +3772,7 @@ BEGIN
 
     GRANT SELECT, INSERT, UPDATE ON public.job_messages TO authenticated;
   END IF;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -3536,7 +3794,7 @@ BEGIN
     USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
     WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
   END IF;
-END $$;
+END; $$;
 
 GRANT SELECT ON public.marketplace_settings TO authenticated;
 GRANT SELECT ON public.marketplace_commission_overrides TO authenticated;

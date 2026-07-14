@@ -99,6 +99,12 @@ export const ADMIN_WEB_ROUTES: Routes = [
                         .then(m => m.GlobalAiPricingComponent)
             },
             {
+                path: 'marketplace/local-services',
+                loadComponent: () =>
+                    import('@admin/features/marketplace/local-services.component')
+                        .then(m => m.AdminLocalServicesComponent)
+            },
+            {
                 path: 'marketplace',
                 loadComponent: () =>
                     import('@admin/features/marketplace/marketplace-control-center.component')
