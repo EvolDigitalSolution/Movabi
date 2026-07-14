@@ -84,6 +84,15 @@ import {
 
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 import { LocalServiceSelectorComponent } from '../../../../../shared/components/local-service-selector/local-service-selector.component';
+import {
+    CompactBookingShellComponent,
+    ServiceIdentityRowComponent,
+    BookingSubtypeGridComponent,
+    BookingSummaryRowComponent,
+    BookingAccordionSectionComponent,
+    CompactAddressSelectorComponent,
+    LocalServiceSummaryComponent
+} from '../../../../../shared/components/booking';
 import { LocalServiceCategory, LocalServicesService, LocalServiceSelection } from '../../../../../core/services/local-services.service';
 
 import {
@@ -109,7 +118,14 @@ type PackageSize = 'small' | 'medium' | 'large';
         ButtonComponent,
         InputComponent,
         MapComponent,
-        LocalServiceSelectorComponent
+        LocalServiceSelectorComponent,
+        CompactBookingShellComponent,
+        ServiceIdentityRowComponent,
+        BookingSubtypeGridComponent,
+        BookingSummaryRowComponent,
+        BookingAccordionSectionComponent,
+        CompactAddressSelectorComponent,
+        LocalServiceSummaryComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -122,41 +138,19 @@ type PackageSize = 'small' | 'medium' | 'large';
     </ion-header>
 
     <ion-content class="bg-slate-50" [fullscreen]="true">
-      <div class="flex flex-col h-full ion-padding-bottom">
-        <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
-          <app-map #map></app-map>
+      <app-compact-booking-shell
+        mapHeight="33vh"
+        [routeDistanceKm]="routeResult() ? routeResult()!.distanceMeters / 1000 : null"
+        [routeDurationMins]="routeResult() ? routeResult()!.durationSeconds / 60 : null">
+        <app-map #map slot="map"></app-map>
 
-          @if (routeResult()) {
-            <div class="absolute bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-4">
-                  <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0">
-                    <ion-icon name="navigate" class="text-2xl"></ion-icon>
-                  </div>
-                  <div class="min-w-0">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Estimated Trip</p>
-                    <p class="text-lg font-display font-bold text-slate-900">
-                      {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km • {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
-                    </p>
-                    
-                  </div>
-                </div>
-              </div>
-            </div>
-          }
-        </div>
-
-        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto ion-padding-bottom">
-          <div class="max-w-2xl mx-auto space-y-5 pb-safe">
-            <div class="flex items-center gap-4 p-1">
-              <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100 shrink-0">
-                <ion-icon [name]="getIcon()" class="text-2xl"></ion-icon>
-              </div>
-              <div>
-                <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight mb-0.5">{{ getTitle() }}</h2>
-                <p class="text-slate-400 font-medium text-sm">Trusted local movement for your needs.</p>
-              </div>
-            </div>
+        <div class="space-y-5 pb-safe">
+          <app-service-identity-row
+            [title]="getTitle()"
+            [icon]="getIcon()"
+            description="Trusted local movement for your needs."
+            [accentColor]="getServiceAccentColor()">
+          </app-service-identity-row>
 
             @if (locationService.locationError()) {
               <div class="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-center gap-3 text-amber-800 text-sm font-medium animate-in fade-in slide-in-from-top-2">
@@ -172,53 +166,15 @@ type PackageSize = 'small' | 'medium' | 'large';
 
             <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-5">
               @if (type === ServiceTypeEnum.ERRAND) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
-                  <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Shop Type</p>
-                    <div class="grid grid-cols-3 gap-3">
-                      <button
-                        type="button"
-                        (click)="setErrandMode('collect_deliver')"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'collect_deliver'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'collect_deliver'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="swap-horizontal-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Collect & Deliver
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        (click)="setErrandMode('quick_buy')"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'quick_buy'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'quick_buy'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="cart-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Quick Buy
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        (click)="setErrandMode('shop_deliver')"
-                        [class.bg-blue-600]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
-                        [class.text-white]="bookingForm.get('errand_mode')?.value === 'shop_deliver'"
-                        [class.bg-white]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        [class.text-slate-600]="bookingForm.get('errand_mode')?.value !== 'shop_deliver'"
-                        class="min-h-[92px] flex flex-col items-center justify-center text-center gap-2 px-2 py-3 rounded-2xl border border-slate-100 shadow-sm transition-all active:scale-95">
-                        <ion-icon name="business-outline" class="text-lg shrink-0"></ion-icon>
-                        <span class="text-[10px] font-bold uppercase leading-tight text-center whitespace-normal">
-                          Shop & Deliver
-                        </span>
-                      </button>
-                    </div>
-                  </div>
+                <div class="p-4 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <app-booking-subtype-grid
+                    sectionLabel="Shop Type"
+                    [options]="errandModeOptions"
+                    [selected]="bookingForm.get('errand_mode')?.value"
+                    [columns]="3"
+                    accentColor="blue"
+                    (selectedChange)="setErrandMode($any($event))">
+                  </app-booking-subtype-grid>
 
                   @if (bookingForm.get('errand_mode')?.value === 'shop_deliver') {
                     <div class="space-y-3">
@@ -264,113 +220,38 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </app-local-service-selector>
               }
 
-              <div class="space-y-5">
-                <div class="rounded-3xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
-                  <button
-                    type="button"
-                    (click)="togglePickupExpanded()"
-                    [attr.aria-expanded]="pickupExpanded()"
-                    aria-label="Change pickup address"
-                    class="w-full min-h-11 rounded-2xl bg-white px-4 py-3 text-left shadow-sm border border-slate-100 flex items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 active:scale-[0.99] transition-all">
-                    <span class="w-11 h-11 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
-                      <ion-icon name="location-outline" class="text-xl"></ion-icon>
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400">Pickup</span>
-                      <span class="block text-sm font-black text-slate-900">{{ pickupSummaryTitle() }}</span>
-                      <span class="block text-xs font-semibold text-slate-500 truncate">{{ pickupSummaryAddress() }}</span>
-                    </span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-orange-600 px-3 py-2 rounded-full bg-orange-50">
-                      Change
-                    </span>
-                  </button>
+              <div class="space-y-3">
+                <app-compact-address-selector
+                  mode="pickup"
+                  [summaryAddress]="pickupSummaryAddress()"
+                  [expanded]="pickupExpanded()"
+                  [autofilling]="pickupAutofilling()"
+                  [suggestions]="displayPickupResults()"
+                  [showResults]="showPickupResults()"
+                  [isCurrentLocation]="pickupLocation.source === 'gps'"
+                  ariaLabel="Edit pickup address"
+                  (expandedChange)="onPickupExpandedChange($event)"
+                  (inputChange)="onPickupInputChange($event)"
+                  (suggestionSelect)="selectResult('pickup', $any($event))"
+                  (useCurrentLocation)="useCurrentLocation('pickup')"
+                  (keepCurrent)="keepCurrentPickup()"
+                  (focusChange)="onPickupFocusChange($event)">
+                </app-compact-address-selector>
 
-                  @if (pickupAutofilling()) {
-                    <p class="mt-2 px-2 text-[11px] font-bold text-slate-500" aria-live="polite">
-                      Finding your current pickup address...
-                    </p>
-                  }
-
-                  @if (pickupExpanded()) {
-                    <div class="mt-3 relative animate-in fade-in slide-in-from-top-2">
-                      <app-input
-                        label="Pickup Location"
-                        formControlName="pickup_address"
-                        (input)="onAddressInput('pickup', $any($event).target.value)"
-                        placeholder="Where should we pick up?"
-                        icon="location-outline"
-                        (focus)="showPickupResults.set(true)"
-                        (blur)="hideResults('pickup')">
-
-                        @if (showPickupResults() && displayPickupResults().length > 0) {
-                          <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                            @for (result of displayPickupResults(); track result.label) {
-                              <button
-                                type="button"
-                                (mousedown)="selectResult('pickup', result)"
-                                class="w-full min-h-11 px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
-                                <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                                  <ion-icon name="location-outline" class="text-lg"></ion-icon>
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                  <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                                  <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
-                                </div>
-                              </button>
-                            }
-                          </div>
-                        }
-                      </app-input>
-
-                      <button
-                        type="button"
-                        (click)="useCurrentLocation('pickup')"
-                        class="absolute right-4 top-10 min-h-11 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50 px-3 py-1 rounded-full z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
-                        <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                        Current
-                      </button>
-                    </div>
-                  }
-                </div>
-
-                <div class="relative">
-                  <app-input
-                    label="Dropoff Location"
-                    formControlName="dropoff_address"
-                    (input)="onAddressInput('dropoff', $any($event).target.value)"
-                    [placeholder]="type === ServiceTypeEnum.DELIVERY ? 'Where should we deliver the parcel?' : 'Where should we deliver?'"
-                    icon="pin-outline"
-                    (focus)="showDropoffResults.set(true)"
-                    (blur)="hideResults('dropoff')">
-
-                    @if (showDropoffResults() && displayDropoffResults().length > 0) {
-                      <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of displayDropoffResults(); track result.label) {
-                          <button
-                            type="button"
-                            (mousedown)="selectResult('dropoff', result)"
-                            class="w-full px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors">
-                            <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                              <ion-icon name="pin-outline" class="text-lg"></ion-icon>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                              <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ dropoffResults().length > 0 ? 'Select destination' : 'Recent destination' }}</p>
-                            </div>
-                          </button>
-                        }
-                      </div>
-                    }
-                  </app-input>
-
-                  <button
-                    type="button"
-                    (click)="useCurrentLocation('dropoff')"
-                    class="absolute right-4 top-10 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50/50 px-3 py-1 rounded-full z-10">
-                    <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                    Current
-                  </button>
-                </div>
+                <app-compact-address-selector
+                  mode="dropoff"
+                  [summaryAddress]="dropoffSummaryAddress()"
+                  [expanded]="dropoffExpanded()"
+                  [suggestions]="displayDropoffResults()"
+                  [showResults]="showDropoffResults()"
+                  ariaLabel="Edit dropoff address"
+                  (expandedChange)="onDropoffExpandedChange($event)"
+                  (inputChange)="onDropoffInputChange($event)"
+                  (suggestionSelect)="selectResult('dropoff', $any($event))"
+                  (useCurrentLocation)="useCurrentLocation('dropoff')"
+                  (keepCurrent)="keepCurrentDropoff()"
+                  (focusChange)="onDropoffFocusChange($event)">
+                </app-compact-address-selector>
               </div>
 
               @if (type !== ServiceTypeEnum.VAN) {
@@ -975,9 +856,8 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </p>
               </div>
             </form>
-          </div>
         </div>
-      </div>
+      </app-compact-booking-shell>
     </ion-content>
   `
 })
@@ -1054,6 +934,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         { id: 'large', label: 'Large', helper: 'Bulky parcel' }
     ];
 
+    readonly errandModeOptions = [
+        { id: 'collect_deliver', label: 'Collect & Deliver', icon: 'swap-horizontal-outline' },
+        { id: 'quick_buy', label: 'Quick Buy', icon: 'cart-outline' },
+        { id: 'shop_deliver', label: 'Shop & Deliver', icon: 'business-outline' }
+    ];
+
+    getServiceAccentColor(): 'orange' | 'blue' | 'slate' | 'green' {
+        switch (this.type) {
+            case ServiceTypeEnum.RIDE: return 'blue';
+            case ServiceTypeEnum.ERRAND: return 'orange';
+            case ServiceTypeEnum.DELIVERY: return 'blue';
+            case ServiceTypeEnum.VAN: return 'slate';
+            default: return 'orange';
+        }
+    }
+
     popularShopOptions = computed(() => this.config.popularShops());
 
     pickupResults = signal<AutocompleteResult[]>([]);
@@ -1061,6 +957,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     showPickupResults = signal(false);
     showDropoffResults = signal(false);
     pickupExpanded = signal(false);
+    dropoffExpanded = signal(false);
     pickupAutofilling = signal(false);
     pickupManuallyChanged = signal(false);
     selectedLocalService = signal<Record<string, unknown> | null>(null);
@@ -1084,7 +981,19 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     pickupSummaryAddress = computed(() => {
         const address = this.bookingForm?.get('pickup_address')?.value || this.pickupLocation.address;
-        return String(address || '').trim() || 'Search for an address or use current location';
+        return String(address || '').trim();
+    });
+
+    dropoffSummaryTitle = computed(() => {
+        const source = this.dropoffLocation.source;
+        if (source === 'gps') return 'Current location';
+        if (source === 'map') return 'Selected on map';
+        return this.dropoffLocation.address?.trim() ? 'Saved dropoff' : 'Choose dropoff';
+    });
+
+    dropoffSummaryAddress = computed(() => {
+        const address = this.bookingForm?.get('dropoff_address')?.value || this.dropoffLocation.address;
+        return String(address || '').trim();
     });
 
     showLocalServiceCatalogue = computed(() => {
@@ -1844,10 +1753,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
+                        this.pickupExpanded.set(false);
                     } else {
                         this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('dropoff');
+                        this.dropoffExpanded.set(false);
                     }
 
                     this.updateRoute();
@@ -1863,10 +1774,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
+                        this.pickupExpanded.set(false);
                     } else {
                         this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('dropoff');
+                        this.dropoffExpanded.set(false);
                     }
 
                     this.updateRoute();
@@ -2006,6 +1919,59 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
+    toggleDropoffExpanded(): void {
+        this.dropoffExpanded.update(value => !value);
+        if (!this.dropoffExpanded()) {
+            this.showDropoffResults.set(false);
+        }
+    }
+
+    keepCurrentPickup(): void {
+        this.pickupExpanded.set(false);
+        this.showPickupResults.set(false);
+    }
+
+    keepCurrentDropoff(): void {
+        this.dropoffExpanded.set(false);
+        this.showDropoffResults.set(false);
+    }
+
+    onPickupExpandedChange(expanded: boolean): void {
+        this.pickupExpanded.set(expanded);
+        if (!expanded) this.showPickupResults.set(false);
+    }
+
+    onDropoffExpandedChange(expanded: boolean): void {
+        this.dropoffExpanded.set(expanded);
+        if (!expanded) this.showDropoffResults.set(false);
+    }
+
+    onPickupInputChange(value: string): void {
+        this.bookingForm.patchValue({ pickup_address: value }, { emitEvent: false });
+        this.onAddressInput('pickup', value);
+    }
+
+    onDropoffInputChange(value: string): void {
+        this.bookingForm.patchValue({ dropoff_address: value }, { emitEvent: false });
+        this.onAddressInput('dropoff', value);
+    }
+
+    onPickupFocusChange(focused: boolean): void {
+        if (focused) {
+            this.showPickupResults.set(true);
+        } else {
+            this.hideResults('pickup');
+        }
+    }
+
+    onDropoffFocusChange(focused: boolean): void {
+        if (focused) {
+            this.showDropoffResults.set(true);
+        } else {
+            this.hideResults('dropoff');
+        }
+    }
+
     private applyErrandModeRules(mode: ErrandMode) {
         const itemsControl = this.bookingForm.get('items_list');
         const budgetControl = this.bookingForm.get('estimated_budget');
@@ -2101,6 +2067,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             );
             this.bookingForm.patchValue({ pickup_address: result.label }, { emitEvent: false });
             this.showPickupResults.set(false);
+            this.pickupExpanded.set(false);
             this.updateMarker('pickup');
         } else {
             this.dropoffLocation = this.locationService.normalizeLocation(
@@ -2110,6 +2077,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             );
             this.bookingForm.patchValue({ dropoff_address: result.label }, { emitEvent: false });
             this.showDropoffResults.set(false);
+            this.dropoffExpanded.set(false);
             this.updateMarker('dropoff');
         }
 
