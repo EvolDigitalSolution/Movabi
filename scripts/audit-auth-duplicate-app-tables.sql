@@ -10,6 +10,8 @@
 --   Review every result before running any cleanup manually.
 --   Never use DROP CASCADE for these tables.
 
+BEGIN;
+
 CREATE TEMP TABLE IF NOT EXISTS auth_duplicate_app_table_audit (
   table_name text PRIMARY KEY,
   auth_table_exists boolean NOT NULL DEFAULT false,
@@ -251,6 +253,8 @@ ORDER BY
     ELSE 5
   END,
   table_name;
+
+COMMIT;
 
 -- Additional manual verification before cleanup:
 -- 1. Confirm code no longer references auth.<table_name>.
