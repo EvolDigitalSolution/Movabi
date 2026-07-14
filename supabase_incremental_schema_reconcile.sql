@@ -2358,7 +2358,7 @@ CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active) WHERE is_activ
 
 -- Keep short package delivery competitive. Bike/small package delivery should
 -- not inherit ride or van-style minimums for sub-1km local jobs.
-CREATE TABLE IF NOT EXISTS pricing_config (
+CREATE TABLE IF NOT EXISTS public.pricing_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     service_type TEXT NOT NULL,
     country_code TEXT,
@@ -2397,12 +2397,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pricing_config_market_service
         service_type
     );
 
-ALTER TABLE pricing_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-    ALTER TABLE pricing_config DROP CONSTRAINT IF EXISTS service_type_check;
-    ALTER TABLE pricing_config
+    ALTER TABLE public.pricing_config DROP CONSTRAINT IF EXISTS service_type_check;
+    ALTER TABLE public.pricing_config
         ADD CONSTRAINT service_type_check
         CHECK (service_type IN ('ride', 'errand', 'delivery', 'van-moving'));
 
@@ -2416,7 +2416,7 @@ BEGIN
         USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
         WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
-    INSERT INTO pricing_config (
+    INSERT INTO public.pricing_config (
         service_type,
         country_code,
         market_city,
@@ -2435,14 +2435,14 @@ BEGIN
     SELECT 'delivery', 'GB', NULL, NULL, 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', '£', 'en-GB', 'km', TRUE
     WHERE NOT EXISTS (
         SELECT 1
-        FROM pricing_config
+        FROM public.pricing_config
         WHERE service_type = 'delivery'
           AND COALESCE(country_code, 'GB') = 'GB'
           AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
           AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL
     );
 
-    UPDATE pricing_config
+    UPDATE public.pricing_config
     SET base_fare = 2.25,
         per_km = 0.55,
         per_min = 0.04,
