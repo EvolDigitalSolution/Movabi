@@ -12,8 +12,9 @@ function cleanCountry(value: unknown): string {
 
 function canonicalService(value: unknown): string {
   const slug = String(value || 'errand').trim().toLowerCase().replace(/_/g, '-');
-  if (['shop', 'shopping', 'shop-deliver', 'quick-buy', 'errands'].includes(slug)) return 'errand';
-  if (['collect-deliver'].includes(slug)) return 'delivery';
+  if (['shop', 'shopping', 'errands'].includes(slug)) return 'errand';
+  if (['quick_buy', 'quick-buy'].includes(slug)) return 'quick-buy';
+  if (['collect_deliver', 'collect-deliver'].includes(slug)) return 'collect-deliver';
   if (['deliver', 'package'].includes(slug)) return 'delivery';
   if (['van', 'move', 'van-moving'].includes(slug)) return 'van-moving';
   return slug || 'errand';
@@ -64,7 +65,6 @@ router.get('/categories', async (req: Request, res: Response) => {
     const serviceSlug = canonicalService(req.query.service || req.query.serviceSlug);
 
     const { data, error } = await supabaseAdmin
-      .schema('public')
       .from('local_service_categories')
       .select('id, category_slug, category_name, category_description, icon, search_keywords, provider_types, fallback_keywords, default_search_radius_km, allow_custom_provider, display_order')
       .eq('country_code', countryCode)
@@ -74,10 +74,6 @@ router.get('/categories', async (req: Request, res: Response) => {
       .order('category_name', { ascending: true });
 
     if (error) {
-      if (['42P01', '42703'].includes(String(error.code || ''))) {
-        console.warn('[LocalServices] categories unavailable, returning empty list:', error.message);
-        return res.json({ ok: true, categories: [] });
-      }
       return res.status(400).json({ ok: false, error: error.message });
     }
 
@@ -192,11 +188,8 @@ router.get('/nearby', async (req: Request, res: Response) => {
 
     return res.json({ ok: true, providers });
   } catch (error: any) {
-    console.warn('[LocalServices] nearby unavailable; returning empty provider list.', {
-      message: error?.message || String(error),
-      code: error?.code
-    });
-    return res.json({ ok: true, providers: [] });
+    console.error('[LocalServices] nearby failed:', error);
+    return res.status(500).json({ ok: false, error: 'Nearby providers are unavailable. Manual entry still works.' });
   }
 });
 
