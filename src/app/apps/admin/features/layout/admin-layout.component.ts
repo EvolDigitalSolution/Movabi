@@ -229,6 +229,7 @@ export class AdminLayoutComponent {
     { label: 'Marketplace Control Centre', path: '/marketplace', icon: 'storefront-outline' },
     { label: 'Local Services', path: '/marketplace/local-services', icon: 'business-outline' },
     { label: 'Global AI Pricing', path: '/marketplace/global-ai-pricing', icon: 'analytics-outline' },
+    { label: 'Market Intelligence', path: '/pricing/market-intelligence', icon: 'trending-up-outline' },
     { label: 'About Movabi', path: '/about-movabi', icon: 'rocket-outline' },
     { label: 'Settings', path: '/settings', icon: 'settings-outline' }
   ];

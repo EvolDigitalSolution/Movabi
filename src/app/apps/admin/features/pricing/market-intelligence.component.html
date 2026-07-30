@@ -1,0 +1,329 @@
+<div class="mi-page">
+  <header class="mi-header">
+    <div>
+      <h1>Market Intelligence Pricing</h1>
+      <p class="mi-subtitle">
+        Beat local competitors safely. Existing pricing remains authoritative while this feature is disabled.
+      </p>
+    </div>
+    <button class="mi-btn mi-btn--ghost" (click)="reload()" [disabled]="loading()">
+      <ion-icon name="refresh-outline"></ion-icon> Reload
+    </button>
+  </header>
+
+  @if (toastMessage()) {
+    <div class="mi-toast" [class.mi-toast--danger]="toastColor() === 'danger'" [class.mi-toast--warning]="toastColor() === 'warning'">
+      {{ toastMessage() }}
+    </div>
+  }
+
+  @if (settings(); as s) {
+    <div class="mi-status-bar" [class.mi-status-bar--live]="s.marketPricingEnabled && !s.shadowMode">
+      <ion-icon [name]="s.marketPricingEnabled && !s.shadowMode ? 'warning-outline' : 'shield-checkmark-outline'"></ion-icon>
+      <span>
+        Market pricing enabled: <strong>{{ s.marketPricingEnabled ? 'Yes' : 'No' }}</strong>
+        &nbsp;·&nbsp; Shadow mode: <strong>{{ s.shadowMode ? 'On' : 'Off' }}</strong>
+        &nbsp;·&nbsp; Live application:
+        <strong>{{ s.marketPricingEnabled && !s.shadowMode ? 'ACTIVE' : 'Disabled (safe)' }}</strong>
+      </span>
+    </div>
+  }
+
+  <nav class="mi-tabs">
+    @for (tab of tabs; track tab.id) {
+      <button class="mi-tab" [class.mi-tab--active]="activeTab() === tab.id" (click)="activeTab.set(tab.id)">
+        <ion-icon [name]="tab.icon"></ion-icon>
+        {{ tab.label }}
+      </button>
+    }
+  </nav>
+
+  <!-- STRATEGIES -->
+  @if (activeTab() === 'strategies') {
+    <section class="mi-panel">
+      <h2>Create strategy</h2>
+      <div class="mi-grid">
+        <label>Country<input [(ngModel)]="strategyDraft['countryCode']" placeholder="GB" maxlength="2"></label>
+        <label>City (optional)<input [(ngModel)]="strategyDraft['marketCity']" placeholder="Manchester"></label>
+        <label>Service<input [(ngModel)]="strategyDraft['serviceType']" placeholder="ride"></label>
+        <label>Vehicle class (optional)<input [(ngModel)]="strategyDraft['vehicleClass']" placeholder="standard"></label>
+        <label>Currency<input [(ngModel)]="strategyDraft['currency']" placeholder="GBP" maxlength="3"></label>
+        <label>Strategy
+          <select [(ngModel)]="strategyDraft['strategy']">
+            <option value="manual">Manual</option>
+            <option value="match_market">Match market</option>
+            <option value="beat_market">Beat market</option>
+            <option value="premium">Premium</option>
+            <option value="lowest_sustainable">Lowest sustainable</option>
+          </select>
+        </label>
+        <label>Target cheaper than market (%)<input type="number" [(ngModel)]="strategyDraft['targetDifferencePercent']" min="0" max="30"></label>
+        <label>Min driver hourly rate<input type="number" [(ngModel)]="strategyDraft['minimumDriverHourlyRate']"></label>
+        <label>Min driver per km<input type="number" [(ngModel)]="strategyDraft['minimumDriverPerKm']"></label>
+        <label>Min driver payout<input type="number" [(ngModel)]="strategyDraft['minimumDriverPayout']"></label>
+        <label>Min platform margin (%)<input type="number" [(ngModel)]="strategyDraft['minimumPlatformMarginPercent']" min="0" max="50"></label>
+        <label>Min platform revenue<input type="number" [(ngModel)]="strategyDraft['minimumPlatformRevenue']"></label>
+        <label>Max customer discount (%)<input type="number" [(ngModel)]="strategyDraft['maximumCustomerDiscountPercent']" min="0" max="30"></label>
+        <label>Max market adjustment (%)<input type="number" [(ngModel)]="strategyDraft['maximumMarketAdjustmentPercent']" min="0" max="100"></label>
+      </div>
+      <button class="mi-btn" (click)="saveStrategy()" [disabled]="saving()">
+        <ion-icon name="add-circle-outline"></ion-icon> Create strategy (disabled by default)
+      </button>
+
+      <h2 class="mi-mt">Existing strategies</h2>
+      <table class="mi-table">
+        <thead>
+          <tr>
+            <th>Country</th><th>City</th><th>Service</th><th>Vehicle</th><th>Strategy</th>
+            <th>Target %</th><th>Max discount %</th><th>Currency</th><th>Enabled</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of strategies(); track row['id']) {
+            <tr>
+              <td>{{ row['country_code'] }}</td>
+              <td>{{ row['market_city'] || '—' }}</td>
+              <td>{{ row['service_type'] }}</td>
+              <td>{{ row['vehicle_class'] || '—' }}</td>
+              <td>{{ row['strategy'] }}</td>
+              <td>{{ row['target_difference_percent'] }}%</td>
+              <td>{{ row['maximum_customer_discount_percent'] }}%</td>
+              <td>{{ row['currency'] }}</td>
+              <td>
+                <button class="mi-toggle" [class.mi-toggle--on]="row['enabled']" (click)="toggleStrategy(row)">
+                  {{ row['enabled'] ? 'Enabled' : 'Disabled' }}
+                </button>
+              </td>
+              <td><button class="mi-icon-btn" (click)="deleteStrategy(row)"><ion-icon name="trash-outline"></ion-icon></button></td>
+            </tr>
+          } @empty {
+            <tr><td colspan="10" class="mi-empty">No strategies configured yet.</td></tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  }
+
+  <!-- COMPETITORS -->
+  @if (activeTab() === 'competitors') {
+    <section class="mi-panel">
+      <div class="mi-banner">Competitor values are manually maintained and may become outdated.</div>
+      <h2>Add competitor</h2>
+      <div class="mi-grid">
+        <label>Country<input [(ngModel)]="competitorDraft['countryCode']" maxlength="2"></label>
+        <label>City (optional)<input [(ngModel)]="competitorDraft['marketCity']"></label>
+        <label>Name<input [(ngModel)]="competitorDraft['competitorName']" placeholder="Uber"></label>
+        <label>Service<input [(ngModel)]="competitorDraft['serviceType']"></label>
+        <label>Vehicle class (optional)<input [(ngModel)]="competitorDraft['vehicleClass']"></label>
+        <label>Display order<input type="number" [(ngModel)]="competitorDraft['displayOrder']"></label>
+        <label>Source
+          <select [(ngModel)]="competitorDraft['sourceType']">
+            <option value="manual">Manual</option>
+            <option value="partner">Partner</option>
+            <option value="research">Research</option>
+            <option value="api">API</option>
+          </select>
+        </label>
+        <label class="mi-span-2">Notes<textarea [(ngModel)]="competitorDraft['notes']"></textarea></label>
+      </div>
+      <button class="mi-btn" (click)="saveCompetitor()" [disabled]="saving()">
+        <ion-icon name="add-circle-outline"></ion-icon> Add competitor
+      </button>
+
+      <h2 class="mi-mt">Competitors</h2>
+      <table class="mi-table">
+        <thead><tr><th>Country</th><th>City</th><th>Name</th><th>Service</th><th>Enabled</th><th></th></tr></thead>
+        <tbody>
+          @for (row of competitors(); track row['id']) {
+            <tr>
+              <td>{{ row['country_code'] }}</td>
+              <td>{{ row['market_city'] || '—' }}</td>
+              <td>{{ row['competitor_name'] }}</td>
+              <td>{{ row['service_type'] }}</td>
+              <td>
+                <button class="mi-toggle" [class.mi-toggle--on]="row['enabled']" (click)="toggleCompetitor(row)">
+                  {{ row['enabled'] ? 'Enabled' : 'Disabled' }}
+                </button>
+              </td>
+              <td><button class="mi-icon-btn" (click)="deleteCompetitor(row)"><ion-icon name="trash-outline"></ion-icon></button></td>
+            </tr>
+          } @empty {
+            <tr><td colspan="6" class="mi-empty">No competitors configured yet.</td></tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  }
+
+  <!-- BENCHMARKS -->
+  @if (activeTab() === 'benchmarks') {
+    <section class="mi-panel">
+      <div class="mi-banner">Competitor values are manually maintained and may become outdated.</div>
+      <h2>Add benchmark</h2>
+      <div class="mi-grid">
+        <label>Competitor
+          <select [(ngModel)]="benchmarkDraft['competitorProfileId']">
+            <option value="">Select competitor…</option>
+            @for (c of competitors(); track c['id']) {
+              <option [value]="c['id']">{{ c['competitor_name'] }} ({{ c['country_code'] }})</option>
+            }
+          </select>
+        </label>
+        <label>Distance (km)<input type="number" [(ngModel)]="benchmarkDraft['distanceKm']"></label>
+        <label>Duration (min)<input type="number" [(ngModel)]="benchmarkDraft['durationMinutes']"></label>
+        <label>Observed fare<input type="number" [(ngModel)]="benchmarkDraft['observedFare']"></label>
+        <label>Currency<input [(ngModel)]="benchmarkDraft['currency']" maxlength="3"></label>
+        <label>Fare type
+          <select [(ngModel)]="benchmarkDraft['fareType']">
+            <option value="typical">Typical</option>
+            <option value="minimum">Minimum</option>
+            <option value="peak">Peak</option>
+            <option value="off_peak">Off peak</option>
+            <option value="airport">Airport</option>
+            <option value="manual_index">Manual index</option>
+          </select>
+        </label>
+        <label>Observed at<input type="datetime-local" [(ngModel)]="benchmarkDraft['observedAt']"></label>
+        <label>Expires at (optional)<input type="datetime-local" [(ngModel)]="benchmarkDraft['expiresAt']"></label>
+        <label>Confidence (0-100)<input type="number" [(ngModel)]="benchmarkDraft['confidenceScore']" min="0" max="100"></label>
+        <label class="mi-span-2">Source note<input [(ngModel)]="benchmarkDraft['sourceReference']" placeholder="Manually checked app fare estimate on ..."></label>
+      </div>
+      <button class="mi-btn" (click)="saveBenchmark()" [disabled]="saving()">
+        <ion-icon name="add-circle-outline"></ion-icon> Add benchmark
+      </button>
+
+      <h2 class="mi-mt">Benchmarks</h2>
+      <table class="mi-table">
+        <thead><tr><th>Competitor</th><th>Distance</th><th>Duration</th><th>Fare</th><th>Type</th><th>Confidence</th><th>Observed</th><th></th></tr></thead>
+        <tbody>
+          @for (row of benchmarks(); track row['id']) {
+            <tr>
+              <td>{{ competitorName(row['competitor_profile_id']) }}</td>
+              <td>{{ row['distance_km'] || '—' }}</td>
+              <td>{{ row['duration_minutes'] || '—' }}</td>
+              <td>{{ row['currency'] }} {{ row['observed_fare'] }}</td>
+              <td>{{ row['fare_type'] }}</td>
+              <td>{{ row['confidence_score'] }}</td>
+              <td>{{ row['observed_at'] | date:'short' }}</td>
+              <td><button class="mi-icon-btn" (click)="deleteBenchmark(row)"><ion-icon name="trash-outline"></ion-icon></button></td>
+            </tr>
+          } @empty {
+            <tr><td colspan="8" class="mi-empty">No benchmarks recorded yet.</td></tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  }
+
+  <!-- SIMULATOR -->
+  @if (activeTab() === 'simulator') {
+    <section class="mi-panel">
+      <h2>Simulate a quote</h2>
+      <p class="mi-hint">Calls the exact same backend pricing service used at quote time. No pricing maths runs in Angular.</p>
+      <div class="mi-grid">
+        <label>Country<input [(ngModel)]="simulationInput['countryCode']" maxlength="2"></label>
+        <label>City (optional)<input [(ngModel)]="simulationInput['marketCity']"></label>
+        <label>Service<input [(ngModel)]="simulationInput['serviceType']"></label>
+        <label>Vehicle class (optional)<input [(ngModel)]="simulationInput['vehicleClass']"></label>
+        <label>Currency<input [(ngModel)]="simulationInput['currency']" maxlength="3"></label>
+        <label>Distance (km)<input type="number" [(ngModel)]="simulationInput['distanceKm']"></label>
+        <label>Duration (min)<input type="number" [(ngModel)]="simulationInput['durationMinutes']"></label>
+        <label>Existing base service fare<input type="number" [(ngModel)]="simulationInput['baseServiceFare']"></label>
+        <label>Platform fee %<input type="number" [(ngModel)]="simulationInput['platformFeePercent']"></label>
+        <label>Driver commission %<input type="number" [(ngModel)]="simulationInput['driverCommissionPercent']"></label>
+      </div>
+      <button class="mi-btn" (click)="runSimulation()" [disabled]="simulating()">
+        <ion-icon name="flask-outline"></ion-icon> Run simulation
+      </button>
+
+      @if (simulationResult(); as r) {
+        <div class="mi-sim-result">
+          <div class="mi-sim-row"><span>Existing base service fare</span><strong>£{{ r.baseServiceFare }}</strong></div>
+          <div class="mi-sim-row"><span>Market median (reference)</span><strong>{{ r.marketReferenceFare !== null ? '£' + r.marketReferenceFare : '—' }}</strong></div>
+          <div class="mi-sim-row"><span>Requested target fare</span><strong>{{ r.targetFare !== null ? '£' + r.targetFare : '—' }}</strong></div>
+          <div class="mi-sim-row"><span>Driver protection floor</span><strong>£{{ r.driverProtectionFloor }}</strong></div>
+          <div class="mi-sim-row"><span>Platform margin floor</span><strong>£{{ r.platformMarginFloor }}</strong></div>
+          <div class="mi-sim-row mi-sim-row--highlight"><span>Adjusted service fare</span><strong>£{{ r.adjustedServiceFare }}</strong></div>
+          <div class="mi-sim-row"><span>Applied market adjustment</span><strong>£{{ r.marketAdjustment }}</strong></div>
+          <div class="mi-sim-row"><span>Customer platform fee</span><strong>£{{ r.platformFeeAmount }}</strong></div>
+          <div class="mi-sim-row mi-sim-row--highlight"><span>Final customer total</span><strong>£{{ r.customerTotal }}</strong></div>
+          <div class="mi-sim-row"><span>Driver commission</span><strong>£{{ r.driverCommissionAmount }}</strong></div>
+          <div class="mi-sim-row mi-sim-row--highlight"><span>Driver payout</span><strong>£{{ r.driverPayout }}</strong></div>
+          <div class="mi-sim-row"><span>Customer saving vs market</span><strong>{{ customerSavingVsMarket() !== null ? '£' + customerSavingVsMarket() : '—' }}</strong></div>
+          <div class="mi-sim-row"><span>Fallback reason</span><strong>{{ r.fallbackReason || 'None' }}</strong></div>
+          <div class="mi-sim-row"><span>Shadow mode</span><strong>{{ r.shadowMode ? 'On' : 'Off' }}</strong></div>
+          <div class="mi-sim-row mi-sim-row--highlight"><span>Would apply live?</span><strong>{{ wouldApply() ? 'Yes' : 'No' }}</strong></div>
+        </div>
+      }
+    </section>
+  }
+
+  <!-- SETTINGS -->
+  @if (activeTab() === 'settings' && settingsDraft) {
+    <section class="mi-panel">
+      <div class="mi-banner mi-banner--warning">
+        Enabling live application affects newly generated quotes only. Previously generated quotes are never changed.
+      </div>
+      <div class="mi-grid">
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.marketPricingEnabled"> Market pricing enabled
+        </label>
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.shadowMode"> Shadow mode (calculate but never apply)
+        </label>
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.competitorBenchmarksEnabled"> Competitor benchmarks enabled
+        </label>
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.driverProtectionEnabled"> Driver protection enabled
+        </label>
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.platformMarginProtectionEnabled"> Platform margin protection enabled
+        </label>
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.auditEnabled"> Audit logging enabled
+        </label>
+        <label>Default target percentage<input type="number" [(ngModel)]="settingsDraft.defaultTargetPercent"></label>
+        <label>Maximum discount percentage<input type="number" [(ngModel)]="settingsDraft.maxDiscountPercent"></label>
+        <label>Benchmark maximum age (hours)<input type="number" [(ngModel)]="settingsDraft.benchmarkMaxAgeHours"></label>
+      </div>
+      <div class="mi-actions">
+        <button class="mi-btn" (click)="saveSettings()" [disabled]="saving()">Save safety controls</button>
+        <button class="mi-btn mi-btn--danger" (click)="forceShadowMode()" [disabled]="saving()">
+          <ion-icon name="warning-outline"></ion-icon> Force shadow mode now (rollback)
+        </button>
+      </div>
+    </section>
+  }
+
+  <!-- AUDIT -->
+  @if (activeTab() === 'audit') {
+    <section class="mi-panel">
+      <h2>Quote market adjustments ({{ auditTotal() }})</h2>
+      <table class="mi-table">
+        <thead>
+          <tr>
+            <th>Created</th><th>Base fare</th><th>Market ref.</th><th>Adjusted fare</th>
+            <th>Applied</th><th>Shadow</th><th>Fallback</th><th>Version</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of auditRows(); track row['id']) {
+            <tr>
+              <td>{{ row['created_at'] | date:'short' }}</td>
+              <td>{{ row['currency'] }} {{ row['base_service_fare'] }}</td>
+              <td>{{ row['market_reference_fare'] ?? '—' }}</td>
+              <td>{{ row['adjusted_service_fare'] }}</td>
+              <td>{{ row['adjustment_applied'] ? 'Yes' : 'No' }}</td>
+              <td>{{ row['feature_enabled'] ? 'Live' : 'Off/Shadow' }}</td>
+              <td>{{ row['fallback_reason'] || '—' }}</td>
+              <td>{{ row['calculation_version'] }}</td>
+            </tr>
+          } @empty {
+            <tr><td colspan="8" class="mi-empty">No audit records yet.</td></tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  }
+</div>

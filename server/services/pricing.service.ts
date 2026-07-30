@@ -1,6 +1,7 @@
 ﻿import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
 import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
+import { MarketPricingService } from './market-pricing.service';
 
 export interface PricingOptions {
     lat: number;
@@ -92,6 +93,12 @@ export interface FareBreakdown {
     driverGrossEarnings?: number;
     calculationVersion?: string;
     reconciliationValid?: boolean;
+    marketPricingApplied?: boolean;
+    marketStrategyId?: string | null;
+    marketReferenceFare?: number | null;
+    marketAdjustmentAmount?: number;
+    marketPricingVersion?: string | null;
+    marketQuoteSnapshot?: Record<string, unknown> | null;
 }
 
 export class PricingService {
@@ -417,16 +424,45 @@ export class PricingService {
                 tenantId
             );
             commissionRateUsed = commissionConfig.enabled === false ? 0 : this.roundMoney(commissionConfig.percent);
-            const rawCommissionFee = this.roundMoney(preCommissionTotal * (commissionRateUsed / 100));
-            const commissionFee = this.applyFeeBounds(rawCommissionFee, commissionConfig.minFee, commissionConfig.maxFee);
             const platformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(
                 canonicalServiceSlug,
                 { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
                 tenantId
             );
-            platformFee = this.calculatePlatformFee(preCommissionTotal, platformFeeConfig);
-            driverPayout = this.roundMoney(preCommissionTotal - commissionFee);
-            const totalPrice = this.roundMoney(preCommissionTotal + platformFee);
+
+            // --- Market intelligence pricing layer (additive, opt-in) ---
+            // Runs AFTER the existing service fare + dynamic pricing calculation
+            // above, and BEFORE platform fee / driver commission are applied.
+            // When disabled (default) or when it cannot resolve a valid market
+            // adjustment, marketPricingResult.adjustmentApplied is false and
+            // effectiveServiceFare below is byte-for-byte equal to
+            // preCommissionTotal, so existing pricing behaviour is unchanged.
+            const marketPricingResult = await MarketPricingService.evaluate({
+                countryCode,
+                marketCity: city?.name || null,
+                zoneId: null,
+                serviceType: canonicalServiceSlug,
+                vehicleClass: null,
+                currency: resolvedCurrencyCode,
+                distanceKm,
+                durationMinutes,
+                baseServiceFare: preCommissionTotal,
+                platformFeePercent: platformFeeConfig.enabled ? Number(platformFeeConfig.percent || 0) : 0,
+                driverCommissionPercent: commissionRateUsed
+            }).catch((err: any) => {
+                console.warn('[PricingService] MarketPricingService.evaluate threw, ignoring market pricing for this quote:', err?.message || err);
+                return null;
+            });
+
+            const effectiveServiceFare = marketPricingResult?.adjustmentApplied
+                ? marketPricingResult.adjustedServiceFare
+                : preCommissionTotal;
+
+            const rawCommissionFee = this.roundMoney(effectiveServiceFare * (commissionRateUsed / 100));
+            const commissionFee = this.applyFeeBounds(rawCommissionFee, commissionConfig.minFee, commissionConfig.maxFee);
+            platformFee = this.calculatePlatformFee(effectiveServiceFare, platformFeeConfig);
+            driverPayout = this.roundMoney(effectiveServiceFare - commissionFee);
+            const totalPrice = this.roundMoney(effectiveServiceFare + platformFee);
 
             taxAmount = this.roundMoney(taxAmount);
 
@@ -458,11 +494,11 @@ export class PricingService {
                 pricingAdjustmentType: dynamicPricingAmount > 0 ? 'surge' : (dynamicPricingAmount < 0 ? 'discount' : 'none'),
                 pricingMultiplier: dynamicPricingMultiplier,
                 pricingAdjustmentAmount: dynamicPricingAmount,
-                postAdjustmentFare: preCommissionTotal,
+                postAdjustmentFare: effectiveServiceFare,
                 minimumFareAdjustment,
                 maximumFareAdjustment: 0,
                 negotiationAdjustment: 0,
-                serviceFareBeforePlatformFee: preCommissionTotal,
+                serviceFareBeforePlatformFee: effectiveServiceFare,
                 platformFeeType: platformFeeConfig.type,
                 platformFeeFixed: platformFeeConfig.fixedAmount,
                 platformFeePercent: platformFeeConfig.percent,
@@ -474,8 +510,26 @@ export class PricingService {
                 serviceFare: totalPrice,
                 shoppingBudget: 0,
                 totalAuthorisation: totalPrice,
-                driverGrossEarnings: preCommissionTotal,
-                calculationVersion: 'marketplace-v1'
+                driverGrossEarnings: effectiveServiceFare,
+                calculationVersion: 'marketplace-v1',
+                marketPricingApplied: !!marketPricingResult?.adjustmentApplied,
+                marketStrategyId: marketPricingResult?.strategyId ?? null,
+                marketReferenceFare: marketPricingResult?.marketReferenceFare ?? null,
+                marketAdjustmentAmount: marketPricingResult?.adjustmentApplied ? marketPricingResult.marketAdjustment : 0,
+                marketPricingVersion: marketPricingResult?.calculationVersion ?? null,
+                marketQuoteSnapshot: marketPricingResult ? {
+                    version: marketPricingResult.calculationVersion,
+                    baseServiceFare: marketPricingResult.baseServiceFare,
+                    marketReferenceFare: marketPricingResult.marketReferenceFare,
+                    targetFare: marketPricingResult.targetFare,
+                    driverProtectionFloor: marketPricingResult.driverProtectionFloor,
+                    platformMarginFloor: marketPricingResult.platformMarginFloor,
+                    adjustedServiceFare: marketPricingResult.adjustedServiceFare,
+                    marketAdjustment: marketPricingResult.marketAdjustment,
+                    adjustmentApplied: marketPricingResult.adjustmentApplied,
+                    shadowMode: marketPricingResult.shadowMode,
+                    fallbackReason: marketPricingResult.fallbackReason ?? null
+                } : null
             };
             fareBreakdown.reconciliationValid = this.validateFareReconciliation(fareBreakdown);
 

@@ -136,7 +136,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                   <div class="min-w-0">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Estimated Trip</p>
                     <p class="text-lg font-display font-bold text-slate-900">
-                      {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km ÔÇó {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
+                      {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km &bull; {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
                     </p>
                     
                   </div>
@@ -484,7 +484,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                         {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
                         @if (additionalItemCharge() > 0) {
-                          ÔÇó +{{ config.formatCurrency(additionalItemCharge()) }} extra item charge
+                          &bull; +{{ config.formatCurrency(additionalItemCharge()) }} extra item charge
                         }
                       </p>
                     </div>
