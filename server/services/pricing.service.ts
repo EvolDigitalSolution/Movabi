@@ -24,6 +24,16 @@ export interface PricingOptions {
     trafficMultiplier?: number;
     itemCount?: number;
     budget?: number;
+    vehicleClass?: string | null;
+    passengerCount?: number;
+    packageSize?: string | null;
+    moveDetails?: {
+        size?: 'small' | 'medium' | 'large' | 'full-house';
+        helperCount?: number;
+        stairsInvolved?: boolean;
+        packingAssistance?: boolean;
+        fragileItems?: boolean;
+    } | null;
 }
 
 export interface PricingResult {
@@ -359,6 +369,55 @@ export class PricingService {
                 durationCost = 0;
                 serviceFee = 0;
             }
+
+            // Service-option surcharges (vehicle class, package size, van-moving
+            // add-ons). Computed server-side ONLY so the client never re-derives
+            // fare-affecting amounts - it just displays whatever this service
+            // returns. Kept additive to whatever floor/minimum-fare logic the
+            // branches above already baked into resolvedBasePrice.
+            const vehicleClassInput = options.vehicleClass || null;
+            const passengerCountInput = Number(options.passengerCount) || 0;
+            const packageSizeInput = options.packageSize || null;
+            const moveDetailsInput = options.moveDetails || null;
+
+            let serviceOptionSurcharge = 0;
+            if (canonicalServiceSlug === 'ride') {
+                if (vehicleClassInput === 'minibus') serviceOptionSurcharge = 6;
+                else if (vehicleClassInput === 'xl' || passengerCountInput > 4) serviceOptionSurcharge = 4;
+            } else if (canonicalServiceSlug === 'delivery') {
+                const packageSurcharge = packageSizeInput === 'large' ? 2 : packageSizeInput === 'medium' ? 0.75 : 0;
+                const vehicleSurchargeAmt = vehicleClassInput === 'large_van' ? 5 : vehicleClassInput === 'small_van' ? 3.5 : vehicleClassInput === 'car' ? 0.75 : 0;
+                serviceOptionSurcharge = this.roundMoney(packageSurcharge + vehicleSurchargeAmt);
+            } else if (canonicalServiceSlug === 'errand') {
+                serviceOptionSurcharge = vehicleClassInput === 'small_van' || vehicleClassInput === 'large_van' ? 5 : vehicleClassInput === 'car' ? 1.5 : 0;
+            }
+
+            let vanMovingMultiplier = 1;
+            let vanMovingAddons = 0;
+            if (canonicalServiceSlug === 'van-moving' && moveDetailsInput) {
+                switch (moveDetailsInput.size) {
+                    case 'medium': vanMovingMultiplier = 1.3; break;
+                    case 'large': vanMovingMultiplier = 1.7; break;
+                    case 'full-house': vanMovingMultiplier = 2.5; break;
+                    default: vanMovingMultiplier = 1;
+                }
+                const helperCount = Math.max(0, Number(moveDetailsInput.helperCount) || 0);
+                vanMovingAddons += helperCount * 15;
+                if (moveDetailsInput.stairsInvolved) vanMovingAddons += 10;
+                if (moveDetailsInput.packingAssistance) vanMovingAddons += 25;
+                if (moveDetailsInput.fragileItems) vanMovingAddons += 5;
+                vanMovingAddons = this.roundMoney(vanMovingAddons);
+            }
+
+            if (vanMovingMultiplier !== 1) {
+                baseFareUsed = this.roundMoney(baseFareUsed * vanMovingMultiplier);
+                distanceCost = this.roundMoney(distanceCost * vanMovingMultiplier);
+                durationCost = this.roundMoney(durationCost * vanMovingMultiplier);
+                resolvedBasePrice = this.roundMoney(resolvedBasePrice * vanMovingMultiplier);
+            }
+
+            serviceFee = this.roundMoney(serviceFee + serviceOptionSurcharge + vanMovingAddons);
+            resolvedBasePrice = this.roundMoney(resolvedBasePrice + serviceOptionSurcharge + vanMovingAddons);
 
             // Marketplace dynamic pricing: demand/supply, time-of-day, weather/traffic
             const dynamicSettings = await MarketplaceConfigService.getEffectiveDynamicPricingConfig(

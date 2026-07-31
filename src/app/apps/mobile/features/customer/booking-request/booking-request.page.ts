@@ -71,8 +71,11 @@ import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
-import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
 import { PricingConfigService } from '../../../../../core/services/pricing/pricing-config.service';
+import {
+    GlobalAiPricingQuoteService,
+    GlobalAiPricingFareBreakdown
+} from '../../../../../core/services/pricing/global-ai-pricing-quote.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
 
@@ -728,6 +731,20 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </textarea>
               </div>
 
+                @if (fareCalculating() && !fareEstimate() && !shouldShowMarketplaceFare()) {
+                  <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40 flex items-center gap-3 animate-in fade-in">
+                    <ion-spinner name="crescent" color="primary"></ion-spinner>
+                    <p class="text-sm font-bold text-slate-500">Calculating your fare...</p>
+                  </div>
+                }
+
+                @if (fareCalculationError() && !fareCalculating()) {
+                  <div class="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-700 text-sm font-medium animate-in fade-in">
+                    <ion-icon name="information-circle" class="text-2xl text-red-500 shrink-0"></ion-icon>
+                    <p class="flex-1">{{ fareCalculationError() }}</p>
+                  </div>
+                }
+
                 @if (shouldShowMarketplaceFare()) {
                   <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
                     <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
@@ -1210,8 +1227,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private analytics = inject(AnalyticsService);
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
-    private fareCalculator = inject(FareCalculationService);
     private pricingConfig = inject(PricingConfigService);
+    private globalAiPricingQuote = inject(GlobalAiPricingQuoteService);
     private supabase = inject(SupabaseService);
     private compliance = inject(ComplianceService);
     private destroyRef = inject(DestroyRef);
@@ -1339,6 +1356,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
+    fareCalculating = signal(false);
+    fareCalculationError = signal<string | null>(null);
+    private lastFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
+    private fareRequestSequence = 0;
     negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
     effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
 
@@ -2638,92 +2659,123 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
+    /**
+     * Fetches the customer's fare estimate from the authoritative backend
+     * pricing pipeline (GlobalAiPricingService -> PricingService ->
+     * MarketPricingService). This page never re-derives fare-affecting
+     * numbers itself - it only sends booking inputs and displays exactly
+     * what the backend returns.
+     */
     private async recalculateFare() {
         const route = this.routeResult();
         const serviceSlug = this.getServiceSlug();
         const formVal = this.bookingForm?.getRawValue?.() || this.bookingForm?.value || {};
 
-        if (!this.hasConfirmedRoute(route)) {
+        if (!this.hasConfirmedRoute(route) || !this.pickupLocation.latitude || !this.pickupLocation.longitude) {
             this.fareEstimate.set(null);
             this.estimatedPrice.set(0);
+            this.lastFareBreakdown = null;
+            this.fareCalculating.set(false);
+            this.fareCalculationError.set(null);
             return;
         }
 
         const distanceKm = this.toMoney((route?.distanceMeters || 0) / 1000);
         const durationMinutes = this.toMoney((route?.durationSeconds || 0) / 60);
 
-        const localEstimate = this.fareCalculator.calculateFare({
-            serviceType: serviceSlug,
-            distanceMeters: route?.distanceMeters || 0,
-            durationSeconds: route?.durationSeconds || 0,
-            basePriceOverride: this.serviceType()?.base_price,
-            surgeMultiplier: 1,
-            errandDetails: serviceSlug === 'errand'
-                ? { mode: formVal.errand_mode }
-                : null,
-            moveDetails: serviceSlug === 'van-moving'
-                ? {
-                    size: formVal.size,
-                    helperCount: formVal.helper_count,
-                    stairsInvolved: formVal.stairs_involved,
-                    packingAssistance: formVal.packing_assistance,
-                    fragileItems: formVal.fragile_items
-                }
-                : null
-        });
+        const requestId = ++this.fareRequestSequence;
+        this.fareCalculating.set(true);
+        this.fareCalculationError.set(null);
 
-        const baseFare = this.toMoney(localEstimate.baseFare || 0);
-        const distanceFare = this.toMoney(localEstimate.distanceFare || 0);
-        const timeFare = this.toMoney(localEstimate.timeFare || 0);
-        const baseServiceFee = this.toMoney(localEstimate.serviceFee || 0);
+        const countryCode = this.config.currentCountry()?.code || 'GB';
+        const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
 
-        const extraItemCharge =
-            serviceSlug === 'errand' && this.usesItemListMode()
-                ? this.additionalItemCharge()
-                : 0;
+        try {
+            const response = await this.globalAiPricingQuote.getQuote({
+                lat: this.pickupLocation.latitude,
+                lng: this.pickupLocation.longitude,
+                dropoffLat: this.dropoffLocation.latitude ?? null,
+                dropoffLng: this.dropoffLocation.longitude ?? null,
+                serviceSlug,
+                distanceKm,
+                durationMinutes,
+                countryCode,
+                currencyCode,
+                vehicleClass: serviceSlug === 'ride' || serviceSlug === 'delivery' || serviceSlug === 'errand'
+                    ? this.vehicleClass()
+                    : null,
+                passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
+                packageSize: serviceSlug === 'delivery' ? this.packageSize() : null,
+                itemCount: serviceSlug === 'errand' && this.usesItemListMode() ? this.itemCount() : undefined,
+                budget: serviceSlug === 'errand' && this.usesBudgetMode() ? this.budgetValue() : undefined,
+                moveDetails: serviceSlug === 'van-moving'
+                    ? {
+                        size: formVal.size,
+                        helperCount: Number(formVal.helper_count) || 0,
+                        stairsInvolved: !!formVal.stairs_involved,
+                        packingAssistance: !!formVal.packing_assistance,
+                        fragileItems: !!formVal.fragile_items
+                    }
+                    : null
+            });
 
-        const serviceOptionSurcharge = this.vehicleSurcharge(serviceSlug);
-        const subtotal = this.toMoney(baseFare + distanceFare + timeFare);
-        const serviceFee = this.toMoney(
-            baseServiceFee +
-            extraItemCharge +
-            serviceOptionSurcharge +
-            (serviceSlug === 'errand' ? this.largeShoppingSurcharge() : 0)
-        );
-        const minimumAdjustment = this.toMoney(Math.max(
-            0,
-            (localEstimate.total || 0) - (localEstimate.subtotal || 0) - (localEstimate.serviceFee || 0)
-        ));
-        const finalTotal = this.toMoney(subtotal + serviceFee + minimumAdjustment);
+            // Ignore stale responses if the user changed inputs while this request was in flight.
+            if (requestId !== this.fareRequestSequence) return;
 
-        const estimate: FareEstimate = {
-            ...localEstimate,
-            baseFare,
-            distanceFare,
-            timeFare,
-            subtotal,
-            serviceFee,
-            total: finalTotal,
-            minimumFareApplied: localEstimate.minimumFareApplied
-        };
+            const breakdown = response.legacy.fareBreakdown;
+            this.lastFareBreakdown = breakdown;
 
-        this.fareEstimate.set(estimate);
-        this.estimatedPrice.set(estimate.total);
+            const estimate: FareEstimate = {
+                serviceType: serviceSlug,
+                currencyCode: breakdown.currencyCode || response.legacy.currencyCode || currencyCode,
+                distanceKm,
+                durationMinutes,
+                baseFare: this.toMoney(breakdown.baseFare || 0),
+                distanceFare: this.toMoney(breakdown.distanceCost || 0),
+                timeFare: this.toMoney(breakdown.durationCost || 0),
+                serviceFee: this.toMoney(breakdown.serviceFee || 0),
+                subtotal: this.toMoney((breakdown.baseFare || 0) + (breakdown.distanceCost || 0) + (breakdown.durationCost || 0)),
+                minimumFareApplied: (breakdown.minimumFareAdjustment || 0) > 0,
+                surgeMultiplier: breakdown.multiplier || 1,
+                surgeAmount: this.toMoney(breakdown.dynamicPricingAmount || 0),
+                total: this.toMoney(breakdown.total ?? response.legacy.totalPrice ?? 0)
+            };
 
-        console.log('[BookingRequest] fare estimate', {
-            serviceSlug,
-            distanceKm,
-            durationMinutes,
-            serviceOptionSurcharge,
-            passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
-            vehicleClass: this.vehicleClass(),
-            packageSize: serviceSlug === 'delivery' ? this.packageSize() : undefined,
-            subtotal,
-            serviceFee,
-            finalTotal
-        });
+            this.fareEstimate.set(estimate);
+            this.estimatedPrice.set(estimate.total);
+
+            console.log('[BookingRequest] backend fare quote', {
+                serviceSlug,
+                distanceKm,
+                durationMinutes,
+                vehicleClass: this.vehicleClass(),
+                passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
+                packageSize: serviceSlug === 'delivery' ? this.packageSize() : undefined,
+                source: breakdown.source,
+                total: estimate.total,
+                fallbackUsed: response.fallback?.used ?? false
+            });
+        } catch (error: any) {
+            if (requestId !== this.fareRequestSequence) return;
+
+            console.error('[BookingRequest] Failed to fetch backend fare quote', error);
+            this.fareEstimate.set(null);
+            this.estimatedPrice.set(0);
+            this.lastFareBreakdown = null;
+            this.fareCalculationError.set('Unable to calculate the fare right now. Please try again.');
+        } finally {
+            if (requestId === this.fareRequestSequence) {
+                this.fareCalculating.set(false);
+            }
+        }
     }
 
+    /**
+     * Builds the fare breakdown attached to the booking creation payload
+     * directly from the last backend quote (server truth). This page never
+     * re-derives fare-affecting amounts - it only forwards what
+     * GlobalAiPricingService/PricingService already calculated and audited.
+     */
     private buildQuoteFareBreakdown(
         quoteId: string,
         currencyCode: string,
@@ -2731,36 +2783,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         customerServiceTotal: number,
         totalAuthorisation: number
     ): Record<string, unknown> | null {
-        const estimate = this.fareEstimate();
-        if (!estimate) return null;
+        const backend = this.lastFareBreakdown;
+        if (!backend) return null;
 
         return {
+            ...backend,
             quoteId,
-            currencyCode,
-            currencySymbol,
-            baseFare: this.toMoney(estimate.baseFare || 0),
-            distanceCost: this.toMoney(estimate.distanceFare || 0),
-            durationCost: this.toMoney(estimate.timeFare || 0),
-            serviceFee: this.toMoney(estimate.serviceFee || 0),
-            taxAmount: 0,
-            dynamicPricingAmount: this.toMoney(estimate.surgeAmount || 0),
-            platformFee: 0,
-            platformFeeAmount: 0,
-            serviceFareBeforePlatformFee: this.toMoney(customerServiceTotal),
+            currencyCode: backend.currencyCode || currencyCode,
+            currencySymbol: backend.currencySymbol || currencySymbol,
             customerServiceTotal: this.toMoney(customerServiceTotal),
-            serviceFare: this.toMoney(customerServiceTotal),
-            total: this.toMoney(customerServiceTotal),
-            shoppingBudget: this.walletBudgetRequired(),
             totalAuthorisation: this.toMoney(totalAuthorisation),
-            minimumFareAdjustment: estimate.minimumFareApplied
-                ? this.toMoney(Math.max(0, customerServiceTotal - (estimate.subtotal + estimate.serviceFee)))
-                : 0,
-            maximumFareAdjustment: 0,
-            negotiationAdjustment: 0,
-            driverGrossEarnings: this.toMoney(customerServiceTotal),
-            multiplier: estimate.surgeMultiplier || 1,
-            calculationVersion: 'marketplace-v1',
-            reconciliationValid: true
+            shoppingBudget: this.walletBudgetRequired()
         };
     }
 
@@ -2890,6 +2923,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     async submit() {
         if (this.submitting() || this.paymentProcessing()) return;
+
+        if (this.fareCalculating() || !this.fareEstimate() || !this.lastFareBreakdown) {
+            const toast = await this.toastCtrl.create({
+                message: this.fareCalculationError() || 'Please wait for the fare to finish calculating.',
+                duration: 3000,
+                color: 'warning'
+            });
+            await toast.present();
+            return;
+        }
 
         const now = Date.now();
         if (now - this.lastBookingTime < 30000) {
