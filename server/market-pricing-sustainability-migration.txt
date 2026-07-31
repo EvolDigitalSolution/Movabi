@@ -1,0 +1,62 @@
+-- =========================================================
+-- MARKET PRICING SUSTAINABILITY REDESIGN - INCREMENTAL MIGRATION
+-- =========================================================
+-- This migration is additive and idempotent. It does not modify or drop any
+-- existing column, index, or constraint from
+-- server/market-intelligence-pricing-migration.txt (including
+-- idx_market_pricing_strategies_unique_specificity, which is preserved
+-- exactly as-is).
+--
+-- Run this AFTER market-intelligence-pricing-migration.txt has been applied.
+-- Safe to run multiple times.
+-- =========================================================
+
+-- =========================================================
+-- 1. quote_market_adjustments: sustainability + audit columns
+-- =========================================================
+-- Adds the extra audit columns required so a single row can show: the
+-- original (pre-market-pricing) fare and customer total, the computed
+-- minimum sustainable fare, the suggested final fare, the fare actually
+-- returned to the customer, whether real competitor benchmark data was
+-- used, whether the (currently no-op) internal signal provider was
+-- consulted, and the strategy/calculation version in effect.
+
+ALTER TABLE public.quote_market_adjustments
+    ADD COLUMN IF NOT EXISTS original_service_fare numeric(12,2),
+    ADD COLUMN IF NOT EXISTS original_customer_total numeric(12,2),
+    ADD COLUMN IF NOT EXISTS minimum_sustainable_fare numeric(12,2),
+    ADD COLUMN IF NOT EXISTS suggested_final_fare numeric(12,2),
+    ADD COLUMN IF NOT EXISTS returned_customer_fare numeric(12,2),
+    ADD COLUMN IF NOT EXISTS benchmark_used boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS internal_signals_used boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS strategy_version varchar(40);
+
+CREATE INDEX IF NOT EXISTS idx_quote_market_adjustments_benchmark_used
+    ON public.quote_market_adjustments (benchmark_used);
+
+-- =========================================================
+-- 2. marketplace_settings: internal signal provider master toggle
+-- =========================================================
+-- Defensive update-then-insert, matching the pattern used by
+-- server/market-intelligence-pricing-migration.txt and
+-- server/routes/market-pricing.routes.ts (upsertFlatSetting). Defaults to
+-- false: the internal signal provider (server/services/market-pricing.service.ts
+-- resolveInternalMarketSignals) is currently a no-op placeholder and must
+-- stay disabled until a real signal source is implemented.
+
+DO $$
+BEGIN
+    UPDATE public.marketplace_settings
+    SET value = 'false'::jsonb, updated_at = now()
+    WHERE key = 'market_use_internal_signals' AND tenant_id IS NULL;
+
+    IF NOT FOUND THEN
+        INSERT INTO public.marketplace_settings (key, value, tenant_id, created_at, updated_at)
+        VALUES ('market_use_internal_signals', 'false'::jsonb, NULL, now(), now());
+    END IF;
+END $$;
+
+-- No RLS changes required: quote_market_adjustments and marketplace_settings
+-- already have RLS enabled with no anon/authenticated policies (see
+-- market-intelligence-pricing-migration.txt §6), so the new columns inherit
+-- the same protection automatically.

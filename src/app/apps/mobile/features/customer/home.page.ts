@@ -3,8 +3,6 @@ import { CommonModule } from '@angular/common';
 import {
     IonHeader,
     IonToolbar,
-    IonTitle,
-    IonButtons,
     IonContent,
     IonIcon,
     ToastController
@@ -22,7 +20,16 @@ import {
     chevronForward,
     receiptOutline,
     walletOutline,
-    settingsOutline
+    settingsOutline,
+    searchOutline,
+    calendarClearOutline,
+    locateOutline,
+    swapHorizontalOutline,
+    businessOutline,
+    cubeOutline,
+    airplaneOutline,
+    arrowForward,
+    personCircleOutline
 } from 'ionicons/icons';
 
 import { AuthService } from '../../../../core/services/auth/auth.service';
@@ -31,8 +38,37 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
 import { BookingService } from '../../../../core/services/booking/booking.service';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { MovabiCarouselComponent, MovabiCarouselSlide } from '../../../../shared/ui';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
+import { CustomerBottomNavComponent } from '../../../../shared/components/customer-shell/customer-bottom-nav.component';
+
+type HomeServiceMode = 'ride' | 'errand' | 'delivery' | 'van-moving';
+
+interface ForYouShortcut {
+    label: string;
+    icon: string;
+    tone: 'blue' | 'emerald' | 'amber' | 'indigo' | 'slate';
+    badge?: 'New' | 'Promo' | 'Soon';
+    type: HomeServiceMode;
+    mode?: string;
+}
+
+interface TopModeTab {
+    id: HomeServiceMode;
+    label: string;
+    icon: string;
+    placeholder: string;
+}
+
+interface UniverseTile {
+    type: HomeServiceMode;
+    title: string;
+    description: string;
+    icon: string;
+    color: string;
+    tintColor: string;
+    textColor: string;
+    ariaLabel: string;
+}
 
 @Component({
     selector: 'app-customer-home',
@@ -41,242 +77,156 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
         CommonModule,
         IonHeader,
         IonToolbar,
-        IonTitle,
-        IonButtons,
         IonContent,
         IonIcon,
-        MovabiCarouselComponent
+        CustomerBottomNavComponent
     ],
     template: `
     <ion-header class="ion-no-border">
-      <ion-toolbar class="px-4 pt-6 bg-slate-50">
-        <ion-title class="font-display font-black text-3xl tracking-tighter text-slate-900">
-          Movabi
-        </ion-title>
+      <ion-toolbar class="home-toolbar bg-slate-50">
+        <div class="home-header">
+          <span class="font-display font-black text-2xl tracking-tighter text-slate-900">
+            Movabi
+          </span>
 
-        <ion-buttons slot="end">
-          @if (auth.userRole() === 'admin') {
+          <div class="flex items-center gap-2">
+            @if (auth.userRole() === 'admin') {
+              <button
+                type="button"
+                (click)="goAdmin()"
+                aria-label="Admin dashboard"
+                class="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center active:scale-95 transition-all"
+              >
+                <ion-icon name="shield-checkmark" class="text-lg"></ion-icon>
+              </button>
+            }
+
             <button
               type="button"
-              (click)="goAdmin()"
-              class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm active:scale-95 transition-all"
+              (click)="router.navigate(['/customer/wallet'])"
+              aria-label="Wallet balance"
+              class="wallet-pill"
             >
-              <ion-icon name="shield-checkmark" class="text-xl"></ion-icon>
+              <ion-icon name="wallet-outline" class="text-base"></ion-icon>
+              <span>{{ formatCurrency(walletService.wallet()?.available_balance || 0) }}</span>
             </button>
-          }
 
-          <button
-            type="button"
-            (click)="router.navigate(['/customer/activity'])"
-            class="w-12 h-12 rounded-2xl bg-white text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm ml-3 active:scale-95 transition-all"
-          >
-            <ion-icon name="time-outline" class="text-xl"></ion-icon>
-          </button>
-
-          <button
-            type="button"
-            (click)="router.navigate(['/customer/wallet'])"
-            class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm ml-3 active:scale-95 transition-all"
-          >
-            <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
-          </button>
-
-          <button
-            type="button"
-            (click)="router.navigate(['/account/settings'])"
-            class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shadow-sm ml-3 active:scale-95 transition-all"
-          >
-            <ion-icon name="settings-outline" class="text-xl"></ion-icon>
-          </button>
-
-          <button
-            type="button"
-            (click)="signOut()"
-            [disabled]="signingOut()"
-            class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-sm ml-3 active:scale-95 transition-all disabled:opacity-50"
-          >
-            <ion-icon name="log-out-outline" class="text-xl"></ion-icon>
-          </button>
-        </ion-buttons>
+            <button
+              type="button"
+              (click)="router.navigate(['/account/settings'])"
+              aria-label="Account"
+              class="w-11 h-11 rounded-2xl bg-white border border-slate-100 text-slate-600 flex items-center justify-center shadow-sm active:scale-95 transition-all"
+            >
+              <ion-icon name="person-circle-outline" class="text-xl"></ion-icon>
+            </button>
+          </div>
+        </div>
       </ion-toolbar>
     </ion-header>
 
     <ion-content class="movabi-page">
-      <div class="max-w-2xl mx-auto p-3 sm:p-5 space-y-5 pb-12">
-        <div class="movabi-hero min-h-[158px] flex items-center p-4">
-          <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
-          <div class="relative z-10 w-full">
-            <p class="text-slate-600 font-black text-[10px] uppercase tracking-[0.14em] mb-1">
-              Welcome Back
-            </p>
+      <div class="max-w-2xl mx-auto p-3 sm:p-5 space-y-6 native-safe-bottom">
 
-            <h1 class="text-[1.45rem] font-display font-black tracking-tight leading-tight text-slate-950 mb-1">
-              Hello, {{ displayName() }}!
-            </h1>
-
-            <p class="text-sm font-semibold text-slate-600 leading-snug">
-              Where can we take you today?
-            </p>
-
-            <div class="mt-4 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                (click)="router.navigate(['/customer/wallet'])"
-                class="rounded-2xl border border-white/80 bg-white/70 px-3 py-2 text-left shadow-sm active:scale-95 transition-all w-full"
-              >
-                <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.1em] mb-1">
-                  Wallet
-                </p>
-                <p class="text-base font-display font-black text-slate-950 leading-tight">
-                  {{ formatCurrency(walletService.wallet()?.available_balance || 0) }}
-                </p>
-              </button>
-
-              <button
-                type="button"
-                (click)="router.navigate(['/customer/activity'])"
-                class="rounded-2xl border border-white/80 bg-white/70 px-3 py-2 text-left shadow-sm active:scale-95 transition-all w-full"
-              >
-                <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.1em] mb-1">
-                  Active
-                </p>
-                <p class="text-base font-display font-black text-slate-950 leading-tight">
-                  {{ activeTrips() }}
-                </p>
-              </button>
-            </div>
-          </div>
+        <!-- Top service mode navigation -->
+        <div class="service-tabs" role="tablist" aria-label="Service mode">
+          @for (tab of topTabs; track tab.id) {
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="activeMode() === tab.id"
+              (click)="activeMode.set(tab.id)"
+              class="service-tab"
+              [class.service-tab--selected]="activeMode() === tab.id"
+            >
+              <ion-icon [name]="tab.icon" class="service-tab__icon"></ion-icon>
+              <span class="service-tab__label">{{ tab.label }}</span>
+            </button>
+          }
         </div>
 
-        @if (activeBooking(); as booking) {
+        <!-- Main action / search card -->
+        <button
+          type="button"
+          (click)="goToBooking(activeMode())"
+          class="w-full text-left rounded-[1.75rem] bg-white border border-slate-100 shadow-lg shadow-slate-900/5 p-4 flex items-center gap-3 active:scale-[0.99] transition-all"
+        >
+          <span class="w-11 h-11 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+            <ion-icon name="search-outline" class="text-xl"></ion-icon>
+          </span>
+          <span class="flex-1 min-w-0">
+            <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">
+              Hi {{ displayName() }}
+            </span>
+            <span class="block text-base font-display font-black text-slate-950 truncate">
+              {{ activeModePlaceholder() }}
+            </span>
+          </span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-2.5">
           <button
             type="button"
-            (click)="continueActiveBooking(booking.id)"
-            class="w-full text-left rounded-2xl bg-white border border-slate-200 shadow-lg shadow-slate-900/10 p-5 active:scale-[0.99] transition-all"
+            (click)="onScheduleTap()"
+            class="min-h-12 rounded-2xl bg-white border border-slate-100 shadow-sm px-4 flex items-center justify-center gap-2 font-black text-xs text-slate-700 active:scale-95 transition-all"
           >
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex items-start gap-3 min-w-0">
-                <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                  <ion-icon [name]="getServiceIcon(booking)" class="text-2xl"></ion-icon>
-                </div>
-                <div class="min-w-0">
-                  <p class="text-[10px] font-black uppercase tracking-[0.18em] text-amber-600">Active {{ getServiceName(booking) }}</p>
-                  <h2 class="mt-1 text-lg font-display font-black text-slate-950 truncate">{{ activeJobStatusLabel(booking) }}</h2>
-                  <p class="mt-1 text-xs font-semibold text-slate-500 line-clamp-2">{{ activeJobRouteLabel(booking) }}</p>
-                </div>
-              </div>
-              <span class="shrink-0 rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
-                Live
-              </span>
-            </div>
-
-            <div class="mt-5 h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div class="h-full rounded-full bg-amber-500 transition-all duration-500" [style.width.%]="activeJobProgress(booking)"></div>
-            </div>
-
-            <div class="mt-3 flex items-center justify-between gap-3">
-              <p class="text-xs font-bold text-slate-600">{{ activeJobProgress(booking) }}% progress</p>
-              <span class="inline-flex items-center gap-1 text-xs font-black text-amber-700">
-                Continue tracking
-                <ion-icon name="chevron-forward"></ion-icon>
-              </span>
-            </div>
+            <ion-icon name="calendar-clear-outline" class="text-base text-slate-400"></ion-icon>
+            Schedule
+            <span class="text-[8px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Soon</span>
           </button>
-        }
 
-        <app-movabi-carousel [slides]="customerCarouselSlides()"></app-movabi-carousel>
+          <button
+            type="button"
+            (click)="goToBooking(activeMode())"
+            class="min-h-12 rounded-2xl bg-white border border-slate-100 shadow-sm px-4 flex items-center justify-center gap-2 font-black text-xs text-slate-700 active:scale-95 transition-all"
+          >
+            <ion-icon name="locate-outline" class="text-base text-slate-400"></ion-icon>
+            Current location
+          </button>
+        </div>
 
+        <!-- For you shortcuts -->
         <div class="space-y-3">
-          <div class="movabi-section-header">
-            <h3 class="movabi-section-title">
-              The Movabi Universe
-            </h3>
+          <div class="flex items-center justify-between px-1">
+            <h3 class="movabi-section-title">For you</h3>
           </div>
 
-          <div class="grid grid-cols-2 max-[339px]:grid-cols-1 gap-x-3 gap-y-2.5" data-tour="customer-services">
-            <button
-              type="button"
-              (click)="goToBooking('ride')"
-              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-blue-600/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
-            >
-              <div class="flex h-full flex-col items-center justify-center gap-2">
-                <div class="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="car" class="text-[22px]"></ion-icon>
-                </div>
-
-                <div class="min-w-0">
-                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
-                    Ride
-                  </h2>
-                  <p class="mt-1 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700 text-[11px] font-black leading-snug">
-                    Everyday rides
-                  </p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              (click)="goToBooking('errand')"
-              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-emerald-600/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
-            >
-              <div class="flex h-full flex-col items-center justify-center gap-2">
-                <div class="w-14 h-14 bg-emerald-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-emerald-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="cart" class="text-[22px]"></ion-icon>
-                </div>
-
-                <div class="min-w-0">
-                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
-                    Shop
-                  </h2>
-                  <p class="mt-1 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700 text-[11px] font-black leading-snug">
-                    Grocery &bull; Pharmacy &bull; Retail
-                  </p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              (click)="goToBooking('delivery')"
-              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
-            >
-              <div class="flex h-full flex-col items-center justify-center gap-2">
-                <div class="w-14 h-14 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg shadow-amber-500/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="cube" class="text-[22px]"></ion-icon>
-                </div>
-
-                <div class="min-w-0">
-                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
-                    Deliver
-                  </h2>
-                  <p class="mt-1 rounded-full bg-amber-50 px-3 py-1.5 text-amber-700 text-[11px] font-black leading-snug">
-                    Parcels &bull; Documents
-                  </p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              (click)="goToBooking('van-moving')"
-              class="w-full min-h-[132px] text-center group relative overflow-hidden rounded-[1.35rem] bg-white border border-slate-100 py-3 px-2.5 shadow-sm hover:shadow-xl hover:shadow-indigo-600/10 hover:-translate-y-0.5 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
-            >
-              <div class="flex h-full flex-col items-center justify-center gap-2">
-                <div class="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 group-hover:rotate-3 group-hover:scale-105 transition-transform">
-                  <ion-icon name="bus" class="text-[22px]"></ion-icon>
-                </div>
-
-                <div class="min-w-0">
-                  <h2 class="text-base font-display font-black text-slate-900 leading-tight">
-                    Move
-                  </h2>
-                  <p class="mt-1 rounded-full bg-indigo-50 px-3 py-1.5 text-indigo-700 text-[11px] font-black leading-snug">
-                    Van &bull; Furniture
-                  </p>
-                </div>
-              </div>
-            </button>
+          <div class="grid grid-cols-4 max-[359px]:grid-cols-3 gap-x-2 gap-y-4" data-tour="customer-services">
+            @for (shortcut of forYouShortcuts; track shortcut.label) {
+              <button
+                type="button"
+                (click)="onShortcutTap(shortcut)"
+                class="flex flex-col items-center gap-1.5 text-center active:scale-95 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500 rounded-2xl"
+                [class.opacity-60]="shortcut.badge === 'Soon'"
+                [attr.aria-disabled]="shortcut.badge === 'Soon'"
+                [attr.aria-label]="shortcut.label"
+              >
+                <span class="relative w-14 h-14 rounded-full flex items-center justify-center shrink-0"
+                  [class.bg-blue-50]="shortcut.tone === 'blue'"
+                  [class.text-blue-600]="shortcut.tone === 'blue'"
+                  [class.bg-emerald-50]="shortcut.tone === 'emerald'"
+                  [class.text-emerald-600]="shortcut.tone === 'emerald'"
+                  [class.bg-amber-50]="shortcut.tone === 'amber'"
+                  [class.text-amber-600]="shortcut.tone === 'amber'"
+                  [class.bg-indigo-50]="shortcut.tone === 'indigo'"
+                  [class.text-indigo-600]="shortcut.tone === 'indigo'"
+                  [class.bg-slate-100]="shortcut.tone === 'slate'"
+                  [class.text-slate-500]="shortcut.tone === 'slate'"
+                >
+                  <ion-icon [name]="shortcut.icon" class="text-2xl"></ion-icon>
+                  @if (shortcut.badge) {
+                    <span
+                      class="absolute -top-1 -right-1 text-[7px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white"
+                      [class.bg-emerald-500]="shortcut.badge === 'New'"
+                      [class.bg-orange-500]="shortcut.badge === 'Promo'"
+                      [class.bg-slate-400]="shortcut.badge === 'Soon'"
+                    >
+                      {{ shortcut.badge }}
+                    </span>
+                  }
+                </span>
+                <span class="text-[10px] font-bold text-slate-700 leading-tight">{{ shortcut.label }}</span>
+              </button>
+            }
           </div>
         </div>
 
@@ -315,63 +265,186 @@ import { OnboardingTourService } from '../../../../core/services/onboarding-tour
           </div>
         }
 
-        <div class="space-y-6">
-          <div class="flex items-center justify-between px-1">
-            <div class="flex items-center gap-3">
-              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-              <h3 class="text-sm font-black text-slate-700">
-                Recent Activity
-              </h3>
-            </div>
-
-            <button
-              type="button"
-              (click)="router.navigate(['/customer/activity'])"
-              class="text-xs font-black text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              View All
-            </button>
+        <!-- Movabi Universe -->
+        <div class="space-y-3">
+          <div class="movabi-section-header">
+            <h3 class="movabi-section-title">
+              The Movabi Universe
+            </h3>
           </div>
 
-          @if (recentBookings().length === 0) {
-            <button
-              type="button"
-              (click)="goToBooking('ride')"
-              class="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
-            >
-              <div class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
-                <ion-icon name="receipt-outline" class="text-xl"></ion-icon>
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-black text-slate-900">No recent activity</p>
-                <p class="text-xs font-semibold text-slate-500 truncate">Your latest trips will appear here.</p>
-              </div>
-              <ion-icon name="chevron-forward" class="text-slate-300 text-lg shrink-0"></ion-icon>
-            </button>
-          } @else {
-            <div class="space-y-3">
-              @for (booking of recentBookings(); track booking.id) {
-                <button
-                  type="button"
-                  (click)="router.navigate(['/customer/tracking', booking.id])"
-                  class="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
-                >
-                  <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
-                    <p class="text-xs font-semibold text-slate-500 truncate">{{ formatStatus(booking.status) }} · {{ booking.created_at | date:'mediumDate' }}</p>
-                  </div>
-                  <p class="text-sm font-black text-slate-900 shrink-0">{{ formatCurrency(booking.total_price || booking.price || 0) }}</p>
-                </button>
-              }
-            </div>
-          }
+          <div class="universe-grid">
+            @for (tile of universeTiles; track tile.type) {
+              <button
+                type="button"
+                (click)="goToBooking(tile.type)"
+                [attr.aria-label]="tile.ariaLabel"
+                class="universe-card"
+              >
+                <span class="universe-card__icon" [style.background]="tile.color">
+                  <ion-icon [name]="tile.icon"></ion-icon>
+                </span>
+                <span class="universe-card__title">{{ tile.title }}</span>
+                <span class="universe-card__desc" [style.color]="tile.textColor" [style.background]="tile.tintColor">
+                  {{ tile.description }}
+                </span>
+              </button>
+            }
+          </div>
         </div>
       </div>
     </ion-content>
-  `
+
+    <app-customer-bottom-nav></app-customer-bottom-nav>
+
+    @if (activeBooking(); as booking) {
+      <button
+        type="button"
+        (click)="continueActiveBooking(booking.id)"
+        class="fixed left-3 right-3 bottom-[92px] z-30 max-w-2xl mx-auto rounded-2xl bg-slate-950 text-white shadow-2xl shadow-slate-950/30 px-4 py-3.5 flex items-center gap-3 active:scale-[0.99] transition-all"
+      >
+        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+          <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
+        </div>
+        <div class="min-w-0 flex-1 text-left">
+          <p class="text-[10px] font-black uppercase tracking-widest text-emerald-400">Live &middot; {{ getServiceName(booking) }}</p>
+          <p class="text-sm font-black truncate">{{ activeJobStatusLabel(booking) }}</p>
+        </div>
+        <ion-icon name="arrow-forward" class="text-lg shrink-0"></ion-icon>
+      </button>
+    }
+  `,
+    styles: [`
+    .home-toolbar {
+      --min-height: 64px;
+      --padding-start: 16px;
+      --padding-end: 16px;
+      --padding-top: 8px;
+      --padding-bottom: 8px;
+    }
+    .home-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 48px;
+    }
+    .wallet-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 40px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #4338ca;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .wallet-pill:active {
+      transform: scale(0.96);
+    }
+
+    .service-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .service-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      min-height: 48px;
+      min-width: 44px;
+      padding-block: 8px;
+      padding-inline: clamp(4px, 2vw, 12px);
+      border-radius: 16px;
+      background: #f1f5f9;
+      color: #64748b;
+      font-weight: 700;
+      transition: background-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+    }
+    .service-tab:active {
+      transform: scale(0.97);
+    }
+    .service-tab__icon {
+      font-size: clamp(16px, 4vw, 20px);
+    }
+    .service-tab__label {
+      font-size: clamp(11px, 3.2vw, 13px);
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .service-tab--selected {
+      background: #f97316;
+      color: #fff;
+      box-shadow: 0 6px 16px -4px rgba(249, 115, 22, 0.35);
+    }
+    .service-tab--selected .service-tab__label {
+      font-weight: 900;
+    }
+
+    .universe-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .universe-card {
+      min-height: 168px;
+      padding: 16px 12px;
+      border-radius: 24px;
+      background: #fff;
+      border: 1px solid #f1f5f9;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .universe-card:active {
+      transform: scale(0.98);
+    }
+    .universe-card__icon {
+      width: 58px;
+      height: 58px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 26px;
+      flex-shrink: 0;
+    }
+    .universe-card__title {
+      font-family: var(--font-display, inherit);
+      font-weight: 800;
+      font-size: 20px;
+      color: #0f172a;
+      line-height: 1.1;
+    }
+    .universe-card__desc {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 800;
+      border-radius: 999px;
+      padding: 8px 12px;
+      line-height: 1.25;
+      max-width: 100%;
+    }
+  `]
 })
 export class HomePage implements OnInit, OnDestroy {
     public router = inject(Router);
@@ -399,52 +472,41 @@ export class HomePage implements OnInit, OnDestroy {
     ]);
 
     signingOut = signal(false);
-    recentBookings = computed(() => this.bookingService.bookingHistory().slice(0, 2));
+    activeMode = signal<HomeServiceMode>('ride');
+
+    readonly topTabs: TopModeTab[] = [
+        { id: 'ride', label: 'Ride', icon: 'car', placeholder: 'Where are you going?' },
+        { id: 'errand', label: 'Shop', icon: 'cart', placeholder: 'What do you need?' },
+        { id: 'delivery', label: 'Deliver', icon: 'cube', placeholder: 'What are you sending?' },
+        { id: 'van-moving', label: 'Move', icon: 'bus', placeholder: 'What are you moving?' }
+    ];
+
+    readonly universeTiles: UniverseTile[] = [
+        { type: 'ride', title: 'Ride', description: 'Everyday trips', icon: 'car', color: '#2563eb', tintColor: '#eff6ff', textColor: '#1d4ed8', ariaLabel: 'Book a Ride' },
+        { type: 'errand', title: 'Shop', description: 'Shopping and errands', icon: 'cart', color: '#059669', tintColor: '#ecfdf5', textColor: '#047857', ariaLabel: 'Open Shop services' },
+        { type: 'delivery', title: 'Deliver', description: 'Parcels and local delivery', icon: 'cube', color: '#d97706', tintColor: '#fffbeb', textColor: '#b45309', ariaLabel: 'Open Delivery services' },
+        { type: 'van-moving', title: 'Move', description: 'Van and moving services', icon: 'bus', color: '#4f46e5', tintColor: '#eef2ff', textColor: '#4338ca', ariaLabel: 'Open Move services' }
+    ];
+
+    readonly forYouShortcuts: ForYouShortcut[] = [
+        { label: 'Ride', icon: 'car', tone: 'blue', type: 'ride' },
+        { label: 'Quick Buy', icon: 'cart-outline', tone: 'emerald', badge: 'New', type: 'errand', mode: 'quick_buy' },
+        { label: 'Collect & Deliver', icon: 'swap-horizontal-outline', tone: 'emerald', type: 'errand', mode: 'collect_deliver' },
+        { label: 'Shop & Deliver', icon: 'business-outline', tone: 'emerald', type: 'errand', mode: 'shop_deliver' },
+        { label: 'Send Parcel', icon: 'cube-outline', tone: 'amber', type: 'delivery' },
+        { label: 'Van Move', icon: 'bus', tone: 'indigo', type: 'van-moving' },
+        { label: 'Scheduled', icon: 'calendar-clear-outline', tone: 'slate', badge: 'Soon', type: 'ride' },
+        { label: 'Airport', icon: 'airplane-outline', tone: 'slate', badge: 'Soon', type: 'ride' }
+    ];
+
+    activeModePlaceholder = computed(() => {
+        return this.topTabs.find(tab => tab.id === this.activeMode())?.placeholder || 'Where are you going?';
+    });
+
     pendingMarketplaceBookings = computed(() => this.bookingService.pendingMarketplaceBookings());
-    activeTrips = computed(() => this.bookingService.bookingHistory().filter(
-        booking => this.isDirectlyActiveBooking(booking)
-    ).length);
     activeBooking = computed(() => this.bookingService.bookingHistory().find(
         booking => this.isDirectlyActiveBooking(booking)
     ) || null);
-    customerCarouselSlides = computed<MovabiCarouselSlide[]>(() => [
-        {
-            eyebrow: 'Quick ride',
-            title: 'Ride with clear fares',
-            subtitle: 'Know the price before the driver accepts.',
-            icon: 'car-sport-outline',
-            cta: 'Book ride',
-            tone: 'amber',
-            accentColor: '#c2410c'
-        },
-        {
-            eyebrow: 'Errands',
-            title: 'Shop, collect, or deliver',
-            subtitle: 'Everyday help with live updates.',
-            icon: 'bag-handle-outline',
-            cta: 'Start errand',
-            tone: 'emerald',
-            accentColor: '#047857'
-        },
-        {
-            eyebrow: 'Delivery',
-            title: 'Send packages locally',
-            subtitle: 'Bike, car, or van based on size.',
-            icon: 'cube-outline',
-            cta: 'Send package',
-            tone: 'blue',
-            accentColor: '#1d4ed8'
-        },
-        {
-            eyebrow: 'Moving',
-            title: 'Move with the right van',
-            subtitle: 'Choose van size and helper needs.',
-            icon: 'storefront-outline',
-            cta: 'Plan move',
-            tone: 'slate',
-            accentColor: '#0f172a'
-        }
-    ]);
 
     constructor() {
         addIcons({
@@ -458,7 +520,16 @@ export class HomePage implements OnInit, OnDestroy {
             chevronForward,
             receiptOutline,
             walletOutline,
-            settingsOutline
+            settingsOutline,
+            searchOutline,
+            calendarClearOutline,
+            locateOutline,
+            swapHorizontalOutline,
+            businessOutline,
+            cubeOutline,
+            airplaneOutline,
+            arrowForward,
+            personCircleOutline
         });
     }
 
@@ -467,6 +538,11 @@ export class HomePage implements OnInit, OnDestroy {
         await this.bookingService.getHistory();
         this.subscribeToCustomerJobs();
         this.tour.startIfNeeded('customer');
+
+        const userId = this.auth.currentUser()?.id;
+        if (userId && !this.auth.profileService.profile()) {
+            void this.auth.profileService.fetchProfile(userId);
+        }
     }
 
     ngOnDestroy(): void {
@@ -482,6 +558,15 @@ export class HomePage implements OnInit, OnDestroy {
 
     continuePendingMarketplaceBooking(booking: any): void {
         void this.router.navigate(['/customer/marketplace-fare', booking.id]);
+    }
+
+    async onScheduleTap(): Promise<void> {
+        const toast = await this.toastCtrl.create({
+            message: 'Scheduled bookings are coming soon. Book now for immediate service.',
+            duration: 2500,
+            color: 'dark'
+        });
+        await toast.present();
     }
 
     private isDirectlyActiveBooking(booking: any): boolean {
@@ -512,33 +597,6 @@ export class HomePage implements OnInit, OnDestroy {
         return labels[status] || this.formatStatus(status);
     }
 
-    activeJobProgress(booking: any): number {
-        const progress: Record<string, number> = {
-            requested: 10,
-            searching: 18,
-            assigned: 30,
-            accepted: 38,
-            heading_to_pickup: 48,
-            arrived: 58,
-            arrived_at_store: 55,
-            shopping_in_progress: 68,
-            over_budget_requested: 68,
-            collected: 78,
-            in_progress: 72,
-            en_route_to_customer: 88,
-            delivered: 96
-        };
-
-        return progress[String(booking?.status || '').toLowerCase()] || 10;
-    }
-
-    activeJobRouteLabel(booking: any): string {
-        const pickup = String(booking?.pickup_address || '').trim();
-        const destination = String(booking?.dropoff_address || booking?.destination_address || '').trim();
-        if (pickup && destination) return `${pickup} to ${destination}`;
-        return destination || pickup || 'Open live details for the latest update';
-    }
-
     private subscribeToCustomerJobs(): void {
         const userId = this.auth.currentUser()?.id;
         if (!userId || this.jobsChannel || !this.supabase.isConfigured) return;
@@ -559,6 +617,10 @@ export class HomePage implements OnInit, OnDestroy {
     }
 
     displayName(): string {
+        const profile = this.auth.profileService.profile();
+        const profileName = String(profile?.first_name || profile?.full_name || '').trim();
+        if (profileName) return profileName;
+
         const email = this.auth.currentUser()?.email || '';
         const name = email.split('@')[0]?.trim();
 
@@ -602,9 +664,23 @@ export class HomePage implements OnInit, OnDestroy {
         void this.router.navigate(['/dashboard']);
     }
 
-    goToBooking(type: 'ride' | 'errand' | 'delivery' | 'van-moving'): void {
+    async onShortcutTap(shortcut: ForYouShortcut): Promise<void> {
+        if (shortcut.badge === 'Soon') {
+            const toast = await this.toastCtrl.create({
+                message: `${shortcut.label} is coming soon.`,
+                duration: 2000,
+                color: 'dark'
+            });
+            await toast.present();
+            return;
+        }
+
+        this.goToBooking(shortcut.type, shortcut.mode);
+    }
+
+    goToBooking(type: HomeServiceMode, mode?: string): void {
         void this.router.navigate(['/customer/request'], {
-            queryParams: { type }
+            queryParams: mode ? { type, mode } : { type }
         });
     }
 

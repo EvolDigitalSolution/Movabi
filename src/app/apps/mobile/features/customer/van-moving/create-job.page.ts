@@ -921,7 +921,7 @@ export class CreateJobPage implements AfterViewInit {
     private withLocationContext(type: 'pickup' | 'dropoff', query?: string): string {
         const cleanQuery = String(query || '').replace(/\s+/g, ' ').trim();
 
-        if (!cleanQuery || cleanQuery.includes(',')) return cleanQuery;
+        if (!cleanQuery || cleanQuery.includes(',') || this.geocoding.isLikelyUkPostcode(cleanQuery)) return cleanQuery;
 
         const contextAddress = type === 'dropoff'
             ? this.pickupLocation.address

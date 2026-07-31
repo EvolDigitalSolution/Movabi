@@ -8,6 +8,7 @@ import {
   analyticsOutline,
   bulbOutline,
   cashOutline,
+  createOutline,
   documentTextOutline,
   flaskOutline,
   peopleOutline,
@@ -72,6 +73,7 @@ export class MarketIntelligenceComponent implements OnInit {
       analyticsOutline,
       bulbOutline,
       cashOutline,
+      createOutline,
       documentTextOutline,
       flaskOutline,
       peopleOutline,
@@ -113,18 +115,53 @@ export class MarketIntelligenceComponent implements OnInit {
 
   // --- Strategies ---
 
+  editingStrategyId: string | null = null;
+
   async saveStrategy(): Promise<void> {
     this.saving.set(true);
     try {
-      await this.service.createStrategy(this.strategyDraft);
-      this.strategyDraft = this.defaultStrategy();
+      if (this.editingStrategyId) {
+        await this.service.updateStrategy(this.editingStrategyId, this.strategyDraft);
+        this.showToast('Strategy updated. Enabled state is unchanged.', 'success');
+      } else {
+        await this.service.createStrategy(this.strategyDraft);
+        this.showToast('Strategy created (disabled by default). Enable it explicitly when ready.', 'success');
+      }
+      this.cancelEditStrategy();
       await this.reload();
-      this.showToast('Strategy created (disabled by default). Enable it explicitly when ready.', 'success');
     } catch (error: any) {
       this.showToast(error?.error?.error || error?.message || 'Unable to save strategy.', 'danger');
     } finally {
       this.saving.set(false);
     }
+  }
+
+  editStrategy(row: MarketPricingRow): void {
+    this.editingStrategyId = row['id'];
+    this.strategyDraft = {
+      countryCode: row['country_code'],
+      marketCity: row['market_city'] ?? null,
+      zoneId: row['zone_id'] ?? null,
+      serviceType: row['service_type'],
+      vehicleClass: row['vehicle_class'] ?? null,
+      strategy: row['strategy'],
+      targetDifferencePercent: row['target_difference_percent'],
+      minimumDriverHourlyRate: row['minimum_driver_hourly_rate'],
+      minimumDriverPerKm: row['minimum_driver_per_km'],
+      minimumDriverPayout: row['minimum_driver_payout'],
+      minimumPlatformMarginPercent: row['minimum_platform_margin_percent'],
+      minimumPlatformRevenue: row['minimum_platform_revenue'],
+      maximumCustomerDiscountPercent: row['maximum_customer_discount_percent'],
+      maximumMarketAdjustmentPercent: row['maximum_market_adjustment_percent'],
+      currency: row['currency'],
+      validFrom: row['valid_from'] ?? null,
+      validUntil: row['valid_until'] ?? null
+    };
+  }
+
+  cancelEditStrategy(): void {
+    this.editingStrategyId = null;
+    this.strategyDraft = this.defaultStrategy();
   }
 
   async toggleStrategy(row: MarketPricingRow): Promise<void> {
@@ -153,6 +190,7 @@ export class MarketIntelligenceComponent implements OnInit {
     this.saving.set(true);
     try {
       await this.service.deleteStrategy(row['id']);
+      if (this.editingStrategyId === row['id']) this.cancelEditStrategy();
       await this.reload();
       this.showToast('Strategy deleted.', 'success');
     } catch (error: any) {

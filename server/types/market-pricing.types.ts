@@ -106,6 +106,8 @@ export interface MarketPricingResult {
 
   driverProtectionFloor: number;
   platformMarginFloor: number;
+  /** max(driverProtectionFloor, platformMarginFloor) - the lowest sustainable SERVICE fare. */
+  minimumSustainableFare: number;
 
   adjustedServiceFare: number;
   marketAdjustment: number;
@@ -118,6 +120,11 @@ export interface MarketPricingResult {
 
   strategyId?: string | null;
   marketSnapshotId?: string | null;
+
+  /** true when a real competitor-derived market reference fare was used. */
+  benchmarkUsed: boolean;
+  /** true when the (currently no-op) internal market signal provider was consulted. */
+  internalSignalsUsed: boolean;
 
   fallbackReason?: string | null;
   calculationVersion: string;
@@ -133,5 +140,43 @@ export interface MarketPricingSettings {
   defaultTargetPercent: number;
   maxDiscountPercent: number;
   benchmarkMaxAgeHours: number;
+  /** master toggle for the (currently no-op) internal market signal provider. */
+  useInternalSignals: boolean;
   version: string;
+}
+
+/**
+ * Internal Movabi signals (driver acceptance, cancellation, supply/demand,
+ * time of day, traffic, weather, etc). This is a forward-looking extension
+ * point only - Phase "sustainability redesign" intentionally ships this as a
+ * structural placeholder so a future signal provider (rule-based or ML-based)
+ * can be dropped in without reshaping MarketPricingService again. It must
+ * never throw and must default to "no adjustment" when signals are
+ * unavailable or disabled.
+ */
+export interface InternalMarketSignalsInput {
+  countryCode: string;
+  marketCity?: string | null;
+  serviceType: string;
+  vehicleClass?: string | null;
+  requestedAt?: string | null;
+}
+
+export interface InternalMarketSignalsResult {
+  /** Percentage adjustment to apply to the pre-floor target fare. 0 = no-op (current behaviour). */
+  adjustmentPercent: number;
+  /** 0-100 confidence in the signal; 0 means "no signal available". */
+  confidence: number;
+  /** Raw signal snapshot for audit/debugging, null while unimplemented. */
+  signals: {
+    driverAcceptanceRate?: number | null;
+    customerCancellationRate?: number | null;
+    completedFareAverage?: number | null;
+    availableDriverSupply?: number | null;
+    demand?: number | null;
+    timeOfDay?: string | null;
+    trafficIndex?: number | null;
+    weatherIndex?: number | null;
+  } | null;
+  source: string;
 }

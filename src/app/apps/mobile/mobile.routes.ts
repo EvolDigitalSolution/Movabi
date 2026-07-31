@@ -130,6 +130,10 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/customer/marketplace-payment/marketplace-payment.page').then((m) => m.MarketplacePaymentPage)
             },
             {
+                path: 'services',
+                loadComponent: () => import('@mobile/features/customer/services/services.page').then((m) => m.ServicesPage)
+            },
+            {
                 path: 'activity',
                 loadComponent: () => import('@mobile/features/customer/activity/activity.page').then((m) => m.ActivityPage)
             },

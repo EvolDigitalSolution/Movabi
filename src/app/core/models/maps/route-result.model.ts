@@ -25,4 +25,7 @@ export interface AutocompleteResult {
   label: string;
   lat: number;
   lng: number;
+  primaryText?: string;
+  secondaryText?: string;
+  postalCode?: string;
 }

@@ -162,7 +162,8 @@ p {
 }
 
 .native-safe-bottom {
-    padding-bottom: max(90px, env(safe-area-inset-bottom));
+    /* Customer floating bottom nav clearance + device safe-area inset */
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
 }
 
 .native-sticky-action {

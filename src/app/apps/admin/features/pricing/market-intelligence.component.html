@@ -41,7 +41,7 @@
   <!-- STRATEGIES -->
   @if (activeTab() === 'strategies') {
     <section class="mi-panel">
-      <h2>Create strategy</h2>
+      <h2>{{ editingStrategyId ? 'Edit strategy' : 'Create strategy' }}</h2>
       <div class="mi-grid">
         <label>Country<input [(ngModel)]="strategyDraft['countryCode']" placeholder="GB" maxlength="2"></label>
         <label>City (optional)<input [(ngModel)]="strategyDraft['marketCity']" placeholder="Manchester"></label>
@@ -67,8 +67,12 @@
         <label>Max market adjustment (%)<input type="number" [(ngModel)]="strategyDraft['maximumMarketAdjustmentPercent']" min="0" max="100"></label>
       </div>
       <button class="mi-btn" (click)="saveStrategy()" [disabled]="saving()">
-        <ion-icon name="add-circle-outline"></ion-icon> Create strategy (disabled by default)
+        <ion-icon name="add-circle-outline"></ion-icon>
+        {{ editingStrategyId ? 'Save changes' : 'Create strategy (disabled by default)' }}
       </button>
+      @if (editingStrategyId) {
+        <button class="mi-btn mi-btn--ghost" (click)="cancelEditStrategy()" [disabled]="saving()">Cancel edit</button>
+      }
 
       <h2 class="mi-mt">Existing strategies</h2>
       <table class="mi-table">
@@ -94,7 +98,10 @@
                   {{ row['enabled'] ? 'Enabled' : 'Disabled' }}
                 </button>
               </td>
-              <td><button class="mi-icon-btn" (click)="deleteStrategy(row)"><ion-icon name="trash-outline"></ion-icon></button></td>
+              <td>
+                <button class="mi-icon-btn" (click)="editStrategy(row)" title="Edit"><ion-icon name="create-outline"></ion-icon></button>
+                <button class="mi-icon-btn" (click)="deleteStrategy(row)" title="Delete"><ion-icon name="trash-outline"></ion-icon></button>
+              </td>
             </tr>
           } @empty {
             <tr><td colspan="10" class="mi-empty">No strategies configured yet.</td></tr>
@@ -282,6 +289,9 @@
         </label>
         <label class="mi-checkbox">
           <input type="checkbox" [(ngModel)]="settingsDraft.auditEnabled"> Audit logging enabled
+        </label>
+        <label class="mi-checkbox">
+          <input type="checkbox" [(ngModel)]="settingsDraft.useInternalSignals"> Use internal Movabi market signals (no-op placeholder)
         </label>
         <label>Default target percentage<input type="number" [(ngModel)]="settingsDraft.defaultTargetPercent"></label>
         <label>Maximum discount percentage<input type="number" [(ngModel)]="settingsDraft.maxDiscountPercent"></label>

@@ -40,14 +40,21 @@ import {
     helpCircleOutline,
     searchOutline,
     swapHorizontalOutline,
+    closeCircle,
     closeCircleOutline,
+    closeOutline,
     walletOutline,
     alertCircle,
     homeOutline,
     storefrontOutline,
     personOutline,
     callOutline,
-    layersOutline
+    layersOutline,
+    navigateOutline,
+    informationCircleOutline,
+    chevronDownOutline,
+    chevronUpOutline,
+    calendarOutline
 } from 'ionicons/icons';
 import { Router, ActivatedRoute } from '@angular/router';
 import { Subject, debounceTime, distinctUntilChanged, firstValueFrom } from 'rxjs';
@@ -146,15 +153,15 @@ type PackageSize = 'small' | 'medium' | 'large';
           }
         </div>
 
-        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto ion-padding-bottom">
-          <div class="max-w-2xl mx-auto space-y-5 pb-safe">
-            <div class="flex items-center gap-4 p-1">
-              <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100 shrink-0">
-                <ion-icon [name]="getIcon()" class="text-2xl"></ion-icon>
+        <div class="flex-1 bg-white rounded-t-[1.75rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-3 pt-3 pb-8 overflow-y-auto ion-padding-bottom">
+          <div class="max-w-2xl mx-auto space-y-3 pb-safe">
+            <div class="service-identity">
+              <div class="service-identity__icon">
+                <ion-icon [name]="getIcon()" class="text-xl"></ion-icon>
               </div>
-              <div>
-                <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight mb-0.5">{{ getTitle() }}</h2>
-                <p class="text-slate-400 font-medium text-sm">Trusted local movement for your needs.</p>
+              <div class="min-w-0">
+                <h2 class="service-identity__title">{{ getServiceLabel() }}</h2>
+                <p class="service-identity__desc">{{ getServiceDescription() }}</p>
               </div>
             </div>
 
@@ -170,9 +177,9 @@ type PackageSize = 'small' | 'medium' | 'large';
               </div>
             }
 
-            <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-5">
+            <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-4">
               @if (type === ServiceTypeEnum.ERRAND) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="space-y-3">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Shop Type</p>
                     <div class="grid grid-cols-3 gap-3">
@@ -242,7 +249,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           </button>
                         }
                       </div>
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                      <p class="px-2 text-xs text-slate-400 font-semibold leading-relaxed">
                         Picking a shop fills pickup with a nearby branch search. You can still type a different shop or exact address.
                       </p>
                     </div>
@@ -264,117 +271,116 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </app-local-service-selector>
               }
 
-              <div class="space-y-5">
-                <div class="rounded-3xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
-                  <button
-                    type="button"
-                    (click)="togglePickupExpanded()"
-                    [attr.aria-expanded]="pickupExpanded()"
-                    aria-label="Change pickup address"
-                    class="w-full min-h-11 rounded-2xl bg-white px-4 py-3 text-left shadow-sm border border-slate-100 flex items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 active:scale-[0.99] transition-all">
-                    <span class="w-11 h-11 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
-                      <ion-icon name="location-outline" class="text-xl"></ion-icon>
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400">Pickup</span>
-                      <span class="block text-sm font-black text-slate-900">{{ pickupSummaryTitle() }}</span>
-                      <span class="block text-xs font-semibold text-slate-500 truncate">{{ pickupSummaryAddress() }}</span>
-                    </span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-orange-600 px-3 py-2 rounded-full bg-orange-50">
-                      Change
-                    </span>
-                  </button>
+              <div class="space-y-3">
+                <div class="address-field">
+                  <span class="address-field__icon">
+                    <ion-icon name="location-outline"></ion-icon>
+                  </span>
+                  <div class="address-field__body">
+                    <span class="address-field__label">Pickup</span>
+                    <app-input
+                      [dense]="true"
+                      formControlName="pickup_address"
+                      (input)="onAddressInput('pickup', $any($event).target.value)"
+                      [placeholder]="pickupPlaceholder()"
+                      (focus)="showPickupResults.set(true)"
+                      (blur)="hideResults('pickup')">
 
-                  @if (pickupAutofilling()) {
-                    <p class="mt-2 px-2 text-[11px] font-bold text-slate-500" aria-live="polite">
-                      Finding your current pickup address...
-                    </p>
-                  }
-
-                  @if (pickupExpanded()) {
-                    <div class="mt-3 relative animate-in fade-in slide-in-from-top-2">
-                      <app-input
-                        label="Pickup Location"
-                        formControlName="pickup_address"
-                        (input)="onAddressInput('pickup', $any($event).target.value)"
-                        placeholder="Where should we pick up?"
-                        icon="location-outline"
-                        (focus)="showPickupResults.set(true)"
-                        (blur)="hideResults('pickup')">
-
-                        @if (showPickupResults() && displayPickupResults().length > 0) {
-                          <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                            @for (result of displayPickupResults(); track result.label) {
-                              <button
-                                type="button"
-                                (mousedown)="selectResult('pickup', result)"
-                                class="w-full min-h-11 px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
-                                <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                                  <ion-icon name="location-outline" class="text-lg"></ion-icon>
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                  <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                                  <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
-                                </div>
-                              </button>
-                            }
-                          </div>
-                        }
-                      </app-input>
-
-                      <button
-                        type="button"
-                        (click)="useCurrentLocation('pickup')"
-                        class="absolute right-4 top-10 min-h-11 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50 px-3 py-1 rounded-full z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
-                        <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                        Current
+                      @if (showPickupResults() && displayPickupResults().length > 0) {
+                        <div dropdown class="address-results">
+                          @for (result of displayPickupResults(); track result.label) {
+                            <button
+                              type="button"
+                              (mousedown)="selectResult('pickup', result)"
+                              class="address-results__item focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+                              <div class="address-results__icon">
+                                <ion-icon name="location-outline" class="text-lg"></ion-icon>
+                              </div>
+                              <div class="flex-1 min-w-0">
+                                <p class="text-sm font-bold text-slate-900 truncate">{{ result.primaryText || result.label }}</p>
+                                @if (result.secondaryText) {
+                                  <p class="text-xs text-slate-500 truncate font-semibold">{{ result.secondaryText }}</p>
+                                } @else if (pickupResults().length === 0) {
+                                  <p class="text-xs text-slate-500 truncate font-semibold">Recent pickup</p>
+                                }
+                              </div>
+                            </button>
+                          }
+                        </div>
+                      }
+                    </app-input>
+                  </div>
+                  <div class="address-field__action">
+                    @if (pickupShowCurrentBadge()) {
+                      <span class="address-badge">Current</span>
+                    } @else if (bookingForm.get('pickup_address')?.value) {
+                      <button type="button" aria-label="Clear pickup address" (click)="clearAddress('pickup')" class="address-action-btn">
+                        <ion-icon name="close-circle"></ion-icon>
                       </button>
-                    </div>
-                  }
+                    } @else {
+                      <button type="button" aria-label="Use current location for pickup" (click)="useCurrentLocation('pickup')" class="address-action-btn">
+                        <ion-icon name="locate"></ion-icon>
+                      </button>
+                    }
+                  </div>
                 </div>
 
-                <div class="relative">
-                  <app-input
-                    label="Dropoff Location"
-                    formControlName="dropoff_address"
-                    (input)="onAddressInput('dropoff', $any($event).target.value)"
-                    [placeholder]="type === ServiceTypeEnum.DELIVERY ? 'Where should we deliver the parcel?' : 'Where should we deliver?'"
-                    icon="pin-outline"
-                    (focus)="showDropoffResults.set(true)"
-                    (blur)="hideResults('dropoff')">
+                <div class="address-field">
+                  <span class="address-field__icon address-field__icon--dropoff">
+                    <ion-icon name="pin-outline"></ion-icon>
+                  </span>
+                  <div class="address-field__body">
+                    <span class="address-field__label">Drop-off</span>
+                    <app-input
+                      [dense]="true"
+                      formControlName="dropoff_address"
+                      (input)="onAddressInput('dropoff', $any($event).target.value)"
+                      [placeholder]="dropoffPlaceholder()"
+                      (focus)="showDropoffResults.set(true)"
+                      (blur)="hideResults('dropoff')">
 
-                    @if (showDropoffResults() && displayDropoffResults().length > 0) {
-                      <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of displayDropoffResults(); track result.label) {
-                          <button
-                            type="button"
-                            (mousedown)="selectResult('dropoff', result)"
-                            class="w-full px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors">
-                            <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                              <ion-icon name="pin-outline" class="text-lg"></ion-icon>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                              <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ dropoffResults().length > 0 ? 'Select destination' : 'Recent destination' }}</p>
-                            </div>
-                          </button>
-                        }
-                      </div>
+                      @if (showDropoffResults() && displayDropoffResults().length > 0) {
+                        <div dropdown class="address-results">
+                          @for (result of displayDropoffResults(); track result.label) {
+                            <button
+                              type="button"
+                              (mousedown)="selectResult('dropoff', result)"
+                              class="address-results__item focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+                              <div class="address-results__icon">
+                                <ion-icon name="pin-outline" class="text-lg"></ion-icon>
+                              </div>
+                              <div class="flex-1 min-w-0">
+                                <p class="text-sm font-bold text-slate-900 truncate">{{ result.primaryText || result.label }}</p>
+                                @if (result.secondaryText) {
+                                  <p class="text-xs text-slate-500 truncate font-semibold">{{ result.secondaryText }}</p>
+                                } @else if (dropoffResults().length === 0) {
+                                  <p class="text-xs text-slate-500 truncate font-semibold">Recent destination</p>
+                                }
+                              </div>
+                            </button>
+                          }
+                        </div>
+                      }
+                    </app-input>
+                  </div>
+                  <div class="address-field__action">
+                    @if (dropoffShowCurrentBadge()) {
+                      <span class="address-badge">Current</span>
+                    } @else if (bookingForm.get('dropoff_address')?.value) {
+                      <button type="button" aria-label="Clear drop-off address" (click)="clearAddress('dropoff')" class="address-action-btn">
+                        <ion-icon name="close-circle"></ion-icon>
+                      </button>
+                    } @else {
+                      <button type="button" aria-label="Use current location for drop-off" (click)="useCurrentLocation('dropoff')" class="address-action-btn">
+                        <ion-icon name="locate"></ion-icon>
+                      </button>
                     }
-                  </app-input>
-
-                  <button
-                    type="button"
-                    (click)="useCurrentLocation('dropoff')"
-                    class="absolute right-4 top-10 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50/50 px-3 py-1 rounded-full z-10">
-                    <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                    Current
-                  </button>
+                  </div>
                 </div>
               </div>
 
               @if (type !== ServiceTypeEnum.VAN) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="flex items-center justify-between gap-3">
                     <div>
                       <p class="text-xs font-black text-slate-700">Choose vehicle</p>
@@ -406,7 +412,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.RIDE) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="flex items-center justify-between gap-3">
                     <div>
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Passengers</p>
@@ -440,7 +446,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                       </p>
                     </div>
                   } @else {
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    <p class="text-xs text-slate-400 font-semibold leading-relaxed">
                       Standard cars can carry up to 4 passengers.
                     </p>
                   }
@@ -467,7 +473,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.ERRAND) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                   @if (usesItemListMode()) {
                     <div class="space-y-2">
                       <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
@@ -512,9 +518,10 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
                       }
 
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        {{ itemBudgetDescription() }}
-                      </p>
+                      <div class="reservation-note">
+                        <ion-icon name="information-circle-outline" class="reservation-note__icon"></ion-icon>
+                        <p class="reservation-note__text">{{ itemBudgetDescription() }}</p>
+                      </div>
                     </div>
                   }
 
@@ -574,7 +581,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.DELIVERY) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="space-y-3">
                     <p class="text-xs font-black text-slate-700 ml-1">Parcel size</p>
                     <div class="grid grid-cols-3 gap-3">
@@ -643,7 +650,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.VAN) {
-                <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                   <div class="space-y-3">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Move Size</p>
                     <div class="grid grid-cols-2 gap-3">
@@ -979,7 +986,194 @@ type PackageSize = 'small' | 'medium' | 'large';
         </div>
       </div>
     </ion-content>
-  `
+  `,
+    styles: [`
+    .reservation-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid #f1f5f9;
+    }
+    .reservation-note__icon {
+      font-size: 16px;
+      color: #94a3b8;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .reservation-note__text {
+      font-size: 13px;
+      font-weight: 600;
+      color: #64748b;
+      line-height: 1.45;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+    .service-identity {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 4px;
+      min-height: 78px;
+    }
+    .service-identity__icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      background: #f8fafc;
+      border: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0f172a;
+      flex-shrink: 0;
+    }
+    .service-identity__title {
+      font-weight: 800;
+      font-size: 1.3rem;
+      color: #0f172a;
+      line-height: 1.15;
+    }
+    .service-identity__desc {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .address-field {
+      position: relative;
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 64px;
+      padding: 8px 12px;
+      border-radius: 18px;
+      background: #f8fafc;
+      border: 1px solid #eef2f6;
+    }
+    .address-field__icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: #fff7ed;
+      color: #ea580c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .address-field__icon--dropoff {
+      background: #eff6ff;
+      color: #2563eb;
+    }
+    .address-field__body {
+      min-width: 0;
+    }
+    .address-field__label {
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      margin-bottom: 2px;
+      margin-left: 2px;
+    }
+    .address-field__action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+    }
+    .address-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #2563eb;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+    .address-action-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      font-size: 20px;
+      background: transparent;
+    }
+    .address-action-btn:active {
+      background: #f1f5f9;
+    }
+    .address-action-btn:focus-visible {
+      outline: 2px solid #f97316;
+      outline-offset: 2px;
+    }
+    .address-results {
+      position: absolute;
+      z-index: 9999;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px -15px rgba(0,0,0,0.15);
+      border: 1px solid #f1f5f9;
+      overflow-y: auto;
+      max-height: 240px;
+    }
+    .address-results__item {
+      width: 100%;
+      min-height: 54px;
+      padding: 8px 10px;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #f8fafc;
+      transition: background-color 0.15s ease;
+    }
+    .address-results__item:last-child {
+      border-bottom: none;
+    }
+    .address-results__item:hover,
+    .address-results__item:focus-visible {
+      background: #f8fafc;
+    }
+    .address-results__icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .address-results__item {
+        transition: none;
+      }
+    }
+  `]
 })
 export class BookingRequestPage implements OnInit, OnDestroy {
     @ViewChild('map') mapComponent!: MapComponent;
@@ -1087,8 +1281,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return String(address || '').trim() || 'Search for an address or use current location';
     });
 
+    pickupPlaceholder = computed(() => {
+        if (this.pickupAutofilling()) return 'Finding your current address…';
+        return 'Search for pickup address';
+    });
+
+    dropoffPlaceholder = computed(() => {
+        return this.type === ServiceTypeEnum.DELIVERY
+            ? 'Where should we deliver the parcel?'
+            : 'Where should we deliver?';
+    });
+
+    pickupShowCurrentBadge = computed(() => {
+        return this.pickupLocation.source === 'gps' && !this.pickupManuallyChanged();
+    });
+
+    dropoffShowCurrentBadge = computed(() => {
+        return this.dropoffLocation.source === 'gps';
+    });
+
     showLocalServiceCatalogue = computed(() => {
-        return this.type === ServiceTypeEnum.ERRAND || this.type === ServiceTypeEnum.DELIVERY;
+        // Disabled for v1 hardening: Local Service Discovery catalogue (nearby provider
+        // search, category accordions, brand-query bridge) is dormant until it is
+        // independently stabilised and re-tested. Shop/Delivery flows use manual
+        // shop/address entry + popular shop shortcuts only. Backend/service
+        // infrastructure is untouched and can be re-enabled by restoring this check.
+        return false;
     });
 
     localServiceCountryCode = computed(() => {
@@ -1252,14 +1470,21 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             helpCircleOutline,
             searchOutline,
             swapHorizontalOutline,
+            closeCircle,
             closeCircleOutline,
+            closeOutline,
             walletOutline,
             alertCircle,
             homeOutline,
             storefrontOutline,
             personOutline,
             callOutline,
-            layersOutline
+            layersOutline,
+            navigateOutline,
+            informationCircleOutline,
+            chevronDownOutline,
+            chevronUpOutline,
+            calendarOutline
         });
     }
 
@@ -1271,7 +1496,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.route.queryParamMap
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe(params => {
-                this.applyRequestedType(params.get('type'));
+                this.applyRequestedType(params.get('type'), params.get('mode'));
             });
 
         this.pickupSearch$
@@ -1287,7 +1512,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             });
     }
 
-    private applyRequestedType(typeParam: unknown): void {
+    private applyRequestedType(typeParam: unknown, modeParam?: unknown): void {
         const nextType = this.normalizeTypeParam(typeParam);
         const changed = this.lastResolvedType !== nextType;
 
@@ -1300,6 +1525,14 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.estimatedPrice.set(0);
 
         this.initForm();
+
+        if (nextType === ServiceTypeEnum.ERRAND) {
+            const requestedMode = String(modeParam || '').trim();
+            if (requestedMode === 'quick_buy' || requestedMode === 'collect_deliver' || requestedMode === 'shop_deliver') {
+                this.setErrandMode(requestedMode);
+            }
+        }
+
         void this.loadPricing();
         void this.autoPrefillPickupOnce();
     }
@@ -1369,6 +1602,15 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     selectPopularShop(shop: PopularShopPreset): void {
         const query = shop.query;
+
+        // "Other" (empty query) means the customer wants to type the shop/address
+        // manually. Expand the pickup field instead of prefilling any text so the
+        // original address input chain stays untouched.
+        if (!query) {
+            this.pickupExpanded.set(true);
+            return;
+        }
+
         this.selectedLocalService.set({
             categorySlug: 'shop-deliver',
             categoryName: 'Shop & Deliver',
@@ -2037,6 +2279,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         budgetControl.updateValueAndValidity({ emitEvent: false });
     }
 
+    clearAddress(type: 'pickup' | 'dropoff'): void {
+        this.bookingForm.patchValue({ [type === 'pickup' ? 'pickup_address' : 'dropoff_address']: '' });
+        this.onAddressInput(type, '');
+    }
+
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
         if (type === 'pickup') {
             this.pickupManuallyChanged.set(true);
@@ -2164,7 +2411,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private withLocationContext(type: 'pickup' | 'dropoff', query: string): string {
         const cleanQuery = String(query || '').replace(/\s+/g, ' ').trim();
 
-        if (!cleanQuery || cleanQuery.includes(',')) return cleanQuery;
+        if (!cleanQuery || cleanQuery.includes(',') || this.geocoding.isLikelyUkPostcode(cleanQuery)) return cleanQuery;
 
         const contextAddress = type === 'dropoff'
             ? this.pickupLocation.address
@@ -2549,6 +2796,36 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return 'bus-outline';
             default:
                 return 'help-circle-outline';
+        }
+    }
+
+    getServiceLabel(): string {
+        switch (this.type) {
+            case ServiceTypeEnum.RIDE:
+                return 'Ride';
+            case ServiceTypeEnum.ERRAND:
+                return 'Shop';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Deliver';
+            case ServiceTypeEnum.VAN:
+                return 'Move';
+            default:
+                return 'Booking';
+        }
+    }
+
+    getServiceDescription(): string {
+        switch (this.type) {
+            case ServiceTypeEnum.RIDE:
+                return 'Everyday local travel';
+            case ServiceTypeEnum.ERRAND:
+                return 'Shopping, errands and collections';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Trusted local delivery';
+            case ServiceTypeEnum.VAN:
+                return 'Van and moving services';
+            default:
+                return 'Trusted local movement for your needs.';
         }
     }
 

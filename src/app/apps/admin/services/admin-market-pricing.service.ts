@@ -15,6 +15,7 @@ export interface MarketPricingSettingsDto {
   defaultTargetPercent: number;
   maxDiscountPercent: number;
   benchmarkMaxAgeHours: number;
+  useInternalSignals: boolean;
   version: string;
 }
 
@@ -40,6 +41,9 @@ export interface MarketPricingSimulationResult {
   targetFare?: number | null;
   driverProtectionFloor: number;
   platformMarginFloor: number;
+  minimumSustainableFare: number;
+  benchmarkUsed: boolean;
+  internalSignalsUsed: boolean;
   adjustedServiceFare: number;
   marketAdjustment: number;
   platformFeeAmount: number;

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, computed, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { addIcons } from 'ionicons';
@@ -9,31 +9,25 @@ import {
     cart,
     bus,
     map,
-    cubeOutline
+    cubeOutline,
+    timeOutline,
+    checkmarkCircle
 } from 'ionicons/icons';
 import { Router } from '@angular/router';
+import { Booking } from '../../../../../shared/models/booking.model';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
 import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
+import { CustomerBottomNavComponent } from '../../../../../shared/components/customer-shell/customer-bottom-nav.component';
 
 @Component({
     selector: 'app-activity',
     standalone: true,
-    imports: [IonicModule, CommonModule, CardComponent, BadgeComponent],
+    imports: [IonicModule, CommonModule, CardComponent, BadgeComponent, CustomerBottomNavComponent],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-6 bg-slate-50">
-        <ion-buttons slot="start">
-          <button
-            type="button"
-            (click)="router.navigate(['/customer'])"
-            class="w-12 h-12 rounded-2xl bg-white text-slate-900 flex items-center justify-center border border-slate-200 shadow-sm active:scale-95 transition-all"
-          >
-            <ion-icon name="chevron-back-outline" class="text-xl"></ion-icon>
-          </button>
-        </ion-buttons>
-
         <ion-title class="font-display font-black text-2xl tracking-tighter text-slate-900">
           Activity
         </ion-title>
@@ -41,8 +35,9 @@ import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
     </ion-header>
 
     <ion-content class="bg-slate-50" [fullscreen]="true">
-      <div class="max-w-xl mx-auto p-5 space-y-8 pb-safe ion-padding-bottom">
-        @if (history().length === 0) {
+      <div class="max-w-xl mx-auto p-5 space-y-8 native-safe-bottom">
+
+        @if (activeBookings().length === 0 && pendingMarketplace().length === 0 && pastBookings().length === 0) {
           <button
             type="button"
             (click)="router.navigate(['/customer/request'])"
@@ -58,91 +53,134 @@ import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
           </button>
         }
 
-        <div class="space-y-5">
-          @for (booking of history(); track booking.id) {
-            <app-card [hoverable]="true" class="group overflow-hidden">
-              <div class="flex justify-between items-start gap-4 mb-7">
-                <div class="flex items-center gap-4 min-w-0">
+        @if (activeBookings().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-emerald-500 rounded-full shadow-lg shadow-emerald-500/20"></div>
+              <h3 class="text-sm font-black text-slate-700">Active</h3>
+            </div>
+
+            <div class="space-y-3">
+              @for (booking of activeBookings(); track booking.id) {
+                <button
+                  type="button"
+                  (click)="continueActive(booking)"
+                  class="w-full bg-white rounded-2xl border border-emerald-200 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                >
                   <div
-                    class="w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
+                    class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
                     [class.bg-blue-50]="getServiceSlug(booking) === 'ride'"
                     [class.text-blue-600]="getServiceSlug(booking) === 'ride'"
-                    [class.border-blue-100]="getServiceSlug(booking) === 'ride'"
                     [class.bg-emerald-50]="getServiceSlug(booking) === 'errand'"
                     [class.text-emerald-600]="getServiceSlug(booking) === 'errand'"
-                    [class.border-emerald-100]="getServiceSlug(booking) === 'errand'"
                     [class.bg-amber-50]="getServiceSlug(booking) === 'delivery'"
                     [class.text-amber-600]="getServiceSlug(booking) === 'delivery'"
-                    [class.border-amber-100]="getServiceSlug(booking) === 'delivery'"
                     [class.bg-indigo-50]="getServiceSlug(booking) === 'van-moving'"
                     [class.text-indigo-600]="getServiceSlug(booking) === 'van-moving'"
-                    [class.border-indigo-100]="getServiceSlug(booking) === 'van-moving'"
                   >
-                    <ion-icon [name]="getServiceIcon(booking)" class="text-2xl"></ion-icon>
+                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
                   </div>
-
-                  <div class="min-w-0">
-                    <span class="text-[10px] font-black uppercase text-slate-400 tracking-[0.18em] mb-1 block">
-                      {{ getServiceName(booking) }}
-                    </span>
-                    <p class="text-xs text-slate-500 font-bold">
-                      {{ booking.created_at | date:'mediumDate' }} • {{ booking.created_at | date:'shortTime' }}
-                    </p>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                    <p class="text-xs font-semibold text-emerald-700 truncate">{{ activeStatusLabel(booking) }}</p>
                   </div>
-                </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-sm font-black text-slate-900">{{ formatPrice(booking.total_price || booking.price || 0) }}</p>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">Continue</span>
+                  </div>
+                </button>
+              }
+            </div>
+          </div>
+        }
 
-                <app-badge [variant]="getStatusVariant(booking.status)">
-                  {{ formatStatus(booking.status) }}
-                </app-badge>
-              </div>
+        @if (pendingMarketplace().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-amber-500 rounded-full shadow-lg shadow-amber-500/20"></div>
+              <h3 class="text-sm font-black text-slate-700">Pending Marketplace</h3>
+            </div>
 
-              <div class="relative pl-10 space-y-7 mb-8">
-                <div class="absolute left-4 top-2 bottom-2 w-0.5 border-l-2 border-slate-200 border-dashed"></div>
+            <div class="space-y-3">
+              @for (booking of pendingMarketplace(); track booking.id) {
+                <button
+                  type="button"
+                  (click)="continueMarketplace(booking)"
+                  class="w-full bg-white rounded-2xl border border-amber-200 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                >
+                  <div class="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                    <p class="text-xs font-semibold text-amber-700 truncate">{{ marketplaceStatusLabel(booking) }}</p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-sm font-black text-slate-900">{{ formatPrice(booking.negotiated_fare || booking.agreed_fare || booking.total_price || 0) }}</p>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-amber-600">Review</span>
+                  </div>
+                </button>
+              }
+            </div>
+          </div>
+        }
 
-                <div class="relative">
-                  <div class="absolute -left-8 top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
-                  <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1.5">Pickup</p>
-                  <p class="font-bold text-slate-900 leading-relaxed text-sm truncate">
-                    {{ booking.pickup_address || 'Pickup unavailable' }}
-                  </p>
-                </div>
+        @if (pastBookings().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-slate-300 rounded-full"></div>
+              <h3 class="text-sm font-black text-slate-700">Past</h3>
+            </div>
 
-                <div class="relative">
-                  <div class="absolute -left-8 top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
-                  <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1.5">
-                    {{ getServiceSlug(booking) === 'delivery' ? 'Delivery Address' : 'Destination' }}
-                  </p>
-                  <p class="font-bold text-slate-900 leading-relaxed text-sm truncate">
-                    {{ booking.dropoff_address || 'Destination unavailable' }}
-                  </p>
-                </div>
-              </div>
+            <div class="space-y-3">
+              @for (booking of pastBookings(); track booking.id) {
+                <app-card [hoverable]="false" class="group overflow-hidden">
+                  <div class="flex justify-between items-start gap-4">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div
+                        class="w-11 h-11 rounded-xl flex items-center justify-center border shrink-0"
+                        [class.bg-blue-50]="getServiceSlug(booking) === 'ride'"
+                        [class.text-blue-600]="getServiceSlug(booking) === 'ride'"
+                        [class.border-blue-100]="getServiceSlug(booking) === 'ride'"
+                        [class.bg-emerald-50]="getServiceSlug(booking) === 'errand'"
+                        [class.text-emerald-600]="getServiceSlug(booking) === 'errand'"
+                        [class.border-emerald-100]="getServiceSlug(booking) === 'errand'"
+                        [class.bg-amber-50]="getServiceSlug(booking) === 'delivery'"
+                        [class.text-amber-600]="getServiceSlug(booking) === 'delivery'"
+                        [class.border-amber-100]="getServiceSlug(booking) === 'delivery'"
+                        [class.bg-indigo-50]="getServiceSlug(booking) === 'van-moving'"
+                        [class.text-indigo-600]="getServiceSlug(booking) === 'van-moving'"
+                        [class.border-indigo-100]="getServiceSlug(booking) === 'van-moving'"
+                      >
+                        <ion-icon [name]="getServiceIcon(booking)" class="text-lg"></ion-icon>
+                      </div>
 
-              <div class="flex justify-between items-center gap-4 pt-5 border-t border-slate-100">
-                <span class="text-2xl font-display font-bold text-slate-900">
-                  {{ formatPrice(booking.total_price || booking.price || 0) }}
-                </span>
-
-                @if (booking.driver) {
-                  <div class="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-2xl border border-slate-100 min-w-0">
-                    <div class="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-xs font-black text-slate-900 border border-slate-200 shadow-sm shrink-0">
-                      {{ getInitial(booking.driver.first_name) }}
+                      <div class="min-w-0">
+                        <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                        <p class="text-[11px] text-slate-400 font-bold">
+                          {{ booking.created_at | date:'mediumDate' }}
+                        </p>
+                      </div>
                     </div>
 
-                    <div class="text-left min-w-0">
-                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Driver</p>
-                      <span class="text-xs font-bold text-slate-900 truncate block">
-                        {{ booking.driver.first_name || 'Driver' }}
-                      </span>
+                    <div class="text-right shrink-0">
+                      <app-badge [variant]="getStatusVariant(booking.status)">
+                        {{ formatStatus(booking.status) }}
+                      </app-badge>
+                      <p class="text-sm font-black text-slate-900 mt-1.5">
+                        {{ formatPrice(booking.total_price || booking.price || 0) }}
+                      </p>
                     </div>
                   </div>
-                }
-              </div>
-            </app-card>
-          }
-        </div>
+                </app-card>
+              }
+            </div>
+          </div>
+        }
       </div>
     </ion-content>
+
+    <app-customer-bottom-nav></app-customer-bottom-nav>
   `
 })
 export class ActivityPage implements OnInit {
@@ -150,7 +188,54 @@ export class ActivityPage implements OnInit {
     private config = inject(AppConfigService);
     public router = inject(Router);
 
+    private readonly activeStatuses = new Set([
+        'pending',
+        'requested',
+        'searching',
+        'assigned',
+        'accepted',
+        'heading_to_pickup',
+        'arrived',
+        'in_progress',
+        'arrived_at_store',
+        'shopping_in_progress',
+        'collected',
+        'en_route_to_customer',
+        'delivered'
+    ]);
+
+    private readonly pastStatuses = new Set([
+        'completed',
+        'cancelled',
+        'no_driver_found',
+        'settled'
+    ]);
+
+    private readonly marketplaceStatuses = new Set([
+        'negotiating',
+        'pending_fare_confirmation',
+        'fare_agreed'
+    ]);
+
     history = this.bookingService.bookingHistory;
+
+    pendingMarketplace = computed(() => this.bookingService.pendingMarketplaceBookings());
+
+    activeBookings = computed(() => {
+        const marketplaceIds = new Set(this.pendingMarketplace().map(b => b.id));
+        return this.history().filter(booking =>
+            !marketplaceIds.has(booking.id) &&
+            this.activeStatuses.has(String(booking.status || '').toLowerCase())
+        );
+    });
+
+    pastBookings = computed(() => {
+        const marketplaceIds = new Set(this.pendingMarketplace().map(b => b.id));
+        return this.history().filter(booking =>
+            !marketplaceIds.has(booking.id) &&
+            this.pastStatuses.has(String(booking.status || '').toLowerCase())
+        );
+    });
 
     constructor() {
         addIcons({
@@ -160,12 +245,54 @@ export class ActivityPage implements OnInit {
             cart,
             bus,
             map,
-            cubeOutline
+            cubeOutline,
+            timeOutline,
+            checkmarkCircle
         });
     }
 
     ngOnInit() {
         void this.bookingService.getHistory();
+    }
+
+    continueActive(booking: Booking): void {
+        void this.router.navigate(['/customer/tracking', booking.id]);
+    }
+
+    continueMarketplace(booking: Booking): void {
+        void this.router.navigate(['/customer/marketplace-fare', booking.id]);
+    }
+
+    activeStatusLabel(booking: Booking): string {
+        const status = String(booking?.status || 'requested').toLowerCase();
+        const labels: Record<string, string> = {
+            pending: 'Request received',
+            requested: 'Request received',
+            searching: 'Finding your driver',
+            assigned: 'Driver assigned',
+            accepted: 'Driver confirmed',
+            heading_to_pickup: 'Driver heading to pickup',
+            arrived: 'Driver has arrived',
+            arrived_at_store: 'Driver at the shop',
+            shopping_in_progress: 'Shopping in progress',
+            collected: 'Items collected',
+            en_route_to_customer: 'On the way to you',
+            in_progress: 'Request in progress',
+            delivered: 'Delivery arrived'
+        };
+
+        return labels[status] || this.formatStatus(status);
+    }
+
+    marketplaceStatusLabel(booking: Booking): string {
+        const status = String(booking?.status || '').toLowerCase();
+        const labels: Record<string, string> = {
+            negotiating: 'Negotiating fare',
+            pending_fare_confirmation: 'Fare offer received',
+            fare_agreed: 'Fare agreed — payment needed'
+        };
+
+        return labels[status] || 'Continue negotiation';
     }
 
     getServiceSlug(booking: any): 'ride' | 'errand' | 'delivery' | 'van-moving' | 'other' {
@@ -223,9 +350,11 @@ export class ActivityPage implements OnInit {
         switch (String(status || '').toLowerCase()) {
             case 'completed':
             case 'paid':
+            case 'settled':
                 return 'success';
             case 'cancelled':
             case 'failed':
+            case 'no_driver_found':
                 return 'error';
             case 'pending':
             case 'searching':
@@ -248,10 +377,6 @@ export class ActivityPage implements OnInit {
         return String(status || 'pending')
             .replace(/_/g, ' ')
             .replace(/\b\w/g, char => char.toUpperCase());
-    }
-
-    getInitial(value?: string | null): string {
-        return String(value || 'D').trim().charAt(0).toUpperCase() || 'D';
     }
 
     formatPrice(amount: number | null | undefined) {

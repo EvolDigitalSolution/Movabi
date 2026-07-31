@@ -1,11 +1,16 @@
 import { supabaseAdmin } from './supabase.service';
 import {
+    InternalMarketSignalsInput,
+    InternalMarketSignalsResult,
     MarketPricingInput,
     MarketPricingResult,
     MarketPricingSettings,
     MarketPricingStrategy,
     MarketPricingStrategyType
 } from '../types/market-pricing.types';
+
+/** Reasons a market reference fare could not be derived from competitor data. */
+export type BenchmarkUnavailableReason = 'competitor_benchmarks_disabled' | 'no_matching_benchmark' | 'expired_benchmark';
 
 /**
  * Inputs required by the pure, DB-free calculation function. Kept separate
@@ -25,6 +30,8 @@ export interface ComputeMarketAdjustmentInput {
     marketReferenceFare: number | null;
     lowestCompetitorFare?: number | null;
     benchmarkCount: number;
+    /** why marketReferenceFare is null, when it is null. Purely informational/audit. */
+    benchmarkUnavailableReason?: BenchmarkUnavailableReason | null;
 
     /** master feature flag (market_pricing_enabled). */
     featureEnabled: boolean;
@@ -32,6 +39,10 @@ export interface ComputeMarketAdjustmentInput {
     shadowMode: boolean;
     driverProtectionEnabled: boolean;
     platformMarginProtectionEnabled: boolean;
+
+    /** Optional additive percentage from the (currently no-op) internal signal provider. */
+    internalSignalAdjustmentPercent?: number;
+    internalSignalsUsed?: boolean;
 
     calculationVersion?: string;
 }
@@ -47,20 +58,36 @@ function requiresMarketData(strategy: MarketPricingStrategyType): boolean {
     return strategy === 'match_market' || strategy === 'beat_market' || strategy === 'premium' || strategy === 'lowest_sustainable';
 }
 
+/** Currency-safe comparison: compares values rounded to the nearest cent. */
+function moneyLessThan(a: number, b: number): boolean {
+    return roundMoney(a) < roundMoney(b);
+}
+
 /**
- * Pure calculation core for the market intelligence pricing layer.
+ * Pure calculation core for the market intelligence "lowest sustainable
+ * fare" pricing layer.
  *
- * Calculation order (see task Phase 4 §9):
- *   A-B. baseServiceFare is the service fare AFTER the existing pricing engine
- *        and existing dynamic-pricing/surge logic have already run (this
- *        function does not know about or alter surge behaviour).
- *   C-D. Resolve the market target fare from the strategy + market reference.
- *   E.   Apply maximum discount / maximum adjustment caps.
- *   F.   Apply the driver protection floor.
- *   G.   Apply the platform margin floor.
- *   H-I. Platform fee and driver commission are computed separately, from the
- *        same effective service fare. They are never merged.
- *   J.   Money is rounded once, only on the values returned from this function.
+ * Calculation order (Sustainability Redesign):
+ *   1. baseServiceFare is the service fare AFTER the existing pricing engine
+ *      and existing dynamic-pricing/surge logic have already run (this
+ *      function does not know about or alter surge behaviour).
+ *   2. minimumSustainableFare = max(driverProtectionFloor, platformMarginFloor)
+ *      is ALWAYS computed whenever a strategy resolves, independent of
+ *      whether competitor data is available. This is Movabi's floor: the
+ *      lowest price that still protects the driver's minimum payout and the
+ *      platform's minimum commission.
+ *   3. When competitor data is available, a competitive target fare is
+ *      computed from the strategy type + market reference fare.
+ *   4. When competitor data is NOT available (disabled, no match, expired),
+ *      that is not an error: the suggested fare simply defaults to the
+ *      minimum sustainable fare (Movabi's "lowest sustainable price" goal),
+ *      still subject to the existing maximum discount/adjustment caps.
+ *   5. The suggested fare is never allowed to fall below the minimum
+ *      sustainable fare, regardless of source.
+ *   6. Platform fee and driver commission are computed separately, from the
+ *      same effective service fare. They are never merged.
+ *   7. Money is rounded once, only on the values returned from this function,
+ *      and all floor comparisons use currency-safe (cent) rounding.
  */
 export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): MarketPricingResult {
     const {
@@ -73,62 +100,22 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         marketReferenceFare,
         lowestCompetitorFare,
         benchmarkCount,
+        benchmarkUnavailableReason,
         featureEnabled,
         shadowMode,
         driverProtectionEnabled,
         platformMarginProtectionEnabled,
+        internalSignalAdjustmentPercent = 0,
+        internalSignalsUsed = false,
         calculationVersion = 'market-v1'
     } = input;
 
     const safeBaseFare = Number.isFinite(baseServiceFare) ? Math.max(0, baseServiceFare) : 0;
+    const isManual = strategy?.strategy === 'manual';
 
-    let fallbackReason: string | null = null;
-    let targetFare = safeBaseFare;
+    // --- Step 2. Minimum sustainable fare (ALWAYS computed for any resolved strategy) ---
 
-    if (!strategy) {
-        fallbackReason = 'no_market_strategy';
-    } else if (strategy.strategy === 'manual') {
-        targetFare = safeBaseFare;
-    } else if (requiresMarketData(strategy.strategy) && (marketReferenceFare === null || marketReferenceFare === undefined || benchmarkCount < MINIMUM_BENCHMARKS_REQUIRED)) {
-        fallbackReason = 'insufficient_market_data';
-    } else {
-        const reference = Number(marketReferenceFare);
-        const diffPercent = Number(strategy.targetDifferencePercent) || 0;
-
-        switch (strategy.strategy) {
-            case 'match_market':
-                targetFare = reference;
-                break;
-            case 'beat_market':
-                targetFare = reference * (1 - diffPercent / 100);
-                break;
-            case 'premium':
-                targetFare = reference * (1 + diffPercent / 100);
-                break;
-            case 'lowest_sustainable':
-                targetFare = Number.isFinite(Number(lowestCompetitorFare)) ? Number(lowestCompetitorFare) : reference;
-                break;
-            default:
-                targetFare = safeBaseFare;
-        }
-    }
-
-    // --- E. Discount / adjustment caps (only meaningful when a strategy is active) ---
-    let cappedTargetFare = targetFare;
-    if (strategy && !fallbackReason && strategy.strategy !== 'manual') {
-        const maxDiscountPercent = Number(strategy.maximumCustomerDiscountPercent) || 0;
-        const maxAdjustmentPercent = Number(strategy.maximumMarketAdjustmentPercent) || 0;
-
-        const maximumDiscountFloor = safeBaseFare * (1 - maxDiscountPercent / 100);
-        const maxAdjustmentAmount = safeBaseFare * (maxAdjustmentPercent / 100);
-        const adjustmentLowerBound = safeBaseFare - maxAdjustmentAmount;
-        const adjustmentUpperBound = safeBaseFare + maxAdjustmentAmount;
-
-        cappedTargetFare = Math.max(cappedTargetFare, maximumDiscountFloor);
-        cappedTargetFare = Math.max(adjustmentLowerBound, Math.min(adjustmentUpperBound, cappedTargetFare));
-    }
-
-    // --- F. Driver protection floor (expressed as required SERVICE FARE, pre-commission) ---
+    // Driver protection floor, expressed as required SERVICE FARE, pre-commission.
     let driverProtectionFloor = 0;
     if (strategy && driverProtectionEnabled) {
         const commissionPercent = Math.min(99.99, Math.max(0, driverCommissionPercent));
@@ -148,7 +135,7 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
             : 0;
     }
 
-    // --- G. Platform margin floor (expressed as required SERVICE FARE) ---
+    // Platform margin floor, expressed as required SERVICE FARE.
     // Platform revenue = platformFeeAmount + driverCommissionAmount, both derived
     // from the same effective service fare. In a pure-percentage fee model the
     // margin RATIO (revenue / customerTotal) is constant regardless of service
@@ -172,17 +159,86 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         }
     }
 
-    // Protection floors are a safety net and take priority over the discount/
-    // adjustment caps computed above.
-    const adjustedServiceFare = fallbackReason
+    const minimumSustainableFare = strategy ? Math.max(driverProtectionFloor, platformMarginFloor) : 0;
+
+    // --- Step 3-4. Resolve the pre-cap suggested fare ---
+    const hasCompetitorTarget = !!strategy && !isManual && requiresMarketData(strategy.strategy)
+        && marketReferenceFare !== null && marketReferenceFare !== undefined && benchmarkCount >= MINIMUM_BENCHMARKS_REQUIRED;
+
+    let competitiveTarget: number | null = null;
+    if (hasCompetitorTarget) {
+        const reference = Number(marketReferenceFare);
+        const diffPercent = Number(strategy!.targetDifferencePercent) || 0;
+
+        switch (strategy!.strategy) {
+            case 'match_market':
+                competitiveTarget = reference;
+                break;
+            case 'beat_market':
+                competitiveTarget = reference * (1 - diffPercent / 100);
+                break;
+            case 'premium':
+                competitiveTarget = reference * (1 + diffPercent / 100);
+                break;
+            case 'lowest_sustainable':
+                competitiveTarget = Number.isFinite(Number(lowestCompetitorFare)) ? Number(lowestCompetitorFare) : reference;
+                break;
+            default:
+                competitiveTarget = reference;
+        }
+    }
+
+    // Optional additive internal-signal adjustment (no-op by default - Step 3.5).
+    if (competitiveTarget !== null && internalSignalsUsed && Number.isFinite(internalSignalAdjustmentPercent) && internalSignalAdjustmentPercent !== 0) {
+        competitiveTarget = competitiveTarget * (1 + internalSignalAdjustmentPercent / 100);
+    }
+
+    let preClampSuggested: number;
+    if (isManual || !strategy) {
+        preClampSuggested = safeBaseFare;
+    } else if (competitiveTarget !== null) {
+        preClampSuggested = competitiveTarget;
+    } else if (minimumSustainableFare > 0) {
+        // No usable competitor data: default to the lowest sustainable fare
+        // rather than treating this as an error (Sustainability Redesign §COMPETITOR DATA).
+        preClampSuggested = minimumSustainableFare;
+    } else {
+        preClampSuggested = safeBaseFare;
+    }
+
+    // --- Discount / adjustment caps relative to the ORIGINAL base fare (existing safeguards) ---
+    let cappedTargetFare = preClampSuggested;
+    if (strategy && !isManual) {
+        const maxDiscountPercent = Number(strategy.maximumCustomerDiscountPercent) || 0;
+        const maxAdjustmentPercent = Number(strategy.maximumMarketAdjustmentPercent) || 0;
+
+        const maximumDiscountFloor = safeBaseFare * (1 - maxDiscountPercent / 100);
+        const maxAdjustmentAmount = safeBaseFare * (maxAdjustmentPercent / 100);
+        const adjustmentLowerBound = safeBaseFare - maxAdjustmentAmount;
+        const adjustmentUpperBound = safeBaseFare + maxAdjustmentAmount;
+
+        cappedTargetFare = Math.max(cappedTargetFare, maximumDiscountFloor);
+        cappedTargetFare = Math.max(adjustmentLowerBound, Math.min(adjustmentUpperBound, cappedTargetFare));
+    }
+
+    // --- Step 5. Never allow the suggested fare below the sustainability floor ---
+    const belowFloorClamped = !!strategy && !isManual && minimumSustainableFare > 0 && moneyLessThan(cappedTargetFare, minimumSustainableFare);
+
+    const adjustedServiceFare = !strategy
         ? safeBaseFare
-        : Math.max(cappedTargetFare, driverProtectionFloor, platformMarginFloor);
+        : Math.max(cappedTargetFare, minimumSustainableFare);
 
     const marketAdjustment = roundMoney(adjustedServiceFare - safeBaseFare);
 
     const strategyEnabled = !!strategy?.enabled;
-    const validMarketData = !fallbackReason;
-    const adjustmentApplied = featureEnabled && !shadowMode && strategyEnabled && validMarketData;
+    // There is only something meaningful to apply when: the strategy is an
+    // explicit manual no-op, real competitor data produced a target, or a
+    // real sustainability floor (> 0) exists to suggest. Competitor data
+    // availability alone is never a BLOCKING condition, but the absence of
+    // both competitor data AND a configured floor means there is nothing to
+    // suggest, so no adjustment is applied (the fare would equal base fare).
+    const hasValidSuggestion = isManual || hasCompetitorTarget || minimumSustainableFare > 0;
+    const adjustmentApplied = featureEnabled && !shadowMode && strategyEnabled && hasValidSuggestion;
 
     const effectiveServiceFare = adjustmentApplied ? adjustedServiceFare : safeBaseFare;
 
@@ -191,15 +247,34 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
     const driverCommissionAmount = roundMoney(effectiveServiceFare * (Number(driverCommissionPercent) || 0) / 100);
     const driverPayout = roundMoney(effectiveServiceFare - driverCommissionAmount);
 
+    // --- Fallback / outcome label (descriptive, not necessarily blocking) ---
+    let fallbackReason: string | null;
+    if (!strategy) {
+        fallbackReason = 'no_market_strategy';
+    } else if (!featureEnabled) {
+        fallbackReason = 'feature_disabled';
+    } else if (shadowMode) {
+        fallbackReason = 'shadow_mode';
+    } else if (isManual) {
+        fallbackReason = null;
+    } else if (belowFloorClamped) {
+        fallbackReason = 'below_sustainability_floor';
+    } else if (!hasCompetitorTarget) {
+        fallbackReason = benchmarkUnavailableReason || 'no_matching_benchmark';
+    } else {
+        fallbackReason = 'market_adjustment_applied';
+    }
+
     return {
         enabled: featureEnabled,
         shadowMode,
         adjustmentApplied,
         baseServiceFare: roundMoney(safeBaseFare),
         marketReferenceFare: marketReferenceFare === null || marketReferenceFare === undefined ? null : roundMoney(marketReferenceFare),
-        targetFare: fallbackReason ? null : roundMoney(cappedTargetFare),
+        targetFare: !strategy ? null : roundMoney(cappedTargetFare),
         driverProtectionFloor: roundMoney(driverProtectionFloor),
         platformMarginFloor: roundMoney(platformMarginFloor),
+        minimumSustainableFare: roundMoney(minimumSustainableFare),
         adjustedServiceFare: roundMoney(adjustedServiceFare),
         marketAdjustment,
         platformFeeAmount,
@@ -208,8 +283,32 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         driverPayout,
         strategyId: strategy?.id ?? null,
         marketSnapshotId: null,
-        fallbackReason: fallbackReason || (marginRatioBelowFloor ? 'platform_margin_percent_unreachable_via_scaling' : null),
+        benchmarkUsed: hasCompetitorTarget,
+        internalSignalsUsed,
+        fallbackReason: marginRatioBelowFloor && fallbackReason === 'market_adjustment_applied'
+            ? 'platform_margin_percent_unreachable_via_scaling'
+            : fallbackReason,
         calculationVersion
+    };
+}
+
+/**
+ * Forward-looking, currently no-op provider for Movabi's own internal market
+ * signals (driver acceptance rate, cancellation rate, completed fare
+ * averages, driver supply, demand, time of day, traffic, weather). Never
+ * throws. Returns a zero adjustment / zero confidence result until a real
+ * signal source is implemented - callers should treat that as "no signal".
+ *
+ * Intentionally NOT machine-learning based (see task constraints). Kept as a
+ * clearly separated function so a future implementation can be swapped in
+ * without changing MarketPricingService's control flow.
+ */
+export async function resolveInternalMarketSignals(_input: InternalMarketSignalsInput): Promise<InternalMarketSignalsResult> {
+    return {
+        adjustmentPercent: 0,
+        confidence: 0,
+        signals: null,
+        source: 'internal-signals-v0-noop'
     };
 }
 
@@ -267,6 +366,7 @@ export async function getMarketPricingSettings(): Promise<MarketPricingSettings>
         defaultTargetPercent: 7,
         maxDiscountPercent: 15,
         benchmarkMaxAgeHours: 168,
+        useInternalSignals: false,
         version: 'market-v1'
     };
 
@@ -281,6 +381,7 @@ export async function getMarketPricingSettings(): Promise<MarketPricingSettings>
             defaultTargetPercent,
             maxDiscountPercent,
             benchmarkMaxAgeHours,
+            useInternalSignals,
             version
         ] = await Promise.all([
             getFlatSetting('market_pricing_enabled'),
@@ -292,6 +393,7 @@ export async function getMarketPricingSettings(): Promise<MarketPricingSettings>
             getFlatSetting('market_pricing_default_target_percent'),
             getFlatSetting('market_pricing_max_discount_percent'),
             getFlatSetting('market_benchmark_max_age_hours'),
+            getFlatSetting('market_use_internal_signals'),
             getFlatSetting('market_pricing_version')
         ]);
 
@@ -305,6 +407,7 @@ export async function getMarketPricingSettings(): Promise<MarketPricingSettings>
             defaultTargetPercent: toNumberSetting(defaultTargetPercent, defaults.defaultTargetPercent),
             maxDiscountPercent: toNumberSetting(maxDiscountPercent, defaults.maxDiscountPercent),
             benchmarkMaxAgeHours: toNumberSetting(benchmarkMaxAgeHours, defaults.benchmarkMaxAgeHours),
+            useInternalSignals: toBoolSetting(useInternalSignals, defaults.useInternalSignals),
             version: typeof version === 'string' ? version : defaults.version
         };
     } catch (err: any) {
@@ -401,11 +504,26 @@ interface EligibleBenchmark {
     durationMinutes: number | null;
 }
 
+interface BenchmarkResolution {
+    benchmarks: EligibleBenchmark[];
+    /** Only meaningful when benchmarks.length < MINIMUM_BENCHMARKS_REQUIRED. */
+    reason: BenchmarkUnavailableReason;
+}
+
+/**
+ * Resolves eligible competitor benchmarks AND explains why, when none (or too
+ * few) are found. Only country, city/market, service type, vehicle class,
+ * currency, expiry and an acceptable distance/duration range are considered
+ * eligible - benchmarks from an unrelated country, service or vehicle class
+ * are never used (Sustainability Redesign §MARKET DATA MATCHING).
+ */
 async function resolveBenchmarks(
     input: MarketPricingInput,
     settings: MarketPricingSettings
-): Promise<EligibleBenchmark[]> {
-    if (!settings.competitorBenchmarksEnabled) return [];
+): Promise<BenchmarkResolution> {
+    if (!settings.competitorBenchmarksEnabled) {
+        return { benchmarks: [], reason: 'competitor_benchmarks_disabled' };
+    }
 
     try {
         const country = String(input.countryCode || '').toUpperCase();
@@ -419,7 +537,7 @@ async function resolveBenchmarks(
             .eq('service_type', input.serviceType);
 
         const { data: profiles, error: profileError } = await profileQuery;
-        if (profileError || !profiles?.length) return [];
+        if (profileError || !profiles?.length) return { benchmarks: [], reason: 'no_matching_benchmark' };
 
         const matchingProfiles = profiles.filter((p: any) => {
             const cityMatches = !p.market_city || p.market_city === city;
@@ -427,12 +545,24 @@ async function resolveBenchmarks(
             return cityMatches && vehicleMatches;
         });
 
-        if (!matchingProfiles.length) return [];
+        if (!matchingProfiles.length) return { benchmarks: [], reason: 'no_matching_benchmark' };
 
         const profileIds = matchingProfiles.map((p: any) => p.id);
         const maxAgeMs = settings.benchmarkMaxAgeHours * 60 * 60 * 1000;
         const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
         const now = new Date().toISOString();
+
+        // First, check whether ANY currency/confidence-eligible benchmarks exist
+        // at all for these profiles (ignoring age/expiry), so we can distinguish
+        // "no matching benchmark" from "benchmark exists but has expired".
+        const { data: anyBenchmarks, error: anyBenchmarkError } = await supabaseAdmin
+            .from('competitor_fare_benchmarks')
+            .select('id')
+            .in('competitor_profile_id', profileIds)
+            .eq('currency', input.currency)
+            .gte('confidence_score', 50);
+
+        if (anyBenchmarkError || !anyBenchmarks?.length) return { benchmarks: [], reason: 'no_matching_benchmark' };
 
         const { data: benchmarks, error: benchmarkError } = await supabaseAdmin
             .from('competitor_fare_benchmarks')
@@ -443,7 +573,11 @@ async function resolveBenchmarks(
             .or(`expires_at.is.null,expires_at.gte.${now}`)
             .gte('confidence_score', 50);
 
-        if (benchmarkError || !benchmarks?.length) return [];
+        if (benchmarkError || !benchmarks?.length) {
+            // Matching benchmarks exist for this country/city/service/vehicle/currency
+            // combination, but every one of them is too old or has expired.
+            return { benchmarks: [], reason: 'expired_benchmark' };
+        }
 
         const eligible: EligibleBenchmark[] = benchmarks.map((b: any) => ({
             id: b.id,
@@ -463,10 +597,11 @@ async function resolveBenchmarks(
             return distanceOk && durationOk;
         });
 
-        return closeMatches.length >= MINIMUM_BENCHMARKS_REQUIRED ? closeMatches : eligible;
+        const finalMatches = closeMatches.length >= MINIMUM_BENCHMARKS_REQUIRED ? closeMatches : eligible;
+        return { benchmarks: finalMatches, reason: 'no_matching_benchmark' };
     } catch (err: any) {
         console.warn('[MarketPricingService] benchmark resolution threw:', err?.message || err);
-        return [];
+        return { benchmarks: [], reason: 'no_matching_benchmark' };
     }
 }
 
@@ -480,7 +615,9 @@ async function persistSnapshotAndAudit(
     input: MarketPricingInput,
     settings: MarketPricingSettings,
     benchmarks: EligibleBenchmark[],
-    result: MarketPricingResult
+    result: MarketPricingResult,
+    originalCustomerTotal: number,
+    originalServiceFare: number
 ): Promise<string | null> {
     if (!settings.auditEnabled) return null;
 
@@ -527,22 +664,30 @@ async function persistSnapshotAndAudit(
             strategy_id: result.strategyId || null,
             market_snapshot_id: snapshotId,
             base_service_fare: result.baseServiceFare,
+            original_service_fare: roundMoney(originalServiceFare),
+            original_customer_total: roundMoney(originalCustomerTotal),
             market_reference_fare: result.marketReferenceFare,
             requested_difference_percent: null,
             requested_target_fare: result.targetFare,
             driver_protection_floor: result.driverProtectionFloor,
             platform_margin_floor: result.platformMarginFloor,
+            minimum_sustainable_fare: result.minimumSustainableFare,
             applied_market_adjustment: result.marketAdjustment,
             adjusted_service_fare: result.adjustedServiceFare,
+            suggested_final_fare: result.adjustedServiceFare,
             platform_fee_amount: result.platformFeeAmount,
             customer_total: result.customerTotal,
+            returned_customer_fare: result.customerTotal,
             driver_commission_amount: result.driverCommissionAmount,
             driver_payout: result.driverPayout,
             currency: input.currency,
             feature_enabled: result.enabled,
             adjustment_applied: result.adjustmentApplied,
+            benchmark_used: result.benchmarkUsed,
+            internal_signals_used: result.internalSignalsUsed,
             fallback_reason: result.fallbackReason || null,
-            calculation_version: result.calculationVersion
+            calculation_version: result.calculationVersion,
+            strategy_version: result.calculationVersion
         });
     } catch (err: any) {
         // Hard rule: audit insertion failures must never fail the booking quote.
@@ -566,13 +711,30 @@ export class MarketPricingService {
         try {
             const settings = await getMarketPricingSettings();
             const strategy = await resolveStrategy(input);
-            const benchmarks = strategy && requiresMarketData(strategy.strategy)
+            const benchmarkResolution = strategy && requiresMarketData(strategy.strategy)
                 ? await resolveBenchmarks(input, settings)
-                : [];
+                : { benchmarks: [] as EligibleBenchmark[], reason: 'no_matching_benchmark' as BenchmarkUnavailableReason };
+            const benchmarks = benchmarkResolution.benchmarks;
 
             const fares = benchmarks.map((b) => b.observedFare);
             const marketReferenceFare = fares.length >= MINIMUM_BENCHMARKS_REQUIRED ? median(fares) : null;
             const lowestCompetitorFare = fares.length >= MINIMUM_BENCHMARKS_REQUIRED ? Math.min(...fares) : null;
+
+            // Forward-looking, currently no-op internal signal lookup. Never
+            // blocks or errors the quote - see resolveInternalMarketSignals().
+            let internalSignals: InternalMarketSignalsResult | null = null;
+            if (settings.useInternalSignals) {
+                try {
+                    internalSignals = await resolveInternalMarketSignals({
+                        countryCode: input.countryCode,
+                        marketCity: input.marketCity || null,
+                        serviceType: input.serviceType,
+                        vehicleClass: input.vehicleClass || null
+                    });
+                } catch (signalErr: any) {
+                    console.warn('[MarketPricingService] internal signal lookup threw (non-fatal):', signalErr?.message || signalErr);
+                }
+            }
 
             const result = computeMarketAdjustment({
                 baseServiceFare: input.baseServiceFare,
@@ -584,15 +746,23 @@ export class MarketPricingService {
                 marketReferenceFare,
                 lowestCompetitorFare,
                 benchmarkCount: fares.length,
+                benchmarkUnavailableReason: fares.length >= MINIMUM_BENCHMARKS_REQUIRED ? null : benchmarkResolution.reason,
                 featureEnabled: settings.marketPricingEnabled,
                 shadowMode: settings.shadowMode,
                 driverProtectionEnabled: settings.driverProtectionEnabled,
                 platformMarginProtectionEnabled: settings.platformMarginProtectionEnabled,
+                internalSignalAdjustmentPercent: internalSignals?.adjustmentPercent ?? 0,
+                internalSignalsUsed: settings.useInternalSignals && !!internalSignals,
                 calculationVersion: settings.version
             });
 
+            // The "original" (pre-market-pricing) service fare/customer total,
+            // computed with the same fee/commission percentages, for audit comparison.
+            const originalServiceFare = Number.isFinite(input.baseServiceFare) ? Math.max(0, input.baseServiceFare) : 0;
+            const originalCustomerTotal = roundMoney(originalServiceFare * (1 + (Number(input.platformFeePercent) || 0) / 100));
+
             if (persist) {
-                result.marketSnapshotId = await persistSnapshotAndAudit(input, settings, benchmarks, result);
+                result.marketSnapshotId = await persistSnapshotAndAudit(input, settings, benchmarks, result, originalCustomerTotal, originalServiceFare);
             }
 
             console.log('[MarketPricing] evaluation', {
@@ -635,6 +805,7 @@ export class MarketPricingService {
                 targetFare: null,
                 driverProtectionFloor: 0,
                 platformMarginFloor: 0,
+                minimumSustainableFare: 0,
                 adjustedServiceFare: roundMoney(safeBase),
                 marketAdjustment: 0,
                 platformFeeAmount: 0,
@@ -643,7 +814,9 @@ export class MarketPricingService {
                 driverPayout: roundMoney(safeBase),
                 strategyId: null,
                 marketSnapshotId: null,
-                fallbackReason: 'market_pricing_service_error',
+                benchmarkUsed: false,
+                internalSignalsUsed: false,
+                fallbackReason: 'market_service_error',
                 calculationVersion: 'market-v1'
             };
         }

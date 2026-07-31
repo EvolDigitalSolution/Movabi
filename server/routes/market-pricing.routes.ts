@@ -473,7 +473,8 @@ const SETTINGS_KEY_MAP: Record<string, { key: string; type: 'bool' | 'number' | 
   auditEnabled: { key: 'market_pricing_audit_enabled', type: 'bool' },
   defaultTargetPercent: { key: 'market_pricing_default_target_percent', type: 'number' },
   maxDiscountPercent: { key: 'market_pricing_max_discount_percent', type: 'number' },
-  benchmarkMaxAgeHours: { key: 'market_benchmark_max_age_hours', type: 'number' }
+  benchmarkMaxAgeHours: { key: 'market_benchmark_max_age_hours', type: 'number' },
+  useInternalSignals: { key: 'market_use_internal_signals', type: 'bool' }
 };
 
 /**

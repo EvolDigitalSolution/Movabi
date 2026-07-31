@@ -20,6 +20,7 @@ import {
     chevronBackOutline,
     closeCircleOutline,
     globeOutline,
+    logOutOutline,
     mailOutline,
     personCircleOutline,
     saveOutline,
@@ -32,6 +33,7 @@ import { StorageUploadService } from '@core/services/storage/storage-upload.serv
 import { OneSignalService } from '@core/services/notification/onesignal.service';
 import { ButtonComponent } from '@shared/ui';
 import { Profile } from '@shared/models/booking.model';
+import { CustomerBottomNavComponent } from '@shared/components/customer-shell/customer-bottom-nav.component';
 
 @Component({
     selector: 'app-account-settings',
@@ -46,7 +48,8 @@ import { Profile } from '@shared/models/booking.model';
         IonTitle,
         IonContent,
         IonIcon,
-        ButtonComponent
+        ButtonComponent,
+        CustomerBottomNavComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -188,6 +191,25 @@ import { Profile } from '@shared/models/booking.model';
           </div>
         </section>
 
+        <section class="rounded-[2rem] bg-white border border-slate-200 shadow-sm p-5">
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="font-display font-black text-slate-950 text-lg">Sign out</h2>
+              <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-1">
+                You can sign back in anytime with the same account.
+              </p>
+            </div>
+            <button
+              type="button"
+              (click)="signOut()"
+              [disabled]="signingOut()"
+              class="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 text-slate-600 flex items-center justify-center shrink-0 active:scale-95 transition-all disabled:opacity-50"
+            >
+              <ion-icon name="log-out-outline" class="text-xl"></ion-icon>
+            </button>
+          </div>
+        </section>
+
         <section class="rounded-[2rem] bg-white border border-rose-100 shadow-sm p-5">
           <div class="flex items-start gap-4">
             <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -213,11 +235,15 @@ import { Profile } from '@shared/models/booking.model';
         </section>
       </div>
     </ion-content>
+
+    @if (auth.userRole() === 'customer') {
+      <app-customer-bottom-nav></app-customer-bottom-nav>
+    }
   `
 })
 export class AccountSettingsPage implements OnInit {
     private fb = inject(FormBuilder);
-    private auth = inject(AuthService);
+    public auth = inject(AuthService);
     private profileService = inject(ProfileService);
     private storageUpload = inject(StorageUploadService);
     private oneSignal = inject(OneSignalService);
@@ -227,6 +253,7 @@ export class AccountSettingsPage implements OnInit {
     private router = inject(Router);
 
     saving = signal(false);
+    signingOut = signal(false);
     email = signal('');
     photoUrl = signal<string | null>(null);
     pushDiagnostics = this.oneSignal.diagnostics;
@@ -243,6 +270,7 @@ export class AccountSettingsPage implements OnInit {
             chevronBackOutline,
             closeCircleOutline,
             globeOutline,
+            logOutOutline,
             mailOutline,
             personCircleOutline,
             saveOutline,
@@ -366,6 +394,22 @@ export class AccountSettingsPage implements OnInit {
 
     async refreshPushDiagnostics() {
         await this.oneSignal.getDiagnostics().catch(() => undefined);
+    }
+
+    async signOut(): Promise<void> {
+        if (this.signingOut()) return;
+
+        this.signingOut.set(true);
+
+        try {
+            await this.auth.signOut();
+            await this.router.navigate(['/auth/login']);
+        } catch (error) {
+            console.error('Sign out failed:', error);
+            await this.showToast('Could not sign out. Please try again.', 'danger');
+        } finally {
+            this.signingOut.set(false);
+        }
     }
 
     async confirmCloseAccount() {

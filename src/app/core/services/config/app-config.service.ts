@@ -58,8 +58,9 @@ export class AppConfigService {
   // These defaults give every market a safe startup experience before admin customisation.
   public readonly defaultCountries: CountryConfig[] = [
     this.country('GB', 'United Kingdom', 'GBP', '£', 'en-GB', '+44', 51.5074, -0.1278, [
-      ['Asda', 'A', '#2f8f2f'], ['Aldi', 'A', '#0b4ea2'], ['Tesco', 'T', '#00539f'],
-      ["Sainsbury's", 'S', '#f06c00'], ['Morrisons', 'M', '#006548'], ['Co-op', 'C', '#00a3e0']
+      ['Tesco', 'T', '#00539f'], ['Asda', 'A', '#2f8f2f'], ["Sainsbury's", 'S', '#f06c00'],
+      ['Morrisons', 'M', '#006548'], ['Co-op', 'C', '#00a3e0'], ['Aldi', 'A', '#0b4ea2'],
+      ['Lidl', 'L', '#0050aa'], ['Boots', 'B', '#00539f'], ['Other', 'O', '#64748b']
     ], this.pricing(3.5, 4.5, 3.25, 14, 1.05, 0.18, 12)),
     this.country('US', 'United States', 'USD', '$', 'en-US', '+1', 38.9072, -77.0369, [
       ['Walmart', 'W', '#0071ce'], ['Target', 'T', '#cc0000'], ['Costco', 'C', '#005daa'],
@@ -332,7 +333,7 @@ export class AppConfigService {
         name: shopName,
         logo,
         color,
-        query: `${shopName} near me`
+        query: shopName === 'Other' ? '' : `${shopName} near me`
       })),
       pricingDefaults
     };
