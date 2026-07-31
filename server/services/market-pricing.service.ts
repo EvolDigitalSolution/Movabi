@@ -656,8 +656,15 @@ async function persistSnapshotAndAudit(
         console.warn('[MarketPricingService] snapshot insert threw (non-fatal):', err?.message || err);
     }
 
+    console.log('[MarketPricing] about to write audit', {
+        quoteReference: input.quoteReference || null,
+        jobId: input.jobId || null,
+        bookingId: input.bookingId || null,
+        fallbackReason: result.fallbackReason || null
+    });
+
     try {
-        await supabaseAdmin.from('quote_market_adjustments').insert({
+        const { error: auditError } = await supabaseAdmin.from('quote_market_adjustments').insert({
             job_id: input.jobId || null,
             booking_id: input.bookingId || null,
             quote_reference: input.quoteReference || null,
@@ -689,9 +696,32 @@ async function persistSnapshotAndAudit(
             calculation_version: result.calculationVersion,
             strategy_version: result.calculationVersion
         });
+
+        if (auditError) {
+            // supabase-js does NOT throw on a Postgres/PostgREST error - it
+            // resolves with { error }. This branch is the actual root cause
+            // of silently-empty audit tables (e.g. missing migrated columns,
+            // RLS denial, FK violation) and must always be logged loudly.
+            console.error('[MarketPricingService] audit write failed', {
+                quoteReference: input.quoteReference || null,
+                code: (auditError as any).code,
+                message: auditError.message,
+                details: (auditError as any).details,
+                hint: (auditError as any).hint
+            });
+        } else {
+            console.log('[MarketPricing] audit write success', {
+                quoteReference: input.quoteReference || null,
+                jobId: input.jobId || null,
+                bookingId: input.bookingId || null
+            });
+        }
     } catch (err: any) {
         // Hard rule: audit insertion failures must never fail the booking quote.
-        console.warn('[MarketPricingService] audit insert threw (non-fatal):', err?.message || err);
+        console.error('[MarketPricingService] audit write failed (threw)', {
+            quoteReference: input.quoteReference || null,
+            message: err?.message || err
+        });
     }
 
     return snapshotId;
@@ -708,13 +738,39 @@ export class MarketPricingService {
     static async evaluate(input: MarketPricingInput, options: { persist?: boolean } = {}): Promise<MarketPricingResult> {
         const persist = options.persist !== false;
 
+        console.log('[MarketPricing] BEGIN evaluate', {
+            quoteReference: input.quoteReference || null,
+            jobId: input.jobId || null,
+            bookingId: input.bookingId || null,
+            persist
+        });
+
         try {
             const settings = await getMarketPricingSettings();
+            console.log('[MarketPricing] settings loaded', {
+                quoteReference: input.quoteReference || null,
+                marketPricingEnabled: settings.marketPricingEnabled,
+                shadowMode: settings.shadowMode,
+                auditEnabled: settings.auditEnabled,
+                competitorBenchmarksEnabled: settings.competitorBenchmarksEnabled
+            });
+
             const strategy = await resolveStrategy(input);
+            console.log('[MarketPricing] strategy resolved', {
+                quoteReference: input.quoteReference || null,
+                strategyId: strategy?.id || null,
+                strategyType: strategy?.strategy || null
+            });
+
             const benchmarkResolution = strategy && requiresMarketData(strategy.strategy)
                 ? await resolveBenchmarks(input, settings)
                 : { benchmarks: [] as EligibleBenchmark[], reason: 'no_matching_benchmark' as BenchmarkUnavailableReason };
             const benchmarks = benchmarkResolution.benchmarks;
+            console.log('[MarketPricing] benchmarks resolved', {
+                quoteReference: input.quoteReference || null,
+                count: benchmarks.length,
+                reason: benchmarks.length === 0 ? benchmarkResolution.reason : null
+            });
 
             const fares = benchmarks.map((b) => b.observedFare);
             const marketReferenceFare = fares.length >= MINIMUM_BENCHMARKS_REQUIRED ? median(fares) : null;
@@ -792,9 +848,20 @@ export class MarketPricingService {
                 version: result.calculationVersion
             });
 
+            console.log('[MarketPricing] END evaluate', {
+                quoteReference: input.quoteReference || null,
+                outcome: 'success',
+                fallbackReason: result.fallbackReason || null
+            });
+
             return result;
         } catch (err: any) {
             console.warn('[MarketPricingService] evaluate failed entirely, returning unchanged pricing:', err?.message || err);
+            console.log('[MarketPricing] END evaluate', {
+                quoteReference: input.quoteReference || null,
+                outcome: 'threw',
+                error: err?.message || err
+            });
             const safeBase = Number.isFinite(input.baseServiceFare) ? Math.max(0, input.baseServiceFare) : 0;
             return {
                 enabled: false,
