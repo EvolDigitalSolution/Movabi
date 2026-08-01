@@ -5,6 +5,16 @@ import { SupabaseService } from '../../../core/services/supabase/supabase.servic
 
 export type MarketPricingRow = Record<string, any>;
 
+export interface MarketPricingStrategyDto extends MarketPricingRow {
+  countryCode: string;
+  marketCity?: string | null;
+  zoneId?: string | null;
+  serviceType: string;
+  vehicleClass?: string | null;
+  currency: string;
+  busyMultiplier?: number | null;
+}
+
 export interface MarketPricingSettingsDto {
   marketPricingEnabled: boolean;
   competitorBenchmarksEnabled: boolean;
@@ -84,12 +94,12 @@ export class AdminMarketPricingService {
       .toPromise().then(res => res?.rows ?? []);
   }
 
-  async createStrategy(row: MarketPricingRow): Promise<MarketPricingRow> {
+  async createStrategy(row: MarketPricingStrategyDto): Promise<MarketPricingRow> {
     return this.http.post<{ row: MarketPricingRow }>(this.url('/strategies'), row, { headers: await this.headers() })
       .toPromise().then(res => res?.row ?? row);
   }
 
-  async updateStrategy(id: string, row: MarketPricingRow): Promise<MarketPricingRow> {
+  async updateStrategy(id: string, row: MarketPricingStrategyDto): Promise<MarketPricingRow> {
     return this.http.put<{ row: MarketPricingRow }>(this.url(`/strategies/${encodeURIComponent(id)}`), row, { headers: await this.headers() })
       .toPromise().then(res => res?.row ?? row);
   }

@@ -20,6 +20,7 @@ import {
 import {
   AdminMarketPricingService,
   MarketPricingRow,
+  MarketPricingStrategyDto,
   MarketPricingSettingsDto,
   MarketPricingSimulationResult
 } from '../../services/admin-market-pricing.service';
@@ -50,7 +51,7 @@ export class MarketIntelligenceComponent implements OnInit {
   settings = signal<MarketPricingSettingsDto | null>(null);
   settingsDraft: MarketPricingSettingsDto | null = null;
 
-  strategyDraft: MarketPricingRow = this.defaultStrategy();
+  strategyDraft: MarketPricingStrategyDto = this.defaultStrategy();
   competitorDraft: MarketPricingRow = this.defaultCompetitor();
   benchmarkDraft: MarketPricingRow = this.defaultBenchmark();
 
@@ -377,7 +378,7 @@ export class MarketIntelligenceComponent implements OnInit {
     setTimeout(() => this.toastMessage.set(''), 4000);
   }
 
-  private defaultStrategy(): MarketPricingRow {
+  private defaultStrategy(): MarketPricingStrategyDto {
     return {
       countryCode: '',
       marketCity: null,

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildStrategyResolutionAttempts, computeMarketAdjustment, ComputeMarketAdjustmentInput } from '../../server/services/market-pricing.service';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { buildStrategyResolutionAttempts, computeMarketAdjustment, ComputeMarketAdjustmentInput, mapMarketPricingStrategyRow } from '../../server/services/market-pricing.service';
 import { MarketPricingStrategy } from '../../server/types/market-pricing.types';
 import { PricingService } from '../../server/services/pricing.service';
 
@@ -428,5 +430,65 @@ describe('computeMarketAdjustment', () => {
       country_code: 'GB', market_city: null, zone_id: null,
       service_type: 'ride', vehicle_class: null, currency: 'GBP'
     });
+  });
+});
+
+describe('GB Ride launch calibration migration', () => {
+  const migration = readFileSync(resolve(process.cwd(), 'server/gb-ride-launch-calibration-migration.txt'), 'utf8');
+  const adminComponent = readFileSync(resolve(process.cwd(), 'src/app/apps/admin/features/pricing/market-intelligence.component.ts'), 'utf8');
+  const adminService = readFileSync(resolve(process.cwd(), 'src/app/apps/admin/services/admin-market-pricing.service.ts'), 'utf8');
+  const strategyRoute = readFileSync(resolve(process.cwd(), 'server/routes/market-pricing.routes.ts'), 'utf8');
+
+  it('populates every launch field on an existing country-level GB Ride strategy', () => {
+    for (const assignment of [
+      'minimum_launch_target_fare = 3.35',
+      'minimum_driver_payout = 3.00',
+      'minimum_driver_hourly_rate = 18.00',
+      'minimum_driver_per_km = 0.70',
+      'minimum_platform_revenue = 0.40',
+      'commission_percent = 10.00',
+      'normal_demand_multiplier = 1.00',
+      'busy_multiplier = 1.25',
+      'maximum_surge_multiplier = 2.50',
+      'target_difference_percent = 8.00',
+      'maximum_customer_discount_percent = 15.00',
+      'maximum_market_adjustment_percent = 15.00',
+      "currency = 'GBP'",
+      'enabled = TRUE'
+    ]) expect(migration).toContain(assignment);
+
+    expect(migration).toMatch(/WHERE country_code = 'GB'[\s\S]*service_type = 'ride'[\s\S]*market_city IS NULL[\s\S]*zone_id IS NULL[\s\S]*vehicle_class IS NULL/);
+  });
+
+  it('inserts at most one fresh strategy and remains idempotent on re-run', () => {
+    expect(migration.match(/INSERT INTO public\.market_pricing_strategies/g)).toHaveLength(1);
+    expect(migration).toMatch(/INSERT INTO public\.market_pricing_strategies[\s\S]*WHERE NOT EXISTS/);
+    expect(migration).toContain('vehicle_class IS NULL');
+  });
+
+  it('populates previously-null fields and preserves the existing uniqueness mechanism', () => {
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
+    expect(migration).not.toContain('DROP INDEX');
+    expect(migration).not.toContain('idx_market_pricing_strategies_unique_specificity');
+  });
+
+  it('forces shadow mode on and live market pricing off', () => {
+    expect(migration).toMatch(/market_pricing_shadow_mode', 'true'::jsonb/);
+    expect(migration).toMatch(/WHERE key = 'market_pricing_shadow_mode'/);
+    expect(migration).toMatch(/market_pricing_enabled', 'false'::jsonb/);
+    expect(migration).toMatch(/WHERE key = 'market_pricing_enabled'/);
+  });
+
+  it('maps the canonical busy multiplier consistently through backend and Admin', () => {
+    const mapped = mapMarketPricingStrategyRow({
+      country_code: 'GB', service_type: 'ride', strategy: 'manual', currency: 'GBP',
+      busy_multiplier: '1.25', enabled: true
+    });
+    expect(mapped.busyMultiplier).toBe(1.25);
+    expect(strategyRoute).toContain("busy_multiplier: body.busyMultiplier ?? body.busy_multiplier ?? null");
+    expect(adminComponent).toContain("busyMultiplier: row['busy_multiplier']");
+    expect(adminComponent).toContain('busyMultiplier: null');
+    expect(adminService).toContain('busyMultiplier?: number | null');
+    expect(`${migration}\n${strategyRoute}\n${adminComponent}\n${adminService}`).not.toContain('busy_demand_multiplier');
   });
 });

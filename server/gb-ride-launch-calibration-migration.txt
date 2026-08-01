@@ -23,17 +23,34 @@ SET value = 'true'::jsonb,
     updated_at = now()
 WHERE key = 'market_pricing_shadow_mode';
 
+INSERT INTO public.marketplace_settings (tenant_id, key, value)
+SELECT NULL, 'market_pricing_enabled', 'false'::jsonb
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.marketplace_settings
+    WHERE tenant_id IS NULL AND key = 'market_pricing_enabled'
+);
+
+UPDATE public.marketplace_settings
+SET value = 'false'::jsonb,
+    updated_at = now()
+WHERE key = 'market_pricing_enabled';
+
 INSERT INTO public.market_pricing_strategies (
     country_code, market_city, zone_id, service_type, vehicle_class,
     strategy, target_difference_percent, minimum_launch_target_fare,
-    minimum_driver_payout, minimum_platform_margin_percent,
-    minimum_platform_revenue, maximum_customer_discount_percent,
+    minimum_driver_payout, minimum_driver_hourly_rate, minimum_driver_per_km,
+    minimum_platform_margin_percent, minimum_platform_revenue,
+    commission_percent, normal_demand_multiplier, busy_multiplier,
+    maximum_surge_multiplier, maximum_customer_discount_percent,
     maximum_market_adjustment_percent, currency, enabled
 )
 SELECT
     'GB', NULL, NULL, 'ride', NULL,
-    'beat_market', 8, 3.35,
-    3.00, 0, 0.40, 15, 15, 'GBP', TRUE
+    'beat_market', 8.00, 3.35,
+    3.00, 18.00, 0.70,
+    0, 0.40,
+    10.00, 1.00, 1.25,
+    2.50, 15.00, 15.00, 'GBP', TRUE
 WHERE NOT EXISTS (
     SELECT 1 FROM public.market_pricing_strategies
     WHERE country_code = 'GB'
@@ -43,14 +60,29 @@ WHERE NOT EXISTS (
       AND vehicle_class IS NULL
 );
 
--- Scope the launch target to GB Ride only; no global fare constant is introduced.
+-- Populate fresh and pre-existing country-level GB Ride strategies identically.
+-- The exact specificity predicate also prevents broader updates.
 UPDATE public.market_pricing_strategies
 SET minimum_launch_target_fare = 3.35,
+    minimum_driver_payout = 3.00,
+    minimum_driver_hourly_rate = 18.00,
+    minimum_driver_per_km = 0.70,
+    minimum_platform_revenue = 0.40,
+    commission_percent = 10.00,
+    normal_demand_multiplier = 1.00,
+    busy_multiplier = 1.25,
+    maximum_surge_multiplier = 2.50,
+    target_difference_percent = 8.00,
+    maximum_customer_discount_percent = 15.00,
+    maximum_market_adjustment_percent = 15.00,
+    currency = 'GBP',
+    enabled = TRUE,
     updated_at = now()
 WHERE country_code = 'GB'
   AND service_type = 'ride'
   AND market_city IS NULL
-  AND zone_id IS NULL;
+  AND zone_id IS NULL
+  AND vehicle_class IS NULL;
 
 -- Calibrate the normal-demand tariff. The minimum handles the shortest trips
 -- while per-km/per-minute components continue to grow longer fares.

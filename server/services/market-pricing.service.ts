@@ -427,7 +427,7 @@ export async function getMarketPricingSettings(): Promise<MarketPricingSettings>
     }
 }
 
-function mapStrategyRow(row: any): MarketPricingStrategy {
+export function mapMarketPricingStrategyRow(row: any): MarketPricingStrategy {
     return {
         id: row.id,
         countryCode: row.country_code,
@@ -513,7 +513,7 @@ export async function resolveMarketPricingStrategy(input: MarketPricingInput): P
                 continue;
             }
 
-            if (data) return mapStrategyRow(data);
+            if (data) return mapMarketPricingStrategyRow(data);
         }
     } catch (err: any) {
         console.warn('[MarketPricingService] strategy resolution threw:', err?.message || err);
