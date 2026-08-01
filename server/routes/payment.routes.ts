@@ -101,7 +101,9 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       pricingPlan,
       tenantId,
       cityZone,
+      zoneId,
       driverTier,
+      vehicleClass,
       requestedAt
     } = req.body;
 
@@ -127,7 +129,9 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
       city,
       tenantId: tenantId || null,
       cityZone: cityZone || city?.name || null,
+      zoneId: zoneId || cityZone || null,
       driverTier: driverTier || null,
+      vehicleClass: vehicleClass || null,
       demand: stats.demand,
       supply: stats.supply,
       requestedAt: requestedAt || new Date().toISOString()

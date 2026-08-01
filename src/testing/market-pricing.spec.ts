@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { computeMarketAdjustment, ComputeMarketAdjustmentInput } from '../../server/services/market-pricing.service';
+import { buildStrategyResolutionAttempts, computeMarketAdjustment, ComputeMarketAdjustmentInput } from '../../server/services/market-pricing.service';
 import { MarketPricingStrategy } from '../../server/types/market-pricing.types';
+import { PricingService } from '../../server/services/pricing.service';
 
 function baseStrategy(overrides: Partial<MarketPricingStrategy> = {}): MarketPricingStrategy {
   return {
@@ -143,6 +144,20 @@ describe('computeMarketAdjustment', () => {
     }));
     // feeRatio = 0.12 => floor service fare = 5 / 0.12
     expect(result.platformMarginFloor).toBeCloseTo(5 / 0.12, 2);
+  });
+
+  it('10b. effective commission and configured platform minimum revenue produce a non-zero margin floor', () => {
+    const result = computeMarketAdjustment(baseInput({
+      strategy: baseStrategy({ minimumPlatformRevenue: 0 }),
+      platformFeePercent: 2,
+      driverCommissionPercent: 10,
+      platformMinimumRevenue: 3,
+      shadowMode: true
+    }));
+
+    expect(result.platformMarginFloor).toBeCloseTo(3 / 0.12, 2);
+    expect(result.minimumSustainableFare).toBeGreaterThan(0);
+    expect(result.adjustmentApplied).toBe(false);
   });
 
   it('11. maximum discount cap applies', () => {
@@ -326,5 +341,92 @@ describe('computeMarketAdjustment', () => {
     expect(result.targetFare).toBeCloseTo(29 * 0.92, 2);
     expect(result.adjustmentApplied).toBe(false); // shadow mode never applies
     expect(result.customerTotal).toBeCloseTo(30.5 * 1.02, 2); // unchanged customer-facing total
+  });
+
+  it('calibrates a normal short GB ride below £3.99 while remaining in shadow mode', () => {
+    const result = computeMarketAdjustment(baseInput({
+      baseServiceFare: 3.35,
+      platformFeePercent: 2,
+      strategy: baseStrategy({ minimumLaunchTargetFare: 3.35 }),
+      benchmarkCount: 0,
+      marketReferenceFare: null,
+      shadowMode: true
+    }));
+
+    expect(result.adjustedServiceFare).toBe(3.35);
+    expect(result.customerTotal).toBeLessThan(3.99);
+    expect(result.adjustmentApplied).toBe(false);
+  });
+
+  it('never lets the launch target undercut the sustainability floor', () => {
+    const result = computeMarketAdjustment(baseInput({
+      baseServiceFare: 3.2,
+      strategy: baseStrategy({ minimumLaunchTargetFare: 3.35, minimumDriverPayout: 3.6 }),
+      driverCommissionPercent: 10,
+      benchmarkCount: 0,
+      marketReferenceFare: null,
+      shadowMode: true
+    }));
+
+    expect(result.minimumSustainableFare).toBe(4);
+    expect(result.adjustedServiceFare).toBe(4);
+  });
+
+  it('keeps longer trips on their higher distance/time-derived base fare', () => {
+    const result = computeMarketAdjustment(baseInput({
+      baseServiceFare: 12.45,
+      strategy: baseStrategy({ minimumLaunchTargetFare: 3.35 }),
+      benchmarkCount: 0,
+      marketReferenceFare: null,
+      shadowMode: true
+    }));
+
+    expect(result.adjustedServiceFare).toBe(12.45);
+  });
+
+  it('keeps normal demand at 1x and increases only after the configured threshold', () => {
+    const settings = {
+      maxMultiplier: 1.5,
+      maxSurge: 1.5,
+      minimumDemandRatio: 1.25
+    } as any;
+
+    expect(PricingService.getSurgeMultiplier(10, 10, settings)).toBe(1);
+    expect(PricingService.getSurgeMultiplier(20, 10, settings)).toBeGreaterThan(1);
+  });
+
+  it('caps busy-time surge at the configured maximum', () => {
+    const settings = {
+      maxMultiplier: 1.4,
+      maxSurge: 1.4,
+      minimumDemandRatio: 1.25
+    } as any;
+
+    expect(PricingService.getSurgeMultiplier(100, 1, settings)).toBe(1.4);
+  });
+
+  it('resolves scoped configuration from most-specific to country/service default', () => {
+    const attempts = buildStrategyResolutionAttempts({
+      countryCode: 'GB',
+      marketCity: 'Manchester',
+      zoneId: 'central',
+      serviceType: 'ride',
+      vehicleClass: 'standard',
+      currency: 'GBP',
+      distanceKm: 1,
+      durationMinutes: 5,
+      baseServiceFare: 3.35,
+      platformFeePercent: 2,
+      driverCommissionPercent: 10
+    });
+
+    expect(attempts[0]).toMatchObject({
+      country_code: 'GB', market_city: 'Manchester', zone_id: 'central',
+      service_type: 'ride', vehicle_class: 'standard', currency: 'GBP'
+    });
+    expect(attempts.at(-1)).toMatchObject({
+      country_code: 'GB', market_city: null, zone_id: null,
+      service_type: 'ride', vehicle_class: null, currency: 'GBP'
+    });
   });
 });

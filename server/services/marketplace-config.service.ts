@@ -631,17 +631,7 @@ export class MarketplaceConfigService {
     const raw = await this.getRawSetting('commission', tenantId);
 
     if (this.isJsonObject(raw)) {
-      const value = { ...defaults, ...raw } as CommissionSettings;
-      const maxFee = value.maxFee === null || value.maxFee === undefined ? null : Number(value.maxFee);
-      const settings: CommissionSettings = {
-        enabled: this.parseEnabledValue((value as any).enabled, true),
-        percent: Number(value.percent ?? fallbackPercent),
-        minFee: Number(value.minFee ?? 0),
-        maxFee,
-        platformFeePercent: Number(value.platformFeePercent ?? 0),
-        source: 'marketplace_settings',
-        configVersion: this.settingVersion(raw)
-      };
+      const settings = this.normalizeCommissionSettings(raw, fallbackPercent);
       this.setCached(tenantId, 'commission', settings);
       this.setLastKnownCommission(tenantId, settings);
       return settings;
@@ -666,6 +656,22 @@ export class MarketplaceConfigService {
     return fallbackSettings;
   }
 
+  /** Normalizes both current and legacy commission JSON without treating an absent enabled flag as false. */
+  static normalizeCommissionSettings(raw: Record<string, unknown>, fallbackPercent = 0): CommissionSettings {
+    const maxFeeValue = this.nullableNumberFrom(raw['maxFee'] ?? raw['max_fee']);
+    return {
+      // Compatibility contract: only an explicitly false value disables commission.
+      enabled: raw['enabled'] !== false,
+      percent: Math.max(0, this.numberFrom(raw['percent'] ?? raw['commissionPercent'] ?? raw['commission_percent'], fallbackPercent)),
+      minFee: Math.max(0, this.numberFrom(raw['minFee'] ?? raw['min_fee'])),
+      // Zero has historically meant "no maximum", just like a missing value.
+      maxFee: maxFeeValue !== null && maxFeeValue > 0 ? maxFeeValue : null,
+      platformFeePercent: Math.max(0, this.numberFrom(raw['platformFeePercent'] ?? raw['platform_fee_percent'])),
+      source: 'marketplace_settings',
+      configVersion: this.settingVersion(raw)
+    };
+  }
+
   static async getEffectivePlatformFeeConfig(
     serviceSlug: string | null | undefined,
     _market?: unknown,
@@ -676,6 +682,20 @@ export class MarketplaceConfigService {
     const config = this.isJsonObject(raw) ? raw : null;
 
     if (!config) {
+      const legacyCommission = await this.getCommissionSettings(tenantId);
+      if (legacyCommission.platformFeePercent > 0) {
+        return {
+          enabled: true,
+          type: 'percentage',
+          percent: legacyCommission.platformFeePercent,
+          fixedAmount: 0,
+          minFee: 0,
+          maxFee: null,
+          applyToServices: [],
+          source: 'legacy_commission.platformFeePercent',
+          configVersion: legacyCommission.configVersion ?? null
+        };
+      }
       console.warn('[MarketplaceConfig] platform_fee missing; using safe zero-impact platform fee fallback', {
         serviceSlug,
         canonical,
@@ -704,13 +724,14 @@ export class MarketplaceConfigService {
       ? rawType
       : 'percentage';
 
+    const maxFee = this.nullableNumberFrom(config['maxFee'] ?? config['max_fee']);
     return {
       enabled: this.parseEnabledValue(config['enabled'], true) && appliesToService,
       type,
       percent: this.numberFrom(config['percent']),
       fixedAmount: this.numberFrom(config['fixedAmount'] ?? config['fixed_amount']),
       minFee: this.numberFrom(config['minFee'] ?? config['min_fee']),
-      maxFee: this.nullableNumberFrom(config['maxFee'] ?? config['max_fee']),
+      maxFee: maxFee !== null && maxFee > 0 ? maxFee : null,
       applyToServices,
       source: 'marketplace_settings',
       configVersion: this.settingVersion(raw)

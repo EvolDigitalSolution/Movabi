@@ -1,7 +1,7 @@
 ﻿import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
 import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
-import { MarketPricingService } from './market-pricing.service';
+import { MarketPricingService, resolveMarketPricingStrategy } from './market-pricing.service';
 
 export interface PricingOptions {
     lat: number;
@@ -16,6 +16,7 @@ export interface PricingOptions {
     pricingPlan?: string;
     tenantId?: string | null;
     cityZone?: string | null;
+    zoneId?: string | null;
     driverTier?: string | null;
     demand?: number;
     supply?: number;
@@ -419,6 +420,20 @@ export class PricingService {
             serviceFee = this.roundMoney(serviceFee + serviceOptionSurcharge + vanMovingAddons);
             resolvedBasePrice = this.roundMoney(resolvedBasePrice + serviceOptionSurcharge + vanMovingAddons);
 
+            const scopedMarketStrategy = await resolveMarketPricingStrategy({
+                countryCode,
+                marketCity: city?.name || null,
+                zoneId: options.zoneId || null,
+                serviceType: canonicalServiceSlug,
+                vehicleClass: options.vehicleClass || null,
+                currency: resolvedCurrencyCode,
+                distanceKm,
+                durationMinutes,
+                baseServiceFare: resolvedBasePrice,
+                platformFeePercent: 0,
+                driverCommissionPercent: 0
+            });
+
             // Marketplace dynamic pricing: demand/supply, time-of-day, weather/traffic
             const dynamicSettings = await MarketplaceConfigService.getEffectiveDynamicPricingConfig(
                 canonicalServiceSlug,
@@ -426,23 +441,47 @@ export class PricingService {
                 cityZone,
                 tenantId
             );
-            const surgeMultiplier = dynamicSettings.demandSupplyEnabled
-                ? this.getSurgeMultiplier(demand, supply, dynamicSettings)
+            const dynamicPricingEnabled = dynamicSettings.enabled === true;
+            const maximumSurgeMultiplier = Math.max(1, Number(
+                scopedMarketStrategy?.maximumSurgeMultiplier ?? dynamicSettings.maxMultiplier ?? dynamicSettings.maxSurge ?? 1
+            ));
+            const demandRatio = supply > 0 ? demand / supply : (demand > 0 ? Number.POSITIVE_INFINITY : 0);
+            const busyDemand = demandRatio > Number(dynamicSettings.minimumDemandRatio || 0);
+            const scopedDemandMultiplier = busyDemand
+                ? scopedMarketStrategy?.busyMultiplier
+                : scopedMarketStrategy?.normalDemandMultiplier;
+            const surgeMultiplier = dynamicPricingEnabled && dynamicSettings.demandSupplyEnabled
+                ? Math.min(
+                    maximumSurgeMultiplier,
+                    scopedDemandMultiplier === null || scopedDemandMultiplier === undefined
+                        ? this.getSurgeMultiplier(demand, supply, { ...dynamicSettings, maxMultiplier: maximumSurgeMultiplier })
+                        : Math.max(1, Number(scopedDemandMultiplier))
+                )
                 : 1.0;
-            const timeMultiplier = dynamicSettings.timeOfDayEnabled
+            const timeMultiplier = dynamicPricingEnabled && dynamicSettings.timeOfDayEnabled
                 ? this.getTimeOfDayMultiplier(dynamicSettings, requestedAt)
                 : 1.0;
             const configuredWeatherMultiplier = Number(dynamicSettings.weatherMultiplier ?? 1);
             const configuredTrafficMultiplier = Number(dynamicSettings.trafficMultiplier ?? 1);
             const configuredDemandMultiplier = Number(dynamicSettings.demandMultiplier ?? 1);
             const configuredFuelMultiplier = Number(dynamicSettings.fuelMultiplier ?? 1);
-            const effectiveWeatherMultiplier = weatherMultiplier * (Number.isFinite(configuredWeatherMultiplier) ? configuredWeatherMultiplier : 1);
-            const effectiveTrafficMultiplier = trafficMultiplier * (Number.isFinite(configuredTrafficMultiplier) ? configuredTrafficMultiplier : 1);
-            const effectiveDemandMultiplier = Number.isFinite(configuredDemandMultiplier) ? configuredDemandMultiplier : 1;
-            const effectiveFuelMultiplier = Number.isFinite(configuredFuelMultiplier) ? configuredFuelMultiplier : 1;
-            const dynamicPricingMultiplier = this.roundMoney(
+            const effectiveWeatherMultiplier = dynamicPricingEnabled && dynamicSettings.weatherEnabled
+                ? weatherMultiplier * (Number.isFinite(configuredWeatherMultiplier) ? configuredWeatherMultiplier : 1)
+                : 1;
+            const effectiveTrafficMultiplier = dynamicPricingEnabled && dynamicSettings.trafficEnabled
+                ? trafficMultiplier * (Number.isFinite(configuredTrafficMultiplier) ? configuredTrafficMultiplier : 1)
+                : 1;
+            const effectiveDemandMultiplier = dynamicPricingEnabled && dynamicSettings.demandSupplyEnabled
+                && (scopedDemandMultiplier === null || scopedDemandMultiplier === undefined)
+                && Number.isFinite(configuredDemandMultiplier)
+                ? configuredDemandMultiplier
+                : 1;
+            const effectiveFuelMultiplier = dynamicPricingEnabled && Number.isFinite(configuredFuelMultiplier)
+                ? configuredFuelMultiplier
+                : 1;
+            const dynamicPricingMultiplier = dynamicPricingEnabled ? this.roundMoney(
                 Math.min(
-                    dynamicSettings.maxMultiplier || dynamicSettings.maxSurge || 1,
+                    maximumSurgeMultiplier,
                     surgeMultiplier *
                         timeMultiplier *
                         effectiveWeatherMultiplier *
@@ -450,7 +489,7 @@ export class PricingService {
                         effectiveDemandMultiplier *
                         effectiveFuelMultiplier
                 )
-            );
+            ) : 1;
             const displayedBaseFare = this.roundMoney(baseFareUsed);
             const displayedDistanceCost = this.roundMoney(distanceCost);
             const displayedDurationCost = this.roundMoney(durationCost);
@@ -482,7 +521,9 @@ export class PricingService {
                 driverTier,
                 tenantId
             );
-            commissionRateUsed = commissionConfig.enabled === false ? 0 : this.roundMoney(commissionConfig.percent);
+            commissionRateUsed = scopedMarketStrategy?.commissionPercent !== null && scopedMarketStrategy?.commissionPercent !== undefined
+                ? this.roundMoney(Math.max(0, Number(scopedMarketStrategy.commissionPercent)))
+                : (commissionConfig.enabled === false ? 0 : this.roundMoney(commissionConfig.percent));
             const platformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(
                 canonicalServiceSlug,
                 { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
@@ -499,15 +540,18 @@ export class PricingService {
             const marketPricingResult = await MarketPricingService.evaluate({
                 countryCode,
                 marketCity: city?.name || null,
-                zoneId: null,
+                zoneId: options.zoneId || null,
                 serviceType: canonicalServiceSlug,
-                vehicleClass: null,
+                vehicleClass: options.vehicleClass || null,
                 currency: resolvedCurrencyCode,
                 distanceKm,
                 durationMinutes,
                 baseServiceFare: preCommissionTotal,
                 platformFeePercent: platformFeeConfig.enabled ? Number(platformFeeConfig.percent || 0) : 0,
-                driverCommissionPercent: commissionRateUsed
+                driverCommissionPercent: commissionRateUsed,
+                platformMinimumRevenue: platformFeeConfig.enabled
+                    ? Math.max(0, Number(platformFeeConfig.minFee || 0))
+                    : 0
             }).catch((err: any) => {
                 console.warn('[PricingService] MarketPricingService.evaluate threw, ignoring market pricing for this quote:', err?.message || err);
                 return null;

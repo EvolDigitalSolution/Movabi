@@ -78,6 +78,23 @@ function validateStrategyPayload(body: any): string | null {
   if (!Number.isFinite(maxAdjustment) || maxAdjustment < 0 || maxAdjustment > 100) {
     return 'Maximum market adjustment must be between 0 and 100 percent.';
   }
+  const launchTarget = body.minimumLaunchTargetFare ?? body.minimum_launch_target_fare ?? null;
+  if (launchTarget !== null && (!Number.isFinite(Number(launchTarget)) || Number(launchTarget) < 0)) {
+    return 'Minimum launch target fare must be zero or greater.';
+  }
+  const commissionPercent = body.commissionPercent ?? body.commission_percent ?? null;
+  if (commissionPercent !== null && !isValidPercent(commissionPercent, 0, 100)) {
+    return 'Commission must be between 0 and 100 percent.';
+  }
+  for (const [label, value] of [
+    ['Normal demand multiplier', body.normalDemandMultiplier ?? body.normal_demand_multiplier ?? null],
+    ['Busy multiplier', body.busyMultiplier ?? body.busy_multiplier ?? null],
+    ['Maximum surge multiplier', body.maximumSurgeMultiplier ?? body.maximum_surge_multiplier ?? null]
+  ] as Array<[string, unknown]>) {
+    if (value !== null && (!Number.isFinite(Number(value)) || Number(value) < 1)) {
+      return `${label} must be at least 1.`;
+    }
+  }
   const validFrom = body.validFrom ?? body.valid_from ?? null;
   const validUntil = body.validUntil ?? body.valid_until ?? null;
   if (validFrom && validUntil && new Date(validFrom).getTime() > new Date(validUntil).getTime()) {
@@ -95,11 +112,16 @@ function strategyRowFromBody(body: any): Record<string, unknown> {
     vehicle_class: body.vehicleClass ?? body.vehicle_class ?? null,
     strategy: String(body.strategy || 'manual'),
     target_difference_percent: Number(body.targetDifferencePercent ?? body.target_difference_percent ?? 0),
+    minimum_launch_target_fare: body.minimumLaunchTargetFare ?? body.minimum_launch_target_fare ?? null,
     minimum_driver_hourly_rate: body.minimumDriverHourlyRate ?? body.minimum_driver_hourly_rate ?? null,
     minimum_driver_per_km: body.minimumDriverPerKm ?? body.minimum_driver_per_km ?? null,
     minimum_driver_payout: body.minimumDriverPayout ?? body.minimum_driver_payout ?? null,
     minimum_platform_margin_percent: Number(body.minimumPlatformMarginPercent ?? body.minimum_platform_margin_percent ?? 0),
     minimum_platform_revenue: Number(body.minimumPlatformRevenue ?? body.minimum_platform_revenue ?? 0),
+    commission_percent: body.commissionPercent ?? body.commission_percent ?? null,
+    normal_demand_multiplier: body.normalDemandMultiplier ?? body.normal_demand_multiplier ?? null,
+    busy_multiplier: body.busyMultiplier ?? body.busy_multiplier ?? null,
+    maximum_surge_multiplier: body.maximumSurgeMultiplier ?? body.maximum_surge_multiplier ?? null,
     maximum_customer_discount_percent: Number(body.maximumCustomerDiscountPercent ?? body.maximum_customer_discount_percent ?? 15),
     maximum_market_adjustment_percent: Number(body.maximumMarketAdjustmentPercent ?? body.maximum_market_adjustment_percent ?? 20),
     currency: String(body.currency).trim().toUpperCase(),
@@ -118,11 +140,13 @@ router.get('/strategies', requireAdmin, async (req: Request, res: Response) => {
   try {
     let query = supabaseAdmin.from('market_pricing_strategies').select('*').order('updated_at', { ascending: false });
 
-    const { countryCode, city, serviceType, vehicleClass, enabled } = req.query;
+    const { countryCode, city, zoneId, serviceType, vehicleClass, currency, enabled } = req.query;
     if (typeof countryCode === 'string' && countryCode) query = query.eq('country_code', countryCode.toUpperCase());
     if (typeof city === 'string' && city) query = query.eq('market_city', city);
+    if (typeof zoneId === 'string' && zoneId) query = query.eq('zone_id', zoneId);
     if (typeof serviceType === 'string' && serviceType) query = query.eq('service_type', serviceType.toLowerCase());
     if (typeof vehicleClass === 'string' && vehicleClass) query = query.eq('vehicle_class', vehicleClass);
+    if (typeof currency === 'string' && currency) query = query.eq('currency', currency.toUpperCase());
     if (typeof enabled === 'string' && (enabled === 'true' || enabled === 'false')) query = query.eq('enabled', enabled === 'true');
 
     const { data, error } = await query;

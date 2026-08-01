@@ -43,11 +43,12 @@
     <section class="mi-panel">
       <h2>{{ editingStrategyId ? 'Edit strategy' : 'Create strategy' }}</h2>
       <div class="mi-grid">
-        <label>Country<input [(ngModel)]="strategyDraft['countryCode']" placeholder="GB" maxlength="2"></label>
-        <label>City (optional)<input [(ngModel)]="strategyDraft['marketCity']" placeholder="Manchester"></label>
-        <label>Service<input [(ngModel)]="strategyDraft['serviceType']" placeholder="ride"></label>
-        <label>Vehicle class (optional)<input [(ngModel)]="strategyDraft['vehicleClass']" placeholder="standard"></label>
-        <label>Currency<input [(ngModel)]="strategyDraft['currency']" placeholder="GBP" maxlength="3"></label>
+        <label>Country<input [(ngModel)]="strategyDraft['countryCode']" maxlength="2"></label>
+        <label>City / market (optional)<input [(ngModel)]="strategyDraft['marketCity']"></label>
+        <label>Zone (optional)<input [(ngModel)]="strategyDraft['zoneId']"></label>
+        <label>Service<input [(ngModel)]="strategyDraft['serviceType']"></label>
+        <label>Vehicle class (optional)<input [(ngModel)]="strategyDraft['vehicleClass']"></label>
+        <label>Currency<input [(ngModel)]="strategyDraft['currency']" maxlength="3"></label>
         <label>Strategy
           <select [(ngModel)]="strategyDraft['strategy']">
             <option value="manual">Manual</option>
@@ -58,12 +59,17 @@
           </select>
         </label>
         <label>Target cheaper than market (%)<input type="number" [(ngModel)]="strategyDraft['targetDifferencePercent']" min="0" max="30"></label>
+        <label>Minimum launch target fare<input type="number" [(ngModel)]="strategyDraft['minimumLaunchTargetFare']" min="0" step="0.01"></label>
         <label>Min driver hourly rate<input type="number" [(ngModel)]="strategyDraft['minimumDriverHourlyRate']"></label>
         <label>Min driver per km<input type="number" [(ngModel)]="strategyDraft['minimumDriverPerKm']"></label>
         <label>Min driver payout<input type="number" [(ngModel)]="strategyDraft['minimumDriverPayout']"></label>
         <label>Min platform margin (%)<input type="number" [(ngModel)]="strategyDraft['minimumPlatformMarginPercent']" min="0" max="50"></label>
         <label>Min platform revenue<input type="number" [(ngModel)]="strategyDraft['minimumPlatformRevenue']"></label>
-        <label>Max customer discount (%)<input type="number" [(ngModel)]="strategyDraft['maximumCustomerDiscountPercent']" min="0" max="30"></label>
+        <label>Commission (%)<input type="number" [(ngModel)]="strategyDraft['commissionPercent']" min="0" max="100"></label>
+        <label>Normal demand multiplier<input type="number" [(ngModel)]="strategyDraft['normalDemandMultiplier']" min="1" step="0.01"></label>
+        <label>Busy multiplier<input type="number" [(ngModel)]="strategyDraft['busyMultiplier']" min="1" step="0.01"></label>
+        <label>Maximum surge cap<input type="number" [(ngModel)]="strategyDraft['maximumSurgeMultiplier']" min="1" step="0.01"></label>
+        <label>Maximum downward adjustment (%)<input type="number" [(ngModel)]="strategyDraft['maximumCustomerDiscountPercent']" min="0" max="100"></label>
         <label>Max market adjustment (%)<input type="number" [(ngModel)]="strategyDraft['maximumMarketAdjustmentPercent']" min="0" max="100"></label>
       </div>
       <button class="mi-btn" (click)="saveStrategy()" [disabled]="saving()">

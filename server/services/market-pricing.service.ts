@@ -22,6 +22,8 @@ export interface ComputeMarketAdjustmentInput {
     durationMinutes: number;
     platformFeePercent: number;
     driverCommissionPercent: number;
+    /** Absolute platform revenue guaranteed by fee configuration (for example platform_fee.minFee). */
+    platformMinimumRevenue?: number;
 
     /** null when no enabled strategy resolves for this request. */
     strategy: MarketPricingStrategy | null;
@@ -96,6 +98,7 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         durationMinutes,
         platformFeePercent,
         driverCommissionPercent,
+        platformMinimumRevenue = 0,
         strategy,
         marketReferenceFare,
         lowestCompetitorFare,
@@ -146,7 +149,10 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
     let marginRatioBelowFloor = false;
     if (strategy && platformMarginProtectionEnabled) {
         const feeRatio = (Number(platformFeePercent) + Number(driverCommissionPercent)) / 100;
-        const minRevenue = Number(strategy.minimumPlatformRevenue) || 0;
+        const minRevenue = Math.max(
+            Number(strategy.minimumPlatformRevenue) || 0,
+            Number(platformMinimumRevenue) || 0
+        );
         if (minRevenue > 0 && feeRatio > 0) {
             platformMarginFloor = minRevenue / feeRatio;
         }
@@ -160,6 +166,9 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
     }
 
     const minimumSustainableFare = strategy ? Math.max(driverProtectionFloor, platformMarginFloor) : 0;
+    const launchTargetFare = strategy && Number.isFinite(Number(strategy.minimumLaunchTargetFare))
+        ? Math.max(0, Number(strategy.minimumLaunchTargetFare))
+        : 0;
 
     // --- Step 3-4. Resolve the pre-cap suggested fare ---
     const hasCompetitorTarget = !!strategy && !isManual && requiresMarketData(strategy.strategy)
@@ -198,10 +207,12 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         preClampSuggested = safeBaseFare;
     } else if (competitiveTarget !== null) {
         preClampSuggested = competitiveTarget;
-    } else if (minimumSustainableFare > 0) {
+    } else if (minimumSustainableFare > 0 || launchTargetFare > 0) {
         // No usable competitor data: default to the lowest sustainable fare
         // rather than treating this as an error (Sustainability Redesign §COMPETITOR DATA).
-        preClampSuggested = minimumSustainableFare;
+        preClampSuggested = launchTargetFare > 0
+            ? Math.max(safeBaseFare, minimumSustainableFare, launchTargetFare)
+            : minimumSustainableFare;
     } else {
         preClampSuggested = safeBaseFare;
     }
@@ -226,7 +237,7 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
 
     const adjustedServiceFare = !strategy
         ? safeBaseFare
-        : Math.max(cappedTargetFare, minimumSustainableFare);
+        : Math.max(cappedTargetFare, minimumSustainableFare, launchTargetFare);
 
     const marketAdjustment = roundMoney(adjustedServiceFare - safeBaseFare);
 
@@ -237,7 +248,7 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
     // availability alone is never a BLOCKING condition, but the absence of
     // both competitor data AND a configured floor means there is nothing to
     // suggest, so no adjustment is applied (the fare would equal base fare).
-    const hasValidSuggestion = isManual || hasCompetitorTarget || minimumSustainableFare > 0;
+    const hasValidSuggestion = isManual || hasCompetitorTarget || minimumSustainableFare > 0 || launchTargetFare > 0;
     const adjustmentApplied = featureEnabled && !shadowMode && strategyEnabled && hasValidSuggestion;
 
     const effectiveServiceFare = adjustmentApplied ? adjustedServiceFare : safeBaseFare;
@@ -426,11 +437,18 @@ function mapStrategyRow(row: any): MarketPricingStrategy {
         vehicleClass: row.vehicle_class ?? null,
         strategy: row.strategy,
         targetDifferencePercent: Number(row.target_difference_percent) || 0,
+        minimumLaunchTargetFare: row.minimum_launch_target_fare === null || row.minimum_launch_target_fare === undefined
+            ? null
+            : Number(row.minimum_launch_target_fare),
         minimumDriverHourlyRate: row.minimum_driver_hourly_rate === null ? null : Number(row.minimum_driver_hourly_rate),
         minimumDriverPerKm: row.minimum_driver_per_km === null ? null : Number(row.minimum_driver_per_km),
         minimumDriverPayout: row.minimum_driver_payout === null ? null : Number(row.minimum_driver_payout),
         minimumPlatformMarginPercent: Number(row.minimum_platform_margin_percent) || 0,
         minimumPlatformRevenue: Number(row.minimum_platform_revenue) || 0,
+        commissionPercent: row.commission_percent === null || row.commission_percent === undefined ? null : Number(row.commission_percent),
+        normalDemandMultiplier: row.normal_demand_multiplier === null || row.normal_demand_multiplier === undefined ? null : Number(row.normal_demand_multiplier),
+        busyMultiplier: row.busy_multiplier === null || row.busy_multiplier === undefined ? null : Number(row.busy_multiplier),
+        maximumSurgeMultiplier: row.maximum_surge_multiplier === null || row.maximum_surge_multiplier === undefined ? null : Number(row.maximum_surge_multiplier),
         maximumCustomerDiscountPercent: Number(row.maximum_customer_discount_percent) || 0,
         maximumMarketAdjustmentPercent: Number(row.maximum_market_adjustment_percent) || 0,
         currency: row.currency,
@@ -444,21 +462,28 @@ function mapStrategyRow(row: any): MarketPricingStrategy {
  * Resolves the most specific enabled strategy for the given context, trying
  * progressively broader filter combinations (Phase 4 §1).
  */
-async function resolveStrategy(input: MarketPricingInput): Promise<MarketPricingStrategy | null> {
+export function buildStrategyResolutionAttempts(input: MarketPricingInput): Array<Record<string, unknown>> {
     const country = String(input.countryCode || '').toUpperCase();
     const city = input.marketCity || null;
     const zone = input.zoneId || null;
     const service = input.serviceType;
     const vehicle = input.vehicleClass || null;
-    const now = new Date().toISOString();
-
+    const currency = String(input.currency || '').toUpperCase();
     const attempts: Array<Record<string, unknown>> = [];
-    if (city && zone) attempts.push({ country_code: country, market_city: city, zone_id: zone, service_type: service, vehicle_class: vehicle });
-    if (city) attempts.push({ country_code: country, market_city: city, service_type: service, vehicle_class: vehicle });
-    attempts.push({ country_code: country, service_type: service, vehicle_class: vehicle });
-    if (city && zone) attempts.push({ country_code: country, market_city: city, zone_id: zone, service_type: service });
-    if (city) attempts.push({ country_code: country, market_city: city, service_type: service });
-    attempts.push({ country_code: country, service_type: service });
+    const addSpecificity = (vehicleClass: string | null) => {
+        if (city && zone) attempts.push({ country_code: country, market_city: city, zone_id: zone, service_type: service, vehicle_class: vehicleClass, currency });
+        if (city) attempts.push({ country_code: country, market_city: city, zone_id: null, service_type: service, vehicle_class: vehicleClass, currency });
+        if (zone) attempts.push({ country_code: country, market_city: null, zone_id: zone, service_type: service, vehicle_class: vehicleClass, currency });
+        attempts.push({ country_code: country, market_city: null, zone_id: null, service_type: service, vehicle_class: vehicleClass, currency });
+    };
+    if (vehicle) addSpecificity(vehicle);
+    addSpecificity(null);
+    return attempts;
+}
+
+export async function resolveMarketPricingStrategy(input: MarketPricingInput): Promise<MarketPricingStrategy | null> {
+    const now = new Date().toISOString();
+    const attempts = buildStrategyResolutionAttempts(input);
 
     try {
         for (const filters of attempts) {
@@ -478,6 +503,7 @@ async function resolveStrategy(input: MarketPricingInput): Promise<MarketPricing
             query = query
                 .or(`valid_from.is.null,valid_from.lte.${now}`)
                 .or(`valid_until.is.null,valid_until.gte.${now}`)
+                .order('updated_at', { ascending: false })
                 .limit(1);
 
             const { data, error } = await query.maybeSingle();
@@ -755,7 +781,10 @@ export class MarketPricingService {
                 competitorBenchmarksEnabled: settings.competitorBenchmarksEnabled
             });
 
-            const strategy = await resolveStrategy(input);
+            const strategy = await resolveMarketPricingStrategy(input);
+            const effectiveDriverCommissionPercent = strategy?.commissionPercent !== null && strategy?.commissionPercent !== undefined
+                ? Math.max(0, Number(strategy.commissionPercent))
+                : input.driverCommissionPercent;
             console.log('[MarketPricing] strategy resolved', {
                 quoteReference: input.quoteReference || null,
                 strategyId: strategy?.id || null,
@@ -797,7 +826,8 @@ export class MarketPricingService {
                 distanceKm: input.distanceKm,
                 durationMinutes: input.durationMinutes,
                 platformFeePercent: input.platformFeePercent,
-                driverCommissionPercent: input.driverCommissionPercent,
+                driverCommissionPercent: effectiveDriverCommissionPercent,
+                platformMinimumRevenue: input.platformMinimumRevenue,
                 strategy,
                 marketReferenceFare,
                 lowestCompetitorFare,

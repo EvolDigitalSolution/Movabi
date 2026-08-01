@@ -1,0 +1,67 @@
+-- GB Ride launch calibration. Market pricing remains shadow-only.
+ALTER TABLE public.market_pricing_strategies
+    ADD COLUMN IF NOT EXISTS minimum_launch_target_fare numeric(12,2),
+    ADD COLUMN IF NOT EXISTS commission_percent numeric(8,4),
+    ADD COLUMN IF NOT EXISTS normal_demand_multiplier numeric(8,4),
+    ADD COLUMN IF NOT EXISTS busy_multiplier numeric(8,4),
+    ADD COLUMN IF NOT EXISTS maximum_surge_multiplier numeric(8,4);
+
+COMMENT ON COLUMN public.market_pricing_strategies.minimum_launch_target_fare IS
+    'Optional market/country/service-specific minimum suggested launch fare. Sustainability floors always take precedence.';
+
+-- Make shadow mode explicit before the strategy is created or updated. This
+-- does not enable market pricing and prevents live application if it is enabled elsewhere.
+INSERT INTO public.marketplace_settings (tenant_id, key, value)
+SELECT NULL, 'market_pricing_shadow_mode', 'true'::jsonb
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.marketplace_settings
+    WHERE tenant_id IS NULL AND key = 'market_pricing_shadow_mode'
+);
+
+UPDATE public.marketplace_settings
+SET value = 'true'::jsonb,
+    updated_at = now()
+WHERE key = 'market_pricing_shadow_mode';
+
+INSERT INTO public.market_pricing_strategies (
+    country_code, market_city, zone_id, service_type, vehicle_class,
+    strategy, target_difference_percent, minimum_launch_target_fare,
+    minimum_driver_payout, minimum_platform_margin_percent,
+    minimum_platform_revenue, maximum_customer_discount_percent,
+    maximum_market_adjustment_percent, currency, enabled
+)
+SELECT
+    'GB', NULL, NULL, 'ride', NULL,
+    'beat_market', 8, 3.35,
+    3.00, 0, 0.40, 15, 15, 'GBP', TRUE
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.market_pricing_strategies
+    WHERE country_code = 'GB'
+      AND service_type = 'ride'
+      AND market_city IS NULL
+      AND zone_id IS NULL
+      AND vehicle_class IS NULL
+);
+
+-- Scope the launch target to GB Ride only; no global fare constant is introduced.
+UPDATE public.market_pricing_strategies
+SET minimum_launch_target_fare = 3.35,
+    updated_at = now()
+WHERE country_code = 'GB'
+  AND service_type = 'ride'
+  AND market_city IS NULL
+  AND zone_id IS NULL;
+
+-- Calibrate the normal-demand tariff. The minimum handles the shortest trips
+-- while per-km/per-minute components continue to grow longer fares.
+UPDATE public.pricing_config
+SET base_fare = 2.20,
+    per_km = 0.75,
+    per_min = 0.10,
+    service_fee = 0.25,
+    minimum_fare = 3.35,
+    updated_at = now()
+WHERE service_type = 'ride'
+  AND COALESCE(country_code, 'GB') = 'GB'
+  AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+  AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL;

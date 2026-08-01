@@ -22,6 +22,7 @@ export interface MarketPricingSettingsDto {
 export interface MarketPricingSimulationInput {
   countryCode: string;
   marketCity?: string | null;
+  zoneId?: string | null;
   serviceType: string;
   vehicleClass?: string | null;
   currency: string;

@@ -14,11 +14,17 @@ export interface MarketPricingStrategy {
   vehicleClass?: string | null;
   strategy: MarketPricingStrategyType;
   targetDifferencePercent: number;
+  /** Market/country/service-scoped minimum launch target; null disables it. */
+  minimumLaunchTargetFare?: number | null;
   minimumDriverHourlyRate?: number | null;
   minimumDriverPerKm?: number | null;
   minimumDriverPayout?: number | null;
   minimumPlatformMarginPercent: number;
   minimumPlatformRevenue: number;
+  commissionPercent?: number | null;
+  normalDemandMultiplier?: number | null;
+  busyMultiplier?: number | null;
+  maximumSurgeMultiplier?: number | null;
   maximumCustomerDiscountPercent: number;
   maximumMarketAdjustmentPercent: number;
   currency: string;
@@ -90,6 +96,7 @@ export interface MarketPricingInput {
   baseServiceFare: number;
   platformFeePercent: number;
   driverCommissionPercent: number;
+  platformMinimumRevenue?: number;
   jobId?: string | null;
   bookingId?: string | null;
   quoteReference?: string | null;

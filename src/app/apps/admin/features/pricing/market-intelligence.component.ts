@@ -146,11 +146,16 @@ export class MarketIntelligenceComponent implements OnInit {
       vehicleClass: row['vehicle_class'] ?? null,
       strategy: row['strategy'],
       targetDifferencePercent: row['target_difference_percent'],
+      minimumLaunchTargetFare: row['minimum_launch_target_fare'],
       minimumDriverHourlyRate: row['minimum_driver_hourly_rate'],
       minimumDriverPerKm: row['minimum_driver_per_km'],
       minimumDriverPayout: row['minimum_driver_payout'],
       minimumPlatformMarginPercent: row['minimum_platform_margin_percent'],
       minimumPlatformRevenue: row['minimum_platform_revenue'],
+      commissionPercent: row['commission_percent'],
+      normalDemandMultiplier: row['normal_demand_multiplier'],
+      busyMultiplier: row['busy_multiplier'],
+      maximumSurgeMultiplier: row['maximum_surge_multiplier'],
       maximumCustomerDiscountPercent: row['maximum_customer_discount_percent'],
       maximumMarketAdjustmentPercent: row['maximum_market_adjustment_percent'],
       currency: row['currency'],
@@ -287,11 +292,12 @@ export class MarketIntelligenceComponent implements OnInit {
     this.simulationResult.set(null);
     try {
       const result = await this.service.simulate({
-        countryCode: String(this.simulationInput['countryCode'] || 'GB').toUpperCase(),
+        countryCode: String(this.simulationInput['countryCode'] || '').toUpperCase(),
         marketCity: this.simulationInput['marketCity'] || null,
-        serviceType: String(this.simulationInput['serviceType'] || 'ride').toLowerCase(),
+        zoneId: this.simulationInput['zoneId'] || null,
+        serviceType: String(this.simulationInput['serviceType'] || '').toLowerCase(),
         vehicleClass: this.simulationInput['vehicleClass'] || null,
-        currency: String(this.simulationInput['currency'] || 'GBP').toUpperCase(),
+        currency: String(this.simulationInput['currency'] || '').toUpperCase(),
         distanceKm: Number(this.simulationInput['distanceKm'] || 0),
         durationMinutes: Number(this.simulationInput['durationMinutes'] || 0),
         baseServiceFare: Number(this.simulationInput['baseServiceFare'] || 0),
@@ -373,33 +379,38 @@ export class MarketIntelligenceComponent implements OnInit {
 
   private defaultStrategy(): MarketPricingRow {
     return {
-      countryCode: 'GB',
+      countryCode: '',
       marketCity: null,
       zoneId: null,
-      serviceType: 'ride',
+      serviceType: '',
       vehicleClass: null,
-      strategy: 'beat_market',
-      targetDifferencePercent: 8,
+      strategy: 'manual',
+      targetDifferencePercent: null,
+      minimumLaunchTargetFare: null,
       minimumDriverHourlyRate: null,
       minimumDriverPerKm: null,
       minimumDriverPayout: null,
-      minimumPlatformMarginPercent: 0,
-      minimumPlatformRevenue: 0,
-      maximumCustomerDiscountPercent: 15,
-      maximumMarketAdjustmentPercent: 15,
-      currency: 'GBP'
+      minimumPlatformMarginPercent: null,
+      minimumPlatformRevenue: null,
+      commissionPercent: null,
+      normalDemandMultiplier: null,
+      busyMultiplier: null,
+      maximumSurgeMultiplier: null,
+      maximumCustomerDiscountPercent: null,
+      maximumMarketAdjustmentPercent: null,
+      currency: ''
     };
   }
 
   private defaultCompetitor(): MarketPricingRow {
     return {
-      countryCode: 'GB',
+      countryCode: '',
       marketCity: null,
       competitorName: '',
-      serviceType: 'ride',
+      serviceType: '',
       vehicleClass: null,
       enabled: false,
-      displayOrder: 0,
+      displayOrder: null,
       sourceType: 'manual',
       notes: ''
     };
@@ -410,28 +421,29 @@ export class MarketIntelligenceComponent implements OnInit {
       competitorProfileId: '',
       distanceKm: null,
       durationMinutes: null,
-      observedFare: 0,
-      currency: 'GBP',
+      observedFare: null,
+      currency: '',
       fareType: 'typical',
       observedAt: new Date().toISOString().slice(0, 16),
       expiresAt: null,
-      confidenceScore: 100,
+      confidenceScore: null,
       sourceReference: ''
     };
   }
 
   private defaultSimulationInput(): MarketPricingRow {
     return {
-      countryCode: 'GB',
+      countryCode: '',
       marketCity: '',
-      serviceType: 'ride',
+      zoneId: '',
+      serviceType: '',
       vehicleClass: '',
-      currency: 'GBP',
-      distanceKm: 32.3,
-      durationMinutes: 29,
-      baseServiceFare: 30.50,
-      platformFeePercent: 2,
-      driverCommissionPercent: 10
+      currency: '',
+      distanceKm: null,
+      durationMinutes: null,
+      baseServiceFare: null,
+      platformFeePercent: null,
+      driverCommissionPercent: null
     };
   }
 }
