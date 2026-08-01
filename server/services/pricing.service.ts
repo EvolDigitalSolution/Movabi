@@ -24,6 +24,7 @@ export interface PricingOptions {
     weatherMultiplier?: number;
     trafficMultiplier?: number;
     itemCount?: number;
+    taskMinutes?: number;
     budget?: number;
     vehicleClass?: string | null;
     passengerCount?: number;
@@ -100,6 +101,16 @@ export interface FareBreakdown {
     commissionConfigVersion?: string | null;
     serviceFare?: number;
     shoppingBudget?: number;
+    itemCharge?: number;
+    taskTimeCharge?: number;
+    largeShoppingSurcharge?: number;
+    packageSizeSurcharge?: number;
+    vehicleClassSurcharge?: number;
+    moveSizeSurcharge?: number;
+    helperSurcharge?: number;
+    stairsSurcharge?: number;
+    packingSurcharge?: number;
+    fragileItemsSurcharge?: number;
     totalAuthorisation?: number;
     driverGrossEarnings?: number;
     calculationVersion?: string;
@@ -152,6 +163,9 @@ export class PricingService {
         let distanceCost = 0;
         let durationCost = 0;
         let itemCharges = 0;
+        let extraItemCharge = 0;
+        let largeShoppingCharge = 0;
+        let taskTimeCharge = 0;
 
         try {
             const pricingConfig = await MarketplaceConfigService.getEffectivePricingConfig(
@@ -165,14 +179,17 @@ export class PricingService {
                 durationCost = durationMinutes * pricingConfig.perMin;
                 serviceFee = pricingConfig.serviceFee;
 
-                const extraItemCharge = options.itemCount
+                extraItemCharge = options.itemCount
                     ? Math.max(0, (options.itemCount || 0) - pricingConfig.freeIncludedItems) * pricingConfig.extraItemFee
                     : 0;
-                const largeShopCharge = (options.budget && options.budget > pricingConfig.largeShoppingThreshold)
+                largeShoppingCharge = (options.budget && options.budget > pricingConfig.largeShoppingThreshold)
                     ? pricingConfig.largeShoppingSurcharge
                     : 0;
 
-                itemCharges = this.roundMoney(extraItemCharge + largeShopCharge);
+                taskTimeCharge = canonicalServiceSlug === 'errand'
+                    ? Math.max(0, Number(options.taskMinutes || 0) - pricingConfig.includedTaskMinutes) * pricingConfig.perAdditionalTaskMinute
+                    : 0;
+                itemCharges = this.roundMoney(extraItemCharge + largeShoppingCharge + taskTimeCharge);
                 serviceFee += itemCharges;
 
                 resolvedBasePrice = this.roundMoney(Math.max(
@@ -382,35 +399,46 @@ export class PricingService {
             const moveDetailsInput = options.moveDetails || null;
 
             let serviceOptionSurcharge = 0;
+            let packageSizeSurcharge = 0;
+            let vehicleClassSurcharge = 0;
             if (canonicalServiceSlug === 'ride') {
-                if (vehicleClassInput === 'minibus') serviceOptionSurcharge = 6;
-                else if (vehicleClassInput === 'xl' || passengerCountInput > 4) serviceOptionSurcharge = 4;
+                if (vehicleClassInput === 'minibus') vehicleClassSurcharge = pricingConfig.optionPricing['rideMinibus'] || 0;
+                else if (vehicleClassInput === 'xl' || passengerCountInput > 4) vehicleClassSurcharge = pricingConfig.optionPricing['rideXl'] || 0;
+                serviceOptionSurcharge = vehicleClassSurcharge;
             } else if (canonicalServiceSlug === 'delivery') {
-                const packageSurcharge = packageSizeInput === 'large' ? 2 : packageSizeInput === 'medium' ? 0.75 : 0;
-                const vehicleSurchargeAmt = vehicleClassInput === 'large_van' ? 5 : vehicleClassInput === 'small_van' ? 3.5 : vehicleClassInput === 'car' ? 0.75 : 0;
-                serviceOptionSurcharge = this.roundMoney(packageSurcharge + vehicleSurchargeAmt);
+                packageSizeSurcharge = packageSizeInput === 'large' ? pricingConfig.optionPricing['deliveryLargePackage'] || 0 : packageSizeInput === 'medium' ? pricingConfig.optionPricing['deliveryMediumPackage'] || 0 : 0;
+                vehicleClassSurcharge = vehicleClassInput === 'large_van' ? pricingConfig.optionPricing['largeVan'] || 0 : vehicleClassInput === 'small_van' ? pricingConfig.optionPricing['smallVan'] || 0 : vehicleClassInput === 'car' ? pricingConfig.optionPricing['car'] || 0 : 0;
+                serviceOptionSurcharge = this.roundMoney(packageSizeSurcharge + vehicleClassSurcharge);
             } else if (canonicalServiceSlug === 'errand') {
-                serviceOptionSurcharge = vehicleClassInput === 'small_van' || vehicleClassInput === 'large_van' ? 5 : vehicleClassInput === 'car' ? 1.5 : 0;
+                vehicleClassSurcharge = vehicleClassInput === 'small_van' || vehicleClassInput === 'large_van' ? pricingConfig.optionPricing['errandVan'] || 0 : vehicleClassInput === 'car' ? pricingConfig.optionPricing['errandCar'] || 0 : 0;
+                serviceOptionSurcharge = vehicleClassSurcharge;
             }
 
             let vanMovingMultiplier = 1;
             let vanMovingAddons = 0;
+            let moveSizeSurcharge = 0;
+            let helperSurcharge = 0;
+            let stairsSurcharge = 0;
+            let packingSurcharge = 0;
+            let fragileItemsSurcharge = 0;
             if (canonicalServiceSlug === 'van-moving' && moveDetailsInput) {
                 switch (moveDetailsInput.size) {
-                    case 'medium': vanMovingMultiplier = 1.3; break;
-                    case 'large': vanMovingMultiplier = 1.7; break;
-                    case 'full-house': vanMovingMultiplier = 2.5; break;
+                    case 'medium': vanMovingMultiplier = pricingConfig.optionPricing['moveMediumMultiplier'] || 1; break;
+                    case 'large': vanMovingMultiplier = pricingConfig.optionPricing['moveLargeMultiplier'] || 1; break;
+                    case 'full-house': vanMovingMultiplier = pricingConfig.optionPricing['moveFullHouseMultiplier'] || 1; break;
                     default: vanMovingMultiplier = 1;
                 }
                 const helperCount = Math.max(0, Number(moveDetailsInput.helperCount) || 0);
-                vanMovingAddons += helperCount * 15;
-                if (moveDetailsInput.stairsInvolved) vanMovingAddons += 10;
-                if (moveDetailsInput.packingAssistance) vanMovingAddons += 25;
-                if (moveDetailsInput.fragileItems) vanMovingAddons += 5;
+                helperSurcharge = helperCount * (pricingConfig.optionPricing['helper'] || 0);
+                stairsSurcharge = moveDetailsInput.stairsInvolved ? pricingConfig.optionPricing['stairs'] || 0 : 0;
+                packingSurcharge = moveDetailsInput.packingAssistance ? pricingConfig.optionPricing['packing'] || 0 : 0;
+                fragileItemsSurcharge = moveDetailsInput.fragileItems ? pricingConfig.optionPricing['fragile'] || 0 : 0;
+                vanMovingAddons = helperSurcharge + stairsSurcharge + packingSurcharge + fragileItemsSurcharge;
                 vanMovingAddons = this.roundMoney(vanMovingAddons);
             }
 
             if (vanMovingMultiplier !== 1) {
+                moveSizeSurcharge = this.roundMoney(resolvedBasePrice * (vanMovingMultiplier - 1));
                 baseFareUsed = this.roundMoney(baseFareUsed * vanMovingMultiplier);
                 distanceCost = this.roundMoney(distanceCost * vanMovingMultiplier);
                 durationCost = this.roundMoney(durationCost * vanMovingMultiplier);
@@ -551,7 +579,19 @@ export class PricingService {
                 driverCommissionPercent: commissionRateUsed,
                 platformMinimumRevenue: platformFeeConfig.enabled
                     ? Math.max(0, Number(platformFeeConfig.minFee || 0))
-                    : 0
+                    : 0,
+                serviceSurcharges: {
+                    itemCharge: this.roundMoney(extraItemCharge),
+                    taskTimeCharge: this.roundMoney(taskTimeCharge),
+                    largeShoppingSurcharge: this.roundMoney(largeShoppingCharge),
+                    packageSizeSurcharge: this.roundMoney(packageSizeSurcharge),
+                    vehicleClassSurcharge: this.roundMoney(vehicleClassSurcharge),
+                    moveSizeSurcharge,
+                    helperSurcharge: this.roundMoney(helperSurcharge),
+                    stairsSurcharge: this.roundMoney(stairsSurcharge),
+                    packingSurcharge: this.roundMoney(packingSurcharge),
+                    fragileItemsSurcharge: this.roundMoney(fragileItemsSurcharge)
+                }
             }).catch((err: any) => {
                 console.warn('[PricingService] MarketPricingService.evaluate threw, ignoring market pricing for this quote:', err?.message || err);
                 return null;
@@ -591,7 +631,17 @@ export class PricingService {
                     weatherMultiplier: effectiveWeatherMultiplier,
                     trafficMultiplier: effectiveTrafficMultiplier,
                     demandMultiplier: effectiveDemandMultiplier,
-                    fuelMultiplier: effectiveFuelMultiplier
+                    fuelMultiplier: effectiveFuelMultiplier,
+                    itemCharge: this.roundMoney(extraItemCharge),
+                    taskTimeCharge: this.roundMoney(taskTimeCharge),
+                    largeShoppingSurcharge: this.roundMoney(largeShoppingCharge),
+                    packageSizeSurcharge: this.roundMoney(packageSizeSurcharge),
+                    vehicleClassSurcharge: this.roundMoney(vehicleClassSurcharge),
+                    moveSizeSurcharge,
+                    helperSurcharge: this.roundMoney(helperSurcharge),
+                    stairsSurcharge: this.roundMoney(stairsSurcharge),
+                    packingSurcharge: this.roundMoney(packingSurcharge),
+                    fragileItemsSurcharge: this.roundMoney(fragileItemsSurcharge)
                 },
                 preAdjustmentFare,
                 pricingAdjustmentType: dynamicPricingAmount > 0 ? 'surge' : (dynamicPricingAmount < 0 ? 'discount' : 'none'),
@@ -611,8 +661,8 @@ export class PricingService {
                 commissionSource: commissionConfig.source,
                 commissionConfigVersion: commissionConfig.configVersion,
                 serviceFare: totalPrice,
-                shoppingBudget: 0,
-                totalAuthorisation: totalPrice,
+                shoppingBudget: canonicalServiceSlug === 'errand' ? this.roundMoney(Number(options.budget || 0)) : 0,
+                totalAuthorisation: this.roundMoney(totalPrice + (canonicalServiceSlug === 'errand' ? Number(options.budget || 0) : 0)),
                 driverGrossEarnings: effectiveServiceFare,
                 calculationVersion: 'marketplace-v1',
                 marketPricingApplied: !!marketPricingResult?.adjustmentApplied,

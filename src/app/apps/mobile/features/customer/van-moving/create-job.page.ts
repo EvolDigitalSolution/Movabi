@@ -189,7 +189,7 @@ type MovingVehicleClass = 'small_van' | 'large_van';
 
                     @if (showPickupResults() && displayPickupResults().length > 0) {
                       <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px]">
-                        @for (result of displayPickupResults(); track result.label) {
+                        @for (result of displayPickupResults(); track result.label + '|' + result.lat + '|' + result.lng + '|' + $index) {
                           <button
                             type="button"
                             (mousedown)="selectResult('pickup', result)"
@@ -221,7 +221,7 @@ type MovingVehicleClass = 'small_van' | 'large_van';
                   >
                     @if (showDropoffResults() && displayDropoffResults().length > 0) {
                       <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px]">
-                        @for (result of displayDropoffResults(); track result.label) {
+                        @for (result of displayDropoffResults(); track result.label + '|' + result.lat + '|' + result.lng + '|' + $index) {
                           <button
                             type="button"
                             (mousedown)="selectResult('dropoff', result)"

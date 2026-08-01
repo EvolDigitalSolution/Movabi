@@ -291,7 +291,7 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                       @if (showPickupResults() && displayPickupResults().length > 0) {
                         <div dropdown class="address-results">
-                          @for (result of displayPickupResults(); track result.label) {
+                          @for (result of displayPickupResults(); track result.label + '|' + result.lat + '|' + result.lng + '|' + $index) {
                             <button
                               type="button"
                               (mousedown)="selectResult('pickup', result)"
@@ -344,7 +344,7 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                       @if (showDropoffResults() && displayDropoffResults().length > 0) {
                         <div dropdown class="address-results">
-                          @for (result of displayDropoffResults(); track result.label) {
+                          @for (result of displayDropoffResults(); track result.label + '|' + result.lat + '|' + result.lng + '|' + $index) {
                             <button
                               type="button"
                               (mousedown)="selectResult('dropoff', result)"
@@ -2707,6 +2707,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
                 packageSize: serviceSlug === 'delivery' ? this.packageSize() : null,
                 itemCount: serviceSlug === 'errand' && this.usesItemListMode() ? this.itemCount() : undefined,
+                errandMode: serviceSlug === 'errand' ? (this.usesBudgetMode() ? 'budget' : 'items') : null,
                 budget: serviceSlug === 'errand' && this.usesBudgetMode() ? this.budgetValue() : undefined,
                 moveDetails: serviceSlug === 'van-moving'
                     ? {

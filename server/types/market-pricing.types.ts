@@ -97,6 +97,7 @@ export interface MarketPricingInput {
   platformFeePercent: number;
   driverCommissionPercent: number;
   platformMinimumRevenue?: number;
+  serviceSurcharges?: Record<string, number>;
   jobId?: string | null;
   bookingId?: string | null;
   quoteReference?: string | null;

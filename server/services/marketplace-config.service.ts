@@ -36,6 +36,9 @@ export interface EffectivePricingConfig {
   extraItemFee: number;
   largeShoppingSurcharge: number;
   largeShoppingThreshold: number;
+  includedTaskMinutes: number;
+  perAdditionalTaskMinute: number;
+  optionPricing: Record<string, number>;
   peakMultiplier: number;
   weatherMultiplier: number;
   source: string;
@@ -573,6 +576,9 @@ export class MarketplaceConfigService {
         extraItemFee: 0,
         largeShoppingSurcharge: 0,
         largeShoppingThreshold: 0,
+        includedTaskMinutes: 0,
+        perAdditionalTaskMinute: 0,
+        optionPricing: {},
         peakMultiplier: 1,
         weatherMultiplier: 1,
         source: 'safe_zero_default',
@@ -593,6 +599,26 @@ export class MarketplaceConfigService {
       extraItemFee: this.numberFrom(selected.extra_item_fee),
       largeShoppingSurcharge: this.numberFrom(selected.large_shopping_surcharge),
       largeShoppingThreshold: this.numberFrom(selected.large_shopping_threshold),
+      includedTaskMinutes: this.numberFrom(selected.included_task_minutes),
+      perAdditionalTaskMinute: this.numberFrom(selected.per_additional_task_minute),
+      optionPricing: {
+        rideXl: this.numberFrom(selected.ride_xl_surcharge),
+        rideMinibus: this.numberFrom(selected.ride_minibus_surcharge),
+        deliveryMediumPackage: this.numberFrom(selected.delivery_medium_package_surcharge),
+        deliveryLargePackage: this.numberFrom(selected.delivery_large_package_surcharge),
+        car: this.numberFrom(selected.car_vehicle_surcharge),
+        smallVan: this.numberFrom(selected.small_van_surcharge),
+        largeVan: this.numberFrom(selected.large_van_surcharge),
+        errandCar: this.numberFrom(selected.errand_car_surcharge),
+        errandVan: this.numberFrom(selected.errand_van_surcharge),
+        moveMediumMultiplier: this.numberFrom(selected.move_medium_multiplier, 1),
+        moveLargeMultiplier: this.numberFrom(selected.move_large_multiplier, 1),
+        moveFullHouseMultiplier: this.numberFrom(selected.move_full_house_multiplier, 1),
+        helper: this.numberFrom(selected.helper_surcharge),
+        stairs: this.numberFrom(selected.stairs_surcharge),
+        packing: this.numberFrom(selected.packing_surcharge),
+        fragile: this.numberFrom(selected.fragile_items_surcharge)
+      },
       peakMultiplier: this.numberFrom(selected.peak_multiplier, 1),
       weatherMultiplier: this.numberFrom(selected.weather_multiplier, 1),
       source: 'pricing_config',

@@ -441,15 +441,15 @@ describe('GB Ride launch calibration migration', () => {
 
   it('populates every launch field on an existing country-level GB Ride strategy', () => {
     for (const assignment of [
-      'minimum_launch_target_fare = 3.35',
-      'minimum_driver_payout = 3.00',
-      'minimum_driver_hourly_rate = 18.00',
-      'minimum_driver_per_km = 0.70',
-      'minimum_platform_revenue = 0.40',
-      'commission_percent = 10.00',
-      'normal_demand_multiplier = 1.00',
-      'busy_multiplier = 1.25',
-      'maximum_surge_multiplier = 2.50',
+      'minimum_launch_target_fare = c.launch_target',
+      'minimum_driver_payout = c.driver_payout',
+      'minimum_driver_hourly_rate = c.hourly_rate',
+      'minimum_driver_per_km = c.per_km_rate',
+      'minimum_platform_revenue = c.platform_revenue',
+      'commission_percent = c.commission',
+      'normal_demand_multiplier = c.normal_multiplier',
+      'busy_multiplier = c.busy_multiplier',
+      'maximum_surge_multiplier = c.surge_cap',
       'target_difference_percent = 8.00',
       'maximum_customer_discount_percent = 15.00',
       'maximum_market_adjustment_percent = 15.00',
@@ -457,7 +457,10 @@ describe('GB Ride launch calibration migration', () => {
       'enabled = TRUE'
     ]) expect(migration).toContain(assignment);
 
-    expect(migration).toMatch(/WHERE country_code = 'GB'[\s\S]*service_type = 'ride'[\s\S]*market_city IS NULL[\s\S]*zone_id IS NULL[\s\S]*vehicle_class IS NULL/);
+    expect(migration).toMatch(/WHERE s\.country_code = 'GB'[\s\S]*s\.service_type = c\.service_type[\s\S]*s\.market_city IS NULL[\s\S]*s\.zone_id IS NULL[\s\S]*s\.vehicle_class IS NULL/);
+    for (const service of ['ride', 'errand', 'delivery', 'van-moving']) {
+      expect(migration).toContain(`('${service}'`);
+    }
   });
 
   it('inserts at most one fresh strategy and remains idempotent on re-run', () => {
@@ -490,5 +493,54 @@ describe('GB Ride launch calibration migration', () => {
     expect(adminComponent).toContain('busyMultiplier: null');
     expect(adminService).toContain('busyMultiplier?: number | null');
     expect(`${migration}\n${strategyRoute}\n${adminComponent}\n${adminService}`).not.toContain('busy_demand_multiplier');
+  });
+
+  it.each([
+    ['ride', 3.35, 3.00, 18.00, 0.70, 0.40],
+    ['errand', 4.00, 3.50, 18.00, 0.65, 0.50],
+    ['delivery', 3.75, 3.25, 18.00, 0.65, 0.45],
+    ['van-moving', 12.00, 10.00, 22.00, 1.00, 1.50]
+  ])('configures %s with its own launch and sustainability values', (service, launch, payout, hourly, perKm, revenue) => {
+    expect(migration).toContain(`('${service}'`);
+    for (const value of [launch, payout, hourly, perKm, revenue]) {
+      expect(migration).toContain(Number(value).toFixed(2));
+    }
+  });
+
+  it('keeps shopping budget separate from service fare reconciliation', () => {
+    expect(PricingService.validateFareReconciliation({
+      baseFare: 4, distanceCost: 0, durationCost: 0, serviceFee: 0,
+      taxAmount: 0, dynamicPricingAmount: 0, commissionAmount: 0,
+      platformFee: 0, driverPayout: 4, total: 4,
+      currencyCode: 'GBP', currencySymbol: '£', multiplier: 1,
+      commissionPercent: 0, source: 'test', extras: {},
+      serviceFareBeforePlatformFee: 4, serviceFare: 4,
+      shoppingBudget: 25, totalAuthorisation: 29
+    })).toBe(true);
+  });
+
+  it('keeps service option charges itemised and database-configurable', () => {
+    for (const field of [
+      'included_task_minutes', 'per_additional_task_minute',
+      'delivery_medium_package_surcharge', 'delivery_large_package_surcharge',
+      'helper_surcharge', 'stairs_surcharge', 'packing_surcharge', 'fragile_items_surcharge'
+    ]) expect(migration).toContain(field);
+  });
+
+  it('audits every service quote with shadow and surcharge context', () => {
+    const pricingService = readFileSync(resolve(process.cwd(), 'server/services/market-pricing.service.ts'), 'utf8');
+    for (const field of ['service_type', 'vehicle_class', 'platform_revenue', 'service_specific_surcharges', 'shadow_mode']) {
+      expect(pricingService).toContain(field);
+      expect(migration).toContain(field);
+    }
+  });
+
+  it('deduplicates quotes and uses unique address tracking keys', () => {
+    const quoteClient = readFileSync(resolve(process.cwd(), 'src/app/core/services/pricing/global-ai-pricing-quote.service.ts'), 'utf8');
+    const bookingPage = readFileSync(resolve(process.cwd(), 'src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts'), 'utf8');
+    expect(quoteClient).toContain('private pending = new Map');
+    expect(quoteClient).toContain('private recent = new Map');
+    expect(quoteClient).toContain('if (existing) return existing');
+    expect(bookingPage).toContain("result.label + '|' + result.lat + '|' + result.lng + '|' + $index");
   });
 });

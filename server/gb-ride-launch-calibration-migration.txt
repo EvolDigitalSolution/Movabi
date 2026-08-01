@@ -9,6 +9,13 @@ ALTER TABLE public.market_pricing_strategies
 COMMENT ON COLUMN public.market_pricing_strategies.minimum_launch_target_fare IS
     'Optional market/country/service-specific minimum suggested launch fare. Sustainability floors always take precedence.';
 
+ALTER TABLE public.quote_market_adjustments
+    ADD COLUMN IF NOT EXISTS service_type text,
+    ADD COLUMN IF NOT EXISTS vehicle_class text,
+    ADD COLUMN IF NOT EXISTS platform_revenue numeric(12,2),
+    ADD COLUMN IF NOT EXISTS service_specific_surcharges jsonb,
+    ADD COLUMN IF NOT EXISTS shadow_mode boolean;
+
 -- Make shadow mode explicit before the strategy is created or updated. This
 -- does not enable market pricing and prevents live application if it is enabled elsewhere.
 INSERT INTO public.marketplace_settings (tenant_id, key, value)
@@ -35,6 +42,14 @@ SET value = 'false'::jsonb,
     updated_at = now()
 WHERE key = 'market_pricing_enabled';
 
+WITH calibration(service_type, launch_target, driver_payout, hourly_rate, per_km_rate,
+                 platform_revenue, commission, normal_multiplier, busy_multiplier, surge_cap) AS (
+    VALUES
+      ('ride',       3.35,  3.00, 18.00, 0.70, 0.40, 10.00, 1.00, 1.25, 2.50),
+      ('errand',     4.00,  3.50, 18.00, 0.65, 0.50, 10.00, 1.00, 1.20, 2.00),
+      ('delivery',   3.75,  3.25, 18.00, 0.65, 0.45, 10.00, 1.00, 1.20, 2.00),
+      ('van-moving',12.00, 10.00, 22.00, 1.00, 1.50, 10.00, 1.00, 1.20, 1.75)
+)
 INSERT INTO public.market_pricing_strategies (
     country_code, market_city, zone_id, service_type, vehicle_class,
     strategy, target_difference_percent, minimum_launch_target_fare,
@@ -44,56 +59,130 @@ INSERT INTO public.market_pricing_strategies (
     maximum_surge_multiplier, maximum_customer_discount_percent,
     maximum_market_adjustment_percent, currency, enabled
 )
-SELECT
-    'GB', NULL, NULL, 'ride', NULL,
-    'beat_market', 8.00, 3.35,
-    3.00, 18.00, 0.70,
-    0, 0.40,
-    10.00, 1.00, 1.25,
-    2.50, 15.00, 15.00, 'GBP', TRUE
+SELECT 'GB', NULL, NULL, c.service_type, NULL,
+       'beat_market', 8.00, c.launch_target,
+       c.driver_payout, c.hourly_rate, c.per_km_rate,
+       0, c.platform_revenue,
+       c.commission, c.normal_multiplier, c.busy_multiplier,
+       c.surge_cap, 15.00, 15.00, 'GBP', TRUE
+FROM calibration c
 WHERE NOT EXISTS (
     SELECT 1 FROM public.market_pricing_strategies
     WHERE country_code = 'GB'
-      AND service_type = 'ride'
+      AND service_type = c.service_type
       AND market_city IS NULL
       AND zone_id IS NULL
       AND vehicle_class IS NULL
 );
 
--- Populate fresh and pre-existing country-level GB Ride strategies identically.
+-- Populate fresh and pre-existing country-level GB service strategies identically.
 -- The exact specificity predicate also prevents broader updates.
-UPDATE public.market_pricing_strategies
-SET minimum_launch_target_fare = 3.35,
-    minimum_driver_payout = 3.00,
-    minimum_driver_hourly_rate = 18.00,
-    minimum_driver_per_km = 0.70,
-    minimum_platform_revenue = 0.40,
-    commission_percent = 10.00,
-    normal_demand_multiplier = 1.00,
-    busy_multiplier = 1.25,
-    maximum_surge_multiplier = 2.50,
+WITH calibration(service_type, launch_target, driver_payout, hourly_rate, per_km_rate,
+                 platform_revenue, commission, normal_multiplier, busy_multiplier, surge_cap) AS (
+    VALUES
+      ('ride',       3.35,  3.00, 18.00, 0.70, 0.40, 10.00, 1.00, 1.25, 2.50),
+      ('errand',     4.00,  3.50, 18.00, 0.65, 0.50, 10.00, 1.00, 1.20, 2.00),
+      ('delivery',   3.75,  3.25, 18.00, 0.65, 0.45, 10.00, 1.00, 1.20, 2.00),
+      ('van-moving',12.00, 10.00, 22.00, 1.00, 1.50, 10.00, 1.00, 1.20, 1.75)
+)
+UPDATE public.market_pricing_strategies s
+SET minimum_launch_target_fare = c.launch_target,
+    minimum_driver_payout = c.driver_payout,
+    minimum_driver_hourly_rate = c.hourly_rate,
+    minimum_driver_per_km = c.per_km_rate,
+    minimum_platform_revenue = c.platform_revenue,
+    commission_percent = c.commission,
+    normal_demand_multiplier = c.normal_multiplier,
+    busy_multiplier = c.busy_multiplier,
+    maximum_surge_multiplier = c.surge_cap,
     target_difference_percent = 8.00,
     maximum_customer_discount_percent = 15.00,
     maximum_market_adjustment_percent = 15.00,
     currency = 'GBP',
     enabled = TRUE,
     updated_at = now()
-WHERE country_code = 'GB'
-  AND service_type = 'ride'
-  AND market_city IS NULL
-  AND zone_id IS NULL
-  AND vehicle_class IS NULL;
+FROM calibration c
+WHERE s.country_code = 'GB'
+  AND s.service_type = c.service_type
+  AND s.market_city IS NULL
+  AND s.zone_id IS NULL
+  AND s.vehicle_class IS NULL;
 
--- Calibrate the normal-demand tariff. The minimum handles the shortest trips
--- while per-km/per-minute components continue to grow longer fares.
-UPDATE public.pricing_config
-SET base_fare = 2.20,
-    per_km = 0.75,
-    per_min = 0.10,
-    service_fee = 0.25,
-    minimum_fare = 3.35,
+-- Service-owned option columns remain on pricing_config and are Admin-editable.
+ALTER TABLE public.pricing_config
+    ADD COLUMN IF NOT EXISTS included_task_minutes numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS per_additional_task_minute numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS ride_xl_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS ride_minibus_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS delivery_medium_package_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS delivery_large_package_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS car_vehicle_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS small_van_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS large_van_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS errand_car_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS errand_van_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS move_medium_multiplier numeric(8,4) NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS move_large_multiplier numeric(8,4) NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS move_full_house_multiplier numeric(8,4) NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS helper_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS stairs_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS packing_surcharge numeric(10,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS fragile_items_surcharge numeric(10,2) NOT NULL DEFAULT 0;
+
+-- Calibrate only country-level GB fallbacks. City and zone rows are untouched.
+WITH services(service_type) AS (
+    VALUES ('ride'), ('errand'), ('delivery'), ('van-moving')
+)
+INSERT INTO public.pricing_config (
+    service_type, country_code, market_city, zone_id,
+    base_fare, per_km, per_min, service_fee, minimum_fare,
+    currency_code, is_active
+)
+SELECT s.service_type, 'GB', NULL, NULL, 0, 0, 0, 0, 0, 'GBP', TRUE
+FROM services s
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.pricing_config p
+    WHERE p.service_type = s.service_type
+      AND COALESCE(p.country_code, 'GB') = 'GB'
+      AND NULLIF(BTRIM(COALESCE(p.market_city, '')), '') IS NULL
+      AND NULLIF(BTRIM(COALESCE(p.zone_id, '')), '') IS NULL
+);
+
+WITH calibration(service_type, base_fare, per_km, per_min, service_fee, minimum_fare,
+                 included_task_minutes, per_additional_task_minute) AS (
+    VALUES
+      ('ride',        2.20, 0.75, 0.10, 0.25,  3.35,  0.00, 0.00),
+      ('errand',      2.50, 0.65, 0.08, 0.25,  4.00, 10.00, 0.20),
+      ('delivery',    2.25, 0.55, 0.06, 0.25,  3.75,  0.00, 0.00),
+      ('van-moving',  8.00, 1.00, 0.25, 1.50, 12.00,  0.00, 0.00)
+)
+UPDATE public.pricing_config p
+SET base_fare = c.base_fare,
+    per_km = c.per_km,
+    per_min = c.per_min,
+    service_fee = c.service_fee,
+    minimum_fare = c.minimum_fare,
+    included_task_minutes = c.included_task_minutes,
+    per_additional_task_minute = c.per_additional_task_minute,
+    ride_xl_surcharge = CASE WHEN c.service_type = 'ride' THEN 4.00 ELSE 0 END,
+    ride_minibus_surcharge = CASE WHEN c.service_type = 'ride' THEN 6.00 ELSE 0 END,
+    delivery_medium_package_surcharge = CASE WHEN c.service_type = 'delivery' THEN 0.75 ELSE 0 END,
+    delivery_large_package_surcharge = CASE WHEN c.service_type = 'delivery' THEN 2.00 ELSE 0 END,
+    car_vehicle_surcharge = CASE WHEN c.service_type = 'delivery' THEN 0.75 ELSE 0 END,
+    small_van_surcharge = CASE WHEN c.service_type = 'delivery' THEN 3.50 ELSE 0 END,
+    large_van_surcharge = CASE WHEN c.service_type = 'delivery' THEN 5.00 ELSE 0 END,
+    errand_car_surcharge = CASE WHEN c.service_type = 'errand' THEN 1.50 ELSE 0 END,
+    errand_van_surcharge = CASE WHEN c.service_type = 'errand' THEN 5.00 ELSE 0 END,
+    move_medium_multiplier = CASE WHEN c.service_type = 'van-moving' THEN 1.30 ELSE 1 END,
+    move_large_multiplier = CASE WHEN c.service_type = 'van-moving' THEN 1.70 ELSE 1 END,
+    move_full_house_multiplier = CASE WHEN c.service_type = 'van-moving' THEN 2.50 ELSE 1 END,
+    helper_surcharge = CASE WHEN c.service_type = 'van-moving' THEN 15.00 ELSE 0 END,
+    stairs_surcharge = CASE WHEN c.service_type = 'van-moving' THEN 10.00 ELSE 0 END,
+    packing_surcharge = CASE WHEN c.service_type = 'van-moving' THEN 25.00 ELSE 0 END,
+    fragile_items_surcharge = CASE WHEN c.service_type = 'van-moving' THEN 5.00 ELSE 0 END,
     updated_at = now()
-WHERE service_type = 'ride'
-  AND COALESCE(country_code, 'GB') = 'GB'
-  AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
-  AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL;
+FROM calibration c
+WHERE p.service_type = c.service_type
+  AND COALESCE(p.country_code, 'GB') = 'GB'
+  AND NULLIF(BTRIM(COALESCE(p.market_city, '')), '') IS NULL
+  AND NULLIF(BTRIM(COALESCE(p.zone_id, '')), '') IS NULL;
