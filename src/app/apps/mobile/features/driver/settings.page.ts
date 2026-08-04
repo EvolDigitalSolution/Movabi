@@ -120,7 +120,7 @@ type DocType = 'license' | 'insurance';
           </div>
         </div>
 
-        <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Outstanding Requests</h2><button class="text-xs font-bold text-blue-600" (click)="refreshOnboardingStatus()">Refresh</button></div>
+        <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Outstanding Requests</h2><button class="text-xs font-bold text-blue-600 disabled:opacity-50" [disabled]="onboardingStatus.loading()" (click)="refreshOnboardingStatus()">{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}</button></div>
           @if(onboardingStatus.loading()){<p class="mt-3 text-xs text-slate-500">Loading requests…</p>}
           @else if(onboardingStatus.error()){<p class="mt-3 text-xs font-semibold text-rose-600">{{onboardingStatus.error()}}</p>}
           @else if(!onboardingStatus.state()?.outstandingRequests?.length){<p class="mt-3 text-xs text-slate-500">No outstanding requests.</p>}
@@ -567,17 +567,29 @@ export class DriverSettingsPage implements OnInit {
         });
     }
 
-    async ngOnInit() {
-        await Promise.all([
+    async ngOnInit(): Promise<void> {
+        this.syncPersonalDraft();
+    }
+
+    async ionViewWillEnter(): Promise<void> {
+        await this.refreshPageData();
+    }
+
+    private async refreshPageData(): Promise<void> {
+        const results = await Promise.allSettled([
             this.driverService.fetchVehicle(),
             this.driverService.fetchStripeAccount(),
             this.onboardingStatus.refresh()
         ]);
+        const labels = ['vehicle', 'stripe', 'onboarding-status'] as const;
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') console.warn(`[DriverSettings] ${labels[index]} load failed`, result.reason);
+        });
         this.syncPersonalDraft();
     }
 
     async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
-    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
+    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData(); await (event.target as HTMLIonRefresherElement).complete(); }
 
     isVerified(): boolean {
         const profile = this.profile() as DriverProfile | null;

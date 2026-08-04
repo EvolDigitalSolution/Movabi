@@ -86,4 +86,32 @@ describe('driver onboarding production flow', () => {
     expect(notifications).toContain('/admin/drivers/${encodeURIComponent(driverId)}/onboarding');
     expect(read('src/app/apps/admin/admin-web.routes.ts')).toContain("path: 'drivers/:driverId/onboarding'");
   });
+
+  it('uses ngOnInit only for local setup and refreshes cached pages on entry', () => {
+    expect(settings).toContain('async ngOnInit(): Promise<void>');
+    expect(settings).toContain('async ionViewWillEnter(): Promise<void>');
+    const init = settings.slice(settings.indexOf('async ngOnInit()'), settings.indexOf('async ionViewWillEnter()'));
+    expect(init).toContain('this.syncPersonalDraft()');
+    expect(init).not.toContain('onboardingStatus.refresh()');
+  });
+  it('loads vehicle, Stripe and onboarding independently once per page entry', () => {
+    expect(settings).toContain('const results = await Promise.allSettled([');
+    expect(settings).toContain("const labels = ['vehicle', 'stripe', 'onboarding-status'] as const");
+    expect(settings).not.toContain('await Promise.all([');
+  });
+  it('keeps onboarding failures out of the empty state and provides Retry', () => {
+    expect(settings.indexOf('@else if(onboardingStatus.error())')).toBeLessThan(settings.indexOf("No outstanding requests."));
+    expect(settings).toContain("{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}");
+    expect(settings).toContain('[disabled]="onboardingStatus.loading()"');
+  });
+  it('pull-to-refresh refreshes all three Settings sections', () => {
+    expect(settings).toContain('async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData()');
+  });
+  it('writes safe structured status request, success and failure logs', () => {
+    expect(route).toContain("console.info('[DriverOnboarding] status request'");
+    expect(route).toContain("console.info('[DriverOnboarding] status success'");
+    expect(route).toContain("console.error('[DriverOnboarding] status failed'");
+    expect(route).toContain('outstandingRequestCount: outstandingRequests.length');
+    expect(route).toContain('if (vehicleError) throw');
+  });
 });
