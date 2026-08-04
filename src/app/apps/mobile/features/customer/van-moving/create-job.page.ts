@@ -1000,7 +1000,7 @@ export class CreateJobPage implements AfterViewInit {
                 serviceSlug: 'van-moving',
                 distanceKm,
                 durationMinutes: durationSec / 60,
-                countryCode: this.config.currentCountry()?.code,
+                countryCode: this.config.currentCountry().code,
                 currencyCode: this.config.currentCountry()?.currency || this.config.currencyCode,
                 vehicleClass: this.moveDetails.vehicleClass,
                 moveDetails: {

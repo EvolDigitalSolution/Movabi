@@ -611,6 +611,7 @@ describe('GB App Store launch controls', () => {
     const logisticsRoute = readFileSync(resolve(process.cwd(), 'server/routes/logistics.routes.ts'), 'utf8');
     expect(vanPage).toContain('GlobalAiPricingQuoteService');
     expect(vanPage).toContain('await this.pricingQuote.getQuote');
+    expect(vanPage).toContain('countryCode: this.config.currentCountry().code');
     expect(vanPage).not.toContain('FareCalculationService');
     expect(logisticsRoute).toContain("code: 'AUTHORITATIVE_QUOTE_REQUIRED'");
     expect(logisticsRoute).not.toContain('LogisticsService.calculatePrice(distance)');
