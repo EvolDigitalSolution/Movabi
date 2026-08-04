@@ -8,6 +8,8 @@ import {
     IonTitle,
     IonContent,
     IonIcon,
+    IonRefresher,
+    IonRefresherContent,
     IonSelect,
     IonSelectOption,
     LoadingController,
@@ -36,6 +38,7 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { ConnectService } from '../../../../core/services/stripe/connect.service';
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
+import { DriverOnboardingStatusService } from '../../../../core/services/driver/driver-onboarding-status.service';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import {
@@ -60,6 +63,8 @@ type DocType = 'license' | 'insurance';
         IonTitle,
         IonContent,
         IonIcon,
+        IonRefresher,
+        IonRefresherContent,
         IonSelect,
         IonSelectOption,
         CardComponent,
@@ -80,6 +85,7 @@ type DocType = 'license' | 'insurance';
     </ion-header>
 
     <ion-content class="movabi-page">
+      <ion-refresher slot="fixed" (ionRefresh)="pullToRefresh($event)"><ion-refresher-content></ion-refresher-content></ion-refresher>
       <div class="w-full max-w-xl mx-auto px-3 py-2 space-y-4 pb-16 overflow-x-hidden">
 
         <div class="movabi-hero bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white">
@@ -113,6 +119,13 @@ type DocType = 'license' | 'insurance';
             </div>
           </div>
         </div>
+
+        <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Outstanding Requests</h2><button class="text-xs font-bold text-blue-600" (click)="refreshOnboardingStatus()">Refresh</button></div>
+          @if(onboardingStatus.loading()){<p class="mt-3 text-xs text-slate-500">Loading requests…</p>}
+          @else if(onboardingStatus.error()){<p class="mt-3 text-xs font-semibold text-rose-600">{{onboardingStatus.error()}}</p>}
+          @else if(!onboardingStatus.state()?.outstandingRequests?.length){<p class="mt-3 text-xs text-slate-500">No outstanding requests.</p>}
+          @else{@for(request of onboardingStatus.state()!.outstandingRequests;track request.id){<div class="mt-3 rounded-xl border border-slate-100 p-3"><div class="flex justify-between"><span class="text-xs font-bold">{{request.item}}</span><app-badge [variant]="request.status==='approved'?'success':request.status==='rejected'?'warning':'secondary'">{{request.status}}</app-badge></div><p class="mt-2 text-xs text-slate-500">{{request.adminMessage||request.nextAction}}</p></div>}}
+        </app-card>
 
         @if (isActionRequired()) {
           <app-card class="p-4 border border-rose-100 shadow-rose-100/30">
@@ -518,6 +531,7 @@ export class DriverSettingsPage implements OnInit {
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
+    readonly onboardingStatus = inject(DriverOnboardingStatusService);
 
     profile = this.profileService.profile;
     vehicle = this.driverService.vehicle;
@@ -556,10 +570,14 @@ export class DriverSettingsPage implements OnInit {
     async ngOnInit() {
         await Promise.all([
             this.driverService.fetchVehicle(),
-            this.driverService.fetchStripeAccount()
+            this.driverService.fetchStripeAccount(),
+            this.onboardingStatus.refresh()
         ]);
         this.syncPersonalDraft();
     }
+
+    async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
+    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
 
     isVerified(): boolean {
         const profile = this.profile() as DriverProfile | null;
@@ -745,6 +763,8 @@ export class DriverSettingsPage implements OnInit {
             }
 
             this.syncPersonalDraft();
+            await this.onboardingStatus.recordEvent('driver_profile_updated_for_review', 'date_of_birth', null, 'updated');
+            await this.refreshOnboardingStatus();
             await this.showToast('Personal details saved.', 'success');
         } catch {
             await this.showToast('Could not save personal details.', 'danger');
@@ -924,6 +944,7 @@ export class DriverSettingsPage implements OnInit {
             }
 
             await this.driverService.fetchVehicle();
+
             const remainingBlockers = this.reviewBlockers();
             const nextStatus = remainingBlockers.length ? 'action_required' : 'under_review';
 
@@ -941,6 +962,8 @@ export class DriverSettingsPage implements OnInit {
                 await (this.profileService as any).fetchProfile(user.id);
             }
             await this.driverService.fetchVehicle();
+            await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'outstanding_requests', 'action_required', nextStatus);
+            await this.refreshOnboardingStatus();
 
             await this.showToast(
                 remainingBlockers.length
@@ -993,8 +1016,14 @@ export class DriverSettingsPage implements OnInit {
             await loading.present();
 
             try {
+                const replacing = !!this.docs()[type];
                 const path = await this.driverService.uploadDocument(file, type);
                 await this.updateProfileDoc(type, path);
+                await this.onboardingStatus.recordEvent(
+                    this.isActionRequired() ? 'driver_document_resubmitted' : replacing ? 'driver_document_replaced' : 'driver_document_uploaded',
+                    type, replacing ? 'uploaded' : 'missing', 'uploaded'
+                );
+                await this.refreshOnboardingStatus();
                 await this.showToast(`${type === 'license' ? 'Driver licence' : 'Insurance'} uploaded.`, 'success');
             } catch {
                 await this.showToast('Document upload failed.', 'danger');

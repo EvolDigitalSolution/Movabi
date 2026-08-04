@@ -51,6 +51,12 @@ export const ADMIN_WEB_ROUTES: Routes = [
                         .then(m => m.DriverListComponent)
             },
             {
+                path: 'drivers/:driverId/onboarding',
+                loadComponent: () =>
+                    import('@admin/features/drivers/driver-list.component')
+                        .then(m => m.DriverListComponent)
+            },
+            {
                 path: 'bookings',
                 loadComponent: () =>
                     import('@admin/features/bookings/booking-list.component')

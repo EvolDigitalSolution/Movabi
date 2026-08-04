@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { stripe } from '../services/stripe.service';
 import { supabaseAdmin } from '../services/supabase.service';
+import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ async function getUserIdFromRequest(req: Request): Promise<string | null> {
     console.warn('[Connect] bearer auth failed:', error?.message);
   }
 
-  return String(req.body?.userId || '').trim() || null;
+  return null;
 }
 
 async function getStripeAccountId(req: Request, userId: string | null): Promise<string | null> {
@@ -126,6 +127,7 @@ function listRequirementsDue(account: any): string[] {
 }
 
 async function updateProfileStripeStatus(userId: string, accountId: string, mapped: ReturnType<typeof mapStripeStatus>) {
+  const { data: previous } = await supabaseAdmin.from('profiles').select('stripe_connect_status').eq('id', userId).maybeSingle();
   const { error } = await supabaseAdmin
     .from('profiles')
     .update({
@@ -139,6 +141,11 @@ async function updateProfileStripeStatus(userId: string, accountId: string, mapp
 
   if (error) {
     console.error('[Connect] profile Stripe status update failed:', error.message);
+  } else if (mapped.status === 'connected' && previous?.stripe_connect_status !== 'connected') {
+    DriverOnboardingNotificationService.enqueue(userId, {
+      eventKey: `stripe:${userId}:${accountId}:connected`, eventType: 'driver_stripe_connected',
+      affectedItem: 'stripe_connect', previousStatus: previous?.stripe_connect_status || 'not_started', newStatus: 'connected'
+    }).catch(notificationError => console.warn('[Connect] Stripe onboarding notification enqueue failed:', notificationError));
   }
 }
 

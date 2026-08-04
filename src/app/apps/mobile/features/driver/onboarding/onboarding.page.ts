@@ -10,6 +10,8 @@ import {
     IonTitle,
     IonContent,
     IonIcon,
+    IonRefresher,
+    IonRefresherContent,
     LoadingController,
     ToastController
 } from '@ionic/angular/standalone';
@@ -42,7 +44,7 @@ import { ProfileService } from '@core/services/profile/profile.service';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
-import { MarketAvailabilityClientService } from '@core/services/market-availability.service';
+import { DriverOnboardingStatusService } from '@core/services/driver/driver-onboarding-status.service';
 import { DriverProfile, Vehicle } from '@shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '@shared/ui';
 import {
@@ -81,6 +83,8 @@ type DriverOnboardingDraft = {
         IonTitle,
         IonContent,
         IonIcon,
+        IonRefresher,
+        IonRefresherContent,
         ButtonComponent,
         BadgeComponent
     ],
@@ -98,6 +102,7 @@ type DriverOnboardingDraft = {
     </ion-header>
 
     <ion-content class="bg-slate-50">
+      <ion-refresher slot="fixed" (ionRefresh)="pullToRefresh($event)"><ion-refresher-content></ion-refresher-content></ion-refresher>
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24 overflow-x-hidden">
         <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 shadow-2xl shadow-slate-900/20 text-white">
           <div class="absolute -top-12 -right-8 w-32 h-32 bg-blue-400/20 rounded-full blur-3xl"></div>
@@ -122,6 +127,17 @@ type DriverOnboardingDraft = {
             </p>
           </div>
         </div>
+
+        <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3"><h2 class="font-display font-black text-slate-950">Outstanding Requests</h2><button type="button" class="text-xs font-bold text-blue-600" (click)="refreshOnboardingStatus()">Refresh</button></div>
+          @if (onboardingStatus.loading()) { <p class="mt-3 text-sm text-slate-500">Loading requests…</p> }
+          @else if (onboardingStatus.error()) { <p class="mt-3 text-sm font-semibold text-rose-600">{{ onboardingStatus.error() }}</p> }
+          @else if (!onboardingStatus.state()?.outstandingRequests?.length) { <p class="mt-3 text-sm text-slate-500">No outstanding requests.</p> }
+          @else { <div class="mt-3 space-y-3">@for (request of onboardingStatus.state()!.outstandingRequests; track request.id) {
+            <div class="rounded-xl border border-slate-100 p-3"><div class="flex justify-between gap-2"><span class="text-sm font-bold text-slate-900">{{request.item}}</span><app-badge [variant]="request.status === 'approved' ? 'success' : request.status === 'rejected' ? 'warning' : 'secondary'">{{request.status}}</app-badge></div>
+            @if(request.adminMessage){<p class="mt-2 text-xs text-slate-600">{{request.adminMessage}}</p>}<p class="mt-2 text-xs font-semibold text-slate-500">{{request.nextAction}}</p></div>
+          }</div> }
+        </section>
 
         @if (isActionRequired()) {
           <div class="rounded-[1.75rem] border border-rose-100 bg-rose-50 p-5 shadow-sm">
@@ -702,7 +718,7 @@ export class OnboardingPage implements OnInit {
     private toastCtrl = inject(ToastController);
     private route = inject(ActivatedRoute);
     public router = inject(Router);
-    private marketAvailability = inject(MarketAvailabilityClientService);
+    readonly onboardingStatus = inject(DriverOnboardingStatusService);
 
     private readonly draftKey = 'driver_onboarding_draft_v2';
     private readonly maxUploadBytes = 8 * 1024 * 1024;
@@ -909,9 +925,8 @@ export class OnboardingPage implements OnInit {
 
     async ngOnInit() {
         try {
-            const currentProfile = this.profile() as any;
-            await this.marketAvailability.requireDriverRegistration({countryCode:currentProfile?.country_code||this.appConfig.currentCountry()?.code,
-                marketCity:currentProfile?.market_city||currentProfile?.city||null,zoneId:currentProfile?.zone_id||null});
+            await this.onboardingStatus.refresh();
+            await this.onboardingStatus.recordRegistrationStartOnce();
         } catch (error) {
             await this.showToast(error instanceof Error?error.message:'Driver onboarding is not available in this area yet.','warning');
             await this.router.navigate(['/driver'],{replaceUrl:true});
@@ -930,6 +945,9 @@ export class OnboardingPage implements OnInit {
         this.watchVehicleClassChanges();
         this.watchDraftChanges();
     }
+
+    async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
+    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
 
     getStripeBadgeText(): string {
         if (this.isStripeReady()) return 'Connected';
@@ -1682,11 +1700,17 @@ export class OnboardingPage implements OnInit {
             await loading.present();
 
             try {
+                const replacing = !!this.docs()[type];
                 const path = await this.driverService.uploadDocument(file, type);
                 this.docs.update((current) => ({ ...current, [type]: path }));
                 this.saveDraft();
 
                 await this.persistUploadedDocument(type, path);
+                await this.onboardingStatus.recordEvent(
+                    this.isActionRequired() ? 'driver_document_resubmitted' : replacing ? 'driver_document_replaced' : 'driver_document_uploaded',
+                    type, replacing ? 'uploaded' : 'missing', 'uploaded'
+                );
+                await this.refreshOnboardingStatus();
 
                 await this.showToast(`${type === 'license' ? 'Driver licence' : 'Insurance'} uploaded.`, 'success');
             } catch (error: unknown) {
@@ -1775,9 +1799,6 @@ export class OnboardingPage implements OnInit {
         await loading.present();
 
         try {
-            const registrationProfile = this.profile() as any;
-            await this.marketAvailability.requireDriverRegistration({countryCode:registrationProfile?.country_code||this.appConfig.currentCountry()?.code,
-                marketCity:registrationProfile?.market_city||registrationProfile?.city||null,zoneId:registrationProfile?.zone_id||null});
             const raw = this.onboardingForm.getRawValue();
             const latestVehicle = await this.driverService.fetchVehicle();
             console.log('[DriverOnboarding] Validation vehicle:', latestVehicle);
@@ -1787,6 +1808,10 @@ export class OnboardingPage implements OnInit {
             const savedVehicle = await this.driverService.updateVehicle(vehiclePayload);
             console.log('[DriverOnboarding] Saved vehicle:', savedVehicle);
             await this.driverService.fetchVehicle();
+            await this.onboardingStatus.recordEvent(
+                latestVehicle ? 'driver_vehicle_updated' : 'driver_vehicle_submitted',
+                'vehicle', latestVehicle ? 'saved' : 'missing', 'under_review'
+            );
 
             await this.updateProfileSafely(user.id, {
                 onboarding_completed: true,
@@ -1808,6 +1833,9 @@ export class OnboardingPage implements OnInit {
                 verification_items: this.buildVerificationItems(raw),
                 is_verified: false
             });
+
+            await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'onboarding', this.verificationStatus(), 'under_review');
+            await this.refreshOnboardingStatus();
 
             if (typeof (this.profileService as any).fetchProfile === 'function') {
                 await (this.profileService as any).fetchProfile(user.id);

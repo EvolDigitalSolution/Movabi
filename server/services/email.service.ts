@@ -18,6 +18,34 @@ export class EmailService {
     },
   });
 
+  static async sendDriverOnboardingAdminNotification(
+    recipients: string[],
+    message: { subject: string; text: string; html: string }
+  ): Promise<boolean> {
+    if (!recipients.length) {
+      console.warn('[EmailService] No driver-onboarding Admin recipients configured.');
+      return false;
+    }
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn('[EmailService] Email credentials missing. Driver-onboarding event remains in the outbox.');
+      return false;
+    }
+    try {
+      const info = await this.transporter.sendMail({
+        from: `"Movabi" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+        to: recipients.join(','),
+        subject: message.subject,
+        text: message.text,
+        html: message.html
+      });
+      console.log('[EmailService] Driver-onboarding Admin email sent:', info.messageId);
+      return true;
+    } catch (error) {
+      console.error('[EmailService] Driver-onboarding Admin email failed:', error);
+      return false;
+    }
+  }
+
   static async sendReceipt(email: string, details: {
     amount: number;
     currency: string;
