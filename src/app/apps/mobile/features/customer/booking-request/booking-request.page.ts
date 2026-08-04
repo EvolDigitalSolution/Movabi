@@ -1359,6 +1359,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     fareCalculating = signal(false);
     fareCalculationError = signal<string | null>(null);
     private lastFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
+    private lastQuoteReference: string | null = null;
+    private lastQuoteExpiresAt: string | null = null;
     private fareRequestSequence = 0;
     negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
     effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
@@ -2725,6 +2727,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
             const breakdown = response.legacy.fareBreakdown;
             this.lastFareBreakdown = breakdown;
+            this.lastQuoteReference = response.quoteReference;
+            this.lastQuoteExpiresAt = response.priceLockedUntil;
 
             const estimate: FareEstimate = {
                 serviceType: serviceSlug,
@@ -2763,6 +2767,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.fareEstimate.set(null);
             this.estimatedPrice.set(0);
             this.lastFareBreakdown = null;
+            this.lastQuoteReference = null;
+            this.lastQuoteExpiresAt = null;
             this.fareCalculationError.set('Unable to calculate the fare right now. Please try again.');
         } finally {
             if (requestId === this.fareRequestSequence) {
@@ -2790,6 +2796,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return {
             ...backend,
             quoteId,
+            quoteExpiresAt: this.lastQuoteExpiresAt,
             currencyCode: backend.currencyCode || currencyCode,
             currencySymbol: backend.currencySymbol || currencySymbol,
             customerServiceTotal: this.toMoney(customerServiceTotal),
@@ -2986,7 +2993,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const serviceCharge = this.cardChargeRequired();
             const totalDue = this.walletPaymentRequired();
             const walletWillCover = this.walletCoversPayment();
-            const quoteId = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            if (!this.lastQuoteReference || !this.lastQuoteExpiresAt || Date.parse(this.lastQuoteExpiresAt) <= Date.now()) {
+                throw new Error('Your fare quote expired. Please refresh the quote before booking.');
+            }
+            const quoteId = this.lastQuoteReference;
 
             const countryCode = this.config.currentCountry()?.code || 'GB';
             const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
@@ -3021,6 +3031,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     currency_code: currencyCode,
                     currency_symbol: currencySymbol,
                     quote_id: quoteId,
+                    quote_expires_at: this.lastQuoteExpiresAt,
                     customer_service_total: serviceCharge,
                     total_authorisation: totalDue,
                     pricing_plan: 'starter',

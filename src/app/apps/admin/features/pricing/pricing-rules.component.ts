@@ -126,7 +126,7 @@ const PRICING_SERVICES = [
               </div>
 
               <p class="text-xs font-medium text-blue-700 leading-relaxed">
-                5-km estimate:
+                5 km / 12-minute estimate:
                 <span class="font-bold text-blue-900 ml-1">
                   {{ getCurrencySymbol(service) }}{{ estimate(service) }}
                 </span>

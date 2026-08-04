@@ -94,6 +94,12 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
             </div>
 
             <div>
+              <label for="marketCity" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">City or operating area</label>
+              <input id="marketCity" type="text" formControlName="marketCity" placeholder="e.g. London or Manchester"
+                class="w-full h-14 px-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900">
+            </div>
+
+            <div>
               <label for="fullName" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Full Name</label>
               <div class="relative group">
                 <ion-icon name="person-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
@@ -244,6 +250,7 @@ export class SignupPage {
 
   signupForm = this.fb.group({
     fullName: ['', [Validators.required, Validators.minLength(2)]],
+    marketCity: ['', [Validators.maxLength(120)]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(6)]],
     confirmPassword: ['', [Validators.required]]
@@ -286,13 +293,13 @@ export class SignupPage {
 
   async onSubmit() {
     if (this.signupForm.invalid) return;
-    const { email, password, fullName } = this.signupForm.value;
+    const { email, password, fullName, marketCity } = this.signupForm.value;
     if (!email || !password || !fullName) return;
 
     this.isLoading.set(true);
     this.errorMessage.set(null);
     try {
-      await this.auth.signUp(email, password, { full_name: fullName });
+      await this.auth.signUp(email, password, { full_name: fullName, country_code: this.config.currentCountry().code, market_city: marketCity || null });
       this.isSuccess.set(true);
     } catch (err: unknown) {
       console.error('Signup failed:', err);

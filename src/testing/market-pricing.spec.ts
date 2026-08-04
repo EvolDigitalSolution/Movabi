@@ -544,3 +544,75 @@ describe('GB Ride launch calibration migration', () => {
     expect(bookingPage).toContain("result.label + '|' + result.lat + '|' + result.lng + '|' + $index");
   });
 });
+
+describe('GB App Store launch controls', () => {
+  const calibration = readFileSync(resolve(process.cwd(), 'server/gb-app-store-launch-pricing-migration.txt'), 'utf8');
+  const enablement = readFileSync(resolve(process.cwd(), 'server/enable-gb-launch-pricing-migration.txt'), 'utf8');
+  const quoteRoute = readFileSync(resolve(process.cwd(), 'server/routes/global-ai-pricing.routes.ts'), 'utf8');
+
+  it('calibrates all four GB fallbacks and explicit London overrides transactionally', () => {
+    expect(calibration.trimStart().startsWith('BEGIN;')).toBe(true);
+    expect(calibration.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(calibration).toContain("('ride',2.00,0.70,0.095,0.25,3.35");
+    expect(calibration).toContain("('errand',2.95,0.65,0.09,0.25,4.50");
+    expect(calibration).toContain("('delivery',2.25,0.55,0.06,0.25,3.75");
+    expect(calibration).toContain("('van-moving',8.00,1.00,0.25,1.50,12.00");
+    expect(calibration).toContain("'GB','London'");
+  });
+
+  it('aborts unless exactly one fallback row exists for every service', () => {
+    expect(calibration).toContain("ARRAY['ride','delivery','errand','van-moving']");
+    expect(calibration).toContain('IF matching_rows <> 1 THEN');
+    expect(calibration).toContain('RAISE EXCEPTION');
+  });
+
+  it('keeps initial launch disabled, shadowed, audited and signal-free', () => {
+    for (const setting of [
+      "'market_pricing_enabled','false'::jsonb",
+      "'market_pricing_shadow_mode','true'::jsonb",
+      "'market_pricing_audit_enabled','true'::jsonb",
+      "'market_competitor_benchmarks_enabled','false'::jsonb",
+      "'market_use_internal_signals','false'::jsonb"
+    ]) expect(calibration).toContain(setting);
+  });
+
+  it('guards live enablement with strategies, tariffs, audits and error checks', () => {
+    expect(enablement).toContain('DO NOT execute until release approval');
+    expect(enablement).toContain('strategy_count <> 1');
+    expect(enablement).toContain('pricing_count <> 1');
+    expect(enablement).toContain('audit_count < 1');
+    expect(enablement).toContain("fallback_reason = 'market_service_error'");
+    expect(enablement).toContain("key = 'market_pricing_enabled'");
+    expect(enablement).toContain("key = 'market_pricing_shadow_mode'");
+  });
+
+  it('generates every authoritative quote reference on the backend', () => {
+    expect(quoteRoute).toContain('const quoteReference = randomUUID()');
+    expect(quoteRoute).toContain('quoteReference');
+  });
+
+  it('persists and enforces the authoritative quote reference and expiry', () => {
+    const bookingPage = readFileSync(resolve(process.cwd(), 'src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts'), 'utf8');
+    const paymentRoute = readFileSync(resolve(process.cwd(), 'server/routes/payment.routes.ts'), 'utf8');
+    const walletRoute = readFileSync(resolve(process.cwd(), 'server/routes/wallet.routes.ts'), 'utf8');
+    expect(bookingPage).toContain('this.lastQuoteReference = response.quoteReference');
+    expect(bookingPage).toContain('quote_expires_at: this.lastQuoteExpiresAt');
+    expect(bookingPage).toContain('quoteExpiresAt: this.lastQuoteExpiresAt');
+    expect(paymentRoute).toContain("code: 'QUOTE_EXPIRED'");
+    expect(walletRoute).toContain("code: 'QUOTE_EXPIRED'");
+    expect(walletRoute).toContain('const authUserId = await getAuthUserId(req)');
+    expect(walletRoute).toContain("status(401).json({ error: 'Authentication required' })");
+    expect(walletRoute).toContain('paymentAmount = Number(');
+    expect(walletRoute).not.toContain('amount: paymentAmount || amount');
+  });
+
+  it('routes Van moving estimates through the backend quote pipeline', () => {
+    const vanPage = readFileSync(resolve(process.cwd(), 'src/app/apps/mobile/features/customer/van-moving/create-job.page.ts'), 'utf8');
+    const logisticsRoute = readFileSync(resolve(process.cwd(), 'server/routes/logistics.routes.ts'), 'utf8');
+    expect(vanPage).toContain('GlobalAiPricingQuoteService');
+    expect(vanPage).toContain('await this.pricingQuote.getQuote');
+    expect(vanPage).not.toContain('FareCalculationService');
+    expect(logisticsRoute).toContain("code: 'AUTHORITATIVE_QUOTE_REQUIRED'");
+    expect(logisticsRoute).not.toContain('LogisticsService.calculatePrice(distance)');
+  });
+});

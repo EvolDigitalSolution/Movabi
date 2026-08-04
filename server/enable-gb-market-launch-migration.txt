@@ -1,0 +1,27 @@
+-- GUARDED ONLY: do not run before release approval and shadow evidence review.
+BEGIN;
+DO $$
+DECLARE service_slug text; n integer; v jsonb;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code='GB' AND market_city IS NULL AND zone_id IS NULL AND enabled AND launch_status='live' AND quote_enabled AND booking_enabled AND payment_enabled AND driver_online_enabled) THEN RAISE EXCEPTION 'GB country market is not fully live'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code='GB' AND lower(BTRIM(market_city))='london' AND zone_id IS NULL AND enabled AND launch_status='live' AND quote_enabled AND booking_enabled AND payment_enabled AND driver_online_enabled) THEN RAISE EXCEPTION 'London market is not fully live'; END IF;
+  FOREACH service_slug IN ARRAY ARRAY['ride','delivery','errand','van-moving'] LOOP
+    SELECT count(*) INTO n FROM public.pricing_config WHERE service_type=service_slug AND COALESCE(NULLIF(BTRIM(country_code),''),'GB')='GB' AND NULLIF(BTRIM(COALESCE(market_city,'')),'') IS NULL AND NULLIF(BTRIM(COALESCE(zone_id,'')),'') IS NULL AND base_fare IS NOT NULL AND per_km IS NOT NULL AND per_min IS NOT NULL AND service_fee IS NOT NULL AND minimum_fare IS NOT NULL;
+    IF n<>1 THEN RAISE EXCEPTION 'GB pricing hard stop failed for %: % rows',service_slug,n; END IF;
+    SELECT count(*) INTO n FROM public.pricing_config WHERE service_type=service_slug AND country_code='GB' AND lower(BTRIM(market_city))='london' AND NULLIF(BTRIM(COALESCE(zone_id,'')),'') IS NULL;
+    IF n<>1 THEN RAISE EXCEPTION 'London pricing hard stop failed for %',service_slug; END IF;
+    SELECT count(*) INTO n FROM public.market_pricing_strategies WHERE country_code='GB' AND service_type=service_slug AND market_city IS NULL AND zone_id IS NULL AND vehicle_class IS NULL AND enabled AND minimum_launch_target_fare IS NOT NULL AND minimum_driver_payout IS NOT NULL AND minimum_driver_hourly_rate IS NOT NULL AND minimum_driver_per_km IS NOT NULL AND minimum_platform_revenue IS NOT NULL AND commission_percent IS NOT NULL AND normal_demand_multiplier IS NOT NULL AND busy_multiplier IS NOT NULL AND maximum_surge_multiplier IS NOT NULL;
+    IF n<>1 THEN RAISE EXCEPTION 'GB strategy hard stop failed for %',service_slug; END IF;
+    SELECT count(*) INTO n FROM public.market_pricing_strategies WHERE country_code='GB' AND lower(BTRIM(market_city))='london' AND service_type=service_slug AND zone_id IS NULL AND vehicle_class IS NULL AND enabled;
+    IF n<>1 THEN RAISE EXCEPTION 'London strategy hard stop failed for %',service_slug; END IF;
+    SELECT count(*) INTO n FROM public.quote_market_adjustments a JOIN public.market_pricing_strategies s ON s.id=a.strategy_id WHERE s.country_code='GB' AND a.service_type=service_slug AND a.shadow_mode=true AND a.created_at>=now()-interval '24 hours' AND a.fallback_reason IS DISTINCT FROM 'market_service_error';
+    IF n<1 THEN RAISE EXCEPTION 'No recent successful GB shadow audit for %',service_slug; END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM public.quote_market_adjustments a JOIN public.market_pricing_strategies s ON s.id=a.strategy_id WHERE s.country_code='GB' AND a.created_at>=now()-interval '24 hours' AND a.fallback_reason='market_service_error') THEN RAISE EXCEPTION 'Recent GB market_service_error exists'; END IF;
+  SELECT value INTO v FROM public.marketplace_settings WHERE tenant_id IS NULL AND key='market_pricing_audit_enabled'; IF v IS DISTINCT FROM 'true'::jsonb THEN RAISE EXCEPTION 'Audit disabled'; END IF;
+  SELECT value INTO v FROM public.marketplace_settings WHERE tenant_id IS NULL AND key='market_competitor_benchmarks_enabled'; IF COALESCE(v,'false'::jsonb)<>'false'::jsonb THEN RAISE EXCEPTION 'Competitor benchmarks enabled'; END IF;
+  SELECT value INTO v FROM public.marketplace_settings WHERE tenant_id IS NULL AND key='market_use_internal_signals'; IF COALESCE(v,'false'::jsonb)<>'false'::jsonb THEN RAISE EXCEPTION 'Internal signals enabled'; END IF;
+END $$;
+UPDATE public.marketplace_settings SET value='true'::jsonb,updated_at=now() WHERE tenant_id IS NULL AND key='market_pricing_enabled';
+UPDATE public.marketplace_settings SET value='false'::jsonb,updated_at=now() WHERE tenant_id IS NULL AND key='market_pricing_shadow_mode';
+COMMIT;

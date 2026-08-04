@@ -1,0 +1,27 @@
+import{describe,expect,it}from'vitest';import{readFileSync}from'node:fs';import{resolve}from'node:path';
+const read=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+describe('UK controlled market rollout',()=>{
+ const migration=read('server/market-availability-migration.txt');const pricing=read('server/gb-app-store-launch-pricing-migration.txt');
+ const service=read('server/services/market-availability.service.ts');const quote=read('server/routes/global-ai-pricing.routes.ts');
+ const booking=read('server/routes/booking.routes.ts');const payment=read('server/routes/payment.routes.ts');const wallet=read('server/routes/wallet.routes.ts');
+ const markets=read('server/routes/market-availability.routes.ts');const dispatch=read('server/services/dispatch.service.ts');
+ const authRoutes=read('server/routes/auth.routes.ts');const authClient=read('src/app/core/services/auth/auth.service.ts');const app=read('src/app/app.ts');
+ it('creates null-safe unique rollout scopes',()=>{expect(migration).toContain('idx_market_availability_unique_scope');expect(migration).toContain("lower(COALESCE(market_city,''))");expect(migration).toContain("COALESCE(zone_id::text,'')");});
+ it('enables only GB and explicit London records',()=>{expect(migration).toContain("('GB',NULL,NULL,'live'");expect(migration).toContain("('GB','London',NULL,'live'");expect(migration).not.toContain("('NG'");});
+ it('resolves zone, city, country then unavailable',()=>{expect(service).toContain("row.zone_id?'zone'");expect(service).toContain("?'city':'country'");expect(service).toContain("resolutionLevel:'unavailable'");});
+ it('normalises ISO country and case-insensitive city',()=>{expect(service).toContain("trim().toUpperCase()");expect(service).toContain('toLowerCase()===cityLower');});
+ it('returns stable rollout codes',()=>{for(const code of ['MARKET_NOT_CONFIGURED','MARKET_COMING_SOON','MARKET_PAUSED','MARKET_CAPABILITY_DISABLED','MARKET_LOCATION_UNRESOLVED'])expect(service).toContain(code);});
+ it('blocks direct quote API bypass using coordinate-resolved market',()=>{expect(quote).toContain("capability: 'quote'");expect(quote).toContain('const countryCode = (city as any)?.country_code');expect(quote).not.toContain('const countryCode = req.body.countryCode ||');});
+ it('blocks direct booking and negotiation bypasses',()=>{expect(booking).toContain("router.post('/create'");expect(booking.match(/capability: 'booking'/g)?.length).toBeGreaterThanOrEqual(3);expect(booking).toContain("code: 'QUOTE_NOT_VERIFIED'");expect(booking).toContain("code: 'QUOTE_INPUT_CHANGED'");});
+ it('blocks card and wallet payment bypasses',()=>{expect(payment).toContain("capability: 'payment'");expect(wallet).toContain("capability: 'payment'");});
+ it('blocks driver online and dispatch bypasses',()=>{expect(markets).toContain("router.post('/driver-online'");expect(markets).toContain("capability:'driver_online'");expect(dispatch).toContain("capability: 'driver_online'");});
+ it('requires admin for rollout reads and writes',()=>{expect(markets).toContain("router.get('/admin',requireAdmin");expect(markets).toContain("router.post('/admin',requireAdmin");expect(markets).toContain("router.put('/admin/:id',requireAdmin");});
+ it('rate limits quote and booking creation',()=>{expect(quote).toContain('rateLimit(');expect(booking).toContain('bookingCreateLimiter');});
+ it.each([['delivery',2.25,.55,.06,.25,5.97],['ride',2,.70,.095,.25,6.89],['errand',2.95,.65,.09,.25,7.53],['van-moving',8,1,.25,1.5,17.5]])('%s GB 5km/12min is calibrated',(_s,b,k,m,f,total)=>expect(Number((b+5*k+12*m+f).toFixed(2))).toBe(total));
+ it('creates explicit London pricing and strategies idempotently',()=>{expect(pricing).toContain("'GB','London'");expect(pricing).toContain('WHERE NOT EXISTS');expect(pricing).toContain('minimum_driver_hourly_rate');});
+ it('preserves safety feature flags',()=>{for(const v of ["'market_pricing_enabled','false'","'market_pricing_shadow_mode','true'","'market_pricing_audit_enabled','true'","'market_competitor_benchmarks_enabled','false'","'market_use_internal_signals','false'"])expect(pricing).toContain(v);});
+ it('audits availability decisions and checks insert errors',()=>{expect(migration).toContain('market_availability_audit');expect(service).toContain('audit insert failed');});
+ it('enforces customer registration on the backend without touching login/reset/OAuth',()=>{expect(authRoutes).toContain("router.post('/register'");expect(authRoutes).toContain("capability: 'customer_registration'");expect(authClient).toContain("/api/auth/register");expect(authClient).toContain('signInWithPassword');expect(authClient).toContain('signInWithOAuth');expect(authClient).toContain('resetPasswordForEmail');});
+ it('enforces new driver onboarding separately from driver online',()=>{expect(markets).toContain("router.post('/driver-registration/check'");expect(markets).toContain("capability:'driver_registration'");expect(markets).toContain("capability:'driver_online'");expect(markets).toContain("profile?.role==='driver'&&profile?.onboarding_completed");});
+ it('provides global coming-soon, retry, location, sign-in and waiting-list UX',()=>{expect(app).toContain('checkStartupMarket()');expect(app).toContain('changeStartupCountry');expect(app).toContain("router.navigateByUrl('/auth/login')");expect(app).toContain('joinWaitingList()');expect(app).toContain('startupMarket()!.bookingEnabled');expect(migration).toContain('market_waiting_list');});
+});

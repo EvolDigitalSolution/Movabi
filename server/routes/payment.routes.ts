@@ -5,6 +5,7 @@ import { dispatchService } from '../services/dispatch.service';
 import { PricingService } from '../services/pricing.service';
 import { CityService } from '../services/city.service';
 import { GlobalAiPricingService } from '../services/global-ai-pricing.service';
+import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 
 const router = Router();
 
@@ -215,6 +216,15 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       });
       return res.status(404).json({ error: 'Job not found' });
     }
+    try {
+      const locationMetadata = metadataObject(job.metadata);
+      await MarketAvailabilityService.requireCapability({ countryCode: job.country_code || locationMetadata.country_code,
+        marketCity: job.market_city || locationMetadata.market_city || locationMetadata.pickup_city,
+        zoneId: job.zone_id || locationMetadata.zone_id, capability: 'payment', endpoint: '/api/payment/create-intent' });
+    } catch (availabilityError) {
+      if (availabilityError instanceof MarketAvailabilityError) return res.status(availabilityError.httpStatus).json({ error: availabilityError.message, code: availabilityError.code, market: availabilityError.market });
+      throw availabilityError;
+    }
 
     if (String(job.customer_id || '') !== authUserId) {
       return res.status(403).json({ error: 'Only the customer can pay for this job' });
@@ -267,6 +277,18 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 
     const serviceSlug = resolveJobServiceSlug(job, req.body);
     const isErrandLike = serviceSlug === 'errand';
+    const jobMetadata = metadataObject(job.metadata);
+    const storedBreakdown = metadataObject(job.fare_breakdown);
+    const quoteReference = String(job.quote_id || jobMetadata.quote_id || storedBreakdown.quoteId || '').trim();
+    const quoteExpiresAt = String(jobMetadata.quote_expires_at || storedBreakdown.quoteExpiresAt || '').trim();
+    const quoteVersion = String(storedBreakdown.calculationVersion || storedBreakdown.marketPricingVersion || '').trim();
+    if (!job.agreed_fare && (!quoteReference || !quoteVersion || !quoteExpiresAt || Date.parse(quoteExpiresAt) <= Date.now())) {
+      return res.status(409).json({
+        error: 'Fare quote is missing or expired',
+        code: 'QUOTE_EXPIRED',
+        details: 'Refresh the versioned booking quote before authorising payment.'
+      });
+    }
 
     const serviceFare =
       money(job.agreed_fare) ||
@@ -322,7 +344,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
           countryCode: String(job.country_code || ''),
           currencySymbol: String(job.currency_symbol || '')
         }
-      });
+      }, { idempotencyKey: `job-quote-${String(job.id)}-${quoteReference}-${quoteVersion}`.slice(0, 255) });
     } catch (stripeError: any) {
       console.error('[PaymentRoutes] Stripe payment intent create failed:', {
         jobId,
@@ -425,6 +447,9 @@ router.post('/create-intent', async (req: Request, res: Response) => {
 router.post('/create-wallet-topup-intent', async (req: Request, res: Response) => {
   try {
     const { userId, amount, currency: cur, tenantId } = req.body;
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) return res.status(401).json({ error: 'Authentication required' });
+    if (String(userId || '') !== authUserId) return res.status(403).json({ error: 'Cannot fund another user wallet' });
 
     const topupAmount = money(amount);
 

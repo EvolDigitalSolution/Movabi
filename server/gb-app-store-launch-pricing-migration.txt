@@ -1,0 +1,119 @@
+BEGIN;
+
+ALTER TABLE public.quote_market_adjustments
+ ADD COLUMN IF NOT EXISTS country_code varchar(2),
+ ADD COLUMN IF NOT EXISTS market_city varchar(120),
+ ADD COLUMN IF NOT EXISTS zone_id uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_unique_quote_reference ON public.jobs(quote_id) WHERE quote_id IS NOT NULL;
+
+DO $$
+DECLARE service_slug text; matching_rows integer;
+BEGIN
+  FOREACH service_slug IN ARRAY ARRAY['ride','delivery','errand','van-moving'] LOOP
+    SELECT count(*) INTO matching_rows FROM public.pricing_config
+    WHERE service_type = service_slug
+      AND COALESCE(NULLIF(BTRIM(country_code), ''), 'GB') = 'GB'
+      AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+      AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL
+      AND NULLIF(BTRIM(COALESCE(vehicle_class, '')), '') IS NULL;
+    IF matching_rows <> 1 THEN
+      RAISE EXCEPTION 'Expected exactly one country-level GB pricing_config row for %, found %', service_slug, matching_rows;
+    END IF;
+  END LOOP;
+END $$;
+
+WITH calibration(service_type,base_fare,per_km,per_min,service_fee,minimum_fare,included_task_minutes,per_additional_task_minute) AS (VALUES
+ ('delivery',2.25,0.55,0.06,0.25,3.75,0.00,0.00),
+ ('ride',2.00,0.70,0.095,0.25,3.35,0.00,0.00),
+ ('errand',2.95,0.65,0.09,0.25,4.50,10.00,0.20),
+ ('van-moving',8.00,1.00,0.25,1.50,12.00,0.00,0.00)
+)
+UPDATE public.pricing_config p SET
+ base_fare=c.base_fare, per_km=c.per_km, per_min=c.per_min,
+ service_fee=c.service_fee, minimum_fare=c.minimum_fare,
+ included_task_minutes=c.included_task_minutes,
+ per_additional_task_minute=c.per_additional_task_minute,
+ currency_code='GBP', is_active=true, updated_at=now()
+FROM calibration c
+WHERE p.service_type=c.service_type
+ AND COALESCE(NULLIF(BTRIM(p.country_code), ''), 'GB')='GB'
+ AND NULLIF(BTRIM(COALESCE(p.market_city,'')),'') IS NULL
+ AND NULLIF(BTRIM(COALESCE(p.zone_id,'')),'') IS NULL
+ AND NULLIF(BTRIM(COALESCE(p.vehicle_class,'')),'') IS NULL;
+
+-- London tariff rows are explicit and editable; copy option columns from GB.
+WITH london(service_type,base_fare,per_km,per_min,service_fee,minimum_fare,included_task_minutes,per_additional_task_minute) AS (VALUES
+ ('delivery',2.52,0.62,0.067,0.28,4.20,0.00,0.00),
+ ('ride',2.24,0.78,0.106,0.28,3.75,0.00,0.00),
+ ('errand',3.30,0.73,0.10,0.28,5.00,10.00,0.22),
+ ('van-moving',8.96,1.12,0.28,1.68,13.50,0.00,0.00)
+), gb AS (
+ SELECT DISTINCT ON (service_type) * FROM public.pricing_config
+ WHERE COALESCE(NULLIF(BTRIM(country_code),''),'GB')='GB'
+   AND NULLIF(BTRIM(COALESCE(market_city,'')),'') IS NULL
+   AND NULLIF(BTRIM(COALESCE(zone_id,'')),'') IS NULL
+   AND NULLIF(BTRIM(COALESCE(vehicle_class,'')),'') IS NULL
+ ORDER BY service_type, updated_at DESC
+)
+INSERT INTO public.pricing_config (
+ service_type,country_code,market_city,zone_id,vehicle_class,base_fare,per_km,per_min,service_fee,minimum_fare,
+ included_task_minutes,per_additional_task_minute,currency_code,is_active,
+ ride_xl_surcharge,ride_minibus_surcharge,delivery_medium_package_surcharge,delivery_large_package_surcharge,
+ car_vehicle_surcharge,small_van_surcharge,large_van_surcharge,errand_car_surcharge,errand_van_surcharge,
+ move_medium_multiplier,move_large_multiplier,move_full_house_multiplier,helper_surcharge,stairs_surcharge,packing_surcharge,fragile_items_surcharge
+)
+SELECT l.service_type,'GB','London',NULL,NULL,l.base_fare,l.per_km,l.per_min,l.service_fee,l.minimum_fare,
+ l.included_task_minutes,l.per_additional_task_minute,'GBP',true,
+ gb.ride_xl_surcharge,gb.ride_minibus_surcharge,gb.delivery_medium_package_surcharge,gb.delivery_large_package_surcharge,
+ gb.car_vehicle_surcharge,gb.small_van_surcharge,gb.large_van_surcharge,gb.errand_car_surcharge,gb.errand_van_surcharge,
+ gb.move_medium_multiplier,gb.move_large_multiplier,gb.move_full_house_multiplier,gb.helper_surcharge,gb.stairs_surcharge,gb.packing_surcharge,gb.fragile_items_surcharge
+FROM london l JOIN gb USING(service_type)
+WHERE NOT EXISTS (SELECT 1 FROM public.pricing_config p WHERE p.country_code='GB' AND lower(BTRIM(p.market_city))='london'
+ AND p.service_type=l.service_type AND NULLIF(BTRIM(COALESCE(p.zone_id,'')),'') IS NULL AND NULLIF(BTRIM(COALESCE(p.vehicle_class,'')),'') IS NULL);
+
+WITH london(service_type,base_fare,per_km,per_min,service_fee,minimum_fare,included_task_minutes,per_additional_task_minute) AS (VALUES
+ ('delivery',2.52,0.62,0.067,0.28,4.20,0.00,0.00),('ride',2.24,0.78,0.106,0.28,3.75,0.00,0.00),
+ ('errand',3.30,0.73,0.10,0.28,5.00,10.00,0.22),('van-moving',8.96,1.12,0.28,1.68,13.50,0.00,0.00)
+)
+UPDATE public.pricing_config p SET base_fare=l.base_fare,per_km=l.per_km,per_min=l.per_min,service_fee=l.service_fee,
+ minimum_fare=l.minimum_fare,included_task_minutes=l.included_task_minutes,per_additional_task_minute=l.per_additional_task_minute,
+ currency_code='GBP',is_active=true,updated_at=now()
+FROM london l WHERE p.service_type=l.service_type AND p.country_code='GB' AND lower(BTRIM(p.market_city))='london'
+ AND NULLIF(BTRIM(COALESCE(p.zone_id,'')),'') IS NULL AND NULLIF(BTRIM(COALESCE(p.vehicle_class,'')),'') IS NULL;
+
+WITH london(service_type,launch,payout,hourly,per_km,revenue) AS (VALUES
+ ('ride',3.75,3.35,20.00,0.78,0.45),('delivery',4.20,3.65,20.00,0.72,0.50),
+ ('errand',5.00,4.40,20.00,0.72,0.60),('van-moving',13.50,11.25,25.00,1.12,1.75)
+), source AS (
+ SELECT s.*,l.launch,l.payout,l.hourly,l.per_km,l.revenue FROM public.market_pricing_strategies s JOIN london l USING(service_type)
+ WHERE s.country_code='GB' AND s.market_city IS NULL AND s.zone_id IS NULL AND s.vehicle_class IS NULL
+)
+INSERT INTO public.market_pricing_strategies (
+ country_code,market_city,zone_id,service_type,vehicle_class,strategy,target_difference_percent,maximum_customer_discount_percent,
+ minimum_platform_margin_percent,maximum_market_adjustment_percent,minimum_launch_target_fare,minimum_driver_payout,
+ minimum_driver_hourly_rate,minimum_driver_per_km,minimum_platform_revenue,commission_percent,normal_demand_multiplier,
+ busy_multiplier,maximum_surge_multiplier,currency,enabled
+)
+SELECT 'GB','London',NULL,service_type,NULL,strategy,target_difference_percent,maximum_customer_discount_percent,
+ minimum_platform_margin_percent,maximum_market_adjustment_percent,launch,payout,hourly,per_km,revenue,10.00,1.00,
+ busy_multiplier,maximum_surge_multiplier,'GBP',true FROM source
+WHERE NOT EXISTS (SELECT 1 FROM public.market_pricing_strategies x WHERE x.country_code='GB' AND lower(BTRIM(x.market_city))='london'
+ AND x.service_type=source.service_type AND x.zone_id IS NULL AND x.vehicle_class IS NULL);
+
+WITH london(service_type,launch,payout,hourly,per_km,revenue) AS (VALUES
+ ('ride',3.75,3.35,20.00,0.78,0.45),('delivery',4.20,3.65,20.00,0.72,0.50),
+ ('errand',5.00,4.40,20.00,0.72,0.60),('van-moving',13.50,11.25,25.00,1.12,1.75)
+)
+UPDATE public.market_pricing_strategies s SET minimum_launch_target_fare=l.launch,minimum_driver_payout=l.payout,
+ minimum_driver_hourly_rate=l.hourly,minimum_driver_per_km=l.per_km,minimum_platform_revenue=l.revenue,
+ commission_percent=10.00,normal_demand_multiplier=1.00,currency='GBP',enabled=true,updated_at=now()
+FROM london l WHERE s.service_type=l.service_type AND s.country_code='GB' AND lower(BTRIM(s.market_city))='london'
+ AND s.zone_id IS NULL AND s.vehicle_class IS NULL;
+
+INSERT INTO public.marketplace_settings(tenant_id,key,value) VALUES
+ (NULL,'market_pricing_enabled','false'::jsonb),(NULL,'market_pricing_shadow_mode','true'::jsonb),
+ (NULL,'market_pricing_audit_enabled','true'::jsonb),(NULL,'market_competitor_benchmarks_enabled','false'::jsonb),
+ (NULL,'market_use_internal_signals','false'::jsonb)
+ON CONFLICT (key) WHERE tenant_id IS NULL DO UPDATE SET value=EXCLUDED.value,updated_at=now();
+
+COMMIT;

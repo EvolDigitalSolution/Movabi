@@ -68,6 +68,7 @@ import { MapComponent } from '../../../../../shared/components/map/map.component
 import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
 import { Booking, BookingStatus, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
+import { MarketAvailabilityClientService } from '../../../../../core/services/market-availability.service';
 import { MapProviderService } from '../../../../../core/services/maps/map-provider.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
@@ -912,6 +913,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private config = inject(AppConfigService);
+    private marketAvailability = inject(MarketAvailabilityClientService);
     private oneSignal = inject(OneSignalService);
     private tour = inject(OnboardingTourService);
     private mapProvider = inject(MapProviderService);
@@ -2454,16 +2456,16 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
         const profile = this.profileService.profile();
 
+        try {
+            await this.marketAvailability.setDriverOnline({ online: true, countryCode: profile?.country_code || this.config.currentCountry()?.code,
+                marketCity: (profile as any)?.market_city || (profile as any)?.city_name || null, zoneId: (profile as any)?.zone_id || null });
+        } catch (error) {
+            this.showToast(error instanceof Error ? error.message : 'Movabi is not available for drivers in this area yet.', 'warning');
+            return;
+        }
+
         this.driverService.onlineStatus.set('online');
         this.driverService.isAvailable.set(true);
-
-        if (profile) {
-            await this.safeUpdateProfile(profile.id, {
-                is_online: true,
-                is_available: true,
-                last_active_at: new Date().toISOString()
-            });
-        }
 
         await this.driverService.fetchAvailableJobs();
         this.syncMarketplaceMapMarkers();

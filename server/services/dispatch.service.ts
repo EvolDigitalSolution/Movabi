@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from './supabase.service';
+import { MarketAvailabilityService } from './market-availability.service';
 import { Job, DispatchResult } from '../../src/app/shared/models/booking.model';
 import { EventService } from './event.service';
 import { NotificationService } from './notification.service';
@@ -291,6 +292,14 @@ export class DispatchService {
         }
 
         try {
+            const metadata = (job as any).metadata && typeof (job as any).metadata === 'object' ? (job as any).metadata : {};
+            const availability = await MarketAvailabilityService.checkCapability({ countryCode: (job as any).country_code || metadata.country_code,
+                marketCity: (job as any).market_city || metadata.market_city || metadata.pickup_city, zoneId: (job as any).zone_id || metadata.zone_id,
+                capability: 'driver_online', endpoint: 'dispatch-engine' });
+            if (!availability.allowed) {
+                await this.supabase.from('job_queue').update({ status: 'blocked', updated_at: nowIso() }).eq('id', item.id);
+                return { success: false, job_id: job.id, message: availability.code || 'Market dispatch disabled' };
+            }
             if (job.status === 'accepted' || job.status === 'assigned' || job.driver_id) {
                 await this.supabase
                     .from('job_queue')

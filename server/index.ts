@@ -40,6 +40,8 @@ import communicationRoutes from './routes/communication.routes';
 import issuingRoutes from './routes/issuing.routes';
 import verificationRoutes from './routes/verification.routes';
 import globalAiPricingRoutes from './routes/global-ai-pricing.routes';
+import marketAvailabilityRoutes from './routes/market-availability.routes';
+import authRoutes from './routes/auth.routes';
 import marketplaceRoutes from './routes/marketplace.routes';
 import localServicesRoutes from './routes/local-services.routes';
 import { dispatchService } from './services/dispatch.service';
@@ -135,6 +137,7 @@ app.use(bodyParser.json());
 
 // Routes
 app.use('/api/app', appRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/logistics', logisticsRoutes);
 app.use('/api/connect', connectRoutes);
@@ -147,6 +150,7 @@ app.use('/api/verification', verificationRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/local-services', localServicesRoutes);
 app.use('/api/pricing/global-ai', globalAiPricingRoutes);
+app.use('/api/markets', marketAvailabilityRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/market-pricing', marketPricingRoutes);
 app.use('/api/stripe/connect', connectRoutes);

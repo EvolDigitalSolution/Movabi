@@ -7,6 +7,9 @@ import { AccountStatus } from '@shared/models/booking.model';
 import { environment } from '@env/environment';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { ApiUrlService } from '../api-url.service';
 
 @Injectable({
     providedIn: 'root'
@@ -15,6 +18,8 @@ export class AuthService {
     private supabase = inject(SupabaseService);
     private router = inject(Router);
     public profileService = inject(ProfileService);
+    private http = inject(HttpClient);
+    private apiUrl = inject(ApiUrlService);
 
     currentUser = signal<User | null>(null);
     session = signal<Session | null>(null);
@@ -114,16 +119,14 @@ export class AuthService {
     }
 
     async signUp(email: string, password: string, data?: Record<string, unknown>) {
-        const { data: result, error } = await this.supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                data,
-                emailRedirectTo: this.getRedirectUrl('/auth/callback')
-            }
-        });
-
-        if (error) throw error;
+        const result = await firstValueFrom(this.http.post<{ user: User | null; session: Session | null }>(this.apiUrl.getApiUrl('/api/auth/register'), {
+            email, password, data,
+            countryCode: data?.['country_code'], marketCity: data?.['market_city'],
+            emailRedirectTo: this.getRedirectUrl('/auth/callback')
+        }));
+        if (result.session?.access_token && result.session.refresh_token) {
+            await this.supabase.auth.setSession({ access_token: result.session.access_token, refresh_token: result.session.refresh_token });
+        }
 
         localStorage.setItem('movabi_returning_user', 'true');
         return result;

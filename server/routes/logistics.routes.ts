@@ -9,26 +9,11 @@ const router = Router();
  * Calculate distance and price for a potential job
  */
 router.post('/calculate-price', async (req: Request, res: Response) => {
-  try {
-    const { pickup, dropoff } = req.body;
-    if (!pickup || !dropoff || !pickup.lat || !pickup.lng || !dropoff.lat || !dropoff.lng) {
-      return res.status(400).json({ error: 'Pickup and dropoff coordinates required' });
-    }
-
-    const distance = LogisticsService.calculateDistance(
-      pickup.lat, pickup.lng,
-      dropoff.lat, dropoff.lng
-    );
-    const price = LogisticsService.calculatePrice(distance);
-
-    res.json({
-      estimated_distance: distance,
-      estimated_price: price
-    });
-  } catch (error: any) {
-    console.error('Price calculation error:', error);
-    res.status(500).json({ error: error.message });
-  }
+  return res.status(410).json({
+    error: 'Legacy pricing endpoint retired',
+    code: 'AUTHORITATIVE_QUOTE_REQUIRED',
+    quoteEndpoint: '/api/pricing/global-ai/quote'
+  });
 });
 
 /**

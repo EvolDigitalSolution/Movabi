@@ -105,6 +105,10 @@ export const ADMIN_WEB_ROUTES: Routes = [
                         .then(m => m.MarketIntelligenceComponent)
             },
             {
+                path: 'marketplace/market-rollout',
+                loadComponent: () => import('@admin/features/marketplace/market-rollout.component').then(m => m.MarketRolloutComponent)
+            },
+            {
                 path: 'marketplace/local-services',
                 loadComponent: () =>
                     import('@admin/features/marketplace/local-services.component')

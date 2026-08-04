@@ -8,6 +8,8 @@ export interface CityConfig {
   radius_km: number;
   is_active: boolean;
   base_surge_multiplier: number;
+  country_code?: string | null;
+  country?: string | null;
 }
 
 export class CityService {

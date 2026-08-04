@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { rateLimit } from 'express-rate-limit';
 import { EmailService } from '../services/email.service';
 import { supabaseAdmin } from '../services/supabase.service';
+import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ const otpLimiter = rateLimit({
 const OTP_TTL_MS = 10 * 60 * 1000;
 const VERIFIED_TTL_MS = 20 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
+const registrationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 8, message: { error: 'Too many registration attempts. Please wait and try again.' } });
 
 function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
@@ -32,6 +34,27 @@ function createCode(): string {
 function isEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
+
+router.post('/register', registrationLimiter, async (req: Request, res: Response) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    const countryCode = MarketAvailabilityService.normalizeCountry(req.body?.countryCode);
+    const marketCity = MarketAvailabilityService.normalizeCity(req.body?.marketCity);
+    if (!isEmail(email) || password.length < 6) return res.status(400).json({ error: 'A valid email and password of at least 6 characters are required.' });
+    if (!countryCode) return res.status(422).json({ error: 'Choose the country where you intend to use Movabi.', code: 'MARKET_LOCATION_UNRESOLVED' });
+    const market = await MarketAvailabilityService.requireCapability({ countryCode, marketCity, capability: 'customer_registration', endpoint: '/api/auth/register' });
+    const redirectTo = String(req.body?.emailRedirectTo || '');
+    const safeRedirect = /^(https:\/\/|http:\/\/localhost(?::\d+)?\/|com\.movabi\.app:\/\/)/i.test(redirectTo) ? redirectTo : undefined;
+    const metadata = { ...(req.body?.data || {}), registration_country_code: market.countryCode, registration_market_city: market.marketCity };
+    const { data, error } = await supabaseAdmin.auth.signUp({ email, password, options: { data: metadata, ...(safeRedirect ? { emailRedirectTo: safeRedirect } : {}) } });
+    if (error) return res.status(error.status || 400).json({ error: error.message });
+    return res.status(201).json({ user: data.user, session: data.session, market: { countryCode: market.countryCode, marketCity: market.marketCity } });
+  } catch (error) {
+    if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Registration failed' });
+  }
+});
 
 router.post('/registration-otp/send', otpLimiter, async (req: Request, res: Response) => {
   const email = normalizeEmail(req.body?.email);

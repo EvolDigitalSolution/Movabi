@@ -7,11 +7,14 @@ import { IssuingService } from '../services/issuing.service';
 import { PricingService } from '../services/pricing.service';
 import { DispatchService } from '../services/dispatch.service';
 import { stripe } from '../services/stripe.service';
+import { rateLimit } from 'express-rate-limit';
+import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 
 const router = Router();
 
 const capturedStatuses = ['paid', 'captured', 'succeeded'];
 const cancellableStripeStatuses = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'];
+const bookingCreateLimiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: true, legacyHeaders: false });
 
 async function getAuthUserId(req: Request): Promise<string | null> {
     const existing = (req as any).user?.id || (req as any).auth?.user?.id;
@@ -28,6 +31,45 @@ async function getAuthUserId(req: Request): Promise<string | null> {
 
     return data.user.id;
 }
+
+router.post('/create', bookingCreateLimiter, async (req: Request, res: Response) => {
+    try {
+        const userId = await getAuthUserId(req);
+        if (!userId) return res.status(401).json({ error: 'Authentication required' });
+        const payload = { ...(req.body?.booking || {}) } as Record<string, any>;
+        if (payload.customer_id && String(payload.customer_id) !== userId) return res.status(403).json({ error: 'Cannot create a booking for another customer' });
+        const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+        const breakdown = payload.fare_breakdown && typeof payload.fare_breakdown === 'object' ? payload.fare_breakdown : {};
+        const quoteReference = String(payload.quote_id || metadata.quote_id || breakdown.quoteId || '').trim();
+        const quoteExpiresAt = String(metadata.quote_expires_at || breakdown.quoteExpiresAt || '').trim();
+        const quoteVersion = String(breakdown.calculationVersion || breakdown.marketPricingVersion || '').trim();
+        if (!quoteReference || !quoteVersion || !quoteExpiresAt || Date.parse(quoteExpiresAt) <= Date.now()) return res.status(409).json({ error: 'A current versioned backend quote is required', code: 'QUOTE_EXPIRED' });
+        const { data: existing } = await supabaseAdmin.from('jobs').select('*, service_type:service_types(*)').eq('quote_id', quoteReference).eq('customer_id', userId).maybeSingle();
+        if (existing) return res.status(200).json(existing);
+        const { data: quoteAudit, error: quoteError } = await supabaseAdmin.from('quote_market_adjustments').select('quote_reference,country_code,market_city,zone_id,service_type,currency,returned_customer_fare,strategy_version').eq('quote_reference', quoteReference).maybeSingle();
+        if (quoteError || !quoteAudit) return res.status(409).json({ error: 'Authoritative quote could not be verified', code: 'QUOTE_NOT_VERIFIED' });
+        const requestedService = String(metadata.service_slug || metadata.service_type || '').trim().toLowerCase();
+        const canonicalService = ['shop','shopping','errands'].includes(requestedService) ? 'errand' : ['deliver','courier','parcel'].includes(requestedService) ? 'delivery' : ['van','move','moving'].includes(requestedService) ? 'van-moving' : requestedService;
+        if (canonicalService && canonicalService !== String(quoteAudit.service_type)) return res.status(409).json({ error: 'Quote service does not match booking', code: 'QUOTE_INPUT_CHANGED' });
+        const quotedFare = Number(quoteAudit.returned_customer_fare);
+        const submittedServiceFare = Number(breakdown.customerServiceTotal ?? payload.total_price ?? payload.price);
+        if (!Number.isFinite(quotedFare) || !Number.isFinite(submittedServiceFare) || Math.abs(quotedFare - submittedServiceFare) > 0.01) return res.status(409).json({ error: 'Quoted fare changed; customer acceptance is required', code: 'QUOTE_INPUT_CHANGED' });
+        payload.quote_id = quoteReference;
+        payload.price = quotedFare; payload.total_price = quotedFare; payload.estimated_price = quotedFare;
+        payload.country_code = quoteAudit.country_code || payload.country_code;
+        payload.currency_code = quoteAudit.currency || payload.currency_code;
+        await MarketAvailabilityService.requireCapability({ countryCode: payload.country_code || metadata.country_code,
+            marketCity: payload.market_city || metadata.market_city || metadata.pickup_city, zoneId: payload.zone_id || metadata.zone_id,
+            capability: 'booking', endpoint: '/api/booking/create' });
+        payload.customer_id = userId;
+        const { data, error } = await supabaseAdmin.from('jobs').insert(payload).select('*, service_type:service_types(*)').single();
+        if (error) return res.status(400).json({ error: error.message, code: error.code });
+        return res.status(201).json(data);
+    } catch (error) {
+        if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
+        return res.status(500).json({ error: error instanceof Error ? error.message : 'Booking creation failed' });
+    }
+});
 
 function normalise(value: unknown): string {
     return String(value || '').toLowerCase().trim();
@@ -951,6 +993,10 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
         if (jobError || !fullJob) {
             return res.status(404).json({ error: 'Job not found' });
         }
+        const fullMetadata = fullJob.metadata && typeof fullJob.metadata === 'object' ? fullJob.metadata : {};
+        await MarketAvailabilityService.requireCapability({ countryCode: fullJob.country_code || fullMetadata.country_code,
+            marketCity: fullJob.market_city || fullMetadata.market_city || fullMetadata.pickup_city, zoneId: fullJob.zone_id || fullMetadata.zone_id,
+            capability: 'booking', endpoint: '/api/booking/negotiation/accept' });
 
         const agreedFare = Number(negotiation.amount);
         const fareUpdate = PricingService.applyAgreedFare(fullJob, agreedFare);
@@ -972,6 +1018,7 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
         return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
     } catch (error: any) {
         console.error('[BookingRoutes] negotiation accept error:', error);
+        if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
         return res.status(500).json({ error: error.message || 'Failed to accept negotiation' });
     }
 });
@@ -999,6 +1046,10 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
         if (jobError || !job) {
             return res.status(404).json({ error: 'Job not found' });
         }
+        const jobMetadata = job.metadata && typeof job.metadata === 'object' ? job.metadata : {};
+        await MarketAvailabilityService.requireCapability({ countryCode: job.country_code || jobMetadata.country_code,
+            marketCity: job.market_city || jobMetadata.market_city || jobMetadata.pickup_city, zoneId: job.zone_id || jobMetadata.zone_id,
+            capability: 'booking', endpoint: '/api/booking/negotiation/driver-accept' });
 
         if (!job.negotiation_mode_enabled) {
             return res.status(400).json({ error: 'Job is not in negotiation mode' });
@@ -1045,6 +1096,7 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
         return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
     } catch (error: any) {
         console.error('[BookingRoutes] driver-accept negotiation error:', error);
+        if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
         return res.status(500).json({ error: error.message || 'Failed to accept offer' });
     }
 });

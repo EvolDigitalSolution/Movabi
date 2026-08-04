@@ -56,7 +56,7 @@ import { AppConfigService } from '@core/services/config/app-config.service';
 import { AnalyticsService } from '@core/services/analytics/analytics.service';
 import { GeocodingService } from '@core/services/maps/geocoding.service';
 import { RoutingService } from '@core/services/maps/routing.service';
-import { FareCalculationService } from '@core/services/maps/fare-calculation.service';
+import { GlobalAiPricingQuoteService, GlobalAiPricingFareBreakdown } from '@core/services/pricing/global-ai-pricing-quote.service';
 import { BookingService } from '@core/services/booking/booking.service';
 
 import {
@@ -460,9 +460,12 @@ export class CreateJobPage implements AfterViewInit {
     private toastCtrl = inject(ToastController);
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
-    private fareCalculator = inject(FareCalculationService);
+    private pricingQuote = inject(GlobalAiPricingQuoteService);
     private bookingService = inject(BookingService);
     private destroyRef = inject(DestroyRef);
+    private authoritativeFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
+    private quoteReference: string | null = null;
+    private quoteExpiresAt: string | null = null;
 
     private pickupSearch$ = new Subject<string>();
     private dropoffSearch$ = new Subject<string>();
@@ -986,14 +989,20 @@ export class CreateJobPage implements AfterViewInit {
         void this.showToast('Could not calculate route. Using direct distance.', 'warning');
     }
 
-    calculatePrice(distanceKm: number, durationSec: number): void {
+    async calculatePrice(distanceKm: number, durationSec: number): Promise<void> {
         try {
             const helperCount = Math.max(0, Number(this.moveDetails.helperCount || 0));
-
-            const fare = this.fareCalculator.calculateFare({
-                serviceType: 'van-moving',
-                distanceMeters: distanceKm * 1000,
-                durationSeconds: durationSec,
+            const response = await this.pricingQuote.getQuote({
+                lat: Number(this.pickupLocation.latitude),
+                lng: Number(this.pickupLocation.longitude),
+                dropoffLat: Number(this.dropoffLocation.latitude),
+                dropoffLng: Number(this.dropoffLocation.longitude),
+                serviceSlug: 'van-moving',
+                distanceKm,
+                durationMinutes: durationSec / 60,
+                countryCode: this.config.currentCountry()?.code,
+                currencyCode: this.config.currentCountry()?.currency || this.config.currencyCode,
+                vehicleClass: this.moveDetails.vehicleClass,
                 moveDetails: {
                     size: this.moveDetails.size,
                     helperCount,
@@ -1002,10 +1011,12 @@ export class CreateJobPage implements AfterViewInit {
                     fragileItems: !!this.moveDetails.fragileItems
                 }
             });
-            const vehicleSurcharge = this.moveDetails.vehicleClass === 'large_van' ? 12 : 0;
+            this.authoritativeFareBreakdown = response.legacy.fareBreakdown;
+            this.quoteReference = response.quoteReference;
+            this.quoteExpiresAt = response.priceLockedUntil;
 
             this.estimate = {
-                estimated_price: Number(fare.total || 0) + vehicleSurcharge,
+                estimated_price: Number(response.legacy.totalPrice || 0),
                 estimated_distance: distanceKm,
                 estimated_duration: durationSec / 60,
                 pickup_lat: Number(this.pickupLocation.latitude),
@@ -1016,6 +1027,9 @@ export class CreateJobPage implements AfterViewInit {
         } catch (error) {
             console.error('Fare calculation error:', error);
             this.estimate = null;
+            this.authoritativeFareBreakdown = null;
+            this.quoteReference = null;
+            this.quoteExpiresAt = null;
         }
     }
 
@@ -1053,6 +1067,9 @@ export class CreateJobPage implements AfterViewInit {
         await loading.present();
 
         try {
+            if (!this.quoteReference || !this.quoteExpiresAt || Date.parse(this.quoteExpiresAt) <= Date.now() || !this.authoritativeFareBreakdown) {
+                throw new Error('Your fare quote expired. Please refresh the route before booking.');
+            }
             await this.calculateRouteAndPrice();
 
             const user = this.auth.currentUser();
@@ -1083,8 +1100,10 @@ export class CreateJobPage implements AfterViewInit {
                 city_id: this.selectedCityId || undefined,
                 metadata: {
                     service_type: 'van-moving',
+                    quote_id: this.quoteReference,
+                    quote_expires_at: this.quoteExpiresAt,
+                    fare_breakdown: this.authoritativeFareBreakdown,
                     service_vehicle_class: this.moveDetails.vehicleClass,
-                    service_option_surcharge: this.moveDetails.vehicleClass === 'large_van' ? 12 : 0,
                     move_details: {
                         ...this.moveDetails,
                         helperCount: Number(this.moveDetails.helperCount || 0),

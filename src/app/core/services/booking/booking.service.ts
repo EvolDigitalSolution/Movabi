@@ -367,35 +367,7 @@ export class BookingService {
             }
         };
 
-        let { data: job, error: bError } = await this.supabase
-            .from('jobs')
-            .insert(insertPayload)
-            .select('*, service_type:service_types(*)')
-            .single();
-
-        if (bError && this.isMissingColumnError(bError)) {
-            const safePayload = { ...insertPayload };
-            delete safePayload['distance_km'];
-            delete safePayload['estimated_distance_km'];
-            delete safePayload['distance_meters'];
-            delete safePayload['duration_seconds'];
-            delete safePayload['estimated_duration'];
-            delete safePayload['is_draft'];
-            delete safePayload['expires_at'];
-            delete safePayload['expired_at'];
-            delete safePayload['expiry_reason'];
-
-            const retry = await this.supabase
-                .from('jobs')
-                .insert(safePayload)
-                .select('*, service_type:service_types(*)')
-                .single();
-
-            job = retry.data;
-            bError = retry.error;
-        }
-
-        if (bError) throw bError;
+        const job = await firstValueFrom(this.http.post<Booking>(this.apiUrlService.getApiUrl('/api/booking/create'), { booking: insertPayload }));
 
         const detailsTable = this.getDetailsTable(serviceSlug);
         if (!detailsTable) {

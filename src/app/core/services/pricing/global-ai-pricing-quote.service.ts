@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { ApiUrlService } from '../api-url.service';
+import { MarketAvailabilityClientService } from '../market-availability.service';
 import { ServiceTypeSlug } from '../../models/maps/map-marker.model';
 
 export interface GlobalAiPricingQuoteRequest {
@@ -19,8 +20,13 @@ export interface GlobalAiPricingQuoteRequest {
     vehicleClass?: string | null;
     passengerCount?: number;
     packageSize?: string | null;
+    deliveryUrgency?: string | null;
     itemCount?: number;
     errandMode?: string | null;
+    taskMinutes?: number;
+    scheduledTime?: string | null;
+    airportOption?: string | null;
+    serviceSubtype?: string | null;
     budget?: number;
     moveDetails?: {
         size: 'small' | 'medium' | 'large' | 'full-house';
@@ -61,6 +67,7 @@ export interface GlobalAiPricingFareBreakdown {
 }
 
 export interface GlobalAiPricingQuoteResponse {
+    quoteReference: string;
     market: { countryCode: string; currency: string; city: string | null; zoneId: string | null };
     price: Record<string, number>;
     ai: Record<string, unknown>;
@@ -87,10 +94,12 @@ export interface GlobalAiPricingQuoteResponse {
 export class GlobalAiPricingQuoteService {
     private http = inject(HttpClient);
     private apiUrlService = inject(ApiUrlService);
+    private marketAvailability = inject(MarketAvailabilityClientService);
     private pending = new Map<string, Promise<GlobalAiPricingQuoteResponse>>();
     private recent = new Map<string, { value: GlobalAiPricingQuoteResponse; expiresAt: number }>();
 
     async getQuote(request: GlobalAiPricingQuoteRequest): Promise<GlobalAiPricingQuoteResponse> {
+        await this.marketAvailability.resolve({ countryCode: request.countryCode, marketCity: request.cityName, zoneId: request.zoneId, capability: 'quote' });
         const key = this.requestKey(request);
         const cached = this.recent.get(key);
         if (cached && cached.expiresAt > Date.now()) return cached.value;
@@ -119,9 +128,12 @@ export class GlobalAiPricingQuoteService {
             request.countryCode || null, request.cityName || null, request.zoneId || null,
             request.serviceSlug, request.vehicleClass || null,
             request.distanceKm, request.durationMinutes, request.passengerCount ?? null,
-            request.packageSize || null, request.errandMode || null, request.itemCount ?? null,
+            request.packageSize || null, request.deliveryUrgency || null,
+            request.errandMode || null, request.itemCount ?? null, request.taskMinutes ?? null,
+            request.currencyCode || null,
             move?.size || null, move?.helperCount ?? null, move?.stairsInvolved ?? null,
-            move?.packingAssistance ?? null, move?.fragileItems ?? null
+            move?.packingAssistance ?? null, move?.fragileItems ?? null,
+            request.scheduledTime || null, request.airportOption || null, request.serviceSubtype || null
         ]);
     }
 }

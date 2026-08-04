@@ -1,9 +1,10 @@
 import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
     Job,
     JobStatus,
-    JobEstimate,
     DispatchCandidate,
     City,
     JobEventType
@@ -19,25 +20,7 @@ export class JobService {
     private supabase = inject(SupabaseService);
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
-
-    async calculatePrice(
-        pickup: { lat: number; lng: number },
-        dropoff: { lat: number; lng: number }
-    ): Promise<JobEstimate> {
-        const url = this.apiUrlService.getApiUrl('/api/logistics/calculate-price');
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pickup, dropoff })
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to calculate price');
-        }
-
-        return await response.json() as JobEstimate;
-    }
+    private http = inject(HttpClient);
 
     async suggestDrivers(
         lat: number,
@@ -65,18 +48,7 @@ export class JobService {
             scheduled_time: job.scheduled_time || new Date().toISOString()
         });
 
-        const { data, error } = await this.supabase
-            .from('jobs')
-            .insert(safeJob)
-            .select('*')
-            .single();
-
-        if (error) {
-            console.error('Error creating job:', error);
-            throw error;
-        }
-
-        return data as Job;
+        return await firstValueFrom(this.http.post<Job>(this.apiUrlService.getApiUrl('/api/booking/create'), { booking: safeJob }));
     }
     async getAvailableJobs(): Promise<Job[]> {
         const { data, error } = await this.supabase

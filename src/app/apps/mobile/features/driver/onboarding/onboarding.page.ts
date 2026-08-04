@@ -42,6 +42,7 @@ import { ProfileService } from '@core/services/profile/profile.service';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
+import { MarketAvailabilityClientService } from '@core/services/market-availability.service';
 import { DriverProfile, Vehicle } from '@shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '@shared/ui';
 import {
@@ -701,6 +702,7 @@ export class OnboardingPage implements OnInit {
     private toastCtrl = inject(ToastController);
     private route = inject(ActivatedRoute);
     public router = inject(Router);
+    private marketAvailability = inject(MarketAvailabilityClientService);
 
     private readonly draftKey = 'driver_onboarding_draft_v2';
     private readonly maxUploadBytes = 8 * 1024 * 1024;
@@ -906,6 +908,15 @@ export class OnboardingPage implements OnInit {
     }
 
     async ngOnInit() {
+        try {
+            const currentProfile = this.profile() as any;
+            await this.marketAvailability.requireDriverRegistration({countryCode:currentProfile?.country_code||this.appConfig.currentCountry()?.code,
+                marketCity:currentProfile?.market_city||currentProfile?.city||null,zoneId:currentProfile?.zone_id||null});
+        } catch (error) {
+            await this.showToast(error instanceof Error?error.message:'Driver onboarding is not available in this area yet.','warning');
+            await this.router.navigate(['/driver'],{replaceUrl:true});
+            return;
+        }
         this.restoreDraft();
 
         await this.driverService.fetchStripeAccount();
@@ -1764,6 +1775,9 @@ export class OnboardingPage implements OnInit {
         await loading.present();
 
         try {
+            const registrationProfile = this.profile() as any;
+            await this.marketAvailability.requireDriverRegistration({countryCode:registrationProfile?.country_code||this.appConfig.currentCountry()?.code,
+                marketCity:registrationProfile?.market_city||registrationProfile?.city||null,zoneId:registrationProfile?.zone_id||null});
             const raw = this.onboardingForm.getRawValue();
             const latestVehicle = await this.driverService.fetchVehicle();
             console.log('[DriverOnboarding] Validation vehicle:', latestVehicle);
