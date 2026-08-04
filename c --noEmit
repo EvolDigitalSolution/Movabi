@@ -1,0 +1,9 @@
+M	server/gb-ride-launch-calibration-migration.txt
+M	server/services/market-pricing.service.ts
+M	server/services/marketplace-config.service.ts
+M	server/services/pricing.service.ts
+M	server/types/market-pricing.types.ts
+M	src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts
+M	src/app/apps/mobile/features/customer/van-moving/create-job.page.ts
+M	src/app/core/services/pricing/global-ai-pricing-quote.service.ts
+M	src/testing/market-pricing.spec.ts

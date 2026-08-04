@@ -1,0 +1,281 @@
+-- GB Errand/Shop pricing calibration
+-- Purpose:
+--   - Keep Errand above Ride and Delivery because it includes handling,
+--     shopping, waiting and customer communication.
+--   - Update only the GB country-wide fallback rows.
+--   - Preserve city, zone and vehicle-specific pricing.
+--   - Keep live market pricing disabled.
+--
+-- Safe to run repeatedly.
+
+BEGIN;
+
+-- Prevent concurrent edits to the two configuration tables during migration.
+LOCK TABLE public.pricing_config
+    IN SHARE ROW EXCLUSIVE MODE;
+
+LOCK TABLE public.market_pricing_strategies
+    IN SHARE ROW EXCLUSIVE MODE;
+
+-- ---------------------------------------------------------------------------
+-- 1. Safety gates
+-- ---------------------------------------------------------------------------
+
+UPDATE public.marketplace_settings
+SET value = 'false'::jsonb,
+    updated_at = now()
+WHERE tenant_id IS NULL
+  AND key = 'market_pricing_enabled';
+
+UPDATE public.marketplace_settings
+SET value = 'true'::jsonb,
+    updated_at = now()
+WHERE tenant_id IS NULL
+  AND key = 'market_pricing_shadow_mode';
+
+UPDATE public.marketplace_settings
+SET value = 'true'::jsonb,
+    updated_at = now()
+WHERE tenant_id IS NULL
+  AND key = 'market_pricing_audit_enabled';
+
+-- Confirm the required safety settings exist.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.marketplace_settings
+        WHERE tenant_id IS NULL
+          AND key = 'market_pricing_enabled'
+          AND value = 'false'::jsonb
+    ) THEN
+        RAISE EXCEPTION
+            'Safety check failed: market_pricing_enabled is not false';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.marketplace_settings
+        WHERE tenant_id IS NULL
+          AND key = 'market_pricing_shadow_mode'
+          AND value = 'true'::jsonb
+    ) THEN
+        RAISE EXCEPTION
+            'Safety check failed: market_pricing_shadow_mode is not true';
+    END IF;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2. Verify the expected country-wide GB Errand pricing row exists
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+    matching_rows integer;
+BEGIN
+    SELECT COUNT(*)
+    INTO matching_rows
+    FROM public.pricing_config
+    WHERE service_type = 'errand'
+      AND COALESCE(NULLIF(BTRIM(country_code), ''), 'GB') = 'GB'
+      AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+      AND NULLIF(BTRIM(COALESCE(zone_id::text, '')), '') IS NULL;
+
+    IF matching_rows = 0 THEN
+        RAISE EXCEPTION
+            'No country-wide GB Errand row exists in public.pricing_config';
+    END IF;
+
+    IF matching_rows > 1 THEN
+        RAISE EXCEPTION
+            'More than one country-wide GB Errand pricing row exists: %',
+            matching_rows;
+    END IF;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Update the authoritative GB Errand base tariff
+-- ---------------------------------------------------------------------------
+
+UPDATE public.pricing_config
+SET
+    base_fare = 2.75,
+    per_km = 0.65,
+    per_min = 0.08,
+    service_fee = 0.25,
+    minimum_fare = 4.50,
+
+    -- Customer gets the first 10 minutes of task/shopping time included.
+    included_task_minutes = 10.00,
+
+    -- Additional shopping/task time after the included allowance.
+    per_additional_task_minute = 0.20,
+
+    updated_at = now()
+WHERE service_type = 'errand'
+  AND COALESCE(NULLIF(BTRIM(country_code), ''), 'GB') = 'GB'
+  AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+  AND NULLIF(BTRIM(COALESCE(zone_id::text, '')), '') IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 4. Verify the country-wide GB Errand market strategy exists
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+    matching_rows integer;
+BEGIN
+    SELECT COUNT(*)
+    INTO matching_rows
+    FROM public.market_pricing_strategies
+    WHERE country_code = 'GB'
+      AND service_type = 'errand'
+      AND market_city IS NULL
+      AND zone_id IS NULL
+      AND vehicle_class IS NULL;
+
+    IF matching_rows = 0 THEN
+        RAISE EXCEPTION
+            'No country-wide GB Errand strategy exists';
+    END IF;
+
+    IF matching_rows > 1 THEN
+        RAISE EXCEPTION
+            'Duplicate country-wide GB Errand strategies detected: %',
+            matching_rows;
+    END IF;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 5. Update Errand sustainability and market controls
+-- ---------------------------------------------------------------------------
+
+UPDATE public.market_pricing_strategies
+SET
+    minimum_launch_target_fare = 4.50,
+    minimum_driver_payout = 4.00,
+    minimum_driver_hourly_rate = 18.00,
+    minimum_driver_per_km = 0.65,
+    minimum_platform_revenue = 0.50,
+    commission_percent = 10.00,
+    normal_demand_multiplier = 1.00,
+    busy_multiplier = 1.20,
+    maximum_surge_multiplier = 2.00,
+    target_difference_percent = 8.00,
+    maximum_customer_discount_percent = 15.00,
+    maximum_market_adjustment_percent = 15.00,
+    currency = 'GBP',
+    enabled = TRUE,
+    updated_at = now()
+WHERE country_code = 'GB'
+  AND service_type = 'errand'
+  AND market_city IS NULL
+  AND zone_id IS NULL
+  AND vehicle_class IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 6. Final migration assertions
+-- ---------------------------------------------------------------------------
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.pricing_config
+        WHERE service_type = 'errand'
+          AND COALESCE(NULLIF(BTRIM(country_code), ''), 'GB') = 'GB'
+          AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+          AND NULLIF(BTRIM(COALESCE(zone_id::text, '')), '') IS NULL
+          AND base_fare = 2.75
+          AND per_km = 0.65
+          AND per_min = 0.08
+          AND service_fee = 0.25
+          AND minimum_fare = 4.50
+          AND included_task_minutes = 10.00
+          AND per_additional_task_minute = 0.20
+    ) THEN
+        RAISE EXCEPTION
+            'GB Errand pricing_config verification failed';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.market_pricing_strategies
+        WHERE country_code = 'GB'
+          AND service_type = 'errand'
+          AND market_city IS NULL
+          AND zone_id IS NULL
+          AND vehicle_class IS NULL
+          AND minimum_launch_target_fare = 4.50
+          AND minimum_driver_payout = 4.00
+          AND minimum_driver_hourly_rate = 18.00
+          AND minimum_driver_per_km = 0.65
+          AND minimum_platform_revenue = 0.50
+          AND commission_percent = 10.00
+          AND normal_demand_multiplier = 1.00
+          AND busy_multiplier = 1.20
+          AND maximum_surge_multiplier = 2.00
+          AND enabled = TRUE
+    ) THEN
+        RAISE EXCEPTION
+            'GB Errand market strategy verification failed';
+    END IF;
+END
+$$;
+
+COMMIT;
+
+-- ---------------------------------------------------------------------------
+-- 7. Display the final values
+-- ---------------------------------------------------------------------------
+
+SELECT
+    service_type,
+    country_code,
+    currency_code,
+    base_fare,
+    per_km,
+    per_min,
+    service_fee,
+    minimum_fare,
+    included_task_minutes,
+    per_additional_task_minute
+FROM public.pricing_config
+WHERE service_type = 'errand'
+  AND COALESCE(NULLIF(BTRIM(country_code), ''), 'GB') = 'GB'
+  AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+  AND NULLIF(BTRIM(COALESCE(zone_id::text, '')), '') IS NULL;
+
+SELECT
+    country_code,
+    service_type,
+    currency,
+    minimum_launch_target_fare,
+    minimum_driver_payout,
+    minimum_driver_hourly_rate,
+    minimum_driver_per_km,
+    minimum_platform_revenue,
+    commission_percent,
+    normal_demand_multiplier,
+    busy_multiplier,
+    maximum_surge_multiplier,
+    enabled
+FROM public.market_pricing_strategies
+WHERE country_code = 'GB'
+  AND service_type = 'errand'
+  AND market_city IS NULL
+  AND zone_id IS NULL
+  AND vehicle_class IS NULL;
+
+SELECT key, value
+FROM public.marketplace_settings
+WHERE tenant_id IS NULL
+  AND key IN (
+      'market_pricing_enabled',
+      'market_pricing_shadow_mode',
+      'market_pricing_audit_enabled'
+  )
+ORDER BY key;
