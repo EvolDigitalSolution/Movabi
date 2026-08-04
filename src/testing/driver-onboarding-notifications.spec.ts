@@ -10,6 +10,9 @@ const store = read('src/app/core/services/driver/driver-onboarding-status.servic
 const onboarding = read('src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts');
 const settings = read('src/app/apps/mobile/features/driver/settings.page.ts');
 const connect = read('server/routes/connect.routes.ts');
+const connectClient = read('src/app/core/services/stripe/connect.service.ts');
+const driverService = read('src/app/core/services/driver/driver.service.ts');
+const dashboard = read('src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts');
 
 describe('driver onboarding production flow', () => {
   it('supports the required mutation events', () => {
@@ -105,7 +108,7 @@ describe('driver onboarding production flow', () => {
     expect(settings).toContain('[disabled]="onboardingStatus.loading()"');
   });
   it('pull-to-refresh refreshes all three Settings sections', () => {
-    expect(settings).toContain('async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData()');
+    expect(settings).toContain('async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData(true)');
   });
   it('writes safe structured status request, success and failure logs', () => {
     expect(route).toContain("console.info('[DriverOnboarding] status request'");
@@ -113,5 +116,32 @@ describe('driver onboarding production flow', () => {
     expect(route).toContain("console.error('[DriverOnboarding] status failed'");
     expect(route).toContain('outstandingRequestCount: outstandingRequests.length');
     expect(route).toContain('if (vehicleError) throw');
+  });
+
+  it('makes one shared payout-settings call on each Driver Settings entry', () => {
+    const refreshPage = settings.slice(settings.indexOf('private async refreshPageData'), settings.indexOf('async refreshOnboardingStatus'));
+    expect(refreshPage.match(/fetchStripeAccount\(/g)).toHaveLength(1);
+    expect(refreshPage).toContain('Promise.allSettled');
+  });
+  it('coalesces concurrent payout-settings callers and briefly caches success', () => {
+    expect(connectClient).toContain('if (this.payoutSettingsInFlight) return this.payoutSettingsInFlight');
+    expect(connectClient).toContain('payoutSettingsCacheMs = 10_000');
+    expect(connectClient).toContain('this.payoutSettingsInFlight = request');
+    expect(driverService).toContain('getPayoutSettings(force)');
+  });
+  it('uses one forced payout-settings request for explicit Settings refresh', () => {
+    const refresh = settings.slice(settings.indexOf('async refreshStripe()'), settings.indexOf('async onCountryChange'));
+    expect(refresh.match(/fetchStripeAccount\(true\)/g)).toHaveLength(1);
+    expect(refresh).not.toContain('refreshStripeStatus');
+  });
+  it('uses one forced request when returning from Stripe Connect', () => {
+    const stripeReturn = onboarding.slice(onboarding.indexOf('async handleStripeReturn()'), onboarding.indexOf('async upload(type'));
+    expect(stripeReturn.match(/fetchStripeAccount\(true\)/g)).toHaveLength(1);
+    expect(stripeReturn).not.toContain('refreshStripeStatus');
+    expect(dashboard).toContain('await this.refreshStripeUiStateFromDb(true)');
+  });
+  it('coalesces repeated forced taps while a request is pending', () => {
+    expect(connectClient.indexOf('if (this.payoutSettingsInFlight)')).toBeLessThan(connectClient.indexOf('if (!force && this.payoutSettingsCache'));
+    expect(settings).toContain('if (this.loadingStripe()) return');
   });
 });

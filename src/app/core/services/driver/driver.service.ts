@@ -1040,12 +1040,12 @@ export class DriverService {
         return data.session?.access_token || null;
     }
 
-    async fetchStripeAccount() {
+    async fetchStripeAccount(force = false) {
         const user = this.auth.currentUser();
         if (!user) return null;
 
         try {
-            const settings = await this.connectService.getPayoutSettings();
+            const settings = await this.connectService.getPayoutSettings(force);
 
             if (!settings.stripeAccountId) {
                 this.stripeAccount.set(null);

@@ -1231,7 +1231,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
         this.loadDismissedJobs();
         await this.marketplaceConfig.loadSettings();
-        await this.refreshStripeUiStateFromDb();
+        if (!this.route.snapshot.queryParamMap.get('stripe')) await this.refreshStripeUiStateFromDb();
         await this.ensureMovabiPayVirtualCard();
         await this.loadAvailability();
         await this.handleStripeReturn();
@@ -2300,7 +2300,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }, 5000);
     }
 
-    private async refreshStripeUiStateFromDb() {
+    private async refreshStripeUiStateFromDb(force = false) {
         const user = this.auth.currentUser();
 
         if (!user?.id) {
@@ -2309,7 +2309,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         try {
-            const settings = await this.connectService.getPayoutSettings();
+            const settings = await this.connectService.getPayoutSettings(force);
 
             if (!settings.stripeAccountId) {
                 this.resetStripeUiState();
@@ -2392,7 +2392,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!stripe) return;
 
         try {
-            await this.refreshStripeUiStateFromDb();
+            await this.refreshStripeUiStateFromDb(true);
 
             if (stripe === 'success') {
                 this.showToast(

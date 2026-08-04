@@ -934,7 +934,7 @@ export class OnboardingPage implements OnInit {
         }
         this.restoreDraft();
 
-        await this.driverService.fetchStripeAccount();
+        if (!this.route.snapshot.queryParamMap.get('stripe')) await this.driverService.fetchStripeAccount();
         await this.driverService.fetchVehicle();
         this.loadExistingData();
 
@@ -1641,14 +1641,7 @@ export class OnboardingPage implements OnInit {
         if (!stripe) return;
 
         try {
-            await this.driverService.fetchStripeAccount();
-
-            const accountId = this.driverService.stripeAccount()?.stripe_account_id;
-
-            if (accountId) {
-                await this.driverService.refreshStripeStatus(accountId, true);
-                await this.driverService.fetchStripeAccount();
-            }
+            await this.driverService.fetchStripeAccount(true);
 
             if (stripe === 'success') {
                 this.stripeMessageType.set(this.isStripeReady() ? 'success' : 'warning');

@@ -42,9 +42,12 @@ export class ConnectService {
     private supabase = inject(SupabaseService);
 
     private apiUrl = this.apiUrlService.getApiUrl('/api/connect');
+    private payoutSettingsInFlight: Promise<PayoutSettingsResponse> | null = null;
+    private payoutSettingsCache: { value: PayoutSettingsResponse; expiresAt: number } | null = null;
+    private readonly payoutSettingsCacheMs = 10_000;
 
     async createAccount(userId: string, email: string, tenantId?: string | null) {
-        return firstValueFrom(
+        const result = await firstValueFrom(
             this.http.post<{ stripe_account_id: string; status?: StripeConnectStatusResponse }>(
                 `${this.apiUrl}/create-account`,
                 {
@@ -57,6 +60,8 @@ export class ConnectService {
                 }
             )
         );
+        this.invalidatePayoutSettingsCache();
+        return result;
     }
 
     async getOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string, platform = this.getConnectPlatform()) {
@@ -116,7 +121,7 @@ export class ConnectService {
     }
 
     async refreshAccountStatus(accountId: string, userId?: string) {
-        return firstValueFrom(
+        const result = await firstValueFrom(
             this.http.post<StripeConnectStatusResponse>(
                 `${this.apiUrl}/refresh-account-status`,
                 {
@@ -128,18 +133,32 @@ export class ConnectService {
                 }
             )
         );
+        this.invalidatePayoutSettingsCache();
+        return result;
     }
 
-    async getPayoutSettings() {
-        return firstValueFrom(
+    getPayoutSettings(force = false): Promise<PayoutSettingsResponse> {
+        if (this.payoutSettingsInFlight) return this.payoutSettingsInFlight;
+        if (!force && this.payoutSettingsCache && this.payoutSettingsCache.expiresAt > Date.now()) {
+            return Promise.resolve(this.payoutSettingsCache.value);
+        }
+
+        const request = (async () => firstValueFrom(
             this.http.get<PayoutSettingsResponse>(
                 `${this.apiUrl}/payout-settings`,
-                {
-                    headers: await this.getAuthHeaders()
-                }
+                { headers: await this.getAuthHeaders() }
             )
-        );
+        ))().then(value => {
+            this.payoutSettingsCache = { value, expiresAt: Date.now() + this.payoutSettingsCacheMs };
+            return value;
+        }).finally(() => {
+            this.payoutSettingsInFlight = null;
+        });
+        this.payoutSettingsInFlight = request;
+        return request;
     }
+
+    invalidatePayoutSettingsCache(): void { this.payoutSettingsCache = null; }
 
     private async getAuthHeaders(): Promise<HttpHeaders> {
         const token = await this.getAccessToken();

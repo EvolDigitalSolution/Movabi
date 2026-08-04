@@ -572,13 +572,13 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async ionViewWillEnter(): Promise<void> {
-        await this.refreshPageData();
+        await this.refreshPageData(false);
     }
 
-    private async refreshPageData(): Promise<void> {
+    private async refreshPageData(forceStripe: boolean): Promise<void> {
         const results = await Promise.allSettled([
             this.driverService.fetchVehicle(),
-            this.driverService.fetchStripeAccount(),
+            this.driverService.fetchStripeAccount(forceStripe),
             this.onboardingStatus.refresh()
         ]);
         const labels = ['vehicle', 'stripe', 'onboarding-status'] as const;
@@ -589,7 +589,7 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
-    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData(); await (event.target as HTMLIonRefresherElement).complete(); }
+    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData(true); await (event.target as HTMLIonRefresherElement).complete(); }
 
     isVerified(): boolean {
         const profile = this.profile() as DriverProfile | null;
@@ -841,20 +841,12 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async refreshStripe() {
-        const accountId = this.driverService.stripeAccount()?.stripe_account_id;
-
-        if (!accountId) {
-            await this.showToast('Stripe account not found.', 'warning');
-            return;
-        }
-
         if (this.loadingStripe()) return;
 
         this.loadingStripe.set(true);
 
         try {
-            await this.driverService.refreshStripeStatus(accountId, true);
-            await this.driverService.fetchStripeAccount();
+            await this.driverService.fetchStripeAccount(true);
             await this.showToast('Stripe status refreshed.', 'success');
         } catch {
             await this.showToast('Could not refresh Stripe status.', 'danger');
