@@ -2,6 +2,7 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
+import { DriverRequirementService } from '../services/driver-requirement.service';
 import {
   getAdminReviewRequirements,
   getBlockingRequirements,
@@ -169,6 +170,12 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       selectedServices
     };
     const requirements = getDriverRequirements(requirementsInput);
+    const authoritativeResolution = DriverRequirementService.resolve({
+      profile: driverProfileWithVerificationItems,
+      vehicle: vehicle || null,
+      authEmailConfirmed: !!authUser?.user?.email_confirmed_at,
+      countryCode: profile.country_code || profile.country || vehicle?.country_code
+    });
     const blockingRequirements = getBlockingRequirements(requirementsInput);
     const adminReviewRequirements = getAdminReviewRequirements(requirementsInput);
     const blockers = blockingRequirements.map((requirement) => requirement.message);
@@ -205,6 +212,7 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       blockers,
       requirements,
       adminReviewRequirements,
+      authoritativeResolution,
       checks: {
         vehicle: {
           status: registrationRequired ? (vehiclePlate ? 'uploaded' : 'missing') : 'not_required',

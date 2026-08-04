@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../services/supabase.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
+import { DriverRequirementService } from '../services/driver-requirement.service';
 
 const router = Router();
 
@@ -30,29 +31,21 @@ router.get('/status', async (req, res) => {
     if (!profile) throw Object.assign(new Error('Driver profile not found.'), { code: 'PROFILE_NOT_FOUND', httpStatus: 404 });
     const { data: vehicle, error: vehicleError } = await supabaseAdmin.from('vehicles').select('*').eq('driver_id', driverId).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (vehicleError) throw Object.assign(new Error('Driver vehicle lookup failed.'), { code: vehicleError.code });
+    const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(driverId);
+    if (authUserError) throw Object.assign(new Error('Driver authentication lookup failed.'), { code: authUserError.code });
+    const { data: requestRows, error: requestError } = await supabaseAdmin.from('driver_onboarding_requests').select('id,requirement_code,item,public_message,status,sent_at,resolved_at,updated_at').eq('driver_id',driverId).order('created_at',{ascending:false});
+    if (requestError) throw Object.assign(new Error('Driver Admin-request lookup failed.'), { code: requestError.code });
     const registrationAllowed = true;
     if (!(profile.role === 'driver' && profile.onboarding_completed)) {
       await MarketAvailabilityService.requireCapability({ countryCode: profile.country_code, marketCity: profile.market_city || profile.city, zoneId: profile.zone_id, capability: 'driver_registration', endpoint: '/api/driver-onboarding/status' });
     }
-    const overallStatus = profile.is_verified === true || profile.verification_status === 'approved' ? 'approved'
-      : profile.verification_status === 'action_required' || profile.driver_review_status === 'action_required' ? 'rejected'
-      : profile.onboarding_completed ? 'pending' : 'draft';
-    const blockers = Array.isArray(profile.driver_review_blockers) ? profile.driver_review_blockers
-      : Array.isArray(profile.verification_blockers) ? profile.verification_blockers : [];
-    const outstandingRequests = blockers.map((item: unknown, index: number) => ({
-      id: `${driverId}:${index}`, item: String(item), status: overallStatus === 'rejected' ? 'rejected' : 'pending',
-      adminMessage: String(profile.driver_review_notes || profile.verification_notes || ''),
-      submittedAt: profile.driver_review_sent_at || profile.updated_at || null,
-      updatedAt: profile.updated_at || null,
-      nextAction: overallStatus === 'rejected' ? 'Update this item and resubmit it for review.' : 'Wait for Admin review.'
-    }));
-    if (overallStatus === 'approved' && !outstandingRequests.length) outstandingRequests.push({
-      id: `${driverId}:approved`, item: 'Driver onboarding', status: 'approved', adminMessage: '',
-      submittedAt: profile.updated_at || null, updatedAt: profile.updated_at || null, nextAction: 'No action required.'
-    });
+    const adminRequests=(requestRows||[]).map(row=>({id:row.id,requirementCode:row.requirement_code,item:row.item,status:row.status,publicMessage:row.public_message,submittedAt:row.sent_at,updatedAt:row.updated_at,resolvedAt:row.resolved_at,nextAction:row.status==='approved'?'No action required.':'Correct this item and resubmit it for review.'}));
+    const resolution=DriverRequirementService.resolve({profile,vehicle:vehicle||null,authEmailConfirmed:!!authUser.user?.email_confirmed_at,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
+    const outstandingRequests=resolution.adminRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
     const stripeStatus = profile.stripe_connect_status || 'not_started';
-    console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
-    return res.json({ driverId, registrationAllowed, overallStatus, profile, vehicle: vehicle || null, outstandingRequests,
+    console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
+    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, vehicle: vehicle || null, outstandingRequests,
+      automaticRequirements:resolution.automaticRequirements,adminRequests:resolution.adminRequests,warnings:resolution.warnings,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
   } catch (error: unknown) {
@@ -83,6 +76,22 @@ router.post('/events', async (req, res) => {
     console.warn('[driver-onboarding] notification enqueue failed after persisted mutation:', error);
     return res.status(202).json({ accepted: true, notificationQueued: false });
   }
+});
+
+router.post('/validate-submission', async (req,res)=>{
+  const driverId=await authenticatedDriver(req,res);if(!driverId)return;
+  try{
+    const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile)throw profileError||new Error('Driver profile not found.');
+    const{data:vehicle,error:vehicleError}=await supabaseAdmin.from('vehicles').select('*').eq('driver_id',driverId).order('created_at',{ascending:false}).limit(1).maybeSingle();if(vehicleError)throw vehicleError;
+    const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
+    const profileInput={...profile,...(req.body?.profile||{})};const vehicleInput={...(vehicle||{}),...(req.body?.vehicle||{})};
+    const resolution=DriverRequirementService.resolve({profile:profileInput,vehicle:vehicleInput,authEmailConfirmed:!!auth.user?.email_confirmed_at,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
+    const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
+    const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
+    if(auditError)throw auditError;
+    if(blockers.length)return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});
+    return res.json({valid:true,resolution});
+  }catch(error:unknown){const message=error instanceof Error?error.message:'Unable to validate driver submission.';return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});}
 });
 
 export default router;

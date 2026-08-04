@@ -10,11 +10,17 @@ export interface DriverOutstandingRequest {
     submittedAt: string | null; updatedAt: string | null; nextAction: string;
 }
 export interface DriverOnboardingStatus {
-    driverId: string; registrationAllowed: boolean; overallStatus: 'draft' | 'pending' | 'approved' | 'rejected';
+    driverId: string; registrationAllowed: boolean; overallStatus: 'not_started'|'incomplete'|'ready_to_submit'|'under_review'|'action_required'|'approved'|'paused';
     profile: Record<string, unknown>; vehicle: Record<string, unknown> | null;
     outstandingRequests: DriverOutstandingRequest[]; submissionHistory: unknown[];
     stripeStatus: string; updatedAt: string | null;
+    automaticRequirements: DriverAutomaticRequirement[]; adminRequests: DriverAdminRequest[]; warnings: DriverAutomaticRequirement[];
+    progress: { completed: number; total: number }; onlineEligibility: { allowed: boolean; reasons: string[] };
+    selectedServices: Array<'ride'|'delivery'|'errand'|'van-moving'>; vehicleType: string|null;
+    age: { eligible: boolean; years: number|null; minimum: number; reason: string|null };
 }
+export interface DriverAutomaticRequirement { code:string;label:string;category:'basic'|'services'|'vehicle'|'documents'|'agreement'|'licensing';status:string;required:boolean;completed:boolean;blockingForSubmission:boolean;blockingForOnline:boolean;needsAdminReview:boolean;reason:string;services:string[]; }
+export interface DriverAdminRequest { id:string;requirementCode:string;item:string;status:'pending'|'rejected'|'approved';publicMessage:string;submittedAt:string|null;updatedAt:string|null;resolvedAt:string|null;nextAction:string; }
 export type DriverOnboardingEventType =
     | 'driver_registration_started' | 'driver_onboarding_submitted' | 'driver_vehicle_submitted'
     | 'driver_vehicle_updated' | 'driver_document_uploaded' | 'driver_document_replaced'
@@ -51,7 +57,7 @@ export class DriverOnboardingStatusService {
 
     async recordRegistrationStartOnce(): Promise<void> {
         const status = this.state();
-        if (!status || status.overallStatus !== 'draft' || this.registrationStartRecorded) return;
+        if (!status || status.overallStatus !== 'not_started' || this.registrationStartRecorded) return;
         this.registrationStartRecorded = true;
         try {
             await this.authenticatedPost('/api/driver-onboarding/events', {
@@ -63,6 +69,8 @@ export class DriverOnboardingStatusService {
             console.warn('[DriverOnboardingStatus] Registration-start notification could not be queued.', error);
         }
     }
+
+    async validateSubmission(profile:Record<string,unknown>,vehicle:Record<string,unknown>):Promise<void>{await this.authenticatedPost('/api/driver-onboarding/validate-submission',{profile,vehicle},true);}
 
     private async authenticatedGet(allowRefresh: boolean): Promise<DriverOnboardingStatus> {
         const token = await this.accessToken();

@@ -245,7 +245,7 @@ type AdminDriver = DriverProfile & {
                       <ion-icon name="checkmark-circle-outline" class="text-lg"></ion-icon>
                     </button>
 
-                    <button type="button" (click)="manualApproveDriver(driver)" class="action-btn hover:bg-green-600 hover:text-white" title="Manual Approval">
+                    <button type="button" (click)="manualApproveDriver(driver)" class="action-btn hover:bg-green-600 hover:text-white" title="Review and Approve">
                       <ion-icon name="checkmark-done-outline" class="text-lg"></ion-icon>
                     </button>
 
@@ -326,7 +326,7 @@ type AdminDriver = DriverProfile & {
               </div>
 
               <div class="detail-card">
-                <p class="detail-label">Manual Approval</p>
+                <p class="detail-label">Review outcome</p>
                 <app-badge [variant]="selectedDriver()?.testing_approval_override ? 'success' : 'secondary'">
                   {{ selectedDriver()?.testing_approval_override ? 'USED' : 'NOT USED' }}
                 </app-badge>
@@ -524,7 +524,7 @@ type AdminDriver = DriverProfile & {
 
             @if (selectedDriver()?.manual_verification_notes) {
               <div class="detail-card">
-                <p class="detail-label">Manual Approval Notes</p>
+                <p class="detail-label">Review notes</p>
                 <p class="text-sm text-slate-700 font-medium mt-2">
                   {{ selectedDriver()?.manual_verification_notes }}
                 </p>
@@ -537,7 +537,7 @@ type AdminDriver = DriverProfile & {
               </app-button>
 
               <app-button class="flex-1" (clicked)="manualApproveDriver(selectedDriver())">
-                Manual Approval
+                Review and Approve
               </app-button>
             </div>
           </div>
@@ -1427,7 +1427,7 @@ export class DriverListComponent implements OnInit {
             : 'This approves the driver manually while external verification APIs are disabled.';
 
         this.confirmModal.set({
-            title: 'Manual Approval',
+            title: 'Review and Approve',
             subtitle: this.getDriverName(driver),
             message: blockerMessage,
             notes: 'Approved manually. External verification APIs are not enabled yet.',
