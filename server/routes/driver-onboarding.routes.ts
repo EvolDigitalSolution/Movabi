@@ -90,7 +90,8 @@ router.post('/events', async (req, res) => {
 
 router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
   const residentialAddress=parseResidentialAddress(req.body);console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent:true});
-  const{data,error}=await supabaseAdmin.from('profiles').update({current_address:residentialAddress,updated_at:new Date().toISOString()}).eq('id',driverId).select('*').single();if(error||!data)throw error||new Error('Profile save returned no record.');
+  const body=req.body||{};const profileUpdates={current_address:residentialAddress,full_name:String(body.fullName||'').trim()||null,phone:String(body.phone||'').trim()||null,date_of_birth:body.dateOfBirth||null,accepted_driver_agreement_at:body.agreementAccepted===true?new Date().toISOString():null,bicycle_declaration:body.bicycleDeclaration===true,delivery_equipment_confirmed:body.deliveryEquipmentConfirmed===true,updated_at:new Date().toISOString()};
+  const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select('*').single();if(error||!data)throw error||new Error('Profile save returned no record.');
   const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(!profile.residentialAddress)throw new Error('Residential address was not persisted.');
   console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent:true});return res.json({profile});
  }catch(error:unknown){const details=error as Error&{code?:string};const message=details.message||'Unable to save residential address.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message});return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
@@ -105,7 +106,7 @@ router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(
   return res.json({vehicle:mapDriverVehicleRow(data as DriverVehicleRow)});
 }catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};const validation=/required|valid vehicle year/i.test(details.message);return res.status(details.httpStatus||(validation?422:500)).json({error:details.message,code:details.code||(validation?'INVALID_VEHICLE':'VEHICLE_SAVE_FAILED')});}});
 
-router.post('/validate-submission', async (req,res)=>{
+router.post('/submit-review', async (req,res)=>{
   const driverId=await authenticatedDriver(req,res);if(!driverId)return;
   try{
     const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile)throw profileError||new Error('Driver profile not found.');
@@ -117,8 +118,11 @@ router.post('/validate-submission', async (req,res)=>{
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
     if(auditError)throw auditError;
-    if(blockers.length)return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});
-    return res.json({valid:true,resolution});
+    if(blockers.length){console.warn('[DriverOnboarding] review resubmission blocked',{userId:driverId,blockerCodes:blockers.map(item=>item.code)});return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});}
+    const submittedAt=new Date().toISOString();const submitted=req.body?.profile||{};
+    const updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted.full_name||'').trim(),phone:String(submitted.phone||'').trim(),date_of_birth:submitted.date_of_birth||null,accepted_driver_agreement_at:submitted.accepted_driver_agreement_at||null,bicycle_declaration:submitted.bicycle_declaration===true,delivery_equipment_confirmed:submitted.delivery_equipment_confirmed===true,driver_license_url:submitted.driver_license_url||null,insurance_url:submitted.insurance_url||null,right_to_work_url:submitted.right_to_work_url||null,verification_items:submitted.verification_items||{},verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+    const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select('*').single();if(updateError||!updated)throw updateError||new Error('Review submission did not update the driver profile.');
+    return res.json({submitted:true,profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
   }catch(error:unknown){const message=error instanceof Error?error.message:'Unable to validate driver submission.';return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});}
 });
 

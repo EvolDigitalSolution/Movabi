@@ -44,7 +44,7 @@ import { ProfileService } from '@core/services/profile/profile.service';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
-import { DriverOnboardingStatusService } from '@core/services/driver/driver-onboarding-status.service';
+import { DriverOnboardingStatus, DriverOnboardingStatusService } from '@core/services/driver/driver-onboarding-status.service';
 import { DriverProfile, Vehicle } from '@shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '@shared/ui';
 import {
@@ -993,18 +993,24 @@ export class OnboardingPage implements OnInit {
         if(!addressControl?.valid){await this.showToast('Enter a valid current residential address before saving.','warning');return;}
         this.savingProgress.set(true);
         try{
-            const raw=this.onboardingForm.getRawValue();
-            const savedProfile=await this.onboardingStatus.saveResidentialAddress(String(raw.current_address||'').trim());
-            this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
-            const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
-            if(vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true)){
-                await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
-            }
-            await this.onboardingStatus.refresh();
+            await this.persistCurrentSetup();
             this.saveDraft();
             await this.showToast('Your Driver Setup progress was saved.','success');
-        }catch(error:unknown){const message=error instanceof Error?error.message:'Your setup could not be saved. Please retry.';await this.showToast(message,'danger');}
+        }catch{await this.showToast('Unable to save your setup. Your changes were not submitted. Please try again.','danger');}
         finally{this.savingProgress.set(false);}
+    }
+
+    private async persistCurrentSetup():Promise<DriverOnboardingStatus>{
+        const raw=this.onboardingForm.getRawValue();const address=String(raw.current_address||'').trim();
+        if(address.length<5)throw new Error('A valid residential address is required.');
+        const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
+        if(!vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true))throw new Error('Complete the required vehicle details before saving.');
+        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address,fullName:String(raw.full_name||'').trim(),phone:String(raw.phone||'').trim(),dateOfBirth:String(raw.date_of_birth||'').trim()||null,agreementAccepted:raw.driver_agreement_accepted===true,bicycleDeclaration:raw.bicycle_declaration===true,deliveryEquipmentConfirmed:raw.delivery_equipment_confirmed===true});
+        if(!savedProfile.residentialAddress)throw new Error('Residential address was not persisted.');
+        this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
+        await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
+        if(!this.driverService.vehicle())throw new Error('Vehicle details were not persisted.');
+        return this.onboardingStatus.refresh();
     }
 
     private restoreDraft() {
@@ -1802,18 +1808,13 @@ export class OnboardingPage implements OnInit {
     }
 
     async submit() {
+        if(this.submitting())return;
         if (this.isReadOnly()) {
             await this.showToast('Your application is already under review.', 'warning');
             return;
         }
 
-        await this.refreshVehicleForValidation();
         this.onboardingForm.markAllAsTouched();
-
-        if (!this.canSubmit()) {
-            await this.showToast(this.setupBlockingMessage(), 'warning');
-            return;
-        }
 
         const user = this.authService.currentUser();
 
@@ -1829,15 +1830,11 @@ export class OnboardingPage implements OnInit {
 
         try {
             const raw = this.onboardingForm.getRawValue();
-            const latestVehicle = await this.driverService.fetchVehicle();
-            const vehiclePayload = this.buildVehiclePayload(raw, latestVehicle);
             const rideCompliancePayload = this.buildRideCompliancePayload(raw, this.profile() as any);
-
-            const savedProfile=await this.onboardingStatus.saveResidentialAddress(String(raw.current_address||'').trim());
-            this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
-            await this.driverService.updateVehicle(vehiclePayload);
-
-            await this.onboardingStatus.validateSubmission({
+            const latestStatus=await this.persistCurrentSetup();
+            const blockers=latestStatus.automaticRequirements.filter(requirement=>requirement.blockingForSubmission);
+            if(blockers.length){await this.showToast(blockers[0].reason,'warning');return;}
+            await this.onboardingStatus.submitForReview({
                 ...(this.profile() as DriverProfile | null),
                 full_name: String(raw.full_name || '').trim(),
                 phone: String(raw.phone || '').trim(),
@@ -1851,45 +1848,9 @@ export class OnboardingPage implements OnInit {
                 right_to_work_url: this.docs().right_to_work || null,
                 ...rideCompliancePayload,
                 verification_items: this.buildVerificationItems(raw)
-            }, vehiclePayload);
-
-            await this.onboardingStatus.recordEvent(
-                latestVehicle ? 'driver_vehicle_updated' : 'driver_vehicle_submitted',
-                'vehicle', latestVehicle ? 'saved' : 'missing', 'under_review'
-            );
-
-            await this.updateProfileSafely(user.id, {
-                onboarding_completed: true,
-                role: 'driver',
-                pricing_plan: 'starter',
-                subscription_status: 'inactive',
-                full_name: String(raw.full_name || '').trim(),
-                phone: String(raw.phone || '').trim(),
-                date_of_birth: String(raw.date_of_birth || '').trim() || null,
-                accepted_driver_agreement_at: raw.driver_agreement_accepted ? new Date().toISOString() : null,
-                bicycle_declaration: raw.bicycle_declaration === true,
-                delivery_equipment_confirmed: raw.delivery_equipment_confirmed === true,
-                ...rideCompliancePayload,
-                driver_license_url: this.docs().license || null,
-                insurance_url: this.docs().insurance || null,
-                right_to_work_url: this.docs().right_to_work || null,
-                verification_status: 'under_review',
-                driver_review_status: 'under_review',
-                verification_notes: null,
-                driver_review_notes: null,
-                verification_blockers: [],
-                driver_review_blockers: [],
-                verification_items: this.buildVerificationItems(raw),
-                is_verified: false
             });
 
             await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'onboarding', this.verificationStatus(), 'under_review');
-            await this.refreshOnboardingStatus();
-
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(user.id);
-            }
-
             this.authService.onboardingCompleted.set(true);
             this.authService.userRole.set('driver');
 
@@ -1903,9 +1864,8 @@ export class OnboardingPage implements OnInit {
             );
 
             await this.router.navigate(['/driver'], { replaceUrl: true });
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'An error occurred.';
-            await this.showToast(message, 'danger');
+        } catch {
+            await this.showToast('Unable to save your setup. Your changes were not submitted. Please try again.', 'danger');
         } finally {
             this.submitting.set(false);
             await loading.dismiss();
