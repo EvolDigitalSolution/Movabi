@@ -5,6 +5,7 @@ import { MarketAvailabilityError, MarketAvailabilityService } from '../services/
 import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
 import { DriverRequirementService } from '../services/driver-requirement.service';
 import { DriverVehicleRow, mapDriverVehicleRow, parseDriverVehicleInput } from '../models/driver-vehicle.model';
+import {mapDriverProfile,parseResidentialAddress} from '../models/driver-profile.model';
 
 const router = Router();
 
@@ -48,11 +49,12 @@ router.get('/status', async (req, res) => {
     }
     const adminRequests=(requestRows||[]).map(row=>({id:row.id,requirementCode:row.requirement_code,item:row.item,status:row.status,publicMessage:row.public_message,submittedAt:row.sent_at,updatedAt:row.updated_at,resolvedAt:row.resolved_at,nextAction:row.status==='approved'?'No action required.':'Correct this item and resubmit it for review.'}));
     const canonicalVehicle=vehicle?mapDriverVehicleRow(vehicle):null;
-    const resolution=DriverRequirementService.resolve({profile,vehicle:canonicalVehicle,authEmailConfirmed:!!authUser.user?.email_confirmed_at,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
+    const canonicalProfile=mapDriverProfile(profile,!!authUser.user?.email_confirmed_at);
+    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
     const outstandingRequests=resolution.adminRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
     const stripeStatus = profile.stripe_connect_status || 'not_started';
     console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
-    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, vehicle: canonicalVehicle, outstandingRequests,
+    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, vehicle: canonicalVehicle, outstandingRequests,
       automaticRequirements:resolution.automaticRequirements,adminRequests:resolution.adminRequests,warnings:resolution.warnings,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
@@ -86,6 +88,8 @@ router.post('/events', async (req, res) => {
   }
 });
 
+router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const residentialAddress=parseResidentialAddress(req.body);const{data,error}=await supabaseAdmin.from('profiles').update({current_address:residentialAddress,updated_at:new Date().toISOString()}).eq('id',driverId).select('*').single();if(error||!data)throw error||new Error('Profile save returned no record.');const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;return res.json({profile:mapDriverProfile(data,!!auth.user?.email_confirmed_at)});}catch(error:unknown){const message=error instanceof Error?error.message:'Unable to save residential address.';return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:'PROFILE_SAVE_FAILED'});}});
+
 router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
 
 router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
@@ -103,7 +107,8 @@ router.post('/validate-submission', async (req,res)=>{
     const vehicle=await currentVehicle(driverId);
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
     const profileInput={...profile,...(req.body?.profile||{})};const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
-    const resolution=DriverRequirementService.resolve({profile:profileInput,vehicle:vehicleInput,authEmailConfirmed:!!auth.user?.email_confirmed_at,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
+    const canonicalProfile=mapDriverProfile(profileInput,!!auth.user?.email_confirmed_at);
+    const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
     if(auditError)throw auditError;

@@ -1838,6 +1838,9 @@ export class OnboardingPage implements OnInit {
                 'vehicle', latestVehicle ? 'saved' : 'missing', 'under_review'
             );
 
+            const savedProfile=await this.onboardingStatus.saveResidentialAddress(String(raw.current_address||''));
+            this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
+
             await this.updateProfileSafely(user.id, {
                 onboarding_completed: true,
                 role: 'driver',
@@ -1846,7 +1849,6 @@ export class OnboardingPage implements OnInit {
                 full_name: String(raw.full_name || '').trim(),
                 phone: String(raw.phone || '').trim(),
                 date_of_birth: String(raw.date_of_birth || '').trim() || null,
-                current_address: String(raw.current_address || '').trim(),
                 accepted_driver_agreement_at: raw.driver_agreement_accepted ? new Date().toISOString() : null,
                 bicycle_declaration: raw.bicycle_declaration === true,
                 delivery_equipment_confirmed: raw.delivery_equipment_confirmed === true,

@@ -1,3 +1,5 @@
+import {CanonicalDriverProfile,mapDriverProfile} from '../models/driver-profile.model';
+
 export type CanonicalDriverService = 'ride' | 'delivery' | 'errand' | 'van-moving';
 export type DriverOperatingVehicle = 'bicycle' | 'motorcycle' | 'car' | 'small_van' | 'large_van' | null;
 export type RequirementState = 'completed' | 'missing' | 'invalid' | 'under_review' | 'approved' | 'rejected' | 'not_applicable';
@@ -16,15 +18,16 @@ export interface DriverRequirementResolution {
 export interface DriverVehicleValidation {id:string;userId:string;type:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string;}
 
 export class DriverRequirementService {
-  static resolve(input: { profile: Record<string, any>; vehicle?: DriverVehicleValidation|null; authEmailConfirmed: boolean; adminRequests?: DriverAdminRequest[]; countryCode?: string|null; marketCity?: string|null; now?: Date }): DriverRequirementResolution {
+  static resolve(input: { profile: Record<string, any>; canonicalProfile?:CanonicalDriverProfile; vehicle?: DriverVehicleValidation|null; authEmailConfirmed: boolean; adminRequests?: DriverAdminRequest[]; countryCode?: string|null; marketCity?: string|null; now?: Date }): DriverRequirementResolution {
     const profile=input.profile||{}, vehicle:DriverVehicleValidation=input.vehicle||{id:'',userId:'',type:'',make:null,model:null,colour:null,year:null,registrationNumber:null,capacity:null,serviceEligibility:[],status:'missing'}, now=input.now||new Date();
+    const canonicalProfile=input.canonicalProfile||mapDriverProfile({id:String(profile.id||''),...profile},input.authEmailConfirmed);
     const selectedServices=this.services(profile,vehicle); const vehicleType=this.vehicle(vehicle,profile); const requirements:ResolvedDriverRequirement[]=[];
     const add=(code:string,label:string,category:ResolvedDriverRequirement['category'],ok:boolean,reason:string,services:CanonicalDriverService[]=selectedServices,invalid=false,review=false)=>requirements.push({code,label,category,status:ok?(review?'under_review':'completed'):(invalid?'invalid':'missing'),required:true,completed:ok&&!review,blockingForSubmission:!ok,blockingForOnline:!ok||review,needsAdminReview:review,reason,services});
-    add('profile.full_name','Legal name','basic',this.has(profile.full_name||profile.legal_name),'Add your full legal name.');
-    add('profile.phone','Phone','basic',this.has(profile.phone||profile.phone_number),'Add a verified contact number.');
-    add('profile.address','Residential address','basic',this.has(profile.current_address||profile.address_line1||profile.home_address),'Add your current residential address.');
-    add('profile.email_verification','Email verified','basic',input.authEmailConfirmed,'Confirm your sign-in email address.');
-    const age=this.age(profile.date_of_birth||profile.dob,now,18);
+    add('profile.full_name','Legal name','basic',this.has(canonicalProfile.fullName),'Add your full legal name.');
+    add('profile.phone','Phone','basic',this.has(canonicalProfile.phone),'Add a verified contact number.');
+    add('profile.address','Residential address','basic',this.has(canonicalProfile.residentialAddress),'Add your current residential address.');
+    add('profile.email_verification','Email verified','basic',canonicalProfile.emailConfirmed,'Confirm your sign-in email address.');
+    const age=this.age(canonicalProfile.dateOfBirth,now,18);
     add('profile.date_of_birth','Date of birth','basic',age.eligible,age.reason||'Date of birth confirmed.',[],this.has(profile.date_of_birth||profile.dob)&&!age.eligible);
     add('service.selection','Selected services','services',selectedServices.length>0,'Select at least one service.');
     add('agreement.driver_terms','Driver agreement','agreement',this.has(profile.accepted_driver_agreement_at)||profile.driver_agreement_accepted===true,'Review and accept the Driver Agreement.');

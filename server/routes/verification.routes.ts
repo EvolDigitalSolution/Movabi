@@ -4,6 +4,7 @@ import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
 import { DriverRequirementService } from '../services/driver-requirement.service';
 import { mapDriverVehicleRow } from '../models/driver-vehicle.model';
+import { mapDriverProfile } from '../models/driver-profile.model';
 import {
   getAdminReviewRequirements,
   getBlockingRequirements,
@@ -173,6 +174,7 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     const requirements = getDriverRequirements(requirementsInput);
     const authoritativeResolution = DriverRequirementService.resolve({
       profile: driverProfileWithVerificationItems,
+      canonicalProfile: mapDriverProfile(profile,!!authUser?.user?.email_confirmed_at),
       vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null,
       authEmailConfirmed: !!authUser?.user?.email_confirmed_at,
       countryCode: profile.country_code || profile.country || vehicle?.country_code
