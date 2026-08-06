@@ -138,7 +138,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='invalid'||requirement.status==='rejected'" [class.text-amber-600]="!requirement.completed&&requirement.status!=='invalid'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.completed?requirement.label:requirement.reason}}</span></div>}</div>}
             </div>}
           </div>
-          <div class="mt-4 grid grid-cols-2 gap-2"><button type="button" class="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white" (click)="scrollToSetup()">Continue Setup</button><button type="button" class="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" (click)="saveDraft()">Save and Continue Later</button></div>
+          <div class="mt-4 grid grid-cols-2 gap-2"><button type="button" class="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white" (click)="scrollToSetup()">Continue Setup</button><button type="button" class="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" (click)="saveAndContinue()" [disabled]="savingProgress()">{{savingProgress()?'Saving…':'Save and Continue Later'}}</button></div>
         </section>
 
         <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -709,6 +709,7 @@ export class OnboardingPage implements OnInit {
     stripeMessage = signal<string | null>(null);
     stripeMessageType = signal<StripeMessageType>('success');
     submitting = signal(false);
+    savingProgress = signal(false);
     readonly setupGroups = [
         {category:'basic' as const,label:'Basic details',empty:'Add your basic account information.'},
         {category:'services' as const,label:'Services',empty:'Select the services you want to provide.'},
@@ -810,7 +811,6 @@ export class OnboardingPage implements OnInit {
 
     activeVehicleDetailsReady = computed(() => {
         const vehicle = this.vehicle() as Vehicle | null;
-        console.log('[DriverOnboarding] Checklist vehicle:', vehicle);
 
         return this.activeVehicleControls().every(controlName => this.isActiveVehicleControlReady(controlName, vehicle));
     });
@@ -897,7 +897,7 @@ export class OnboardingPage implements OnInit {
             email: [''],
             phone: ['', Validators.required],
             date_of_birth: ['', adultDateValidator],
-            current_address: ['', Validators.required],
+            current_address: ['', [Validators.required, Validators.minLength(5)]],
             driver_agreement_accepted: [false, Validators.requiredTrue],
             bicycle_declaration: [false],
             delivery_equipment_confirmed: [false],
@@ -985,6 +985,26 @@ export class OnboardingPage implements OnInit {
         };
 
         localStorage.setItem(this.draftKey, JSON.stringify(draft));
+    }
+
+    async saveAndContinue():Promise<void>{
+        if(this.savingProgress()||this.isReadOnly())return;
+        const addressControl=this.onboardingForm.get('current_address');addressControl?.markAsTouched();
+        if(!addressControl?.valid){await this.showToast('Enter a valid current residential address before saving.','warning');return;}
+        this.savingProgress.set(true);
+        try{
+            const raw=this.onboardingForm.getRawValue();
+            const savedProfile=await this.onboardingStatus.saveResidentialAddress(String(raw.current_address||'').trim());
+            this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
+            const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
+            if(vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true)){
+                await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
+            }
+            await this.onboardingStatus.refresh();
+            this.saveDraft();
+            await this.showToast('Your Driver Setup progress was saved.','success');
+        }catch(error:unknown){const message=error instanceof Error?error.message:'Your setup could not be saved. Please retry.';await this.showToast(message,'danger');}
+        finally{this.savingProgress.set(false);}
     }
 
     private restoreDraft() {
@@ -1402,7 +1422,6 @@ export class OnboardingPage implements OnInit {
 
     private async refreshVehicleForValidation(): Promise<Vehicle | null> {
         const vehicle = await this.driverService.fetchVehicle();
-        console.log('[DriverOnboarding] Validation vehicle:', vehicle);
 
         if (vehicle) {
             this.onboardingForm.patchValue(
@@ -1811,9 +1830,12 @@ export class OnboardingPage implements OnInit {
         try {
             const raw = this.onboardingForm.getRawValue();
             const latestVehicle = await this.driverService.fetchVehicle();
-            console.log('[DriverOnboarding] Validation vehicle:', latestVehicle);
             const vehiclePayload = this.buildVehiclePayload(raw, latestVehicle);
             const rideCompliancePayload = this.buildRideCompliancePayload(raw, this.profile() as any);
+
+            const savedProfile=await this.onboardingStatus.saveResidentialAddress(String(raw.current_address||'').trim());
+            this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
+            await this.driverService.updateVehicle(vehiclePayload);
 
             await this.onboardingStatus.validateSubmission({
                 ...(this.profile() as DriverProfile | null),
@@ -1831,15 +1853,10 @@ export class OnboardingPage implements OnInit {
                 verification_items: this.buildVerificationItems(raw)
             }, vehiclePayload);
 
-            const savedVehicle = await this.driverService.updateVehicle(vehiclePayload);
-            console.log('[DriverOnboarding] Saved vehicle:', savedVehicle);
             await this.onboardingStatus.recordEvent(
                 latestVehicle ? 'driver_vehicle_updated' : 'driver_vehicle_submitted',
                 'vehicle', latestVehicle ? 'saved' : 'missing', 'under_review'
             );
-
-            const savedProfile=await this.onboardingStatus.saveResidentialAddress(String(raw.current_address||''));
-            this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
 
             await this.updateProfileSafely(user.id, {
                 onboarding_completed: true,

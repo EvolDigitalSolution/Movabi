@@ -88,7 +88,12 @@ router.post('/events', async (req, res) => {
   }
 });
 
-router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const residentialAddress=parseResidentialAddress(req.body);const{data,error}=await supabaseAdmin.from('profiles').update({current_address:residentialAddress,updated_at:new Date().toISOString()}).eq('id',driverId).select('*').single();if(error||!data)throw error||new Error('Profile save returned no record.');const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;return res.json({profile:mapDriverProfile(data,!!auth.user?.email_confirmed_at)});}catch(error:unknown){const message=error instanceof Error?error.message:'Unable to save residential address.';return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:'PROFILE_SAVE_FAILED'});}});
+router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const residentialAddress=parseResidentialAddress(req.body);console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent:true});
+  const{data,error}=await supabaseAdmin.from('profiles').update({current_address:residentialAddress,updated_at:new Date().toISOString()}).eq('id',driverId).select('*').single();if(error||!data)throw error||new Error('Profile save returned no record.');
+  const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(!profile.residentialAddress)throw new Error('Residential address was not persisted.');
+  console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent:true});return res.json({profile});
+ }catch(error:unknown){const details=error as Error&{code?:string};const message=details.message||'Unable to save residential address.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message});return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
 
 router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
 
