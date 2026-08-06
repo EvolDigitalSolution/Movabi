@@ -1,5 +1,44 @@
-export interface DriverProfileRow {id:string;full_name?:string|null;first_name?:string|null;last_name?:string|null;phone?:string|null;date_of_birth?:string|null;current_address?:string|null;residential_address?:string|null;address?:string|null;address_line1?:string|null;home_address?:string|null;verification_status?:string|null;driver_review_status?:string|null;}
-export interface CanonicalDriverProfile {id:string;fullName:string|null;phone:string|null;dateOfBirth:string|null;residentialAddress:string|null;emailConfirmed:boolean;verificationStatus:string|null;}
-const value=(input:unknown)=>typeof input==='string'&&input.trim()?input.trim():null;
-export function mapDriverProfile(row:DriverProfileRow,emailConfirmed:boolean):CanonicalDriverProfile{return{id:row.id,fullName:value(row.full_name)||value(`${row.first_name||''} ${row.last_name||''}`),phone:value(row.phone),dateOfBirth:value(row.date_of_birth),residentialAddress:value(row.current_address)||value(row.residential_address)||value(row.address)||value(row.address_line1)||value(row.home_address),emailConfirmed,verificationStatus:value(row.verification_status)||value(row.driver_review_status)};}
-export function parseResidentialAddress(input:unknown):string{const body=input&&typeof input==='object'?input as {[key:string]:unknown}:{};const address=value(body['residentialAddress']??body['currentAddress']??body['current_address']);if(!address||address.length<5)throw new Error('Enter a valid current residential address.');return address;}
+export const CANONICAL_DRIVER_PROFILE_SELECT =
+  'id,full_name,phone,date_of_birth,current_address,verification_status,updated_at';
+
+export interface DriverProfileRow {
+  id: string;
+  full_name?: string | null;
+  phone?: string | null;
+  date_of_birth?: string | null;
+  current_address?: string | null;
+  verification_status?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CanonicalDriverProfile {
+  id: string;
+  fullName: string | null;
+  phone: string | null;
+  dateOfBirth: string | null;
+  residentialAddress: string | null;
+  emailConfirmed: boolean;
+  verificationStatus: string | null;
+}
+
+const value = (input: unknown): string | null =>
+  typeof input === 'string' && input.trim() ? input.trim() : null;
+
+export function mapDriverProfile(row: DriverProfileRow, emailConfirmed: boolean): CanonicalDriverProfile {
+  return {
+    id: row.id,
+    fullName: value(row.full_name),
+    phone: value(row.phone),
+    dateOfBirth: value(row.date_of_birth),
+    residentialAddress: value(row.current_address),
+    emailConfirmed,
+    verificationStatus: value(row.verification_status)
+  };
+}
+
+export function parseResidentialAddress(input: unknown): string {
+  const body = input && typeof input === 'object' ? input as { [key: string]: unknown } : {};
+  const address = value(body['residentialAddress'] ?? body['currentAddress'] ?? body['current_address']);
+  if (!address || address.length < 5) throw new Error('Enter a valid current residential address.');
+  return address;
+}

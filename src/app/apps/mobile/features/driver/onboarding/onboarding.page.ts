@@ -1093,8 +1093,8 @@ export class OnboardingPage implements OnInit {
                     date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob),
                     current_address: profile.current_address ?? profile.address_line1 ?? profile.home_address ?? '',
                     driver_agreement_accepted: !!profile.accepted_driver_agreement_at,
-                    bicycle_declaration: profile.bicycle_declaration === true,
-                    delivery_equipment_confirmed: profile.delivery_equipment_confirmed === true
+                    bicycle_declaration: verificationItems['bicycle_declaration'] === 'true' || verificationItems['bicycle_declaration'] === true,
+                    delivery_equipment_confirmed: verificationItems['delivery_equipment_confirmed'] === 'true' || verificationItems['delivery_equipment_confirmed'] === true
                 },
                 { emitEvent: false }
             );
@@ -1476,11 +1476,11 @@ export class OnboardingPage implements OnInit {
         };
     }
 
-    private parseVerificationItems(value: unknown): Record<string, string> {
+    private parseVerificationItems(value: unknown): Record<string, unknown> {
         if (!value) return {};
 
         if (Array.isArray(value)) {
-            return value.reduce<Record<string, string>>((items, entry) => {
+            return value.reduce<Record<string, unknown>>((items, entry) => {
                 if (!entry || typeof entry !== 'object') return items;
 
                 const record = entry as Record<string, unknown>;
@@ -1493,7 +1493,7 @@ export class OnboardingPage implements OnInit {
         }
 
         if (typeof value === 'object') {
-            return value as Record<string, string>;
+            return value as Record<string, unknown>;
         }
 
         if (typeof value === 'string') {
@@ -1512,7 +1512,9 @@ export class OnboardingPage implements OnInit {
         const items: Array<{ key: string; value: string }> = [
             { key: 'vehicle_class', value: String(raw['vehicle_class'] || 'standard').trim() },
             { key: 'vehicle_type', value: this.vehicleTypeFromClass(String(raw['vehicle_class'] || 'standard') as DriverVehicleClass) },
-            { key: 'driver_service_types', value: JSON.stringify(this.selectedServiceTypes()) }
+            { key: 'driver_service_types', value: JSON.stringify(this.selectedServiceTypes()) },
+            { key: 'bicycle_declaration', value: String(raw['bicycle_declaration'] === true) },
+            { key: 'delivery_equipment_confirmed', value: String(raw['delivery_equipment_confirmed'] === true) }
         ];
 
         if (this.requiresTaxiLicence()) {

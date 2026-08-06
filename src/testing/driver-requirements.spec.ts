@@ -5,7 +5,7 @@ const profile = (overrides: Record<string, unknown> = {}) => ({
   full_name: 'Alex Driver', phone: '07000000000', current_address: '1 High Street',
   date_of_birth: '1990-01-01', accepted_driver_agreement_at: '2026-01-01',
   country_code: 'GB', right_to_work_url: 'right.pdf', driver_service_types: ['delivery'],
-  bicycle_declaration: true, delivery_equipment_confirmed: true, ...overrides
+  verification_items: { bicycle_declaration: true, delivery_equipment_confirmed: true }, ...overrides
 });
 const bicycle = { id:'bike-1',userId:'driver-1',type:'bike',make:null,model:null,colour:null,year:null,registrationNumber:null,capacity:'bike',serviceEligibility:['delivery'],status:'saved' };
 const car = { id:'car-1',userId:'driver-1',type:'car',make:'Ford',model:'Focus',colour:'Blue',year:2020,registrationNumber:'AB12 CDE',capacity:'standard',serviceEligibility:['delivery'],status:'saved' };
