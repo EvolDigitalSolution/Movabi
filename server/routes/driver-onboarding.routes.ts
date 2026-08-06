@@ -4,8 +4,16 @@ import { supabaseAdmin } from '../services/supabase.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
 import { DriverRequirementService } from '../services/driver-requirement.service';
+import { DriverVehicleRow, mapDriverVehicleRow, parseDriverVehicleInput } from '../models/driver-vehicle.model';
 
 const router = Router();
+
+async function currentVehicle(driverId:string):Promise<DriverVehicleRow|null>{
+  const{data,error}=await supabaseAdmin.from('vehicles').select('*').eq('user_id',driverId).order('created_at',{ascending:false});
+  if(error)throw error;
+  if((data||[]).length>1)throw Object.assign(new Error('Multiple vehicle records require Admin repair before setup can continue.'),{code:'DUPLICATE_DRIVER_VEHICLES',httpStatus:409});
+  return ((data||[])[0] as DriverVehicleRow|undefined)||null;
+}
 
 async function authenticatedDriver(req: Request, res: Response): Promise<string | null> {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -29,8 +37,7 @@ router.get('/status', async (req, res) => {
     const { data: profile, error } = await supabaseAdmin.from('profiles').select('*').eq('id', driverId).single();
     if (error) throw Object.assign(new Error('Driver profile lookup failed.'), { code: error.code });
     if (!profile) throw Object.assign(new Error('Driver profile not found.'), { code: 'PROFILE_NOT_FOUND', httpStatus: 404 });
-    const { data: vehicle, error: vehicleError } = await supabaseAdmin.from('vehicles').select('*').eq('driver_id', driverId).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (vehicleError) throw Object.assign(new Error('Driver vehicle lookup failed.'), { code: vehicleError.code });
+    const vehicle = await currentVehicle(driverId);
     const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(driverId);
     if (authUserError) throw Object.assign(new Error('Driver authentication lookup failed.'), { code: authUserError.code });
     const { data: requestRows, error: requestError } = await supabaseAdmin.from('driver_onboarding_requests').select('id,requirement_code,item,public_message,status,sent_at,resolved_at,updated_at').eq('driver_id',driverId).order('created_at',{ascending:false});
@@ -44,7 +51,7 @@ router.get('/status', async (req, res) => {
     const outstandingRequests=resolution.adminRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
     const stripeStatus = profile.stripe_connect_status || 'not_started';
     console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
-    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, vehicle: vehicle || null, outstandingRequests,
+    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null, outstandingRequests,
       automaticRequirements:resolution.automaticRequirements,adminRequests:resolution.adminRequests,warnings:resolution.warnings,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
@@ -78,11 +85,21 @@ router.post('/events', async (req, res) => {
   }
 });
 
+router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
+
+router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const input=parseDriverVehicleInput(req.body);const existing=await currentVehicle(driverId);
+  const values={user_id:driverId,type:input.vehicleType,make:input.make,model:input.model,color:input.colour,year:input.year,license_plate:input.registrationNumber,capacity:input.capacity,service_eligibility:input.serviceEligibility,updated_at:new Date().toISOString()};
+  const query=existing?supabaseAdmin.from('vehicles').update(values).eq('id',existing.id):supabaseAdmin.from('vehicles').insert(values);
+  const{data,error}=await query.select('*').single();if(error||!data)throw error||new Error('Vehicle save returned no record.');
+  return res.json({vehicle:mapDriverVehicleRow(data as DriverVehicleRow)});
+}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};const validation=/required|valid vehicle year/i.test(details.message);return res.status(details.httpStatus||(validation?422:500)).json({error:details.message,code:details.code||(validation?'INVALID_VEHICLE':'VEHICLE_SAVE_FAILED')});}});
+
 router.post('/validate-submission', async (req,res)=>{
   const driverId=await authenticatedDriver(req,res);if(!driverId)return;
   try{
     const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile)throw profileError||new Error('Driver profile not found.');
-    const{data:vehicle,error:vehicleError}=await supabaseAdmin.from('vehicles').select('*').eq('driver_id',driverId).order('created_at',{ascending:false}).limit(1).maybeSingle();if(vehicleError)throw vehicleError;
+    const vehicle=await currentVehicle(driverId);
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
     const profileInput={...profile,...(req.body?.profile||{})};const vehicleInput={...(vehicle||{}),...(req.body?.vehicle||{})};
     const resolution=DriverRequirementService.resolve({profile:profileInput,vehicle:vehicleInput,authEmailConfirmed:!!auth.user?.email_confirmed_at,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});

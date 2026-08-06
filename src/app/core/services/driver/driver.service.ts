@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -26,6 +26,8 @@ import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
 import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
 import { MarketplaceHybridService, HybridOpportunity } from '../marketplace/marketplace-hybrid.service';
+
+interface DriverVehicleApi { id:string;driverId:string;vehicleType:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string; }
 
 @Injectable({
     providedIn: 'root'
@@ -255,21 +257,10 @@ export class DriverService {
     async fetchVehicle() {
         const user = this.auth.currentUser();
         if (!user) return null;
-
-        const { data, error } = await this.supabase
-            .from('vehicles')
-            .select('*')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-        if (error) {
-            console.error('Error fetching vehicle:', error);
-            return null;
-        }
-
-        console.log('[DriverService] Checklist vehicle:', data);
-        this.vehicle.set((data as Vehicle) ?? null);
-        return (data as Vehicle) ?? null;
+        const response = await firstValueFrom(this.http.get<{vehicle:DriverVehicleApi|null}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{headers:await this.authHeaders()}));
+        const vehicle=response.vehicle?this.fromVehicleApi(response.vehicle):null;
+        this.vehicle.set(vehicle);
+        return vehicle;
     }
 
     async fetchAvailableJobs() {
@@ -848,47 +839,22 @@ export class DriverService {
             throw new Error('Invalid vehicle year');
         }
 
-        let { data, error } = await this.supabase
-            .from('vehicles')
-            .upsert(payload, { onConflict: 'user_id' })
-            .select()
-            .single();
-
-        if (error && this.isMissingColumnError(error, 'color')) {
-            const legacyPayload = { ...payload } as Partial<typeof payload>;
-            delete legacyPayload.color;
-            const retry = await this.supabase
-                .from('vehicles')
-                .upsert(legacyPayload, { onConflict: 'user_id' })
-                .select()
-                .single();
-
-            data = retry.data;
-            error = retry.error;
-        }
-
-        if (error && this.isMissingColumnError(error, 'service_eligibility')) {
-            const legacyPayload = { ...payload } as Partial<typeof payload>;
-            delete legacyPayload.service_eligibility;
-            const retry = await this.supabase
-                .from('vehicles')
-                .upsert(legacyPayload, { onConflict: 'user_id' })
-                .select()
-                .single();
-
-            data = retry.data;
-            error = retry.error;
-        }
-
-        if (error) {
-            console.error('[DriverService] updateVehicle failed:', error);
+        let response:{vehicle:DriverVehicleApi};
+        try { response=await firstValueFrom(this.http.put<{vehicle:DriverVehicleApi}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{
+                vehicleType:payload.type,make:payload.make,model:payload.model,colour:payload.color,year:payload.year,
+                registrationNumber:payload.license_plate,capacity:payload.capacity,serviceEligibility:payload.service_eligibility
+            },{headers:await this.authHeaders()}));
+        } catch(error:unknown) {
+            if(error instanceof HttpErrorResponse){const backend=error.error as {error?:unknown}|null;throw new Error(String(backend?.error||'Vehicle details could not be saved. Please retry.'));}
             throw error;
         }
-
-        console.log('[DriverService] Saved vehicle:', data);
-        this.vehicle.set(data as Vehicle);
-        return data as Vehicle;
+        const saved=this.fromVehicleApi(response.vehicle);
+        this.vehicle.set(saved);
+        return saved;
     }
+
+    private async authHeaders():Promise<HttpHeaders>{const{data}=await this.supabase.auth.getSession();if(!data.session?.access_token)throw new Error('Please sign in again.');return new HttpHeaders({Authorization:`Bearer ${data.session.access_token}`});}
+    private fromVehicleApi(value:DriverVehicleApi):Vehicle{return{id:value.id,driver_id:value.driverId,make:value.make||'',model:value.model||'',color:value.colour||'',year:value.year||0,license_plate:value.registrationNumber||'',type:value.vehicleType as Vehicle['type'],capacity:value.capacity||undefined,service_eligibility:value.serviceEligibility,is_verified:value.status==='approved'};}
 
     private isMissingColumnError(error: unknown, column: string): boolean {
         const maybeError = error as { code?: string; message?: string };

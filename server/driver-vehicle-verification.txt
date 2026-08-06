@@ -1,0 +1,23 @@
+-- Read-only production verification for the reported driver.
+SELECT id, user_id, type, make, model, color, year, license_plate,
+       capacity, service_eligibility, status, created_at, updated_at
+FROM public.vehicles
+WHERE user_id = 'e0d535e5-e90f-4a4c-b3f2-6937634517c7'
+ORDER BY created_at DESC, id DESC;
+
+SELECT user_id, count(*) AS vehicle_row_count,
+       array_agg(id ORDER BY created_at DESC, id DESC) AS vehicle_ids
+FROM public.vehicles
+WHERE user_id = 'e0d535e5-e90f-4a4c-b3f2-6937634517c7'
+GROUP BY user_id;
+
+-- Must return zero rows before the unique index is applied.
+SELECT user_id, count(*) AS vehicle_row_count,
+       array_agg(id ORDER BY created_at DESC, id DESC) AS vehicle_ids
+FROM public.vehicles
+GROUP BY user_id
+HAVING count(*) > 1;
+
+-- Apply only after duplicates have been reviewed and resolved explicitly.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_one_record_per_user
+  ON public.vehicles(user_id);

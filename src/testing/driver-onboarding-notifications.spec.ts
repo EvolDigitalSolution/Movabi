@@ -115,7 +115,8 @@ describe('driver onboarding production flow', () => {
     expect(route).toContain("console.info('[DriverOnboarding] status success'");
     expect(route).toContain("console.error('[DriverOnboarding] status failed'");
     expect(route).toContain('outstandingRequestCount: outstandingRequests.length');
-    expect(route).toContain('if (vehicleError) throw');
+    expect(route).toContain('if(error)throw error');
+    expect(route).toContain(".eq('user_id',driverId)");
   });
 
   it('makes one shared payout-settings call on each Driver Settings entry', () => {

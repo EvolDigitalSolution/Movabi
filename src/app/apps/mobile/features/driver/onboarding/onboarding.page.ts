@@ -1827,7 +1827,6 @@ export class OnboardingPage implements OnInit {
 
             const savedVehicle = await this.driverService.updateVehicle(vehiclePayload);
             console.log('[DriverOnboarding] Saved vehicle:', savedVehicle);
-            await this.driverService.fetchVehicle();
             await this.onboardingStatus.recordEvent(
                 latestVehicle ? 'driver_vehicle_updated' : 'driver_vehicle_submitted',
                 'vehicle', latestVehicle ? 'saved' : 'missing', 'under_review'

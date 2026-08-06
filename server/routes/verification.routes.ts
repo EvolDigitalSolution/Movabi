@@ -138,7 +138,7 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     const { data: vehicle } = await supabase
       .from('vehicles')
       .select('*')
-      .eq('driver_id', driverId)
+      .eq('user_id', driverId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
