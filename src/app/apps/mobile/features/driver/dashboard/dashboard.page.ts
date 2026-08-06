@@ -11,6 +11,7 @@ import {
     IonToggle,
     LoadingController,
     ToastController
+    ,AlertController
 } from '@ionic/angular/standalone';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
@@ -69,6 +70,7 @@ import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shar
 import { Booking, BookingStatus, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import { MarketAvailabilityClientService } from '../../../../../core/services/market-availability.service';
+import { DriverOnlineEligibility } from '../../../../../core/services/market-availability.service';
 import { MapProviderService } from '../../../../../core/services/maps/map-provider.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
@@ -912,6 +914,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private vehicleCompatibility = inject(VehicleCompatibilityService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
+    private alertCtrl = inject(AlertController);
     private config = inject(AppConfigService);
     private marketAvailability = inject(MarketAvailabilityClientService);
     private oneSignal = inject(OneSignalService);
@@ -922,6 +925,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private notificationService = inject(NotificationService);
     private negotiationService = inject(MarketplaceNegotiationService);
     private marketplaceConfig = inject(MarketplaceConfigService);
+    private goOnlineInFlight:Promise<void>|null=null;
+    private onlineDenialAlert:HTMLIonAlertElement|null=null;
 
     get hybridEnabled(): boolean {
         return this.hybridOpportunities().length > 0;
@@ -2449,10 +2454,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     async goOnline() {
-        if (!this.canDriverAcceptTrips()) {
-            this.showToast('Complete Stripe Connect before going online.', 'warning');
-            return;
-        }
+        if(this.goOnlineInFlight)return this.goOnlineInFlight;
+        this.goOnlineInFlight=this.performGoOnline().finally(()=>this.goOnlineInFlight=null);
+        return this.goOnlineInFlight;
+    }
+
+    private async performGoOnline():Promise<void>{
 
         const profile = this.profileService.profile();
 
@@ -2460,7 +2467,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             await this.marketAvailability.setDriverOnline({ online: true, countryCode: profile?.country_code || this.config.currentCountry()?.code,
                 marketCity: (profile as any)?.market_city || (profile as any)?.city_name || null, zoneId: (profile as any)?.zone_id || null });
         } catch (error) {
-            this.showToast(error instanceof Error ? error.message : 'Movabi is not available for drivers in this area yet.', 'warning');
+            if(this.isOnlineEligibility(error)){await this.showOnlineDenial(error);}
+            else this.showToast(error instanceof Error ? error.message : 'Unable to check online eligibility.', 'warning');
             return;
         }
 
@@ -2471,6 +2479,16 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         this.syncMarketplaceMapMarkers();
         this.checkTracking();
     }
+
+    private isOnlineEligibility(value:unknown):value is DriverOnlineEligibility{return !!value&&typeof value==='object'&&'code' in value&&'title' in value&&'message' in value;}
+    private async showOnlineDenial(denial:DriverOnlineEligibility):Promise<void>{
+        if(this.onlineDenialAlert){await this.onlineDenialAlert.dismiss().catch(()=>undefined);}
+        const buttons:any[]=[{text:'Close',role:'cancel'}];if(denial.action&&!['TRY_AGAIN_LATER','CONTACT_SUPPORT'].includes(denial.action))buttons.push({text:this.onlineActionLabel(denial.action),handler:()=>{void this.openOnlineAction(denial.action!);}});
+        this.onlineDenialAlert=await this.alertCtrl.create({header:denial.title,message:denial.message,buttons});
+        await this.onlineDenialAlert.present();await this.onlineDenialAlert.onDidDismiss();this.onlineDenialAlert=null;
+    }
+    private onlineActionLabel(action:string):string{return({OPEN_DRIVER_SETUP:'Open Driver Setup',VIEW_OUTSTANDING_REQUESTS:'View requests',VIEW_STATUS:'View status',MANAGE_SERVICES:'Manage services',ADD_VEHICLE:'Add vehicle',UPLOAD_DOCUMENTS:'Upload documents',UPDATE_DOCUMENTS:'Update documents',UPLOAD_INSURANCE:'Upload insurance',CONTINUE_STRIPE_SETUP:'Continue Stripe setup',SET_LOCATION:'Set location',CHANGE_OPERATING_AREA:'Change area'} as {[key:string]:string})[action]||'Continue';}
+    private async openOnlineAction(action:string):Promise<void>{if(action==='CONTINUE_STRIPE_SETUP'){await this.router.navigate(['/driver/settings'],{queryParams:{section:'payouts'}});return;}if(['SET_LOCATION','CHANGE_OPERATING_AREA'].includes(action)){await this.router.navigate(['/driver/settings'],{queryParams:{section:'location'}});return;}const section=({VIEW_OUTSTANDING_REQUESTS:'requests',VIEW_STATUS:'status',MANAGE_SERVICES:'services',ADD_VEHICLE:'vehicle',UPLOAD_DOCUMENTS:'documents',UPDATE_DOCUMENTS:'documents',UPLOAD_INSURANCE:'documents'} as {[key:string]:string})[action]||'setup';await this.router.navigate(['/driver/onboarding'],{queryParams:{section}});}
 
     async goOffline() {
         const profile = this.profileService.profile();

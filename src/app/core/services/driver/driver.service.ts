@@ -26,8 +26,7 @@ import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
 import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
 import { MarketplaceHybridService, HybridOpportunity } from '../marketplace/marketplace-hybrid.service';
-
-interface DriverVehicleApi { id:string;driverId:string;vehicleType:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string; }
+import { DriverVehicle } from './driver-onboarding-status.service';
 
 @Injectable({
     providedIn: 'root'
@@ -257,7 +256,7 @@ export class DriverService {
     async fetchVehicle() {
         const user = this.auth.currentUser();
         if (!user) return null;
-        const response = await firstValueFrom(this.http.get<{vehicle:DriverVehicleApi|null}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{headers:await this.authHeaders()}));
+        const response = await firstValueFrom(this.http.get<{vehicle:DriverVehicle|null}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{headers:await this.authHeaders()}));
         const vehicle=response.vehicle?this.fromVehicleApi(response.vehicle):null;
         this.vehicle.set(vehicle);
         return vehicle;
@@ -839,8 +838,8 @@ export class DriverService {
             throw new Error('Invalid vehicle year');
         }
 
-        let response:{vehicle:DriverVehicleApi};
-        try { response=await firstValueFrom(this.http.put<{vehicle:DriverVehicleApi}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{
+        let response:{vehicle:DriverVehicle};
+        try { response=await firstValueFrom(this.http.put<{vehicle:DriverVehicle}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{
                 vehicleType:payload.type,make:payload.make,model:payload.model,colour:payload.color,year:payload.year,
                 registrationNumber:payload.license_plate,capacity:payload.capacity,serviceEligibility:payload.service_eligibility
             },{headers:await this.authHeaders()}));
@@ -854,7 +853,7 @@ export class DriverService {
     }
 
     private async authHeaders():Promise<HttpHeaders>{const{data}=await this.supabase.auth.getSession();if(!data.session?.access_token)throw new Error('Please sign in again.');return new HttpHeaders({Authorization:`Bearer ${data.session.access_token}`});}
-    private fromVehicleApi(value:DriverVehicleApi):Vehicle{return{id:value.id,driver_id:value.driverId,make:value.make||'',model:value.model||'',color:value.colour||'',year:value.year||0,license_plate:value.registrationNumber||'',type:value.vehicleType as Vehicle['type'],capacity:value.capacity||undefined,service_eligibility:value.serviceEligibility,is_verified:value.status==='approved'};}
+    private fromVehicleApi(value:DriverVehicle):Vehicle{return{id:value.id,driver_id:value.userId,make:value.make||'',model:value.model||'',color:value.colour||'',year:value.year||0,license_plate:value.registrationNumber||'',type:value.type as Vehicle['type'],capacity:value.capacity||undefined,service_eligibility:value.serviceEligibility,is_verified:value.status==='approved'};}
 
     private isMissingColumnError(error: unknown, column: string): boolean {
         const maybeError = error as { code?: string; message?: string };

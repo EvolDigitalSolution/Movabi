@@ -11,7 +11,7 @@ export interface DriverOutstandingRequest {
 }
 export interface DriverOnboardingStatus {
     driverId: string; registrationAllowed: boolean; overallStatus: 'not_started'|'incomplete'|'ready_to_submit'|'under_review'|'action_required'|'approved'|'paused';
-    profile: Record<string, unknown>; vehicle: Record<string, unknown> | null;
+    profile: Record<string, unknown>; vehicle: DriverVehicle | null;
     outstandingRequests: DriverOutstandingRequest[]; submissionHistory: unknown[];
     stripeStatus: string; updatedAt: string | null;
     automaticRequirements: DriverAutomaticRequirement[]; adminRequests: DriverAdminRequest[]; warnings: DriverAutomaticRequirement[];
@@ -19,6 +19,7 @@ export interface DriverOnboardingStatus {
     selectedServices: Array<'ride'|'delivery'|'errand'|'van-moving'>; vehicleType: string|null;
     age: { eligible: boolean; years: number|null; minimum: number; reason: string|null };
 }
+export interface DriverVehicle { id:string;userId:string;type:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string; }
 export interface DriverAutomaticRequirement { code:string;label:string;category:'basic'|'services'|'vehicle'|'documents'|'agreement'|'licensing';status:string;required:boolean;completed:boolean;blockingForSubmission:boolean;blockingForOnline:boolean;needsAdminReview:boolean;reason:string;services:string[]; }
 export interface DriverAdminRequest { id:string;requirementCode:string;item:string;status:'pending'|'rejected'|'approved';publicMessage:string;submittedAt:string|null;updatedAt:string|null;resolvedAt:string|null;nextAction:string; }
 export type DriverOnboardingEventType =

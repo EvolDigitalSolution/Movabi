@@ -16,8 +16,8 @@ export interface DriverVehicleRow {
 
 export interface DriverVehicle {
   id: string;
-  driverId: string;
-  vehicleType: string;
+  userId: string;
+  type: string;
   make: string | null;
   model: string | null;
   colour: string | null;
@@ -45,8 +45,8 @@ export function mapDriverVehicleRow(row: DriverVehicleRow): DriverVehicle {
   const numericYear = Number(row.year);
   return {
     id: row.id,
-    driverId: row.user_id,
-    vehicleType: text(row.type),
+    userId: row.user_id,
+    type: text(row.type),
     make: text(row.make) || null,
     model: text(row.model) || null,
     colour: text(row.color) || null,

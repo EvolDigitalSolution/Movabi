@@ -28,7 +28,7 @@ describe('driver vehicle API boundary', () => {
   });
 
   it('maps database snake_case explicitly to the canonical API model', () => {
-    expect(mapDriverVehicleRow(savedRow)).toMatchObject({ driverId:'driver-1', colour:'Green', year:2026, registrationNumber:'NH1 4G' });
+    expect(mapDriverVehicleRow(savedRow)).toMatchObject({ userId:'driver-1', type:'car', colour:'Green', year:2026, registrationNumber:'NH1 4G' });
   });
 
   it('preserves registration display spaces and case', () => {
@@ -36,14 +36,14 @@ describe('driver vehicle API boundary', () => {
   });
 
   it('marks all five persisted vehicle fields complete', () => {
-    const result=DriverRequirementService.resolve({profile:completeProfile,vehicle:savedRow,authEmailConfirmed:true,now:new Date('2026-08-05')});
+    const result=DriverRequirementService.resolve({profile:completeProfile,vehicle:mapDriverVehicleRow(savedRow),authEmailConfirmed:true,now:new Date('2026-08-05')});
     const required=['vehicle.make','vehicle.model','vehicle.colour','vehicle.year','vehicle.registration'];
     expect(result.automaticRequirements.filter(item=>required.includes(item.code)).map(item=>[item.code,item.completed]))
       .toEqual(required.map(code=>[code,true]));
   });
 
   it('does not complete fields from empty persisted values', () => {
-    const result=DriverRequirementService.resolve({profile:completeProfile,vehicle:{...savedRow,make:''},authEmailConfirmed:true});
+    const result=DriverRequirementService.resolve({profile:completeProfile,vehicle:mapDriverVehicleRow({...savedRow,make:''}),authEmailConfirmed:true});
     expect(result.automaticRequirements.find(item=>item.code==='vehicle.make')?.completed).toBe(false);
   });
 });

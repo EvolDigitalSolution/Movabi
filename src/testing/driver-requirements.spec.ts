@@ -7,8 +7,8 @@ const profile = (overrides: Record<string, unknown> = {}) => ({
   country_code: 'GB', right_to_work_url: 'right.pdf', driver_service_types: ['delivery'],
   bicycle_declaration: true, delivery_equipment_confirmed: true, ...overrides
 });
-const bicycle = { vehicle_class: 'bike', bicycle_type: 'road' };
-const car = { vehicle_class: 'standard', make: 'Ford', model: 'Focus', color: 'Blue', year: 2020, license_plate: 'AB12 CDE' };
+const bicycle = { id:'bike-1',userId:'driver-1',type:'bike',make:null,model:null,colour:null,year:null,registrationNumber:null,capacity:'bike',serviceEligibility:['delivery'],status:'saved' };
+const car = { id:'car-1',userId:'driver-1',type:'car',make:'Ford',model:'Focus',colour:'Blue',year:2020,registrationNumber:'AB12 CDE',capacity:'standard',serviceEligibility:['delivery'],status:'saved' };
 const resolve = (p = profile(), v: Record<string, unknown> = bicycle, requests: DriverAdminRequest[] = []) =>
   DriverRequirementService.resolve({ profile: p, vehicle: v, authEmailConfirmed: true, adminRequests: requests, now: new Date('2026-08-04') });
 
@@ -31,11 +31,11 @@ describe('authoritative driver requirement resolution', () => {
   });
 
   it('adds goods-in-transit cover for GB van moving', () => {
-    expect(resolve(profile({ driver_service_types: ['van-moving'] }), { ...car, vehicle_class: 'small_van' }).automaticRequirements.some(item => item.code === 'document.goods_in_transit')).toBe(true);
+    expect(resolve(profile({ driver_service_types: ['van-moving'] }), { ...car, type: 'small_van',capacity:'small_van' }).automaticRequirements.some(item => item.code === 'document.goods_in_transit')).toBe(true);
   });
 
   it('does not invent vehicle fields before service selection', () => {
-    const codes = resolve(profile({ driver_service_types: [] }), {}).automaticRequirements.map(item => item.code);
+    const codes = DriverRequirementService.resolve({profile:profile({driver_service_types:[]}),vehicle:null,authEmailConfirmed:true}).automaticRequirements.map(item => item.code);
     expect(codes).not.toContain('vehicle.make');
     expect(codes).not.toContain('vehicle.operating_method');
   });

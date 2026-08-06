@@ -663,7 +663,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 {{ submitting() ? 'Submitting...' : (isActionRequired() ? 'Resubmit for Manual Review' : 'Submit for Manual Review') }}
               </app-button>
 
-              @if (!canSubmit()) {
+              @if (hasAuthoritativeBlockers()) {
                 <p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-2xl p-4 mt-4 font-semibold leading-relaxed">
                   {{ setupBlockingMessage() }}
                 </p>
@@ -816,6 +816,10 @@ export class OnboardingPage implements OnInit {
     });
 
     setupBlockingMessage = computed(() => {
+        const authoritativeBlocker=this.onboardingStatus.state()?.automaticRequirements.find(item=>item.blockingForSubmission);
+        if(!authoritativeBlocker)return 'All authoritative setup requirements are complete.';
+        return authoritativeBlocker.reason;
+        /* Local form validity controls whether Save can run, but never decides the authoritative requirement banner.
         if (!this.activeVehicleDetailsReady()) {
             const invalid = this.activeVehicleControls().filter(controlName => this.onboardingForm.get(controlName)?.invalid);
             const hiddenInvalid = Object.keys(this.onboardingForm.controls).filter(controlName => !this.activeVehicleControls().includes(controlName) && this.onboardingForm.get(controlName)?.invalid);
@@ -844,7 +848,9 @@ export class OnboardingPage implements OnInit {
         if (!this.docs().license) return `Upload your ${this.primaryDocumentLabel().toLowerCase()} before submitting.`;
         if (!this.secondaryDocumentReady()) return `Upload your ${this.secondaryDocumentLabel().toLowerCase()} before submitting.`;
         return 'Complete the remaining required setup before submitting.';
+        */
     });
+    hasAuthoritativeBlockers=computed(()=>this.onboardingStatus.state()?.automaticRequirements.some(item=>item.blockingForSubmission)===true);
 
     pageTitle = computed(() => {
         if (this.isReadOnly()) return 'Application Under Review';

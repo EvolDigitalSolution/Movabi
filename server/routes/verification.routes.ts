@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
 import { DriverRequirementService } from '../services/driver-requirement.service';
+import { mapDriverVehicleRow } from '../models/driver-vehicle.model';
 import {
   getAdminReviewRequirements,
   getBlockingRequirements,
@@ -172,7 +173,7 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     const requirements = getDriverRequirements(requirementsInput);
     const authoritativeResolution = DriverRequirementService.resolve({
       profile: driverProfileWithVerificationItems,
-      vehicle: vehicle || null,
+      vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null,
       authEmailConfirmed: !!authUser?.user?.email_confirmed_at,
       countryCode: profile.country_code || profile.country || vehicle?.country_code
     });

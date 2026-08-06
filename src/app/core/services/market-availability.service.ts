@@ -6,6 +6,7 @@ export type MarketCapability='customer_app'|'customer_registration'|'driver_regi
 export interface PublicMarketStatus { code?:string|null;countryCode:string|null;marketCity:string|null;launchStatus:string;customerAppEnabled:boolean;
  customerRegistrationEnabled:boolean;driverRegistrationEnabled:boolean;driverOnlineEnabled:boolean;quoteEnabled:boolean;bookingEnabled:boolean;paymentEnabled:boolean;
  currency:string|null;timezone:string|null;title:string;message:string;waitingListEnabled:boolean;resolutionLevel:'zone'|'city'|'country'|'unavailable'; }
+export interface DriverOnlineEligibility {allowed:boolean;code:string;title:string;message:string;action:string|null;blockers:string[];}
 @Injectable({providedIn:'root'})
 export class MarketAvailabilityClientService{
  private http=inject(HttpClient);private api=inject(ApiUrlService);readonly current=signal<PublicMarketStatus|null>(null);
@@ -18,9 +19,9 @@ export class MarketAvailabilityClientService{
   const status=await firstValueFrom(this.http.get<PublicMarketStatus>(`${this.api.getApiUrl('/api/markets/status')}?${params.toString()}`));this.current.set(status);return status;
  }
  async joinWaitingList(email:string,status:PublicMarketStatus):Promise<void>{await firstValueFrom(this.http.post(this.api.getApiUrl('/api/markets/waitlist'),{email,countryCode:status.countryCode,marketCity:status.marketCity}));}
- async setDriverOnline(input:{online:boolean;countryCode?:string|null;marketCity?:string|null;zoneId?:string|null}):Promise<void>{
+ async setDriverOnline(input:{online:boolean;countryCode?:string|null;marketCity?:string|null;zoneId?:string|null;locationPermission?:boolean}):Promise<void>{
   try{await firstValueFrom(this.http.post(this.api.getApiUrl('/api/markets/driver-online'),input));}
-  catch(error:any){const body=error?.error;if(body?.market?.message)throw new Error(body.market.message);throw error;}
+  catch(error:any){const body=error?.error;if(body?.code&&body?.title&&body?.message)throw body as DriverOnlineEligibility;if(body?.market?.message)throw new Error(body.market.message);throw error;}
  }
  async requireDriverRegistration(input:{countryCode?:string|null;marketCity?:string|null;zoneId?:string|null}):Promise<void>{
   try{await firstValueFrom(this.http.post(this.api.getApiUrl('/api/markets/driver-registration/check'),input));}
