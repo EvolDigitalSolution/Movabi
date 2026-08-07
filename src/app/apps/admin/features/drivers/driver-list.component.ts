@@ -25,6 +25,7 @@ type AdminDriver = DriverProfile & {
     email?: string | null;
     auth_email?: string | null;
     date_of_birth?: string | null;
+    dob_correction_request?:{id:string;status:'pending'|'approved'|'rejected';public_message:string;private_admin_note:string|null;permission_consumed_at:string|null}|null;
     phone?: string | null;
     council_license_number?: string | null;
     council_name?: string | null;
@@ -349,6 +350,7 @@ type AdminDriver = DriverProfile & {
                     <span class="detail-muted">Date of Birth:</span>
                     <span class="detail-value">{{ formatDate(selectedDriver()?.date_of_birth) }}</span>
                   </div>
+                  @if(selectedDriver()?.dob_correction_request;as correction){<div class="rounded-xl border border-amber-200 bg-amber-50 p-3"><p class="text-xs font-black text-amber-900">DOB correction: {{correction.status}}</p><p class="mt-1 text-xs text-amber-800">{{correction.public_message}}</p>@if(correction.status==='pending'){<div class="mt-2 flex gap-2"><button type="button" class="text-xs font-bold text-green-700" (click)="resolveDobCorrection(selectedDriver(),true)">Allow correction</button><button type="button" class="text-xs font-bold text-rose-700" (click)="resolveDobCorrection(selectedDriver(),false)">Reject</button></div>}</div>}
                   <div>
                     <span class="detail-muted">Driver ID:</span>
                     <span class="detail-value break-all">{{ selectedDriver()?.id }}</span>
@@ -1446,6 +1448,8 @@ export class DriverListComponent implements OnInit {
             }
         });
     }
+
+    async resolveDobCorrection(driver:AdminDriver|null,approved:boolean){const request=driver?.dob_correction_request;if(!driver?.id||!request)return;const publicMessage=window.prompt('Public message for the driver',approved?'Correction approved. You may update your date of birth once.':'Correction request was not approved.')||'';const privateNote=window.prompt('Private Admin note (not shown to the driver)','')||'';try{await this.adminService.resolveDobCorrection(driver.id,request.id,approved,publicMessage,privateNote);await this.loadDrivers();}catch(error){console.error('[Admin] DOB correction resolution failed',error);}}
 
     async sendMissingInfoRequest(driver: any) {
         if (!driver?.id) return;

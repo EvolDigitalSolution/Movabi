@@ -8,7 +8,7 @@ export interface ResolvedDriverRequirement {
   status: RequirementState; required: boolean; completed: boolean; blockingForSubmission: boolean; blockingForOnline: boolean;
   needsAdminReview: boolean; reason: string; services: CanonicalDriverService[];
 }
-export interface DriverAdminRequest { id: string; requirementCode: string; item: string; status: 'pending'|'rejected'|'approved'; publicMessage: string; submittedAt: string|null; updatedAt: string|null; resolvedAt: string|null; nextAction: string; }
+export interface DriverAdminRequest { id: string; requirementCode: string; requestType?:string|null; item: string; status: 'pending'|'rejected'|'approved'; publicMessage: string; submittedAt: string|null; updatedAt: string|null; resolvedAt: string|null; nextAction: string; }
 export interface DriverRequirementResolution {
   selectedServices: CanonicalDriverService[]; vehicleType: DriverOperatingVehicle; automaticRequirements: ResolvedDriverRequirement[];
   adminRequests: DriverAdminRequest[]; warnings: ResolvedDriverRequirement[];

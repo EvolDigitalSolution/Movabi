@@ -309,6 +309,8 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
     }
 
     const driverIds = (drivers || []).map((driver: any) => driver.id).filter(Boolean);
+    const {data:dobCorrectionRows}=driverIds.length?await supabaseAdmin.from('driver_onboarding_requests').select('id,driver_id,status,public_message,private_admin_note,sent_at,resolved_at,request_type,permission_consumed_at').in('driver_id',driverIds).eq('request_type','identity_correction').order('created_at',{ascending:false}):{data:[] as any[]};
+    const dobCorrectionsByDriver=new Map<string,any>();for(const request of dobCorrectionRows||[]){if(!dobCorrectionsByDriver.has(request.driver_id))dobCorrectionsByDriver.set(request.driver_id,request);}
     const { data: vehicles } = driverIds.length
       ? await supabaseAdmin
         .from('vehicles')
@@ -346,6 +348,7 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
         email: driver.email || authEmail,
         auth_email: authEmail,
         date_of_birth: driver.date_of_birth || null,
+        dob_correction_request:dobCorrectionsByDriver.get(driver.id)||null,
         phone: driver.phone || driver.phone_number || driver.mobile || null,
         council_name: firstValue(driverWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
         council_license_number: firstValue(driverWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number', 'taxi_licence_number']),

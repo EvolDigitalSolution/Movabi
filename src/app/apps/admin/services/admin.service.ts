@@ -893,6 +893,8 @@ export class AdminService {
     return data;
   }
 
+  async resolveDobCorrection(driverId:string,requestId:string,approved:boolean,publicMessage:string,privateNote:string){const headers=await this.getAuthenticatedApiHeaders();const response=await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/dob-correction/${requestId}`,{method:'POST',headers,body:JSON.stringify({approved,publicMessage,privateNote})});const result=await this.readApiResponse(response);if(!response.ok)throw new Error(result?.error||'DOB correction request could not be resolved.');return result;}
+
   async updateServiceType(id: string, payload: any) {
     const { data, error } = await this.supabase
       .from('service_types')

@@ -217,7 +217,7 @@ type DocType = 'license' | 'insurance';
                   <p class="text-sm font-bold text-slate-900 mt-1 break-words">{{ driverEmail() }}</p>
                 </div>
 
-                <label class="block">
+                @if (dateOfBirthEditable()) {<label class="block">
                   <span class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</span>
                   <input
                     type="date"
@@ -225,11 +225,11 @@ type DocType = 'license' | 'insurance';
                     [value]="dateOfBirthDraft()"
                     (input)="onDateOfBirthInput($event)"
                   >
-                </label>
+                </label>} @else {<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4"><p class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</p><p class="mt-1 text-sm font-bold text-slate-900">{{formattedDateOfBirth()}}</p><p class="mt-2 text-xs font-bold text-slate-600">Locked identity information</p><p class="mt-1 text-xs text-slate-500">Your date of birth is used for identity and driver eligibility checks.</p><button type="button" class="mt-3 text-xs font-bold text-blue-600" (click)="requestDobCorrection()">Request a correction</button></div>}
 
-                <app-button size="sm" class="w-full" [disabled]="savingPersonalDetails()" (clicked)="savePersonalDetails()">
+                @if(dateOfBirthEditable()){<app-button size="sm" class="w-full" [disabled]="savingPersonalDetails()" (clicked)="savePersonalDetails()">
                   {{ savingPersonalDetails() ? 'Saving...' : 'Save Personal Details' }}
-                </app-button>
+                </app-button>}
               </div>
             </div>
           </app-card>
@@ -759,6 +759,10 @@ export class DriverSettingsPage implements OnInit {
         this.dateOfBirthDraft.set((event.target as HTMLInputElement).value || '');
     }
 
+    dateOfBirthEditable(){return this.onboardingStatus.state()?.identityEditability?.dateOfBirthEditable===true;}
+    formattedDateOfBirth(){const value=this.onboardingStatus.state()?.canonicalProfile?.dateOfBirth;if(!value)return'Date of birth unavailable';const date=new Date(`${value}T00:00:00Z`);return new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(date);}
+    async requestDobCorrection(){const reason=window.prompt('Briefly explain why your date of birth needs correcting.','');if(!reason)return;try{await this.onboardingStatus.requestDobCorrection(reason);await this.showToast('Date of birth correction requested. We’ll review your request.','success');}catch(error){await this.showToast(error instanceof Error?error.message:'Could not request a correction.','danger');}}
+
     async savePersonalDetails() {
         const user = this.auth.currentUser();
         if (!user?.id || this.savingPersonalDetails()) return;
@@ -766,9 +770,8 @@ export class DriverSettingsPage implements OnInit {
         this.savingPersonalDetails.set(true);
 
         try {
-            await this.profileService.updateProfile(user.id, {
-                date_of_birth: this.dateOfBirthDraft() || null
-            } as any);
+            if(!this.dateOfBirthEditable())throw new Error('Date of birth is locked.');
+            await this.onboardingStatus.saveCurrentProfile({dateOfBirth:this.dateOfBirthDraft()});
 
             if (typeof (this.profileService as any).fetchProfile === 'function') {
                 await (this.profileService as any).fetchProfile(user.id);

@@ -18,6 +18,7 @@ export interface DriverOnboardingStatus {
     progress: { completed: number; total: number; percentage:number }; sectionStatus:DriverSetupSectionStatus; onlineEligibility: { allowed: boolean; reasons: string[] };
     selectedServices: Array<'ride'|'delivery'|'errand'|'van-moving'>; vehicleType: string|null;
     age: { eligible: boolean; years: number|null; minimum: number; reason: string|null };
+    identityEditability:{dateOfBirthEditable:boolean;reason:string|null};
 }
 export type DriverSetupSectionState='not_applicable'|'incomplete'|'complete'|'action_required'|'under_review';
 export interface DriverSetupSection {applicable:boolean;status:DriverSetupSectionState;}
@@ -25,7 +26,7 @@ export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;servi
 export interface CanonicalDriverProfile {id:string;fullName:string|null;phone:string|null;dateOfBirth:string|null;residentialAddress:string|null;emailConfirmed:boolean;verificationStatus:string|null;}
 export interface DriverVehicle { id:string;userId:string;type:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string; }
 export interface DriverAutomaticRequirement { code:string;label:string;category:'basic'|'services'|'vehicle'|'documents'|'agreement'|'licensing';status:string;required:boolean;completed:boolean;blockingForSubmission:boolean;blockingForOnline:boolean;needsAdminReview:boolean;reason:string;services:string[]; }
-export interface DriverAdminRequest { id:string;requirementCode:string;item:string;status:'pending'|'rejected'|'approved';publicMessage:string;submittedAt:string|null;updatedAt:string|null;resolvedAt:string|null;nextAction:string; }
+export interface DriverAdminRequest { id:string;requirementCode:string;requestType?:string|null;item:string;status:'pending'|'rejected'|'approved';publicMessage:string;submittedAt:string|null;updatedAt:string|null;resolvedAt:string|null;nextAction:string; }
 export type DriverOnboardingEventType =
     | 'driver_registration_started' | 'driver_onboarding_submitted' | 'driver_vehicle_submitted'
     | 'driver_vehicle_updated' | 'driver_document_uploaded' | 'driver_document_replaced'
@@ -76,13 +77,14 @@ export class DriverOnboardingStatusService {
     }
 
     async submitForReview(profile:Record<string,unknown>):Promise<void>{await this.authenticatedPost('/api/driver-onboarding/submit-review',{profile},true);}
-    async saveCurrentProfile(input:{residentialAddress:string;dateOfBirth:string}):Promise<CanonicalDriverProfile>{
+    async saveCurrentProfile(input:{residentialAddress?:string;dateOfBirth?:string}):Promise<CanonicalDriverProfile>{
         const result=await this.authenticatedPut<{profile:CanonicalDriverProfile}>('/api/driver-onboarding/profile',input,true);
         this.state.update(snapshot=>snapshot?{...snapshot,canonicalProfile:result.profile,profile:{...snapshot.profile,current_address:result.profile.residentialAddress,date_of_birth:result.profile.dateOfBirth}}:snapshot);
         return result.profile;
     }
     async saveVerificationItems(input:{bicycleDeclaration:boolean;deliveryEquipmentConfirmed:boolean}):Promise<void>{await this.authenticatedPut<{saved:true}>('/api/driver-onboarding/verification-items',input,true);}
     async saveAgreement(accepted:boolean):Promise<{accepted:boolean;acceptedAt:string|null}>{return this.authenticatedPut<{agreement:{accepted:boolean;acceptedAt:string|null}}>('/api/driver-onboarding/agreement',{accepted},true).then(result=>result.agreement);}
+    async requestDobCorrection(reason:string):Promise<void>{await this.authenticatedPost('/api/driver-onboarding/dob-correction-request',{reason},true);await this.refresh();}
 
     private async authenticatedGet(allowRefresh: boolean): Promise<DriverOnboardingStatus> {
         const token = await this.accessToken();

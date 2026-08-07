@@ -119,6 +119,8 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
 
 router.use(requireAdmin);
 
+router.post('/drivers/:driverId/dob-correction/:requestId',async(req,res)=>{try{const{driverId,requestId}=req.params;const approved=req.body?.approved===true;const publicMessage=String(req.body?.publicMessage||'').trim();const privateNote=String(req.body?.privateNote||'').trim();const token=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();const{data:actor}=await supabase.auth.getUser(token);const now=new Date().toISOString();const{data,error}=await supabase.from('driver_onboarding_requests').update({status:approved?'approved':'rejected',public_message:publicMessage||(approved?'Correction approved. You may update your date of birth once.':'Correction request was not approved.'),private_admin_note:privateNote||null,resolved_at:now,permission_consumed_at:null,updated_at:now}).eq('id',requestId).eq('driver_id',driverId).eq('request_type','identity_correction').select('id,status,public_message').single();if(error||!data)return res.status(404).json({error:error?.message||'DOB correction request not found.'});const{error:auditError}=await supabase.from('driver_requirement_audit').insert({driver_id:driverId,event_type:approved?'dob_correction_granted':'dob_correction_rejected',actor_id:actor.user?.id||null,selected_services:[],requirement_codes:['profile.date_of_birth'],metadata:{requestId,privateNotePresent:!!privateNote}});if(auditError)throw auditError;return res.json({request:data});}catch(error:any){return res.status(500).json({error:error?.message||'Unable to resolve DOB correction request.'});}});
+
 router.post('/drivers/:driverId/preverify', async (req, res) => {
   try {
     if (!serviceRoleKey) {

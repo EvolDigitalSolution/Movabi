@@ -1,0 +1,10 @@
+BEGIN;
+ALTER TABLE public.driver_onboarding_requests
+  ADD COLUMN IF NOT EXISTS request_type varchar(50),
+  ADD COLUMN IF NOT EXISTS permission_consumed_at timestamptz;
+ALTER TABLE public.driver_requirement_audit
+  ADD COLUMN IF NOT EXISTS actor_id uuid,
+  ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_driver_dob_correction_requests
+  ON public.driver_onboarding_requests(driver_id,request_type,status);
+COMMIT;

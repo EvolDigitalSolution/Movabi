@@ -363,8 +363,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
 
                 <div>
                   <label for="date_of_birth" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date of Birth</label>
-                  <input id="date_of_birth" type="date" formControlName="date_of_birth" [readonly]="isReadOnly()" [class]="fieldInputClass()">
-                  @if(onboardingForm.get('date_of_birth')?.hasError('minimumAge')){<p class="mt-1 text-xs font-semibold text-rose-600">You must meet the minimum driver age requirement to register.</p>}
+                  @if(dateOfBirthEditable()){<input id="date_of_birth" type="date" formControlName="date_of_birth" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  @if(onboardingForm.get('date_of_birth')?.hasError('minimumAge')){<p class="mt-1 text-xs font-semibold text-rose-600">You must meet the minimum driver age requirement to register.</p>}}
+                  @else{<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4"><p class="text-sm font-bold text-slate-900">{{formattedPersistedDateOfBirth()}}</p><p class="mt-2 text-xs font-bold text-slate-600">Locked identity information</p><p class="mt-1 text-xs text-slate-500">Your date of birth is used for identity and driver eligibility checks.</p></div>}
                 </div>
 
                 <div><label for="current_address" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Residential Address</label><textarea id="current_address" formControlName="current_address" [readonly]="isReadOnly()" [class]="fieldInputClass()" placeholder="Your current home address"></textarea></div>
@@ -951,6 +952,8 @@ export class OnboardingPage implements OnInit {
     sectionFor(section:keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus){return this.onboardingStatus.state()?.sectionStatus?.[section];}
     setupProgressPercent(){return this.onboardingStatus.state()?.progress?.percentage||0;}
     setupStatusLabel(){return String(this.onboardingStatus.state()?.overallStatus||'not_started').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());}
+    dateOfBirthEditable(){return this.onboardingStatus.state()?.identityEditability?.dateOfBirthEditable===true;}
+    formattedPersistedDateOfBirth(){const value=this.onboardingStatus.state()?.canonicalProfile?.dateOfBirth;if(!value)return'Date of birth unavailable';return new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${value}T00:00:00Z`));}
     async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
 
     getStripeBadgeText(): string {
@@ -1008,8 +1011,8 @@ export class OnboardingPage implements OnInit {
         if(address.length<5)throw new Error('A valid residential address is required.');
         const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
         if(!vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true))throw new Error('Complete the required vehicle details before saving.');
-        const dateOfBirth=this.dateOfBirthForApi(raw.date_of_birth);
-        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address,dateOfBirth});
+        const dateOfBirth=this.dateOfBirthEditable()?this.dateOfBirthForApi(raw.date_of_birth):undefined;
+        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address,...(dateOfBirth?{dateOfBirth}:{})});
         if(!savedProfile.residentialAddress)throw new Error('Residential address was not persisted.');
         if(!savedProfile.dateOfBirth)throw new Error('Date of birth was not persisted.');
         this.mergeLocalProfile({current_address:savedProfile.residentialAddress,date_of_birth:savedProfile.dateOfBirth});
