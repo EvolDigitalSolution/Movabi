@@ -73,7 +73,8 @@ export class DriverOnboardingStatusService {
     }
 
     async submitForReview(profile:Record<string,unknown>):Promise<void>{await this.authenticatedPost('/api/driver-onboarding/submit-review',{profile},true);}
-    async saveCurrentProfile(input:{residentialAddress:string;fullName:string;phone:string;dateOfBirth:string|null;agreementAccepted:boolean;bicycleDeclaration:boolean;deliveryEquipmentConfirmed:boolean}):Promise<CanonicalDriverProfile>{return this.authenticatedPut<{profile:CanonicalDriverProfile}>('/api/driver-onboarding/profile',input,true).then(result=>result.profile);}
+    async saveCurrentProfile(input:{residentialAddress:string}):Promise<CanonicalDriverProfile>{return this.authenticatedPut<{profile:CanonicalDriverProfile}>('/api/driver-onboarding/profile',input,true).then(result=>result.profile);}
+    async saveVerificationItems(input:{bicycleDeclaration:boolean;deliveryEquipmentConfirmed:boolean}):Promise<void>{await this.authenticatedPut<{saved:true}>('/api/driver-onboarding/verification-items',input,true);}
 
     private async authenticatedGet(allowRefresh: boolean): Promise<DriverOnboardingStatus> {
         const token = await this.accessToken();

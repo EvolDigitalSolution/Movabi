@@ -16,6 +16,10 @@ function parseOnboardingItems(input:unknown):Record<string,unknown>{
   return typeof input==='object'?input as Record<string,unknown>:{};
 }
 
+function serializeOnboardingItems(items:Record<string,unknown>):Array<{key:string;value:string}>{
+  return Object.entries(items).filter(([key])=>key.trim().length>0).map(([key,value])=>({key,value:typeof value==='string'?value:JSON.stringify(value)}));
+}
+
 async function currentVehicle(driverId:string):Promise<DriverVehicleRow|null>{
   const{data,error}=await supabaseAdmin.from('vehicles').select('*').eq('user_id',driverId).order('created_at',{ascending:false});
   if(error)throw error;
@@ -97,16 +101,19 @@ router.post('/events', async (req, res) => {
 
 router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
   const residentialAddress=parseResidentialAddress(req.body);console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent:true});
-  const body=req.body||{};
-  const {data:existing,error:existingError}=await supabaseAdmin.from('profiles').select('id,verification_items').eq('id',driverId).single();
-  if(existingError||!existing)throw existingError||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND'});
-  const storedItems=parseOnboardingItems(existing.verification_items);
-  const verificationItems={...storedItems,bicycle_declaration:body.bicycleDeclaration===true,delivery_equipment_confirmed:body.deliveryEquipmentConfirmed===true};
-  const profileUpdates={current_address:residentialAddress,full_name:String(body.fullName||'').trim()||null,phone:String(body.phone||'').trim()||null,date_of_birth:body.dateOfBirth||null,accepted_driver_agreement_at:body.agreementAccepted===true?new Date().toISOString():null,verification_items:verificationItems,updated_at:new Date().toISOString()};
+  const profileUpdates={current_address:residentialAddress,updated_at:new Date().toISOString()};
+  console.info('[DriverOnboarding] profile update payload',{userId:driverId,keys:Object.keys(profileUpdates)});
   const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(error||!data)throw error||new Error('Profile save returned no record.');
   const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(!profile.residentialAddress)throw new Error('Residential address was not persisted.');
   console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent:true});return res.json({profile});
- }catch(error:unknown){const details=error as Error&{code?:string};const message=details.message||'Unable to save residential address.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message});return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const message=details.message||'Unable to save residential address.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message,details:details.details||null,hint:details.hint||null});return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
+
+router.put('/verification-items',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const{data:existing,error:readError}=await supabaseAdmin.from('profiles').select('id,verification_items').eq('id',driverId).single();if(readError||!existing)throw readError||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND'});
+  const items={...parseOnboardingItems(existing.verification_items),bicycle_declaration:req.body?.bicycleDeclaration===true,delivery_equipment_confirmed:req.body?.deliveryEquipmentConfirmed===true};
+  const{data,error}=await supabaseAdmin.from('profiles').update({verification_items:serializeOnboardingItems(items),updated_at:new Date().toISOString()}).eq('id',driverId).select('id').single();if(error||!data)throw error||new Error('Onboarding declarations save returned no record.');
+  return res.json({saved:true});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] verification items update failed',{userId:driverId,code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save onboarding declarations.',code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED'});}});
 
 router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
 
@@ -134,7 +141,7 @@ router.post('/submit-review', async (req,res)=>{
     const submittedAt=new Date().toISOString();const submitted=req.body?.profile||{};
     const existingItems=parseOnboardingItems(profile.verification_items);
     const submittedItems=parseOnboardingItems(submitted.verification_items);
-    const updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted.full_name||'').trim(),phone:String(submitted.phone||'').trim(),date_of_birth:submitted.date_of_birth||null,accepted_driver_agreement_at:submitted.accepted_driver_agreement_at||null,driver_license_url:submitted.driver_license_url||null,insurance_url:submitted.insurance_url||null,right_to_work_url:submitted.right_to_work_url||null,verification_items:{...existingItems,...submittedItems},verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+    const updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted.full_name||'').trim(),phone:String(submitted.phone||'').trim(),date_of_birth:submitted.date_of_birth||null,accepted_driver_agreement_at:submitted.accepted_driver_agreement_at||null,driver_license_url:submitted.driver_license_url||null,insurance_url:submitted.insurance_url||null,right_to_work_url:submitted.right_to_work_url||null,verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
     const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated)throw updateError||new Error('Review submission did not update the driver profile.');
     return res.json({submitted:true,profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
   }catch(error:unknown){const message=error instanceof Error?error.message:'Unable to validate driver submission.';return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});}

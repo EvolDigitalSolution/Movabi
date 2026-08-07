@@ -1005,9 +1005,10 @@ export class OnboardingPage implements OnInit {
         if(address.length<5)throw new Error('A valid residential address is required.');
         const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
         if(!vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true))throw new Error('Complete the required vehicle details before saving.');
-        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address,fullName:String(raw.full_name||'').trim(),phone:String(raw.phone||'').trim(),dateOfBirth:String(raw.date_of_birth||'').trim()||null,agreementAccepted:raw.driver_agreement_accepted===true,bicycleDeclaration:raw.bicycle_declaration===true,deliveryEquipmentConfirmed:raw.delivery_equipment_confirmed===true});
+        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address});
         if(!savedProfile.residentialAddress)throw new Error('Residential address was not persisted.');
         this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
+        await this.onboardingStatus.saveVerificationItems({bicycleDeclaration:raw.bicycle_declaration===true,deliveryEquipmentConfirmed:raw.delivery_equipment_confirmed===true});
         await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
         if(!this.driverService.vehicle())throw new Error('Vehicle details were not persisted.');
         return this.onboardingStatus.refresh();
