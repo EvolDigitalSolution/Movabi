@@ -42,3 +42,31 @@ export function parseResidentialAddress(input: unknown): string {
   if (!address || address.length < 5) throw new Error('Enter a valid current residential address.');
   return address;
 }
+
+export function parseDriverDateOfBirth(input: unknown, now = new Date()): string {
+  const raw = value(input);
+  if (!raw) throw new Error('Add your date of birth.');
+  let year: number, month: number, day: number;
+  let match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (match) {
+    year = Number(match[1]); month = Number(match[2]); day = Number(match[3]);
+  } else {
+    match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+    if (!match) throw new Error('Enter a valid date of birth.');
+    day = Number(match[1]); month = Number(match[2]); year = Number(match[3]);
+  }
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1900 || candidate.getUTCFullYear() !== year || candidate.getUTCMonth() !== month - 1 || candidate.getUTCDate() !== day) {
+    throw new Error('Enter a valid date of birth.');
+  }
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  if (candidate.getTime() > today) throw new Error('Date of birth cannot be in the future.');
+  return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+}
+
+export function calculateCalendarAge(isoDateOfBirth: string, now = new Date()): number {
+  const [year, month, day] = isoDateOfBirth.split('-').map(Number);
+  let age = now.getUTCFullYear() - year;
+  if (now.getUTCMonth() + 1 < month || (now.getUTCMonth() + 1 === month && now.getUTCDate() < day)) age--;
+  return age;
+}

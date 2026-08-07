@@ -1,8 +1,8 @@
-import {CanonicalDriverProfile,mapDriverProfile} from '../models/driver-profile.model';
+import {calculateCalendarAge,CanonicalDriverProfile,mapDriverProfile,parseDriverDateOfBirth} from '../models/driver-profile.model';
 
 export type CanonicalDriverService = 'ride' | 'delivery' | 'errand' | 'van-moving';
 export type DriverOperatingVehicle = 'bicycle' | 'motorcycle' | 'car' | 'small_van' | 'large_van' | null;
-export type RequirementState = 'completed' | 'missing' | 'invalid' | 'under_review' | 'approved' | 'rejected' | 'not_applicable';
+export type RequirementState = 'completed' | 'missing' | 'invalid' | 'under_age' | 'under_review' | 'approved' | 'rejected' | 'not_applicable';
 export interface ResolvedDriverRequirement {
   code: string; label: string; category: 'basic' | 'services' | 'vehicle' | 'documents' | 'agreement' | 'licensing';
   status: RequirementState; required: boolean; completed: boolean; blockingForSubmission: boolean; blockingForOnline: boolean;
@@ -28,7 +28,7 @@ export class DriverRequirementService {
     add('profile.address','Residential address','basic',this.has(canonicalProfile.residentialAddress),'Add your current residential address.');
     add('profile.email_verification','Email verified','basic',canonicalProfile.emailConfirmed,'Confirm your sign-in email address.');
     const age=this.age(canonicalProfile.dateOfBirth,now,18);
-    add('profile.date_of_birth','Date of birth','basic',age.eligible,age.reason||'Date of birth confirmed.',[],this.has(profile.date_of_birth||profile.dob)&&!age.eligible);
+    requirements.push({code:'profile.date_of_birth',label:'Date of birth',category:'basic',status:age.state,required:true,completed:age.eligible,blockingForSubmission:!age.eligible,blockingForOnline:!age.eligible,needsAdminReview:false,reason:age.reason||'Date of birth confirmed.',services:[]});
     add('service.selection','Selected services','services',selectedServices.length>0,'Select at least one service.');
     add('agreement.driver_terms','Driver agreement','agreement',this.has(profile.accepted_driver_agreement_at)||profile.driver_agreement_accepted===true,'Review and accept the Driver Agreement.');
     const country=String(input.countryCode||profile.country_code||'').toUpperCase();
@@ -57,7 +57,7 @@ export class DriverRequirementService {
     const adminRequests=(input.adminRequests||[]).filter((request,index,array)=>!automaticCodes.has(request.requirementCode)&&array.findIndex(item=>item.requirementCode===request.requirementCode&&item.status!=='approved')===index);
     const required=requirements.filter(r=>r.required); const completed=required.filter(r=>r.completed).length; const blockers=required.filter(r=>r.blockingForSubmission);
     const openAdmin=adminRequests.filter(r=>r.status!=='approved'); const review=profile.verification_status==='under_review'||profile.driver_review_status==='under_review'; const actionRequired=profile.verification_status==='action_required'||profile.driver_review_status==='action_required'; const approved=profile.is_verified===true||profile.verification_status==='approved'; const paused=['paused','suspended','blocked'].includes(String(profile.account_status||'').toLowerCase());
-    const overallStatus=paused?'paused':approved?'approved':actionRequired||openAdmin.length||requirements.some(r=>r.status==='invalid'||r.status==='rejected')?'action_required':review?'under_review':!selectedServices.length?'not_started':blockers.length?'incomplete':'ready_to_submit';
+    const overallStatus=paused?'paused':approved?'approved':actionRequired||openAdmin.length||requirements.some(r=>r.status==='invalid'||r.status==='under_age'||r.status==='rejected')?'action_required':review?'under_review':!selectedServices.length?'not_started':blockers.length?'incomplete':'ready_to_submit';
     const onlineReasons=[...required.filter(r=>r.blockingForOnline).map(r=>r.reason),...openAdmin.map(r=>r.publicMessage||r.item)];
     for(const service of selectedServices){const approvals=profile.service_approval_statuses||{};if((service==='ride'||service==='van-moving')&&approvals[service]!=='approved')onlineReasons.push(`${service} approval is pending.`);}
     if(!approved)onlineReasons.push('Driver onboarding is not approved.'); if(paused)onlineReasons.push('Driver account is paused or suspended.');
@@ -67,6 +67,6 @@ export class DriverRequirementService {
   private static services(profile:Record<string,any>,vehicle:DriverVehicleValidation):CanonicalDriverService[]{const raw=profile.driver_service_types||profile.verification_items?.driver_service_types||vehicle.serviceEligibility||[];const values=Array.isArray(raw)?raw:String(raw||'').replace(/[\[\]"]/g,'').split(',');return Array.from(new Set(values.map(v=>String(v).trim().toLowerCase()).map(v=>['van','moving','van_moving'].includes(v)?'van-moving':v).filter((v):v is CanonicalDriverService=>['ride','delivery','errand','van-moving'].includes(v))));}
   private static onboardingItems(input:unknown):Record<string,unknown>{if(!input)return{};if(typeof input==='string'){try{return this.onboardingItems(JSON.parse(input))}catch{return{}}}if(Array.isArray(input))return input.reduce<Record<string,unknown>>((items,entry)=>{if(!entry||typeof entry!=='object')return items;const row=entry as Record<string,unknown>,key=String(row.key||row.name||'').trim();if(key)items[key]=row.value==='true'?true:row.value==='false'?false:row.value;return items;},{});return typeof input==='object'?input as Record<string,unknown>:{};}
   private static vehicle(vehicle:DriverVehicleValidation,profile:Record<string,any>):DriverOperatingVehicle{const value=String(vehicle.capacity||vehicle.type||profile.operating_vehicle||'').toLowerCase();if(!value)return null;if(/bicycle|bike|cycle/.test(value))return'bicycle';if(/motorcycle|motorbike|moped|scooter/.test(value))return'motorcycle';if(/large.?van|luton|box.?van/.test(value))return'large_van';if(/small.?van|\bvan\b/.test(value))return'small_van';return'car';}
-  private static age(raw:unknown,now:Date,minimum:number){if(!raw)return{eligible:false,years:null,minimum,reason:'Enter your date of birth.'};const dob=new Date(String(raw));if(Number.isNaN(dob.getTime())||dob>now||dob.getUTCFullYear()<1900)return{eligible:false,years:null,minimum,reason:'Enter a valid date of birth.'};let years=now.getUTCFullYear()-dob.getUTCFullYear();if(now.getUTCMonth()<dob.getUTCMonth()||(now.getUTCMonth()===dob.getUTCMonth()&&now.getUTCDate()<dob.getUTCDate()))years--;return{eligible:years>=minimum,years,minimum,reason:years>=minimum?null:'You must meet the minimum driver age requirement to register.'};}
+  private static age(raw:unknown,now:Date,minimum:number){if(!raw)return{eligible:false,years:null,minimum,state:'missing' as const,reason:'Add your date of birth.'};try{const iso=parseDriverDateOfBirth(raw,now),years=calculateCalendarAge(iso,now),eligible=years>=minimum;return{eligible,years,minimum,state:eligible?'completed' as const:'under_age' as const,reason:eligible?null:'You must meet the minimum driver age requirement to register.'};}catch{return{eligible:false,years:null,minimum,state:'invalid' as const,reason:'Enter a valid date of birth.'};}}
   private static has(value:unknown){return String(value??'').trim().length>0;}
 }

@@ -5,7 +5,7 @@ import { MarketAvailabilityError, MarketAvailabilityService } from '../services/
 import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
 import { DriverRequirementService } from '../services/driver-requirement.service';
 import { DriverVehicleRow, mapDriverVehicleRow, parseDriverVehicleInput } from '../models/driver-vehicle.model';
-import { CANONICAL_DRIVER_PROFILE_SELECT, mapDriverProfile, parseResidentialAddress } from '../models/driver-profile.model';
+import { CANONICAL_DRIVER_PROFILE_SELECT, calculateCalendarAge, mapDriverProfile, parseDriverDateOfBirth, parseResidentialAddress } from '../models/driver-profile.model';
 
 const router = Router();
 
@@ -100,13 +100,17 @@ router.post('/events', async (req, res) => {
 });
 
 router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
-  const residentialAddress=parseResidentialAddress(req.body);console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent:true});
-  const profileUpdates={current_address:residentialAddress,updated_at:new Date().toISOString()};
+  const body=req.body&&typeof req.body==='object'?req.body:{};const residentialAddressPresent=typeof body.residentialAddress==='string';const dateOfBirthPresent=typeof body.dateOfBirth==='string';
+  console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent,dateOfBirthPresent});
+  if(!residentialAddressPresent&&!dateOfBirthPresent)throw new Error('Provide a residential address or date of birth.');
+  const profileUpdates:{current_address?:string;date_of_birth?:string;updated_at:string}={updated_at:new Date().toISOString()};
+  if(residentialAddressPresent)profileUpdates.current_address=parseResidentialAddress(body);
+  if(dateOfBirthPresent){profileUpdates.date_of_birth=parseDriverDateOfBirth(body.dateOfBirth);calculateCalendarAge(profileUpdates.date_of_birth);}
   console.info('[DriverOnboarding] profile update payload',{userId:driverId,keys:Object.keys(profileUpdates)});
   const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(error||!data)throw error||new Error('Profile save returned no record.');
-  const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(!profile.residentialAddress)throw new Error('Residential address was not persisted.');
-  console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent:true});return res.json({profile});
- }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const message=details.message||'Unable to save residential address.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message,details:details.details||null,hint:details.hint||null});return res.status(/valid current residential/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
+  const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(residentialAddressPresent&&!profile.residentialAddress)throw new Error('Residential address was not persisted.');if(dateOfBirthPresent&&!profile.dateOfBirth)throw new Error('Date of birth was not persisted.');
+  console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent,dateOfBirthPresent});return res.json({profile});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const message=details.message||'Unable to save driver profile.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message,details:details.details||null,hint:details.hint||null});return res.status(/date of birth|valid current residential/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
 
 router.put('/verification-items',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
   const{data:existing,error:readError}=await supabaseAdmin.from('profiles').select('id,verification_items').eq('id',driverId).single();if(readError||!existing)throw readError||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND'});

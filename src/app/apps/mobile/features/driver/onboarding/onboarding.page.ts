@@ -1005,9 +1005,12 @@ export class OnboardingPage implements OnInit {
         if(address.length<5)throw new Error('A valid residential address is required.');
         const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
         if(!vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true))throw new Error('Complete the required vehicle details before saving.');
-        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address});
+        const dateOfBirth=this.dateOfBirthForApi(raw.date_of_birth);
+        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address,dateOfBirth});
         if(!savedProfile.residentialAddress)throw new Error('Residential address was not persisted.');
-        this.mergeLocalProfile({current_address:savedProfile.residentialAddress});
+        if(!savedProfile.dateOfBirth)throw new Error('Date of birth was not persisted.');
+        this.mergeLocalProfile({current_address:savedProfile.residentialAddress,date_of_birth:savedProfile.dateOfBirth});
+        this.onboardingForm.patchValue({date_of_birth:this.formatDateForInput(savedProfile.dateOfBirth)},{emitEvent:false});
         await this.onboardingStatus.saveVerificationItems({bicycleDeclaration:raw.bicycle_declaration===true,deliveryEquipmentConfirmed:raw.delivery_equipment_confirmed===true});
         await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
         if(!this.driverService.vehicle())throw new Error('Vehicle details were not persisted.');
@@ -1929,6 +1932,14 @@ export class OnboardingPage implements OnInit {
     private formatDateForInput(value: unknown): string {
         if (!value) return '';
         return String(value).slice(0, 10);
+    }
+
+    private dateOfBirthForApi(value: unknown): string {
+        const raw=String(value||'').trim();
+        if(/^\d{4}-\d{2}-\d{2}$/.test(raw))return raw;
+        const match=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+        if(!match)throw new Error('Enter a valid date of birth.');
+        return `${match[3]}-${match[2]}-${match[1]}`;
     }
 
     private extractMissingColumn(error: unknown): string | null {
