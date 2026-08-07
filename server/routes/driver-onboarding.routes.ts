@@ -66,7 +66,7 @@ router.get('/status', async (req, res) => {
     const stripeStatus = profile.stripe_connect_status || 'not_started';
     console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
     return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, vehicle: canonicalVehicle, outstandingRequests,
-      automaticRequirements:resolution.automaticRequirements,adminRequests:resolution.adminRequests,warnings:resolution.warnings,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
+      automaticRequirements:resolution.automaticRequirements,adminRequests:resolution.adminRequests,warnings:resolution.warnings,sectionStatus:resolution.sectionStatus,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
   } catch (error: unknown) {
@@ -119,6 +119,14 @@ router.put('/verification-items',async(req,res)=>{const driverId=await authentic
   return res.json({saved:true});
  }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] verification items update failed',{userId:driverId,code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save onboarding declarations.',code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED'});}});
 
+router.put('/agreement',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  if(typeof req.body?.accepted!=='boolean')return res.status(422).json({error:'Agreement acceptance must be true or false.',code:'INVALID_AGREEMENT_STATE'});
+  const acceptedAt=req.body.accepted?new Date().toISOString():null;
+  const{data,error}=await supabaseAdmin.from('profiles').update({accepted_driver_agreement_at:acceptedAt,updated_at:new Date().toISOString()}).eq('id',driverId).select('id,accepted_driver_agreement_at').single();
+  if(error||!data)throw error||new Error('Agreement save returned no record.');
+  return res.json({agreement:{accepted:!!data.accepted_driver_agreement_at,acceptedAt:data.accepted_driver_agreement_at||null}});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] agreement update failed',{userId:driverId,code:details.code||'AGREEMENT_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save Driver Agreement.',code:details.code||'AGREEMENT_SAVE_FAILED'});}});
+
 router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
 
 router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
@@ -135,7 +143,7 @@ router.post('/submit-review', async (req,res)=>{
     const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile)throw profileError||new Error('Driver profile not found.');
     const vehicle=await currentVehicle(driverId);
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
-    const profileInput={...profile,...(req.body?.profile||{})};const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
+    const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
     const canonicalProfile=mapDriverProfile(profileInput,!!auth.user?.email_confirmed_at);
     const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);

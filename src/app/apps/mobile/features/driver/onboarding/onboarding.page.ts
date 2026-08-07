@@ -132,11 +132,12 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
         <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
           <div class="flex items-center justify-between"><div><p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Driver Setup</p><h2 class="font-display font-black text-slate-950">{{setupStatusLabel()}}</h2></div><span class="text-sm font-black text-blue-600">{{onboardingStatus.state()?.progress?.completed||0}} / {{onboardingStatus.state()?.progress?.total||0}}</span></div>
           <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-blue-600 transition-all" [style.width.%]="setupProgressPercent()"></div></div>
-          <div class="mt-4 grid gap-3">@for(group of setupGroups;track group.category){
-            <div class="rounded-2xl border border-slate-100 p-4"><div class="flex justify-between"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="groupComplete(group.category)" [class.text-amber-600]="!groupComplete(group.category)">{{groupComplete(group.category)?'Complete':'Incomplete'}}</span></div>
-              @if(!requirementsFor(group.category).length){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
+          <div class="mt-4 grid gap-3">@for(group of setupGroups;track group.section){
+            @if(sectionFor(group.section)?.applicable){
+            <div class="rounded-2xl border border-slate-100 p-4"><div class="flex justify-between"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="sectionFor(group.section)?.status==='complete'" [class.text-amber-600]="sectionFor(group.section)?.status!=='complete'">{{sectionFor(group.section)?.status==='complete'?'Complete':sectionFor(group.section)?.status==='under_review'?'Under review':sectionFor(group.section)?.status==='action_required'?'Action required':'Incomplete'}}</span></div>
+              @if(group.category&&!requirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
               @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='invalid'||requirement.status==='rejected'" [class.text-amber-600]="!requirement.completed&&requirement.status!=='invalid'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.completed?requirement.label:requirement.reason}}</span></div>}</div>}
-            </div>}
+            </div>}}
           </div>
           <div class="mt-4 grid grid-cols-2 gap-2"><button type="button" class="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white" (click)="scrollToSetup()">Continue Setup</button><button type="button" class="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" (click)="saveAndContinue()" [disabled]="savingProgress()">{{savingProgress()?'Saving…':'Save and Continue Later'}}</button></div>
         </section>
@@ -660,7 +661,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 class="w-full shadow-xl shadow-blue-600/15"
                 [disabled]="submitting()"
               >
-                {{ submitting() ? 'Submitting...' : (isActionRequired() ? 'Resubmit for Manual Review' : 'Submit for Manual Review') }}
+                {{ submitting() ? 'Submitting...' : (isActionRequired() ? 'Resubmit for Review' : 'Submit for Review') }}
               </app-button>
 
               @if (hasAuthoritativeBlockers()) {
@@ -711,12 +712,14 @@ export class OnboardingPage implements OnInit {
     submitting = signal(false);
     savingProgress = signal(false);
     readonly setupGroups = [
-        {category:'basic' as const,label:'Basic details',empty:'Add your basic account information.'},
-        {category:'services' as const,label:'Services',empty:'Select the services you want to provide.'},
-        {category:'vehicle' as const,label:'Operating method / Vehicle',empty:'Choose your services to see whether vehicle details are required.'},
-        {category:'documents' as const,label:'Documents',empty:'Requirements will appear after service and vehicle selection.'},
-        {category:'licensing' as const,label:'Service-specific licensing',empty:'Licensing appears only for services that require it.'},
-        {category:'agreement' as const,label:'Agreement',empty:'Review and accept the Driver Agreement.'}
+        {section:'basicDetails' as const,category:'basic' as const,label:'Basic details',empty:'Add your basic account information.'},
+        {section:'services' as const,category:'services' as const,label:'Services',empty:'Select the services you want to provide.'},
+        {section:'operatingMethod' as const,category:'operating' as const,label:'Operating method',empty:'Choose how you will provide the selected services.'},
+        {section:'vehicle' as const,category:'vehicle' as const,label:'Vehicle / Bicycle requirements',empty:'Complete the applicable vehicle requirements.'},
+        {section:'documents' as const,category:'documents' as const,label:'Documents',empty:'Complete the applicable document requirements.'},
+        {section:'serviceLicensing' as const,category:'licensing' as const,label:'Service-specific licensing',empty:''},
+        {section:'agreement' as const,category:'agreement' as const,label:'Agreement',empty:'Review and accept the Driver Agreement.'},
+        {section:'review' as const,category:'review' as const,label:'Review',empty:''}
     ];
 
     stripeAccount = this.driverService.stripeAccount;
@@ -944,9 +947,9 @@ export class OnboardingPage implements OnInit {
     }
 
     async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
-    requirementsFor(category:'basic'|'services'|'vehicle'|'documents'|'licensing'|'agreement'){return(this.onboardingStatus.state()?.automaticRequirements||[]).filter(item=>item.category===category);}
-    groupComplete(category:'basic'|'services'|'vehicle'|'documents'|'licensing'|'agreement'){const rows=this.requirementsFor(category);return rows.length>0&&rows.every(row=>row.completed);}
-    setupProgressPercent(){const progress=this.onboardingStatus.state()?.progress;return progress?.total?Math.round(progress.completed/progress.total*100):0;}
+    requirementsFor(category:'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review'){const rows=this.onboardingStatus.state()?.automaticRequirements||[];if(category==='review')return[];if(category==='operating')return rows.filter(item=>item.code==='vehicle.operating_method');if(category==='vehicle')return rows.filter(item=>item.category==='vehicle'&&item.code!=='vehicle.operating_method');return rows.filter(item=>item.category===category);}
+    sectionFor(section:keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus){return this.onboardingStatus.state()?.sectionStatus?.[section];}
+    setupProgressPercent(){return this.onboardingStatus.state()?.progress?.percentage||0;}
     setupStatusLabel(){return String(this.onboardingStatus.state()?.overallStatus||'not_started').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());}
     async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
 
@@ -1014,6 +1017,8 @@ export class OnboardingPage implements OnInit {
         await this.onboardingStatus.saveVerificationItems({bicycleDeclaration:raw.bicycle_declaration===true,deliveryEquipmentConfirmed:raw.delivery_equipment_confirmed===true});
         await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
         if(!this.driverService.vehicle())throw new Error('Vehicle details were not persisted.');
+        const agreement=await this.onboardingStatus.saveAgreement(raw.driver_agreement_accepted===true);
+        this.mergeLocalProfile({accepted_driver_agreement_at:agreement.acceptedAt});
         return this.onboardingStatus.refresh();
     }
 

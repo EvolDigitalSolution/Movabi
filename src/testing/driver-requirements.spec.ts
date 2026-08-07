@@ -74,7 +74,30 @@ describe('authoritative driver requirement resolution', () => {
 
   it('returns stable progress counts from unique canonical requirements', () => {
     const result = resolve();
-    expect(result.progress.total).toBe(new Set(result.automaticRequirements.map(item => item.code)).size);
+    expect(result.progress.total).toBe(Object.values(result.sectionStatus).filter(section=>section.applicable).length);
     expect(result.progress.completed).toBeLessThanOrEqual(result.progress.total);
+    expect(result.progress.percentage).toBe(Math.round(result.progress.completed/result.progress.total*100));
+  });
+
+  it.each([
+    ['delivery',false],['errand',false],['shop',false],['van-moving',false],['ride',true]
+  ] as const)('%s resolves service licensing applicability to %s',(service,applicable)=>{
+    const result=resolve(profile({driver_service_types:[service],private_hire_vehicle_license_url:'phv.pdf',council_license_number:'C1',private_hire_insurance_url:'hire.pdf'}),car);
+    expect(result.sectionStatus.serviceLicensing).toMatchObject({applicable,status:applicable?'complete':'not_applicable'});
+  });
+
+  it('canonicalises Shop and Deliver aliases before applicability',()=>{
+    expect(resolve(profile({driver_service_types:['shop','deliver']}),car).selectedServices).toEqual(['errand','delivery']);
+  });
+
+  it('excludes not-applicable licensing from progress',()=>{
+    const result=resolve(profile({driver_service_types:['delivery']}),car);
+    expect(result.sectionStatus.serviceLicensing).toEqual({applicable:false,status:'not_applicable'});
+    expect(Object.values(result.sectionStatus).filter(section=>section.applicable)).toHaveLength(result.progress.total);
+  });
+
+  it('uses only persisted agreement acceptance',()=>{
+    expect(resolve(profile({accepted_driver_agreement_at:null,driver_agreement_accepted:true}),car).sectionStatus.agreement.status).toBe('incomplete');
+    expect(resolve(profile({accepted_driver_agreement_at:'2026-08-07T10:00:00Z'}),car).sectionStatus.agreement.status).toBe('complete');
   });
 });
