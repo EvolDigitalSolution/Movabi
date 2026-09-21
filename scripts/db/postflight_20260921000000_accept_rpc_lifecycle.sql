@@ -224,10 +224,15 @@ SELECT
         THEN 'PASS' ELSE 'FAIL'
     END AS verdict
 FROM (
+    -- Both the policy triple and the exact signature are brought into ONE row.
+    -- The signature lives on the `sig` VALUES alias, so it must be referenced as
+    -- sig.signature. (An earlier version referenced policy.signature here, and
+    -- the `policy` alias only exposes (fname, rolname, can_execute); PostgreSQL
+    -- rejected it with "column policy.signature does not exist".)
     SELECT policy.fname, policy.rolname, policy.can_execute,
            CASE WHEN policy.rolname = 'PUBLIC'
                 THEN NULL
-                ELSE to_regprocedure(policy.signature) END AS fn_oid
+                ELSE to_regprocedure(sig.signature) END AS fn_oid
     FROM (VALUES
             -- driver_vehicle_can_accept_job: internal predicate, no role access
             ('driver_vehicle_can_accept_job', 'anon',          false),

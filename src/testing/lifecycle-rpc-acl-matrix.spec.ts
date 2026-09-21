@@ -160,16 +160,90 @@ describe('lifecycle RPC EXECUTE privilege matrix (static source assertions)', ()
     });
 
     it('the postflight gates on effective privileges for the full 5x3 client matrix', () => {
-        // 15 policy cells: 5 functions x (anon, authenticated, service_role).
+        // 15 policy cells: 5 functions x (anon, authenticated, service_role),
+        // declared twice (the matrix row source and the section 9 acl_policy CTE).
         for (const entry of ACL_MATRIX) {
             for (const role of ['anon', 'authenticated', 'service_role']) {
                 expect(postflight).toContain(snippet(`'${entry.fn}', '${role}'`));
             }
         }
+        // Cross-check the actual number of cell literals present, so a dropped
+        // cell fails rather than passing on a hard-coded expectation.
+        const cellLiterals = (
+            readFileSync(POSTFLIGHT, 'utf8').match(/'(?:anon|authenticated|service_role)',\s*(?:true|false)/g) ?? []
+        ).length;
+        expect(cellLiterals, '5 functions x 3 roles x 2 declarations').toBe(30);
+
         // The verdict must be driven by the effective-privilege violation set,
         // not by proacl text formatting.
         expect(postflight).toContain(snippet('has_function_privilege'));
         expect(postflight).toContain(snippet("WHEN (SELECT COUNT(*) FROM acl_violations) > 0 THEN 'NO-GO'"));
         expect(postflight).toContain(snippet("WHEN (SELECT COUNT(*) FROM public_grants) > 0 THEN 'NO-GO'"));
+    });
+
+    /**
+     * Regression for the production defect:
+     *   ERROR: column policy.signature does not exist
+     * The privilege matrix joined a `sig(fname, signature)` VALUES alias but the
+     * SELECT list referenced `policy.signature`, and the `policy` alias exposes
+     * only (fname, rolname, can_execute). A real PostgreSQL parser catches this;
+     * no engine is available here, so these structural assertions stand in for it.
+     */
+    it('does not reference a qualified column that its alias does not declare', () => {
+        // Qualifier.column references that legitimately exist but are not derived
+        // tables with an explicit column list (catalog functions, table aliases,
+        // JSON field access). Anything else must be a declared derived-table column.
+        const allowed: Record<string, string[]> = {
+            pg_catalog: ['*'],
+            information_schema: ['*'],
+            metadata: ['*']
+        };
+        // Schema-qualified object names such as public.jobs live in FROM clauses,
+        // never as an alias-qualified column in a SELECT list, so the derived-table
+        // column set is the only cross-check needed here.
+        const ignoreQualifiers = new Set(['public', 'auth', 'pg_catalog', 'information_schema', 'metadata']);
+
+        for (const path of [POSTFLIGHT, ACL_REPAIR_MIGRATION, LIFECYCLE_MIGRATION]) {
+            const raw = readFileSync(path, 'utf8')
+                .split('\n')
+                .filter(line => !line.trimStart().startsWith('--'))
+                .join('\n');
+
+            // Derived tables that declare an explicit column list. Two forms occur
+            // in this SQL:
+            //   ) AS alias(a, b, c)                     -- subquery / CTE body
+            //   (VALUES ...) AS alias(a, b, c)          -- VALUES list
+            // Matching the closing paren OR the VALUES keyword is what makes the
+            // declaration set complete; without the VALUES form, aliases such as
+            // f(fname, expected_signature) and sig(fname, signature) were missed.
+            const declared = new Map<string, Set<string>>();
+            for (const m of raw.matchAll(/(?:\)|\bVALUES\b[^;]*?)\s*AS\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gis)) {
+                const alias = m[1].toLowerCase();
+                const cols = m[2].split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+                const existing = declared.get(alias);
+                if (existing) {
+                    for (const c of cols) existing.add(c);
+                } else {
+                    declared.set(alias, new Set(cols));
+                }
+            }
+
+            const offenders: string[] = [];
+            for (const m of raw.matchAll(/\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b/gi)) {
+                const qualifier = m[1].toLowerCase();
+                const column = m[2].toLowerCase();
+                if (ignoreQualifiers.has(qualifier)) continue;
+                if (allowed[qualifier]) continue;
+                const cols = declared.get(qualifier);
+                if (!cols) continue;              // table alias: columns verified by the engine
+                if (cols.has('*')) continue;
+                if (!cols.has(column)) offenders.push(`${qualifier}.${column}`);
+            }
+
+            expect(
+                Array.from(new Set(offenders)),
+                `${path}: qualified column(s) not declared by their alias`
+            ).toEqual([]);
+        }
     });
 });
