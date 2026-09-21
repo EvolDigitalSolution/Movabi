@@ -464,19 +464,33 @@ SELECT
 -- 5.2a ADVISORY: the complete set of literals the constraint permits, extracted
 -- structurally from the constraint expression tree. This is what proves the
 -- extraction understands the real operator form on this database.
+--
+-- PostgreSQL 15 note: regexp_matches(..., 'g') is a SET-RETURNING function. It is
+-- ILLEGAL inside an aggregate argument ("aggregate function calls cannot contain
+-- set-returning function calls"), so it is placed in a LATERAL FROM item and only
+-- its relational output is aggregated. This is the single extraction mechanism
+-- shared by this advisory row and the 5.2b gate, so the diagnostic and the gate
+-- can never disagree because of two different parsing implementations.
 WITH job_status_constraints AS (
     SELECT con.oid, pg_get_expr(con.conbin, con.conrelid) AS expr
       FROM pg_constraint con
      WHERE con.conrelid = 'public.jobs'::regclass
        AND con.contype = 'c'
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
+),
+extracted_literals AS (
+    SELECT jsc.oid AS constraint_oid, m.literal
+      FROM job_status_constraints jsc
+      -- LATERAL: the SRF runs in FROM, not inside an aggregate argument.
+      CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
+      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
 )
 SELECT
     'STATUS ALLOWED LITERALS (from expression tree)' AS check_name,
     'advisory: every literal the jobs.status constraint permits' AS expected,
     COALESCE(
-        (SELECT string_agg(DISTINCT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1], ', ' ORDER BY (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1])
-           FROM job_status_constraints jsc),
+        (SELECT string_agg(DISTINCT el.literal, ', ' ORDER BY el.literal)
+           FROM extracted_literals el),
         'NO LITERALS EXTRACTED'
     ) AS observed,
     'INFO' AS verdict;
@@ -489,49 +503,55 @@ SELECT
 -- The migration also WRITES errand_funding.status = 'settled', which is a
 -- different table and is gated separately in section 6.
 --
--- The comparison is the parser's own resolved condition: the constraint is
--- rebuilt from its expression tree as `(<expr>) AND <col> = ANY(ARRAY[<literals>])`
--- and evaluated by PostgreSQL, so it cannot suffer wildcard, quoting or
--- array-ordering artefacts the way textual LIKE matching can.
+-- Membership is a plain '=' equality test against the extracted literal set, so
+-- underscores and '%' are treated as literal characters (the previous
+-- implementation used LIKE, where '_' is a single-character wildcard, which is
+-- what produced the false NOT PERMITTED rows on production).
 WITH job_status_constraints AS (
-    SELECT con.oid, con.conname, pg_get_expr(con.conbin, con.conrelid) AS expr
+    SELECT con.oid, pg_get_expr(con.conbin, con.conrelid) AS expr
       FROM pg_constraint con
      WHERE con.conrelid = 'public.jobs'::regclass
        AND con.contype = 'c'
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
+extracted_literals AS (
+    SELECT jsc.oid AS constraint_oid, m.literal
+      FROM job_status_constraints jsc
+      CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
+      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
+),
 migration_writes AS (
     VALUES ('accepted'), ('assigned')
+),
+gate_eval AS (
+    SELECT
+        w.column1 AS literal,
+        (SELECT COUNT(*) FROM job_status_constraints) = 0 AS no_constraint,
+        -- Extraction-sanity guard: production's constraint has many literals, so
+        -- a tiny/empty extraction means the parser assumption is wrong. The gate
+        -- must fail loudly in that case rather than pass vacuously.
+        (SELECT COUNT(DISTINCT el.literal) FROM extracted_literals el) >= 5 AS extraction_healthy,
+        EXISTS (
+            SELECT 1 FROM extracted_literals el WHERE el.literal = w.column1
+        ) AS literal_present
+      FROM migration_writes w
 )
 SELECT
-    'STATUS PERMITTED ' || w.column1 AS check_name,
+    'STATUS PERMITTED ' || g.literal AS check_name,
     'jobs_status_check permits a literal this migration writes' AS expected,
     CASE
-        WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0
-            THEN 'no CHECK constraint on jobs.status (unconstrained TEXT is permissive)'
-        WHEN EXISTS (
-            SELECT 1
-              FROM job_status_constraints jsc
-             WHERE jsc.expr IS NOT NULL
-               AND (jsc.expr) AND (w.column1 = ANY(ARRAY(
-                       SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
-                   ))) IS TRUE
-        ) THEN 'permitted'
+        WHEN g.no_constraint THEN 'no CHECK constraint on jobs.status (unconstrained TEXT is permissive)'
+        WHEN NOT g.extraction_healthy THEN 'literal extraction from the constraint expression failed'
+        WHEN g.literal_present THEN 'permitted'
         ELSE 'NOT PERMITTED by any jobs.status CHECK constraint'
     END AS observed,
     CASE
-        WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0 THEN 'PASS'
-        WHEN EXISTS (
-            SELECT 1
-              FROM job_status_constraints jsc
-             WHERE jsc.expr IS NOT NULL
-               AND (jsc.expr) AND (w.column1 = ANY(ARRAY(
-                       SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
-                   ))) IS TRUE
-        ) THEN 'PASS'
+        WHEN g.no_constraint THEN 'PASS'
+        WHEN NOT g.extraction_healthy THEN 'FAIL'
+        WHEN g.literal_present THEN 'PASS'
         ELSE 'FAIL'
     END AS verdict
-FROM migration_writes w
+FROM gate_eval g
 ORDER BY verdict DESC, check_name;
 
 -- 5.3 ADVISORY: the statuses this migration READS as claim preconditions.
@@ -545,6 +565,14 @@ WITH job_status_constraints AS (
        AND con.contype = 'c'
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
+-- Same LATERAL extraction as 5.2a/5.2b; regexp_matches is never used inside an
+-- aggregate argument (illegal on PostgreSQL 15).
+extracted_literals AS (
+    SELECT jsc.oid AS constraint_oid, m.literal
+      FROM job_status_constraints jsc
+      CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
+      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
+),
 claim_preconditions AS (
     VALUES ('pending'), ('requested'), ('searching'), ('broadcasting'), ('waiting')
 )
@@ -553,12 +581,8 @@ SELECT
     'read as a claim precondition; not written by this migration (advisory)' AS expected,
     CASE
         WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0 THEN 'no constraint to test'
-        WHEN EXISTS (
-            SELECT 1 FROM job_status_constraints jsc
-             WHERE (c.column1 = ANY(ARRAY(
-                        SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
-                   ))) IS TRUE
-        ) THEN 'permitted'
+        WHEN EXISTS (SELECT 1 FROM extracted_literals el WHERE el.literal = c.column1)
+            THEN 'permitted'
         ELSE 'NOT PERMITTED (jobs can never exist in this state)'
     END AS observed,
     'INFO' AS verdict
@@ -575,6 +599,12 @@ WITH job_status_constraints AS (
        AND con.contype = 'c'
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
+extracted_literals AS (
+    SELECT jsc.oid AS constraint_oid, m.literal
+      FROM job_status_constraints jsc
+      CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
+      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
+),
 app_lifecycle_status AS (
     VALUES ('arrived'), ('heading_to_pickup'), ('arrived_at_store'),
            ('shopping_in_progress'), ('collected'), ('en_route_to_customer'),
@@ -586,12 +616,8 @@ SELECT
     'application lifecycle status; NOT written by this migration (advisory)' AS expected,
     CASE
         WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0 THEN 'no constraint to test'
-        WHEN EXISTS (
-            SELECT 1 FROM job_status_constraints jsc
-             WHERE (a.column1 = ANY(ARRAY(
-                        SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
-                   ))) IS TRUE
-        ) THEN 'permitted'
+        WHEN EXISTS (SELECT 1 FROM extracted_literals el WHERE el.literal = a.column1)
+            THEN 'permitted'
         ELSE 'NOT PERMITTED'
     END AS observed,
     'INFO' AS verdict
@@ -965,6 +991,16 @@ job_status_constraints AS (
        AND con.contype = 'c'
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
+-- Same LATERAL extraction as section 5, so the gate and the advisory diagnostic
+-- can never disagree. regexp_matches is a set-returning function and MUST live in
+-- a FROM/LATERAL item on PostgreSQL 15; it is never placed in an aggregate
+-- argument or in a scalar subquery.
+extracted_literals AS (
+    SELECT jsc.oid AS constraint_oid, m.literal
+      FROM job_status_constraints jsc
+      CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
+      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
+),
 -- ============================================================================
 -- THE SINGLE SOURCE OF TRUTH FOR GATING. One row per gate.
 -- ============================================================================
@@ -975,11 +1011,11 @@ gate_exprs(gate_name, failing_expr) AS (
                 ON ic.table_schema='public' AND ic.table_name=r.table_name AND ic.column_name=r.column_name
          WHERE ic.column_name IS NULL) > 0
 
-    UNION ALL SELECT 'helper_prerequisite_columns', (
-        SELECT COUNT(*) FROM helper_prerequisites hp
+    UNION ALL SELECT 'helper_prerequisite_columns', EXISTS (
+        SELECT 1 FROM helper_prerequisites hp
          LEFT JOIN information_schema.columns hic
                 ON hic.table_schema='public' AND hic.table_name=hp.table_name AND hic.column_name=hp.column_name
-         WHERE hic.column_name IS NULL) > 0
+         WHERE hic.column_name IS NULL)
 
     -- DROP safety: exactly one overload, recognised return type, zero dependents.
     UNION ALL SELECT 'accept_searching_job_single_overload', (
@@ -1003,11 +1039,11 @@ gate_exprs(gate_name, failing_expr) AS (
         SELECT 1 FROM information_schema.columns
          WHERE table_schema='public' AND table_name='wallet_transactions' AND column_name='transaction_type')
 
-    UNION ALL SELECT 'wallet_transactions_audit_columns', (
-        SELECT COUNT(*) FROM ledger_audit_columns lac
+    UNION ALL SELECT 'wallet_transactions_audit_columns', EXISTS (
+        SELECT 1 FROM ledger_audit_columns lac
          LEFT JOIN information_schema.columns aic
                 ON aic.table_schema='public' AND aic.table_name='wallet_transactions' AND aic.column_name=lac.column_name
-         WHERE aic.column_name IS NULL) > 0
+         WHERE aic.column_name IS NULL)
 
     UNION ALL SELECT 'auth_uid_present', NOT EXISTS (
         SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -1019,16 +1055,22 @@ gate_exprs(gate_name, failing_expr) AS (
          WHERE r.oid IS NULL) > 0
 
     -- GATE: jobs.status must permit the literals this migration WRITES.
-    -- Evaluated with the parser's own condition, never textual LIKE matching.
-    UNION ALL SELECT 'jobs_status_permits_migration_writes', EXISTS (
-        SELECT 1 FROM top_level_status_literals l
-         WHERE (SELECT COUNT(*) FROM job_status_constraints) > 0
-           AND NOT EXISTS (
-               SELECT 1 FROM job_status_constraints jsc
-                WHERE jsc.expr IS NOT NULL
-                  AND (jsc.expr) AND (l.v = ANY(ARRAY(
-                          SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
-                      ))) IS TRUE))
+    --
+    -- Fails if:
+    --   * extraction is unhealthy (parser assumption wrong) while a constraint
+    --     exists, so the gate cannot pass vacuously; or
+    --   * any migration-write literal is absent from the extracted literal set.
+    -- Uses the SAME LATERAL extraction as the 5.2 advisory rows, and plain '='
+    -- equality, so underscores are literal and there is no wildcard matching.
+    UNION ALL SELECT 'jobs_status_permits_migration_writes',
+        (SELECT COUNT(*) FROM job_status_constraints) > 0
+        AND (
+            (SELECT COUNT(DISTINCT el.literal) FROM extracted_literals el) < 5
+            OR EXISTS (
+                SELECT 1 FROM top_level_status_literals l
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM extracted_literals el WHERE el.literal = l.v))
+        )
 ),
 evaluated AS (
     SELECT gate_name, failing_expr, (failing_expr IS TRUE) AS is_failing FROM gate_exprs
