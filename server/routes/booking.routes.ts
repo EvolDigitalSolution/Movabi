@@ -137,6 +137,27 @@ async function refreshDriverRating(driverId: string | null | undefined) {
     return null;
 }
 
+/**
+ * Batch 2B (N12) — detect ONLY the single-active-job invariant violation.
+ *
+ * Deliberately narrow. `MB001` is the dedicated SQLSTATE raised by the
+ * acquisition RPCs for "driver already has an active job", and it is used for
+ * nothing else. A raw `23505` is accepted only when the message or details name
+ * the invariant index, so an unrelated unique violation (or the Batch 2A
+ * "job already owned by another driver" 23505) can never be reported as
+ * "driver busy".
+ */
+function isDriverBusyViolation(error: unknown): boolean {
+    const candidate = error as { code?: string; message?: string; details?: string } | null;
+
+    if (!candidate) return false;
+    if (candidate.code === 'MB001') return true;
+    if (candidate.code !== '23505') return false;
+
+    const text = `${candidate.message ?? ''} ${candidate.details ?? ''}`;
+    return text.includes('idx_jobs_one_active_per_driver');
+}
+
 async function getDriverVehicle(driverId: string) {
     const { data, error } = await supabaseAdmin
         .from('vehicles')
@@ -969,13 +990,18 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Only participants can accept this negotiation' });
         }
 
-        const { error: updateError } = await supabaseAdmin
-            .from('fare_negotiations')
-            .update({ status: 'accepted', updated_at: new Date().toISOString() })
-            .eq('id', negotiationId);
-
-        if (updateError) throw updateError;
-
+        // ------------------------------------------------------------------
+        // N12 (Batch 2B): the ownership write happens FIRST and its error is
+        // observed.
+        //
+        // Previously the negotiation was marked accepted BEFORE the jobs write,
+        // and the jobs UPDATE result was discarded entirely. The single-active-
+        // job invariant (idx_jobs_one_active_per_driver) can now reject the
+        // assignment, so that ordering would have marked a negotiation accepted
+        // while reporting { success: true } with no driver assigned. Owning the
+        // job first means a rejected assignment cannot leave a half-applied
+        // acceptance behind.
+        // ------------------------------------------------------------------
         const { data: fullJob, error: jobError } = await supabaseAdmin
             .from('jobs')
             .select('*')
@@ -996,7 +1022,7 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
             ? (negotiation as any).proposed_by
             : job?.driver_id;
 
-        await supabaseAdmin
+        const { error: jobUpdateError } = await supabaseAdmin
             .from('jobs')
             .update({
                 status: 'fare_agreed',
@@ -1006,6 +1032,28 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
                 updated_at: new Date().toISOString()
             })
             .eq('id', negotiation.job_id);
+
+        // The jobs write MUST be observed: reporting success after a rejected
+        // assignment is exactly the defect this batch closes.
+        if (jobUpdateError) {
+            console.error('[BookingRoutes] negotiation accept jobs update failed:', jobUpdateError);
+
+            if (isDriverBusyViolation(jobUpdateError)) {
+                return res.status(409).json({
+                    error: 'This driver already has an active job.',
+                    code: 'DRIVER_BUSY'
+                });
+            }
+
+            return res.status(500).json({ error: 'Failed to accept negotiation' });
+        }
+
+        const { error: updateError } = await supabaseAdmin
+            .from('fare_negotiations')
+            .update({ status: 'accepted', updated_at: new Date().toISOString() })
+            .eq('id', negotiationId);
+
+        if (updateError) throw updateError;
 
         return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
     } catch (error: any) {
@@ -1073,6 +1121,16 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
         if (acceptError) {
             // Map the RPC's deterministic SQLSTATEs without leaking SQL internals.
             const sqlState = String(acceptError.code || '');
+
+            if (sqlState === 'MB001') {
+                // Batch 2B (N12): the driver already owns another occupying job.
+                // Distinct from OFFER_ALREADY_ACCEPTED: the offer was free, the
+                // DRIVER was busy, and the unique invariant resolved the race.
+                return res.status(409).json({
+                    error: 'You already have an active job.',
+                    code: 'DRIVER_BUSY'
+                });
+            }
 
             if (sqlState === '23505') {
                 // Lost race: a different driver already owns this job.
