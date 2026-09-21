@@ -78,15 +78,36 @@ export class LogisticsService {
   }
 
   /**
+   * Durable completion evidence: the per-job earnings row. driver_earnings has
+   * UNIQUE(job_id), so a row here means the monetary tail already ran for this job.
+   */
+  private static async hasDriverEarnings(jobId: string): Promise<boolean> {
+    const { data, error } = await supabaseAdmin
+      .from('driver_earnings')
+      .select('job_id')
+      .eq('job_id', jobId)
+      .maybeSingle();
+
+    if (error) {
+      // Fail closed on an unreadable marker: never re-run money movement when we
+      // cannot prove the completion tail did not already run.
+      console.error('[LogisticsService.hasDriverEarnings] earnings lookup failed:', error);
+      throw new Error('Could not verify whether this request was already settled.');
+    }
+
+    return !!data;
+  }
+
+  /**
    * Validate booking status transition
    */
   static isValidBookingTransition(current: string, next: string): boolean {
     const transitions: Record<string, string[]> = {
-      'requested': ['pending_fare_confirmation', 'negotiating', 'fare_agreed', 'searching', 'cancelled'],
+      'requested': ['pending_fare_confirmation', 'negotiating', 'fare_agreed', 'accepted', 'searching', 'cancelled'],
       'pending_fare_confirmation': ['negotiating', 'fare_agreed', 'cancelled'],
       'negotiating': ['fare_agreed', 'cancelled'],
       'fare_agreed': ['searching', 'cancelled'],
-      'searching': ['assigned', 'no_driver_found', 'cancelled'],
+      'searching': ['assigned', 'accepted', 'no_driver_found', 'cancelled'],
       'assigned': ['in_progress', 'cancelled'],
       'in_progress': ['completed'],
       'completed': [],
@@ -115,7 +136,7 @@ export class LogisticsService {
   /**
    * Complete a job and finalize payout
    */
-  static async completeJob(jobId: string, completionPin?: string | null) {
+  static async completeJob(jobId: string, completionPin?: string | null, expectedDriverId?: string | null) {
     const rawJobId = String(jobId || '').trim();
 
     if (!rawJobId) {
@@ -141,6 +162,35 @@ export class LogisticsService {
 
     if (!driverId) {
       throw new Error('Cannot complete job without an assigned driver');
+    }
+
+    // Ownership guard. Runs before PIN validation, Stripe capture, transfer,
+    // earnings sync or any other side effect. The authenticated caller must be
+    // the driver assigned to this job.
+    if (!expectedDriverId || String(expectedDriverId) !== String(driverId)) {
+      throw new Error('Only the assigned driver can complete this request');
+    }
+
+    // Completion readiness. Ownership alone does not stop the SAME driver from
+    // calling complete again (a resend, an impatient second tap, or a retry after a
+    // partial failure). Decide from PERSISTED state what still needs to run instead
+    // of blindly re-running money movement or blindly refusing.
+    const wasAlreadyCompleted = String(job.status || '').toLowerCase() === 'completed';
+
+    // Fully-complete evidence: the job is marked completed AND its earnings row
+    // exists. driver_earnings has UNIQUE(job_id), so that row is the durable marker
+    // that the whole money tail (capture/settlement, transfer, status write,
+    // earnings) finished. Only then is a repeat call a safe no-op.
+    if (wasAlreadyCompleted && await this.hasDriverEarnings(job.id)) {
+      console.log('[LogisticsService.completeJob] Job already fully completed, returning without side effects:', job.id);
+      return job;
+    }
+
+    // Otherwise resume. Every step below is individually skipped when its own
+    // durable marker is already present, so a retry finishes only the missing work
+    // and a repeat can never capture, transfer, settle or earn twice.
+    if (wasAlreadyCompleted) {
+      console.warn('[LogisticsService.completeJob] Resuming completion of a partially completed job:', job.id);
     }
 
     const completionMetadata = this.assertCompletionPin(job, completionPin);
@@ -282,7 +332,9 @@ export class LogisticsService {
     const { data: updatedJob, error: updateError } = await supabaseAdmin
       .from('jobs')
       .update({
-        status: 'completed',
+        // Keep the ORIGINAL completed status/timestamp when resuming a partially
+        // completed job rather than rewriting when it actually finished.
+        status: wasAlreadyCompleted ? String(job.status) : 'completed',
         payment_status: 'paid',
         driver_id: driverId,
         price: totalPrice,
@@ -292,9 +344,9 @@ export class LogisticsService {
         stripe_transfer_id: stripeTransferId,
         stripe_transfer_status: 'paid',
         transferred_at: job.transferred_at || now,
-        completed_at: job.completed_at || now,
-        metadata: completedMetadata,
-        updated_at: now
+        updated_at: now,
+        ...(wasAlreadyCompleted ? {} : { completed_at: job.completed_at || now }),
+        metadata: completedMetadata
       })
       .eq('id', job.id)
       .select('*')
@@ -405,6 +457,12 @@ export class LogisticsService {
     return String(value ?? '').replace(/\D/g, '').slice(0, 8);
   }
 
+  /**
+   * Read-only estimate of the amount that will settle from the wallet reservation.
+   * Used only to size the driver payout / platform fee before settlement. The
+   * authoritative amount is re-derived from DB state inside
+   * settle_job_wallet_reservation, which performs the actual mutation.
+   */
   private static async resolveWalletSettlementAmount(job: any, fallbackAmount: number): Promise<number> {
     if (String(job.service_slug || '').toLowerCase() !== 'errand') {
       return this.roundMoney(fallbackAmount);
@@ -433,183 +491,45 @@ export class LogisticsService {
     return this.roundMoney(Math.min(reservedAmount, actualSpending));
   }
 
+  /**
+   * Settle the customer's wallet reservation for this job.
+   *
+   * The whole operation (balance mutation, ledger rows and the settlement marker)
+   * runs inside ONE Postgres transaction in settle_job_wallet_reservation, so it can
+   * never leave a debited wallet without durable settlement evidence. A repeat call
+   * returns 'already_settled' without changing balances. This deliberately replaces
+   * the previous sequence of independent PostgREST calls.
+   */
   private static async settleWalletJobReservation(job: any, amount: number): Promise<void> {
-    const wallet = await supabaseAdmin
-      .from('wallets')
-      .select('id, available_balance, reserved_balance')
-      .eq('user_id', job.customer_id)
-      .maybeSingle();
+    const { data, error } = await supabaseAdmin.rpc('settle_job_wallet_reservation', {
+      p_job_id: job.id,
+      p_amount: amount
+    });
 
-    if (wallet.error || !wallet.data) {
-      throw new Error('Customer wallet reservation could not be found');
+    if (error) {
+      console.error('[LogisticsService.settleWalletJobReservation] atomic settlement failed:', error);
+      throw new Error(error.message || 'Failed to settle wallet reservation');
     }
 
-    const reservedBalance = this.roundMoney(Math.max(0, Number(wallet.data.reserved_balance || 0)));
-    const availableBalance = this.roundMoney(Math.max(0, Number(wallet.data.available_balance || 0)));
-    const jobReservedAmount = await this.resolveWalletReservedAmount(job, amount);
-    const reservationAmount = this.roundMoney(Math.min(reservedBalance, jobReservedAmount));
-    const settlementAmount = this.roundMoney(Math.min(reservationAmount, Math.max(0, amount)));
-    const refundAmount = this.roundMoney(Math.max(0, reservationAmount - settlementAmount));
+    const result = (data || {}) as Record<string, unknown>;
+    const status = String(result['status'] || '');
 
-    if (settlementAmount <= 0) {
-      throw new Error('Customer wallet reservation is empty');
+    if (status === 'settled') {
+      console.log('[LogisticsService.settleWalletJobReservation] settled', {
+        jobId: job.id,
+        amountSettled: result['amount_settled'],
+        amountReleased: result['amount_released']
+      });
+      return;
     }
 
-    const updatedWallet = await supabaseAdmin
-      .from('wallets')
-      .update({
-        available_balance: this.roundMoney(availableBalance + refundAmount),
-        reserved_balance: this.roundMoney(Math.max(0, reservedBalance - reservationAmount)),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', wallet.data.id);
-
-    if (updatedWallet.error) {
-      throw new Error(updatedWallet.error.message || 'Failed to settle wallet reservation');
+    if (status === 'already_settled') {
+      console.warn('[LogisticsService.settleWalletJobReservation] already settled, not debiting again:', job.id);
+      return;
     }
 
-    await this.insertWalletSettlementTransaction(job, wallet.data.id, settlementAmount);
-
-    if (refundAmount > 0) {
-      await this.insertWalletReleaseTransaction(job, wallet.data.id, refundAmount);
-    }
-
-    if (String(job.service_slug || '').toLowerCase() === 'errand') {
-      const { data: fundingRow } = await supabaseAdmin
-        .from('errand_funding')
-        .select('metadata')
-        .eq('job_id', job.id)
-        .maybeSingle();
-
-      await supabaseAdmin
-        .from('errand_funding')
-        .update({
-          status: 'settled',
-          metadata: {
-            ...((fundingRow?.metadata as Record<string, unknown>) || {}),
-            settlement: {
-              amount_settled: settlementAmount,
-              amount_released: refundAmount,
-              settled_at: new Date().toISOString()
-            }
-          },
-          updated_at: new Date().toISOString()
-        })
-        .eq('job_id', job.id);
-    }
-  }
-
-  private static async resolveWalletReservedAmount(job: any, fallbackAmount: number): Promise<number> {
-    if (String(job.service_slug || '').toLowerCase() !== 'errand') {
-      return this.roundMoney(fallbackAmount);
-    }
-
-    const { data } = await supabaseAdmin
-      .from('errand_funding')
-      .select('amount_reserved')
-      .eq('job_id', job.id)
-      .maybeSingle();
-
-    return this.roundMoney(Number(data?.amount_reserved || fallbackAmount));
-  }
-
-  private static async insertWalletSettlementTransaction(
-    job: any,
-    walletId: string,
-    amount: number
-  ): Promise<void> {
-    const basePayload: Record<string, unknown> = {
-      user_id: job.customer_id,
-      job_id: job.id,
-      amount,
-      description: 'Job payment settled from wallet reservation',
-      metadata: {
-        payment_method: 'wallet',
-        currency_code: job.currency_code || 'GBP',
-        settled_at: new Date().toISOString()
-      }
-    };
-
-    const withWalletId = {
-      ...basePayload,
-      wallet_id: walletId,
-      transaction_type: 'settlement'
-    };
-
-    let insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(withWalletId);
-
-    if (!insert.error) return;
-
-    const message = `${insert.error.code || ''} ${insert.error.message || ''}`.toLowerCase();
-
-    if (!message.includes('transaction_type') && !message.includes('wallet_id')) {
-      throw new Error(insert.error.message || 'Failed to record wallet settlement');
-    }
-
-    const fallbackPayload = {
-      ...basePayload,
-      type: 'settlement'
-    };
-
-    insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(fallbackPayload);
-
-    if (insert.error) {
-      throw new Error(insert.error.message || 'Failed to record wallet settlement');
-    }
-  }
-
-  private static async insertWalletReleaseTransaction(
-    job: any,
-    walletId: string,
-    amount: number
-  ): Promise<void> {
-    const basePayload: Record<string, unknown> = {
-      user_id: job.customer_id,
-      job_id: job.id,
-      amount,
-      description: 'Unused errand wallet reservation returned',
-      metadata: {
-        payment_method: 'wallet',
-        currency_code: job.currency_code || 'GBP',
-        released_at: new Date().toISOString(),
-        reason: 'actual_spending_below_reserved_amount'
-      }
-    };
-
-    const withWalletId = {
-      ...basePayload,
-      wallet_id: walletId,
-      transaction_type: 'release'
-    };
-
-    let insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(withWalletId);
-
-    if (!insert.error) return;
-
-    const message = `${insert.error.code || ''} ${insert.error.message || ''}`.toLowerCase();
-
-    if (!message.includes('transaction_type') && !message.includes('wallet_id')) {
-      throw new Error(insert.error.message || 'Failed to record wallet release');
-    }
-
-    const fallbackPayload = {
-      ...basePayload,
-      type: 'release'
-    };
-
-    insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(fallbackPayload);
-
-    if (insert.error) {
-      throw new Error(insert.error.message || 'Failed to record wallet release');
-    }
+    // No wallet reservation to settle. Completion must not mark the job as paid.
+    throw new Error(String(result['reason'] || 'Customer wallet reservation could not be found'));
   }
 
   private static roundMoney(value: number): number {

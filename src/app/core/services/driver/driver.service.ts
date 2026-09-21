@@ -659,6 +659,41 @@ export class DriverService {
         this.earnings.set(data || []);
     }
 
+    /**
+     * Confirm an admin/dispatch assignment. The RPC derives the driver from the
+     * authenticated session and only accepts the job when the caller is already
+     * stored in jobs.driver_id, so this can never claim another driver's job.
+     */
+    async acceptAssignedJob(bookingId: string): Promise<Booking> {
+        const user = this.auth.currentUser();
+
+        if (!user?.id) {
+            throw new Error('Please sign in again to confirm this request.');
+        }
+
+        const { data: accepted, error } = await this.supabase.client.rpc('accept_assigned_job', {
+            p_job_id: bookingId,
+            p_driver_id: user.id
+        });
+
+        if (error) {
+            console.error('[DriverService] acceptAssignedJob failed:', error);
+            throw new Error(error.message || 'Could not confirm this request.');
+        }
+
+        // FALSE (without error) means the job was not assigned to this driver, was
+        // already confirmed, or is no longer in 'assigned'. Never report success.
+        if (accepted !== true) {
+            throw new Error('This request is no longer awaiting your confirmation.');
+        }
+
+        await this.eventService.logEvent(bookingId, 'driver_accepted', 'Assigned request confirmed by driver');
+
+        const fullBooking = await this.bookingService.getBooking(bookingId);
+        this.activeJob.set(fullBooking);
+        return fullBooking;
+    }
+
     async completeJob(jobId: string, completionPin?: string | null) {
         const job = await this.bookingService.getBooking(jobId);
 
@@ -706,10 +741,18 @@ export class DriverService {
         }
 
         const url = this.apiUrlService.getApiUrl('/api/logistics/complete');
+        const token = await this.getAccessToken();
+
+        if (!token) {
+            throw new Error('Please sign in again to complete this request.');
+        }
 
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
             body: JSON.stringify({ jobId, completionPin: completionPin || undefined })
         });
 

@@ -2582,13 +2582,19 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 );
             }
 
-            const { error } = await this.supabase.client.rpc('accept_searching_job', {
+            const { data: accepted, error } = await this.supabase.client.rpc('accept_searching_job', {
                 p_driver_id: user.id,
                 p_job_id: jobId
             });
 
             if (error) {
                 throw new Error(error.message || 'Request no longer available');
+            }
+
+            // The RPC returns false (without error) when another driver won the
+            // race or the request is no longer acceptable. Never treat that as success.
+            if (accepted !== true) {
+                throw new Error('This request is no longer available. Another driver may have accepted it.');
             }
 
             this.driverService.availableJobs.update((jobs: Booking[]) =>

@@ -344,9 +344,9 @@ router.post('/accept', async (req: Request, res: Response) => {
             });
         }
 
-        if (!LogisticsService.isValidBookingTransition(job.status, 'assigned')) {
+        if (!LogisticsService.isValidBookingTransition(job.status, 'accepted')) {
             return res.status(400).json({
-                error: `Invalid transition from ${job.status} to assigned`
+                error: `Invalid transition from ${job.status} to accepted`
             });
         }
 
@@ -397,66 +397,58 @@ router.post('/accept', async (req: Request, res: Response) => {
  */
 router.post('/complete', async (req: Request, res: Response) => {
     try {
-        const { jobId, driverId } = req.body;
+        const { jobId, completionPin } = req.body || {};
 
         if (!jobId) {
             return res.status(400).json({ error: 'jobId required' });
         }
 
+        // Completion moves money. Authenticate first and derive the driver from
+        // the token: driverId supplied in the request body is never trusted.
+        const authUserId = await getAuthUserId(req);
+
+        if (!authUserId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
         const job = await getJob(jobId);
+        const assignedDriverId = job.driver_id || job.accepted_driver_id;
 
-        if (driverId && job.driver_id && job.driver_id !== driverId) {
-            return res.status(403).json({ error: 'This driver is not assigned to the job' });
+        if (!assignedDriverId || String(assignedDriverId) !== authUserId) {
+            return res.status(403).json({ error: 'Only the assigned driver can complete this request' });
         }
 
-        if (!LogisticsService.isValidBookingTransition(job.status, 'completed')) {
-            return res.status(400).json({
-                error: `Invalid transition from ${job.status} to completed`
-            });
-        }
+        // Delegate to the canonical completion path so ownership, completion PIN,
+        // Stripe capture, driver transfer and earnings stay in one place.
+        const wasAlreadyCompleted = String(job.status || '').toLowerCase() === 'completed';
+        const completed = await LogisticsService.completeJob(jobId, completionPin || null, authUserId);
 
-        const { error: completeError } = await supabaseAdmin
-            .from('jobs')
-            .update({
-                status: 'completed',
-                payment_status: job.payment_method === 'card' ? 'capture_pending' : 'paid'
-            })
-            .eq('id', jobId);
+        // Only announce the transition. An idempotent repeat of an already-completed
+        // job (or a resume) must not re-notify the customer and driver.
+        if (!wasAlreadyCompleted) {
+            if (job.customer_id) {
+                await NotificationService.notifyJobStatusUpdate(job.customer_id, jobId, 'completed');
+            }
 
-        if (completeError) {
-            throw completeError;
-        }
-
-        try {
-            await captureJobPaymentOnlyWhenCompleted(jobId);
-        } catch (captureError: any) {
-            console.error('Stripe capture on completion failed:', captureError);
-
-            await supabaseAdmin
-                .from('jobs')
-                .update({ payment_status: 'requires_review' })
-                .eq('id', jobId);
-
-            return res.status(402).json({
-                error: captureError?.message || 'Payment capture failed. Job marked for review.'
-            });
-        }
-
-        if (job.customer_id) {
-            await NotificationService.notifyJobStatusUpdate(job.customer_id, jobId, 'completed');
-        }
-
-        if (job.driver_id) {
-            await NotificationService.notifyJobStatusUpdate(job.driver_id, jobId, 'completed');
+            await NotificationService.notifyJobStatusUpdate(String(assignedDriverId), jobId, 'completed');
         }
 
         return res.json({
             success: true,
-            message: 'Job completed and payment captured.'
+            message: 'Job completed and payment captured.',
+            data: completed
         });
     } catch (error: any) {
         console.error('Complete job error:', error);
-        return res.status(500).json({ error: error.message || 'Failed to complete job' });
+        const message = String(error?.message || 'Failed to complete job');
+        const status = /only the assigned driver/i.test(message)
+            ? 403
+            : /pin|required|incorrect/i.test(message)
+                ? 400
+                : /capture|transfer/i.test(message)
+                    ? 402
+                    : 500;
+        return res.status(status).json({ error: message });
     }
 });
 

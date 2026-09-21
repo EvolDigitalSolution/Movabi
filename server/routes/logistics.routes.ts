@@ -2,8 +2,25 @@ import { Router, Request, Response } from 'express';
 import { LogisticsService } from '../services/logistics.service';
 import { dispatchService } from '../services/dispatch.service';
 import { MarketplaceConfigService } from '../services/marketplace-config.service';
+import { supabaseAdmin } from '../services/supabase.service';
 
 const router = Router();
+
+async function getAuthUserId(req: Request): Promise<string | null> {
+  const existing = (req as any).user?.id || (req as any).auth?.user?.id;
+  if (existing) return String(existing);
+
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user?.id) {
+    console.warn('[LogisticsRoutes] auth token decode failed:', error?.message || 'No user on token');
+    return null;
+  }
+
+  return data.user.id;
+}
 
 /**
  * Calculate distance and price for a potential job
@@ -118,12 +135,21 @@ router.post('/complete', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'jobId required' });
     }
 
-    const data = await LogisticsService.completeJob(jobId, completionPin);
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const data = await LogisticsService.completeJob(jobId, completionPin, authUserId);
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Complete job error:', error);
     const message = String(error?.message || 'Failed to complete job');
-    const status = /pin|required|incorrect/i.test(message) ? 400 : 500;
+    const status = /only the assigned driver/i.test(message)
+      ? 403
+      : /pin|required|incorrect/i.test(message)
+        ? 400
+        : 500;
     res.status(status).json({ error: message });
   }
 });

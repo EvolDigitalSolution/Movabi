@@ -711,6 +711,9 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
 
               @switch (job()?.status) {
+                @case ('assigned') {
+                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="confirmAssignedJob()">Accept This Request</app-button>
+                }
                 @case ('accepted') {
                   <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
                 }
@@ -1604,6 +1607,42 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
     }
 
+    /**
+     * Confirm an admin/dispatch assignment. The transition itself is performed by the
+     * atomic accept_assigned_job RPC (which derives the driver from the session), then
+     * the existing accepted -> arrived workflow continues unchanged.
+     */
+    async confirmAssignedJob() {
+        const currentJob = this.job();
+
+        if (!currentJob?.id) {
+            await this.showToast('Request not found.', 'danger');
+            return;
+        }
+
+        const loading = await this.loadingCtrl.create({ message: 'Confirming request...' });
+        await loading.present();
+
+        try {
+            const confirmed = await this.driverService.acceptAssignedJob(currentJob.id);
+            this.driverService.activeJob.set(confirmed as Booking);
+            await this.loadJob(currentJob.id);
+            await this.showToast('Request confirmed. Continue when you are ready to start.', 'success');
+
+            // Existing customer notification mechanism, real 'accepted' status.
+            try {
+                await this.bookingService.notifyBookingStatus(currentJob.id, 'accepted');
+            } catch (notifyError) {
+                console.warn('[driver-job-details] assignment confirmation notification failed', notifyError);
+            }
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Could not confirm this request.';
+            await this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+        }
+    }
+
     async updateStatus(status: BookingStatus) {
         const currentJob = this.job();
 
@@ -2375,6 +2414,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     actionTitle(): string {
         switch (this.job()?.status) {
+            case 'assigned':
+                return 'Confirm this assignment';
             case 'accepted':
                 return `Go to ${this.originTargetLabel()}`;
             case 'arrived':
@@ -2401,6 +2442,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     actionHint(): string {
         switch (this.job()?.status) {
+            case 'assigned':
+                return 'Movabi assigned this request to you. Accept it to confirm you will complete it.';
             case 'accepted':
                 return `Open the ${this.originTargetLabel()}, contact the customer if needed, then mark yourself arrived.`;
             case 'arrived':
@@ -2437,6 +2480,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     actionProgress(): number {
         switch (this.job()?.status) {
+            case 'assigned':
+                return 10;
             case 'accepted':
                 return 20;
             case 'arrived':
@@ -2460,6 +2505,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         switch (this.job()?.status) {
             case 'completed':
                 return 'success';
+            case 'assigned':
+                return 'warning';
             case 'accepted':
             case 'arrived':
                 return 'primary';

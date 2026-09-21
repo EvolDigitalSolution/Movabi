@@ -922,6 +922,16 @@ export class BookingService {
         }
     }
 
+    /**
+     * Announce a status that was changed outside updateBookingStatus (for example by
+     * an atomic RPC), reusing the existing status notification mechanism so the
+     * customer message stays consistent with the real job status.
+     */
+    async notifyBookingStatus(bookingId: string, status: BookingStatus): Promise<void> {
+        const booking = await this.getBooking(bookingId);
+        await this.notifyStatusChange({ ...booking, status });
+    }
+
     async getBooking(bookingId: string): Promise<Booking> {
         const { data, error } = await this.supabase
             .from('jobs')
