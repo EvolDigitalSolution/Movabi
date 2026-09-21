@@ -479,11 +479,10 @@ WITH job_status_constraints AS (
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
 extracted_literals AS (
-    SELECT jsc.oid AS constraint_oid, m.literal
+    SELECT jsc.oid AS constraint_oid, m.match[1] AS literal
       FROM job_status_constraints jsc
       -- LATERAL: the SRF runs in FROM, not inside an aggregate argument.
       CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
-      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
 )
 SELECT
     'STATUS ALLOWED LITERALS (from expression tree)' AS check_name,
@@ -515,10 +514,9 @@ WITH job_status_constraints AS (
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
 extracted_literals AS (
-    SELECT jsc.oid AS constraint_oid, m.literal
+    SELECT jsc.oid AS constraint_oid, m.match[1] AS literal
       FROM job_status_constraints jsc
       CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
-      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
 ),
 migration_writes AS (
     VALUES ('accepted'), ('assigned')
@@ -527,10 +525,14 @@ gate_eval AS (
     SELECT
         w.column1 AS literal,
         (SELECT COUNT(*) FROM job_status_constraints) = 0 AS no_constraint,
-        -- Extraction-sanity guard: production's constraint has many literals, so
-        -- a tiny/empty extraction means the parser assumption is wrong. The gate
-        -- must fail loudly in that case rather than pass vacuously.
-        (SELECT COUNT(DISTINCT el.literal) FROM extracted_literals el) >= 5 AS extraction_healthy,
+        -- Extraction-sanity guard: if any status constraint yielded no literal at
+        -- all, the extraction assumption is wrong and the gate must fail loudly
+        -- rather than pass vacuously. Counting "constraints with no literal"
+        -- avoids an arbitrary magic threshold and scales with the schema.
+        (SELECT COUNT(*)
+           FROM job_status_constraints jsc
+          WHERE NOT EXISTS (SELECT 1 FROM extracted_literals el WHERE el.constraint_oid = jsc.oid)) > 0
+            AS extraction_unhealthy,
         EXISTS (
             SELECT 1 FROM extracted_literals el WHERE el.literal = w.column1
         ) AS literal_present
@@ -541,13 +543,13 @@ SELECT
     'jobs_status_check permits a literal this migration writes' AS expected,
     CASE
         WHEN g.no_constraint THEN 'no CHECK constraint on jobs.status (unconstrained TEXT is permissive)'
-        WHEN NOT g.extraction_healthy THEN 'literal extraction from the constraint expression failed'
+        WHEN g.extraction_unhealthy THEN 'literal extraction from the constraint expression failed'
         WHEN g.literal_present THEN 'permitted'
         ELSE 'NOT PERMITTED by any jobs.status CHECK constraint'
     END AS observed,
     CASE
         WHEN g.no_constraint THEN 'PASS'
-        WHEN NOT g.extraction_healthy THEN 'FAIL'
+        WHEN g.extraction_unhealthy THEN 'FAIL'
         WHEN g.literal_present THEN 'PASS'
         ELSE 'FAIL'
     END AS verdict
@@ -568,10 +570,9 @@ WITH job_status_constraints AS (
 -- Same LATERAL extraction as 5.2a/5.2b; regexp_matches is never used inside an
 -- aggregate argument (illegal on PostgreSQL 15).
 extracted_literals AS (
-    SELECT jsc.oid AS constraint_oid, m.literal
+    SELECT jsc.oid AS constraint_oid, m.match[1] AS literal
       FROM job_status_constraints jsc
       CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
-      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
 ),
 claim_preconditions AS (
     VALUES ('pending'), ('requested'), ('searching'), ('broadcasting'), ('waiting')
@@ -600,10 +601,9 @@ WITH job_status_constraints AS (
        AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 ),
 extracted_literals AS (
-    SELECT jsc.oid AS constraint_oid, m.literal
+    SELECT jsc.oid AS constraint_oid, m.match[1] AS literal
       FROM job_status_constraints jsc
       CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
-      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
 ),
 app_lifecycle_status AS (
     VALUES ('arrived'), ('heading_to_pickup'), ('arrived_at_store'),
@@ -996,10 +996,9 @@ job_status_constraints AS (
 -- a FROM/LATERAL item on PostgreSQL 15; it is never placed in an aggregate
 -- argument or in a scalar subquery.
 extracted_literals AS (
-    SELECT jsc.oid AS constraint_oid, m.literal
+    SELECT jsc.oid AS constraint_oid, m.match[1] AS literal
       FROM job_status_constraints jsc
       CROSS JOIN LATERAL regexp_matches(jsc.expr, '''([^'']*)''', 'g') AS m(match)
-      CROSS JOIN LATERAL (SELECT m.match[1] AS literal) AS l
 ),
 -- ============================================================================
 -- THE SINGLE SOURCE OF TRUTH FOR GATING. One row per gate.
@@ -1065,7 +1064,10 @@ gate_exprs(gate_name, failing_expr) AS (
     UNION ALL SELECT 'jobs_status_permits_migration_writes',
         (SELECT COUNT(*) FROM job_status_constraints) > 0
         AND (
-            (SELECT COUNT(DISTINCT el.literal) FROM extracted_literals el) < 5
+            -- extraction sanity: a status constraint that yielded no literal at all
+            (SELECT COUNT(*)
+               FROM job_status_constraints jsc
+              WHERE NOT EXISTS (SELECT 1 FROM extracted_literals el WHERE el.constraint_oid = jsc.oid)) > 0
             OR EXISTS (
                 SELECT 1 FROM top_level_status_literals l
                  WHERE NOT EXISTS (
