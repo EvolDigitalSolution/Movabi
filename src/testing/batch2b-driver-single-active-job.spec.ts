@@ -615,6 +615,15 @@ describe('N12 operational scripts', () => {
 const splitCols = (list: string): string[] =>
     list.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
 
+/** Words that can appear where a bare column name could, but are not columns. */
+const SQL_WORDS = new Set([
+    'select', 'distinct', 'from', 'where', 'and', 'or', 'not', 'null', 'is', 'in', 'exists',
+    'as', 'on', 'join', 'left', 'right', 'inner', 'outer', 'cross', 'lateral', 'group', 'by',
+    'having', 'order', 'limit', 'offset', 'union', 'all', 'except', 'intersect', 'case', 'when',
+    'then', 'else', 'end', 'true', 'false', 'with', 'values', 'count', 'sum', 'bool_or',
+    'coalesce', 'nullif', 'string_agg', 'array_agg', 'unnest', 'regexp_matches', 'text', 'boolean', 'uuid'
+]);
+
 /**
  * Split SQL into statements, honouring dollar-quoted function bodies, single
  * quotes, double-quoted identifiers, line comments and block comments. Auditing
@@ -723,6 +732,31 @@ const auditStatement = (raw: string): { declared: Map<string, Set<string>>; offe
         if (cols) register(m[2], cols);
     }
 
+    // 4. Bare column projected from a CTE / derived source:
+    //    `SELECT <bare> FROM <src>` where <src> declares its columns.
+    const lookup = (name: string): Set<string> | null =>
+        declared.get(name.toLowerCase()) ?? cteColumns.get(name.toLowerCase()) ?? null;
+
+    for (const m of raw.matchAll(/\bSELECT\s+(?:DISTINCT\s+)?([a-z_][a-z0-9_]*)\s+FROM\s+([a-z_][a-z0-9_]*)\b/gi)) {
+        const column = m[1].toLowerCase();
+        const src = m[2].toLowerCase();
+        const cols = lookup(src);
+        if (!cols) continue;                 // function call / physical table: engine-verified
+        if (SQL_WORDS.has(column)) continue;
+        if (!cols.has(column)) offenders.push(`SELECT ${column} FROM ${src}`);
+    }
+
+    // 5. Aggregate over a derived table named after its FIRST branch:
+    //    `string_agg(<col>, ...) FROM (SELECT <first> FROM ...)`.
+    //    A half-fix that renames one side but not the other must fail here.
+    for (const m of raw.matchAll(
+        /(?:string_agg|array_agg)\(\s*(?:([a-z_][a-z0-9_]*)\s*\.\s*)?([a-z_][a-z0-9_]*)\s*,[\s\S]{0,400}?FROM\s*\(\s*SELECT\s+(?:DISTINCT\s+)?([a-z_][a-z0-9_]*)\s+FROM/gi)) {
+        const column = m[2].toLowerCase();
+        const first = m[3].toLowerCase();
+        if (SQL_WORDS.has(column) || SQL_WORDS.has(first)) continue;
+        if (column !== first) offenders.push(`aggregate ${column} over derived first-branch ${first}`);
+    }
+
     const ignore = new Set(['public', 'auth', 'pg_catalog', 'information_schema', 'pg_temp']);
     for (const m of raw.matchAll(/\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b/gi)) {
         const qualifier = m[1].toLowerCase();
@@ -781,6 +815,89 @@ describe('N12 alias/column discipline (structural)', () => {
         }
     });
 
+    it('no CTE column is referenced that the CTE does not declare (the production defect)', () => {
+        // This is the exact class of defect that aborted the production preflight
+        // under PostgreSQL 15.1 with `column "s" does not exist`: the statement
+        // read `SELECT s FROM occupying` while the CTE is `occupying(status)`.
+        // A lexer that only balances parentheses cannot see this; name resolution
+        // is semantic. The audit above now implements both halves of it:
+        //   R1  SELECT <bare> FROM <cte>  -> <bare> must be declared by <cte>
+        //   R2  <agg>(<col>, ...) FROM (SELECT <first> FROM ...)
+        //                                  -> <col> must equal <first> (no half-fix)
+
+        // Non-vacuity: the auditor must fail on the exact broken shape...
+        const broken = [
+            'WITH occupying(status) AS (VALUES (\'assigned\'))',
+            'SELECT string_agg(s, \',\' ORDER BY s)',
+            '  FROM (SELECT s FROM occupying',
+            '        EXCEPT',
+            '        SELECT s FROM unnest(ARRAY[\'assigned\']) AS u(s)) d;'
+        ].join('\n');
+        const brokenOffenders = aliasDiscipline(broken).offenders;
+        expect(brokenOffenders).toContain('SELECT s FROM occupying');
+
+        // ...and must pass on the corrected shape, including a qualifier.
+        const fixed = [
+            'WITH occupying(status) AS (VALUES (\'assigned\'))',
+            'SELECT string_agg(status, \',\' ORDER BY status)',
+            '  FROM (SELECT status FROM occupying',
+            '        EXCEPT',
+            '        SELECT status FROM unnest(ARRAY[\'assigned\']) AS u(status)) d;'
+        ].join('\n');
+        expect(aliasDiscipline(fixed).offenders).toEqual([]);
+
+        // Half-fix guard: inner select corrected but the aggregate left alone.
+        const halfFixed = fixed.replace('string_agg(status', 'string_agg(s');
+        expect(aliasDiscipline(halfFixed).offenders).toEqual([
+            'aggregate s over derived first-branch status'
+        ]);
+
+        // The real artifacts must contain no such reference at all.
+        for (const [label, code] of [
+            ['migration', migrationCode],
+            ['preflight', sqlCode(PREFLIGHT)],
+            ['postflight', sqlCode(POSTFLIGHT)],
+            ['reference_only', sqlCode(INDEX_STEP)]
+        ] as Array<[string, string]>) {
+            expect(code, `${label} must not read an undeclared column from occupying`)
+                .not.toMatch(/SELECT\s+s\s+FROM\s+occupying\b/i);
+            expect(code, `${label} must not qualify the occupying CTE as occupying.s`)
+                .not.toMatch(/\boccupying\s*\.\s*s\b/i);
+        }
+    });
+
+    it('the SECTION 7 frozen-set statement consumes only the column its CTE declares', () => {
+        const code = sqlCode(PREFLIGHT);
+        const declared = /WITH\s+occupying\s*\(([^)]*)\)\s*AS\s*\(/i.exec(code);
+        expect(declared, 'preflight must declare the occupying CTE').not.toBeNull();
+        const declaredCols = splitCols(declared![1]);
+        expect(declaredCols).toEqual(['status']);
+
+        // Isolate the frozen-set self-check statement (SECTION 7).
+        const start = code.indexOf('FROZEN SET preflight-restatement vs helper');
+        expect(start).toBeGreaterThan(-1);
+        const statement = code.slice(start, code.indexOf('SECTION 8', start));
+        expect(statement).toContain('occupying');
+
+        // Every bare projection and every aggregate argument that touches the CTE
+        // must use the declared column name.
+        const projections = Array.from(
+            statement.matchAll(/SELECT\s+(?:DISTINCT\s+)?([a-z_][a-z0-9_]*)\s+FROM\s+occupying\b/gi)
+        ).map(m => m[1].toLowerCase());
+        expect(projections.length, 'SECTION 7 must project from the occupying CTE').toBeGreaterThanOrEqual(2);
+        for (const projection of projections) {
+            expect(declaredCols, `SECTION 7 projects "${projection}" from occupying`).toContain(projection);
+        }
+
+        const aggregates = Array.from(
+            statement.matchAll(/(?:string_agg|array_agg)\(\s*([a-z_][a-z0-9_]*)\s*,/gi)
+        ).map(m => m[1].toLowerCase());
+        expect(aggregates.length).toBeGreaterThanOrEqual(2);
+        for (const aggregate of aggregates) {
+            expect(declaredCols, `SECTION 7 aggregates "${aggregate}"`).toContain(aggregate);
+        }
+    });
+
     it('the postflight really does declare the columns it references through aliases', () => {
         const { declared } = aliasDiscipline(postflightRaw);
         // Positive controls: these are the aliases the audit actually resolved.
@@ -788,8 +905,7 @@ describe('N12 alias/column discipline (structural)', () => {
         expect(declared.get('p') ?? declared.get('policy')).toBeTruthy();
     });
 
-    it('no internal "char" catalog column is concatenated without an explicit cast', () => {
-        const CHAR_CATALOG_COLUMNS = [
+    it('no internal "char" catalog column is concatenated without an explicit cast', () => {        const CHAR_CATALOG_COLUMNS = [
             'defaclobjtype', 'prokind', 'provolatile', 'proparallel',
             'relkind', 'relpersistence', 'relreplident',
             'contype', 'typtype', 'typcategory', 'oprkind', 'amtype',

@@ -495,6 +495,18 @@ ORDER BY p.fn, p.rolname;
 -- ============================================================================
 -- SECTION 7 — FROZEN-SET SELF-CHECK OF THIS SCRIPT'S RESTATEMENT
 -- Only meaningful once public.driver_occupying_statuses() exists.
+--
+-- COLUMN-NAME DISCIPLINE: the CTE above is declared `occupying(status)`, so the
+-- ONLY column reachable from it is `status`. The set-difference branches below
+-- therefore project `status` from `occupying`, and the `unnest(...)` side is
+-- aliased `AS u(status)` so both sides of every EXCEPT expose the same name.
+-- Because `SELECT <col> FROM ...` names the derived table's column after the
+-- FIRST branch, the outer aggregates aggregate `status` as well.
+--
+-- A previous revision of this statement projected `s` from `occupying` - a
+-- column that does not exist there, which is exactly the shape of the
+-- `unnest(...) AS u(s)` alias next to it. PostgreSQL aborts the whole script
+-- with `column "s" does not exist`. See the regression test that now pins this.
 -- ============================================================================
 
 WITH occupying(status) AS (
@@ -511,26 +523,26 @@ SELECT
         WHEN pg_catalog.to_regprocedure('public.driver_occupying_statuses()') IS NULL
             THEN 'helper absent - restatement not yet verifiable'
         ELSE 'script_only=' || COALESCE(
-                 (SELECT string_agg(s, ',' ORDER BY s)
-                    FROM (SELECT s FROM occupying
+                 (SELECT string_agg(status, ',' ORDER BY status)
+                    FROM (SELECT status FROM occupying
                           EXCEPT
-                          SELECT s FROM unnest(public.driver_occupying_statuses()) AS u(s)) d),
+                          SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)) d),
                  'none')
              || ' | helper_only=' || COALESCE(
-                 (SELECT string_agg(s, ',' ORDER BY s)
-                    FROM (SELECT s FROM unnest(public.driver_occupying_statuses()) AS u(s)
+                 (SELECT string_agg(status, ',' ORDER BY status)
+                    FROM (SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)
                           EXCEPT
-                          SELECT s FROM occupying) d),
+                          SELECT status FROM occupying) d),
                  'none')
     END AS observed,
     CASE
         WHEN pg_catalog.to_regprocedure('public.driver_occupying_statuses()') IS NULL THEN 'INFO'
-        WHEN EXISTS (SELECT s FROM occupying
+        WHEN EXISTS (SELECT status FROM occupying
                      EXCEPT
-                     SELECT s FROM unnest(public.driver_occupying_statuses()) AS u(s)) THEN 'FAIL'
-        WHEN EXISTS (SELECT s FROM unnest(public.driver_occupying_statuses()) AS u(s)
+                     SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)) THEN 'FAIL'
+        WHEN EXISTS (SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)
                      EXCEPT
-                     SELECT s FROM occupying) THEN 'FAIL'
+                     SELECT status FROM occupying) THEN 'FAIL'
         ELSE 'PASS'
     END AS verdict;
 
