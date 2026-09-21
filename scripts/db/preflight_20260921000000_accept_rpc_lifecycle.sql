@@ -23,16 +23,27 @@
 --     check_name  - what was inspected
 --     expected    - what the migration needs
 --     observed    - what the database actually has
---     verdict     - 'PASS' | 'FAIL' | 'WARN'  (WARN = not fatal, but read the note)
+--     verdict     - 'PASS' | 'FAIL' | 'WARN' | 'INFO'  (only FAIL is fatal)
 --
---   ARCHITECTURE NOTE ON WARN
---     In this codebase an installed database may legitimately carry a column named
---     either "type" or "transaction_type" (and may or may not have "wallet_id"),
---     plus a differently-shaped "wallets" table, depending on which superseded
---     baseline (supabase_incremental_schema_reconcile.sql vs the migrations) built
---     it. The migration detects these at runtime, so several checks below are
---     intentionally reported as WARN rather than FAIL. Do not "fix" a WARN by
---     editing the migration.
+--   ARCHITECTURE NOTE ON VERDICTS
+--     PASS  - expectation met.
+--     WARN  - not fatal, but read the note; may need operator judgement.
+--     INFO  - purely informational, never a gate.
+--     FAIL  - expectation NOT met. Any FAIL means do not apply the migration.
+--
+--     The migration under test is written against the VERIFIED production schema
+--     and writes wallet_transactions.transaction_type directly (production has no
+--     `type` column). Several checks below assert that exact shape rather than
+--     probing for variants. Do not "fix" a WARN or INFO by editing the migration.
+--
+--   CARDINALITY SAFETY
+--     Every scalar subquery in this script is deliberately aggregation- or
+--     EXISTS-based. A bare `(SELECT ...)` filtered only by object NAME is unsafe
+--     on this database because PostgreSQL function identity includes the argument
+--     list, so same-name overloads legitimately produce multiple rows and would
+--     raise "more than one row returned by a subquery used as an expression".
+--     Where a specific function is meant, the query keys on its exact
+--     ::regprocedure signature.
 --
 -- FINAL STEP
 --   The last query returns a single PASS/FAIL summary line. If it is not 'PASS',
@@ -155,29 +166,32 @@ LEFT JOIN information_schema.columns c
 ORDER BY verdict DESC, check_name;
 
 -- Which type vocabulary is installed, and does it permit 'settlement' / 'release'?
+-- Cardinality-safe: string_agg over EVERY matching CHECK constraint. A bare
+-- scalar subquery here would throw if wallet_transactions carried more than one
+-- CHECK mentioning 'settlement'.
 SELECT
-    'LEDGER type CHECK constraint allows settlement+release' AS check_name,
-    'settlement and release permitted' AS expected,
+    'LEDGER CHECK permits settlement+release' AS check_name,
+    'at least one CHECK constraint on wallet_transactions mentions both settlement and release' AS expected,
     COALESCE(
-        (SELECT pg_get_constraintdef(con.oid)
+        (SELECT string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' | ' ORDER BY con.oid)
            FROM pg_constraint con
           WHERE con.conrelid = 'public.wallet_transactions'::regclass
             AND con.contype = 'c'
-            AND pg_get_constraintdef(con.oid) ILIKE '%settlement%'),
-        'NO CHECK CONSTRAINT ON TYPE COLUMN') AS observed,
+            AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%settlement%'),
+        'NO CHECK CONSTRAINT MENTIONING settlement') AS observed,
     CASE
         WHEN EXISTS (
             SELECT 1 FROM pg_constraint con
              WHERE con.conrelid = 'public.wallet_transactions'::regclass
                AND con.contype = 'c'
-               AND pg_get_constraintdef(con.oid) ILIKE '%settlement%'
-               AND pg_get_constraintdef(con.oid) ILIKE '%release%'
+               AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%settlement%'
+               AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%release%'
         ) THEN 'PASS'
         WHEN EXISTS (
             SELECT 1 FROM pg_constraint con
              WHERE con.conrelid = 'public.wallet_transactions'::regclass
                AND con.contype = 'c'
-               AND pg_get_constraintdef(con.oid) ILIKE '%settlement%'
+               AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%settlement%'
         ) THEN 'WARN'
         -- No CHECK at all is safe: both literals are accepted.
         ELSE 'PASS'
@@ -189,13 +203,21 @@ SELECT
 -- ============================================================================
 
 SELECT
-    'FUNCTION ' || p.proname AS check_name,
+    -- The VALUES list mixes real public function names with one non-function
+    -- entry ('auth_uid', which is auth.uid() and lives in schema auth). That
+    -- entry used to produce a row with a NULL label because the label was built
+    -- from the missing function name. Label robustly from the VALUES column.
+    'FUNCTION ' || COALESCE(f.fname, '(unnamed)') AS check_name,
     'exists with expected argument types' AS expected,
     CASE
+        WHEN p.oid IS NULL AND COALESCE(f.fname, '') = 'auth_uid' THEN
+            'not a public function; checked separately in the security section'
         WHEN p.oid IS NULL THEN 'MISSING'
-        ELSE pg_get_function_identity_arguments(p.oid)
+        ELSE pg_catalog.pg_get_function_identity_arguments(p.oid)
     END AS observed,
     CASE
+        -- auth_uid is informational only: it is auth.uid(), not public.auth_uid.
+        WHEN COALESCE(f.fname, '') = 'auth_uid' THEN 'INFO'
         WHEN p.oid IS NULL AND f.required THEN 'FAIL'
         WHEN p.oid IS NULL THEN 'WARN'
         ELSE 'PASS'
@@ -213,11 +235,28 @@ FROM (VALUES
         ('release_job_wallet_reservation',false, 'Lock-order reference only (jobs then wallets).'),
         ('settle_errand_funds',           false, 'Superseded errand settlement; informational.'),
         ('pay_job_from_wallet',           false, 'Lock-order / wallet RPC; informational.'),
-        ('auth_uid',                      false, 'Informational: Supabase auth helper used by SECURITY DEFINER RPCs.')
+        ('auth_uid',                      false, 'Informational: this is auth.uid(), NOT a public function. Checked in the security section.')
      ) AS f(fname, required, note)
 LEFT JOIN pg_proc p
        ON p.proname = f.fname
       AND p.pronamespace = 'public'::regnamespace
+-- Explicitly report auth.uid() existence under a non-NULL label, so the
+-- informational intent survives without a blank check_name row.
+UNION ALL
+SELECT
+    'FUNCTION auth.uid() (Supabase helper)' AS check_name,
+    'exists in schema auth' AS expected,
+    CASE WHEN EXISTS (
+            SELECT 1 FROM pg_proc pr
+            JOIN pg_namespace n ON n.oid = pr.pronamespace
+            WHERE n.nspname = 'auth' AND pr.proname = 'uid'
+         ) THEN 'present' ELSE 'MISSING' END AS observed,
+    CASE WHEN EXISTS (
+            SELECT 1 FROM pg_proc pr
+            JOIN pg_namespace n ON n.oid = pr.pronamespace
+            WHERE n.nspname = 'auth' AND pr.proname = 'uid'
+         ) THEN 'INFO' ELSE 'FAIL' END AS verdict,
+    'Required by SECURITY DEFINER RPCs that call auth.uid().' AS note
 ORDER BY verdict DESC, check_name;
 
 -- Exact current signatures of the two functions being replaced, so the
@@ -271,22 +310,40 @@ LEFT JOIN pg_proc p
       AND p.pronamespace = 'public'::regnamespace;
 
 -- 4b.3 Dependency check: a non-CASCADE DROP fails if ANY object depends on it.
+--
+-- Authoritative form, matching the canonical production diagnostic exactly:
+--   pg_depend WHERE refclassid='pg_proc' AND refobjid='public.accept_searching_job(uuid,uuid)'::regprocedure
+--
+-- NOTE ON A FIXED BUG: this check previously reported "1 dependent object(s)"
+-- even when the canonical query above returned zero rows. The cause was
+-- COUNT(*) over LEFT JOINs: with no dependencies the LEFT JOINs still emit ONE
+-- row per matching pg_proc row (with NULLs), so COUNT(*) was 1. The count must
+-- come from a column of the *dependency* row, never from COUNT(*).
+WITH target AS (
+    SELECT 'public.accept_searching_job(uuid,uuid)'::regprocedure::oid AS fn_oid
+),
+dependents AS (
+    SELECT COALESCE(
+               pg_describe_object(d.classid, d.objid, d.objsubid),
+               'object oid ' || d.objid::TEXT
+           ) AS dependent_description
+      FROM pg_depend d
+      JOIN target t ON d.refclassid = 'pg_proc'::regclass
+                   AND d.refobjid   = t.fn_oid
+)
 SELECT
     'DROP-SAFETY accept_searching_job dependents' AS check_name,
-    'ZERO dependent objects (verified on production; anything else is NO-GO)' AS expected,
-    COUNT(*)::TEXT || ' dependent object(s)' ||
-      COALESCE(' : ' || string_agg(DISTINCT COALESCE(d.proname, c.relname, 'unknown'), ', '), '')
+    'ZERO dependent objects (COUNT over pg_depend refobjid=regprocedure)' AS expected,
+    COUNT(dep.dependent_description)::TEXT || ' dependent object(s)' ||
+      CASE
+          WHEN COUNT(dep.dependent_description) = 0 THEN ''
+          ELSE ' : ' || (SELECT string_agg(DISTINCT dependent_description, ', ') FROM dependents)
+      END
     AS observed,
-    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS verdict
-FROM pg_proc p
-LEFT JOIN pg_depend dep
-       ON dep.refobjid = p.oid
-      AND dep.refclassid = 'pg_proc'::regclass
-      AND dep.deptype IN ('n', 'a')          -- normal / auto dependencies only
-LEFT JOIN pg_proc d ON d.oid = dep.objid
-LEFT JOIN pg_class c ON c.oid = dep.objid
-WHERE p.pronamespace = 'public'::regnamespace
-  AND p.proname = 'accept_searching_job';
+    CASE WHEN COUNT(dep.dependent_description) = 0 THEN 'PASS' ELSE 'FAIL' END AS verdict
+FROM (SELECT 1) AS one
+LEFT JOIN dependents dep ON TRUE
+GROUP BY one;
 
 -- 4b.4 The helper prerequisites the migration's new function bodies need.
 -- Its body reads public.jobs, public.service_types and public.vehicles.
@@ -359,8 +416,10 @@ ORDER BY verdict DESC, check_name;
 
 -- Does anything ELSE in the database call these functions (triggers, views, other
 -- functions)? A caller could break if semantics changed.
+-- Cardinality-safe: grouped by function, and rows with no caller are filtered out
+-- by d.oid IS NOT NULL, so 'none found' is an honest report. Informational only.
 SELECT
-    'CALLERS OF ' || p.proname AS check_name,
+    'CALLERS OF ' || COALESCE(p.proname, '(none)') AS check_name,
     'identify dependent routines before replacing' AS expected,
     COALESCE(string_agg(DISTINCT d.proname, ', '), 'none found') AS observed,
     'INFO' AS verdict
@@ -384,11 +443,11 @@ SELECT
     'jobs.status CHECK constraint' AS check_name,
     'must permit every status the lifecycle writes' AS expected,
     COALESCE(
-        (SELECT pg_get_constraintdef(con.oid)
+        (SELECT string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' | ' ORDER BY con.oid)
            FROM pg_constraint con
           WHERE con.conrelid = 'public.jobs'::regclass
             AND con.contype = 'c'
-            AND pg_get_constraintdef(con.oid) ILIKE '%status%'),
+            AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'),
         'NO CHECK CONSTRAINT FOUND ON status'
     ) AS observed,
     'INFO' AS verdict;
@@ -492,12 +551,11 @@ SELECT
     'errand_funding.status permits settled' AS check_name,
     'settled must be an allowed status literal' AS expected,
     COALESCE(
-        (SELECT pg_get_constraintdef(con.oid)
+        (SELECT string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' | ' ORDER BY con.oid)
            FROM pg_constraint con
           WHERE con.conrelid = 'public.errand_funding'::regclass
             AND con.contype = 'c'
-            AND pg_get_constraintdef(con.oid) ILIKE '%status%'
-          LIMIT 1),
+            AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'),
         'NO CHECK CONSTRAINT ON status') AS observed,
     CASE
         WHEN NOT EXISTS (
@@ -784,15 +842,20 @@ SELECT
       || (SELECT COUNT(*)::TEXT FROM pg_proc p
            WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job')
       || ' | accept_searching_job_rettype='
-      || COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
-                    WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job'), 'MISSING')
+      -- Actual return type of the EXACT signature the migration drops.
+      -- This previously used a scalar subquery filtered only by name; any second
+      -- overload of accept_searching_job made it multi-row and threw
+      -- "more than one row returned by a subquery used as an expression".
+      -- array_to_string is an aggregate, so it always yields exactly one row.
+      || (SELECT COALESCE(array_to_string(array_agg(DISTINCT pg_catalog.pg_get_function_result(p.oid) ORDER BY pg_catalog.pg_get_function_result(p.oid)), ' | '), 'MISSING')
+            FROM (SELECT 'public.accept_searching_job(uuid,uuid)'::regprocedure::oid AS oid) t
+            LEFT JOIN pg_proc p ON p.oid = t.oid)
       || ' | accept_searching_job_dependents='
+      -- Authoritative: keyed on the exact signature, matching section 4b.3.
       || (SELECT COUNT(*)::TEXT
-            FROM pg_proc p
-            JOIN pg_depend dep ON dep.refobjid = p.oid
-                              AND dep.refclassid = 'pg_proc'::regclass
-                              AND dep.deptype IN ('n','a')
-           WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job')
+            FROM pg_depend d
+           WHERE d.refclassid = 'pg_proc'::regclass
+             AND d.refobjid = to_regprocedure('public.accept_searching_job(uuid,uuid)'))
       || ' | transaction_type='
       || CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns
                             WHERE table_schema='public' AND table_name='wallet_transactions'
@@ -829,15 +892,16 @@ SELECT
         -- DROP safety for accept_searching_job
         WHEN (SELECT COUNT(*) FROM pg_proc p
                WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job') <> 1 THEN 'NO-GO'
-        WHEN COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
-                        WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job'), '')
+        -- Cardinality-safe: filtered to the exact signature the migration drops.
+        WHEN (SELECT COALESCE(array_to_string(array_agg(DISTINCT pg_catalog.pg_get_function_result(p.oid)), ' | '), '')
+                FROM (SELECT 'public.accept_searching_job(uuid,uuid)'::regprocedure::oid AS oid) t
+                LEFT JOIN pg_proc p ON p.oid = t.oid)
              NOT IN ('public.jobs', 'jobs', 'boolean') THEN 'NO-GO'
         WHEN (SELECT COUNT(*)
-                FROM pg_proc p
-                JOIN pg_depend dep ON dep.refobjid = p.oid
-                                  AND dep.refclassid = 'pg_proc'::regclass
-                                  AND dep.deptype IN ('n','a')
-               WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job') > 0 THEN 'NO-GO'
+                FROM pg_depend d
+               WHERE d.refclassid = 'pg_proc'::regclass
+                 AND d.refobjid = to_regprocedure('public.accept_searching_job(uuid,uuid)')
+             ) > 0 THEN 'NO-GO'
         -- ledger shape the migration was written against
         WHEN NOT EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_schema='public' AND table_name='wallet_transactions'
