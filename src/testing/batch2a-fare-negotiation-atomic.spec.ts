@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
  */
 
 const MIGRATION = 'supabase/migrations/20260923000000_accept_fare_negotiation_atomic.sql';
+const PREFLIGHT = 'scripts/db/preflight_20260923000000_accept_fare_negotiation_atomic.sql';
 const ROUTE = 'server/routes/booking.routes.ts';
 const POSTFLIGHT = 'scripts/db/postflight_20260923000000_accept_fare_negotiation_atomic.sql';
 const PRICING_SERVICE = 'server/services/pricing.service.ts';
@@ -46,6 +47,52 @@ const routeHandler = (() => {
 })();
 
 const routeHandlerFlat = routeHandler.replace(/\s+/g, '').toLowerCase();
+
+/** SQL with `--` comment lines removed: assertions target executable text only. */
+const sqlCode = (path: string): string =>
+    readFileSync(path, 'utf8')
+        .split('\n')
+        .filter(line => !line.trimStart().startsWith('--'))
+        .join('\n');
+
+/**
+ * STRUCTURAL alias-discipline audit.
+ *
+ * Collects every derived table that declares an explicit column list
+ * (`) AS a(x, y)` or `(VALUES ...) AS a(x, y)`) and every `alias.column`
+ * reference whose alias does not declare that column.
+ *
+ * This validates the real shape of the SQL rather than searching for one
+ * hard-coded typo, so it catches the entire defect class: a qualifier's
+ * declared column list must contain every column referenced through it.
+ * (Production has twice been broken by this exact class - a shipped
+ * `column policy.signature does not exist` and `column m.literal does not
+ * exist` - because a set-returning function's alias exposes only the columns
+ * its declaration lists.)
+ */
+const aliasDiscipline = (raw: string): { declared: Map<string, Set<string>>; offenders: string[] } => {
+    const declared = new Map<string, Set<string>>();
+    for (const m of raw.matchAll(/(?:\)|\bVALUES\b[^;]*?)\s*AS\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gis)) {
+        const alias = m[1].toLowerCase();
+        const cols = m[2].split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+        const existing = declared.get(alias);
+        if (existing) for (const c of cols) existing.add(c);
+        else declared.set(alias, new Set(cols));
+    }
+
+    const ignore = new Set(['public', 'auth', 'pg_catalog', 'information_schema']);
+    const offenders: string[] = [];
+    for (const m of raw.matchAll(/\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b/gi)) {
+        const qualifier = m[1].toLowerCase();
+        const column = m[2].toLowerCase();
+        if (ignore.has(qualifier)) continue;
+        const cols = declared.get(qualifier);
+        if (!cols) continue;             // plain table alias: verified by the engine
+        if (!cols.has(column)) offenders.push(`${qualifier}.${column}`);
+    }
+
+    return { declared, offenders: Array.from(new Set(offenders)) };
+};
 
 describe('N35 migration: accept_fare_negotiation contract', () => {
     it('1. defines the exact signature and jsonb return', () => {
@@ -179,35 +226,33 @@ describe('N35 route: adapter around the atomic RPC', () => {
     });
 });
 
+describe('preflight: alias discipline (structural)', () => {
+    it('every derived-table alias declares every column referenced through it', () => {
+        const { declared, offenders } = aliasDiscipline(sqlCode(PREFLIGHT));
+
+        expect(offenders, 'alias does not declare the referenced column').toEqual([]);
+
+        // Pin the real structure of the constraint-literal extraction.
+        //
+        // regexp_matches(text, pattern, 'g') is a set-returning function exposing
+        // exactly ONE column, of type text[] (one row per match, one array
+        // element per capture group). Its alias must therefore declare exactly
+        // `match`, and the capture group can only be addressed as m.match[1].
+        expect(declared.get('m')).toEqual(new Set(['match']));
+
+        // ...and the CTE must PROJECT that capture group into a column named
+        // `literal`, because the outer query reads a.literal / v.literal. Without
+        // the explicit projection the CTE exposes `match` and every `a.literal`
+        // reference becomes an invalid column reference.
+        expect(sqlCode(PREFLIGHT)).toMatch(/m\.match\s*\[\s*1\s*\]\s+AS\s+literal/i);
+    });
+});
+
 describe('postflight: alias discipline and effective-privilege gate', () => {
     it('every derived-table alias declares every column referenced through it', () => {
-        const raw = readFileSync(POSTFLIGHT, 'utf8')
-            .split('\n')
-            .filter(line => !line.trimStart().startsWith('--'))
-            .join('\n');
+        const { declared, offenders } = aliasDiscipline(sqlCode(POSTFLIGHT));
 
-        // Derived tables with an explicit column list: ) AS a(x, y) or (VALUES ...) AS a(x, y)
-        const declared = new Map<string, Set<string>>();
-        for (const m of raw.matchAll(/(?:\)|\bVALUES\b[^;]*?)\s*AS\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gis)) {
-            const alias = m[1].toLowerCase();
-            const cols = m[2].split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
-            const existing = declared.get(alias);
-            if (existing) for (const c of cols) existing.add(c);
-            else declared.set(alias, new Set(cols));
-        }
-
-        const ignore = new Set(['public', 'auth', 'pg_catalog', 'information_schema']);
-        const offenders: string[] = [];
-        for (const m of raw.matchAll(/\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b/gi)) {
-            const qualifier = m[1].toLowerCase();
-            const column = m[2].toLowerCase();
-            if (ignore.has(qualifier)) continue;
-            const cols = declared.get(qualifier);
-            if (!cols) continue;             // table alias: verified by the engine
-            if (!cols.has(column)) offenders.push(`${qualifier}.${column}`);
-        }
-
-        expect(Array.from(new Set(offenders)), 'alias does not declare the referenced column').toEqual([]);
+        expect(offenders, 'alias does not declare the referenced column').toEqual([]);
         // The alias must genuinely declare the column referenced through it.
         expect(declared.get('policy')).toContain('signature');
         // And no MIS-ATTRIBUTION may exist in executable SQL: a qualifier.column

@@ -129,8 +129,15 @@ SELECT
     END AS verdict;
 
 -- The two job statuses the RPC accepts, and the one it writes.
+--
+-- regexp_matches(text, pattern, flags) is a SET-RETURNING function that exposes
+-- exactly ONE output column, of type text[] - one row per match, one array
+-- element per capture group. The LATERAL alias below is therefore declared as
+-- m(match), and the captured literal is addressed as m.match[1]. There is no
+-- column called `literal` on m; the CTE must PROJECT the capture group and name
+-- it `literal`, because the outer query reads a.literal / v.literal.
 WITH allowed_literals AS (
-    SELECT DISTINCT m.literal
+    SELECT DISTINCT m.match[1] AS literal
       FROM (SELECT pg_get_expr(con.conbin, con.conrelid) AS expr
               FROM pg_constraint con
              WHERE con.conrelid = 'public.jobs'::regclass
