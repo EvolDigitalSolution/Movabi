@@ -94,6 +94,51 @@ const aliasDiscipline = (raw: string): { declared: Map<string, Set<string>>; off
     return { declared, offenders: Array.from(new Set(offenders)) };
 };
 
+/**
+ * PostgreSQL internal `"char"` catalog columns that these introspection scripts
+ * could render.
+ *
+ * `"char"` is a single-byte internal type whose cast to text is ASSIGNMENT
+ * context, NOT implicit. `text || "char"` therefore has no unique best operator
+ * and fails at ANALYSIS time with `operator is not unique: text || "char"`.
+ *
+ * The contrast matters and is why this guard must not simply cast everything:
+ * `name` <-> `text` are binary-coercible in BOTH directions with IMPLICIT
+ * context, so `name || ':'` (e.g. pg_get_userbyid) resolves normally. Equality
+ * against an unknown literal (e.g. `con.contype = 'c'`) is also fine because the
+ * literal coerces to `"char"`. Only direct concatenation of the internal type is
+ * unsafe.
+ */
+const CHAR_CATALOG_COLUMNS = [
+    'defaclobjtype', 'prokind', 'provolatile', 'proparallel',
+    'relkind', 'relpersistence', 'relreplident',
+    'contype', 'typtype', 'typcategory', 'oprkind', 'amtype',
+    'tgenabled', 'ev_type', 'ev_enabled',
+    'attidentity', 'attgenerated',
+    'deptype', 'polcmd', 'privtype', 'substream'
+];
+
+/**
+ * Returns every `alias.column` reference to an internal `"char"` catalog column
+ * that is a DIRECT operand of a `||` concatenation without an explicit
+ * text-family cast. Structural, not a search for one hard-coded expression.
+ */
+const uncastCharConcat = (raw: string): string[] => {
+    const offenders: string[] = [];
+    const re = new RegExp(
+        `\\b([A-Za-z_][A-Za-z0-9_]*)\\.(${CHAR_CATALOG_COLUMNS.join('|')})\\b`, 'gi');
+    for (const m of raw.matchAll(re)) {
+        const ref = `${m[1].toLowerCase()}.${m[2].toLowerCase()}`;
+        const at = m.index ?? 0;
+        const after = raw.slice(at + m[0].length);
+        // An explicit cast at the operand boundary is the fix.
+        if (/^\s*::\s*(?:text|varchar|character\s+varying)\b/i.test(after)) continue;
+        const before = raw.slice(0, at);
+        if (/^\s*\|\|/.test(after) || /\|\|\s*$/.test(before)) offenders.push(ref);
+    }
+    return Array.from(new Set(offenders));
+};
+
 describe('N35 migration: accept_fare_negotiation contract', () => {
     it('1. defines the exact signature and jsonb return', () => {
         expect(migration).toContain('createorreplacefunctionpublic.accept_fare_negotiation(');
@@ -272,6 +317,51 @@ describe('postflight: alias discipline and effective-privilege gate', () => {
         // The postflight must only introspect; it must not CALL the function.
         expect(postflight).not.toMatch(/selectpublic\.accept_fare_negotiation\(/);
         expect(postflight).not.toMatch(/performpublic\.accept_fare_negotiation\(/);
+    });
+});
+
+describe('catalog "char" type discipline', () => {
+    it('the auditor detects uncast "char" concatenation and accepts the safe forms', () => {
+        const fixtures: Array<[string, boolean]> = [
+            // UNSAFE: the exact defect production hit, plus other concat shapes.
+            ["pg_get_userbyid(d.defaclrole) || ':' || d.defaclobjtype", true],
+            ["d.defaclobjtype || ':'", true],
+            ["':' || d.defaclobjtype", true],
+            ["string_agg(c.relkind || ':', ', ')", true],
+            // SAFE: explicit text-family cast at the operand boundary.
+            ["pg_get_userbyid(d.defaclrole) || ':' || d.defaclobjtype::text", false],
+            ["d.defaclobjtype::text || ':'", false],
+            ["d.defaclobjtype::varchar || ':'", false],
+            ["(d.defaclobjtype)::text || ':'", false],
+            // SAFE: equality/comparison against an unknown literal.
+            ["con.contype = 'c'", false],
+            ["p.prokind = 'f'", false],
+            ["c.relkind IN ('r', 'v')", false]
+        ];
+        for (const [sql, shouldFlag] of fixtures) {
+            expect(uncastCharConcat(sql).length > 0, sql).toBe(shouldFlag);
+        }
+    });
+
+    it('the intended DEFAULT ACL expression shape is accepted', () => {
+        const intended =
+            "pg_get_userbyid(d.defaclrole) || ':' || d.defaclobjtype::text || ':' || "
+            + "COALESCE(array_to_string(d.defaclacl, ','), 'none')";
+        expect(uncastCharConcat(intended)).toEqual([]);
+        // Positive control: the same expression WITHOUT the cast must be caught,
+        // so the assertion above cannot pass vacuously.
+        const unpatched = intended.replace('d.defaclobjtype::text', 'd.defaclobjtype');
+        expect(uncastCharConcat(unpatched)).toEqual(['d.defaclobjtype']);
+    });
+
+    it('preflight never concatenates an uncast internal "char" catalog column', () => {
+        expect(uncastCharConcat(sqlCode(PREFLIGHT)),
+            'text || "char" is ambiguous and fails at analysis time').toEqual([]);
+    });
+
+    it('postflight never concatenates an uncast internal "char" catalog column', () => {
+        expect(uncastCharConcat(sqlCode(POSTFLIGHT)),
+            'text || "char" is ambiguous and fails at analysis time').toEqual([]);
     });
 });
 

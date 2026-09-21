@@ -258,12 +258,24 @@ ORDER BY verdict DESC, check_name;
 
 -- Production carries broad DEFAULT FUNCTION privileges; report the current
 -- default ACL so the explicit REVOKEs can be seen to be necessary.
+--
+-- TYPE DISCIPLINE: pg_default_acl.defaclobjtype is PostgreSQL's internal
+-- `"char"` type, whose cast to text is ASSIGNMENT context, not implicit.
+-- `text || "char"` is therefore ambiguous and fails at ANALYSIS time with
+-- `operator is not unique: text || "char"`. The conversion must be explicit at
+-- this operand. `::text` renders the same single character the concat would
+-- have rendered ('f' function, 'r' relation, 'S' sequence, 'T' type, 'n'
+-- schema), so the informational value is unchanged.
+--
+-- The neighbouring pg_get_userbyid(...) operand needs no cast: it returns
+-- `name`, and name <-> text are binary-coercible in BOTH directions with
+-- IMPLICIT context, so `name || ':'` resolves normally.
 SELECT
     'DEFAULT ACL for public schema' AS check_name,
     'informational: default function privileges that explicit REVOKEs must beat' AS expected,
     COALESCE(
         (SELECT string_agg(
-                    pg_get_userbyid(d.defaclrole) || ':' || d.defaclobjtype || ':' ||
+                    pg_get_userbyid(d.defaclrole) || ':' || d.defaclobjtype::text || ':' ||
                     COALESCE(array_to_string(d.defaclacl, ','), 'none'), ' | ')
            FROM pg_default_acl d
           JOIN pg_namespace n ON n.oid = d.defaclnamespace
