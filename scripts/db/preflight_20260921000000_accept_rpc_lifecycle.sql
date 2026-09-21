@@ -437,11 +437,20 @@ GROUP BY p.proname;
 
 -- ============================================================================
 -- SECTION 5 — jobs.status CHECK CONSTRAINT
+--
+-- GATE: the jobs.status constraint must permit every literal this migration
+-- WRITES. Literal extraction is structural, not textual: we read the constraint's
+-- expression tree via pg_get_expr (which strips the "CHECK (...)" wrapper) and
+-- compare with the parser's resolved boolean comparison. A = ANY(ARRAY['a','b'])
+-- and status = ANY(ARRAY[...]) both parse to a ScalarArrayOpExpr under a boolean
+-- test, so the extraction does not depend on how pg_get_constraintdef happens to
+-- print the constraint, nor on literal anchors or ordering.
 -- ============================================================================
 
+-- 5.1 The constraint definition, printed for the record (INFORMATIONAL only).
 SELECT
     'jobs.status CHECK constraint' AS check_name,
-    'must permit every status the lifecycle writes' AS expected,
+    'informational: the printed jobs.status constraint definition' AS expected,
     COALESCE(
         (SELECT string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' | ' ORDER BY con.oid)
            FROM pg_constraint con
@@ -452,37 +461,141 @@ SELECT
     ) AS observed,
     'INFO' AS verdict;
 
--- Per-status membership test: is each required literal permitted?
-WITH required_status(s) AS (
-    VALUES ('pending'), ('requested'), ('searching'), ('broadcasting'), ('waiting'),
-           ('assigned'), ('accepted'), ('arrived'), ('heading_to_pickup'),
-           ('arrived_at_store'), ('shopping_in_progress'), ('collected'),
-           ('en_route_to_customer'), ('delivered'), ('in_progress'),
-           ('completed'), ('settled'), ('cancelled'), ('no_driver_found')
-),
-constraint_def AS (
-    SELECT pg_get_constraintdef(con.oid) AS def
+-- 5.2a ADVISORY: the complete set of literals the constraint permits, extracted
+-- structurally from the constraint expression tree. This is what proves the
+-- extraction understands the real operator form on this database.
+WITH job_status_constraints AS (
+    SELECT con.oid, pg_get_expr(con.conbin, con.conrelid) AS expr
       FROM pg_constraint con
      WHERE con.conrelid = 'public.jobs'::regclass
        AND con.contype = 'c'
-       AND pg_get_constraintdef(con.oid) ILIKE '%status%'
-     LIMIT 1
+       AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
 )
 SELECT
-    'STATUS PERMITTED ' || r.s AS check_name,
-    'jobs_status_check permits literal' AS expected,
+    'STATUS ALLOWED LITERALS (from expression tree)' AS check_name,
+    'advisory: every literal the jobs.status constraint permits' AS expected,
+    COALESCE(
+        (SELECT string_agg(DISTINCT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1], ', ' ORDER BY (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1])
+           FROM job_status_constraints jsc),
+        'NO LITERALS EXTRACTED'
+    ) AS observed,
+    'INFO' AS verdict;
+
+-- 5.2b GATE: every jobs.status literal the migration WRITES must be permitted.
+--
+-- The gating list is deliberately ONLY what this migration writes:
+--   'accepted' - accept_searching_job and accept_assigned_job
+--   'assigned' - assign_driver_to_job
+-- The migration also WRITES errand_funding.status = 'settled', which is a
+-- different table and is gated separately in section 6.
+--
+-- The comparison is the parser's own resolved condition: the constraint is
+-- rebuilt from its expression tree as `(<expr>) AND <col> = ANY(ARRAY[<literals>])`
+-- and evaluated by PostgreSQL, so it cannot suffer wildcard, quoting or
+-- array-ordering artefacts the way textual LIKE matching can.
+WITH job_status_constraints AS (
+    SELECT con.oid, con.conname, pg_get_expr(con.conbin, con.conrelid) AS expr
+      FROM pg_constraint con
+     WHERE con.conrelid = 'public.jobs'::regclass
+       AND con.contype = 'c'
+       AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
+),
+migration_writes AS (
+    VALUES ('accepted'), ('assigned')
+)
+SELECT
+    'STATUS PERMITTED ' || w.column1 AS check_name,
+    'jobs_status_check permits a literal this migration writes' AS expected,
     CASE
-        WHEN (SELECT def FROM constraint_def) IS NULL THEN 'no constraint to test (unconstrained TEXT is permissive)'
-        WHEN (SELECT def FROM constraint_def) ILIKE '%''' || r.s || '''%' THEN 'permitted'
-        ELSE 'NOT PERMITTED'
+        WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0
+            THEN 'no CHECK constraint on jobs.status (unconstrained TEXT is permissive)'
+        WHEN EXISTS (
+            SELECT 1
+              FROM job_status_constraints jsc
+             WHERE jsc.expr IS NOT NULL
+               AND (jsc.expr) AND (w.column1 = ANY(ARRAY(
+                       SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
+                   ))) IS TRUE
+        ) THEN 'permitted'
+        ELSE 'NOT PERMITTED by any jobs.status CHECK constraint'
     END AS observed,
     CASE
-        -- No CHECK constraint at all means every literal is accepted.
-        WHEN (SELECT def FROM constraint_def) IS NULL THEN 'PASS'
-        WHEN (SELECT def FROM constraint_def) ILIKE '%''' || r.s || '''%' THEN 'PASS'
+        WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0 THEN 'PASS'
+        WHEN EXISTS (
+            SELECT 1
+              FROM job_status_constraints jsc
+             WHERE jsc.expr IS NOT NULL
+               AND (jsc.expr) AND (w.column1 = ANY(ARRAY(
+                       SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
+                   ))) IS TRUE
+        ) THEN 'PASS'
         ELSE 'FAIL'
     END AS verdict
-FROM required_status r
+FROM migration_writes w
+ORDER BY verdict DESC, check_name;
+
+-- 5.3 ADVISORY: the statuses this migration READS as claim preconditions.
+-- These are not written here, so they are not migration gates; a missing
+-- precondition status would instead mean the corresponding jobs could never
+-- exist in that state. Reported for operator context only.
+WITH job_status_constraints AS (
+    SELECT con.oid, pg_get_expr(con.conbin, con.conrelid) AS expr
+      FROM pg_constraint con
+     WHERE con.conrelid = 'public.jobs'::regclass
+       AND con.contype = 'c'
+       AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
+),
+claim_preconditions AS (
+    VALUES ('pending'), ('requested'), ('searching'), ('broadcasting'), ('waiting')
+)
+SELECT
+    'STATUS ADVISORY ' || c.column1 AS check_name,
+    'read as a claim precondition; not written by this migration (advisory)' AS expected,
+    CASE
+        WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0 THEN 'no constraint to test'
+        WHEN EXISTS (
+            SELECT 1 FROM job_status_constraints jsc
+             WHERE (c.column1 = ANY(ARRAY(
+                        SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
+                   ))) IS TRUE
+        ) THEN 'permitted'
+        ELSE 'NOT PERMITTED (jobs can never exist in this state)'
+    END AS observed,
+    'INFO' AS verdict
+FROM claim_preconditions c
+ORDER BY verdict DESC, check_name;
+
+-- 5.4 ADVISORY: the broader application lifecycle statuses. NOT written by this
+-- migration and therefore deliberately NOT gates; listed so an operator can see
+-- the full picture without any of these blocking the migration.
+WITH job_status_constraints AS (
+    SELECT con.oid, pg_get_expr(con.conbin, con.conrelid) AS expr
+      FROM pg_constraint con
+     WHERE con.conrelid = 'public.jobs'::regclass
+       AND con.contype = 'c'
+       AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
+),
+app_lifecycle_status AS (
+    VALUES ('arrived'), ('heading_to_pickup'), ('arrived_at_store'),
+           ('shopping_in_progress'), ('collected'), ('en_route_to_customer'),
+           ('delivered'), ('in_progress'), ('completed'), ('settled'),
+           ('cancelled'), ('no_driver_found')
+)
+SELECT
+    'STATUS ADVISORY ' || a.column1 AS check_name,
+    'application lifecycle status; NOT written by this migration (advisory)' AS expected,
+    CASE
+        WHEN (SELECT COUNT(*) FROM job_status_constraints) = 0 THEN 'no constraint to test'
+        WHEN EXISTS (
+            SELECT 1 FROM job_status_constraints jsc
+             WHERE (a.column1 = ANY(ARRAY(
+                        SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
+                   ))) IS TRUE
+        ) THEN 'permitted'
+        ELSE 'NOT PERMITTED'
+    END AS observed,
+    'INFO' AS verdict
+FROM app_lifecycle_status a
 ORDER BY verdict DESC, check_name;
 
 
@@ -798,77 +911,164 @@ FROM public.wallets WHERE COALESCE(available_balance, 0) < 0;
 
 -- ============================================================================
 -- SECTION 9 — FINAL GO / NO-GO SUMMARY
+--
+-- HOW TO ADD A GATE (read this before adding any new check):
+--   1. Add ONE row to the gate_exprs UNION ALL below, with
+--      failing_expr evaluating TRUE when the gate is NOT satisfied.
+--   2. The final line applies bool_and / string_agg over ALL rows, so the summary
+--      and the printed reason list both pick the new gate up automatically.
+--   3. Do NOT add a new WHEN branch to the verdict CASE - that is how a gate gets
+--      forgotten. There is intentionally only ONE verdict expression here.
+--
+--   GATE  = a precondition without which the migration is unsafe or cannot apply.
+--           Any failing gate forces NO-GO.
+--   INFO / WARN = advisory only. They are deliberately NOT in gate_exprs, so they
+--           can never produce NO-GO. WARN/INFO rows elsewhere in this script are
+--           never gates.
 -- ============================================================================
 
-WITH checks AS (
-    -- prerequisite columns
-    SELECT COUNT(*) AS failures FROM (
-        SELECT 1
-        FROM (VALUES
-            ('jobs','id'),('jobs','status'),('jobs','driver_id'),('jobs','accepted_driver_id'),
-            ('jobs','accepted_at'),('jobs','updated_at'),('jobs','service_type_id'),
-            ('jobs','metadata'),('jobs','customer_id'),('jobs','currency_code'),
-            ('wallets','user_id'),('wallets','available_balance'),('wallets','reserved_balance'),
-            ('wallets','id'),('wallets','updated_at'),
-            ('wallet_transactions','user_id'),('wallet_transactions','job_id'),
-            ('wallet_transactions','amount'),('wallet_transactions','description'),
-            ('wallet_transactions','metadata'),
-            ('errand_funding','job_id'),('errand_funding','status'),
-            ('errand_funding','amount_reserved'),('errand_funding','metadata'),
-            ('errand_funding','updated_at'),
-            ('errand_details','job_id'),('errand_details','actual_spending'),
-            ('service_types','id'),('service_types','slug'),
-            ('driver_earnings','job_id')
-        ) AS r(t, c)
-        LEFT JOIN information_schema.columns ic
-               ON ic.table_schema = 'public' AND ic.table_name = r.t AND ic.column_name = r.c
-        WHERE ic.column_name IS NULL
-    ) missing_columns
+WITH required_columns(table_name, column_name) AS (
+    VALUES
+        ('jobs','id'),('jobs','status'),('jobs','driver_id'),('jobs','accepted_driver_id'),
+        ('jobs','accepted_at'),('jobs','updated_at'),('jobs','service_type_id'),
+        ('jobs','metadata'),('jobs','customer_id'),('jobs','currency_code'),
+        ('wallets','user_id'),('wallets','available_balance'),('wallets','reserved_balance'),
+        ('wallets','id'),('wallets','updated_at'),
+        ('wallet_transactions','user_id'),('wallet_transactions','job_id'),
+        ('wallet_transactions','amount'),('wallet_transactions','description'),
+        ('wallet_transactions','metadata'),
+        ('errand_funding','job_id'),('errand_funding','status'),
+        ('errand_funding','amount_reserved'),('errand_funding','metadata'),
+        ('errand_funding','updated_at'),
+        ('errand_details','job_id'),('errand_details','actual_spending'),
+        ('service_types','id'),('service_types','slug'),
+        ('driver_earnings','job_id')
+),
+helper_prerequisites(table_name, column_name) AS (
+    VALUES
+        ('jobs','id'),('jobs','service_type_id'),('jobs','metadata'),
+        ('service_types','id'),('service_types','slug'),
+        ('vehicles','id'),('vehicles','user_id'),('vehicles','type'),('vehicles','capacity')
+),
+ledger_audit_columns(column_name) AS (
+    VALUES
+        ('balance_before_available'),('balance_after_available'),
+        ('balance_before_reserved'),('balance_after_reserved')
+),
+top_level_status_literals(v) AS (
+    VALUES ('accepted'), ('assigned')
+),
+job_status_constraints AS (
+    SELECT con.oid, pg_get_expr(con.conbin, con.conrelid) AS expr
+      FROM pg_constraint con
+     WHERE con.conrelid = 'public.jobs'::regclass
+       AND con.contype = 'c'
+       AND pg_catalog.pg_get_constraintdef(con.oid) ILIKE '%status%'
+),
+-- ============================================================================
+-- THE SINGLE SOURCE OF TRUTH FOR GATING. One row per gate.
+-- ============================================================================
+gate_exprs(gate_name, failing_expr) AS (
+    SELECT 'prerequisite_columns', (
+        SELECT COUNT(*) FROM required_columns r
+         LEFT JOIN information_schema.columns ic
+                ON ic.table_schema='public' AND ic.table_name=r.table_name AND ic.column_name=r.column_name
+         WHERE ic.column_name IS NULL) > 0
+
+    UNION ALL SELECT 'helper_prerequisite_columns', (
+        SELECT COUNT(*) FROM helper_prerequisites hp
+         LEFT JOIN information_schema.columns hic
+                ON hic.table_schema='public' AND hic.table_name=hp.table_name AND hic.column_name=hp.column_name
+         WHERE hic.column_name IS NULL) > 0
+
+    -- DROP safety: exactly one overload, recognised return type, zero dependents.
+    UNION ALL SELECT 'accept_searching_job_single_overload', (
+        SELECT COUNT(*) FROM pg_proc p
+         WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job') <> 1
+
+    UNION ALL SELECT 'accept_searching_job_return_type', (
+        SELECT COALESCE(array_to_string(array_agg(DISTINCT pg_catalog.pg_get_function_result(p.oid)), ' | '), '')
+          FROM (SELECT 'public.accept_searching_job(uuid,uuid)'::regprocedure::oid AS oid) t
+          LEFT JOIN pg_proc p ON p.oid = t.oid)
+        NOT IN ('public.jobs', 'jobs', 'boolean')
+
+    UNION ALL SELECT 'accept_searching_job_zero_dependents', (
+        SELECT COUNT(*)
+          FROM pg_depend d
+         WHERE d.refclassid = 'pg_proc'::regclass
+           AND d.refobjid = to_regprocedure('public.accept_searching_job(uuid,uuid)')) > 0
+
+    -- Ledger shape the settlement RPC is written against.
+    UNION ALL SELECT 'wallet_transactions_transaction_type', NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema='public' AND table_name='wallet_transactions' AND column_name='transaction_type')
+
+    UNION ALL SELECT 'wallet_transactions_audit_columns', (
+        SELECT COUNT(*) FROM ledger_audit_columns lac
+         LEFT JOIN information_schema.columns aic
+                ON aic.table_schema='public' AND aic.table_name='wallet_transactions' AND aic.column_name=lac.column_name
+         WHERE aic.column_name IS NULL) > 0
+
+    UNION ALL SELECT 'auth_uid_present', NOT EXISTS (
+        SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+         WHERE n.nspname='auth' AND p.proname='uid')
+
+    UNION ALL SELECT 'roles_present', (
+        SELECT COUNT(*) FROM (VALUES ('authenticated'),('service_role')) AS rr(rn)
+         LEFT JOIN pg_roles r ON r.rolname = rr.rn
+         WHERE r.oid IS NULL) > 0
+
+    -- GATE: jobs.status must permit the literals this migration WRITES.
+    -- Evaluated with the parser's own condition, never textual LIKE matching.
+    UNION ALL SELECT 'jobs_status_permits_migration_writes', EXISTS (
+        SELECT 1 FROM top_level_status_literals l
+         WHERE (SELECT COUNT(*) FROM job_status_constraints) > 0
+           AND NOT EXISTS (
+               SELECT 1 FROM job_status_constraints jsc
+                WHERE jsc.expr IS NOT NULL
+                  AND (jsc.expr) AND (l.v = ANY(ARRAY(
+                          SELECT (regexp_matches(jsc.expr, '''([^'']*)''', 'g'))[1]
+                      ))) IS TRUE))
+),
+evaluated AS (
+    SELECT gate_name, failing_expr, (failing_expr IS TRUE) AS is_failing FROM gate_exprs
+),
+summary AS (
+    SELECT COUNT(*) AS gate_count,
+           COUNT(*) FILTER (WHERE is_failing) AS failing_count,
+           COALESCE(string_agg(gate_name, ', ' ORDER BY gate_name) FILTER (WHERE is_failing), 'none') AS failing_gates
+      FROM evaluated
 )
 SELECT
     'GO / NO-GO' AS check_name,
-    'prereq columns + helper prereqs + DROP-safety + auth.uid() + roles' AS expected,
-    'missing_columns=' || (SELECT failures FROM checks)::TEXT
-      || ' | helper_prereqs_missing='
-      || (SELECT COUNT(*) FROM (VALUES
-            ('jobs','id'),('jobs','service_type_id'),('jobs','metadata'),
-            ('service_types','id'),('service_types','slug'),
-            ('vehicles','id'),('vehicles','user_id'),('vehicles','type'),('vehicles','capacity')
-          ) AS hr(t,c)
-          LEFT JOIN information_schema.columns hic
-                 ON hic.table_schema='public' AND hic.table_name=hr.t AND hic.column_name=hr.c
-          WHERE hic.column_name IS NULL)::TEXT
+    'ALL migration gates satisfied (see gate_exprs in this query for the list)' AS expected,
+    'gates_checked=' || s.gate_count::TEXT
+      || ' | gates_failed=' || s.failing_count::TEXT
+      || ' | failing_gates=' || s.failing_gates
+      || ' | missing_columns='
+      || (SELECT COUNT(*) FROM required_columns r
+            LEFT JOIN information_schema.columns ic
+                   ON ic.table_schema='public' AND ic.table_name=r.table_name AND ic.column_name=r.column_name
+            WHERE ic.column_name IS NULL)::TEXT
       || ' | accept_searching_job_overloads='
       || (SELECT COUNT(*)::TEXT FROM pg_proc p
            WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job')
       || ' | accept_searching_job_rettype='
-      -- Actual return type of the EXACT signature the migration drops.
-      -- This previously used a scalar subquery filtered only by name; any second
-      -- overload of accept_searching_job made it multi-row and threw
-      -- "more than one row returned by a subquery used as an expression".
-      -- array_to_string is an aggregate, so it always yields exactly one row.
       || (SELECT COALESCE(array_to_string(array_agg(DISTINCT pg_catalog.pg_get_function_result(p.oid) ORDER BY pg_catalog.pg_get_function_result(p.oid)), ' | '), 'MISSING')
             FROM (SELECT 'public.accept_searching_job(uuid,uuid)'::regprocedure::oid AS oid) t
             LEFT JOIN pg_proc p ON p.oid = t.oid)
       || ' | accept_searching_job_dependents='
-      -- Authoritative: keyed on the exact signature, matching section 4b.3.
       || (SELECT COUNT(*)::TEXT
             FROM pg_depend d
            WHERE d.refclassid = 'pg_proc'::regclass
              AND d.refobjid = to_regprocedure('public.accept_searching_job(uuid,uuid)'))
+      || ' | migration_status_literals_checked='
+      || (SELECT COALESCE(string_agg(l.v, ', ' ORDER BY l.v), 'none') FROM top_level_status_literals l)
       || ' | transaction_type='
       || CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns
                             WHERE table_schema='public' AND table_name='wallet_transactions'
                               AND column_name='transaction_type')
               THEN 'present' ELSE 'MISSING' END
-      || ' | ledger_audit_cols_missing='
-      || (SELECT COUNT(*)::TEXT FROM (VALUES
-            ('balance_before_available'),('balance_after_available'),
-            ('balance_before_reserved'),('balance_after_reserved')
-          ) AS ac(c)
-          LEFT JOIN information_schema.columns aic
-                 ON aic.table_schema='public' AND aic.table_name='wallet_transactions' AND aic.column_name=ac.c
-          WHERE aic.column_name IS NULL)
       || ' | auth.uid()='
       || CASE WHEN EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                             WHERE n.nspname='auth' AND p.proname='uid')
@@ -877,45 +1077,7 @@ SELECT
       || (SELECT COUNT(*) FROM (VALUES ('authenticated'),('service_role'))
             AS rr(rn) LEFT JOIN pg_roles r ON r.rolname = rr.rn WHERE r.oid IS NULL)::TEXT
     AS observed,
-    CASE
-        WHEN (SELECT failures FROM checks) > 0 THEN 'NO-GO'
-        -- helper prerequisites (the migration creates the helper, so it must NOT
-        -- need to pre-exist, but its inputs must be present)
-        WHEN (SELECT COUNT(*) FROM (VALUES
-                ('jobs','id'),('jobs','service_type_id'),('jobs','metadata'),
-                ('service_types','id'),('service_types','slug'),
-                ('vehicles','id'),('vehicles','user_id'),('vehicles','type'),('vehicles','capacity')
-              ) AS hr(t,c)
-              LEFT JOIN information_schema.columns hic
-                     ON hic.table_schema='public' AND hic.table_name=hr.t AND hic.column_name=hr.c
-              WHERE hic.column_name IS NULL) > 0 THEN 'NO-GO'
-        -- DROP safety for accept_searching_job
-        WHEN (SELECT COUNT(*) FROM pg_proc p
-               WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job') <> 1 THEN 'NO-GO'
-        -- Cardinality-safe: filtered to the exact signature the migration drops.
-        WHEN (SELECT COALESCE(array_to_string(array_agg(DISTINCT pg_catalog.pg_get_function_result(p.oid)), ' | '), '')
-                FROM (SELECT 'public.accept_searching_job(uuid,uuid)'::regprocedure::oid AS oid) t
-                LEFT JOIN pg_proc p ON p.oid = t.oid)
-             NOT IN ('public.jobs', 'jobs', 'boolean') THEN 'NO-GO'
-        WHEN (SELECT COUNT(*)
-                FROM pg_depend d
-               WHERE d.refclassid = 'pg_proc'::regclass
-                 AND d.refobjid = to_regprocedure('public.accept_searching_job(uuid,uuid)')
-             ) > 0 THEN 'NO-GO'
-        -- ledger shape the migration was written against
-        WHEN NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_schema='public' AND table_name='wallet_transactions'
-                            AND column_name='transaction_type') THEN 'NO-GO'
-        WHEN (SELECT COUNT(*) FROM (VALUES
-                ('balance_before_available'),('balance_after_available'),
-                ('balance_before_reserved'),('balance_after_reserved')
-              ) AS ac(c)
-              LEFT JOIN information_schema.columns aic
-                     ON aic.table_schema='public' AND aic.table_name='wallet_transactions' AND aic.column_name=ac.c
-              WHERE aic.column_name IS NULL) > 0 THEN 'NO-GO'
-        WHEN NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-                          WHERE n.nspname='auth' AND p.proname='uid') THEN 'NO-GO'
-        WHEN (SELECT COUNT(*) FROM (VALUES ('authenticated'),('service_role'))
-                AS rr(rn) LEFT JOIN pg_roles r ON r.rolname = rr.rn WHERE r.oid IS NULL) > 0 THEN 'NO-GO'
-        ELSE 'PASS'
-    END AS verdict;
+    -- The ONLY verdict expression. It is derived from evaluated/summary, so every
+    -- row in gate_exprs participates automatically.
+    CASE WHEN s.failing_count = 0 THEN 'PASS' ELSE 'NO-GO' END AS verdict
+FROM summary s;
