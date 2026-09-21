@@ -494,19 +494,38 @@ ORDER BY p.fn, p.rolname;
 
 -- ============================================================================
 -- SECTION 7 — FROZEN-SET SELF-CHECK OF THIS SCRIPT'S RESTATEMENT
--- Only meaningful once public.driver_occupying_statuses() exists.
 --
--- COLUMN-NAME DISCIPLINE: the CTE above is declared `occupying(status)`, so the
--- ONLY column reachable from it is `status`. The set-difference branches below
--- therefore project `status` from `occupying`, and the `unnest(...)` side is
--- aliased `AS u(status)` so both sides of every EXCEPT expose the same name.
--- Because `SELECT <col> FROM ...` names the derived table's column after the
--- FIRST branch, the outer aggregates aggregate `status` as well.
+-- CLEAN-INSTALL SAFETY (this statement must run BEFORE the migration too).
+-- public.driver_occupying_statuses() is NEW in 20260924000000 and does not
+-- exist pre-migration. PostgreSQL resolves every STATICALLY WRITTEN function
+-- reference during parse/analysis - before any CASE/COALESCE guard can run - so
+-- a statement containing a direct call such as
+--     unnest(public.driver_occupying_statuses())
+-- aborts with
+--     ERROR: function public.driver_occupying_statuses() does not exist
+-- even when that call sits in the ELSE branch of a
+-- `CASE WHEN to_regprocedure(...) IS NULL` guard. A guard cannot protect a
+-- reference the parser must resolve.
 --
--- A previous revision of this statement projected `s` from `occupying` - a
--- column that does not exist there, which is exactly the shape of the
--- `unnest(...) AS u(s)` alias next to it. PostgreSQL aborts the whole script
--- with `column "s" does not exist`. See the regression test that now pins this.
+-- This statement therefore NEVER invokes the helper. It reads the helper's
+-- DEFINITION from the catalog when it exists:
+--   * to_regprocedure('<string literal signature>') takes a STRING argument, so
+--     it returns NULL instead of raising while the object is absent;
+--   * the pg_proc row is joined on that OID, so the literal extraction yields no
+--     rows while the helper is absent;
+--   * the helper's own ARRAY[...] literals ARE the set it defines.
+--
+-- Behaviour:
+--   helper ABSENT  -> 'INFO'  (legitimate clean-install state; never a failure
+--                              on its own)
+--   helper PRESENT -> the set it defines is compared BOTH WAYS against this
+--                              script's restatement; any drift is 'FAIL'.
+-- The comparison is never skipped silently when the helper exists.
+--
+-- COLUMN-NAME DISCIPLINE: every CTE below declares its column list, and the
+-- projected/aggregated column is checked against that declared list by the
+-- static regression test (a previous revision projected `s` from a CTE
+-- declared `occupying(status)` and aborted the whole script).
 -- ============================================================================
 
 WITH occupying(status) AS (
@@ -515,32 +534,43 @@ WITH occupying(status) AS (
            ('shopping_in_progress'),('collected'),('picked_up'),
            ('en_route_to_customer'),('in_progress'),('delivered'),
            ('over_budget_requested'),('requires_review')
+),
+helper_function(oid, prosrc) AS (
+    SELECT p.oid, p.prosrc
+      FROM pg_catalog.pg_proc p
+     WHERE p.oid = pg_catalog.to_regprocedure('public.driver_occupying_statuses()')
+),
+helper_literals(status) AS (
+    SELECT DISTINCT (m.match)[1] AS status
+      FROM helper_function h
+     CROSS JOIN LATERAL pg_catalog.regexp_matches(h.prosrc, '''([^'']*)''', 'g') AS m(match)
 )
 SELECT
-    'FROZEN SET preflight-restatement vs helper' AS check_name,
-    'identical sets (or helper absent, which is expected before the migration)' AS expected,
+    'FROZEN SET preflight-restatement vs helper definition' AS check_name,
+    'identical sets when the helper exists; helper absent is a legitimate clean-install state' AS expected,
     CASE
         WHEN pg_catalog.to_regprocedure('public.driver_occupying_statuses()') IS NULL
-            THEN 'helper absent - restatement not yet verifiable'
-        ELSE 'script_only=' || COALESCE(
-                 (SELECT string_agg(status, ',' ORDER BY status)
-                    FROM (SELECT status FROM occupying
-                          EXCEPT
-                          SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)) d),
-                 'none')
+            THEN 'helper absent (clean install) - restatement not yet comparable'
+        ELSE 'helper_defined_statuses=' || (SELECT COUNT(*) FROM helper_literals)::TEXT
+             || ' | script_only=' || COALESCE(
+                    (SELECT string_agg(status, ',' ORDER BY status)
+                       FROM (SELECT status FROM occupying
+                             EXCEPT
+                             SELECT status FROM helper_literals) d),
+                    'none')
              || ' | helper_only=' || COALESCE(
-                 (SELECT string_agg(status, ',' ORDER BY status)
-                    FROM (SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)
-                          EXCEPT
-                          SELECT status FROM occupying) d),
-                 'none')
+                    (SELECT string_agg(status, ',' ORDER BY status)
+                       FROM (SELECT status FROM helper_literals
+                             EXCEPT
+                             SELECT status FROM occupying) d),
+                    'none')
     END AS observed,
     CASE
         WHEN pg_catalog.to_regprocedure('public.driver_occupying_statuses()') IS NULL THEN 'INFO'
         WHEN EXISTS (SELECT status FROM occupying
                      EXCEPT
-                     SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)) THEN 'FAIL'
-        WHEN EXISTS (SELECT status FROM unnest(public.driver_occupying_statuses()) AS u(status)
+                     SELECT status FROM helper_literals) THEN 'FAIL'
+        WHEN EXISTS (SELECT status FROM helper_literals
                      EXCEPT
                      SELECT status FROM occupying) THEN 'FAIL'
         ELSE 'PASS'

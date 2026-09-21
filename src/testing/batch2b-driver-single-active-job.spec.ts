@@ -770,8 +770,7 @@ const auditStatement = (raw: string): { declared: Map<string, Set<string>>; offe
     return { declared, offenders: Array.from(new Set(offenders)) };
 };
 
-const aliasDiscipline = (source: string): { declared: Map<string, Set<string>>; offenders: string[] } => {
-    const allDeclared = new Map<string, Set<string>>();
+const aliasDiscipline = (source: string): { declared: Map<string, Set<string>>; offenders: string[] } => {    const allDeclared = new Map<string, Set<string>>();
     const offenders: string[] = [];
 
     for (const statement of splitStatements(source)) {
@@ -786,6 +785,38 @@ const aliasDiscipline = (source: string): { declared: Map<string, Set<string>>; 
     }
 
     return { declared: allDeclared, offenders: Array.from(new Set(offenders)) };
+};
+
+/**
+ * Comments removed (via the statement splitter) and every string literal
+ * blanked, so what remains is ONLY what PostgreSQL must resolve by name during
+ * parse/analysis.
+ *
+ * This distinction is the whole point: `to_regprocedure('public.f()')` takes a
+ * STRING and is therefore safe while `f` is absent, whereas a direct `f()` call
+ * is resolved before any CASE/COALESCE guard can run and aborts with
+ * `function public.f() does not exist`.
+ */
+const executableText = (sql: string): string =>
+    splitStatements(sql).join(';\n').replace(/'(?:[^']|'')*'/g, "''");
+
+/** Count statically resolvable references to a named object in executable text. */
+const directInvocations = (sql: string, name: string): number =>
+    (executableText(sql).match(new RegExp(`(?:public\\s*\\.\\s*)?\\b${name}\\s*\\(`, 'gi')) ?? []).length;
+
+/** The SECTION 7 frozen-set self-check statement, as one comment-stripped statement. */
+const section7Statement = (): string => {
+    const statement = splitStatements(preflightRaw)
+        .find(s => s.includes('FROZEN SET preflight-restatement vs helper'));
+    expect(statement, 'SECTION 7 frozen-set check not found').toBeTruthy();
+    return statement as string;
+};
+
+/** The SECTION 7 statement's own restatement of the frozen set (its CTE VALUES). */
+const section7RestatedStatuses = (): Set<string> => {
+    const cte = /WITH\s+occupying\(status\)\s+AS\s*\(\s*VALUES([\s\S]*?)\n\s*\)/i.exec(section7Statement());
+    expect(cte, 'SECTION 7 occupying CTE not found').not.toBeNull();
+    return new Set(quotedLiterals(cte![1]));
 };
 
 describe('N12 alias/column discipline (structural)', () => {
@@ -941,6 +972,95 @@ describe('N12 alias/column discipline (structural)', () => {
         ] as Array<[string, string]>) {
             expect(uncastCharConcat(read(path)), `${label} uncast internal "char" concatenation`).toEqual([]);
         }
+    });
+});
+
+describe('N12 preflight clean-install safety', () => {
+    it('the preflight never statically invokes an object it permits to be absent', () => {
+        // A guard cannot protect a reference the parser must resolve, so the
+        // preflight - which must run BEFORE the migration - may not contain a
+        // direct call to any object the migration creates.
+        for (const name of [
+            'driver_occupying_statuses',
+            'driver_has_other_active_job',
+            'driver_has_active_job'
+        ]) {
+            expect(directInvocations(preflightRaw, name), `preflight must not invoke ${name}()`).toBe(0);
+        }
+        // The invariant index is optional pre-migration too: to_regclass only.
+        expect(directInvocations(preflightRaw, 'idx_jobs_one_active_per_driver')).toBe(0);
+
+        // Non-vacuity: the detector must reject the real defect shape, i.e. a
+        // direct call sitting in the ELSE branch of a to_regprocedure() guard.
+        const broken = [
+            'SELECT CASE',
+            "  WHEN pg_catalog.to_regprocedure('public.driver_occupying_statuses()') IS NULL",
+            "  THEN 'INFO'",
+            '  ELSE (SELECT COUNT(*) FROM unnest(public.driver_occupying_statuses()) AS u(status))',
+            'END AS verdict;'
+        ].join('\n');
+        expect(directInvocations(broken, 'driver_occupying_statuses')).toBe(1);
+
+        // ...and must accept the catalog-only form the preflight actually uses.
+        const catalogOnly = [
+            'WITH helper_function(oid, prosrc) AS (',
+            '  SELECT p.oid, p.prosrc FROM pg_catalog.pg_proc p',
+            "   WHERE p.oid = pg_catalog.to_regprocedure('public.driver_occupying_statuses()')",
+            ') SELECT COUNT(*) FROM helper_function;'
+        ].join('\n');
+        expect(directInvocations(catalogOnly, 'driver_occupying_statuses')).toBe(0);
+    });
+
+    it('the frozen-set comparison is catalog-only and tolerates an absent helper', () => {
+        const statement = section7Statement();
+
+        // Catalog introspection, never an invocation.
+        expect(statement).toContain('pg_catalog.pg_proc');
+        expect(statement).toContain('prosrc');
+        expect(statement).toContain("pg_catalog.to_regprocedure('public.driver_occupying_statuses()')");
+        expect(statement).toContain('regexp_matches');
+        expect(statement).toContain('CROSS JOIN LATERAL');
+        expect(directInvocations(statement, 'driver_occupying_statuses')).toBe(0);
+
+        // helper ABSENT -> INFO, never FAIL on absence alone.
+        expect(flat(statement)).toContain(
+            "whenpg_catalog.to_regprocedure('public.driver_occupying_statuses()')isnullthen'info'"
+        );
+        expect(flat(statement)).not.toContain(
+            "whenpg_catalog.to_regprocedure('public.driver_occupying_statuses()')isnullthen'fail'"
+        );
+
+        // helper PRESENT -> compared BOTH WAYS, never silently skipped.
+        expect(flat(statement)).toContain(
+            "whenexists(selectstatusfromoccupyingexceptselectstatusfromhelper_literals)then'fail'"
+        );
+        expect(flat(statement)).toContain(
+            "whenexists(selectstatusfromhelper_literalsexceptselectstatusfromoccupying)then'fail'"
+        );
+        expect(flat(statement)).toContain("else'pass'");
+
+        // Still read-only.
+        expect(statement).not.toMatch(/\b(create|drop|alter|insert|update|delete|grant|revoke|truncate)\b/i);
+    });
+
+    it('the SECTION 7 restatement still validates all sixteen frozen statuses', () => {
+        const literals = section7RestatedStatuses();
+        expect(sorted(literals)).toEqual(sorted(FROZEN_OCCUPYING_STATUSES));
+        for (const status of FROZEN_OCCUPYING_STATUSES) {
+            expect(literals.has(status), `restatement must include ${status}`).toBe(true);
+        }
+        expect(literals.size).toBe(16);
+    });
+
+    it('the postflight, which runs AFTER the migration, may call the new helper directly', () => {
+        // Documented asymmetry: the postflight is tied to the migration it runs
+        // after, so its direct calls are legitimate. Pinning this keeps the
+        // difference deliberate and visible rather than accidental.
+        expect(read(POSTFLIGHT)).toContain('supabase/migrations/20260924000000_driver_single_active_job.sql');
+        expect(read(POSTFLIGHT)).toContain('STRICTLY READ ONLY');
+        expect(directInvocations(read(POSTFLIGHT), 'driver_occupying_statuses')).toBeGreaterThan(0);
+        // The preflight must remain the clean-install-safe one.
+        expect(directInvocations(preflightRaw, 'driver_occupying_statuses')).toBe(0);
     });
 });
 
