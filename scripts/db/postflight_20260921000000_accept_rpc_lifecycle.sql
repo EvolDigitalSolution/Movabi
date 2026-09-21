@@ -152,16 +152,41 @@ WHERE p.pronamespace = 'public'::regnamespace
                     'settle_job_wallet_reservation')
 ORDER BY p.proname;
 
--- Raw ACL, plus explicit PUBLIC-grant detection (PUBLIC grants are a security
--- regression the migration's REVOKE is meant to remove).
+-- Raw ACL. This is a FORMATTING-LEVEL diagnostic only: it shows what is written
+-- in proacl. It deliberately does NOT decide the verdict, because effective
+-- privileges also depend on role inheritance and default ACLs that proacl text
+-- cannot express. The authoritative test is the effective-privilege matrix below.
+--
+-- PUBLIC detection: in proacl text a grant to the PUBLIC pseudo-role is rendered
+-- with an empty grantee before the "=" (e.g. "=X/owner"). A NULL proacl means the
+-- function still carries the built-in default ACL, where PUBLIC holds EXECUTE.
 SELECT
     'ACL ' || p.proname AS check_name,
-    'no PUBLIC/anon grant; authenticated/service_role only' AS expected,
-    COALESCE(array_to_string(p.proacl, ' | '), '(default ACL - PUBLIC has EXECUTE, migration REVOKE may not have applied)') AS observed,
+    'informational: proacl text; the effective-privilege matrix below is authoritative' AS expected,
+    COALESCE(array_to_string(p.proacl, ' | '),
+             '(NULL: default ACL - PUBLIC has EXECUTE)') AS observed,
+    'INFO' AS verdict
+FROM pg_proc p
+WHERE p.pronamespace = 'public'::regnamespace
+  AND p.proname IN ('driver_vehicle_can_accept_job', 'accept_searching_job',
+                    'assign_driver_to_job', 'accept_assigned_job',
+                    'settle_job_wallet_reservation')
+ORDER BY p.proname;
+
+-- Any surviving PUBLIC EXECUTE is a hard security regression.
+SELECT
+    'PUBLIC EXECUTE absent on ' || p.proname AS check_name,
+    'no PUBLIC grant (proacl must not contain a bare =X/ entry)' AS expected,
     CASE
-        WHEN p.proacl IS NULL THEN 'WARN'
-        WHEN EXISTS (SELECT 1 FROM unnest(p.proacl) a WHERE a::TEXT LIKE '=%') THEN 'FAIL'
-        ELSE 'PASS'
+        WHEN p.proacl IS NULL THEN 'NULL proacl - default ACL still grants EXECUTE to PUBLIC'
+        WHEN EXISTS (SELECT 1 FROM unnest(p.proacl) a WHERE a::TEXT LIKE '=%') THEN 'PUBLIC EXECUTE present'
+        ELSE 'no PUBLIC entry'
+    END AS observed,
+    CASE
+        WHEN p.proacl IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM unnest(p.proacl) a WHERE a::TEXT LIKE '=%')
+        THEN 'PASS'
+        ELSE 'FAIL'
     END AS verdict
 FROM pg_proc p
 WHERE p.pronamespace = 'public'::regnamespace
@@ -170,44 +195,75 @@ WHERE p.pronamespace = 'public'::regnamespace
                     'settle_job_wallet_reservation')
 ORDER BY p.proname;
 
--- has_function_privilege is the authoritative grant test.
+-- ============================================================================
+-- EFFECTIVE-PRIVILEGE MATRIX — the authoritative ACL gate.
+--
+-- This is the COMPLETE 5 functions x 4 roles matrix, so a policy cell cannot be
+-- silently omitted (the previous version listed only 13 hand-picked cells and
+-- omitted, for example, every service_role/helper and anon/assign cell).
+--
+-- has_function_privilege(role, fnoid, 'EXECUTE') is authoritative: it reports the
+-- EFFECTIVE privilege for that role, accounting for direct grants, role
+-- inheritance and PUBLIC-derived grants. The verdict is therefore derived from it
+-- rather than from parsing proacl text.
+--
+-- EXECUTE policy:
+--   driver_vehicle_can_accept_job : nobody (internal; invoked from SECURITY DEFINER callers)
+--   accept_searching_job          : authenticated + service_role
+--   assign_driver_to_job          : authenticated + service_role
+--   accept_assigned_job           : authenticated only
+--   settle_job_wallet_reservation : service_role only (moves money)
+-- ============================================================================
 SELECT
-    'GRANT ' || g.rolname || ' -> ' || g.fname AS check_name,
-    g.expected AS expected,
-    CASE WHEN has_function_privilege(g.rolname, g.fnoid, 'EXECUTE')
+    'PRIVILEGE ' || m.fname || ' -> ' || m.rolname AS check_name,
+    CASE WHEN m.can_execute THEN 'EXECUTE expected' ELSE 'EXECUTE must NOT be granted' END AS expected,
+    CASE WHEN has_function_privilege(m.rolname, m.fn_oid, 'EXECUTE')
          THEN 'EXECUTE granted' ELSE 'EXECUTE NOT granted' END AS observed,
     CASE
-        WHEN g.should_have AND has_function_privilege(g.rolname, g.fnoid, 'EXECUTE') THEN 'PASS'
-        WHEN NOT g.should_have AND NOT has_function_privilege(g.rolname, g.fnoid, 'EXECUTE') THEN 'PASS'
-        ELSE 'FAIL'
+        WHEN has_function_privilege(m.rolname, m.fn_oid, 'EXECUTE') = m.can_execute
+        THEN 'PASS' ELSE 'FAIL'
     END AS verdict
 FROM (
-    SELECT r.rolname, f.fname, f.should_have, p.oid AS fnoid, f.expected
+    SELECT policy.fname, policy.rolname, policy.can_execute,
+           CASE WHEN policy.rolname = 'PUBLIC'
+                THEN NULL
+                ELSE to_regprocedure(policy.signature) END AS fn_oid
     FROM (VALUES
-            ('authenticated', 'accept_searching_job',          true,  'driver self-accept is called from the browser'),
-            ('service_role',  'accept_searching_job',          true,  'server-side accept path'),
-            ('authenticated', 'assign_driver_to_job',          true,  'admin manual assignment uses the admin session'),
-            ('service_role',  'assign_driver_to_job',          true,  'POST /api/booking/accept uses supabaseAdmin'),
-            ('authenticated', 'accept_assigned_job',           true,  'assigned driver confirms from Job Details'),
-            ('service_role',  'accept_assigned_job',           false, 'not granted by this migration on purpose'),
-            ('authenticated', 'settle_job_wallet_reservation', false, 'moves money: must NOT be client-callable'),
-            ('service_role',  'settle_job_wallet_reservation', true,  'called only by LogisticsService server code'),
-            ('anon',          'settle_job_wallet_reservation', false, 'must never be callable anonymously'),
-            ('anon',          'accept_searching_job',          false, 'must never be callable anonymously'),
-            ('anon',          'accept_assigned_job',           false, 'must never be callable anonymously'),
-            -- The helper is a prerequisite for the accept RPCs. The migration does
-            -- not grant it, so PUBLIC/default ACLs would be a security regression;
-            -- assert it is not callable by the client-facing roles.
-            ('anon',          'driver_vehicle_can_accept_job', false, 'internal predicate: must not be anonymous-callable'),
-            ('authenticated', 'driver_vehicle_can_accept_job', false, 'internal predicate: not granted by this migration')
-         ) AS f(rolename, fname, should_have, expected)
-    JOIN pg_roles r ON r.rolname = f.rolename
-    LEFT JOIN pg_proc p
-           ON p.proname = f.fname
-          AND p.pronamespace = 'public'::regnamespace
-) g
-WHERE g.fnoid IS NOT NULL
-ORDER BY verdict DESC, check_name;
+            -- driver_vehicle_can_accept_job: internal predicate, no role access
+            ('driver_vehicle_can_accept_job', 'anon',          false),
+            ('driver_vehicle_can_accept_job', 'authenticated', false),
+            ('driver_vehicle_can_accept_job', 'service_role',  false),
+
+            -- accept_searching_job: driver self-accept from browser + server
+            ('accept_searching_job',          'anon',          false),
+            ('accept_searching_job',          'authenticated', true),
+            ('accept_searching_job',          'service_role',  true),
+
+            -- assign_driver_to_job: admin/dispatch assignment
+            ('assign_driver_to_job',          'anon',          false),
+            ('assign_driver_to_job',          'authenticated', true),
+            ('assign_driver_to_job',          'service_role',  true),
+
+            -- accept_assigned_job: assigned-driver confirmation only
+            ('accept_assigned_job',           'anon',          false),
+            ('accept_assigned_job',           'authenticated', true),
+            ('accept_assigned_job',           'service_role',  false),
+
+            -- settle_job_wallet_reservation: server-side only, moves money
+            ('settle_job_wallet_reservation', 'anon',          false),
+            ('settle_job_wallet_reservation', 'authenticated', false),
+            ('settle_job_wallet_reservation', 'service_role',  true)
+         ) AS policy(fname, rolname, can_execute)
+    JOIN (VALUES
+            ('driver_vehicle_can_accept_job', 'public.driver_vehicle_can_accept_job(uuid,uuid)'),
+            ('accept_searching_job',          'public.accept_searching_job(uuid,uuid)'),
+            ('assign_driver_to_job',          'public.assign_driver_to_job(uuid,uuid)'),
+            ('accept_assigned_job',           'public.accept_assigned_job(uuid,uuid)'),
+            ('settle_job_wallet_reservation', 'public.settle_job_wallet_reservation(uuid,numeric)')
+         ) AS sig(fname, signature) ON sig.fname = policy.fname
+) m
+WHERE m.fn_oid IS NOT NULL
+ORDER BY verdict DESC, m.fname, m.rolname;
 
 
 -- ============================================================================
@@ -381,53 +437,82 @@ ORDER BY status;
 -- SECTION 6 — POST-MIGRATION GO / NO-GO
 -- ============================================================================
 
-SELECT
-    'POST-MIGRATION GO / NO-GO' AS check_name,
-    'all five functions present with correct return types, correctly secured, no bulk rewrite' AS expected,
-    'functions_present=' ||
-      (SELECT COUNT(*) FROM (VALUES
+WITH acl_policy(fname, signature, rolname, can_execute) AS (
+    VALUES
+        -- driver_vehicle_can_accept_job: internal predicate, no role access
+        ('driver_vehicle_can_accept_job', 'public.driver_vehicle_can_accept_job(uuid,uuid)', 'anon',          false),
+        ('driver_vehicle_can_accept_job', 'public.driver_vehicle_can_accept_job(uuid,uuid)', 'authenticated', false),
+        ('driver_vehicle_can_accept_job', 'public.driver_vehicle_can_accept_job(uuid,uuid)', 'service_role',  false),
+        -- accept_searching_job: driver self-accept (browser) + server
+        ('accept_searching_job',          'public.accept_searching_job(uuid,uuid)',          'anon',          false),
+        ('accept_searching_job',          'public.accept_searching_job(uuid,uuid)',          'authenticated', true),
+        ('accept_searching_job',          'public.accept_searching_job(uuid,uuid)',          'service_role',  true),
+        -- assign_driver_to_job: admin/dispatch assignment
+        ('assign_driver_to_job',          'public.assign_driver_to_job(uuid,uuid)',          'anon',          false),
+        ('assign_driver_to_job',          'public.assign_driver_to_job(uuid,uuid)',          'authenticated', true),
+        ('assign_driver_to_job',          'public.assign_driver_to_job(uuid,uuid)',          'service_role',  true),
+        -- accept_assigned_job: assigned-driver confirmation only
+        ('accept_assigned_job',           'public.accept_assigned_job(uuid,uuid)',           'anon',          false),
+        ('accept_assigned_job',           'public.accept_assigned_job(uuid,uuid)',           'authenticated', true),
+        ('accept_assigned_job',           'public.accept_assigned_job(uuid,uuid)',           'service_role',  false),
+        -- settle_job_wallet_reservation: service_role only (moves money)
+        ('settle_job_wallet_reservation', 'public.settle_job_wallet_reservation(uuid,numeric)', 'anon',          false),
+        ('settle_job_wallet_reservation', 'public.settle_job_wallet_reservation(uuid,numeric)', 'authenticated', false),
+        ('settle_job_wallet_reservation', 'public.settle_job_wallet_reservation(uuid,numeric)', 'service_role',  true)
+),
+acl_violations AS (
+    -- Effective-privilege violations across the WHOLE matrix. Derived from
+    -- has_function_privilege so role inheritance and default ACLs are accounted
+    -- for, and complete so no policy cell can be forgotten the way the previous
+    -- hand-written helper/settlement checks could.
+    SELECT pol.fname, pol.rolname, pol.can_execute
+      FROM acl_policy pol
+     WHERE to_regprocedure(pol.signature) IS NOT NULL
+       AND has_function_privilege(pol.rolname, to_regprocedure(pol.signature), 'EXECUTE') <> pol.can_execute
+),
+public_grants AS (
+    -- A surviving PUBLIC entry in proacl is a regression regardless of the matrix.
+    SELECT p.proname AS fname
+      FROM pg_proc p
+     WHERE p.pronamespace = 'public'::regnamespace
+       AND p.proname IN ('driver_vehicle_can_accept_job', 'accept_searching_job',
+                         'assign_driver_to_job', 'accept_assigned_job',
+                         'settle_job_wallet_reservation')
+       AND (p.proacl IS NULL
+            OR EXISTS (SELECT 1 FROM unnest(p.proacl) a WHERE a::TEXT LIKE '=%'))
+),
+functions_present AS (
+    SELECT COUNT(*) AS n
+      FROM (VALUES
             ('driver_vehicle_can_accept_job'),('accept_searching_job'),
             ('assign_driver_to_job'),('accept_assigned_job'),
             ('settle_job_wallet_reservation')
-       ) AS f(n)
-       WHERE EXISTS (SELECT 1 FROM pg_proc p
-                      WHERE p.pronamespace='public'::regnamespace AND p.proname = f.n))::TEXT || '/5'
-      || ' | accept_searching_job_rettype=' ||
-      COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
-                 WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job'), 'MISSING')
-      || ' | helper_rettype=' ||
-      COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
-                 WHERE p.pronamespace='public'::regnamespace AND p.proname='driver_vehicle_can_accept_job'), 'MISSING')
-      || ' | helper_client_callable=' ||
-      CASE WHEN EXISTS (
-            SELECT 1 FROM pg_roles r
-            WHERE r.rolname IN ('anon', 'authenticated')
-              AND has_function_privilege(r.rolname, 'public.driver_vehicle_can_accept_job(uuid,uuid)', 'EXECUTE')
-           ) THEN 'YES(FAIL)' ELSE 'no' END
-      || ' | settle_service_role_only=' ||
-      CASE WHEN EXISTS (
-            SELECT 1 FROM pg_roles r
-            WHERE r.rolname = 'service_role'
-              AND NOT has_function_privilege(r.rolname, 'public.settle_job_wallet_reservation(uuid,numeric)', 'EXECUTE')
-           ) THEN 'NO' ELSE 'YES' END
-      || ' | settle_client_grantable=' ||
-      CASE WHEN EXISTS (
-            SELECT 1 FROM pg_roles r
-            WHERE r.rolname IN ('anon', 'authenticated')
-              AND has_function_privilege(r.rolname, 'public.settle_job_wallet_reservation(uuid,numeric)', 'EXECUTE')
-           ) THEN 'YES(FAIL)' ELSE 'no' END
-      || ' | assigned_with_accepted_at=' ||
-      (SELECT COUNT(*)::TEXT FROM public.jobs WHERE status='assigned' AND accepted_at IS NOT NULL)
+           ) AS f(n)
+     WHERE EXISTS (SELECT 1 FROM pg_proc p
+                    WHERE p.pronamespace='public'::regnamespace AND p.proname = f.n)
+)
+SELECT
+    'POST-MIGRATION GO / NO-GO' AS check_name,
+    'all five functions present with correct return types, ACL matrix satisfied, no bulk rewrite' AS expected,
+    'functions_present=' || (SELECT n FROM functions_present)::TEXT || '/5'
+      || ' | accept_searching_job_rettype='
+      || COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
+                    WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job'), 'MISSING')
+      || ' | helper_rettype='
+      || COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
+                    WHERE p.pronamespace='public'::regnamespace AND p.proname='driver_vehicle_can_accept_job'), 'MISSING')
+      || ' | acl_policy_violations='
+      || (SELECT COUNT(*) FROM acl_violations)::TEXT
+      || ' | acl_violations='
+      || COALESCE((SELECT string_agg(v.fname || '->' || v.rolname, ', ' ORDER BY v.fname, v.rolname)
+                     FROM acl_violations v), 'none')
+      || ' | public_execute_regressions='
+      || COALESCE((SELECT string_agg(g.fname, ', ' ORDER BY g.fname) FROM public_grants g), 'none')
+      || ' | assigned_with_accepted_at='
+      || (SELECT COUNT(*)::TEXT FROM public.jobs WHERE status='assigned' AND accepted_at IS NOT NULL)
     AS observed,
     CASE
-        WHEN (SELECT COUNT(*) FROM (VALUES
-                ('driver_vehicle_can_accept_job'),('accept_searching_job'),
-                ('assign_driver_to_job'),('accept_assigned_job'),
-                ('settle_job_wallet_reservation')
-              ) AS f(n)
-              WHERE EXISTS (SELECT 1 FROM pg_proc p
-                             WHERE p.pronamespace='public'::regnamespace AND p.proname = f.n)) <> 5
-            THEN 'NO-GO'
+        WHEN (SELECT n FROM functions_present) <> 5 THEN 'NO-GO'
         -- return types: the client contract depends on these
         WHEN COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
                         WHERE p.pronamespace='public'::regnamespace AND p.proname='accept_searching_job'), '') <> 'boolean'
@@ -435,16 +520,10 @@ SELECT
         WHEN COALESCE((SELECT pg_get_function_result(p.oid) FROM pg_proc p
                         WHERE p.pronamespace='public'::regnamespace AND p.proname='driver_vehicle_can_accept_job'), '') <> 'boolean'
             THEN 'NO-GO'
-        WHEN EXISTS (
-                SELECT 1 FROM pg_roles r
-                WHERE r.rolname IN ('anon', 'authenticated')
-                  AND has_function_privilege(r.rolname, 'public.settle_job_wallet_reservation(uuid,numeric)', 'EXECUTE')
-             ) THEN 'NO-GO'
-        WHEN NOT EXISTS (
-                SELECT 1 FROM pg_roles r
-                WHERE r.rolname = 'service_role'
-                  AND has_function_privilege(r.rolname, 'public.settle_job_wallet_reservation(uuid,numeric)', 'EXECUTE')
-             ) THEN 'NO-GO'
+        -- AUTHORITATIVE ACL GATE: any effective-privilege deviation, or any
+        -- surviving PUBLIC grant, forces NO-GO.
+        WHEN (SELECT COUNT(*) FROM acl_violations) > 0 THEN 'NO-GO'
+        WHEN (SELECT COUNT(*) FROM public_grants) > 0 THEN 'NO-GO'
         WHEN (SELECT COUNT(*) FROM public.jobs WHERE status='assigned' AND accepted_at IS NOT NULL) > 0
             THEN 'NO-GO'
         ELSE 'PASS'

@@ -283,11 +283,41 @@ $$;
 -- and no role grant is issued: the SECURITY DEFINER caller already has the
 -- necessary rights. Leaving PUBLIC EXECUTE would let any authenticated client
 -- probe driver/job vehicle compatibility directly.
+--
+-- WHY THE ROLE-LEVEL REVOKES BELOW ARE REQUIRED (see the forward repair
+-- migration 20260922000000_accept_rpc_acl_repair.sql for the full explanation):
+-- "REVOKE ... FROM PUBLIC" removes ONLY the PUBLIC pseudo-role's grant. It does
+-- NOT remove EXECUTE that a concrete role holds in its own right. PostgreSQL
+-- grants EXECUTE on new functions to PUBLIC by default, and this database's
+-- schema owner also carries default ACL entries that hand EXECUTE to anon,
+-- authenticated and service_role. CREATE OR REPLACE preserves a function's ACL,
+-- and DROP + CREATE re-derives it from those default privileges - so in both
+-- cases every role ends up with EXECUTE unless it is revoked EXPLICITLY.
+--
+-- Every must-not-have role is therefore revoked explicitly BEFORE the GRANTs
+-- below, so this migration converges to the intended matrix on a FRESH install.
+-- Revoking from the owner (postgres) is deliberately NOT done: the owner is not
+-- a client role, and an owner can always re-grant to itself.
 REVOKE ALL ON FUNCTION public.driver_vehicle_can_accept_job(UUID, UUID) FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION public.accept_searching_job(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.assign_driver_to_job(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.accept_assigned_job(UUID, UUID) FROM PUBLIC;
+
+-- Internal predicate: nobody but the SECURITY DEFINER callers may execute it.
+REVOKE EXECUTE ON FUNCTION public.driver_vehicle_can_accept_job(UUID, UUID)
+FROM anon, authenticated, service_role;
+
+-- Driver self-accept: browser + server, never anonymous.
+REVOKE EXECUTE ON FUNCTION public.accept_searching_job(UUID, UUID) FROM anon;
+
+-- Admin/dispatch assignment: browser + server, never anonymous.
+REVOKE EXECUTE ON FUNCTION public.assign_driver_to_job(UUID, UUID) FROM anon;
+
+-- Assigned-driver confirmation: authenticated only, never anonymous, never
+-- service_role.
+REVOKE EXECUTE ON FUNCTION public.accept_assigned_job(UUID, UUID)
+FROM anon, service_role;
 
 GRANT EXECUTE ON FUNCTION public.accept_searching_job(UUID, UUID)
 TO authenticated, service_role;
@@ -552,7 +582,14 @@ $$;
 
 REVOKE ALL ON FUNCTION public.settle_job_wallet_reservation(UUID, NUMERIC) FROM PUBLIC;
 
--- Moves money and is only ever called by trusted server code.
+-- Moves money and is only ever called by trusted server code. The role-level
+-- REVOKE is required for the same reason documented at the top of this file's
+-- privilege block: REVOKE ... FROM PUBLIC does not remove a concrete role's own
+-- grant, and this schema's default ACL gives new functions EXECUTE to
+-- anon/authenticated/service_role.
+REVOKE EXECUTE ON FUNCTION public.settle_job_wallet_reservation(UUID, NUMERIC)
+FROM anon, authenticated;
+
 GRANT EXECUTE ON FUNCTION public.settle_job_wallet_reservation(UUID, NUMERIC)
 TO service_role;
 
