@@ -963,6 +963,17 @@ export class PricingService {
      * Re-derive the price-related fields on a job when the fare has been
      * negotiated/locked to a different amount. The agreed fare is treated as
      * the customer-visible service fare; any shopping budget remains separate.
+     *
+     * The returned object is a `jobs` PERSISTENCE payload: every key must be a
+     * real column on public.jobs, because callers spread it straight into
+     * `.from('jobs').update({ ... })`. A key that is not an actual column makes
+     * PostgREST reject the ENTIRE update (unknown column), so the refresh would
+     * never apply while the caller may still report success.
+     *
+     * The booking-time pricing concepts `app_confirmed_price`,
+     * `frontend_total_price` and `regional_price` are NOT jobs columns - they
+     * are jobs.metadata keys written by BookingService.createBooking. They must
+     * never be emitted from here.
      */
     static applyAgreedFare(job: any, agreedFare: number): Partial<any> {
         const originalTotal = Number(job?.total_price || job?.price || agreedFare) || agreedFare;
@@ -1020,9 +1031,6 @@ export class PricingService {
             price: safeAgreed,
             total_price: safeAgreed,
             estimated_price: safeAgreed,
-            app_confirmed_price: safeAgreed,
-            frontend_total_price: safeAgreed,
-            regional_price: round(Number(job?.regional_price || 0) * ratio),
             platform_fee: platformFee,
             driver_payout: driverPayout,
             tax_amount: taxAmount,

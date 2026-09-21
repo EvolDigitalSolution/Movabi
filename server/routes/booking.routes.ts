@@ -1047,42 +1047,113 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
             return res.status(400).json({ error: 'Job is not in negotiation mode' });
         }
 
-        const { data: negotiations, error: fetchError } = await supabaseAdmin
-            .from('fare_negotiations')
-            .select('*')
-            .eq('job_id', jobId)
-            .eq('proposed_by_role', 'customer')
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1);
+        // ------------------------------------------------------------------
+        // ATOMIC acceptance (N35).
+        //
+        // The previous implementation performed SELECT -> UPDATE
+        // fare_negotiations -> UPDATE jobs with no transaction, no row lock and
+        // no conditional predicate, so two concurrent drivers could both mark
+        // the offer accepted and both overwrite jobs.driver_id while both
+        // received { success: true }.
+        //
+        // accept_fare_negotiation now owns the whole ownership decision in one
+        // transaction: it locks the job row FOR UPDATE (serialising racers),
+        // locks the newest pending customer offer FOR UPDATE, guards on job
+        // status and existing ownership, then writes both tables. Exactly one
+        // caller can commit.
+        //
+        // Driver identity is the server-derived authenticated user. The request
+        // body can never influence it.
+        // ------------------------------------------------------------------
+        const { data: acceptResult, error: acceptError } = await supabaseAdmin.rpc('accept_fare_negotiation', {
+            p_job_id: jobId,
+            p_driver_id: userId
+        });
 
-        if (fetchError) throw fetchError;
+        if (acceptError) {
+            // Map the RPC's deterministic SQLSTATEs without leaking SQL internals.
+            const sqlState = String(acceptError.code || '');
 
-        const negotiation = negotiations?.[0];
-        if (!negotiation) {
-            return res.status(404).json({ error: 'No pending customer offer found' });
+            if (sqlState === '23505') {
+                // Lost race: a different driver already owns this job.
+                return res.status(409).json({
+                    error: 'This offer has already been accepted by another driver.',
+                    code: 'OFFER_ALREADY_ACCEPTED'
+                });
+            }
+
+            if (sqlState === '23514') {
+                // Stale state: job moved on, or the offer stopped being pending.
+                return res.status(409).json({
+                    error: 'This offer is no longer available.',
+                    code: 'OFFER_NO_LONGER_AVAILABLE'
+                });
+            }
+
+            if (sqlState === 'P0002') {
+                // Job or pending customer offer not found.
+                return res.status(404).json({ error: 'No pending customer offer found' });
+            }
+
+            if (sqlState === '22023') {
+                return res.status(400).json({ error: acceptError.message || 'Offer cannot be accepted' });
+            }
+
+            console.error('[BookingRoutes] driver-accept RPC failed:', acceptError);
+            return res.status(500).json({ error: 'Failed to accept offer' });
         }
 
-        await supabaseAdmin
-            .from('fare_negotiations')
-            .update({ status: 'accepted', updated_at: new Date().toISOString() })
-            .eq('id', negotiation.id);
+        // The RPC returns the negotiation row and the agreed fare. Ownership and
+        // status are already committed at this point.
+        const result = (acceptResult || {}) as {
+            agreed_fare?: number | string;
+            negotiation?: Record<string, unknown>;
+        };
 
-        const agreedFare = Number(negotiation.amount);
-        const fareUpdate = PricingService.applyAgreedFare(job, agreedFare);
+        const agreedFare = Number(result.agreed_fare ?? 0);
 
-        await supabaseAdmin
-            .from('jobs')
-            .update({
-                status: 'fare_agreed',
-                driver_id: userId,
-                agreed_fare: agreedFare,
-                ...fareUpdate,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', jobId);
+        if (!Number.isFinite(agreedFare) || agreedFare <= 0) {
+            console.error('[BookingRoutes] driver-accept RPC returned no usable agreed fare:', acceptResult);
+            return res.status(500).json({ error: 'Accepted offer returned no agreed fare' });
+        }
 
-        // Notify customer that driver accepted the offer
+        const negotiation = result.negotiation || {
+            job_id: jobId,
+            amount: agreedFare,
+            proposed_by_role: 'customer',
+            status: 'accepted'
+        };
+
+        // ------------------------------------------------------------------
+        // Derived pricing only. applyAgreedFare is the single source of truth for
+        // the scaled fare breakdown and is intentionally NOT duplicated in SQL.
+        //
+        // The write is ownership-guarded so it can never undo the RPC: it only
+        // matches when THIS driver owns the job and it is still fare_agreed. If
+        // the guard matches nothing the atomic claim already succeeded, so the
+        // pricing refresh is reported diagnostically rather than failing the
+        // acceptance the driver has legitimately won.
+        // ------------------------------------------------------------------
+        try {
+            const fareUpdate = PricingService.applyAgreedFare(job, agreedFare);
+
+            const { error: pricingError } = await supabaseAdmin
+                .from('jobs')
+                .update({ ...fareUpdate, updated_at: new Date().toISOString() })
+                .eq('id', jobId)
+                .eq('driver_id', userId)
+                .eq('status', 'fare_agreed');
+
+            if (pricingError) {
+                console.error('[BookingRoutes] driver-accept pricing refresh failed (ownership already committed):', pricingError);
+            }
+        } catch (pricingException) {
+            // Never convert a committed win into a client-visible failure.
+            console.error('[BookingRoutes] driver-accept pricing refresh threw (ownership already committed):', pricingException);
+        }
+
+        // Notify only after the atomic acquisition succeeded. The winner notifies;
+        // a loser returned above and never reaches this line.
         await NotificationService.notifyJobStatusUpdate(String(job.customer_id), String(jobId), 'accepted');
 
         return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });

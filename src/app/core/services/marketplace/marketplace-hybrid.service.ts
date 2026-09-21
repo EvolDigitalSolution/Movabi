@@ -444,14 +444,36 @@ export class MarketplaceHybridService {
         return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
     }
 
+    /**
+     * Fire a hybrid negotiation notification.
+     *
+     * ROUTE: must be `/api/booking/notify-hybrid`. `environment.apiUrl` is
+     * `https://movabi-api.apps.evolsolution.com` with NO `/api` suffix, and
+     * getApiUrl only concatenates, so a path of `/booking/notify-hybrid`
+     * resolves to `.../booking/notify-hybrid` and misses the Express mount
+     * `app.use('/api/booking', bookingRoutes)`. That returned a 404 which this
+     * method previously discarded.
+     *
+     * FAILURE SEMANTICS: notification is a SECONDARY side effect. Every caller
+     * has already committed its negotiation mutation (claim / counter / lockFare
+     * / release) before calling this, so a delivery failure must never be
+     * reported as a failure of that mutation. Non-2xx responses and transport
+     * errors are therefore surfaced DIAGNOSTICALLY via console.error/warn and
+     * swallowed deliberately - this method must not reject, or callers would
+     * convert a successful negotiation into a user-visible "accept failed".
+     *
+     * No retries here by design.
+     */
     private async notify(payload: { action: 'notify_drivers'; jobId: string; } | { action: 'notify'; jobId: string; recipientUserId: string | null; title: string; body: string; data?: Record<string, any>; }): Promise<void> {
         const token = this.auth.session()?.access_token;
         if (!token) return;
 
         if (payload.action === 'notify' && !payload.recipientUserId) return;
 
+        const url = this.apiUrl.getApiUrl('/api/booking/notify-hybrid');
+
         try {
-            await fetch(this.apiUrl.getApiUrl('/booking/notify-hybrid'), {
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -459,8 +481,24 @@ export class MarketplaceHybridService {
                 },
                 body: JSON.stringify(payload)
             });
+
+            // A 404/500 resolves normally, so it must be checked explicitly.
+            if (!response.ok) {
+                let detail = '';
+                try {
+                    detail = (await response.text()).slice(0, 300);
+                } catch {
+                    detail = '(response body unreadable)';
+                }
+
+                console.error(
+                    `[MarketplaceHybridService] notify failed: HTTP ${response.status} ${response.statusText} ` +
+                    `for ${payload.action} on ${url}${detail ? ` - ${detail}` : ''}`
+                );
+            }
         } catch (error) {
-            console.warn('[MarketplaceHybridService] notify failed', error);
+            // Transport-level failure only; the negotiation mutation stands.
+            console.warn('[MarketplaceHybridService] notify request failed', { url, action: payload.action, error });
         }
     }
 
