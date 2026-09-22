@@ -66,7 +66,7 @@ router.get('/status', async (req, res) => {
     const canonicalProfile=mapDriverProfile(profile,!!authUser.user?.email_confirmed_at);
     const passengerLicence=readPassengerLicence(profile);
     const identityEditability=DriverIdentityEditabilityService.resolve(profile,requestRows||[]);
-    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,passengerLicence,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
+    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
     const visibleRequests=[...resolution.adminRequests,...adminRequests.filter(request=>request.requestType==='identity_correction'&&!resolution.adminRequests.some(item=>item.id===request.id))];
     const outstandingRequests=visibleRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
     const stripeStatus = profile.stripe_connect_status || 'not_started';
@@ -166,7 +166,7 @@ router.get('/eligibility',async(req,res)=>{
     const{data:profile,error}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();
     if(error||!profile)throw error||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND',httpStatus:404});
     const vehicleRow=await currentVehicle(driverId);
-    const verdict=evaluateDriverServiceEligibility({profile:profile as Record<string,unknown>,vehicle:(vehicleRow as Record<string,unknown>|null)??null,service:requested});
+    const verdict=evaluateDriverServiceEligibility({profile:profile as Record<string,unknown>,vehicle:vehicleRow?{...vehicleRow}:null,service:requested});
     return res.json({
       driverId,
       service:verdict.service,
@@ -228,7 +228,7 @@ router.post('/submit-review', async (req,res)=>{
     const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
     const canonicalProfile=mapDriverProfile(profileInput,!!auth.user?.email_confirmed_at);
     const passengerLicence=readPassengerLicence(profileInput);
-    const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,passengerLicence,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
+    const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const resubmission=req.body?.resubmission===true;
     const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:resubmission?'resubmission_validated':'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
