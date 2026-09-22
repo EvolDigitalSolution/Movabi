@@ -16,8 +16,21 @@
 --     NOT revoked (Phase A must not activate enforcement),
 --   * the live jobs UPDATE policy was NOT replaced,
 --   * the canonical rule table is internally consistent and ride-scoped,
+--   * every required service alias resolves to its EXPLICIT expected canonical
+--     value, and that check GATES the final verdict (SECTION 4.1 reports the
+--     per-row result; SECTION 6 counts the failures), and
 --   * the eligibility function fails closed, and
 --   * the N12 invariant is untouched and healthy.
+--
+-- WHY RESOLUTION FIXTURES CARRY AN EXPLICIT EXPECTATION
+-- ============================================================================
+-- The verdict compares the function result against a declared expected value.
+-- Deriving the expectation from the raw input instead (for example testing the
+-- raw text for membership in a lowercase alias list) makes every correctly
+-- resolved uppercase or mixed-case input look like a failure, and it cannot
+-- detect a WRONG canonical result at all. The fixture therefore freezes the
+-- alias -> canonical mapping, including that unrecognised and blank input must
+-- resolve to NULL (fail closed).
 --
 -- HOW "PHASE A MUTATED NO PROFILE DATA" IS PROVEN
 -- ============================================================================
@@ -354,22 +367,58 @@ SELECT
     END AS verdict;
 
 -- 4.1 Canonical service resolution coverage, straight from the function.
+--
+-- Each fixture row carries an EXPLICIT expected canonical value, and the verdict
+-- compares the function result against that expectation. The expectation is
+-- never derived from the raw input and never compared case-sensitively with it:
+-- canonical_driver_service() lowercases and trims before matching, so 'RIDE',
+-- 'Ride' and '  RIDE  ' must ALL resolve to 'ride'. Comparing the raw text
+-- against a lowercase alias list made every correctly-resolved uppercase input
+-- look like a failure.
+--
+-- The SAME fixture block is repeated in SECTION 6 so the final GO / NO-GO can
+-- count service-resolution failures instead of leaving them as cosmetic rows.
+-- src/testing/batch2c-phase-a-eligibility.spec.ts proves the two blocks are
+-- identical and evaluates every pair against the canonical implementation.
+WITH service_fixtures(raw, expected) AS (
+    VALUES
+        ('ride',       'ride'),
+        ('RIDE',       'ride'),
+        ('Ride',       'ride'),
+        ('  ride  ',   'ride'),
+        ('  RIDE  ',   'ride'),
+        ('errand',     'errand'),
+        ('ERRAND',     'errand'),
+        ('shop',       'errand'),
+        ('SHOP',       'errand'),
+        ('shopping',   'errand'),
+        ('delivery',   'delivery'),
+        ('DELIVERY',   'delivery'),
+        ('deliver',    'delivery'),
+        ('van-moving', 'van-moving'),
+        ('VAN-MOVING', 'van-moving'),
+        ('van_moving', 'van-moving'),
+        ('move',       'van-moving'),
+        ('moving',     'van-moving'),
+        ('van',        'van-moving'),
+        ('',           NULL),
+        ('   ',        NULL),
+        ('bogus',      NULL)
+),
+resolution AS (
+    SELECT f.raw,
+           f.expected,
+           public.canonical_driver_service(f.raw) AS resolved
+      FROM service_fixtures f
+)
 SELECT
-    'RESOLVE ' || t.raw AS check_name,
-    'informational: alias -> canonical (NULL means unresolvable)' AS expected,
-    COALESCE(public.canonical_driver_service(t.raw), 'NULL') AS observed,
-    CASE
-        WHEN t.raw IN ('ride','errand','shop','shopping','delivery','deliver',
-                       'van-moving','van_moving','move','moving','van')
-             AND public.canonical_driver_service(t.raw) IS NOT NULL THEN 'PASS'
-        WHEN t.raw NOT IN ('ride','errand','shop','shopping','delivery','deliver',
-                           'van-moving','van_moving','move','moving','van')
-             AND public.canonical_driver_service(t.raw) IS NULL THEN 'PASS'
-        ELSE 'FAIL'
-    END AS verdict
-FROM (VALUES ('ride'), ('errand'), ('shop'), ('shopping'), ('delivery'), ('deliver'),
-             ('van-moving'), ('van_moving'), ('move'), ('moving'), ('van'),
-             (''), ('bogus'), ('RIDE')) AS t(raw);
+    'RESOLVE <' || REPLACE(r.raw, ' ', '_') || '>' AS check_name,
+    'must resolve to the frozen canonical service, or NULL when unresolvable' AS expected,
+    'expected=' || COALESCE(r.expected, 'NULL')
+      || ' | resolved=' || COALESCE(r.resolved, 'NULL') AS observed,
+    CASE WHEN r.resolved IS NOT DISTINCT FROM r.expected THEN 'PASS' ELSE 'FAIL' END AS verdict
+FROM resolution r
+ORDER BY r.raw;
 
 
 -- ============================================================================
@@ -433,6 +482,15 @@ FROM (SELECT unnest(public.driver_occupying_statuses()) AS status) s;
 
 -- ============================================================================
 -- SECTION 6 — PHASE A GO / NO-GO
+--
+-- Every counter below is BOTH reported and gated: a counter that appears only in
+-- the observed string cannot influence the verdict, so the two lists are kept in
+-- step and the suite asserts that.
+--
+-- service_resolution_failures is computed from the same explicit fixture block
+-- used by SECTION 4.1. Without it the final verdict was blind to service
+-- resolution: an individual RESOLVE row could print FAIL while the aggregate
+-- still printed PASS, because no counter was ever derived from those rows.
 -- ============================================================================
 WITH objects(sig) AS (
     VALUES
@@ -455,6 +513,36 @@ unpinned AS (
      WHERE p.oid IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM unnest(COALESCE(p.proconfig, '{}')) c
                         WHERE c ILIKE 'search\_path=%' AND c ILIKE '%public%')
+),
+service_fixtures(raw, expected) AS (
+    VALUES
+        ('ride',       'ride'),
+        ('RIDE',       'ride'),
+        ('Ride',       'ride'),
+        ('  ride  ',   'ride'),
+        ('  RIDE  ',   'ride'),
+        ('errand',     'errand'),
+        ('ERRAND',     'errand'),
+        ('shop',       'errand'),
+        ('SHOP',       'errand'),
+        ('shopping',   'errand'),
+        ('delivery',   'delivery'),
+        ('DELIVERY',   'delivery'),
+        ('deliver',    'delivery'),
+        ('van-moving', 'van-moving'),
+        ('VAN-MOVING', 'van-moving'),
+        ('van_moving', 'van-moving'),
+        ('move',       'van-moving'),
+        ('moving',     'van-moving'),
+        ('van',        'van-moving'),
+        ('',           NULL),
+        ('   ',        NULL),
+        ('bogus',      NULL)
+),
+service_resolution_failures AS (
+    SELECT COUNT(*) AS n
+      FROM service_fixtures f
+     WHERE public.canonical_driver_service(f.raw) IS DISTINCT FROM f.expected
 ),
 client_grants AS (
     SELECT COUNT(*) AS n
@@ -493,11 +581,12 @@ profiles_rls AS (
 )
 SELECT
     'PHASE A POST-MIGRATION GO / NO-GO' AS check_name,
-    'objects present + pinned + internal ACL + trigger DISABLED + ride-only scoping + advisory rows non-blocking + N12 intact + profiles RLS still off' AS expected,
+    'objects present + pinned + internal ACL + trigger DISABLED + every required service alias resolves to its frozen canonical value + ride-only scoping + advisory rows non-blocking + N12 intact + profiles RLS still off' AS expected,
     'missing_objects=' || (SELECT n FROM missing_objects)::TEXT
       || ' | unpinned=' || (SELECT n FROM unpinned)::TEXT
       || ' | client_executable=' || (SELECT n FROM client_grants)::TEXT
       || ' | trigger_enabled_or_missing=' || (SELECT n FROM trigger_enabled)::TEXT
+      || ' | service_resolution_failures=' || (SELECT n FROM service_resolution_failures)::TEXT
       || ' | ride_scope_leaks=' || (SELECT n FROM ride_scope_leak)::TEXT
       || ' | advisory_blocking_leaks=' || (SELECT n FROM advisory_leak)::TEXT
       || ' | n12_status_count=' || (SELECT n FROM n12_statuses)::TEXT
@@ -507,6 +596,7 @@ SELECT
         WHEN (SELECT n FROM unpinned) > 0 THEN 'NO-GO: a Phase A function is not pinned to search_path'
         WHEN (SELECT n FROM client_grants) > 0 THEN 'NO-GO: a Phase A function is client-executable'
         WHEN (SELECT n FROM trigger_enabled) > 0 THEN 'NO-GO: acquisition trigger is not DISABLED'
+        WHEN (SELECT n FROM service_resolution_failures) > 0 THEN 'NO-GO: a required service alias does not resolve to its frozen canonical value'
         WHEN (SELECT n FROM ride_scope_leak) > 0 THEN 'NO-GO: passenger licensing leaked outside ride'
         WHEN (SELECT n FROM advisory_leak) > 0 THEN 'NO-GO: an advisory policy row became blocking in Phase A'
         WHEN (SELECT n FROM n12_statuses) <> 16 THEN 'NO-GO: N12 frozen status set changed'

@@ -177,6 +177,70 @@ const withRuleBlocking = (text: string, code: string, blocking: boolean): string
 const withRuleField = (text: string, code: string, field: string): string =>
     text.replace(new RegExp(`('${code.replace(/\./g, '\\.')}'[\\s\\S]{0,120}?)'[a-z_]+'(\\s*,\\s*'[a-z_]+'\\s*,)`), `$1'${field}'$2`);
 
+// ---------------------------------------------------------------------------
+// Postflight service-resolution fixture (the corrected verification gate)
+//
+// The postflight's resolution fixture declares an EXPLICIT expected canonical
+// value per raw input. These helpers extract that fixture from the postflight,
+// evaluate it against the canonical implementation, and inspect whether the
+// final GO / NO-GO is actually wired to the resulting failure counter.
+// ---------------------------------------------------------------------------
+
+const FIXTURE_MARKER = 'service_fixtures(raw, expected) AS (';
+/** One `('raw', 'expected')` or `('raw', NULL)` fixture row. */
+const FIXTURE_ROW = /\(\s*'([^']*)'\s*,\s*(?:'([^']*)'|NULL)\s*\)/gi;
+
+interface ServiceFixture {
+    raw: string;
+    expected: string | null;
+}
+
+/** Every fixture block in a script, marker through the closing `),`. */
+const fixtureBlocks = (text: string): string[] => {
+    const blocks: string[] = [];
+    let from = 0;
+    for (;;) {
+        const start = text.indexOf(FIXTURE_MARKER, from);
+        if (start === -1) return blocks;
+        const end = text.indexOf('\n),', start);
+        if (end === -1) return blocks;
+        blocks.push(text.slice(start, end));
+        from = end + 1;
+    }
+};
+
+const parseFixtures = (block: string): ServiceFixture[] =>
+    Array.from(block.matchAll(FIXTURE_ROW)).map(m => ({
+        raw: m[1],
+        expected: m[2] === undefined ? null : m[2]
+    }));
+
+/**
+ * Evaluate a fixture against the canonical implementation: the rows a database
+ * WOULD count as service-resolution failures. This is the evaluated check, not a
+ * text-presence check — a wrong expectation always surfaces here.
+ */
+const fixtureResolutionFailures = (fixtures: readonly ServiceFixture[]): ServiceFixture[] =>
+    fixtures.filter(f => canonicalDriverService(f.raw) !== f.expected);
+
+/** Does the final GO / NO-GO both REPORT and GATE the alias failure counter? */
+const gateReportsAliasFailures = (text: string): boolean =>
+    text.includes(`' | service_resolution_failures=' || (SELECT n FROM service_resolution_failures)`);
+
+const gateGatesOnAliasFailures = (text: string): boolean =>
+    /WHEN\s*\(SELECT\s+n\s+FROM\s+service_resolution_failures\)\s*>\s*0\s*THEN\s*'NO-GO:/.test(text);
+
+/** Every counter the final verdict branches on, in file order. */
+const gatedCounters = (text: string): string[] => {
+    const start = text.indexOf("'PHASE A POST-MIGRATION GO / NO-GO'");
+    const body = start === -1 ? text : text.slice(start);
+    return Array.from(body.matchAll(/WHEN\s*\(SELECT\s+n\s+FROM\s+([a-z_][a-z0-9_]*)\)/g)).map(m => m[1]);
+};
+
+/** Change a raw fixture input's expected canonical value. */
+const withAliasExpectation = (text: string, raw: string, expected: string): string =>
+    text.replace(new RegExp(`(\\('${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}',\\s*)'[a-z-]+'`, 'g'), `$1'${expected}'`);
+
 // ===========================================================================
 describe('Phase A canonical service normalisation (SQL + TS parity)', () => {
     it('1. the frozen taxonomy is exactly the four internal types', () => {
@@ -199,6 +263,7 @@ describe('Phase A canonical service normalisation (SQL + TS parity)', () => {
         expect(canonicalDriverService('van-moving')).toBe('van-moving');
         expect(canonicalDriverService('ride')).toBe('ride');
         expect(canonicalDriverService('RIDE')).toBe('ride');
+        expect(canonicalDriverService('Ride')).toBe('ride');
         expect(canonicalDriverService(' ride ')).toBe('ride');
 
         // The SQL CASE must carry the same alias set.
@@ -982,5 +1047,144 @@ describe('Phase A mutation self-checks (the guards are not vacuous)', () => {
         // what proves the pass above is comment-stripping and not a blind spot.
         const uncommented = migrationRaw.replace(/^--/gm, '');
         expect(applicationDataDml(uncommented)).not.toEqual([]);
+    });
+});
+
+// ===========================================================================
+describe('Phase A postflight service-resolution fixture and final gate', () => {
+    const postflightRaw = readFileSync(POSTFLIGHT, 'utf8');
+    const blocks = fixtureBlocks(postflightRaw);
+    /** SECTION 4.1 (per-row report) and SECTION 6 (the GO/NO-GO gate). */
+    const reportBlock = blocks[0] ?? '';
+    const gateBlock = blocks[1] ?? '';
+    const reportFixtures = parseFixtures(reportBlock);
+    const gateFixtures = parseFixtures(gateBlock);
+
+    it('19a. the postflight declares an explicit expected canonical value per fixture row', () => {
+        expect(blocks.length, 'both the report and the gate must carry the fixture').toBe(2);
+        expect(reportFixtures.length).toBeGreaterThanOrEqual(20);
+        expect(gateFixtures.length).toBe(reportFixtures.length);
+        // The report and the gate must use the SAME fixture, byte for byte, so a
+        // failure can never be reported in one place and ignored in the other.
+        expect(gateBlock).toBe(reportBlock);
+        // Every row carries an expectation: either a canonical service or an
+        // explicit NULL. Nothing is left untyped or derived from the raw input.
+        const shape = /\(\s*'([^']*)'\s*,\s*(?:'[^']*'|NULL)\s*\)/;
+        for (const row of reportBlock.split('\n')) {
+            if (!row.includes("('")) continue;
+            expect(shape.test(row.trim()), `fixture row lacks an explicit expectation: ${row.trim()}`).toBe(true);
+        }
+    });
+
+    it('19b. every fixture expectation matches the canonical implementation', () => {
+        // THE evaluated assertion. If any expectation is wrong — including a
+        // mutation such as RIDE -> errand — this fails, and so does the suite.
+        expect(fixtureResolutionFailures(reportFixtures)).toEqual([]);
+        expect(fixtureResolutionFailures(gateFixtures)).toEqual([]);
+    });
+
+    it('19c. uppercase RIDE resolves to ride, in the fixture and in the implementation', () => {
+        // The exact production defect: the old verdict compared the RAW text
+        // against a lowercase alias list, so a correctly resolved 'RIDE' printed
+        // FAIL. The fixture now freezes the expectation explicitly.
+        expect(canonicalDriverService('RIDE')).toBe('ride');
+        expect(canonicalDriverService('Ride')).toBe('ride');
+        expect(reportFixtures).toContainEqual({ raw: 'RIDE', expected: 'ride' });
+        expect(reportFixtures).toContainEqual({ raw: 'Ride', expected: 'ride' });
+        expect(gateFixtures).toContainEqual({ raw: 'RIDE', expected: 'ride' });
+        // ...and the resolution expression in the report compares against the
+        // expectation, never against the raw text.
+        expect(reportBlock).toBe(gateBlock);
+        expect(postflightRaw).toContain('public.canonical_driver_service(f.raw) AS resolved');
+        expect(postflightRaw).toContain('CASE WHEN r.resolved IS NOT DISTINCT FROM r.expected THEN');
+        // The defective formulation must be gone.
+        expect(postflightRaw).not.toMatch(/t\.raw\s+IN\s*\(\s*'ride'/i);
+        expect(postflightRaw).not.toMatch(/t\.raw\s+NOT\s+IN/i);
+    });
+
+    it('19d. uppercase aliases normalise to their canonical services', () => {
+        for (const [raw, expected] of [
+            ['RIDE', 'ride'], ['Ride', 'ride'], ['  RIDE  ', 'ride'], ['  ride  ', 'ride'],
+            ['ERRAND', 'errand'], ['SHOP', 'errand'],
+            ['DELIVERY', 'delivery'], ['VAN-MOVING', 'van-moving']
+        ] as const) {
+            expect(canonicalDriverService(raw), `canonicalDriverService(${JSON.stringify(raw)})`).toBe(expected);
+            expect(reportFixtures, `fixture must freeze ${raw} -> ${expected}`)
+                .toContainEqual({ raw, expected });
+        }
+    });
+
+    it('19e. unknown and blank services stay NULL and fail closed', () => {
+        // The postflight fixture freezes NULL expectations...
+        expect(reportFixtures).toContainEqual({ raw: 'bogus', expected: null });
+        expect(reportFixtures).toContainEqual({ raw: '', expected: null });
+        expect(reportFixtures).toContainEqual({ raw: '   ', expected: null });
+        // ...and the implementation agrees.
+        for (const raw of ['bogus', '', '   ', 'RIDE-MOVING', 'rides']) {
+            expect(canonicalDriverService(raw), `canonicalDriverService(${JSON.stringify(raw)})`).toBeNull();
+        }
+        // An unresolvable service blocks acquisition with service.unresolved.
+        const verdict = evaluateDriverServiceEligibility({
+            profile: { role: 'driver' }, vehicle: { type: 'car', capacity: 'standard' }, service: 'bogus'
+        });
+        expect(verdict.eligible).toBe(false);
+        expect(verdict.blockingCodes).toEqual([SERVICE_UNRESOLVED_CODE]);
+    });
+
+    it('19f. the final GO / NO-GO reports AND gates the alias-failure counter', () => {
+        // The gate must both display the counter and branch on it; a counter that
+        // is only displayed cannot influence the verdict.
+        expect(gateReportsAliasFailures(postflightRaw), 'the counter must be reported').toBe(true);
+        expect(gateGatesOnAliasFailures(postflightRaw), 'the counter must gate the verdict').toBe(true);
+        // ...and it must be derived from the SAME fixture as the report.
+        expect(postflightRaw).toContain('service_resolution_failures AS (');
+        expect(postflightRaw).toMatch(/FROM\s+service_fixtures\s+f\s+WHERE\s+public\.canonical_driver_service\(f\.raw\)\s+IS\s+DISTINCT\s+FROM\s+f\.expected/);
+
+        // Every counter the verdict depends on, including the alias counter.
+        const gated = gatedCounters(postflightRaw);
+        for (const counter of [
+            'missing_objects', 'unpinned', 'client_grants', 'trigger_enabled',
+            'service_resolution_failures', 'ride_scope_leak', 'advisory_leak',
+            'n12_statuses', 'profiles_rls'
+        ]) {
+            expect(gated, `the final verdict must branch on ${counter}`).toContain(counter);
+        }
+
+        // Evaluated, not merely present: with the real fixture there are zero
+        // failures, so the alias condition is FALSE and cannot mask the verdict.
+        expect(fixtureResolutionFailures(gateFixtures)).toEqual([]);
+    });
+
+    it('19g. a deliberately wrong alias expectation fails BOTH the alias check and the final gate', () => {
+        const mutated = withAliasExpectation(postflightRaw, 'RIDE', 'errand');
+        expect(mutated, 'the mutation must actually change the fixture').not.toBe(postflightRaw);
+
+        const mutatedGate = parseFixtures(fixtureBlocks(mutated)[1] ?? '');
+        // (1) the per-row alias check fails: the wrong expectation is detected.
+        const failures = fixtureResolutionFailures(mutatedGate);
+        expect(failures.map(f => f.raw)).toContain('RIDE');
+        expect(failures.length).toBeGreaterThan(0);
+        // (2) and the final gate is wired to that same counter, so the aggregate
+        //     can no longer print PASS while an alias row is wrong.
+        expect(gateGatesOnAliasFailures(mutated), 'the gate must still branch on the counter').toBe(true);
+        expect(gateReportsAliasFailures(mutated)).toBe(true);
+
+        // The unmutated file has neither problem.
+        expect(fixtureResolutionFailures(gateFixtures)).toEqual([]);
+        expect(gateGatesOnAliasFailures(postflightRaw)).toBe(true);
+    });
+
+    it('19h. removing the alias-failure condition from the final gate is detected', () => {
+        const withoutCondition = postflightRaw.replace(
+            /[ \t]*WHEN \(SELECT n FROM service_resolution_failures\) > 0 THEN 'NO-GO[^\n]*\n/, '');
+        expect(withoutCondition, 'the mutation must actually remove the condition').not.toBe(postflightRaw);
+        expect(gateGatesOnAliasFailures(withoutCondition), 'the gate must no longer branch on it').toBe(false);
+        expect(gateGatesOnAliasFailures(postflightRaw)).toBe(true);
+
+        // Removing the counter itself is detected too.
+        const withoutCounter = postflightRaw.replace(
+            /[ \t]*\|\| ' \| service_resolution_failures=' \|\| \(SELECT n FROM service_resolution_failures\)::TEXT\n/, '');
+        expect(gateReportsAliasFailures(withoutCounter)).toBe(false);
+        expect(gateReportsAliasFailures(postflightRaw)).toBe(true);
     });
 });
