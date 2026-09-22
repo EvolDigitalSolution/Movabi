@@ -368,7 +368,7 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
 /**
  * Get heatmap data (supply vs demand)
  */
-router.get('/heatmap', async (req: Request, res: Response) => {
+router.get('/heatmap', requireAdmin, async (req: Request, res: Response) => {
   try {
     // In a real city-scale app, we'd query active zones.
     // For now, we'll return a few sample zones based on active bookings/drivers.
@@ -397,7 +397,7 @@ router.get('/heatmap', async (req: Request, res: Response) => {
 /**
  * Get platform metrics
  */
-router.get('/metrics', async (req: Request, res: Response) => {
+router.get('/metrics', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { count: totalBookings } = await supabaseAdmin
       .from('jobs')
@@ -435,7 +435,7 @@ router.get('/metrics', async (req: Request, res: Response) => {
 /**
  * Get failed bookings
  */
-router.get('/failures', async (req: Request, res: Response) => {
+router.get('/failures', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { data } = await supabaseAdmin
       .from('jobs')
@@ -453,7 +453,7 @@ router.get('/failures', async (req: Request, res: Response) => {
 /**
  * Get recent payments
  */
-router.get('/payments', async (req: Request, res: Response) => {
+router.get('/payments', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { data } = await supabaseAdmin
       .from('wallet_transactions')
@@ -470,7 +470,7 @@ router.get('/payments', async (req: Request, res: Response) => {
 /**
  * Get ops health metrics
  */
-router.get('/ops-health', async (req: Request, res: Response) => {
+router.get('/ops-health', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { data: stripeEvents } = await supabaseAdmin
       .from('stripe_events')
@@ -506,7 +506,7 @@ router.get('/ops-health', async (req: Request, res: Response) => {
 /**
  * Accounting Export
  */
-router.get('/accounting-export', async (req: Request, res: Response) => {
+router.get('/accounting-export', requireAdmin, async (req: Request, res: Response) => {
   try {
     const [bookings, payments, refunds, wallet, earnings] = await Promise.all([
       supabaseAdmin.from('jobs').select('*').limit(1000),
@@ -532,7 +532,7 @@ router.get('/accounting-export', async (req: Request, res: Response) => {
 /**
  * Payment Timeline
  */
-router.get('/payment/:id/timeline', async (req: Request, res: Response) => {
+router.get('/payment/:id/timeline', requireAdmin, async (req: Request, res: Response) => {
   try {
     
       const rawId = req.params.id;
@@ -582,7 +582,7 @@ res.json({
 /**
  * Dispute / Refund Management
  */
-router.post('/dispute', async (req: Request, res: Response) => {
+router.post('/dispute', requireAdmin, async (req: Request, res: Response) => {
   const { bookingId, amount, reason, adminId } = req.body;
   
   try {
@@ -625,7 +625,7 @@ router.post('/dispute', async (req: Request, res: Response) => {
 /**
  * SLA Monitoring
  */
-router.get('/sla', async (req: Request, res: Response) => {
+router.get('/sla', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { data: jobs } = await supabaseAdmin
       .from('jobs')
@@ -659,7 +659,7 @@ router.get('/sla', async (req: Request, res: Response) => {
 /**
  * Trigger Payout Processing
  */
-router.post('/process-payouts', async (req: Request, res: Response) => {
+router.post('/process-payouts', requireAdmin, async (req: Request, res: Response) => {
   try {
     const results = await PayoutService.processDriverPayouts();
     res.json(results);
@@ -671,7 +671,7 @@ router.post('/process-payouts', async (req: Request, res: Response) => {
 /**
  * Test Push Notification
  */
-router.post('/test-push', async (req: Request, res: Response) => {
+router.post('/test-push', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId, title, body } = req.body || {};
     const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -732,7 +732,7 @@ router.post('/test-push', async (req: Request, res: Response) => {
 /**
  * Validate User Push Subscription
  */
-router.get('/validate-push-subscription/:userId', async (req: Request, res: Response) => {
+router.get('/validate-push-subscription/:userId', requireAdmin, async (req: Request, res: Response) => {
   try {
     const rawUserId = req.params['userId'];
     const userId = Array.isArray(rawUserId) ? rawUserId[0] : rawUserId;

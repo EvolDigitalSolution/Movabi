@@ -7,6 +7,8 @@ import { DriverRequirementService } from '../services/driver-requirement.service
 import { DriverIdentityEditabilityService } from '../services/driver-identity-editability.service';
 import { DriverVehicleRow, mapDriverVehicleRow, parseDriverVehicleInput } from '../models/driver-vehicle.model';
 import { CANONICAL_DRIVER_PROFILE_SELECT, calculateCalendarAge, mapDriverProfile, parseDriverDateOfBirth, parseResidentialAddress } from '../models/driver-profile.model';
+import { parseDriverPassengerLicenceInput, passengerLicenceColumns, readPassengerLicence } from '../models/driver-passenger-licence.model';
+import { evaluateDriverServiceEligibility } from '../services/driver-eligibility.service';
 
 const router = Router();
 
@@ -62,13 +64,14 @@ router.get('/status', async (req, res) => {
     const adminRequests=(requestRows||[]).map(row=>({id:row.id,requirementCode:row.requirement_code,requestType:row.request_type,item:row.item,status:row.status,publicMessage:row.public_message,submittedAt:row.sent_at,updatedAt:row.updated_at,resolvedAt:row.resolved_at,nextAction:row.request_type==='identity_correction'&&row.status==='pending'?'We’ll review your correction request before allowing this identity detail to be changed.':row.status==='approved'?'No action required.':'Correct this item and resubmit it for review.'}));
     const canonicalVehicle=vehicle?mapDriverVehicleRow(vehicle):null;
     const canonicalProfile=mapDriverProfile(profile,!!authUser.user?.email_confirmed_at);
+    const passengerLicence=readPassengerLicence(profile);
     const identityEditability=DriverIdentityEditabilityService.resolve(profile,requestRows||[]);
-    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
+    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,passengerLicence,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
     const visibleRequests=[...resolution.adminRequests,...adminRequests.filter(request=>request.requestType==='identity_correction'&&!resolution.adminRequests.some(item=>item.id===request.id))];
     const outstandingRequests=visibleRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
     const stripeStatus = profile.stripe_connect_status || 'not_started';
     console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
-    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, vehicle: canonicalVehicle, outstandingRequests,
+    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, passengerLicence, vehicle: canonicalVehicle, outstandingRequests,
       automaticRequirements:resolution.automaticRequirements,adminRequests:visibleRequests,warnings:resolution.warnings,identityEditability,sectionStatus:resolution.sectionStatus,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
@@ -127,6 +130,55 @@ router.put('/verification-items',async(req,res)=>{const driverId=await authentic
   return res.json({saved:true});
  }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] verification items update failed',{userId:driverId,code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save onboarding declarations.',code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED'});}});
 
+// Batch 2C Phase B — the canonical typed columns are the source of truth; the
+// verification_items array is maintained unchanged as the compatibility mirror.
+const PASSENGER_LICENCE_SELECT='id,verification_items,council_name,council_license_number,taxi_badge_number,taxi_license_expiry';
+
+router.put('/passenger-licence',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const licence=parseDriverPassengerLicenceInput(req.body);
+  const{data:existing,error:readError}=await supabaseAdmin.from('profiles').select(PASSENGER_LICENCE_SELECT).eq('id',driverId).single();if(readError||!existing)throw readError||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND'});
+  const mirror={...parseOnboardingItems(existing.verification_items),council_name:licence.councilName,council_license_number:licence.licenceNumber,taxi_badge_number:licence.badgeNumber,taxi_license_expiry:licence.expiryDate};
+  const values={...passengerLicenceColumns(licence),verification_items:serializeOnboardingItems(mirror),updated_at:new Date().toISOString()};
+  const{data,error}=await supabaseAdmin.from('profiles').update(values).eq('id',driverId).select(PASSENGER_LICENCE_SELECT).single();if(error||!data)throw error||new Error('Passenger licence save returned no record.');
+  return res.json({passengerLicence:readPassengerLicence(data)});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const validation=/licen[cs]|badge|authority|expired/i.test(details.message);console.error('[DriverOnboarding] passenger licence update failed',{userId:driverId,code:details.code||'PASSENGER_LICENCE_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(validation?422:500).json({error:details.message||'Unable to save passenger licence.',code:details.code||(validation?'INVALID_PASSENGER_LICENCE':'PASSENGER_LICENCE_SAVE_FAILED')});}});
+
+/**
+ * Batch 2C Phase B — authoritative application-facing eligibility contract.
+ *
+ * Identity comes ONLY from the authenticated session: the request can supply the
+ * service name and nothing else. There is no path by which a caller can submit,
+ * influence or override a verdict.
+ *
+ * AUTHORITY: `public.driver_service_eligibility(uuid, text, timestamptz)` is the
+ * authority for ACQUISITION and is enforced by the Phase A trigger, which is
+ * still DISABLED. Its EXECUTE privilege is intentionally revoked from every API
+ * role (Phase A), so this endpoint evaluates with the parity-proven TypeScript
+ * mirror and reports which engine produced the verdict. The response therefore
+ * states `evaluatedBy` and `enforced` explicitly rather than implying that
+ * database enforcement is active.
+ */
+router.get('/eligibility',async(req,res)=>{
+  const driverId=await authenticatedDriver(req,res);if(!driverId)return;
+  try{
+    const requested=typeof req.query.service==='string'?req.query.service.trim():'';
+    if(!requested)return res.status(400).json({error:'A service is required.',code:'SERVICE_REQUIRED'});
+    const{data:profile,error}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();
+    if(error||!profile)throw error||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND',httpStatus:404});
+    const vehicleRow=await currentVehicle(driverId);
+    const verdict=evaluateDriverServiceEligibility({profile:profile as Record<string,unknown>,vehicle:(vehicleRow as Record<string,unknown>|null)??null,service:requested});
+    return res.json({
+      driverId,
+      service:verdict.service,
+      resolved:verdict.service!==null,
+      eligible:verdict.eligible,
+      blockingCodes:verdict.blockingCodes,
+      advisoryCodes:verdict.advisoryCodes,
+      authority:{evaluatedBy:'ts-mirror',sqlAuthority:'public.driver_service_eligibility',enforced:false}
+    });
+  }catch(error:unknown){const details=error as Error&{code?:string;httpStatus?:number};console.error('[DriverOnboarding] eligibility evaluation failed',{userId:driverId,code:details.code||'ELIGIBILITY_EVALUATION_FAILED',message:details.message});return res.status(details.httpStatus||500).json({error:details.message||'Unable to evaluate driver eligibility.',code:details.code||'ELIGIBILITY_EVALUATION_FAILED'});}
+});
+
 router.put('/agreement',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
   if(typeof req.body?.accepted!=='boolean')return res.status(422).json({error:'Agreement acceptance must be true or false.',code:'INVALID_AGREEMENT_STATE'});
   const acceptedAt=req.body.accepted?new Date().toISOString():null;
@@ -145,6 +197,28 @@ router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(
   return res.json({vehicle:mapDriverVehicleRow(data as DriverVehicleRow)});
 }catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};const validation=/required|valid vehicle year/i.test(details.message);return res.status(details.httpStatus||(validation?422:500)).json({error:details.message,code:details.code||(validation?'INVALID_VEHICLE':'VEHICLE_SAVE_FAILED')});}});
 
+/**
+ * Batch 2C Phase B — the ONE trusted review-submission endpoint.
+ *
+ * Identity is the authenticated session; the body can never choose a driver, a
+ * service approval, or a review verdict.
+ *
+ *   initial submission (default)  — validates requirements, then writes the
+ *                                   onboarding payload exactly as before.
+ *   resubmission (resubmission:true) — the SAME validation and the same blocker
+ *                                   gate, but only the SERVER-DEFINED review
+ *                                   state is reset. Identity, documents,
+ *                                   agreement, plan and subscription are left
+ *                                   exactly as stored, so a resubmission can
+ *                                   never wipe or re-price a driver's account.
+ *
+ * The previous client-side resubmission wrote `verification_status` /
+ * `driver_review_status` straight from the browser and let the browser decide
+ * between 'action_required' and 'under_review'. Neither is possible here: the
+ * server validates first and then applies one fixed review state, and a driver
+ * who still has blockers is refused with the blocker list rather than being
+ * written into a client-chosen state.
+ */
 router.post('/submit-review', async (req,res)=>{
   const driverId=await authenticatedDriver(req,res);if(!driverId)return;
   try{
@@ -153,18 +227,31 @@ router.post('/submit-review', async (req,res)=>{
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
     const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
     const canonicalProfile=mapDriverProfile(profileInput,!!auth.user?.email_confirmed_at);
-    const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
+    const passengerLicence=readPassengerLicence(profileInput);
+    const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,passengerLicence,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
-    const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
+    const resubmission=req.body?.resubmission===true;
+    const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:resubmission?'resubmission_validated':'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
     if(auditError)throw auditError;
-    if(blockers.length){console.warn('[DriverOnboarding] review resubmission blocked',{userId:driverId,blockerCodes:blockers.map(item=>item.code)});return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});}
-    const submittedAt=new Date().toISOString();const submitted=req.body?.profile||{};
-    const existingItems=parseOnboardingItems(profile.verification_items);
-    const submittedItems=parseOnboardingItems(submitted.verification_items);
-    const updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted.full_name||'').trim(),phone:String(submitted.phone||'').trim(),accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:submitted.driver_license_url||null,insurance_url:submitted.insurance_url||null,right_to_work_url:submitted.right_to_work_url||null,verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+    if(blockers.length){console.warn('[DriverOnboarding] review resubmission blocked',{userId:driverId,resubmission,blockerCodes:blockers.map(item=>item.code)});return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});}
+    const submittedAt=new Date().toISOString();
+    let updates:Record<string,unknown>;
+    let auditEvent:string;
+    if(resubmission){
+      // Server-defined review state only. is_verified, plan, subscription,
+      // identity, documents and agreement are deliberately untouched.
+      updates={verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],updated_at:submittedAt};
+      auditEvent='resubmitted';
+    }else{
+      const submitted=req.body?.profile||{};
+      const existingItems=parseOnboardingItems(profile.verification_items);
+      const submittedItems=parseOnboardingItems(submitted.verification_items);
+      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted.full_name||'').trim(),phone:String(submitted.phone||'').trim(),accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:submitted.driver_license_url||null,insurance_url:submitted.insurance_url||null,right_to_work_url:submitted.right_to_work_url||null,verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+      auditEvent='submitted';
+    }
     const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated)throw updateError||new Error('Review submission did not update the driver profile.');
     const{error:consumeError}=await supabaseAdmin.from('driver_onboarding_requests').update({permission_consumed_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','identity_correction').eq('status','approved').is('permission_consumed_at',null);if(consumeError)throw consumeError;
-    return res.json({submitted:true,profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
+    return res.json({submitted:true,resubmission,event:auditEvent,reviewState:'under_review',profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
   }catch(error:unknown){const message=error instanceof Error?error.message:'Unable to validate driver submission.';return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});}
 });
 

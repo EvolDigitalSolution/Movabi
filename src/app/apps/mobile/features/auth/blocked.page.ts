@@ -75,7 +75,25 @@ export class BlockedPage {
     return profile?.closure_reason || profile?.account_closure_reason || profile?.moderation_reason || '';
   }
 
+  // Batch 2C Phase B.1 — MODERATION BOUNDARY.
+  //
+  // This method previously wrote `account_status: 'active'` unconditionally, so a
+  // SUSPENDED or BLOCKED account could be restored by the account holder from the
+  // client: an immediate privilege escalation. Only a closure the user asked for
+  // may be cancelled here; every other state (suspended, blocked, paused) is a
+  // moderation decision and is left exactly as the platform set it. The template
+  // already hides the button for those states — this guard makes the METHOD safe
+  // independently of the template.
+  //
+  // APPLICATION-LAYER GUARD ONLY: `profiles` still has no RLS and no column-level
+  // UPDATE revoke, so a hand-crafted request can still write this column. A
+  // trusted server endpoint for closure cancellation, plus the Phase C column
+  // revoke, is a MANDATORY Phase C prerequisite.
   async cancelClosureRequest() {
+    if (this.status() !== 'closure_requested') {
+      console.warn('[BlockedPage] Refused to reactivate an account that is not pending a user-requested closure.', { status: this.status() });
+      return;
+    }
     const user = this.auth.currentUser();
     if (!user?.id) return;
 

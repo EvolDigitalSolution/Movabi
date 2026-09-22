@@ -152,8 +152,54 @@ export function canonicalDriverService(raw: unknown): CanonicalDriverService | n
 /** Raised by the DB for a compliance rejection. Distinct from MB001 (busy). */
 export const DRIVER_NOT_ELIGIBLE_SQLSTATE = 'MB002';
 export const DRIVER_NOT_ELIGIBLE_CODE = 'DRIVER_NOT_ELIGIBLE';
+/** Raised by the DB when the driver already owns an occupying job (N12). */
+export const DRIVER_BUSY_SQLSTATE = 'MB001';
+export const DRIVER_BUSY_CODE = 'DRIVER_BUSY';
 /** Blocking code used whenever the service cannot be resolved. Fail closed. */
 export const SERVICE_UNRESOLVED_CODE = 'service.unresolved';
+
+/**
+ * Batch 2C Phase B — the ONE acquisition error contract.
+ *
+ * `MB001` (busy / N12) and `MB002` (compliance) are reserved and distinct. Both
+ * are recognised here, in one place, so every acquisition path maps them
+ * identically and neither can be mistaken for the other or for a generic
+ * failure. `MB002` carries requirement CODES only — never documents, admin notes
+ * or reviewer identity.
+ *
+ * Returns null when the error is not an acquisition contract error.
+ */
+export interface DriverAcquisitionFailure {
+    status: number;
+    code: string;
+    error: string;
+    /** Requirement codes reported by the database. Codes only, never prose. */
+    blocking?: string[];
+}
+
+export function mapDriverAcquisitionError(error: unknown): DriverAcquisitionFailure | null {
+    const candidate = error as { code?: string; message?: string; details?: string } | null;
+    if (!candidate) return null;
+
+    if (candidate.code === DRIVER_NOT_ELIGIBLE_SQLSTATE) {
+        const reported = String(candidate.details ?? '')
+            .split(',')
+            .map(value => value.trim())
+            .filter(value => /^[a-z][a-z0-9_.]*$/.test(value));
+        return {
+            status: 409,
+            code: DRIVER_NOT_ELIGIBLE_CODE,
+            error: 'You are not eligible to take this service. Complete the listed requirements and try again.',
+            blocking: reported
+        };
+    }
+
+    if (candidate.code === DRIVER_BUSY_SQLSTATE) {
+        return { status: 409, code: DRIVER_BUSY_CODE, error: 'You already have an active job.' };
+    }
+
+    return null;
+}
 
 export interface DriverEligibilityInput {
     profile: Record<string, unknown> | null | undefined;

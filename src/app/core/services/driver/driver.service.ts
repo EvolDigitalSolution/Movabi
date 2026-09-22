@@ -3,6 +3,7 @@ import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
+import { acquisitionErrorMessage } from '../compliance/acquisition-error';
 import {
     Booking,
     DriverStatus,
@@ -504,16 +505,16 @@ export class DriverService {
         }
 
         try {
+            // Batch 2C Phase B: the server derives the driver from this session
+            // token and refuses a body that names a different driver. `driverId`
+            // is deliberately NOT sent — ownership is never client-declared.
             await firstValueFrom(
-                this.http.post(`${environment.apiUrl}/booking/accept`, {
-                    jobId: bookingId,
-                    driverId: user.id
-                })
+                this.http.post(`${environment.apiUrl}/booking/accept`, { jobId: bookingId }, { headers: await this.authHeaders() })
             );
         } catch (error: unknown) {
-            const err = error as { error?: { message?: string } };
+            const err = error as { error?: { message?: string; code?: string } };
             console.error('Failed to accept job via API', error);
-            throw new Error(err.error?.message || 'Failed to accept request. It may have been taken.');
+            throw new Error(acquisitionErrorMessage(err.error, err.error?.message || 'Failed to accept request. It may have been taken.'));
         }
 
         await this.eventService.logEvent(bookingId, 'driver_accepted', 'Request accepted by driver');
@@ -534,9 +535,8 @@ export class DriverService {
             await firstValueFrom(
                 this.http.post(this.apiUrlService.getApiUrl('/api/booking/decline-job'), {
                     jobId: bookingId,
-                    driverId: user.id,
                     reason
-                })
+                }, { headers: await this.authHeaders() })
             );
         } catch (error: unknown) {
             const err = error as { error?: { message?: string } };
@@ -678,7 +678,8 @@ export class DriverService {
 
         if (error) {
             console.error('[DriverService] acceptAssignedJob failed:', error);
-            throw new Error(error.message || 'Could not confirm this request.');
+            // Batch 2C Phase B: MB001 busy and MB002 compliance stay distinct.
+            throw new Error(acquisitionErrorMessage(error, 'Could not confirm this request.'));
         }
 
         // FALSE (without error) means the job was not assigned to this driver, was
@@ -776,9 +777,9 @@ export class DriverService {
                 this.apiUrlService.getApiUrl('/api/booking/driver-unable'),
                 {
                     jobId,
-                    driverId: user.id,
                     reason
-                }
+                },
+                { headers: await this.authHeaders() }
             )
         );
 

@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
+import { acquisitionErrorMessage } from '../compliance/acquisition-error';
 import { AuthService } from '../auth/auth.service';
 import { ApiUrlService } from '../api-url.service';
 import {
@@ -233,7 +234,7 @@ export class MarketplaceHybridService {
             p_driver_id: driverId
         });
 
-        if (error) throw error;
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This job is no longer available to claim.'));
         const session = data as MarketplaceNegotiationSession;
 
         if (session?.customer_id) {
@@ -271,7 +272,7 @@ export class MarketplaceHybridService {
             p_amount: amount
         });
 
-        if (error) throw error;
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This fare could not be locked.'));
         const session = data as MarketplaceNegotiationSession;
 
         if (session?.customer_id) {

@@ -5,6 +5,7 @@ import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { Profile, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
 import { BookingService } from '@core/services/booking/booking.service';
 import { ApiUrlService } from '@core/services/api-url.service';
+import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
 import { cleanServiceTypePayload } from './admin-pricing-payload';
 
 export interface FailedBooking {
@@ -309,30 +310,25 @@ export class AdminService {
     return null;
   }
 
+    /**
+     * Batch 2C Phase B — admin approval must go through the requireAdmin-guarded
+     * server routes and never through a browser-side profile UPDATE.
+     *
+     * `public.profiles` still has no RLS and no column-level UPDATE revoke (that
+     * is the Phase C boundary), so a client-side write here would be an approval
+     * path that no server check can observe or refuse. The routes below derive
+     * the actor from the authenticated admin session and own the mutation.
+     */
     async verifyDriver(driverId: string, approved: boolean) {
-
-        const now = new Date().toISOString();
-
-        const update: any = approved
-            ? {
-                verification_status: 'approved',
-                driver_review_status: 'approved',
-                verified_at: now,
-                verification_blockers: [],
-                driver_review_blockers: [],
-                driver_review_notes: null
-            }
-            : {
-                verification_status: 'action_required',
-                driver_review_status: 'action_required'
-            };
-
-        const { error } = await this.supabase
-            .from('profiles')
-            .update(update)
-            .eq('id', driverId);
-
-        if (error) throw error;
+        if (approved) {
+            await this.manualApproveDriver(driverId, 'Approved from the driver review queue');
+            return;
+        }
+        await this.sendDriverMissingInfoRequest(
+            driverId,
+            'Verification was not approved. Please review and resubmit the outstanding requirements.',
+            []
+        );
     }
 
   async getJobs(filters?: { status?: string; payment_status?: string; service_type_id?: string }) {
@@ -549,7 +545,9 @@ export class AdminService {
     });
 
     if (error || data !== true) {
-      throw new Error(error?.message || 'Driver could not be assigned to this booking.');
+      // Batch 2C Phase B: an assignment refused for compliance must not read as
+      // a generic failure, and a false return is never a success.
+      throw new Error(acquisitionErrorMessage(error, 'Driver could not be assigned to this booking.'));
     }
 
     return this.bookingService.getBooking(bookingId);
@@ -632,9 +630,13 @@ export class AdminService {
 
   async getHeatmapData() {
     try {
+      // Batch 2C Phase B.1: /api/admin/* now requires an admin session, so these
+      // inspection calls must carry the authenticated admin token.
+      const headers = await this.getAuthenticatedApiHeaders();
       return await firstValueFrom(
         this.http.get<{ zones: { lat: number; lng: number; demand: number; drivers: number }[] }>(
-          this.apiUrlService.getApiUrl('/api/admin/heatmap')
+          this.apiUrlService.getApiUrl('/api/admin/heatmap'),
+          { headers }
         )
       );
     } catch {
@@ -643,15 +645,17 @@ export class AdminService {
   }
 
   async getPlatformMetrics() {
+    const headers = await this.getAuthenticatedApiHeaders();
     return firstValueFrom(
-      this.http.get<Record<string, number>>(this.apiUrlService.getApiUrl('/api/admin/metrics'))
+      this.http.get<Record<string, number>>(this.apiUrlService.getApiUrl('/api/admin/metrics'), { headers })
     );
   }
 
   async getFailedBookings() {
     try {
+      const headers = await this.getAuthenticatedApiHeaders();
       return await firstValueFrom(
-        this.http.get<FailedBooking[]>(this.apiUrlService.getApiUrl('/api/admin/failures'))
+        this.http.get<FailedBooking[]>(this.apiUrlService.getApiUrl('/api/admin/failures'), { headers })
       );
     } catch {
       return [];
@@ -660,8 +664,9 @@ export class AdminService {
 
   async getRecentPayments() {
     try {
+      const headers = await this.getAuthenticatedApiHeaders();
       return await firstValueFrom(
-        this.http.get<WalletTransaction[]>(this.apiUrlService.getApiUrl('/api/admin/payments'))
+        this.http.get<WalletTransaction[]>(this.apiUrlService.getApiUrl('/api/admin/payments'), { headers })
       );
     } catch {
       return [];
@@ -714,10 +719,9 @@ export class AdminService {
     const result = await this.readApiResponse(response);
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return this.manualApproveDriverViaSupabase(driverId, notes);
-      }
-
+      // Batch 2C Phase B: there is deliberately NO client-side fallback. A browser
+      // profile UPDATE here would approve a driver without the server's
+      // requireAdmin check, and profiles has no RLS until Phase C.
       throw new Error(result?.error || 'Manual driver approval failed');
     }
 
@@ -736,12 +740,7 @@ export class AdminService {
     const result = await this.readApiResponse(response);
 
     if (!response.ok) {
-      if (response.status === 404) {
-        const fallbackResult = await this.sendDriverMissingInfoViaSupabase(driverId, notes, blockers);
-        console.log('[admin-driver-review] saved', fallbackResult);
-        return fallbackResult;
-      }
-
+      // Batch 2C Phase B: no client-side fallback — see manualApproveDriver.
       console.warn('[admin-driver-review] failed', result);
       throw new Error(result?.error || 'Could not send missing information request');
     }
@@ -750,104 +749,11 @@ export class AdminService {
     return result;
   }
 
-  private async manualApproveDriverViaSupabase(driverId: string, notes: string) {
-    const { data, error } = await this.supabase
-      .from('profiles')
-      .update({
-        is_verified: true,
-        verification_status: 'approved',
-        account_status: 'active',
-        manual_verification_notes: notes || 'Approved manually. External verification APIs are not enabled yet.',
-        testing_approval_override: true,
-        driver_review_status: 'approved',
-        verification_blockers: [],
-        verified_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', driverId)
-      .select('*')
-      .single();
-
-    if (error) {
-      throw new Error(`Verification API is not deployed and the secure database fallback failed: ${error.message}`);
-    }
-
-    return {
-      success: true,
-      message: 'Driver manually approved',
-      driver: data
-    };
-  }
-
-    private async sendDriverMissingInfoViaSupabase(
-        driverId: string,
-        notes: string,
-        blockers: string[]
-    ) {
-        const sentAt = new Date().toISOString();
-
-        const cleanBlockers = (blockers || [])
-            .map(x => String(x || '').trim())
-            .filter(Boolean);
-
-        // Update driver profile
-        const { error } = await this.supabase
-            .from('profiles')
-            .update({
-                driver_review_status: 'action_required',
-                driver_review_notes: notes,
-                driver_review_blockers: cleanBlockers,
-                driver_review_sent_at: sentAt,
-
-                verification_status: 'action_required',
-                verification_notes: notes,
-                verification_blockers: cleanBlockers,
-
-                updated_at: sentAt
-            })
-            .eq('id', driverId);
-
-        if (error) {
-            throw new Error(error.message);
-        }
-
-        //
-        // Create in-app notification
-        //
-        try {
-            await this.supabase
-                .from('notifications')
-                .insert({
-                    user_id: driverId,
-                    title: 'Verification action required',
-                    body: notes,
-                    type: 'driver_review_action_required',
-                    route: '/driver/settings',
-                    data: {
-                        route: '/driver/settings',
-                        blockers: cleanBlockers,
-                        message: notes,
-                        action: 'driver_review_action_required'
-                    },
-                    metadata: {
-                        route: '/driver/settings',
-                        blockers: cleanBlockers,
-                        message: notes,
-                        action: 'driver_review_action_required'
-                    },
-                    is_read: false,
-                    created_at: sentAt
-                });
-        } catch (e) {
-            console.warn('Notification table not available.', e);
-        }
-
-        return {
-            success: true,
-            message: 'Driver notified successfully.',
-            blockers: cleanBlockers
-        };
-    }
+  // Batch 2C Phase B removed manualApproveDriverViaSupabase() and
+  // sendDriverMissingInfoViaSupabase(). Both wrote approval/review state straight
+  // from the browser and were only reached when the verification API returned 404.
+  // Admin review mutations now go exclusively through the requireAdmin-guarded
+  // /api/verification routes; the browser has no approval path.
 
   private async readApiResponse(response: Response): Promise<any> {
     const text = await response.text();

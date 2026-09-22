@@ -1,5 +1,5 @@
-﻿import { Injectable, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -796,8 +796,21 @@ export class BookingService {
             status: nextStatus
         };
 
+        // Batch 2C Phase B (ownership hardening).
+        //
+        // `driver_id` is deliberately NOT copied out of `additionalData`. Job
+        // ownership is an ACQUISITION and must only ever be written by a trusted
+        // server action or an ownership RPC (`accept_searching_job`,
+        // `accept_assigned_job`, `accept_fare_negotiation`, admin
+        // `assign_driver_to_job`), all of which derive or authorise the driver
+        // server-side. Forwarding a caller-supplied driver_id here let any caller
+        // of this generic status method claim a job.
+        //
+        // A caller that still passes driver_id gets a loud error instead of a
+        // silent drop, so a reintroduced acquisition path fails fast in tests
+        // rather than acquiring ownership in production.
         if (additionalData.driver_id) {
-            updatePayload['driver_id'] = additionalData.driver_id;
+            throw new Error('Assigning a driver is not a status update. Use the job acceptance action.');
         }
 
         if (additionalData.total_price !== undefined && additionalData.total_price !== null) {
@@ -903,7 +916,7 @@ export class BookingService {
                 this.http.post(this.apiUrlService.getApiUrl('/api/booking/notify-status'), {
                     jobId: booking.id,
                     status: booking.status
-                })
+                }, { headers: await this.authHeaders() })
             );
         } catch (error) {
             console.warn('[BookingService] Failed to send backend push notification:', error);
@@ -1204,6 +1217,19 @@ export class BookingService {
         );
     }
 
+    /**
+     * Batch 2C Phase B.1 — bearer headers for the authenticated booking routes.
+     *
+     * `/cancel` and `/notify-status` now require a session (they were previously
+     * anonymous), so their client calls must carry the caller's token. Identity is
+     * never taken from the request body by those routes.
+     */
+    private async authHeaders(): Promise<HttpHeaders> {
+        const { data } = await this.supabase.auth.getSession();
+        if (!data.session?.access_token) throw new Error('Please sign in again.');
+        return new HttpHeaders({ Authorization: `Bearer ${data.session.access_token}` });
+    }
+
     async cancelBooking(bookingId: string, reason: string): Promise<any> {
         try {
             const response = await firstValueFrom(
@@ -1213,7 +1239,7 @@ export class BookingService {
                 }>(this.apiUrlService.getApiUrl('/api/booking/cancel'), {
                     jobId: bookingId,
                     reason
-                })
+                }, { headers: await this.authHeaders() })
             );
 
             if (response?.data) {

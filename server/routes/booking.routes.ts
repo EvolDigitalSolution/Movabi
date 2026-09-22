@@ -9,6 +9,7 @@ import { DispatchService } from '../services/dispatch.service';
 import { stripe } from '../services/stripe.service';
 import { rateLimit } from 'express-rate-limit';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { mapDriverAcquisitionError } from '../services/driver-eligibility.service';
 
 const router = Router();
 
@@ -32,12 +33,113 @@ async function getAuthUserId(req: Request): Promise<string | null> {
     return data.user.id;
 }
 
+/**
+ * Batch 2C Phase B.1 — admin predicate for the booking mutation routes.
+ * Fails closed: any lookup error means "not an admin".
+ */
+async function isAdminUser(userId: string | null): Promise<boolean> {
+    if (!userId) return false;
+    const { data, error } = await supabaseAdmin.from('profiles').select('role').eq('id', userId).maybeSingle();
+    if (error) {
+        console.error('[BookingRoutes] admin lookup failed:', error);
+        return false;
+    }
+    return String(data?.role || '') === 'admin';
+}
+
+/**
+ * Batch 2C Phase B.1 — true when the authenticated user is a participant in the
+ * job: its customer, its assigned driver, or the driver who confirmed it.
+ */
+function isJobParticipant(job: any, userId: string): boolean {
+    const id = String(userId || '');
+    if (!id) return false;
+    return String(job?.customer_id || '') === id
+        || String(job?.driver_id || '') === id
+        || String(job?.accepted_driver_id || '') === id;
+}
+
+/**
+ * Batch 2C Phase B.1 — resolve the caller for a booking mutation route.
+ *
+ * Returns the authenticated id, or null after writing the response, so callers
+ * can `if (!userId) return;`. Never trusts a client-supplied identity.
+ */
+async function requireAuthenticatedUser(req: Request, res: Response): Promise<string | null> {
+    const userId = await getAuthUserId(req);
+    if (!userId) {
+        res.status(401).json({ error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
+        return null;
+    }
+    return userId;
+}
+
+/**
+ * Batch 2C Phase B.1 — ownership fields a booking CREATE may never accept.
+ *
+ * A new booking belongs to its customer and to nobody else. Ownership is an
+ * ACQUISITION performed later by a trusted server action or an ownership RPC, so
+ * these keys are rejected outright (fail closed) rather than silently dropped.
+ */
+const BOOKING_OWNERSHIP_FIELDS = [
+    'driver_id',
+    'accepted_driver_id',
+    'accepted_at',
+    'assigned_at',
+    'driver_assigned_at',
+    'dispatch_started_at'
+] as const;
+
+/**
+ * Batch 2C Phase B.1 — explicit allow-list of fields a client may create a
+ * booking with.
+ *
+ * The route previously forwarded an arbitrary client object into `insert()`,
+ * forcing only `customer_id`. Anything not listed here is dropped and logged, so
+ * an unexpected key can never reach the insert statement. The list is the union
+ * of the fields the shipping client sends
+ * (`BookingService.createBooking` / `JobService.toJobsPayload`) and the fields
+ * this route derives itself.
+ */
+const CREATABLE_BOOKING_FIELDS = new Set<string>([
+    // identity / lifecycle (the route forces these itself)
+    'customer_id', 'tenant_id', 'service_type_id', 'status', 'payment_status',
+    'is_draft', 'expires_at', 'expired_at', 'expiry_reason', 'scheduled_time',
+    'quote_id', 'agreed_fare', 'bid_mode_enabled', 'negotiation_mode_enabled',
+    // geography
+    'pickup_address', 'pickup_lat', 'pickup_lng',
+    'dropoff_address', 'dropoff_lat', 'dropoff_lng',
+    'country_code', 'currency_code', 'currency_symbol',
+    // fare (the route overwrites these from the verified quote)
+    'price', 'total_price', 'estimated_price', 'distance_km', 'estimated_distance_km',
+    'distance_meters', 'duration_seconds', 'estimated_duration',
+    'platform_fee', 'driver_payout', 'tax_amount',
+    'surge_multiplier', 'dynamic_pricing_multiplier',
+    'base_fare_used', 'price_per_km_used', 'commission_rate_used', 'pricing_plan_used',
+    'regional_pricing_rule_id', 'fare_breakdown', 'marketplace_flags',
+    // free-form
+    'metadata'
+]);
+
 router.post('/create', bookingCreateLimiter, async (req: Request, res: Response) => {
     try {
         const userId = await getAuthUserId(req);
         if (!userId) return res.status(401).json({ error: 'Authentication required' });
         const payload = { ...(req.body?.booking || {}) } as Record<string, any>;
         if (payload.customer_id && String(payload.customer_id) !== userId) return res.status(403).json({ error: 'Cannot create a booking for another customer' });
+
+        // Batch 2C Phase B.1: a create can never carry ownership. Presence of the
+        // key is an attempt, even when the value is null or blank.
+        const attemptedOwnership = BOOKING_OWNERSHIP_FIELDS.filter(field =>
+            Object.prototype.hasOwnProperty.call(payload, field));
+        if (attemptedOwnership.length) {
+            console.warn('[BookingRoutes] booking create rejected ownership fields', { userId, fields: attemptedOwnership });
+            return res.status(400).json({
+                error: 'A new booking cannot be created with driver ownership fields.',
+                code: 'OWNERSHIP_FIELD_NOT_ALLOWED',
+                fields: attemptedOwnership
+            });
+        }
         const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
         const breakdown = payload.fare_breakdown && typeof payload.fare_breakdown === 'object' ? payload.fare_breakdown : {};
         const quoteReference = String(payload.quote_id || metadata.quote_id || breakdown.quoteId || '').trim();
@@ -62,7 +164,19 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             marketCity: payload.market_city || metadata.market_city || metadata.pickup_city, zoneId: payload.zone_id || metadata.zone_id,
             capability: 'booking', endpoint: '/api/booking/create' });
         payload.customer_id = userId;
-        const { data, error } = await supabaseAdmin.from('jobs').insert(payload).select('*, service_type:service_types(*)').single();
+        // Batch 2C Phase B.1: build the insert payload from the allow-list only,
+        // so no unlisted client key can reach the insert statement.
+        const insertPayload: Record<string, unknown> = {};
+        const droppedFields: string[] = [];
+        for (const [key, value] of Object.entries(payload)) {
+            if (CREATABLE_BOOKING_FIELDS.has(key)) insertPayload[key] = value;
+            else droppedFields.push(key);
+        }
+        if (droppedFields.length) {
+            console.warn('[BookingRoutes] booking create dropped non-creatable fields', { userId, droppedFields });
+        }
+        insertPayload.customer_id = userId;
+        const { data, error } = await supabaseAdmin.from('jobs').insert(insertPayload).select('*, service_type:service_types(*)').single();
         if (error) return res.status(400).json({ error: error.message, code: error.code });
         return res.status(201).json(data);
     } catch (error) {
@@ -345,13 +459,30 @@ async function logJobEvent(jobId: string, eventType: string, actorId: string | n
 /**
  * Accept/assign a job.
  * Payment is NOT captured here.
+ *
+ * Batch 2C Phase B (ownership hardening): this route used to take `driverId`
+ * straight from the request body and perform NO authentication at all, so any
+ * caller could assign an arbitrary driver — or themselves — to any acceptable
+ * job. The driver is now derived from the authenticated session and the body can
+ * no longer name one.
  */
 router.post('/accept', async (req: Request, res: Response) => {
     try {
-        const { jobId, driverId } = req.body;
+        const { jobId } = req.body;
 
-        if (!jobId || !driverId) {
-            return res.status(400).json({ error: 'jobId and driverId required' });
+        const driverId = await getAuthUserId(req);
+        if (!driverId) {
+            return res.status(401).json({ error: 'Authentication required.' });
+        }
+
+        if (!jobId) {
+            return res.status(400).json({ error: 'jobId required' });
+        }
+        if (req.body?.driverId && String(req.body.driverId) !== driverId) {
+            return res.status(403).json({
+                error: 'A job can only be accepted for the authenticated driver.',
+                code: 'DRIVER_IDENTITY_MISMATCH'
+            });
         }
 
         const job = await getJob(jobId);
@@ -377,6 +508,17 @@ router.post('/accept', async (req: Request, res: Response) => {
         });
 
         if (rpcError || !assigned) {
+            // Batch 2C Phase B: MB002 (compliance) and MB001 (busy) are mapped
+            // explicitly; everything else keeps the pre-existing generic failure
+            // and is NEVER reported as a success.
+            const acquisitionFailure = mapDriverAcquisitionError(rpcError);
+            if (acquisitionFailure) {
+                return res.status(acquisitionFailure.status).json({
+                    error: acquisitionFailure.error,
+                    code: acquisitionFailure.code,
+                    ...(acquisitionFailure.blocking ? { blocking: acquisitionFailure.blocking } : {})
+                });
+            }
             return res.status(400).json({
                 error: 'Failed to accept job. It may have been taken or cancelled.'
             });
@@ -480,6 +622,10 @@ router.post('/complete', async (req: Request, res: Response) => {
  */
 router.post('/cancel', async (req: Request, res: Response) => {
     try {
+        // Batch 2C Phase B.1: this route was unauthenticated, so anyone who knew
+        // a job id could cancel somebody else's booking.
+        const userId = await requireAuthenticatedUser(req, res);
+        if (!userId) return;
         const { jobId, reason } = req.body;
 
         if (!jobId) {
@@ -487,6 +633,14 @@ router.post('/cancel', async (req: Request, res: Response) => {
         }
 
         const job = await getJob(jobId);
+
+        // Only a participant (customer or assigned driver) or an admin may cancel.
+        if (!isJobParticipant(job, userId) && !(await isAdminUser(userId))) {
+            return res.status(403).json({ error: 'You cannot cancel this booking.', code: 'NOT_A_PARTICIPANT' });
+        }
+        if (req.body?.customerId && String(req.body.customerId) !== String(job.customer_id || '')) {
+            return res.status(403).json({ error: 'Customer identity mismatch.', code: 'IDENTITY_MISMATCH' });
+        }
 
         if (!LogisticsService.isValidBookingTransition(job.status, 'cancelled')) {
             return res.status(400).json({
@@ -608,21 +762,33 @@ router.post('/cancel', async (req: Request, res: Response) => {
  */
 router.post('/driver-unable', async (req: Request, res: Response) => {
     try {
+        // Batch 2C Phase B.1: the caller identity was taken from the request body,
+        // so anyone could force a handoff, freeze the assigned driver's issuing
+        // card and release the job.
+        const userId = await requireAuthenticatedUser(req, res);
+        if (!userId) return;
         const { jobId, driverId, reason } = req.body || {};
 
-        if (!jobId || !driverId) {
-            return res.status(400).json({ error: 'jobId and driverId required' });
+        if (!jobId) {
+            return res.status(400).json({ error: 'jobId required' });
+        }
+        if (driverId && String(driverId) !== userId) {
+            return res.status(403).json({ error: 'You can only hand off your own job.', code: 'DRIVER_IDENTITY_MISMATCH' });
         }
 
         const job = await getJob(jobId);
 
-        if (job.driver_id !== driverId) {
-            return res.status(403).json({ error: 'This driver is not assigned to the job' });
+        // The authenticated caller must BE the assigned driver.
+        if (String(job.driver_id || '') !== userId) {
+            return res.status(403).json({ error: 'This driver is not assigned to the job', code: 'NOT_ASSIGNED_DRIVER' });
         }
 
         if (['completed', 'settled', 'cancelled'].includes(normalise(job.status))) {
             return res.status(400).json({ error: `Cannot hand off a job in status: ${job.status}` });
         }
+
+        // The acting driver is the authenticated caller, never the request body.
+        const actingDriverId = userId;
 
         const reasonText = String(reason || 'Driver cannot continue').trim().slice(0, 500);
         const hasSpend = await hasProtectedErrandSpend(jobId);
@@ -631,7 +797,7 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
             ? metadata.driver_handoff_history
             : [];
         const handoffEntry = {
-            driver_id: driverId,
+            driver_id: actingDriverId,
             reason: reasonText,
             previous_status: job.status,
             created_at: new Date().toISOString()
@@ -643,7 +809,7 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
         };
 
         try {
-            await IssuingService.freezeDriverCard(driverId, `Driver handoff: ${reasonText}`);
+            await IssuingService.freezeDriverCard(actingDriverId, `Driver handoff: ${reasonText}`);
         } catch (freezeError) {
             console.warn('[BookingRoutes] failed to freeze issuing card during handoff:', freezeError);
         }
@@ -661,7 +827,7 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
 
             if (error) throw error;
 
-            await logJobEvent(jobId, 'driver_handoff_review_required', driverId, reasonText, {
+            await logJobEvent(jobId, 'driver_handoff_review_required', actingDriverId, reasonText, {
                 previous_status: job.status,
                 has_protected_spend: true
             });
@@ -695,7 +861,7 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
 
         if (error) throw error;
 
-        await logJobEvent(jobId, 'driver_handoff_requeued', driverId, reasonText, {
+        await logJobEvent(jobId, 'driver_handoff_requeued', actingDriverId, reasonText, {
             previous_status: job.status,
             has_protected_spend: false
         });
@@ -823,16 +989,23 @@ router.post('/rate', async (req: Request, res: Response) => {
  */
 router.post('/decline-job', async (req: Request, res: Response) => {
     try {
+        // Batch 2C Phase B.1: unauthenticated, and the declined driver id came
+        // from the body, so anyone could suppress offers for any driver.
+        const userId = await requireAuthenticatedUser(req, res);
+        if (!userId) return;
         const { driverId, jobId, reason } = req.body;
 
-        if (!driverId || !jobId) {
-            return res.status(400).json({ error: 'driverId and jobId are required' });
+        if (!jobId) {
+            return res.status(400).json({ error: 'jobId is required' });
+        }
+        if (driverId && String(driverId) !== userId) {
+            return res.status(403).json({ error: 'You can only decline a job for yourself.', code: 'DRIVER_IDENTITY_MISMATCH' });
         }
 
         const { error: insertError } = await supabaseAdmin
             .from('driver_job_declines')
             .upsert({
-                driver_id: driverId,
+                driver_id: userId,
                 job_id: jobId,
                 reason: reason || 'driver_declined',
                 created_at: new Date().toISOString()
@@ -856,23 +1029,42 @@ router.post('/decline-job', async (req: Request, res: Response) => {
  * the push via the existing notification service so it works when the app is
  * in the background.
  */
+const NOTIFIABLE_JOB_STATUSES = new Set([
+    'searching', 'requested', 'pending', 'pending_fare_confirmation', 'negotiating',
+    'assigned', 'accepted', 'driver_arrived', 'arrived', 'in_progress', 'started',
+    'picked_up', 'collected', 'delivered', 'completed', 'cancelled', 'requires_review',
+    'no_driver_found', 'expired'
+]);
+
 router.post('/notify-status', async (req: Request, res: Response) => {
     try {
+        // Batch 2C Phase B.1: unauthenticated, so anyone could push an arbitrary
+        // status string to any job's customer.
+        const userId = await requireAuthenticatedUser(req, res);
+        if (!userId) return;
         const { jobId, status } = req.body;
 
         if (!jobId || !status) {
             return res.status(400).json({ error: 'jobId and status are required' });
         }
+        // Only canonical statuses may be announced: no free text may reach a push.
+        if (!NOTIFIABLE_JOB_STATUSES.has(normalise(status))) {
+            return res.status(400).json({ error: 'Unknown job status.', code: 'UNKNOWN_JOB_STATUS' });
+        }
 
         const { data: job, error: jobError } = await supabaseAdmin
             .from('jobs')
-            .select('customer_id')
+            .select('customer_id,driver_id,accepted_driver_id')
             .eq('id', jobId)
             .single();
 
         if (jobError || !job?.customer_id) {
             console.warn('[BookingRoutes] notify-status: job or customer not found', jobError);
             return res.status(404).json({ error: 'Job or customer not found' });
+        }
+
+        if (!isJobParticipant(job, userId) && !(await isAdminUser(userId))) {
+            return res.status(403).json({ error: 'You are not a participant in this booking.', code: 'NOT_A_PARTICIPANT' });
         }
 
         await NotificationService.notifyJobStatusUpdate(job.customer_id, jobId, status);
@@ -965,13 +1157,32 @@ router.post('/negotiation', async (req: Request, res: Response) => {
 /**
  * Accept a fare negotiation and lock the agreed fare.
  */
+/**
+ * Customer accepts a driver's fare offer (legacy negotiation accept).
+ *
+ * Batch 2C Phase B.1: this handler used to perform a bare `.update({status,
+ * agreed_fare, driver_id})` with no status predicate, no ownership predicate, no
+ * row lock and no transaction, so a customer participant could force
+ * `fare_agreed` with `driver_id = NULL`, could reassign the job from driver A to
+ * driver B, and was told `{ success: true }` either way.
+ *
+ * It is now a thin trusted wrapper around the atomic
+ * `public.accept_driver_offer(uuid, uuid)`:
+ *   * the server authorises the CALLER as a job participant,
+ *   * the DRIVER is derived server-side from the negotiation row (never from the
+ *     request body), so a NULL driver can no longer be written,
+ *   * the RPC locks the job, validates the negotiation status and the ownership
+ *     transition, refuses A -> B, and raises unless the row actually moved.
+ * Post-commit pricing is secondary work: it can never turn a committed
+ * acceptance into a reported failure.
+ */
 router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
     try {
         const negotiationId = req.params.id;
         const userId = await getAuthUserId(req);
 
         if (!userId) {
-            return res.status(401).json({ error: 'Authentication required' });
+            return res.status(401).json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
         }
 
         const { data: negotiation, error: fetchError } = await supabaseAdmin
@@ -985,23 +1196,11 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
         }
 
         const job = (negotiation as any).job;
-        const isParticipant = job.customer_id === userId || job.driver_id === userId;
+        const isParticipant = job?.customer_id === userId || job?.driver_id === userId;
         if (!isParticipant) {
-            return res.status(403).json({ error: 'Only participants can accept this negotiation' });
+            return res.status(403).json({ error: 'Only participants can accept this negotiation', code: 'NOT_A_PARTICIPANT' });
         }
 
-        // ------------------------------------------------------------------
-        // N12 (Batch 2B): the ownership write happens FIRST and its error is
-        // observed.
-        //
-        // Previously the negotiation was marked accepted BEFORE the jobs write,
-        // and the jobs UPDATE result was discarded entirely. The single-active-
-        // job invariant (idx_jobs_one_active_per_driver) can now reject the
-        // assignment, so that ordering would have marked a negotiation accepted
-        // while reporting { success: true } with no driver assigned. Owning the
-        // job first means a rejected assignment cannot leave a half-applied
-        // acceptance behind.
-        // ------------------------------------------------------------------
         const { data: fullJob, error: jobError } = await supabaseAdmin
             .from('jobs')
             .select('*')
@@ -1016,46 +1215,86 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
             marketCity: fullJob.market_city || fullMetadata.market_city || fullMetadata.pickup_city, zoneId: fullJob.zone_id || fullMetadata.zone_id,
             capability: 'booking', endpoint: '/api/booking/negotiation/accept' });
 
-        const agreedFare = Number(negotiation.amount);
-        const fareUpdate = PricingService.applyAgreedFare(fullJob, agreedFare);
+        // The accepted driver is derived SERVER-SIDE from the negotiation row.
+        // A customer cannot accept an offer into a job with no driver.
         const acceptedDriverId = (negotiation as any).proposed_by_role === 'driver'
-            ? (negotiation as any).proposed_by
-            : job?.driver_id;
+            ? String((negotiation as any).proposed_by || '')
+            : String(fullJob.driver_id || '');
 
-        const { error: jobUpdateError } = await supabaseAdmin
-            .from('jobs')
-            .update({
-                status: 'fare_agreed',
-                agreed_fare: agreedFare,
-                driver_id: acceptedDriverId,
-                ...fareUpdate,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', negotiation.job_id);
+        if (!acceptedDriverId) {
+            return res.status(409).json({
+                error: 'There is no driver offer to accept for this job.',
+                code: 'NO_DRIVER_OFFER_TO_ACCEPT'
+            });
+        }
 
-        // The jobs write MUST be observed: reporting success after a rejected
-        // assignment is exactly the defect this batch closes.
-        if (jobUpdateError) {
-            console.error('[BookingRoutes] negotiation accept jobs update failed:', jobUpdateError);
+        const { data: accepted, error: acceptError } = await supabaseAdmin.rpc('accept_driver_offer', {
+            p_job_id: negotiation.job_id,
+            p_driver_id: acceptedDriverId
+        });
 
-            if (isDriverBusyViolation(jobUpdateError)) {
-                return res.status(409).json({
-                    error: 'This driver already has an active job.',
-                    code: 'DRIVER_BUSY'
+        if (acceptError) {
+            const acquisitionFailure = mapDriverAcquisitionError(acceptError);
+            if (acquisitionFailure) {
+                return res.status(acquisitionFailure.status).json({
+                    error: acquisitionFailure.error,
+                    code: acquisitionFailure.code,
+                    ...(acquisitionFailure.blocking ? { blocking: acquisitionFailure.blocking } : {})
                 });
             }
 
+            const sqlState = String(acceptError.code || '');
+            if (sqlState === '23505') {
+                return res.status(409).json({ error: 'This job is already owned by another driver.', code: 'JOB_ALREADY_OWNED' });
+            }
+            if (sqlState === '23514') {
+                return res.status(409).json({ error: 'This offer is no longer available.', code: 'OFFER_NO_LONGER_AVAILABLE' });
+            }
+            if (sqlState === 'P0002') {
+                return res.status(404).json({ error: 'No pending driver offer found', code: 'OFFER_NOT_FOUND' });
+            }
+            if (sqlState === '22023') {
+                return res.status(400).json({ error: 'Offer amount is not valid', code: 'INVALID_OFFER_AMOUNT' });
+            }
+            if (sqlState === '42501') {
+                return res.status(403).json({ error: 'You cannot accept this offer.', code: 'NOT_ALLOWED' });
+            }
+
+            console.error('[BookingRoutes] negotiation accept RPC failed:', acceptError);
             return res.status(500).json({ error: 'Failed to accept negotiation' });
         }
 
-        const { error: updateError } = await supabaseAdmin
-            .from('fare_negotiations')
-            .update({ status: 'accepted', updated_at: new Date().toISOString() })
-            .eq('id', negotiationId);
+        // ------------------------------------------------------------------
+        // OWNERSHIP IS COMMITTED AT THIS POINT. Everything below is SECONDARY:
+        // a pricing or notification problem must never report the committed
+        // acceptance as failed, and must never write ownership again.
+        // ------------------------------------------------------------------
+        const agreedFare = Number((accepted as any)?.agreed_fare ?? negotiation.amount);
+        let pricingPending = false;
+        try {
+            const fareUpdate = PricingService.applyAgreedFare(fullJob, agreedFare);
+            const { error: pricingError } = await supabaseAdmin
+                .from('jobs')
+                .update({ ...fareUpdate, updated_at: new Date().toISOString() })
+                .eq('id', negotiation.job_id)
+                .eq('driver_id', acceptedDriverId)
+                .eq('status', 'fare_agreed');
 
-        if (updateError) throw updateError;
+            if (pricingError) {
+                pricingPending = true;
+                console.error('[BookingRoutes] negotiation accept pricing refresh failed (ownership already committed):', pricingError);
+            }
+        } catch (pricingException) {
+            pricingPending = true;
+            console.error('[BookingRoutes] negotiation accept pricing refresh threw (ownership already committed):', pricingException);
+        }
 
-        return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
+        return res.json({
+            success: true,
+            ownershipCommitted: true,
+            pricingPending,
+            negotiation: { ...negotiation, status: 'accepted' }
+        });
     } catch (error: any) {
         console.error('[BookingRoutes] negotiation accept error:', error);
         if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
@@ -1122,13 +1361,16 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
             // Map the RPC's deterministic SQLSTATEs without leaking SQL internals.
             const sqlState = String(acceptError.code || '');
 
-            if (sqlState === 'MB001') {
-                // Batch 2B (N12): the driver already owns another occupying job.
-                // Distinct from OFFER_ALREADY_ACCEPTED: the offer was free, the
-                // DRIVER was busy, and the unique invariant resolved the race.
-                return res.status(409).json({
-                    error: 'You already have an active job.',
-                    code: 'DRIVER_BUSY'
+            // Batch 2C Phase B — the acquisition error contract. COMPLIANCE (MB002)
+            // is checked BEFORE busy (MB001): a driver who is both ineligible and
+            // busy must be told the actionable compliance reason, matching the
+            // precedence the acquisition RPCs themselves use.
+            const acquisitionFailure = mapDriverAcquisitionError(acceptError);
+            if (acquisitionFailure) {
+                return res.status(acquisitionFailure.status).json({
+                    error: acquisitionFailure.error,
+                    code: acquisitionFailure.code,
+                    ...(acquisitionFailure.blocking ? { blocking: acquisitionFailure.blocking } : {})
                 });
             }
 
@@ -1162,7 +1404,7 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
         }
 
         // The RPC returns the negotiation row and the agreed fare. Ownership and
-        // status are already committed at this point.
+        // status are ALREADY COMMITTED at this point.
         const result = (acceptResult || {}) as {
             agreed_fare?: number | string;
             negotiation?: Record<string, unknown>;
@@ -1170,14 +1412,26 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
 
         const agreedFare = Number(result.agreed_fare ?? 0);
 
-        if (!Number.isFinite(agreedFare) || agreedFare <= 0) {
-            console.error('[BookingRoutes] driver-accept RPC returned no usable agreed fare:', acceptResult);
-            return res.status(500).json({ error: 'Accepted offer returned no agreed fare' });
+        // Batch 2C Phase B.1 — this used to be a hard 500.
+        //
+        // Ownership has already moved inside the RPC's transaction, so reporting
+        // a failure here told the driver their acceptance had failed when it had
+        // in fact succeeded. That is worse than the pricing gap it was guarding:
+        // the driver retries, the retry is correctly refused as already-owned,
+        // and the job is left in a state the driver believes they do not own.
+        //
+        // An unusable negotiated amount is therefore classified as SECONDARY
+        // work: the response reports the committed ownership accurately, flags
+        // that the derived pricing still needs to be completed, and never claims
+        // the acceptance failed. The raw amount is never used to write pricing.
+        const pricingPending = !Number.isFinite(agreedFare) || agreedFare <= 0;
+        if (pricingPending) {
+            console.error('[BookingRoutes] driver-accept committed ownership but returned no usable agreed fare; pricing deferred:', acceptResult);
         }
 
         const negotiation = result.negotiation || {
             job_id: jobId,
-            amount: agreedFare,
+            amount: Number.isFinite(agreedFare) ? agreedFare : null,
             proposed_by_role: 'customer',
             status: 'accepted'
         };
@@ -1192,7 +1446,13 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
         // pricing refresh is reported diagnostically rather than failing the
         // acceptance the driver has legitimately won.
         // ------------------------------------------------------------------
+        let derivedPricingPending = pricingPending;
         try {
+            if (pricingPending) {
+                // No usable amount: skip the derived write entirely rather than
+                // persisting a fabricated fare. Ownership stays committed.
+                throw new Error('negotiated amount unavailable; derived pricing deferred');
+            }
             const fareUpdate = PricingService.applyAgreedFare(job, agreedFare);
 
             const { error: pricingError } = await supabaseAdmin
@@ -1203,18 +1463,30 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
                 .eq('status', 'fare_agreed');
 
             if (pricingError) {
+                derivedPricingPending = true;
                 console.error('[BookingRoutes] driver-accept pricing refresh failed (ownership already committed):', pricingError);
             }
         } catch (pricingException) {
             // Never convert a committed win into a client-visible failure.
+            derivedPricingPending = true;
             console.error('[BookingRoutes] driver-accept pricing refresh threw (ownership already committed):', pricingException);
         }
 
         // Notify only after the atomic acquisition succeeded. The winner notifies;
         // a loser returned above and never reaches this line.
-        await NotificationService.notifyJobStatusUpdate(String(job.customer_id), String(jobId), 'accepted');
+        try {
+            await NotificationService.notifyJobStatusUpdate(String(job.customer_id), String(jobId), 'accepted');
+        } catch (notifyError) {
+            // Secondary work: a push failure must not repaint a committed win.
+            console.error('[BookingRoutes] driver-accept notify failed (ownership already committed):', notifyError);
+        }
 
-        return res.json({ success: true, negotiation: { ...negotiation, status: 'accepted' } });
+        return res.json({
+            success: true,
+            ownershipCommitted: true,
+            pricingPending: derivedPricingPending,
+            negotiation: { ...negotiation, status: 'accepted' }
+        });
     } catch (error: any) {
         console.error('[BookingRoutes] driver-accept negotiation error:', error);
         if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });

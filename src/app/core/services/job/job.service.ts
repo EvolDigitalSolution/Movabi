@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
+import { acquisitionErrorMessage } from '../compliance/acquisition-error';
 import {
     Job,
     JobStatus,
@@ -88,7 +89,9 @@ export class JobService {
 
         if (error || !accepted) {
             console.error('[JobService] acceptJob failed:', error);
-            throw error || new Error('Request no longer available');
+            // Batch 2C Phase B: surface MB002 (compliance ineligible) / MB001
+            // (busy) distinctly; never swallow a failure into a success.
+            throw new Error(acquisitionErrorMessage(error, 'Request no longer available'));
         }
 
         await this.eventService.logEvent(jobId, 'driver_accepted', 'Job accepted by driver');

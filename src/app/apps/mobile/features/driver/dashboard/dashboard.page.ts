@@ -1,5 +1,6 @@
-import { AfterViewInit, Component, ViewChild, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
 import { FormsModule } from '@angular/forms';
 import {
     IonHeader,
@@ -79,6 +80,7 @@ import { RouteSummary } from '../../../../../core/models/maps/route-result.model
 import { NotificationService } from '../../../../../core/services/notification.service';
 import { MarketplaceNegotiationService } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
 import { MarketplaceConfigService } from '../../../../../core/services/marketplace/marketplace-config.service';
+import { DriverOnboardingStatusService } from '../../../../../core/services/driver/driver-onboarding-status.service';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -208,6 +210,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
             <app-map
               #map
               class="w-full h-full"
+              (ready)="onMapReady($event)"
             ></app-map>
           </div>
 
@@ -900,9 +903,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
 
 
 
-export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
-    @ViewChild('map') private marketplaceMap?: MapComponent;
-
+export class DriverDashboardPage implements OnInit, OnDestroy {
     public router = inject(Router);
     private route = inject(ActivatedRoute);
     public auth = inject(AuthService);
@@ -925,6 +926,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private notificationService = inject(NotificationService);
     private negotiationService = inject(MarketplaceNegotiationService);
     private marketplaceConfig = inject(MarketplaceConfigService);
+    private onboardingStatus = inject(DriverOnboardingStatusService);
     private goOnlineInFlight:Promise<void>|null=null;
     private onlineDenialAlert:HTMLIonAlertElement|null=null;
 
@@ -1017,9 +1019,15 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private geocodedJobCoordinates = new Map<string, MarkerCoordinates>();
     private geocodingInFlight = new Set<string>();
     private geocodingAttempted = new Set<string>();
-    private hasCenteredMarketplaceMap = false;
-    private hasFitMarketplaceBounds = false;
     private activeRouteDrawnFor: string | null = null;
+
+    // Camera orchestration state.
+    // These replace the old boolean latches, which could permanently block
+    // reframing (including after a fit that never actually ran).
+    private mapGeneration = 0;
+    private appliedCameraSignature: string | null = null;
+    private driverLocationAnchoredInCamera = false;
+    private autoFollowSuspended = false;
     private notifiedDriverEventIds = new Set<string>();
     private sheetDragStartY = 0;
     private sheetDragStartHeight = 40;
@@ -1246,7 +1254,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         await this.driverService.fetchAvailableJobs();
         await this.loadWalletEarnings();
         this.syncMarketplaceMapMarkers();
-        this.centerMarketplaceMap(true); // Force refit after initial load
+        this.applyMarketplaceCamera(true); // Force an initial frame once the map reports ready
         this.knownAvailableJobIds = new Set(this.jobs().map(job => job.id));
 
         this.subscribeToAvailableJobsRealtime();
@@ -1319,13 +1327,6 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         this.stripeUiState.set({ accountId: null, status: '', chargesEnabled: false, payoutsEnabled: false });
     }
 
-    ngAfterViewInit(): void {
-        window.setTimeout(() => {
-            if (this.marketplaceMap) {
-                this.onMapReady(this.marketplaceMap);
-            }
-        }, 150);
-    }
 
     formatPrice(amount: number | null | undefined) {
         return this.config.formatCurrency(Number(amount || 0));
@@ -2021,8 +2022,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
     async refreshAvailableJobs() {
         await this.driverService.fetchAvailableJobs();
+        this.autoFollowSuspended = false;
         this.syncMarketplaceMapMarkers();
-        this.centerMarketplaceMap(true); // Force refit after refresh
+        this.applyMarketplaceCamera(true); // Explicit user action: safe to force
         this.showToast('Requests refreshed.', 'success');
     }
 
@@ -2146,7 +2148,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                         await this.refreshActiveJob();
                         await this.driverService.fetchAvailableJobs();
                         this.syncMarketplaceMapMarkers();
-                        this.centerMarketplaceMap(true); // Force refit after realtime updates
+                        // Signature-guarded: unchanged request geometry never moves the camera.
+                        this.applyMarketplaceCamera(false);
 
                         const visibleJobs = this.jobs();
                         const newVisibleJob = visibleJobs.find(job => job.id === changedJobId);
@@ -2588,7 +2591,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             });
 
             if (error) {
-                throw new Error(error.message || 'Request no longer available');
+                // Batch 2C Phase B: MB001 (busy) and MB002 (compliance) are
+                // distinct, and neither is ever reported as a generic failure.
+                throw new Error(acquisitionErrorMessage(error, 'Request no longer available'));
             }
 
             // The RPC returns false (without error) when another driver won the
@@ -2606,7 +2611,6 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             await this.driverService.fetchAvailableJobs();
             this.selectedJobId.set(null);
             this.sheetHeight.set(55);
-            this.hasFitMarketplaceBounds = false;
             this.syncMarketplaceMapMarkers();
 
             await loading.dismiss();
@@ -2900,29 +2904,32 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     });
 
+    /**
+     * Batch 2C Phase B — resubmission is server-authoritative (N13).
+     *
+     * The direct `profiles` update of driver_review_status / verification_status
+     * / blockers is gone: this now calls the authenticated onboarding endpoint,
+     * which derives the driver from the session and applies the server-defined
+     * review state. The client no longer sends any compliance field.
+     *
+     * NOTE: this method currently has no template binding (the reachable review
+     * resubmission button lives in settings.page.ts). It is hardened anyway so a
+     * future binding cannot reintroduce a client-side approval path.
+     */
     async resubmitDriverReview() {
-        const profile = this.profileService.profile();
-
-        if (!profile?.id || this.resubmittingReview()) return;
+        if (this.resubmittingReview()) return;
 
         this.resubmittingReview.set(true);
 
         try {
-            await this.safeUpdateProfile(profile.id, {
-                driver_review_status: 'under_review',
-                verification_status: 'under_review',
-                verification_notes: null,
-                driver_review_notes: null,
-                verification_blockers: [],
-                driver_review_blockers: [],
-                updated_at: new Date().toISOString()
-            });
-
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(profile.id);
-            }
-
+            await this.onboardingStatus.resubmitForReview();
             this.showToast('Resubmitted for manual review.', 'success');
+        } catch (error: unknown) {
+            const failure = error as { status?: number; error?: { error?: string } } | null;
+            const message = failure?.error?.error
+                || (error instanceof Error && error.message ? error.message : '')
+                || 'Could not resubmit for review. Please try again.';
+            this.showToast(message, failure?.status === 422 ? 'warning' : 'danger');
         } finally {
             this.resubmittingReview.set(false);
         }
@@ -3208,10 +3215,28 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     onMapReady(mapComponent: MapComponent) {
         this.mapComponent.set(mapComponent);
 
+        // A recreated map (Hub tab switch) invalidates every previous camera
+        // decision and every previously "rendered" marker id.
+        this.mapGeneration += 1;
+        this.appliedCameraSignature = null;
+        this.driverLocationAnchoredInCamera = false;
+        this.autoFollowSuspended = false;
+        this.renderedJobMarkerIds = new Set<string>();
+        this.activeRouteDrawnFor = null;
+
+        // Genuine user pan/zoom/rotate suspends automatic framing. Programmatic
+        // camera moves never reach this callback (renderer filters originalEvent).
+        mapComponent.onUserMapGesture(() => {
+            this.autoFollowSuspended = true;
+        });
+
         window.setTimeout(() => {
             mapComponent.resize();
-            void this.updateDriverLocation();
-            this.syncMarketplaceMapMarkers();
+
+            void this.updateDriverLocation().then(() => {
+                this.syncMarketplaceMapMarkers();
+                this.applyMarketplaceCamera(true);
+            });
         }, 200);
     }
 
@@ -3222,7 +3247,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             window.setTimeout(() => {
                 this.mapComponent()?.resize?.();
                 this.syncMarketplaceMapMarkers();
-                this.centerMarketplaceMap(false);
+                this.applyMarketplaceCamera(false);
             }, 120);
         }
 
@@ -3232,20 +3257,31 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     selectJob(jobId: string) {
+        // Expand the sheet FIRST, then focus, so padding reflects the new
+        // obstruction instead of the previous sheet height.
         this.selectedJobId.set(jobId);
-
-        const job = this.jobs().find(j => j.id === jobId);
-        if (job) {
-            void this.focusMapOnJob(job);
-        }
-
         this.sheetHeight.set(80);
+
+        window.setTimeout(() => {
+            this.mapComponent()?.resize?.();
+
+            const job = this.jobs().find(j => j.id === jobId);
+            if (!job) return;
+
+            void this.focusMapOnJob(job);
+        }, 60);
     }
 
     recenterMap() {
-        this.hasCenteredMarketplaceMap = false;
-        this.hasFitMarketplaceBounds = false;
-        void this.updateDriverLocation().then(() => this.centerMarketplaceMap(true));
+        // Explicit user intent: restore auto-follow and force a fresh frame.
+        this.autoFollowSuspended = false;
+        this.appliedCameraSignature = null;
+        this.mapComponent()?.resize?.();
+
+        void this.updateDriverLocation().then(() => {
+            this.syncMarketplaceMapMarkers();
+            this.applyMarketplaceCamera(true);
+        });
     }
 
     seeJobOnMap(job: Booking) {
@@ -3260,6 +3296,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.sheetHeight.set(this.sheetHeight() >= 70 ? 40 : 80);
+        this.reframeForSheetChange();
     }
 
     startDragSheet(event: PointerEvent) {
@@ -3285,7 +3322,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             document.removeEventListener('pointermove', move);
             document.removeEventListener('pointerup', end);
             document.removeEventListener('pointercancel', end);
-            this.sheetHeight.set(this.sheetHeight() >= 60 ? 80 : 40);
+
+            const settledHeight = this.sheetHeight() >= 60 ? 80 : 40;
+            const heightChanged = Math.round(settledHeight / 10) !== Math.round(this.sheetHeight() / 10);
+            this.sheetHeight.set(settledHeight);
+
+            if (heightChanged) {
+                this.reframeForSheetChange();
+            }
 
             window.setTimeout(() => {
                 this.isDraggingSheet.set(false);
@@ -3327,14 +3371,15 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private async updateDriverLocation(): Promise<MarkerCoordinates | null> {
         try {
             const location = await this.locationService.getCurrentPosition();
-            if (location) {
+            if (location && this.isValidCoordinate(location.coords.latitude, location.coords.longitude)) {
                 const coordinates = {
-                    lat: location.coords.latitude,
-                    lng: location.coords.longitude
+                    lat: Number(location.coords.latitude),
+                    lng: Number(location.coords.longitude)
                 };
                 this.driverLocation.set(coordinates);
                 this.syncMarketplaceMapMarkers();
-                this.centerMarketplaceMap(false);
+                // Signature-guarded: only the FIRST valid driver fix changes the camera.
+                this.applyMarketplaceCamera(false);
                 return coordinates;
             }
         } catch (error) {
@@ -3345,14 +3390,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (user?.id) {
             try {
                 const lastKnown = await this.locationService.getLatestDriverLocation(user.id);
-                if (lastKnown) {
+                if (lastKnown && this.isValidCoordinate(lastKnown.lat, lastKnown.lng)) {
                     const coordinates = {
-                        lat: lastKnown.lat,
-                        lng: lastKnown.lng
+                        lat: Number(lastKnown.lat),
+                        lng: Number(lastKnown.lng)
                     };
                     this.driverLocation.set(coordinates);
                     this.syncMarketplaceMapMarkers();
-                    this.centerMarketplaceMap(false);
+                    this.applyMarketplaceCamera(false);
                     return coordinates;
                 }
             } catch (error) {
@@ -3360,7 +3405,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             }
         }
 
-        this.centerMarketplaceMap(false);
+        this.applyMarketplaceCamera(false);
         return null;
     }
 
@@ -3387,19 +3432,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
         const map = this.mapComponent();
         if (map) {
-            const expanded: [[number, number], [number, number]] = [
-                [coordinates.lng - 0.005, coordinates.lat - 0.005],
-                [coordinates.lng + 0.005, coordinates.lat + 0.005]
-            ];
-            map.fitBounds(expanded, {
-                padding: {
-                    top: 80,
-                    bottom: MapUxHelpers.getBottomSheetPadding(this.sheetHeight()),
-                    left: 48,
-                    right: 48
-                },
-                maxZoom: 16
-            });
+            // Single-point focus with sheet-aware padding. No fake coordinate
+            // offsets are used to trick a multi-point fit.
+            MapUxHelpers.fitVisibleMapBounds(
+                map,
+                [{ lat: coordinates.lat, lng: coordinates.lng }],
+                this.sheetHeight(),
+                { duration: 600, maxZoom: 16, singlePointZoom: 16 }
+            );
+
+            this.driverLocationAnchoredInCamera = this.driverLocationAnchoredInCamera
+                || this.hasValidDriverLocation();
+            this.appliedCameraSignature = this.buildMarketplaceCameraSignature();
         }
 
         this.syncMarketplaceMapMarkers();
@@ -3412,7 +3456,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         map.resize();
 
         const driverLocation = this.driverLocation();
-        if (driverLocation) {
+        if (driverLocation && this.isValidCoordinate(driverLocation.lat, driverLocation.lng)) {
             map.addOrUpdateMarker({
                 id: 'driver-current-location',
                 kind: 'driver',
@@ -3428,7 +3472,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         for (const job of this.jobs()) {
             const coordinates = this.resolveJobCoordinates(job);
 
-            if (!coordinates) {
+            if (!coordinates || !this.isValidCoordinate(coordinates.lat, coordinates.lng)) {
                 void this.ensureJobCoordinates(job);
                 continue;
             }
@@ -3495,75 +3539,118 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.renderedJobMarkerIds = nextMarkerIds;
-        this.centerMarketplaceMap(false);
+        this.applyMarketplaceCamera(false);
     }
 
-    private centerMarketplaceMap(force: boolean): void {
+    /**
+     * Single camera entry point for the Requests map.
+     *
+     * Automatic reframing only happens when the material marketplace geometry
+     * changes (request ids + resolved pickups, first driver fix, map generation,
+     * sheet snap band), never on GPS ticks, animation frames, identical job
+     * emissions or unforced realtime noise.
+     */
+    private applyMarketplaceCamera(force: boolean): void {
         const map = this.mapComponent() as MapComponent | null;
         if (!map || this.activeHubTab() !== 'requests') return;
+        if (this.autoFollowSuspended && !force) return;
+        if (this.isDraggingSheet() && !force) return;
 
-        const points = this.getMarketplaceMapPoints();
+        const points = this.getMarketplaceCameraPoints();
+        if (!points.length) return; // zero valid points: never perform a bogus move
 
-        if (points.length) {
-            if (this.hasFitMarketplaceBounds && !force) return;
+        const signature = this.buildMarketplaceCameraSignature();
+        if (!force && signature === this.appliedCameraSignature) return;
 
-            const mapPoints: MapCoordinates[] = points.map(p => ({ lat: p.lat, lng: p.lng }));
-            MapUxHelpers.fitVisibleMapBounds(map, mapPoints, this.sheetHeight());
-            this.hasFitMarketplaceBounds = true;
-            this.hasCenteredMarketplaceMap = true;
-            return;
-        }
+        const applied = MapUxHelpers.fitVisibleMapBounds(
+            map,
+            points,
+            this.sheetHeight(),
+            {
+                duration: force ? 700 : 600,
+                maxZoom: 16,
+                singlePointZoom: 15
+            }
+        );
 
-        if (this.hasCenteredMarketplaceMap && !force) return;
+        // Unmeasurable viewport / dead map: do not latch, retry on next trigger.
+        if (!applied) return;
 
-        const center = this.driverLocation() ?? this.locationService.getFallbackCoordinates();
-        if (!center) return;
-
-        const expanded: [[number, number], [number, number]] = [
-            [center.lng - 0.005, center.lat - 0.005],
-            [center.lng + 0.005, center.lat + 0.005]
-        ];
-        map.fitBounds(expanded, {
-            padding: {
-                top: 80,
-                bottom: MapUxHelpers.getBottomSheetPadding(this.sheetHeight()),
-                left: 48,
-                right: 48
-            },
-            maxZoom: 16
-        });
-        this.hasCenteredMarketplaceMap = true;
+        this.driverLocationAnchoredInCamera = this.driverLocationAnchoredInCamera
+            || this.hasValidDriverLocation();
+        this.appliedCameraSignature = this.buildMarketplaceCameraSignature();
     }
 
-    private getMarketplaceMapPoints(): MarkerCoordinates[] {
-        const points: MarkerCoordinates[] = [];
-        const driverLocation = this.driverLocation();
+    private buildMarketplaceCameraSignature(): string {
+        const requestPoints = this.getValidMarketplaceRequestPoints()
+            .map(point => `${point.id}:${point.lat.toFixed(5)},${point.lng.toFixed(5)}`)
+            .sort();
 
-        if (driverLocation) {
-            points.push(driverLocation);
+        // Driver GPS is deliberately collapsed to a one-way anchor token so that
+        // movement after the first fix cannot cause repeated refits.
+        const driverState = this.driverLocationAnchoredInCamera
+            ? 'anchored'
+            : this.hasValidDriverLocation() ? 'pending' : 'none';
+
+        return [
+            `map:${this.mapGeneration}`,
+            `driver:${driverState}`,
+            `sheet:${Math.round(this.sheetHeight() / 10)}`,
+            `requests:${requestPoints.join('|')}`
+        ].join(';');
+    }
+
+    private getMarketplaceCameraPoints(): MapCoordinates[] {
+        const points: MapCoordinates[] = [];
+        const driver = this.driverLocation();
+
+        if (driver && this.isValidCoordinate(driver.lat, driver.lng)) {
+            points.push({ lat: driver.lat, lng: driver.lng });
         }
+
+        for (const point of this.getValidMarketplaceRequestPoints()) {
+            points.push({ lat: point.lat, lng: point.lng });
+        }
+
+        return MapUxHelpers.filterValidCoordinates(points);
+    }
+
+    private getValidMarketplaceRequestPoints(): Array<{ id: string; lat: number; lng: number }> {
+        const points: Array<{ id: string; lat: number; lng: number }> = [];
 
         for (const job of this.jobs()) {
             const coordinates = this.resolveJobCoordinates(job);
-            if (coordinates) {
-                points.push(coordinates);
-            }
-        }
 
-        const active = this.activeJob();
-        if (active) {
-            const pickup = this.resolveJobCoordinates(active);
-            const dropoff = this.resolveJobDestinationCoordinates(active);
-            if (pickup) points.push(pickup);
-            if (dropoff) points.push(dropoff);
-        }
+            if (!coordinates || !this.isValidCoordinate(coordinates.lat, coordinates.lng)) continue;
 
-        const serviceArea = this.resolveServiceAreaCoordinates();
-        if (!points.length && serviceArea) {
-            points.push(serviceArea);
+            points.push({ id: job.id, lat: coordinates.lat, lng: coordinates.lng });
         }
 
         return points;
+    }
+
+    private hasValidDriverLocation(): boolean {
+        const driver = this.driverLocation();
+        return !!driver && this.isValidCoordinate(driver.lat, driver.lng);
+    }
+
+    /**
+     * Sheet snap / expansion changes the visible map area, so re-frame using the
+     * CURRENT sheet height. A selected request stays the focus target.
+     */
+    private reframeForSheetChange(): void {
+        window.setTimeout(() => {
+            this.mapComponent()?.resize?.();
+
+            const selected = this.selectedAvailableJob();
+
+            if (selected) {
+                void this.focusMapOnJob(selected);
+                return;
+            }
+
+            this.applyMarketplaceCamera(false);
+        }, 60);
     }
 
     private uniqueCoordinates(points: MarkerCoordinates[]): MarkerCoordinates[] {
@@ -3817,14 +3904,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     private isValidCoordinate(lat: unknown, lng: unknown): boolean {
+        if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
+        if (typeof lat === 'string' && !lat.trim()) return false;
+        if (typeof lng === 'string' && !lng.trim()) return false;
+
         const parsedLat = Number(lat);
         const parsedLng = Number(lng);
-        return Number.isFinite(parsedLat) &&
-            Number.isFinite(parsedLng) &&
-            parsedLat >= -90 &&
-            parsedLat <= 90 &&
-            parsedLng >= -180 &&
-            parsedLng <= 180;
+
+        if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return false;
+        if (parsedLat < -90 || parsedLat > 90) return false;
+        if (parsedLng < -180 || parsedLng > 180) return false;
+
+        // Null Island: both axes at (or effectively at) zero is never a real
+        // marketplace coordinate, it is a missing/placeholder value.
+        if (Math.abs(parsedLat) < 1e-6 && Math.abs(parsedLng) < 1e-6) return false;
+
+        return true;
     }
 
     getVehicleRequired(job: Booking): string {

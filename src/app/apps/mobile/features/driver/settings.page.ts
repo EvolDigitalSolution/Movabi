@@ -938,48 +938,43 @@ export class DriverSettingsPage implements OnInit {
         await this.uploadDoc(type);
     }
 
+    /**
+     * Batch 2C Phase B — resubmission is server-authoritative (N13).
+     *
+     * This method used to write driver_review_status / verification_status /
+     * verification_blockers / driver_review_blockers straight to `profiles` from
+     * the browser, and it CHOSE the review state itself from a client-side
+     * blocker list. Both are gone: the authenticated onboarding endpoint derives
+     * the driver from the session, re-validates the requirements server-side and
+     * applies the server-defined review state. The client submits no status, no
+     * blocker list, no notes and no driver id, so it cannot influence — let alone
+     * approve — its own review outcome.
+     */
     async resubmitDriverReview() {
-        const user = this.auth.currentUser();
-
-        if (!user?.id || this.resubmitting()) return;
+        if (this.resubmitting()) return;
 
         this.resubmitting.set(true);
 
         try {
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(user.id);
-            }
-
-            await this.driverService.fetchVehicle();
-
-            const remainingBlockers = this.reviewBlockers();
-            const nextStatus = remainingBlockers.length ? 'action_required' : 'under_review';
-
-            await this.profileService.updateProfile(user.id, {
-                driver_review_status: nextStatus,
-                verification_status: nextStatus,
-                verification_notes: remainingBlockers.length ? this.verificationNotes() : null,
-                driver_review_notes: remainingBlockers.length ? this.verificationNotes() : null,
-                verification_blockers: remainingBlockers,
-                driver_review_blockers: remainingBlockers,
-                updated_at: new Date().toISOString()
-            } as any);
-
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(user.id);
-            }
-            await this.driverService.fetchVehicle();
-            await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'outstanding_requests', 'action_required', nextStatus);
+            await this.onboardingStatus.resubmitForReview();
             await this.refreshOnboardingStatus();
+            await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'outstanding_requests', 'action_required', 'under_review');
+
+            await this.showToast('Resubmitted for manual review.', 'success');
+        } catch (error: unknown) {
+            // A 422 means the server still sees blocking requirements; surface the
+            // server's own reason rather than a generic failure.
+            const failure = error as { status?: number; error?: { error?: string } } | null;
+            const serverMessage = failure?.error?.error;
+            const message = serverMessage
+                || (error instanceof Error && error.message ? error.message : '')
+                || 'Could not resubmit for review. Please try again.';
+            const stillBlocked = failure?.status === 422 || /requirement|complete|missing|add |upload /i.test(message);
 
             await this.showToast(
-                remainingBlockers.length
-                    ? 'Some requested items still need attention before review.'
-                    : 'Resubmitted for manual review.',
-                remainingBlockers.length ? 'warning' : 'success'
+                stillBlocked ? message : 'Could not resubmit for review. Please try again.',
+                stillBlocked ? 'warning' : 'danger'
             );
-        } catch {
-            await this.showToast('Could not resubmit for review. Please try again.', 'danger');
         } finally {
             this.resubmitting.set(false);
         }

@@ -11,7 +11,7 @@ export interface DriverOutstandingRequest {
 }
 export interface DriverOnboardingStatus {
     driverId: string; registrationAllowed: boolean; overallStatus: 'not_started'|'incomplete'|'ready_to_submit'|'under_review'|'action_required'|'approved'|'paused';
-    profile: Record<string, unknown>; canonicalProfile: CanonicalDriverProfile; vehicle: DriverVehicle | null;
+    profile: Record<string, unknown>; canonicalProfile: CanonicalDriverProfile; passengerLicence:DriverPassengerLicence; vehicle: DriverVehicle | null;
     outstandingRequests: DriverOutstandingRequest[]; submissionHistory: unknown[];
     stripeStatus: string; updatedAt: string | null;
     automaticRequirements: DriverAutomaticRequirement[]; adminRequests: DriverAdminRequest[]; warnings: DriverAutomaticRequirement[];
@@ -24,6 +24,22 @@ export type DriverSetupSectionState='not_applicable'|'incomplete'|'complete'|'ac
 export interface DriverSetupSection {applicable:boolean;status:DriverSetupSectionState;}
 export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;services:DriverSetupSection;operatingMethod:DriverSetupSection;vehicle:DriverSetupSection;documents:DriverSetupSection;serviceLicensing:DriverSetupSection;agreement:DriverSetupSection;review:DriverSetupSection;}
 export interface CanonicalDriverProfile {id:string;fullName:string|null;phone:string|null;dateOfBirth:string|null;residentialAddress:string|null;emailConfirmed:boolean;verificationStatus:string|null;}
+export type DriverOnboardingService = 'ride' | 'delivery' | 'errand' | 'van-moving';
+/**
+ * Batch 2C Phase B — the canonical eligibility verdict returned by the
+ * authenticated endpoint. `authority` states which engine produced it and
+ * whether the database trigger is enforcing, so no caller can mistake the
+ * mirror for active database enforcement.
+ */
+export interface DriverEligibilityVerdict {
+    driverId: string;
+    service: DriverOnboardingService | null;
+    resolved: boolean;
+    eligible: boolean;
+    blockingCodes: string[];
+    advisoryCodes: string[];
+    authority: { evaluatedBy: string; sqlAuthority: string; enforced: boolean };
+}export interface DriverPassengerLicence {councilName:string|null;licenceNumber:string|null;badgeNumber:string|null;expiryDate:string|null;status:string|null;complete:boolean;}
 export interface DriverVehicle { id:string;userId:string;type:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string; }
 export interface DriverAutomaticRequirement { code:string;label:string;category:'basic'|'services'|'vehicle'|'documents'|'agreement'|'licensing';status:string;required:boolean;completed:boolean;blockingForSubmission:boolean;blockingForOnline:boolean;needsAdminReview:boolean;reason:string;services:string[]; }
 export interface DriverAdminRequest { id:string;requirementCode:string;requestType?:string|null;item:string;status:'pending'|'rejected'|'approved';publicMessage:string;submittedAt:string|null;updatedAt:string|null;resolvedAt:string|null;nextAction:string; }
@@ -77,12 +93,46 @@ export class DriverOnboardingStatusService {
     }
 
     async submitForReview(profile:Record<string,unknown>):Promise<void>{await this.authenticatedPost('/api/driver-onboarding/submit-review',{profile},true);}
+
+    /**
+     * Batch 2C Phase B — server-authoritative resubmission.
+     *
+     * The client sends ONLY the resubmission flag: no status, no blockers, no
+     * notes and no driver id. The endpoint derives the driver from the session,
+     * re-validates the requirements server-side and applies the server-defined
+     * review state. A driver who still has blockers is refused with 422 and the
+     * blocker list instead of being written into a client-chosen state.
+     */
+    async resubmitForReview():Promise<void>{
+        await this.authenticatedPost('/api/driver-onboarding/submit-review',{resubmission:true},true);
+        await this.refresh();
+    }
+
+    /**
+     * Batch 2C Phase B — canonical eligibility verdict for a service.
+     *
+     * Read-only: the server loads the driver from the session, evaluates the
+     * Phase A rule model and returns blocking/advisory CODES. The client can
+     * supply the service name and nothing else, and no verdict can be submitted.
+     */
+    async eligibility(service: DriverOnboardingService):Promise<DriverEligibilityVerdict>{
+        const token=await this.accessToken();
+        return await firstValueFrom(this.http.get<DriverEligibilityVerdict>(
+            this.api.getApiUrl('/api/driver-onboarding/eligibility'),
+            {headers:this.headers(token),params:{service}}
+        ));
+    }
     async saveCurrentProfile(input:{residentialAddress?:string;dateOfBirth?:string}):Promise<CanonicalDriverProfile>{
         const result=await this.authenticatedPut<{profile:CanonicalDriverProfile}>('/api/driver-onboarding/profile',input,true);
         this.state.update(snapshot=>snapshot?{...snapshot,canonicalProfile:result.profile,profile:{...snapshot.profile,current_address:result.profile.residentialAddress,date_of_birth:result.profile.dateOfBirth}}:snapshot);
         return result.profile;
     }
     async saveVerificationItems(input:{bicycleDeclaration:boolean;deliveryEquipmentConfirmed:boolean}):Promise<void>{await this.authenticatedPut<{saved:true}>('/api/driver-onboarding/verification-items',input,true);}
+    async savePassengerLicence(input:{councilName:string;licenceNumber:string;badgeNumber:string;expiryDate:string}):Promise<DriverPassengerLicence>{
+        const result=await this.authenticatedPut<{passengerLicence:DriverPassengerLicence}>('/api/driver-onboarding/passenger-licence',input,true);
+        this.state.update(snapshot=>snapshot?{...snapshot,passengerLicence:result.passengerLicence}:snapshot);
+        return result.passengerLicence;
+    }
     async saveAgreement(accepted:boolean):Promise<{accepted:boolean;acceptedAt:string|null}>{return this.authenticatedPut<{agreement:{accepted:boolean;acceptedAt:string|null}}>('/api/driver-onboarding/agreement',{accepted},true).then(result=>result.agreement);}
     async requestDobCorrection(reason:string):Promise<void>{await this.authenticatedPost('/api/driver-onboarding/dob-correction-request',{reason},true);await this.refresh();}
 

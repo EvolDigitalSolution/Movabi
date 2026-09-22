@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { mapDriverAcquisitionError } from '../../server/services/driver-eligibility.service';
 
 /**
  * Batch 2B (N12) — single-active-job invariant.
@@ -351,21 +352,25 @@ describe('N12 acquisition RPC integration', () => {
 
 describe('N12 error propagation to the client', () => {
     it('14. the legacy negotiation endpoint can no longer discard the assignment error', () => {
-        expect(legacyHandlerFlat).toContain("const{error:jobupdateerror}=awaitsupabaseadmin");
-        expect(legacyHandlerFlat).toContain('if(jobupdateerror)');
-        expect(legacyHandlerFlat).toContain('isdriverbusyviolation(jobupdateerror)');
-        expect(legacyHandlerFlat).toContain('driver_busy');
-        // No false success: the success return must come AFTER the error branch.
-        const errorBranch = legacyHandlerFlat.indexOf('if(jobupdateerror)');
-        const successReturn = legacyHandlerFlat.indexOf("returnres.json({success:true,negotiation:");
+        // Batch 2C Phase B.1 replaced the endpoint's own non-atomic jobs UPDATE
+        // with the atomic public.accept_driver_offer RPC. The N12 guarantee is the
+        // same or stronger: the RPC owns the whole decision in one transaction,
+        // its error is observed, and the success return comes AFTER it.
+        expect(legacyHandlerFlat).toContain("rpc('accept_driver_offer'");
+        expect(legacyHandlerFlat).toContain('if(accepterror)');
+        expect(legacyHandlerFlat).toContain('mapdriveracquisitionerror(accepterror)');
+        expect(legacyHandlerFlat).toContain('job_already_owned');
+        // No false success: the success return must come AFTER the RPC error branch.
+        const errorBranch = legacyHandlerFlat.indexOf('if(accepterror)');
+        const successReturn = legacyHandlerFlat.indexOf('ownershipcommitted:true');
         expect(errorBranch).toBeGreaterThan(-1);
         expect(successReturn).toBeGreaterThan(errorBranch);
-        // The ownership write must precede the negotiation write, so a rejected
-        // assignment cannot leave a falsely-accepted negotiation behind.
-        const jobsWrite = legacyHandlerFlat.indexOf("from('jobs').update(");
-        const negotiationWrite = legacyHandlerFlat.indexOf("from('fare_negotiations').update(");
-        expect(jobsWrite).toBeGreaterThan(-1);
-        expect(negotiationWrite).toBeGreaterThan(jobsWrite);
+        // The endpoint no longer writes jobs.driver_id itself at all, so it cannot
+        // half-accept: ownership belongs entirely to the RPC.
+        expect(legacyHandlerFlat).not.toContain("from('jobs').update({status:'fare_agreed'");
+        expect(legacyHandlerFlat).not.toMatch(/\.update\(\{[^}]*driver_id:/);
+        // MB001 stays mapped through the shared acquisition contract.
+        expect(legacyHandlerFlat).toContain('acquisitionfailure.code');
     });
 
     it('14b. the busy detector is narrow: unrelated 23505 must not become "driver busy"', () => {
@@ -382,11 +387,24 @@ describe('N12 error propagation to the client', () => {
         expect(start).toBeGreaterThan(-1);
         const next = routeRaw.indexOf('router.post(', start + 10);
         const handler = flat(next > start ? routeRaw.slice(start, next) : routeRaw.slice(start));
-        expect(handler).toContain("sqlstate==='mb001'");
-        expect(handler).toContain("code:'driver_busy'");
+        // Batch 2C Phase B moved the reservation vocabulary into ONE shared
+        // mapper. The route must still map MB001 -> DRIVER_BUSY / 409, and the
+        // mapper must be the thing that owns it.
+        expect(handler).toContain('mapdriveracquisitionerror(accepterror)');
+        expect(handler).toContain('acquisitionfailure.status');
+        expect(handler).toContain('acquisitionfailure.code');
         // The pre-existing 23505 meaning is preserved and NOT reused for busy.
         expect(handler).toContain("sqlstate==='23505'");
         expect(handler).toContain("code:'offer_already_accepted'");
+
+        // Behavioural proof of the same contract, so the text above cannot pass
+        // vacuously:
+        const busy = mapDriverAcquisitionError({ code: 'MB001' });
+        expect(busy).toEqual({ status: 409, code: 'DRIVER_BUSY', error: 'You already have an active job.' });
+        // 23505 is NOT busy: it keeps its own meaning.
+        expect(mapDriverAcquisitionError({ code: '23505' })).toBeNull();
+        // MB002 is a different reservation and must not read as busy.
+        expect(mapDriverAcquisitionError({ code: 'MB002', details: 'a.b' })?.code).toBe('DRIVER_NOT_ELIGIBLE');
     });
 
     it('15. the hybrid ownership writer maps the violation and propagates it', () => {
@@ -398,10 +416,14 @@ describe('N12 error propagation to the client', () => {
         // ...and the ownership write is otherwise preserved.
         expect(lockBody).toContain('driver_id=p_driver_id');
         expect(lockBody).toContain("status='fare_agreed'");
-        // The client can never turn that failure into a false success.
+        // The client can never turn that failure into a false success: it must
+        // surface the reserved failure explicitly (Batch 2C Phase B contract).
         const lockFareClient = hybridRaw.slice(hybridRaw.indexOf('async lockFare('));
         const clientBody = lockFareClient.slice(0, lockFareClient.indexOf('\n    }') + 6);
-        expect(flat(clientBody)).toContain("if(error)throwerror;");
+        expect(flat(clientBody)).toContain('if(error)thrownewerror(acquisitionerrormessage(error,');
+        // ...and it must never swallow the failure into a success.
+        expect(flat(clientBody)).not.toContain('if(error)return');
+        expect(flat(clientBody)).not.toContain('error:null');
     });
 });
 
