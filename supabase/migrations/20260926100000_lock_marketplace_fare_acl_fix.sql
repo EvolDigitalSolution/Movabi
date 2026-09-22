@@ -1,0 +1,108 @@
+-- ============================================================================
+-- MOVABI — BATCH 2C / PHASE B.B1 FOLLOW-UP: lock_marketplace_fare ACL FIX
+--
+-- WHY THIS EXISTS (production evidence, applied 20260926000000 migration)
+-- ============================================================================
+-- Production reported for public.lock_marketplace_fare(uuid,uuid,numeric):
+--
+--   proacl = {=X/postgres, postgres=X/postgres, anon=X/postgres,
+--             authenticated=X/postgres, service_role=X/postgres}
+--   PUBLIC        EXECUTE = true      <-- must be false
+--   anon          EXECUTE = true      <-- must be false
+--   authenticated EXECUTE = true      <-- required (see caller audit)
+--   service_role  EXECUTE = true      <-- retained
+--
+-- ROOT CAUSE
+-- The function was created (baseline supabase_incremental_schema_reconcile.sql:3512,
+-- re-created by 20260924000000:777, re-created again by the APPLIED
+-- 20260926000000:192) and NO revision ever issued `REVOKE ALL ... FROM PUBLIC`.
+-- CREATE OR REPLACE preserves the ACL, so the function inherited production's
+-- permissive default: PostgreSQL's implicit `EXECUTE TO PUBLIC` (the `=X/postgres`
+-- entry, whose grantee is the PUBLIC pseudo-role) plus Supabase's
+-- `ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS TO anon, authenticated,
+-- service_role` (the explicit `anon=X/postgres` and `service_role=X/postgres`
+-- entries). Only `authenticated` also had an explicit GRANT
+-- (supabase_incremental_schema_reconcile.sql:3822).
+--
+-- WHY THIS IS LOAD-BEARING, NOT COSMETIC
+-- The Phase B.1 hardening guards caller identity with
+--     IF v_caller IS NOT NULL AND v_caller <> p_driver_id THEN RAISE ...
+-- An ANONYMOUS caller has auth.uid() = NULL, so it PASSES that guard and reaches
+-- the session and ownership checks. In a SECURITY DEFINER function invoked through
+-- PostgREST, `auth.uid()` cannot distinguish service_role from anon: the ACL is
+-- what separates the trusted server from an anonymous caller. With PUBLIC and anon
+-- holding EXECUTE, this ACQUISITION RPC (it writes jobs.driver_id and
+-- status = 'fare_agreed') was reachable without authentication.
+--
+-- CALLER AUDIT (this is the only legitimate runtime path)
+--   * src/app/core/services/marketplace/marketplace-hybrid.service.ts:269
+--       `lockFare()` -> `this.rpc('lock_marketplace_fare', {...})`
+--     where `private rpc(name, args) { return this.supabase.rpc(name, args); }`
+--     -> the Supabase JS client, presenting the USER's JWT -> role `authenticated`.
+--     Reachable from `acceptDriverCounter` (:398) and `acceptCustomerOffer` (:406),
+--     which are driven by
+--     src/app/apps/mobile/features/driver/hybrid-negotiation/hybrid-negotiation.page.ts
+--     `acceptSuggested()` (:387) and `acceptOffer()` (:421), and from
+--     src/app/core/services/driver/driver.service.ts `lockHybridFare()` (:336).
+--   * NO server/API (service_role) caller exists anywhere in the repository.
+--
+-- SELECTED ACL MODEL (and why)
+--   PUBLIC        EXECUTE = FALSE  no anonymous execution of an acquisition RPC
+--   anon          EXECUTE = FALSE  same
+--   authenticated EXECUTE = TRUE   the live mobile client calls it DIRECTLY, so
+--                                  revoking this would break the driver hybrid
+--                                  negotiation accept flow. It is safe to keep
+--                                  because the function is SECURITY DEFINER with a
+--                                  pinned search_path and validates auth.uid()
+--                                  against p_driver_id, the session's
+--                                  active_driver_id, and the job's ownership and
+--                                  status before writing.
+--   service_role  EXECUTE = TRUE   retained trusted-server role (Supabase default).
+--
+-- THIS MIGRATION IS ACL-ONLY
+-- ============================================================================
+--   * no function body is changed (no CREATE OR REPLACE here),
+--   * no application-data DML,
+--   * no trigger enable (the Phase A acquisition trigger stays DISABLED),
+--   * no RLS change and no policy DDL,
+--   * no table or column privilege change,
+--   * no MB002 activation,
+--   * no N12 change (frozen status set and index untouched),
+--   * no change to the already-applied 20260926000000 migration.
+--
+-- Every statement is idempotent: REVOKE of an absent privilege and GRANT of an
+-- existing one are both no-ops.
+-- ============================================================================
+
+
+-- ============================================================================
+-- SECTION 1 — REMOVE the permissive grants (exact signature)
+--
+-- REVOKE ALL ... FROM PUBLIC is NOT sufficient on its own: PUBLIC is a
+-- pseudo-role, and production also carries a CONCRETE `anon` grant from
+-- Supabase's default function privileges. Both must be revoked explicitly
+-- (the Batch 1 / 2A / 2B discipline).
+-- ============================================================================
+REVOKE ALL ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) FROM anon;
+
+
+-- ============================================================================
+-- SECTION 2 — RE-ASSERT the selected caller model
+--
+-- Stated explicitly so the end state is self-contained and survives any earlier
+-- broad REVOKE. Neither statement can widen access beyond the selected model.
+-- ============================================================================
+GRANT EXECUTE ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) TO service_role;
+
+
+-- NON-ACTIONS (asserted by the static tests):
+--   * no CREATE OR REPLACE FUNCTION anywhere in this file
+--   * no ALTER TABLE ... ENABLE TRIGGER
+--   * no ALTER TABLE ... ENABLE ROW LEVEL SECURITY
+--   * no CREATE/DROP/ALTER POLICY
+--   * no GRANT/REVOKE on TABLES or COLUMNS
+--   * no INSERT/UPDATE/DELETE against application data
+--   * no 'MB002'
+--   * no change to driver_occupying_statuses() or idx_jobs_one_active_per_driver

@@ -74,30 +74,65 @@ SELECT
 FROM roles r
 ORDER BY r.rolname;
 
--- 1.2 lock_marketplace_fare ACL must be UNCHANGED by this migration: the
---     authenticated client calls it directly. Only the anon exclusion is GATED
---     (an anonymous caller must never be able to lock a fare); the authenticated
---     and service_role bits are REPORTED, because this migration has no snapshot
---     to compare them against and therefore cannot claim they are identical.
-WITH roles(rolname) AS (VALUES ('anon'), ('authenticated'), ('service_role'))
+-- 1.2 lock_marketplace_fare ACL — THE SELECTED CALLER MODEL (GATED).
+--
+-- Caller audit (Batch 2C Phase B/B.1 ACL follow-up): the ONLY legitimate runtime
+-- caller is the mobile driver client invoking this RPC directly through the
+-- Supabase JS client (src/app/core/services/marketplace/marketplace-hybrid.service.ts
+-- -> `this.rpc('lock_marketplace_fare', ...)`), which presents the user's JWT and
+-- therefore executes as `authenticated`. There is NO server/API (service_role)
+-- caller in the repository.
+--
+--   PUBLIC        = FALSE   a pseudo-role; no anonymous execution of an
+--                           ACQUISITION RPC
+--   anon          = FALSE   no anonymous execution of an acquisition RPC
+--   authenticated = TRUE    the live mobile client path calls it directly, and
+--                           the function derives and validates auth.uid(),
+--                           the session's active_driver_id and the job's
+--                           ownership/status before it writes
+--   service_role  = TRUE    retained trusted-server role
+--
+-- PUBLIC is tested through aclexplode(grantee = 0): PUBLIC is a pseudo-role, so
+-- has_function_privilege cannot probe it, and an ABSENT proacl still means
+-- PostgreSQL's implicit EXECUTE TO PUBLIC.
+WITH expected(role_name, want, why) AS (
+    VALUES
+        ('PUBLIC',        FALSE, 'public pseudo-role must not execute an acquisition RPC'),
+        ('anon',          FALSE, 'anonymous callers must not execute an acquisition RPC'),
+        ('authenticated', TRUE,  'the live mobile client calls this RPC directly'),
+        ('service_role',  TRUE,  'retained trusted-server role')
+),
+observed AS (
+    SELECT e.role_name,
+           e.want,
+           e.why,
+           pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)') AS fn,
+           CASE
+               WHEN e.role_name = 'PUBLIC' THEN (
+                   SELECT COUNT(*) > 0
+                     FROM pg_catalog.pg_proc p
+                     CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+                    WHERE p.oid = pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)')
+                      AND a.grantee = 0
+                      AND a.privilege_type = 'EXECUTE')
+               ELSE pg_catalog.has_function_privilege(
+                        e.role_name,
+                        pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)'),
+                        'EXECUTE')
+           END AS has_execute
+      FROM expected e
+)
 SELECT
-    'ACL PRESERVED lock_marketplace_fare/' || r.rolname AS check_name,
-    CASE WHEN r.rolname = 'anon'
-         THEN 'must NOT be executable by anon (existing anon exclusion preserved)'
-         ELSE 'informational: pre-existing matrix, not changed by this migration'
-    END AS expected,
-    CASE WHEN pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)') IS NULL THEN 'function absent'
-         ELSE pg_catalog.has_function_privilege(r.rolname,
-                  pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)'), 'EXECUTE')::TEXT
-    END AS observed,
+    'ACL lock_marketplace_fare/' || o.role_name AS check_name,
+    'execute must be ' || o.want::TEXT || ' - ' || o.why AS expected,
+    CASE WHEN o.fn IS NULL THEN 'function absent' ELSE o.has_execute::TEXT END AS observed,
     CASE
-        WHEN pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)') IS NULL THEN 'FAIL'
-        WHEN r.rolname = 'anon' AND pg_catalog.has_function_privilege('anon',
-             pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)'), 'EXECUTE') THEN 'FAIL'
+        WHEN o.fn IS NULL THEN 'FAIL'
+        WHEN o.has_execute IS DISTINCT FROM o.want THEN 'FAIL'
         ELSE 'PASS'
     END AS verdict
-FROM roles r
-ORDER BY r.rolname;
+FROM observed o
+ORDER BY o.role_name;
 
 -- 1.3 The hardened bodies must carry the fail-closed guards.
 SELECT
@@ -281,6 +316,43 @@ client_executable AS (
        AND pg_catalog.to_regprocedure(o.sig) IS NOT NULL
        AND pg_catalog.has_function_privilege(ro.rolname, pg_catalog.to_regprocedure(o.sig), 'EXECUTE')
 ),
+-- ---------------------------------------------------------------------------
+-- lock_marketplace_fare ACL enforcement in the AGGREGATE.
+--
+-- The per-row ACL checks above are only a gate if the FINAL verdict depends on
+-- them. This block exists precisely because it did not: production emitted
+-- `ACL PRESERVED lock_marketplace_fare/anon = FAIL` while this aggregate still
+-- returned PASS, so an anonymous caller could execute an acquisition RPC and
+-- nothing failed. Each condition is counted separately so the operator can see
+-- WHICH half of the selected model is violated.
+-- ---------------------------------------------------------------------------
+lock_fare_public AS (
+    SELECT COUNT(*) AS n
+      FROM pg_catalog.pg_proc p
+      CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+     WHERE p.oid = pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)')
+       AND a.grantee = 0
+       AND a.privilege_type = 'EXECUTE'
+),
+lock_fare_anon AS (
+    SELECT COUNT(*) AS n
+      FROM (VALUES ('anon')) AS ro(rolname)
+     WHERE pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)') IS NOT NULL
+       AND pg_catalog.has_function_privilege(ro.rolname,
+             pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)'), 'EXECUTE')
+),
+lock_fare_required_missing AS (
+    SELECT COUNT(*) AS n
+      FROM (VALUES ('authenticated'), ('service_role')) AS ro(rolname)
+     WHERE pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)') IS NULL
+        OR NOT pg_catalog.has_function_privilege(ro.rolname,
+                 pg_catalog.to_regprocedure('public.lock_marketplace_fare(uuid,uuid,numeric)'), 'EXECUTE')
+),
+lock_fare_acl_violations AS (
+    SELECT (SELECT n FROM lock_fare_public)
+         + (SELECT n FROM lock_fare_anon)
+         + (SELECT n FROM lock_fare_required_missing) AS n
+),
 trigger_enabled AS (
     SELECT CASE WHEN t.tgname IS NULL THEN 1 WHEN t.tgenabled = 'D' THEN 0 ELSE 1 END AS n
       FROM (SELECT 1) AS one
@@ -299,15 +371,19 @@ profiles_rls AS (
 )
 SELECT
     'PHASE B.1 POST-MIGRATION GO / NO-GO' AS check_name,
-    'both functions present + pinned + accept_driver_offer server-only + trigger DISABLED + N12 intact + profiles RLS still off' AS expected,
+    'both functions present + pinned + accept_driver_offer server-only + lock_marketplace_fare ACL = selected model (PUBLIC/anon denied, authenticated/service_role allowed) + trigger DISABLED + N12 intact + profiles RLS still off' AS expected,
     'missing_objects=' || (SELECT n FROM missing)::TEXT
       || ' | unpinned=' || (SELECT n FROM unpinned)::TEXT
       || ' | accept_driver_offer_client_executable=' || (SELECT n FROM client_executable)::TEXT
+      || ' | lock_fare_public_executable=' || (SELECT n FROM lock_fare_public)::TEXT
+      || ' | lock_fare_anon_executable=' || (SELECT n FROM lock_fare_anon)::TEXT
+      || ' | lock_fare_required_role_missing=' || (SELECT n FROM lock_fare_required_missing)::TEXT
       || ' | trigger_enabled_or_missing=' || (SELECT n FROM trigger_enabled)::TEXT
       || ' | n12_status_count=' || (SELECT n FROM n12_statuses)::TEXT
       || ' | profiles_rls_on=' || (SELECT n FROM profiles_rls)::TEXT AS observed,
     CASE
         WHEN (SELECT n FROM missing) > 0 THEN 'NO-GO: a Phase B.1 function is missing'
+        WHEN (SELECT n FROM lock_fare_acl_violations) > 0 THEN 'NO-GO: lock_marketplace_fare ACL violates the selected caller model (PUBLIC/anon must NOT execute; authenticated/service_role MUST)'
         WHEN (SELECT n FROM unpinned) > 0 THEN 'NO-GO: a Phase B.1 function is not pinned to search_path'
         WHEN (SELECT n FROM client_executable) > 0 THEN 'NO-GO: accept_driver_offer is client-executable'
         WHEN (SELECT n FROM trigger_enabled) > 0 THEN 'NO-GO: acquisition trigger is not DISABLED'
