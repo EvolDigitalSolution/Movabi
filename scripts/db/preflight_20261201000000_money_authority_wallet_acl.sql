@@ -20,7 +20,7 @@ BEGIN TRANSACTION READ ONLY;
 
 -- 1. Live overloads (signature + SECURITY DEFINER + search_path).
 SELECT 'preflight' AS section, 'live overload' AS check_name,
-       p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS object,
+       p.proname || '(' || oidvectortypes(p.proargtypes) || ')' AS object,
        'EXISTS' AS verdict,
        'security_definer=' || p.prosecdef::text
        || ' search_path=' || COALESCE(array_to_string(p.proconfig, ','), '<UNPINNED>') AS detail
@@ -36,7 +36,7 @@ ORDER BY p.proname, 3;
 
 -- 2. Live EXECUTE matrix (PUBLIC pseudo-role via acldefault grantee 0).
 SELECT 'preflight' AS section, 'EXECUTE grant' AS check_name,
-       p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS object,
+       p.proname || '(' || oidvectortypes(p.proargtypes) || ')' AS object,
        'EXISTS' AS verdict,
        'grantee=' || COALESCE(r.rolname, 'PUBLIC') AS detail
 FROM pg_proc p
@@ -74,13 +74,13 @@ ORDER BY want.sig;
 
 -- 4. UNEXPECTED EXTRA OVERLOAD on a money function (revoke-only, not a NO-GO).
 SELECT 'preflight' AS section, 'UNEXPECTED EXTRA OVERLOAD (revoke-only)' AS check_name,
-       p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS object,
+       p.proname || '(' || oidvectortypes(p.proargtypes) || ')' AS object,
        'EXTRA' AS verdict,
        'not in the migration contract; the catch-all DO block revokes anon/authenticated/PUBLIC only' AS detail
 FROM pg_proc p
 WHERE p.pronamespace = to_regnamespace('public')
   AND p.proname IN ('credit_wallet_topup','finalize_wallet_topup','pay_job_from_wallet')
-  AND translate(pg_get_function_identity_arguments(p.oid), ' ', '') NOT IN (
+  AND translate(oidvectortypes(p.proargtypes), ' ', '') NOT IN (
     'uuid,numeric,text,text', 'uuid,numeric,text,text,jsonb',
     'numeric,text,text,uuid', 'uuid,numeric,text,text',
     'uuid,uuid,numeric,text,uuid'

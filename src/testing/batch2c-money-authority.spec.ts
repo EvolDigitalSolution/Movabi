@@ -189,4 +189,39 @@ describe('PHASE C2B — migration/preflight exact-signature contract', () => {
         expect(PRE).toContain('RAISE EXCEPTION');
         expect(PRE).toContain('to_regprocedure');
     });
+
+    it('23. extra-overload detection uses canonical type-only identity, not named arguments', () => {
+        // pg_get_function_identity_arguments returns NAMED args (p_user_id uuid, ...),
+        // which never matches a type-only contract tuple and falsely classifies every
+        // expected overload as EXTRA. oidvectortypes(p.proargtypes) returns the
+        // type-only tuple (uuid, numeric, text, text) and matches the contract.
+        expect(PRE).toContain('oidvectortypes(p.proargtypes)');
+        expect(PRE).not.toContain('pg_get_function_identity_arguments');
+    });
+
+    it('24. all 11 required type-only signatures remain unchanged', () => {
+        const required = new Set(preflightRequired());
+        for (const sig of [
+            'credit_wallet_topup(uuid,numeric,text,text)',
+            'credit_wallet_topup(uuid,numeric,text,text,jsonb)',
+            'finalize_wallet_topup(numeric,text,text,uuid)',
+            'finalize_wallet_topup(uuid,numeric,text,text)',
+            'pay_job_from_wallet(uuid,uuid,numeric,text,uuid)',
+            'claim_marketplace_negotiation(uuid,uuid)',
+            'release_marketplace_negotiation(uuid,uuid,text)',
+            'fetch_hybrid_opportunities(uuid)',
+            'get_marketplace_commission(text,text,text,uuid)',
+            'get_marketplace_setting(text,uuid)',
+            'settle_job_wallet_reservation(uuid,numeric)'
+        ]) {
+            expect(required.has(norm(sig)), `${sig} must remain required`).toBe(true);
+        }
+    });
+
+    it('25. the five money overload canonical tuples are type-only in the comparison list', () => {
+        const body = norm(PRE);
+        for (const tuple of ['uuid,numeric,text,text', 'uuid,numeric,text,text,jsonb', 'numeric,text,text,uuid', 'uuid,uuid,numeric,text,uuid']) {
+            expect(body.includes(tuple), `tuple ${tuple} must be present in the extra-overload comparison`).toBe(true);
+        }
+    });
 });
