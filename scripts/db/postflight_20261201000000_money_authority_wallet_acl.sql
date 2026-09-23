@@ -115,13 +115,19 @@ LEFT JOIN pg_trigger tg
  AND tg.tgrelid = to_regclass('public.jobs')
  AND NOT tg.tgisinternal;
 
--- 5. N12 single-active-job partial unique index still present.
+-- 5. N12 single-active-job partial unique index still present on public.jobs.
+--    pg_index (catalog) has indexrelid/indrelid/indisunique/indisvalid; the
+--    pg_indexes view does NOT expose indexrelid, which caused the rev-1 failure.
 SELECT 'postflight' AS section, 'N12 index present' AS check_name,
        'idx_jobs_one_active_per_driver' AS object,
        CASE WHEN i.indexrelid IS NOT NULL THEN 'PASS' ELSE 'FAIL' END AS verdict,
-       COALESCE(i.indexname, 'index missing') AS detail
+       CASE WHEN i.indexrelid IS NULL THEN 'index missing or not attached to public.jobs'
+            ELSE 'unique=' || i.indisunique::text || ' valid=' || i.indisvalid::text
+                 || ' def=' || pg_get_indexdef(i.indexrelid) END AS detail
 FROM (SELECT 1) AS one
-LEFT JOIN pg_indexes i ON i.schemaname = 'public' AND i.indexname = 'idx_jobs_one_active_per_driver';
+LEFT JOIN pg_index i
+  ON i.indrelid = to_regclass('public.jobs')
+ AND i.indexrelid = to_regclass('public.idx_jobs_one_active_per_driver');
 
 -- 6. HARD GATE: raise if any hard assertion is violated.
 DO $$

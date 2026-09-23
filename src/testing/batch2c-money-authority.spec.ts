@@ -225,3 +225,25 @@ describe('PHASE C2B — migration/preflight exact-signature contract', () => {
         }
     });
 });
+
+describe('PHASE C2B — postflight index diagnostic', () => {
+    const POST = read('scripts/db/postflight_20261201000000_money_authority_wallet_acl.sql');
+
+    it('26. the N12 index check uses pg_index (indexrelid), not the pg_indexes view', () => {
+        // pg_indexes has schemaname/tablename/indexname/indexdef but NOT indexrelid;
+        // referencing i.indexrelid against it raised "column i.indexrelid does not exist".
+        expect(POST).not.toContain('LEFT JOIN pg_indexes');
+        expect(POST).toContain('LEFT JOIN pg_index i');
+        expect(POST).toContain('i.indexrelid');
+        expect(POST).toContain("to_regclass('public.idx_jobs_one_active_per_driver')");
+        expect(POST).toContain('i.indisunique');
+        expect(POST).toContain('i.indisvalid');
+    });
+
+    it('27. postflight retains the read-only envelope, hard-fail gate and PASS sentinel', () => {
+        expect(POST).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(POST).toContain('ROLLBACK');
+        expect(POST).toContain('RAISE EXCEPTION');
+        expect(POST).toContain('POSTFLIGHT_COMPLETE');
+    });
+});
