@@ -31,9 +31,8 @@ const WEBHOOK = read('server/routes/stripe-webhook.routes.ts');
 
 describe('PHASE C2 — customer checkout, payment & money authority', () => {
     it('1. create-intent amount is server-derived: no client amount fallback', () => {
-        expect(PAYMENT).toContain("money(job.agreed_fare)");
         expect(PAYMENT).not.toContain('money(req.body.amount)');
-        expect(PAYMENT).toContain('money(job.price);');
+        expect(PAYMENT).toContain('PaymentAuthorityService.resolve(job)');
     });
 
     it('2. create-intent does not re-write client fare_breakdown / marketplace_flags / negotiation mode', () => {
@@ -156,5 +155,38 @@ describe('PHASE C2 FINAL — shared payable resolver & provenance', () => {
     it('18. wallet amount is server-derived, not from the body or a bare agreed_fare', () => {
         expect(WALLET).not.toContain('job.agreed_fare ?? breakdown');
         expect(WALLET).not.toMatch(/paymentAmount\s*=\s*Number\s*\(\s*req\.body/);
+    });
+});
+
+describe('PHASE C2B — migration/preflight exact-signature contract', () => {
+    const MIG = read('supabase/migrations/20261201000000_money_authority_wallet_acl.sql');
+    const PRE = read('scripts/db/preflight_20261201000000_money_authority_wallet_acl.sql');
+
+    const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+    const migrationTargets = () => [...MIG.matchAll(/ON FUNCTION public\.([a-z_]+\([^)]*\))/g)].map(m => norm(m[1]));
+    const preflightRequired = () => [...PRE.matchAll(/'([a-z_]+\([^)]*\))'/g)].map(m => norm(m[1]));
+
+    it('19. every explicit migration function target is required by the preflight contract', () => {
+        const required = new Set(preflightRequired());
+        const untracked = migrationTargets().filter(sig => !required.has(sig));
+        expect(untracked, 'migration references a signature the preflight does not verify (would abort at runtime)').toEqual([]);
+    });
+
+    it('20. the nonexistent 3-arg finalize_wallet_topup signature is NOT a migration target', () => {
+        expect(migrationTargets()).not.toContain('finalize_wallet_topup(uuid,numeric,text)');
+    });
+
+    it('21. both real production finalize_wallet_topup 4-arg signatures ARE migration targets', () => {
+        const targets = migrationTargets();
+        expect(targets).toContain('finalize_wallet_topup(numeric,text,text,uuid)');
+        expect(targets).toContain('finalize_wallet_topup(uuid,numeric,text,text)');
+    });
+
+    it('22. the preflight requires both real finalize signatures and has a non-zero hard gate', () => {
+        const required = new Set(preflightRequired());
+        expect(required.has('finalize_wallet_topup(numeric,text,text,uuid)')).toBe(true);
+        expect(required.has('finalize_wallet_topup(uuid,numeric,text,text)')).toBe(true);
+        expect(PRE).toContain('RAISE EXCEPTION');
+        expect(PRE).toContain('to_regprocedure');
     });
 });

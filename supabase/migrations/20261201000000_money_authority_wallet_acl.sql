@@ -51,12 +51,20 @@ BEGIN;
 REVOKE ALL ON FUNCTION public.credit_wallet_topup(uuid, numeric, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.credit_wallet_topup(uuid, numeric, text, text) FROM anon, authenticated, service_role;
 
+-- Second production overload (p_user_id uuid, p_amount numeric, p_payment_intent_id text,
+-- p_currency_code text, p_metadata jsonb).
+REVOKE ALL ON FUNCTION public.credit_wallet_topup(uuid, numeric, text, text, jsonb) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.credit_wallet_topup(uuid, numeric, text, text, jsonb) FROM anon, authenticated, service_role;
+
 -- ----------------------------------------------------------------------------
 -- 2. finalize_wallet_topup — server-only (service_role). Revoke client roles.
 -- ----------------------------------------------------------------------------
-REVOKE ALL ON FUNCTION public.finalize_wallet_topup(uuid, numeric, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.finalize_wallet_topup(uuid, numeric, text) FROM anon, authenticated;
+-- Production overload A (p_amount numeric, p_description text, p_payment_intent_id text, p_user_id uuid).
+REVOKE ALL ON FUNCTION public.finalize_wallet_topup(numeric, text, text, uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.finalize_wallet_topup(numeric, text, text, uuid) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.finalize_wallet_topup(numeric, text, text, uuid) TO service_role;
 
+-- Production overload B (p_user_id uuid, p_amount numeric, p_payment_intent_id text, p_description text).
 REVOKE ALL ON FUNCTION public.finalize_wallet_topup(uuid, numeric, text, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.finalize_wallet_topup(uuid, numeric, text, text) FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.finalize_wallet_topup(uuid, numeric, text, text) TO service_role;
