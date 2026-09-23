@@ -319,7 +319,7 @@ FROM (VALUES
   ('public.errand_funding'),('public.stripe_events'),('public.job_queue'),
   ('public.audit_logs'),('public.jobs'),('public.pricing_config'),
   ('public.market_pricing_strategies'),('public.market_availability'),
-  ('public.quote_market_adjustments'),('public.payments')
+  ('public.quote_market_adjustments')
 ) AS want(obj)
 ORDER BY want.obj;
 

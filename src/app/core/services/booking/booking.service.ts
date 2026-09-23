@@ -1076,45 +1076,16 @@ export class BookingService {
     }
 
     async confirmJobPayment(jobId: string, paymentIntentId: string): Promise<Booking> {
-        const isWallet = paymentIntentId === 'wallet_funded';
-        const now = new Date();
-        const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
+        // C2A.1: the client is never authoritative for payment or dispatch state.
+        // The server verifies Stripe (or the wallet reservation) and transitions
+        // the job; this is the single client path to "paid and searchable".
+        const response = await firstValueFrom(this.http.post<{ booking: unknown }>(
+            this.apiUrlService.getApiUrl('/api/payment/confirm'),
+            { jobId },
+            { headers: await this.authHeaders() }
+        ));
 
-        const job = await this.getBooking(jobId);
-        const hasLockedDriver = !!job?.driver_id;
-
-        const { data, error } = await this.supabase
-            .from('jobs')
-            .update({
-                payment_status: isWallet ? 'wallet_funded' : 'authorized',
-                payment_intent_id: isWallet ? null : paymentIntentId,
-                status: hasLockedDriver ? 'assigned' : 'searching',
-                dispatch_started_at: hasLockedDriver ? null : now.toISOString(),
-                driver_search_expires_at: hasLockedDriver ? null : expiresAt,
-                dispatch_attempts: hasLockedDriver ? 0 : 1,
-                no_driver_reason: null
-            })
-            .eq('id', jobId)
-            .select('*, service_type:service_types(*)')
-            .single();
-
-        if (error) throw error;
-
-        await this.logStatusHistory(
-            jobId,
-            'searching',
-            isWallet
-                ? 'Wallet funds reserved, job is now dispatchable'
-                : 'Payment authorized, job is now dispatchable'
-        );
-
-        await this.eventService.logEvent(
-            jobId,
-            'payment_succeeded',
-            isWallet ? 'Payment confirmed via Wallet' : 'Payment authorized via Stripe'
-        );
-
-        const booking = this.mapJobToBooking(data);
+        const booking = this.mapJobToBooking(response.booking as any);
         this.activeBooking.set(booking);
 
         return booking;

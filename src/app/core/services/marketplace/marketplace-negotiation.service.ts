@@ -90,16 +90,13 @@ export class MarketplaceNegotiationService {
     }
 
     async lockAgreedFare(jobId: string, amount: number): Promise<void> {
-        const { error } = await this.supabase
-            .from('jobs')
-            .update({
-                agreed_fare: amount,
-                status: 'fare_agreed',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', jobId);
-
-        if (error) throw error;
+        // C2: the client is never authoritative for agreed_fare. The payable is
+        // the server-verified quote (jobs.total_price) or a server negotiation
+        // RPC's fare; accepting the suggested fare therefore advances straight to
+        // payment with NO client state write.
+        void jobId;
+        void amount;
+        return;
     }
 
     async driverAcceptOffer(jobId: string): Promise<FareNegotiation> {

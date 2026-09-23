@@ -6,6 +6,7 @@ import { PricingService } from '../services/pricing.service';
 import { CityService } from '../services/city.service';
 import { GlobalAiPricingService } from '../services/global-ai-pricing.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { PaymentAuthorityService } from '../services/payment-authority.service';
 
 const router = Router();
 
@@ -175,7 +176,7 @@ router.post('/calculate-price', async (req: Request, res: Response) => {
 
 router.post('/create-intent', async (req: Request, res: Response) => {
   try {
-    const { jobId, tenantId, surgeMultiplier, fareBreakdown, marketplaceFlags } = req.body;
+    const { jobId, tenantId, surgeMultiplier } = req.body;
 
     if (!jobId) {
       return res.status(400).json({ error: 'jobId is required' });
@@ -290,23 +291,12 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       });
     }
 
-    const serviceFare =
-      money(job.agreed_fare) ||
-      money(job.total_price) ||
-      money(job.estimated_price) ||
-      money(job.price) ||
-      money(req.body.amount);
-
-    let itemBudget = 0;
-    if (isErrandLike) {
-      const [{ data: errandDetails }, { data: errandFunding }] = await Promise.all([
-        supabaseAdmin.from('errand_details').select('estimated_budget').eq('job_id', jobId).maybeSingle(),
-        supabaseAdmin.from('errand_funding').select('amount_reserved').eq('job_id', jobId).maybeSingle()
-      ]);
-      itemBudget = money(errandFunding?.amount_reserved) || money(errandDetails?.estimated_budget) || 0;
-    }
-
-    const totalAuthorisation = serviceFare + itemBudget;
+    // C2: one shared server-derived payable amount; the client body amount is
+    // never authoritative and is not accepted as a fallback.
+    const payable = await PaymentAuthorityService.resolve(job);
+    const serviceFare = payable.serviceFareMajor;
+    const itemBudget = payable.itemBudgetMajor;
+    const totalAuthorisation = payable.totalAuthorisationMajor;
 
     console.log('[PaymentRoutes] create-intent amount', {
       jobId,
@@ -366,24 +356,10 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       payment_method: 'card'
     };
 
-    const optionalUpdatePayload: Record<string, unknown> = {
-      surge_multiplier: Number(surgeMultiplier || 1)
-    };
-
-    // The job's price/total_price remains the agreed service fare; the payment intent
-    // authorises serviceFare + itemBudget. Shopping budget is reserved separately in errand_funding.
-
-    if (fareBreakdown && typeof fareBreakdown === 'object') {
-      optionalUpdatePayload.fare_breakdown = fareBreakdown;
-      optionalUpdatePayload.commission_rate_used = (fareBreakdown as any)?.commissionPercent ?? null;
-      optionalUpdatePayload.dynamic_pricing_multiplier = (fareBreakdown as any)?.multiplier ?? 1;
-    }
-
-    if (marketplaceFlags && typeof marketplaceFlags === 'object') {
-      optionalUpdatePayload.marketplace_flags = marketplaceFlags;
-      optionalUpdatePayload.negotiation_mode_enabled = (marketplaceFlags as any)?.negotiationEnabled ?? false;
-      optionalUpdatePayload.bid_mode_enabled = (marketplaceFlags as any)?.biddingEnabled ?? false;
-    }
+    // C2: the client is not authoritative for commission, multipliers, marketplace
+    // flags or negotiation mode. Those were snapshotted at booking create from the
+    // verified quote and must not be re-written by a later payment call.
+    const optionalUpdatePayload: Record<string, unknown> = {};
 
     const { error: updateError } = await supabaseAdmin
       .from('jobs')
@@ -544,33 +520,171 @@ router.post('/confirm-wallet-topup', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/confirm', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId is required' });
+    }
+
+    // C2A.1: server-owned payment confirmation. The client supplies only the job
+    // id; every authority value (amount, currency, intent, ownership, state) is
+    // derived server-side and verified against Stripe / the wallet reservation.
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { data: job, error } = await supabaseAdmin
+      .from('jobs')
+      .select('*, service_type:service_types(*)')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (error || !job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (String(job.customer_id || '') !== authUserId) {
+      return res.status(403).json({ error: 'Only the customer can confirm this payment' });
+    }
+
+    // Wallet path: the reservation was already authorised server-side by
+    // pay_job_from_wallet; here we only advance dispatch, and only once.
+    const walletPaid = String(job.payment_status || '').toLowerCase() === 'wallet_funded';
+
+    if (!walletPaid) {
+      if (!job.payment_intent_id) {
+        return res.status(400).json({ error: 'Job has no card payment intent' });
+      }
+
+      const pi = await stripe.paymentIntents.retrieve(String(job.payment_intent_id));
+
+      if (pi.metadata?.jobId !== String(job.id)) {
+        return res.status(409).json({ error: 'PaymentIntent does not belong to this job', code: 'PAYMENT_INTENT_MISMATCH' });
+      }
+
+      if (String(pi.currency || '').toLowerCase() !== currency(job.currency_code)) {
+        return res.status(409).json({ error: 'PaymentIntent currency does not match the job', code: 'CURRENCY_MISMATCH' });
+      }
+
+      // C2: one shared server-derived payable amount.
+      const payable = await PaymentAuthorityService.resolve(job);
+      const expectedMinor = PaymentAuthorityService.minorUnits(payable.totalAuthorisationMajor);
+      if (pi.amount !== expectedMinor) {
+        return res.status(409).json({ error: 'PaymentIntent amount does not match the job', code: 'AMOUNT_MISMATCH' });
+      }
+
+      // Manual capture: successful authorization is `requires_capture` (card
+      // authorized, capture deferred to completion). `succeeded` is also accepted.
+      if (pi.status !== 'requires_capture' && pi.status !== 'succeeded') {
+        return res.status(402).json({ error: `Payment is not authorized. Current Stripe status: ${pi.status}`, code: 'PAYMENT_NOT_AUTHORIZED' });
+      }
+    }
+
+    const hasLockedDriver = !!job.driver_id;
+    const nextStatus = hasLockedDriver ? 'assigned' : 'searching';
+    const nextPaymentStatus = walletPaid ? 'wallet_funded' : 'authorized';
+
+    // Idempotent: only an unpaid job advances.
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('jobs')
+      .update({
+        payment_status: nextPaymentStatus,
+        status: nextStatus,
+        dispatch_started_at: hasLockedDriver ? null : new Date().toISOString(),
+        driver_search_expires_at: hasLockedDriver ? null : new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        dispatch_attempts: hasLockedDriver ? 0 : 1,
+        no_driver_reason: null
+      })
+      .eq('id', jobId)
+      .eq('payment_status', 'pending')
+      .select('*, service_type:service_types(*)')
+      .single();
+
+    if (updateError) {
+      // Already advanced (idempotent): return the current state as success.
+      const { data: current } = await supabaseAdmin
+        .from('jobs')
+        .select('*, service_type:service_types(*)')
+        .eq('id', jobId)
+        .single();
+      return res.json({ success: true, alreadyConfirmed: true, booking: current });
+    }
+
+    return res.json({ success: true, booking: updated });
+  } catch (error: any) {
+    console.error('[PaymentRoutes] confirm failed:', error);
+    return res.status(500).json({ error: error.message || 'Failed to confirm payment' });
+  }
+});
+
 router.post('/refund', async (req: Request, res: Response) => {
   try {
-    const { paymentIntentId, amount, jobId } = req.body;
+    const { jobId } = req.body;
 
-    if (!paymentIntentId) {
-      return res.status(400).json({ error: 'paymentIntentId is required' });
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId is required' });
     }
 
-    const params: any = { payment_intent: paymentIntentId };
-
-    if (amount) {
-      params.amount = Math.round(Number(amount) * 100);
+    // C2: refunds move money. The actor must be authenticated AND an admin, and the
+    // intent + amount are derived server-side from the job/Stripe — never from the body.
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const refund = await stripe.refunds.create(params);
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', authUserId)
+      .maybeSingle();
 
-    if (jobId) {
+    if (profileError || profile?.role !== 'admin') {
+      return res.status(403).json({ error: 'Administrator access required' });
+    }
+
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select('payment_intent_id,payment_status,refund_id')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (jobError || !job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (!job.payment_intent_id) {
+      return res.status(400).json({ error: 'Job has no card payment intent' });
+    }
+
+    const pi = await stripe.paymentIntents.retrieve(String(job.payment_intent_id));
+
+    if (pi.status === 'succeeded' && (pi.amount_received || 0) > 0) {
+      const refund = await stripe.refunds.create({
+        payment_intent: String(job.payment_intent_id),
+        amount: pi.amount_received
+      });
+
       await supabaseAdmin
         .from('jobs')
-        .update({
-          payment_status: 'refunded',
-          refund_id: refund.id
-        })
+        .update({ payment_status: 'refunded', refund_id: refund.id })
         .eq('id', jobId);
+
+      return res.json({ success: true, refundId: refund.id, amount: Number(pi.amount_received) / 100 });
     }
 
-    return res.json({ success: true, refundId: refund.id });
+    if (pi.status === 'requires_capture') {
+      // Not yet captured: release the authorization instead of refunding.
+      await stripe.paymentIntents.cancel(String(job.payment_intent_id));
+      await supabaseAdmin
+        .from('jobs')
+        .update({ payment_status: 'cancelled' })
+        .eq('id', jobId);
+      return res.json({ success: true, cancelled: true });
+    }
+
+    return res.status(400).json({ error: `No refundable amount in Stripe status: ${pi.status}` });
   } catch (error: any) {
     console.error('[PaymentRoutes] refund failed:', error);
     return res.status(500).json({ error: error.message || 'Refund failed' });

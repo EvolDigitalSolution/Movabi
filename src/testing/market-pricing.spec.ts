@@ -602,7 +602,7 @@ describe('GB App Store launch controls', () => {
     expect(walletRoute).toContain("code: 'QUOTE_EXPIRED'");
     expect(walletRoute).toContain('const authUserId = await getAuthUserId(req)');
     expect(walletRoute).toContain("status(401).json({ error: 'Authentication required' })");
-    expect(walletRoute).toContain('paymentAmount = Number(');
+    expect(walletRoute).toContain('const paymentAmount = payable.totalAuthorisationMajor;');
     expect(walletRoute).not.toContain('amount: paymentAmount || amount');
   });
 

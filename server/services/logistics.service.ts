@@ -82,10 +82,14 @@ export class LogisticsService {
    * UNIQUE(job_id), so a row here means the monetary tail already ran for this job.
    */
   private static async hasDriverEarnings(jobId: string): Promise<boolean> {
+    // C2: only a SETTLED earnings row proves the money tail already ran. A
+    // trigger-created 'pending' row (e.g. from an admin status write) must NOT
+    // short-circuit the real completion, or capture/transfer would be skipped.
     const { data, error } = await supabaseAdmin
       .from('driver_earnings')
       .select('job_id')
       .eq('job_id', jobId)
+      .eq('status', 'paid')
       .maybeSingle();
 
     if (error) {
@@ -195,7 +199,10 @@ export class LogisticsService {
 
     const completionMetadata = this.assertCompletionPin(job, completionPin);
 
-    const requestedTotalPrice = Number(job.total_price ?? job.price ?? job.estimated_price ?? 0);
+    // C2: the payout/commission basis MUST be the same authoritative fare the
+    // customer was charged (agreed_fare first), otherwise a negotiated fare is
+    // charged while a pre-negotiation fare is paid out and commissioned.
+    const requestedTotalPrice = Number(job.agreed_fare ?? job.total_price ?? job.estimated_price ?? job.price ?? 0);
 
     if (!Number.isFinite(requestedTotalPrice) || requestedTotalPrice <= 0) {
       throw new Error('Invalid job amount');

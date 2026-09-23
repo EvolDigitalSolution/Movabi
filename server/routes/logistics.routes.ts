@@ -102,12 +102,41 @@ router.post('/suggest-drivers', async (req: Request, res: Response) => {
  */
 router.post('/enqueue', async (req: Request, res: Response) => {
   try {
-    const { jobId, tenantId, cityId } = req.body;
-    if (!jobId || !tenantId) {
-      return res.status(400).json({ error: 'jobId and tenantId required' });
+    const { jobId } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId required' });
     }
 
-    const { data, error } = await dispatchService.enqueueJob(jobId, tenantId, cityId);
+    // C2: dispatch is a server-owned transition. The actor must be authenticated,
+    // must own the job, and the job must already be paid — otherwise a customer
+    // could broadcast an unpaid job as accept-ready.
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select('id,customer_id,tenant_id,city_id,payment_status,status')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (jobError || !job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.customer_id !== authUserId) {
+      return res.status(403).json({ error: 'Only the customer can enqueue this job' });
+    }
+
+    const paid = ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded']
+      .includes(String(job.payment_status || '').toLowerCase());
+    if (!paid) {
+      return res.status(409).json({ error: 'Job must be paid before dispatch', code: 'PAYMENT_REQUIRED' });
+    }
+
+    const tenantId = job.tenant_id;
+    const { data, error } = await dispatchService.enqueueJob(jobId, tenantId, job.city_id);
     if (error) {
       console.error('[LogisticsRoutes] enqueue dispatch error:', error);
       return res.status(500).json({

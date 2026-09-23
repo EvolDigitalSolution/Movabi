@@ -5,6 +5,7 @@ import { NotificationService } from '../services/notification.service';
 import { LogisticsService } from '../services/logistics.service';
 import { IssuingService } from '../services/issuing.service';
 import { PricingService } from '../services/pricing.service';
+import { MarketplaceConfigService } from '../services/marketplace-config.service';
 import { DispatchService } from '../services/dispatch.service';
 import { stripe } from '../services/stripe.service';
 import { rateLimit } from 'express-rate-limit';
@@ -176,6 +177,26 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             console.warn('[BookingRoutes] booking create dropped non-creatable fields', { userId, droppedFields });
         }
         insertPayload.customer_id = userId;
+        // C2: negotiation/bidding modes, draft/expiry and agreed_fare are
+        // server-derived from the authoritative marketplace configuration and
+        // never trusted from the client. Resolver failure fails closed to direct
+        // checkout.
+        try {
+            const modes = await MarketplaceConfigService.determineJobModes(canonicalService);
+            insertPayload.negotiation_mode_enabled = modes.negotiation;
+            insertPayload.bid_mode_enabled = modes.bidding;
+            insertPayload.status = modes.negotiation ? 'pending_fare_confirmation' : 'requested';
+            insertPayload.is_draft = modes.negotiation;
+            insertPayload.expires_at = modes.negotiation ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null;
+        } catch (modeError) {
+            console.error('[BookingRoutes] marketplace mode resolution failed; failing closed to direct checkout:', modeError);
+            insertPayload.negotiation_mode_enabled = false;
+            insertPayload.bid_mode_enabled = false;
+            insertPayload.status = 'requested';
+            insertPayload.is_draft = false;
+            insertPayload.expires_at = null;
+        }
+        insertPayload.agreed_fare = null;
         const { data, error } = await supabaseAdmin.from('jobs').insert(insertPayload).select('*, service_type:service_types(*)').single();
         if (error) return res.status(400).json({ error: error.message, code: error.code });
         return res.status(201).json(data);
