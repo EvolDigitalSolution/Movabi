@@ -321,7 +321,37 @@ export class LogisticsService {
         stripeTransferId = transfer.id;
       } catch (transferError: any) {
         console.error('[LogisticsService.completeJob] Stripe transfer failed:', transferError);
-        throw new Error(transferError?.message || 'Failed to transfer driver payout');
+        const message = String(transferError?.message || 'Failed to transfer driver payout');
+        const statusCode = Number(transferError?.statusCode || 0);
+        // A 4xx is a definitive Stripe rejection: the transfer did NOT happen.
+        // A connection error, timeout, or 5xx is AMBIGUOUS: Stripe may have
+        // completed the transfer even though the response never reached us.
+        // Because the deterministic transfer-job-<id> idempotency key makes an
+        // ambiguous retry safely resume the SAME transfer, the durable marker is
+        // honest ('unknown') rather than claiming a definitive 'failed'. The
+        // capture already succeeded, so this also records the diagnosable state
+        // a support operator needs to see.
+        const markerStatus = (statusCode >= 400 && statusCode < 500) ? 'failed' : 'unknown';
+        try {
+          await supabaseAdmin
+            .from('jobs')
+            .update({
+              stripe_transfer_status: markerStatus,
+              metadata: {
+                ...(job.metadata || {}),
+                stripe_transfer_error: message,
+                stripe_transfer_error_type: String(transferError?.type || '')
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
+        } catch (markError) {
+          // Best-effort bookkeeping: never mask the economically important
+          // Stripe error with a marker-persistence failure. The original error
+          // is still rethrown below with its full context.
+          console.error('[LogisticsService.completeJob] failed to persist transfer failure marker:', markError);
+        }
+        throw transferError instanceof Error ? transferError : new Error(message);
       }
     } else {
       console.log('[LogisticsService.completeJob] Transfer already exists, skipping transfer:', stripeTransferId);

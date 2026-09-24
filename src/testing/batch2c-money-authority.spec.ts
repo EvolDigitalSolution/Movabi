@@ -247,3 +247,68 @@ describe('PHASE C2B — postflight index diagnostic', () => {
         expect(POST).toContain('POSTFLIGHT_COMPLETE');
     });
 });
+
+describe('PHASE C2C — settlement idempotency', () => {
+    const SETTLE_MIG = read('supabase/migrations/20261202000000_settlement_idempotency.sql');
+
+    it('28. wallet payment RPC short-circuits on wallet PROVENANCE, not generic paid', () => {
+        // The guard must prove the wallet operation, not "some payment completed".
+        expect(SETTLE_MIG).toContain("IF v_job.payment_method = 'wallet' OR v_job.payment_status = 'wallet_funded' THEN");
+        expect(SETTLE_MIG).toContain("'status', 'already_paid'");
+        expect(SETTLE_MIG).toContain('FOR UPDATE');
+        // Generic 'paid' must NOT appear in the idempotency predicate (card jobs
+        // also reach 'paid' and must not be treated as wallet-funded).
+        expect(SETTLE_MIG).not.toContain("payment_status IN ('wallet_funded', 'paid', 'wallet_settled')");
+        expect(SETTLE_MIG).not.toContain("v_job.payment_status = 'paid'");
+    });
+
+    it('29. completion persists an HONEST transfer-failure marker and preserves the error', () => {
+        expect(LOGISTICS_SERVICE).toContain("stripe_transfer_status: markerStatus");
+        expect(LOGISTICS_SERVICE).toContain("const markerStatus = (statusCode >= 400 && statusCode < 500) ? 'failed' : 'unknown'");
+        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error: message');
+        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error_type: String(transferError?.type || \'\')');
+        expect(LOGISTICS_SERVICE).toContain('throw transferError instanceof Error ? transferError : new Error(message)');
+    });
+
+    it('30. C2C does not weaken C2B, N12, Phase A, or change any ACL', () => {
+        expect(SETTLE_MIG).not.toMatch(/REVOKE|GRANT|SECURITY DEFINER/);
+        expect(SETTLE_MIG).not.toContain('idx_jobs_one_active_per_driver');
+        expect(SETTLE_MIG).not.toContain('ENABLE TRIGGER');
+        expect(SETTLE_MIG).not.toContain('trg_enforce_job_acquisition_eligibility');
+    });
+});
+
+describe('PHASE C2C — preflight/postflight companions', () => {
+    const C2C_PRE = read('scripts/db/preflight_20261202000000_settlement_idempotency.sql');
+    const C2C_POST = read('scripts/db/postflight_20261202000000_settlement_idempotency.sql');
+
+    it('31. preflight is read-only, hard-gates prerequisites, and ends with a PASS sentinel', () => {
+        expect(C2C_PRE).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(C2C_PRE).toContain('ROLLBACK');
+        expect(C2C_PRE).toContain('RAISE EXCEPTION');
+        expect(C2C_PRE).toContain("'pay_job_from_wallet(uuid,uuid,numeric,text,uuid)'");
+        expect(C2C_PRE).toContain("v_job.payment_method = ''wallet'' OR v_job.payment_status = ''wallet_funded''");
+        expect(C2C_PRE).toContain("'PREFLIGHT_COMPLETE'");
+        expect(C2C_PRE).toContain("'PASS'");
+        expect(C2C_PRE).toContain('trg_enforce_job_acquisition_eligibility');
+        expect(C2C_PRE).toContain('idx_jobs_one_active_per_driver');
+    });
+
+    it('32. postflight is read-only, hard-gates the result, and verifies the frozen N12 set', () => {
+        expect(C2C_POST).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(C2C_POST).toContain('ROLLBACK');
+        expect(C2C_POST).toContain('RAISE EXCEPTION');
+        expect(C2C_POST).toContain("v_job.payment_method = ''wallet'' OR v_job.payment_status = ''wallet_funded''");
+        expect(C2C_POST).toContain('driver_occupying_statuses()');
+        expect(C2C_POST).toContain('regexp_matches');
+        expect(C2C_POST).toContain('service_role');
+        expect(C2C_POST).toContain('POSTFLIGHT_COMPLETE');
+    });
+
+    it('33. postflight sentinel is POSTFLIGHT_COMPLETE | PASS (never the C2B VERIFIED form)', () => {
+        expect(C2C_POST).toContain("'POSTFLIGHT_COMPLETE'");
+        expect(C2C_POST).toContain("'PASS'");
+        // The C2B shell check keyed on a VERIFIED/PASS mismatch; C2C must end PASS.
+        expect(C2C_POST).not.toContain("'VERIFIED'");
+    });
+});
