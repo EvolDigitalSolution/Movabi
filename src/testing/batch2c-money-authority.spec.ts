@@ -433,3 +433,155 @@ describe('PHASE C2C — corrective schema-qualified migration', () => {
         expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: N12 predicate status set diverged from frozen set'");
     });
 });
+
+describe('PHASE 2.1 — release closure authority hardening', () => {
+    const AUTH_MIG = read('supabase/migrations/20261203000000_release_authority_hardening.sql');
+    const AUTH_PRE = read('scripts/db/preflight_20261203000000_release_authority_hardening.sql');
+    const AUTH_POST = read('scripts/db/postflight_20261203000000_release_authority_hardening.sql');
+    const BOOKING_ROUTE = read('server/routes/booking.routes.ts');
+    const PRICING_SERVICE = read('server/services/pricing.service.ts');
+    const INDEX_TS = read('server/index.ts');
+
+    it('38. migration closes direct-client money/acquisition writes on jobs', () => {
+        // Revoke table-level UPDATE from client roles, then grant only safe columns.
+        expect(AUTH_MIG).toContain('REVOKE UPDATE ON public.jobs FROM anon, authenticated;');
+        expect(AUTH_MIG).toContain('GRANT UPDATE (');
+        expect(AUTH_MIG).toContain('payment_status');
+        // Sensitive columns are NOT in the safe grant set.
+        expect(AUTH_MIG).toContain('negotiation_mode_enabled');
+        expect(AUTH_MIG).toContain('pickup_lat');
+    });
+
+    it('39. migration gates assign_driver_to_job and claim/release/fetch identity', () => {
+        expect(AUTH_MIG).toContain("RAISE EXCEPTION 'Only an administrator can assign a driver to a job'");
+        expect(AUTH_MIG).toContain("IF auth.uid() IS NOT NULL AND NOT EXISTS (");
+        expect(AUTH_MIG).toContain("RAISE EXCEPTION 'You can only claim a negotiation for yourself'");
+        expect(AUTH_MIG).toContain("RAISE EXCEPTION 'System release requires service role'");
+        expect(AUTH_MIG).toContain("RAISE EXCEPTION 'You can only fetch your own opportunities'");
+        expect(AUTH_MIG).toContain('REVOKE ALL ON FUNCTION public.claim_marketplace_negotiation(uuid, uuid) FROM PUBLIC;');
+        expect(AUTH_MIG).toContain('REVOKE EXECUTE ON FUNCTION public.fetch_hybrid_opportunities(uuid) FROM anon;');
+        expect(AUTH_MIG).toContain('GRANT EXECUTE ON FUNCTION public.claim_marketplace_negotiation(uuid, uuid) TO authenticated, service_role;');
+    });
+
+    it('40. booking create forces payment_status pending and drops client commission/payout', () => {
+        expect(BOOKING_ROUTE).toContain("insertPayload.payment_status = 'pending';");
+        expect(BOOKING_ROUTE).toContain('insertPayload.commission_rate_used = null;');
+        expect(BOOKING_ROUTE).toContain('insertPayload.driver_payout = null;');
+    });
+
+    it('41. completion commission is server-authoritative (no client fare_breakdown/commission_rate_used)', () => {
+        const LOGISTICS_SERVICE = read('server/services/logistics.service.ts');
+        // The client-snapshotted commission fields are no longer the payout basis.
+        expect(LOGISTICS_SERVICE).toContain('const commissionRate = plan === \'pro\' ? 0 : Number(effectiveCommissionRate ?? 0);');
+        expect(LOGISTICS_SERVICE).not.toContain('Number(storedCommission ?? 0)');
+    });
+
+    it('42. pricing propagates quoteReference into the market-pricing audit', () => {
+        expect(PRICING_SERVICE).toContain('quoteReference?: string | null;');
+        expect(PRICING_SERVICE).toContain('quoteReference: options.quoteReference || null,');
+    });
+
+    it('43. duplicate legacy Stripe webhook route is removed (single authoritative path)', () => {
+        expect(INDEX_TS).not.toContain('webhookRoutes');
+        expect(INDEX_TS).toContain('stripeWebhookRoutes');
+        expect(INDEX_TS).not.toContain("app.use('/api/webhook', webhookRoutes)");
+    });
+
+    it('44. authority preflight/postflight have read-only envelope + PASS sentinel', () => {
+        expect(AUTH_PRE).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(AUTH_PRE).toContain('ROLLBACK');
+        expect(AUTH_PRE).toContain("'PREFLIGHT_COMPLETE'");
+        expect(AUTH_POST).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(AUTH_POST).toContain('ROLLBACK');
+        expect(AUTH_POST).toContain("'POSTFLIGHT_COMPLETE'");
+        expect(AUTH_POST).toContain("has_column_privilege('authenticated', 'public.jobs', 'payment_status', 'UPDATE')");
+    });
+});
+
+describe('PHASE 2.1 — final zero-blocker hardening', () => {
+    const FINAL_MIG = read('supabase/migrations/20261204000000_release_final_hardening.sql');
+    const FINAL_PRE = read('scripts/db/preflight_20261204000000_release_final_hardening.sql');
+    const FINAL_POST = read('scripts/db/postflight_20261204000000_release_final_hardening.sql');
+    const LOGISTICS_SERVICE = read('server/services/logistics.service.ts');
+    const DISPATCH_SERVICE = read('server/services/dispatch.service.ts');
+    const PAYMENT_ROUTE = read('server/routes/payment.routes.ts');
+    const BOOKING_SERVICE = read('src/app/core/services/booking/booking.service.ts');
+
+    it('45. final migration retires the payout trigger and installs payment-eligibility + secret store', () => {
+        expect(FINAL_MIG).toContain('DROP TRIGGER IF EXISTS tr_calculate_job_payouts ON public.jobs;');
+        expect(FINAL_MIG).toContain('DROP FUNCTION IF EXISTS public.calculate_job_payouts();');
+        expect(FINAL_MIG).toContain('CREATE TRIGGER trg_enforce_job_payment_eligibility');
+        expect(FINAL_MIG).toContain("NEW.payment_status NOT IN (");
+        expect(FINAL_MIG).toContain('CREATE TABLE IF NOT EXISTS public.job_completion_secrets');
+        expect(FINAL_MIG).toContain('Customers can view own completion pin');
+    });
+
+    it('46. final migration keeps wallet total_price as the service fare (no budget inflation)', () => {
+        expect(FINAL_MIG).toContain('total_price = COALESCE(total_price, v_amount)');
+        expect(FINAL_MIG).not.toContain('total_price = v_amount');
+    });
+
+    it('47. completion payout basis is the service fare; card errands capture fare + actual spend', () => {
+        expect(LOGISTICS_SERVICE).toContain('const totalPrice = requestedTotalPrice;');
+        expect(LOGISTICS_SERVICE).not.toContain('resolveWalletSettlementAmount(job, requestedTotalPrice)');
+        expect(LOGISTICS_SERVICE).toContain('amount_to_capture: captureAmountInPence');
+        expect(LOGISTICS_SERVICE).toContain('PaymentAuthorityService.resolve(job)');
+    });
+
+    it('48. completion PIN is server-side (secret table) and not driver-readable via metadata', () => {
+        expect(LOGISTICS_SERVICE).toContain("from('job_completion_secrets')");
+        expect(LOGISTICS_SERVICE).toContain('secretRow?.completion_pin');
+        expect(BOOKING_SERVICE).not.toContain('completion_pin: completionPin');
+        expect(BOOKING_SERVICE).toContain('completion_pin_required: true');
+    });
+
+    it('49. scheduled bookings defer dispatch until scheduled_time and activate exactly once', () => {
+        expect(PAYMENT_ROUTE).toContain('scheduledInFuture');
+        expect(PAYMENT_ROUTE).toContain("(scheduledInFuture ? 'requested' : 'searching')");
+        expect(DISPATCH_SERVICE).toContain('activateDueScheduledJobs');
+        expect(DISPATCH_SERVICE).toContain(".lte('scheduled_time', nowIso())");
+        expect(DISPATCH_SERVICE).toContain(".eq('status', 'requested')");
+    });
+
+    it('50. final preflight/postflight have read-only envelope + PASS sentinel', () => {
+        expect(FINAL_PRE).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(FINAL_PRE).toContain('ROLLBACK');
+        expect(FINAL_PRE).toContain("'PREFLIGHT_COMPLETE'");
+        expect(FINAL_POST).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(FINAL_POST).toContain('ROLLBACK');
+        expect(FINAL_POST).toContain("'POSTFLIGHT_COMPLETE'");
+        expect(FINAL_POST).toContain('trg_enforce_job_payment_eligibility');
+    });
+});
+
+describe('PHASE 2.1 — wallet-errand settlement economics', () => {
+    const SETTLE_MIG = read('supabase/migrations/20261205000000_settle_errand_economics.sql');
+    const SETTLE_PRE = read('scripts/db/preflight_20261205000000_settle_errand_economics.sql');
+    const SETTLE_POST = read('scripts/db/postflight_20261205000000_settle_errand_economics.sql');
+
+    it('51. settle errand total = service fare + actual spend; unused budget released; fare never capped', () => {
+        // The old conflation (LEAST(v_amount, actual_spending)) must be gone.
+        expect(SETTLE_MIG).not.toContain('LEAST(v_amount, v_actual_spending)');
+        // Settlement = fare + spend.
+        expect(SETTLE_MIG).toContain('v_settlement_amount := ROUND((v_amount + v_actual_spending)::NUMERIC, 2)');
+        // Unused budget release.
+        expect(SETTLE_MIG).toContain('v_budget := ROUND(GREATEST(v_job_reserved - v_amount, 0)::NUMERIC, 2)');
+        expect(SETTLE_MIG).toContain('v_refund_amount := ROUND(GREATEST(v_job_reserved - v_settlement_amount, 0)::NUMERIC, 2)');
+        // Idempotency + non-errand preserved.
+        expect(SETTLE_MIG).toContain("'already_settled'");
+        expect(SETTLE_MIG).toContain('LEAST(v_reserved, v_job_reserved)');
+        // Schema-qualified CREATE OR REPLACE.
+        expect(SETTLE_MIG).toContain('CREATE OR REPLACE FUNCTION public.settle_job_wallet_reservation(');
+    });
+
+    it('52. settle preflight/postflight are read-only with PASS sentinels', () => {
+        expect(SETTLE_PRE).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(SETTLE_PRE).toContain('ROLLBACK');
+        expect(SETTLE_PRE).toContain("'PREFLIGHT_COMPLETE'");
+        expect(SETTLE_PRE).toContain('LEAST(v_amount, v_actual_spending)');
+        expect(SETTLE_POST).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(SETTLE_POST).toContain('ROLLBACK');
+        expect(SETTLE_POST).toContain("'POSTFLIGHT_COMPLETE'");
+        expect(SETTLE_POST).toContain('v_settlement_amount := ROUND((v_amount + v_actual_spending)');
+    });
+});

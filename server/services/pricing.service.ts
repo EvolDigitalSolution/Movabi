@@ -1,4 +1,4 @@
-﻿import { supabaseAdmin } from './supabase.service';
+import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
 import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
 import { MarketPricingService, resolveMarketPricingStrategy } from './market-pricing.service';
@@ -36,6 +36,7 @@ export interface PricingOptions {
         packingAssistance?: boolean;
         fragileItems?: boolean;
     } | null;
+    quoteReference?: string | null;
 }
 
 export interface PricingResult {
@@ -575,6 +576,7 @@ export class PricingService {
                 distanceKm,
                 durationMinutes,
                 baseServiceFare: preCommissionTotal,
+                quoteReference: options.quoteReference || null,
                 platformFeePercent: platformFeeConfig.enabled ? Number(platformFeeConfig.percent || 0) : 0,
                 driverCommissionPercent: commissionRateUsed,
                 platformMinimumRevenue: platformFeeConfig.enabled

@@ -34,7 +34,6 @@ import walletRoutes from './routes/wallet.routes';
 import adminRoutes from './routes/admin.routes';
 import marketPricingRoutes from './routes/market-pricing.routes';
 import appRoutes from './routes/app.routes';
-import webhookRoutes from './routes/webhook.routes';
 import stripeWebhookRoutes from './routes/stripe-webhook.routes';
 import communicationRoutes from './routes/communication.routes';
 import issuingRoutes from './routes/issuing.routes';
@@ -157,7 +156,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/admin/market-pricing', marketPricingRoutes);
 app.use('/api/stripe/connect', connectRoutes);
 app.use('/api/connect', connectRoutes);
-app.use('/api/webhook', webhookRoutes);
 
 // Start Background Jobs
 setInterval(() => {

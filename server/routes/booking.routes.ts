@@ -197,9 +197,32 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             insertPayload.expires_at = null;
         }
         insertPayload.agreed_fare = null;
+        // C2 final-release closure: the client is NEVER authoritative for payment
+        // state or monetary breakdown. A fresh booking always starts 'pending';
+        // a forged payment_status='paid' (or a client commission/payout snapshot)
+        // must never reach the insert.
+        insertPayload.payment_status = 'pending';
+        insertPayload.commission_rate_used = null;
+        insertPayload.platform_fee = null;
+        insertPayload.driver_payout = null;
+        insertPayload.tax_amount = null;
         const { data, error } = await supabaseAdmin.from('jobs').insert(insertPayload).select('*, service_type:service_types(*)').single();
         if (error) return res.status(400).json({ error: error.message, code: error.code });
-        return res.status(201).json(data);
+
+        // Release closure: mint the completion PIN SERVER-side and store it in the
+        // customer-only secret table (never in jobs.metadata). The PIN is returned
+        // to the customer here; the driver has no read path to it.
+        const completionPin = String(1000 + Math.floor(Math.random() * 9000));
+        const { error: secretError } = await supabaseAdmin.from('job_completion_secrets').insert({
+            job_id: data.id,
+            completion_pin: completionPin
+        });
+        if (secretError) {
+            console.error('[BookingRoutes] failed to store completion secret:', secretError);
+            return res.status(500).json({ error: 'Failed to store booking completion secret' });
+        }
+
+        return res.status(201).json({ ...data, completion_pin: completionPin });
     } catch (error) {
         if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
         return res.status(500).json({ error: error instanceof Error ? error.message : 'Booking creation failed' });
@@ -1217,9 +1240,11 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
         }
 
         const job = (negotiation as any).job;
-        const isParticipant = job?.customer_id === userId || job?.driver_id === userId;
-        if (!isParticipant) {
-            return res.status(403).json({ error: 'Only participants can accept this negotiation', code: 'NOT_A_PARTICIPANT' });
+        // Release closure: this endpoint is the CUSTOMER accepting a driver
+        // offer. Only the customer may invoke it; a driver must not self-accept
+        // their own offer through the customer-authority path.
+        if (job?.customer_id !== userId) {
+            return res.status(403).json({ error: 'Only the customer can accept this negotiation', code: 'NOT_A_PARTICIPANT' });
         }
 
         const { data: fullJob, error: jobError } = await supabaseAdmin
@@ -1540,6 +1565,13 @@ router.post('/negotiation/:jobId/driver-counter', async (req: Request, res: Resp
 
         if (jobError || !job) {
             return res.status(404).json({ error: 'Job not found' });
+        }
+
+        // Release closure: a driver counter-offer must come from a driver, never
+        // the job's own customer (who would otherwise be able to fabricate a
+        // "driver" counter-offer against their own negotiation).
+        if (String(job.customer_id) === String(userId)) {
+            return res.status(403).json({ error: 'Customers cannot submit a driver counter-offer' });
         }
 
         if (!job.negotiation_mode_enabled) {

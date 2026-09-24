@@ -583,7 +583,12 @@ router.post('/confirm', async (req: Request, res: Response) => {
     }
 
     const hasLockedDriver = !!job.driver_id;
-    const nextStatus = hasLockedDriver ? 'assigned' : 'searching';
+    // Release closure: a scheduled booking must NOT enter active searching/
+    // dispatch before its scheduled_time. It stays 'requested' (paid) and the
+    // scheduled worker activates it exactly once at the due time.
+    const scheduledInFuture = !!(job.scheduled_time && new Date(job.scheduled_time).getTime() > Date.now());
+    const deferred = scheduledInFuture && !hasLockedDriver;
+    const nextStatus = hasLockedDriver ? 'assigned' : (scheduledInFuture ? 'requested' : 'searching');
     const nextPaymentStatus = walletPaid ? 'wallet_funded' : 'authorized';
 
     // Idempotent: only an unpaid job advances.
@@ -592,9 +597,9 @@ router.post('/confirm', async (req: Request, res: Response) => {
       .update({
         payment_status: nextPaymentStatus,
         status: nextStatus,
-        dispatch_started_at: hasLockedDriver ? null : new Date().toISOString(),
-        driver_search_expires_at: hasLockedDriver ? null : new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-        dispatch_attempts: hasLockedDriver ? 0 : 1,
+        dispatch_started_at: (hasLockedDriver || deferred) ? null : new Date().toISOString(),
+        driver_search_expires_at: (hasLockedDriver || deferred) ? null : new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        dispatch_attempts: (hasLockedDriver || deferred) ? 0 : 1,
         no_driver_reason: null
       })
       .eq('id', jobId)

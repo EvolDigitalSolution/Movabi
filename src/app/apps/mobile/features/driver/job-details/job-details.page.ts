@@ -1058,7 +1058,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private requiresCompletionPin(): boolean {
-        return this.completionPin().length >= 4;
+        // Release closure: the flag is driver-visible; the PIN value is NOT (it
+        // lives in the customer-only job_completion_secrets table). The legacy
+        // metadata-PIN check remains for in-flight jobs created before the store.
+        const metadata = this.jobMetadata();
+        return metadata['completion_pin_required'] === true || this.completionPin().length >= 4;
     }
 
     private normalizeCompletionPin(value: unknown): string {

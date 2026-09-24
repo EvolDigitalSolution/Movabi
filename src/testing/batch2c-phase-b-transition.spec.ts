@@ -339,10 +339,10 @@ describe('Phase B — job ownership hardening', () => {
         expect(executable, 'the driver_id branch must be gone').not.toContain("updatePayload['driver_id']");
         expect(flat(executable)).toContain('if(additionaldata.driver_id){');
         expect(flat(executable)).toContain('thrownewerror(');
-        // The rest of the status payload is untouched.
+        // The rest of the status payload is untouched; money is server-authoritative.
         expect(executable).toContain('status: nextStatus');
-        expect(flat(executable)).toContain("updatepayload['price']=price");
-        expect(flat(executable)).toContain("updatepayload['estimated_price']=price");
+        expect(flat(executable), 'client must not round-trip a price').not.toContain("updatepayload['price']=price");
+        expect(flat(executable), 'client must not round-trip an estimated_price').not.toContain("updatepayload['estimated_price']=price");
     });
 
     it('16. the legacy client-supplied driverId route is now authenticated', () => {

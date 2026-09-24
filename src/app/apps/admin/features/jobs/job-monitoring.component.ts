@@ -596,14 +596,22 @@ export class JobMonitoringComponent implements OnInit, OnDestroy {
 
   getPaymentText(job: any): string {
     const paymentStatus = this.normalise(job?.payment_status || job?.paymentStatus);
+    const transferStatus = this.normalise(job?.stripe_transfer_status);
 
-    if (!paymentStatus) return 'Unknown';
-    if (['paid', 'captured', 'succeeded'].includes(paymentStatus)) return 'Captured';
-    if (['authorized', 'requires_capture'].includes(paymentStatus)) return 'Authorized';
-    if (['cancelled', 'canceled'].includes(paymentStatus)) return 'Cancelled';
-    if (paymentStatus === 'refunded') return 'Refunded';
+    let base: string;
+    if (!paymentStatus) base = 'Unknown';
+    else if (['paid', 'captured', 'succeeded'].includes(paymentStatus)) base = 'Captured';
+    else if (['authorized', 'requires_capture'].includes(paymentStatus)) base = 'Authorized';
+    else if (['cancelled', 'canceled'].includes(paymentStatus)) base = 'Cancelled';
+    else if (paymentStatus === 'refunded') base = 'Refunded';
+    else base = paymentStatus.replace(/_/g, ' ');
 
-    return paymentStatus.replace(/_/g, ' ');
+    // Release closure: surface durable settlement state for recovery without
+    // exposing any Stripe secret. 'failed' is a definitive rejection; 'unknown'
+    // is an ambiguous outcome that requires reconciliation.
+    if (transferStatus === 'failed') return `${base} · Transfer failed`;
+    if (transferStatus === 'unknown') return `${base} · Transfer unknown`;
+    return base;
   }
 
   getPaymentVariant(job: any): 'success' | 'warning' | 'error' | 'secondary' {

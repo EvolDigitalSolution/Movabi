@@ -285,11 +285,11 @@ describe('PHASE C2C — completion money-movement behavior', () => {
         expect(finalUpdate.payload.stripe_transfer_status).toBe('paid');
     });
 
-    it('I. the settlement basis is the persisted agreed_fare + persisted commission, not client input', async () => {
+    it('I. the settlement basis uses server-authoritative commission, ignoring client fare_breakdown', async () => {
         M.state.select['jobs'] = baseJob({
             payment_status: 'authorized',
             agreed_fare: 100,
-            fare_breakdown: { commissionPercent: 20 } // server-authored fare snapshot
+            fare_breakdown: { commissionPercent: 20 } // client round-tripped; MUST be ignored
         });
         M.state.select['driver_earnings'] = null;
         M.state.select['profiles'] = baseDriver();
@@ -298,10 +298,10 @@ describe('PHASE C2C — completion money-movement behavior', () => {
         await LogisticsService.completeJob(JOB_ID, null, DRIVER_ID);
 
         const [payload] = M.stripe.transfers.create.mock.calls[0];
-        // 20% commission on 100 -> platform fee 20 -> driver payout 80 -> 8000 pence.
-        expect(payload.amount).toBe(8000);
-        expect(payload.metadata.driver_payout).toBe('80');
-        expect(payload.metadata.platform_fee).toBe('20');
+        // Server commission is 10% (MarketplaceConfigService spy), NOT the client 20%.
+        expect(payload.amount).toBe(9000);
+        expect(payload.metadata.driver_payout).toBe('90');
+        expect(payload.metadata.platform_fee).toBe('10');
         expect(payload.metadata.total_price).toBe('100');
         // completeJob accepts no amount/commission parameter at all.
         expect(LogisticsService.completeJob.length).toBeLessThanOrEqual(3);

@@ -166,7 +166,6 @@ export class BookingService {
         }
 
         const normalizedDetails = this.normalizeDetails(serviceSlug, details);
-        const completionPin = this.generateCompletionPin();
 
         this.validateDetails(serviceSlug, {
             ...details,
@@ -348,9 +347,7 @@ export class BookingService {
 
             metadata: {
                 ...(bookingData.metadata || {}),
-                completion_pin: completionPin,
                 completion_pin_required: true,
-                completion_pin_created_at: new Date().toISOString(),
                 pricing_source: pricing?.pricingSource || pricing?.source || 'app_confirmed_fare',
                 quote_id: fareBreakdown?.['quoteId'] || null,
                 distance_km: distanceKm,
@@ -813,16 +810,16 @@ export class BookingService {
             throw new Error('Assigning a driver is not a status update. Use the job acceptance action.');
         }
 
+        // Release closure: the client is NEVER authoritative for money. price /
+        // estimated_price are server-derived from the verified quote, so a status
+        // update must not round-trip a client-supplied price (which would let a
+        // caller inflate the payout/commission basis).
         if (additionalData.total_price !== undefined && additionalData.total_price !== null) {
-            const price = Number(additionalData.total_price) || 0;
-            updatePayload['price'] = price;
-            updatePayload['estimated_price'] = price;
+            // Intentionally dropped: server authority only.
         }
 
         if (additionalData.price !== undefined && additionalData.price !== null) {
-            const price = Number(additionalData.price) || 0;
-            updatePayload['price'] = price;
-            updatePayload['estimated_price'] = price;
+            // Intentionally dropped: server authority only.
         }
 
         const query = this.supabase

@@ -4,6 +4,7 @@ import { AuditService } from './audit.service';
 import { calculatePayoutBreakdown } from './payout-calculator';
 import { IssuingService } from './issuing.service';
 import { MarketplaceConfigService } from './marketplace-config.service';
+import { PaymentAuthorityService } from './payment-authority.service';
 
 export class LogisticsService {
   private static readonly EARTH_RADIUS_KM = 6371;
@@ -197,7 +198,7 @@ export class LogisticsService {
       console.warn('[LogisticsService.completeJob] Resuming completion of a partially completed job:', job.id);
     }
 
-    const completionMetadata = this.assertCompletionPin(job, completionPin);
+    const completionMetadata = await this.assertCompletionPin(job, completionPin);
 
     // C2: the payout/commission basis MUST be the same authoritative fare the
     // customer was charged (agreed_fare first), otherwise a negotiated fare is
@@ -233,21 +234,21 @@ export class LogisticsService {
       String(job.tenant_id || '') || null
     );
 
-    const storedCommission =
-      (job.fare_breakdown as Record<string, unknown> | null)?.commissionPercent ??
-      job.commission_rate_used ??
-      effectiveCommissionRate;
-
-    const commissionRate = plan === 'pro' ? 0 : Number(storedCommission ?? 0);
+    // C2 final-release closure: commission is SERVER-authoritative. The client
+    // round-tripped fare_breakdown.commissionPercent / commission_rate_used are
+    // NOT trusted; the admin-configured MarketplaceConfigService is the single
+    // authority for the platform fee / driver payout split.
+    const commissionRate = plan === 'pro' ? 0 : Number(effectiveCommissionRate ?? 0);
     const safeCommissionRate = Number.isFinite(commissionRate)
       ? commissionRate
       : 0;
 
     let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
     const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';
-    const totalPrice = isWalletPayment
-      ? await this.resolveWalletSettlementAmount(job, requestedTotalPrice)
-      : requestedTotalPrice;
+    // Release closure: the payout/commission basis is ALWAYS the authoritative
+    // SERVICE fare. The errand purchase budget is customer purchasing money
+    // (reserved/settled separately), never driver earnings.
+    const totalPrice = requestedTotalPrice;
 
     const platformFee = this.roundMoney(totalPrice * (safeCommissionRate / 100));
     const driverPayout = this.roundMoney(Math.max(0, Math.min(totalPrice, totalPrice - platformFee)));
@@ -268,10 +269,27 @@ export class LogisticsService {
         throw new Error('Payment is authorized but payment_intent_id is missing');
       }
 
+      // Release closure: card errands capture only service fare + actually-spent
+      // purchase budget, converging with the wallet path (which refunds unused
+      // budget). Unused purchasing budget is never captured as driver earnings.
+      let captureAmountInPence: number | undefined;
+      if (String(job.service_slug || '').toLowerCase() === 'errand') {
+        const payable = await PaymentAuthorityService.resolve(job);
+        const serviceFare = Number(payable.serviceFareMajor || totalPrice || 0);
+        const budget = Math.max(0, Number(payable.totalAuthorisationMajor || 0) - serviceFare);
+        const { data: details } = await supabaseAdmin
+          .from('errand_details')
+          .select('actual_spending')
+          .eq('job_id', job.id)
+          .maybeSingle();
+        const actualSpending = this.roundMoney(Number(details?.actual_spending || 0));
+        captureAmountInPence = Math.round((serviceFare + Math.min(budget, actualSpending)) * 100);
+      }
+
       try {
         const captured = await stripe.paymentIntents.capture(
           job.payment_intent_id,
-          {} as any,
+          captureAmountInPence ? { amount_to_capture: captureAmountInPence } : ({} as any),
           { idempotencyKey: `capture-job-${job.id}` }
         );
 
@@ -446,9 +464,24 @@ export class LogisticsService {
     return updatedJob;
   }
 
-  private static assertCompletionPin(job: any, submittedPin?: string | null): Record<string, any> {
+  private static async assertCompletionPin(job: any, submittedPin?: string | null): Promise<Record<string, any>> {
     const metadata = this.getMetadata(job);
-    const expectedPin = this.getCompletionPin(metadata);
+
+    // Release closure: the completion secret lives in job_completion_secrets
+    // (customer-only RLS), not in jobs.metadata (which the driver's jobs.*
+    // SELECT returns wholesale). Fall back to metadata ONLY for in-flight jobs
+    // created before the secret store existed.
+    let expectedPin = '';
+    const { data: secretRow } = await supabaseAdmin
+      .from('job_completion_secrets')
+      .select('completion_pin')
+      .eq('job_id', job.id)
+      .maybeSingle();
+    if (secretRow?.completion_pin) {
+      expectedPin = this.normalizeCompletionPin(secretRow.completion_pin);
+    } else {
+      expectedPin = this.getCompletionPin(metadata);
+    }
 
     if (!expectedPin) {
       return metadata;

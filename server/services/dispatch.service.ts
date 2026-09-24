@@ -55,9 +55,54 @@ export class DispatchService {
         try {
             await this.cleanupExpiredSearchingJobs();
             await this.cleanupStaleOpenSearchingJobs();
+            await this.activateDueScheduledJobs();
             await this.refreshWaitingQueueItems();
         } catch (error) {
             console.error('[DispatchService] Engine error:', error);
+        }
+    }
+
+    /**
+     * Release closure: activate due scheduled bookings exactly once. A paid
+     * scheduled job in 'requested' becomes 'searching' only at/after
+     * scheduled_time, via an atomic status-guarded UPDATE, so duplicate worker
+     * executions cannot double-dispatch and cancelled/completed jobs are never
+     * re-activated.
+     */
+    private async activateDueScheduledJobs() {
+        const { data: jobs, error } = await this.supabase
+            .from('jobs')
+            .select('id')
+            .eq('status', 'requested')
+            .is('driver_id', null)
+            .in('payment_status', ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded', 'captured'])
+            .not('scheduled_time', 'is', null)
+            .lte('scheduled_time', nowIso())
+            .limit(100);
+
+        if (error) {
+            console.error('[DispatchService] Failed to fetch due scheduled jobs:', error);
+            return;
+        }
+
+        for (const job of jobs || []) {
+            const { error: updateError } = await this.supabase
+                .from('jobs')
+                .update({
+                    status: 'searching',
+                    dispatch_started_at: nowIso(),
+                    driver_search_expires_at: expiresAt(),
+                    dispatch_attempts: 1,
+                    no_driver_reason: null,
+                    updated_at: nowIso()
+                })
+                .eq('id', job.id)
+                .eq('status', 'requested')
+                .is('driver_id', null);
+
+            if (updateError) {
+                console.warn('[DispatchService] scheduled activation skipped (already moved):', job.id, updateError.message);
+            }
         }
     }
 
