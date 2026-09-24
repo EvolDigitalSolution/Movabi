@@ -8,11 +8,12 @@
 -- preflight hard-checks the prerequisites that must already hold for that
 -- replacement to be safe:
 --   * the exact target signature exists (to_regprocedure);
+--   * ZERO unexpected pay_job_from_wallet overloads (only the target signature);
 --   * its current posture is the known pre-C2C posture (INVOKER, unpinned
 --     search_path, old status-guard anchor present, new guard NOT yet present);
 --   * service_role has EXECUTE and PUBLIC/anon/authenticated do NOT;
 --   * every jobs/wallets/wallet_transactions column the body references exists;
---   * Phase A trigger is still DISABLED (enabled='D');
+--   * Phase A trigger EXISTS on public.jobs, is non-internal, and is DISABLED;
 --   * the frozen N12 single-active-job index exists, is UNIQUE and VALID.
 --
 -- Read-only by construction: BEGIN TRANSACTION READ ONLY / ROLLBACK; SELECT and
@@ -134,30 +135,55 @@ LEFT JOIN pg_index i
  AND i.indexrelid = to_regclass('public.idx_jobs_one_active_per_driver');
 
 -- 9. HARD GATE: raise on any NO-GO so `psql -v ON_ERROR_STOP=1` exits non-zero.
+--    Every gate below MUST raise for the preflight to fail closed; a condition
+--    that only appears in the informational SELECTs above is NOT sufficient.
 DO $$
 DECLARE
   missing_cols text := '';
   has_type_col boolean;
-  p RECORD;
+  v_prosecdef boolean;
+  v_proconfig text;
+  v_def text;
 BEGIN
-  -- Target signature must exist.
+  -- 1. Exact target function must exist.
   IF to_regprocedure('public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)') IS NULL THEN
     RAISE EXCEPTION 'NO-GO: pay_job_from_wallet(uuid,uuid,numeric,text,uuid) does not exist';
   END IF;
 
-  -- Posture must be the known pre-C2C posture (INVOKER, unpinned search_path).
-  SELECT prosecdef, array_to_string(proconfig, ',')
-    INTO p
-    FROM pg_proc
-   WHERE oid = to_regprocedure('public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)');
-  IF p.prosecdef THEN
+  -- 2. ZERO unexpected pay_job_from_wallet overloads (only the target signature).
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    WHERE p.pronamespace = to_regnamespace('public')
+      AND p.proname = 'pay_job_from_wallet'
+      AND p.oid <> to_regprocedure('public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)')
+  ) THEN
+    RAISE EXCEPTION 'NO-GO: unexpected pay_job_from_wallet overload(s) present';
+  END IF;
+
+  -- 3/4/5/6. Expected PRE-C2C posture: SECURITY INVOKER, unpinned search_path,
+  --          old body anchor PRESENT, new C2C wallet-provenance guard ABSENT.
+  SELECT p.prosecdef, array_to_string(p.proconfig, ','), pg_get_functiondef(p.oid)
+    INTO v_prosecdef, v_proconfig, v_def
+    FROM pg_proc p
+   WHERE p.oid = to_regprocedure('public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)');
+
+  IF v_prosecdef THEN
     RAISE EXCEPTION 'NO-GO: pay_job_from_wallet is SECURITY DEFINER (expected INVOKER)';
   END IF;
-  IF COALESCE(p.proconfig, '') LIKE '%search_path%' THEN
+
+  IF COALESCE(v_proconfig, '') LIKE '%search_path%' THEN
     RAISE EXCEPTION 'NO-GO: pay_job_from_wallet has a pinned search_path (expected unpinned)';
   END IF;
 
-  -- service_role must have EXECUTE; PUBLIC/anon/authenticated must NOT.
+  IF v_def NOT LIKE '%v_job.status IN (''cancelled'', ''completed'')%' THEN
+    RAISE EXCEPTION 'NO-GO: expected pre-C2C body anchor (v_job.status IN (cancelled, completed)) is missing';
+  END IF;
+
+  IF v_def LIKE '%v_job.payment_method = ''wallet'' OR v_job.payment_status = ''wallet_funded''%' THEN
+    RAISE EXCEPTION 'NO-GO: C2C wallet-provenance guard is already present in pay_job_from_wallet';
+  END IF;
+
+  -- 7/8. ACL: service_role MUST execute; PUBLIC/anon/authenticated must NOT.
   IF NOT has_function_privilege('service_role', 'public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'NO-GO: service_role lacks EXECUTE on pay_job_from_wallet';
   END IF;
@@ -173,7 +199,7 @@ BEGIN
     RAISE EXCEPTION 'NO-GO: PUBLIC/anon/authenticated has EXECUTE on pay_job_from_wallet';
   END IF;
 
-  -- Required columns must exist.
+  -- 9. All required columns must exist.
   SELECT string_agg(tbl || '.' || col, ', ')
     INTO missing_cols
     FROM (VALUES
@@ -194,6 +220,7 @@ BEGIN
     RAISE EXCEPTION 'NO-GO: missing required column(s): %', missing_cols;
   END IF;
 
+  -- 10. wallet_transactions must have transaction_type OR type.
   SELECT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'wallet_transactions'
@@ -203,15 +230,20 @@ BEGIN
     RAISE EXCEPTION 'NO-GO: wallet_transactions has neither transaction_type nor type column';
   END IF;
 
-  -- Phase A trigger must be disabled.
-  IF EXISTS (
-    SELECT 1 FROM pg_trigger tg
-    WHERE tg.tgname = 'trg_enforce_job_acquisition_eligibility' AND tg.tgenabled <> 'D'
+  -- 11. Phase A trigger MUST EXIST on public.jobs, be non-internal, and disabled.
+  --     Absence is a NO-GO; an enabled trigger is a NO-GO.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger tg
+    WHERE tg.tgname = 'trg_enforce_job_acquisition_eligibility'
+      AND tg.tgrelid = to_regclass('public.jobs')
+      AND NOT tg.tgisinternal
+      AND tg.tgenabled = 'D'
   ) THEN
-    RAISE EXCEPTION 'NO-GO: Phase A trigger is not disabled';
+    RAISE EXCEPTION 'NO-GO: Phase A trigger missing or not disabled';
   END IF;
 
-  -- N12 index must be present, unique and valid.
+  -- 12. Frozen N12 index must exist on public.jobs and be UNIQUE and VALID.
   IF NOT EXISTS (
     SELECT 1 FROM pg_index i
     WHERE i.indrelid = to_regclass('public.jobs')

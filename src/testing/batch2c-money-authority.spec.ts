@@ -311,4 +311,44 @@ describe('PHASE C2C — preflight/postflight companions', () => {
         // The C2B shell check keyed on a VERIFIED/PASS mismatch; C2C must end PASS.
         expect(C2C_POST).not.toContain("'VERIFIED'");
     });
+
+    it('34. preflight hard-gate DO block (not the informational SELECTs) enforces all 12 gates', () => {
+        // The informational SELECTs above the DO block only DISPLAY posture; the
+        // preflight must fail closed, so every gate must be an executable RAISE
+        // inside the DO block. Slice the DO block out and assert its raises.
+        const doBlock = C2C_PRE.slice(C2C_PRE.indexOf('DO $$'), C2C_PRE.indexOf('-- 10. Sentinel'));
+        expect(doBlock.length).toBeGreaterThan(200);
+
+        // 1. exact target function exists
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: pay_job_from_wallet(uuid,uuid,numeric,text,uuid) does not exist'");
+        // 2. zero unexpected overloads
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: unexpected pay_job_from_wallet overload(s) present'");
+        expect(doBlock).toContain("p.oid <> to_regprocedure('public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)')");
+        // 3. SECURITY INVOKER
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: pay_job_from_wallet is SECURITY DEFINER (expected INVOKER)'");
+        // 4. unpinned search_path
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: pay_job_from_wallet has a pinned search_path (expected unpinned)'");
+        // 5. old body anchor PRESENT (hard gate via v_def NOT LIKE, not informational)
+        expect(doBlock).toContain("v_def NOT LIKE '%v_job.status IN (''cancelled'', ''completed'')%'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: expected pre-C2C body anchor (v_job.status IN (cancelled, completed)) is missing'");
+        // 6. new C2C guard ABSENT (hard gate via v_def LIKE -> RAISE)
+        expect(doBlock).toContain("v_def LIKE '%v_job.payment_method = ''wallet'' OR v_job.payment_status = ''wallet_funded''%'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: C2C wallet-provenance guard is already present in pay_job_from_wallet'");
+        // 7. service_role EXECUTE
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: service_role lacks EXECUTE on pay_job_from_wallet'");
+        // 8. PUBLIC/anon/authenticated NO EXECUTE
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: PUBLIC/anon/authenticated has EXECUTE on pay_job_from_wallet'");
+        expect(doBlock).toContain("(a.grantee = 0 OR COALESCE(r.rolname,'') IN ('anon','authenticated'))");
+        // 9. required columns
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: missing required column(s): %', missing_cols");
+        // 10. transaction_type OR type
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: wallet_transactions has neither transaction_type nor type column'");
+        // 11. Phase A trigger MUST EXIST, non-internal, disabled (absence -> NO-GO)
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: Phase A trigger missing or not disabled'");
+        expect(doBlock).toContain('AND NOT tg.tgisinternal');
+        expect(doBlock).toContain("AND tg.tgenabled = 'D'");
+        expect(doBlock).toContain('IF NOT EXISTS (');
+        // 12. N12 index unique + valid
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: idx_jobs_one_active_per_driver missing, not unique, or not valid'");
+    });
 });
