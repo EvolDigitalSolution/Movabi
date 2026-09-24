@@ -352,3 +352,84 @@ describe('PHASE C2C — preflight/postflight companions', () => {
         expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: idx_jobs_one_active_per_driver missing, not unique, or not valid'");
     });
 });
+
+describe('PHASE C2C — corrective schema-qualified migration', () => {
+    const CORRECTIVE_MIG = read('supabase/migrations/20261202010000_settlement_idempotency_corrective.sql');
+    const CORRECTIVE_PRE = read('scripts/db/preflight_20261202010000_settlement_idempotency_corrective.sql');
+    const CORRECTIVE_POST = read('scripts/db/postflight_20261202010000_settlement_idempotency_corrective.sql');
+
+    it('35. corrective migration is schema-qualified and drops only the exact auth overload', () => {
+        // A: the production defect was an UNqualified function name. The corrective
+        // migration MUST declare the schema explicitly, and must NOT contain an
+        // executable unqualified CREATE (line-anchored so a comment mention is ignored).
+        expect(CORRECTIVE_MIG).toContain('CREATE OR REPLACE FUNCTION public.pay_job_from_wallet(');
+        expect(CORRECTIVE_MIG).not.toMatch(/^\s*CREATE\s+OR\s+REPLACE\s+FUNCTION\s+pay_job_from_wallet\s*\(/m);
+        // D: drop ONLY the exact accidental auth overload, no CASCADE, no broad drop.
+        expect(CORRECTIVE_MIG).toContain('DROP FUNCTION IF EXISTS auth.pay_job_from_wallet(uuid, uuid, numeric, text, uuid);');
+        expect(CORRECTIVE_MIG).not.toMatch(/DROP\s+FUNCTION\s+pay_job_from_wallet/);
+        expect(CORRECTIVE_MIG).not.toMatch(/^\s*[^-][^\n]*\bCASCADE\b/m);
+        // E: no ACL broadening (CREATE OR REPLACE preserves existing grants).
+        expect(CORRECTIVE_MIG).not.toMatch(/GRANT\s+(EXECUTE|ALL|USAGE|SELECT|INSERT|UPDATE|DELETE)/);
+        // No Phase A enablement, no N12 mutation.
+        expect(CORRECTIVE_MIG).not.toContain('ENABLE TRIGGER');
+        expect(CORRECTIVE_MIG).not.toContain('idx_jobs_one_active_per_driver');
+        // The intended guard is present.
+        expect(CORRECTIVE_MIG).toContain("IF v_job.payment_method = 'wallet' OR v_job.payment_status = 'wallet_funded' THEN");
+        expect(CORRECTIVE_MIG).toContain("'status', 'already_paid'");
+    });
+
+    it('36. corrective preflight has executable RAISE hard gates for every required condition', () => {
+        const doBlock = CORRECTIVE_PRE.slice(CORRECTIVE_PRE.indexOf('DO $$'), CORRECTIVE_PRE.indexOf('-- 8. Sentinel'));
+        expect(CORRECTIVE_PRE).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(CORRECTIVE_PRE).toContain('ROLLBACK');
+        expect(CORRECTIVE_PRE).toContain('CORRECTIVE_PREFLIGHT_COMPLETE');
+        expect(CORRECTIVE_PRE).toContain("'PASS'");
+
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid) does not exist'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: expected exactly one public pay_job_from_wallet overload'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: public pay_job_from_wallet is SECURITY DEFINER (expected INVOKER)'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: public pay_job_from_wallet has a pinned search_path'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: public pay_job_from_wallet already contains the C2C guard'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: public pay_job_from_wallet missing the pre-C2C terminal-status anchor'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: accidental auth.pay_job_from_wallet overload not found'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: auth.pay_job_from_wallet does not contain the exact C2C guard'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: service_role lacks EXECUTE on public.pay_job_from_wallet'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: PUBLIC/anon/authenticated has EXECUTE on public.pay_job_from_wallet'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: missing required column(s): %'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: wallet_transactions has neither transaction_type nor type'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: Phase A trigger missing or not disabled'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: idx_jobs_one_active_per_driver missing, not unique, or not valid'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: N12 predicate status cardinality diverged from frozen set'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: N12 predicate status set diverged from frozen set'");
+    });
+
+    it('37. corrective postflight structurally proves the public guard, fixes BUG1+BUG2, and gates the auth absence', () => {
+        const doBlock = CORRECTIVE_POST.slice(CORRECTIVE_POST.indexOf('DO $$'), CORRECTIVE_POST.indexOf('-- 7. Sentinel'));
+        expect(CORRECTIVE_POST).toContain('BEGIN TRANSACTION READ ONLY');
+        expect(CORRECTIVE_POST).toContain('ROLLBACK');
+        expect(CORRECTIVE_POST).toContain('CORRECTIVE_POSTFLIGHT_COMPLETE');
+        expect(CORRECTIVE_POST).toContain("'PASS'");
+
+        // public-specific (schema-qualified) + auth-absence gates.
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid) missing'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: accidental auth.pay_job_from_wallet overload still exists'");
+        expect(doBlock).toContain("to_regprocedure('public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)')");
+        expect(doBlock).toContain("to_regprocedure('auth.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)')");
+
+        // BUG 1 fix: structural strpos-based guard presence + ordering (not a loose LIKE).
+        expect(doBlock).toContain("strpos(v_def, 'IF v_job.payment_method = ''wallet'' OR v_job.payment_status = ''wallet_funded'' THEN')");
+        expect(doBlock).toContain("strpos(v_def, '''status'', ''already_paid''')");
+        expect(doBlock).toContain('v_guard_pos > v_wallet_insert_pos');
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: guard must occur before wallet INSERT, wallet UPDATE, and jobs UPDATE'");
+
+        // BUG 2 fix: no `array_agg(s ...)` over EXCEPT; uses aliased array_agg(x ORDER BY x).
+        expect(doBlock).not.toContain('array_agg(s');
+        expect(doBlock).toContain('array_agg(x ORDER BY x)');
+        expect(doBlock).toContain('unnest(v_helper) AS u(x)');
+
+        // Phase A + N12 + frozen predicate.
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: Phase A trigger missing or not disabled'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: idx_jobs_one_active_per_driver missing, not unique, or not valid'");
+        expect(doBlock).toContain("RAISE EXCEPTION 'NO-GO: N12 predicate status set diverged from frozen set'");
+    });
+});
