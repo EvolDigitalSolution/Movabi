@@ -144,8 +144,8 @@ describe('BATCH 2C — API startup compile guard (production ts-node graph)', ()
         }
         if (!/passengerLicence,vehicle:vehicleInput,/.test(regressedRoute)) {
             regressedRoute = regressedRoute.replace(
-                'resolve({profile:profileInput,canonicalProfile,vehicle:vehicleInput,',
-                'resolve({profile:profileInput,canonicalProfile,passengerLicence,vehicle:vehicleInput,'
+                'resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,',
+                'resolve({profile:effectiveProfile,canonicalProfile,passengerLicence,vehicle:vehicleInput,'
             );
         }
         if (!/vehicleRow as Record<string,unknown>\|null/.test(regressedRoute)) {

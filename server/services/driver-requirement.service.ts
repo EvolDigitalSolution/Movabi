@@ -1,4 +1,5 @@
 import {calculateCalendarAge,CanonicalDriverProfile,mapDriverProfile,parseDriverDateOfBirth} from '../models/driver-profile.model';
+import { readPassengerLicence } from '../models/driver-passenger-licence.model';
 
 export type CanonicalDriverService = 'ride' | 'delivery' | 'errand' | 'van-moving';
 export type DriverOperatingVehicle = 'bicycle' | 'motorcycle' | 'car' | 'small_van' | 'large_van' | null;
@@ -22,7 +23,7 @@ export interface DriverSetupSectionStatus {basicDetails:DriverSetupSection;servi
 export interface DriverVehicleValidation {id:string;userId:string;type:string;make:string|null;model:string|null;colour:string|null;year:number|null;registrationNumber:string|null;capacity:string|null;serviceEligibility:string[];status:string;}
 
 export class DriverRequirementService {
-  static resolve(input: { profile: Record<string, any>; canonicalProfile?:CanonicalDriverProfile; vehicle?: DriverVehicleValidation|null; authEmailConfirmed: boolean; adminRequests?: DriverAdminRequest[]; countryCode?: string|null; marketCity?: string|null; now?: Date }): DriverRequirementResolution {
+  static resolve(input: { profile: any; canonicalProfile?:CanonicalDriverProfile; vehicle?: DriverVehicleValidation|null; authEmailConfirmed: boolean; adminRequests?: DriverAdminRequest[]; countryCode?: string|null; marketCity?: string|null; now?: Date }): DriverRequirementResolution {
     const profile=input.profile||{}, onboardingItems=this.onboardingItems(profile.verification_items), vehicle:DriverVehicleValidation=input.vehicle||{id:'',userId:'',type:'',make:null,model:null,colour:null,year:null,registrationNumber:null,capacity:null,serviceEligibility:[],status:'missing'}, now=input.now||new Date();
     const canonicalProfile=input.canonicalProfile||mapDriverProfile({id:String(profile.id||''),...profile},input.authEmailConfirmed);
     const selectedServices=this.services(profile,vehicle,onboardingItems); const vehicleType=this.vehicle(vehicle,profile); const requirements:ResolvedDriverRequirement[]=[];
@@ -48,11 +49,16 @@ export class DriverRequirementService {
         add('document.driving_licence','Driving licence','documents',this.has(profile.driver_license_url||profile.driving_licence_url),'Upload the appropriate driving licence.');
         add('document.insurance','Vehicle insurance','documents',this.has(profile.insurance_url||profile.courier_insurance_url||profile.hire_reward_insurance_url),'Upload insurance appropriate to the selected services.');
       } else if(vehicleType==='bicycle') {
-        add('vehicle.bicycle_declaration','Bicycle details','vehicle',this.has(vehicle.type)||onboardingItems.bicycle_declaration===true,'Add bicycle details or confirm your bicycle declaration.');
-        add('vehicle.delivery_equipment','Delivery equipment','vehicle',onboardingItems.delivery_equipment_confirmed===true,'Confirm suitable delivery equipment.');
+        add('vehicle.bicycle_declaration','Bicycle details','vehicle',this.has(vehicle.type)||onboardingItems['bicycle_declaration']===true,'Add bicycle details or confirm your bicycle declaration.');
+        add('vehicle.delivery_equipment','Delivery equipment','vehicle',onboardingItems['delivery_equipment_confirmed']===true,'Confirm suitable delivery equipment.');
       }
       if(selectedServices.includes('ride')){
-        add('licence.private_hire','Private-hire/council licensing','licensing',this.has(profile.private_hire_vehicle_license_url)&&this.has(profile.council_license_number),'Provide the passenger-service licensing configured for this market.',['ride']);
+        // Canonical passenger-licence evaluation: the licensing requirement is
+        // satisfied by the canonical council_name + licence number + badge +
+        // expiry (readPassengerLicence), NOT by an ad-hoc vehicle-licence URL.
+        const passengerLicence=readPassengerLicence(profile, now);
+        add('licence.private_hire','Private-hire/council licensing','licensing',passengerLicence.complete,'Provide the passenger-service licensing configured for this market.',['ride']);
+        add('document.private_hire_vehicle_license','Private-hire vehicle licence','documents',this.has(profile.private_hire_vehicle_license_url),'Upload your private-hire/taxi vehicle licence.',['ride']);
         add('document.private_hire_insurance','Private-hire insurance','documents',this.has(profile.private_hire_insurance_url),'Upload passenger-service insurance.',['ride']);
       }
       if(selectedServices.includes('van-moving')) add('document.goods_in_transit','Goods-in-transit cover','documents',country!=='GB'||this.has(profile.goods_in_transit_url),'Upload configured commercial or goods-in-transit cover.',['van-moving']);
@@ -74,9 +80,9 @@ export class DriverRequirementService {
     const applicableSections=Object.values(sectionStatus).filter(item=>item.applicable),completed=applicableSections.filter(item=>item.status==='complete').length,total=applicableSections.length;
     return {selectedServices,vehicleType,automaticRequirements:requirements,adminRequests,warnings,sectionStatus,progress:{completed,total,percentage:total?Math.round(completed/total*100):0},overallStatus,onlineEligibility:{allowed:onlineReasons.length===0,reasons:Array.from(new Set(onlineReasons))},age};
   }
-  private static services(profile:Record<string,any>,vehicle:DriverVehicleValidation,onboardingItems:Record<string,unknown>):CanonicalDriverService[]{const raw=profile.driver_service_types||onboardingItems.driver_service_types||vehicle.serviceEligibility||[];const values=Array.isArray(raw)?raw:String(raw||'').replace(/[\[\]"]/g,'').split(',');return Array.from(new Set(values.map(v=>String(v).trim().toLowerCase()).map(v=>['shop','shopping','errand'].includes(v)?'errand':['deliver','delivery'].includes(v)?'delivery':['move','moving','van','van_moving','van-moving'].includes(v)?'van-moving':v).filter((v):v is CanonicalDriverService=>['ride','delivery','errand','van-moving'].includes(v))));}
-  private static onboardingItems(input:unknown):Record<string,unknown>{if(!input)return{};if(typeof input==='string'){try{return this.onboardingItems(JSON.parse(input))}catch{return{}}}if(Array.isArray(input))return input.reduce<Record<string,unknown>>((items,entry)=>{if(!entry||typeof entry!=='object')return items;const row=entry as Record<string,unknown>,key=String(row.key||row.name||'').trim();if(key)items[key]=row.value==='true'?true:row.value==='false'?false:row.value;return items;},{});return typeof input==='object'?input as Record<string,unknown>:{};}
-  private static vehicle(vehicle:DriverVehicleValidation,profile:Record<string,any>):DriverOperatingVehicle{const value=String(vehicle.capacity||vehicle.type||profile.operating_vehicle||'').toLowerCase();if(!value)return null;if(/bicycle|bike|cycle/.test(value))return'bicycle';if(/motorcycle|motorbike|moped|scooter/.test(value))return'motorcycle';if(/large.?van|luton|box.?van/.test(value))return'large_van';if(/small.?van|\bvan\b/.test(value))return'small_van';return'car';}
+  private static services(profile:any,vehicle:DriverVehicleValidation,onboardingItems:Record<string,unknown>):CanonicalDriverService[]{const raw=profile.driver_service_types||onboardingItems['driver_service_types']||vehicle.serviceEligibility||[];const values=Array.isArray(raw)?raw:String(raw||'').replace(/[\[\]"]/g,'').split(',');return Array.from(new Set(values.map(v=>String(v).trim().toLowerCase()).map(v=>['shop','shopping','errand'].includes(v)?'errand':['deliver','delivery'].includes(v)?'delivery':['move','moving','van','van_moving','van-moving'].includes(v)?'van-moving':v).filter((v):v is CanonicalDriverService=>['ride','delivery','errand','van-moving'].includes(v))));}
+  private static onboardingItems(input:unknown):Record<string,unknown>{if(!input)return{};if(typeof input==='string'){try{return this.onboardingItems(JSON.parse(input))}catch{return{}}}if(Array.isArray(input))return input.reduce<Record<string,unknown>>((items,entry)=>{if(!entry||typeof entry!=='object')return items;const row=entry as Record<string,unknown>,key=String(row['key']||row['name']||'').trim();if(key)items[key]=row['value']==='true'?true:row['value']==='false'?false:row['value'];return items;},{});return typeof input==='object'?input as Record<string,unknown>:{};}
+  private static vehicle(vehicle:DriverVehicleValidation,profile:any):DriverOperatingVehicle{const value=String(vehicle.capacity||vehicle.type||profile.operating_vehicle||'').toLowerCase();if(!value)return null;if(/bicycle|bike|cycle/.test(value))return'bicycle';if(/motorcycle|motorbike|moped|scooter/.test(value))return'motorcycle';if(/large.?van|luton|box.?van/.test(value))return'large_van';if(/small.?van|\bvan\b/.test(value))return'small_van';return'car';}
   private static age(raw:unknown,now:Date,minimum:number){if(!raw)return{eligible:false,years:null,minimum,state:'missing' as const,reason:'Add your date of birth.'};try{const iso=parseDriverDateOfBirth(raw,now),years=calculateCalendarAge(iso,now),eligible=years>=minimum;return{eligible,years,minimum,state:eligible?'completed' as const:'under_age' as const,reason:eligible?null:'You must meet the minimum driver age requirement to register.'};}catch{return{eligible:false,years:null,minimum,state:'invalid' as const,reason:'Enter a valid date of birth.'};}}
   private static has(value:unknown){return String(value??'').trim().length>0;}
 }

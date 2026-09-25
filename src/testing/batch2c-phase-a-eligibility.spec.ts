@@ -46,7 +46,14 @@ const PREFLIGHT = 'scripts/db/preflight_20260925000000_driver_compliance_eligibi
 const POSTFLIGHT = 'scripts/db/postflight_20260925000000_driver_compliance_eligibility_phase_a.sql';
 const N12_MIGRATION = 'supabase/migrations/20260924000000_driver_single_active_job.sql';
 
-const migrationRaw = readFileSync(MIGRATION, 'utf8');
+/** Read a file as UTF-8 and normalise CRLF -> LF. The structural fixtures and
+ *  the postflight SHA-256 are authored against LF content; a Windows checkout
+ *  with core.autocrlf=true materialises CRLF, which would otherwise change the
+ *  hash and break the line-anchored regexes below. Content drift is still caught:
+ *  normalisation only removes \r before \n, never any assertion-relevant text. */
+const readNormalized = (path: string): string => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+
+const migrationRaw = readNormalized(MIGRATION);
 const migration = migrationRaw.replace(/\s+/g, '').toLowerCase();
 
 /** Comment lines removed, so assertions target executable text. */
@@ -54,8 +61,8 @@ const sqlCode = (text: string): string =>
     text.split('\n').filter(line => !line.trimStart().startsWith('--')).join('\n');
 
 const migrationCode = sqlCode(migrationRaw);
-const preflightCode = sqlCode(readFileSync(PREFLIGHT, 'utf8'));
-const postflightCode = sqlCode(readFileSync(POSTFLIGHT, 'utf8'));
+const preflightCode = sqlCode(readNormalized(PREFLIGHT));
+const postflightCode = sqlCode(readNormalized(POSTFLIGHT));
 
 const flat = (text: string): string => text.replace(/\s+/g, '').toLowerCase();
 
@@ -853,7 +860,7 @@ describe('Phase A N12 regression boundary and operational scripts', () => {
         expect(migrationCode).not.toContain('CREATE UNIQUE INDEX');
         expect(migrationCode).not.toMatch(/ALTER\s+TABLE\s+public\.jobs\s+ALTER\s+COLUMN/i);
         // The Batch 2B migration file itself is untouched by Phase A.
-        expect(readFileSync(N12_MIGRATION, 'utf8')).toContain('idx_jobs_one_active_per_driver');
+        expect(readNormalized(N12_MIGRATION)).toContain('idx_jobs_one_active_per_driver');
     });
 
     it('17b. preflight and postflight are read-only and never invoke an acquisition RPC', () => {
@@ -940,7 +947,7 @@ describe('Phase A N12 regression boundary and operational scripts', () => {
         expect(postflightCode).toContain('t.tgenabled::TEXT');
         expect(flat(postflightCode)).toContain('p.prosrc~*');
         // It states plainly that row equality is NOT claimed.
-        const raw = readFileSync(POSTFLIGHT, 'utf8');
+        const raw = readNormalized(POSTFLIGHT);
         expect(raw).toMatch(/Row-level equality is NOT proven here and is NOT claimed/);
         expect(raw).not.toMatch(/rows are unchanged/i);
         expect(raw).not.toMatch(/row equality (was )?(runtime-)?proven/i);
@@ -1052,7 +1059,7 @@ describe('Phase A mutation self-checks (the guards are not vacuous)', () => {
 
 // ===========================================================================
 describe('Phase A postflight service-resolution fixture and final gate', () => {
-    const postflightRaw = readFileSync(POSTFLIGHT, 'utf8');
+    const postflightRaw = readNormalized(POSTFLIGHT);
     const blocks = fixtureBlocks(postflightRaw);
     /** SECTION 4.1 (per-row report) and SECTION 6 (the GO/NO-GO gate). */
     const reportBlock = blocks[0] ?? '';

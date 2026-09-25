@@ -6,9 +6,9 @@ import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
-import { ComplianceService } from '../../../../core/services/compliance/compliance.service';
+import { DriverRequirementService } from '../../../../../../server/services/driver-requirement.service';
+import { mapDriverVehicleRow } from '../../../../../../server/models/driver-vehicle.model';
 import {
-    getBlockingRequirements,
     getVehiclePlateValue,
     isRideSelected as engineRideSelected,
     normaliseSelectedServices,
@@ -797,7 +797,7 @@ export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
     private tour = inject(OnboardingTourService);
-    private complianceService = inject(ComplianceService);
+
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
@@ -1218,34 +1218,22 @@ export class DriverListComponent implements OnInit {
     }
 
     private getEngineBlockers(driver: any): string[] {
+        // Canonical driver-KYC display: use the same authoritative resolver the
+        // Driver Setup status / submit-review / go-online endpoints use, so an
+        // admin never sees a requirement the driver does not (and vice versa).
         const vehicle = this.getVehicle(driver);
-        const selectedServices = this.getSelectedServices(driver);
-        
-        // Use ComplianceService as source of truth for all service types
-        const allRequirements = selectedServices.map(serviceType => 
-            this.complianceService.getDriverMissingRequirements(
-                driver,
-                vehicle,
-                { ...driver, ...vehicle },
-                serviceType as any
-            )
-        ).flat();
-        
-        // Also check base requirements
-        const baseRequirements = this.complianceService.getDriverMissingRequirements(
-            driver,
-            vehicle,
-            { ...driver, ...vehicle },
-            'base'
-        );
-        
-        // Combine and filter for blockers only
-        const allBlockers = [...allRequirements, ...baseRequirements]
-            .filter(req => req.severity === 'blocker')
-            .map(req => req.message);
-        
-        // Remove duplicates
-        return Array.from(new Set(allBlockers));
+        const resolution = DriverRequirementService.resolve({
+            profile: driver || {},
+            vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null,
+            authEmailConfirmed: true,
+            adminRequests: [],
+            countryCode: driver?.country_code || driver?.country || null,
+            marketCity: driver?.market_city || driver?.city || null
+        });
+
+        return resolution.automaticRequirements
+            .filter(requirement => requirement.blockingForSubmission)
+            .map(requirement => requirement.reason);
     }
 
     private filterReviewBlockers(driver: any, blockers: string[]): string[] {

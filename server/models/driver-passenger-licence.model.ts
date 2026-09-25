@@ -85,8 +85,8 @@ export function passengerLicenceItems(input: unknown): Record<string, unknown> {
     return input.reduce<Record<string, unknown>>((items, entry) => {
       if (!entry || typeof entry !== 'object') return items;
       const row = entry as Record<string, unknown>;
-      const key = String(row.key ?? row.name ?? '').trim();
-      if (key) items[key] = row.value;
+      const key = String(row['key'] ?? row['name'] ?? '').trim();
+      if (key) items[key] = row['value'];
       return items;
     }, {});
   }

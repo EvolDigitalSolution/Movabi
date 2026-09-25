@@ -226,11 +226,33 @@ router.post('/submit-review', async (req,res)=>{
     const vehicle=await currentVehicle(driverId);
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
     const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
-    const canonicalProfile=mapDriverProfile(profileInput,!!auth.user?.email_confirmed_at);
-    const passengerLicence=readPassengerLicence(profileInput);
-    const resolution=DriverRequirementService.resolve({profile:profileInput,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:profileInput.country_code,marketCity:profileInput.market_city||profileInput.city});
-    const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const resubmission=req.body?.resubmission===true;
+    const submitted=resubmission?null:(req.body?.profile||{});
+    // Release closure: evaluate the blocker gate against the data being SUBMITTED
+    // (current profile merged with the submitted canonical passenger-licence +
+    // ride-document fields), so a first-time submission is not blocked by stale
+    // DB state. Resubmission re-uses the stored profile unchanged.
+    let passengerLicenceUpdate: Record<string, unknown> = { council_name: null, council_license_number: null, taxi_badge_number: null, taxi_license_expiry: null };
+    if (submitted) {
+      try { passengerLicenceUpdate = passengerLicenceColumns(parseDriverPassengerLicenceInput(submitted, new Date())); } catch { /* keep nulls */ }
+    }
+    const effectiveProfile = submitted
+      ? {
+          ...profileInput,
+          full_name: String(submitted.full_name||'').trim() || profileInput.full_name,
+          phone: String(submitted.phone||'').trim() || profileInput.phone,
+          driver_license_url: submitted.driver_license_url ?? profileInput.driver_license_url,
+          insurance_url: submitted.insurance_url ?? profileInput.insurance_url,
+          right_to_work_url: submitted.right_to_work_url ?? profileInput.right_to_work_url,
+          private_hire_vehicle_license_url: submitted.private_hire_vehicle_license_url ?? profileInput.private_hire_vehicle_license_url,
+          private_hire_insurance_url: submitted.private_hire_insurance_url ?? profileInput.private_hire_insurance_url,
+          goods_in_transit_url: submitted.goods_in_transit_url ?? profileInput.goods_in_transit_url,
+          ...passengerLicenceUpdate
+        }
+      : profileInput;
+    const canonicalProfile=mapDriverProfile(effectiveProfile,!!auth.user?.email_confirmed_at);
+    const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city});
+    const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:resubmission?'resubmission_validated':'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
     if(auditError)throw auditError;
     if(blockers.length){console.warn('[DriverOnboarding] review resubmission blocked',{userId:driverId,resubmission,blockerCodes:blockers.map(item=>item.code)});return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});}
@@ -243,14 +265,14 @@ router.post('/submit-review', async (req,res)=>{
       updates={verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],updated_at:submittedAt};
       auditEvent='resubmitted';
     }else{
-      const submitted=req.body?.profile||{};
       const existingItems=parseOnboardingItems(profile.verification_items);
-      const submittedItems=parseOnboardingItems(submitted.verification_items);
-      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted.full_name||'').trim(),phone:String(submitted.phone||'').trim(),accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:submitted.driver_license_url||null,insurance_url:submitted.insurance_url||null,right_to_work_url:submitted.right_to_work_url||null,verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+      const submittedItems=parseOnboardingItems(submitted?.verification_items);
+      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted?.full_name||'').trim(),phone:String(submitted?.phone||'').trim(),accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:submitted?.driver_license_url||null,insurance_url:submitted?.insurance_url||null,right_to_work_url:submitted?.right_to_work_url||null,private_hire_vehicle_license_url:submitted?.private_hire_vehicle_license_url||null,private_hire_insurance_url:submitted?.private_hire_insurance_url||null,goods_in_transit_url:submitted?.goods_in_transit_url||null,...passengerLicenceUpdate,verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
       auditEvent='submitted';
     }
     const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated)throw updateError||new Error('Review submission did not update the driver profile.');
     const{error:consumeError}=await supabaseAdmin.from('driver_onboarding_requests').update({permission_consumed_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','identity_correction').eq('status','approved').is('permission_consumed_at',null);if(consumeError)throw consumeError;
+    const{error:resolveError}=await supabaseAdmin.from('driver_onboarding_requests').update({status:'approved',resolved_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','missing_info').in('status',['pending','rejected']);if(resolveError)throw resolveError;
     return res.json({submitted:true,resubmission,event:auditEvent,reviewState:'under_review',profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
   }catch(error:unknown){const message=error instanceof Error?error.message:'Unable to validate driver submission.';return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});}
 });

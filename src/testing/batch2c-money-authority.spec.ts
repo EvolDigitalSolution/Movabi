@@ -22,7 +22,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = process.cwd();
-const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
+// Structural fixtures and line-anchored regexes below are authored against LF
+// content. A Windows checkout with core.autocrlf=true materialises CRLF, which
+// would otherwise trip the `^\s*[^-]` CASCADE guard and line-terminated matches,
+// so normalise CRLF -> LF at read time (content assertions are unaffected).
+const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
 
 const PAYMENT = read('server/routes/payment.routes.ts');
 const LOGISTICS_ROUTE = read('server/routes/logistics.routes.ts');

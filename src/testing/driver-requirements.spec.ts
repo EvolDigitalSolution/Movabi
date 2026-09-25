@@ -82,7 +82,7 @@ describe('authoritative driver requirement resolution', () => {
   it.each([
     ['delivery',false],['errand',false],['shop',false],['van-moving',false],['ride',true]
   ] as const)('%s resolves service licensing applicability to %s',(service,applicable)=>{
-    const result=resolve(profile({driver_service_types:[service],private_hire_vehicle_license_url:'phv.pdf',council_license_number:'C1',private_hire_insurance_url:'hire.pdf'}),car);
+    const result=resolve(profile({driver_service_types:[service],council_name:'Oldham Council',council_license_number:'C1',taxi_badge_number:'BADGE-1',taxi_license_expiry:'2026-08-30',private_hire_vehicle_license_url:'phv.pdf',private_hire_insurance_url:'hire.pdf'}),car);
     expect(result.sectionStatus.serviceLicensing).toMatchObject({applicable,status:applicable?'complete':'not_applicable'});
   });
 

@@ -182,8 +182,14 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       countryCode: profile.country_code || profile.country || vehicle?.country_code
     });
     const blockingRequirements = getBlockingRequirements(requirementsInput);
-    const adminReviewRequirements = getAdminReviewRequirements(requirementsInput);
-    const blockers = blockingRequirements.map((requirement) => requirement.message);
+    // Release closure: the CANONICAL resolution (DriverRequirementService) is the
+    // authority for whether a driver can be approved, so admin pre-verify agrees
+    // with the mobile setup checklist. The shared engine result is kept only for
+    // backward-compatible display fields below.
+    const adminReviewRequirements = authoritativeResolution.automaticRequirements.filter((requirement) => requirement.needsAdminReview);
+    const blockers = authoritativeResolution.automaticRequirements
+      .filter((requirement) => requirement.blockingForSubmission)
+      .map((requirement) => requirement.reason);
     const canApprove = blockers.length === 0;
     const rideSelected = isRideSelected(profile, vehicle);
     const vehiclePlate = getVehiclePlateValue(vehicle);
@@ -300,6 +306,43 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // Reconcile with the mobile "Outstanding Requests" feed, which reads
+    // driver_onboarding_requests (not the blocker columns). One open
+    // 'admin.missing_info' row per driver keeps the partial unique index
+    // idx_driver_onboarding_requests_one_open satisfied and makes the explicit
+    // admin request visible to the driver.
+    const requestItem = selectedBlockers.length
+      ? selectedBlockers.join(' · ').slice(0, 160)
+      : 'Update your details';
+    const requestMessage = String(notes || '').trim() || requestItem;
+    const { data: existingOpenRequest } = await supabase
+      .from('driver_onboarding_requests')
+      .select('id')
+      .eq('driver_id', driverId)
+      .eq('requirement_code', 'admin.missing_info')
+      .in('status', ['pending', 'rejected'])
+      .maybeSingle();
+    const requestPatch = {
+      item: requestItem,
+      public_message: requestMessage,
+      request_type: 'missing_info',
+      status: 'pending',
+      sent_at: sentAt,
+      updated_at: sentAt
+    };
+    if (existingOpenRequest) {
+      const { error: requestUpdateError } = await supabase
+        .from('driver_onboarding_requests')
+        .update(requestPatch)
+        .eq('id', existingOpenRequest.id);
+      if (requestUpdateError) throw requestUpdateError;
+    } else {
+      const { error: requestInsertError } = await supabase
+        .from('driver_onboarding_requests')
+        .insert({ driver_id: driverId, requirement_code: 'admin.missing_info', ...requestPatch });
+      if (requestInsertError) throw requestInsertError;
+    }
 
     await NotificationService
       .notifyDriverReviewActionRequired(driverId, selectedBlockers, historyEntry.notes)

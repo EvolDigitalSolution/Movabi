@@ -25,12 +25,13 @@ describe('authoritative passenger licence persistence',()=>{
     expect(route).toContain('select(PASSENGER_LICENCE_SELECT).eq(\'id\',driverId).single()');
     expect(route).toContain('const values={...passengerLicenceColumns(licence),verification_items:serializeOnboardingItems(mirror),updated_at:new Date().toISOString()}');
     expect(route).toContain('passengerLicence=readPassengerLicence(profile)');
-    expect(route).toContain('passengerLicence=readPassengerLicence(profileInput)');
+    expect(route).toContain('passengerLicenceColumns(parseDriverPassengerLicenceInput(');
   });
 
   it('does not clear stored form values when Ride is temporarily removed',()=>{
     const page=readFileSync('src/app/apps/mobile/features/driver/onboarding/onboarding.page.ts','utf8');
     expect(page).not.toContain("councilName?.setValue('', { emitEvent: false })");
-    expect(page).toContain('savePassengerLicence');
+    expect(page).toContain('private_hire_vehicle_license');
+    expect(page).toContain('private_hire_insurance');
   });
 });

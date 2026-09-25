@@ -176,7 +176,7 @@ describe('Phase B — passenger licence canonical transition', () => {
             "const PASSENGER_LICENCE_SELECT='id,verification_items,council_name,council_license_number,taxi_badge_number,taxi_license_expiry'"
         );
         expect(flat(ROUTE_CODE)).toContain('passengerlicence=readpassengerlicence(profile)');
-        expect(flat(ROUTE_CODE)).toContain('passengerlicence=readpassengerlicence(profileinput)');
+        expect(flat(ROUTE_CODE)).toContain('passengerlicencecolumns(parsedriverpassengerlicenceinput(');
         expect(flat(ROUTE_CODE)).toContain('...passengerlicencecolumns(licence)');
         expect(flat(ROUTE_CODE)).toContain('verification_items:serializeonboardingitems(mirror)');
         // The compatibility-only read is no longer used for the licence verdict.

@@ -56,7 +56,7 @@ import {
     vehicleRequiresRegistration
 } from '@shared/verification/driver-requirements.engine';
 
-type DocumentType = 'license' | 'insurance' | 'right_to_work';
+type DocumentType = 'license' | 'insurance' | 'right_to_work' | 'private_hire_vehicle_license' | 'private_hire_insurance' | 'goods_in_transit';
 type StripeMessageType = 'success' | 'warning';
 type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'small_van' | 'large_van';
 type DriverServiceSelection = 'ride' | 'errand' | 'delivery' | 'van';
@@ -66,6 +66,7 @@ type DriverOnboardingDraft = {
     docs?: {
         license?: string;
         insurance?: string;
+        goods_in_transit?: string;
     };
 };
 const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!control.value)return{required:true};const dob=new Date(String(control.value));const now=new Date();if(Number.isNaN(dob.getTime())||dob>now||dob.getUTCFullYear()<1900)return{invalidDate:true};let age=now.getUTCFullYear()-dob.getUTCFullYear();if(now.getUTCMonth()<dob.getUTCMonth()||(now.getUTCMonth()===dob.getUTCMonth()&&now.getUTCDate()<dob.getUTCDate()))age--;return age>=18?null:{minimumAge:true};};
@@ -615,6 +616,34 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 @if (docs().right_to_work) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
                 @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
               </button>
+
+              @if (requiresTaxiLicence()) {
+                <button type="button" (click)="handleDocumentClick('private_hire_vehicle_license')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                  <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100 shadow-sm"><ion-icon name="car-sport-outline" class="text-2xl"></ion-icon></div>
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Private-hire vehicle licence</h4>
+                  @if (docs().private_hire_vehicle_license) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
+                  @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                </button>
+
+                <button type="button" (click)="handleDocumentClick('private_hire_insurance')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                  <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm"><ion-icon name="shield-checkmark-outline" class="text-2xl"></ion-icon></div>
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Passenger-service insurance</h4>
+                  @if (docs().private_hire_insurance) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
+                  @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                </button>
+              }
+
+              @if (requiresGoodsInTransit()) {
+                <button type="button" (click)="handleDocumentClick('goods_in_transit')" class="col-span-2 bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                  <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-4 border border-teal-100 shadow-sm"><ion-icon name="document-attach-outline" class="text-2xl"></ion-icon></div>
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Goods-in-transit cover</h4>
+                  @if (docs().goods_in_transit) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
+                  @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                </button>
+              }
             </div>
           </section>
 
@@ -707,7 +736,7 @@ export class OnboardingPage implements OnInit {
 
     onboardingForm: FormGroup;
 
-    docs = signal<{ license?: string; insurance?: string; right_to_work?: string }>({});
+    docs = signal<{ license?: string; insurance?: string; right_to_work?: string; private_hire_vehicle_license?: string; private_hire_insurance?: string; goods_in_transit?: string }>({});
     stripeMessage = signal<string | null>(null);
     stripeMessageType = signal<StripeMessageType>('success');
     submitting = signal(false);
@@ -1055,7 +1084,8 @@ export class OnboardingPage implements OnInit {
             if (draft?.docs) {
                 this.docs.set({
                     license: draft.docs.license,
-                    insurance: draft.docs.insurance
+                    insurance: draft.docs.insurance,
+                    goods_in_transit: draft.docs.goods_in_transit
                 });
             }
         } catch {
@@ -1114,7 +1144,10 @@ export class OnboardingPage implements OnInit {
             this.docs.set({
                 license: profile.driver_license_url ?? this.docs().license,
                 insurance: profile.insurance_url ?? this.docs().insurance,
-                right_to_work: profile.right_to_work_url ?? this.docs().right_to_work
+                right_to_work: profile.right_to_work_url ?? this.docs().right_to_work,
+                private_hire_vehicle_license: profile.private_hire_vehicle_license_url ?? this.docs().private_hire_vehicle_license,
+                private_hire_insurance: profile.private_hire_insurance_url ?? this.docs().private_hire_insurance,
+                goods_in_transit: profile.goods_in_transit_url ?? this.docs().goods_in_transit
             });
         }
     }
@@ -1164,6 +1197,13 @@ export class OnboardingPage implements OnInit {
             { verification_items: { driver_service_types: this.selectedServiceTypes() }, driver_service_types: this.selectedServiceTypes() },
             { service_eligibility: this.selectedServiceTypes(), capacity: this.selectedVehicleClass() }
         );
+    }
+
+    requiresGoodsInTransit(): boolean {
+        // Mirrors DriverRequirementService.resolve(): document.goods_in_transit is
+        // added whenever van-moving is selected, so the upload control appears
+        // exactly when the canonical evaluation carries that requirement.
+        return this.selectedServiceTypes().includes('van');
     }
 
     private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
@@ -1322,10 +1362,9 @@ export class OnboardingPage implements OnInit {
             councilNumber?.setErrors(null);
             taxiBadge?.setErrors(null);
             taxiExpiry?.setErrors(null);
-            councilName?.setValue('', { emitEvent: false });
-            councilNumber?.setValue('', { emitEvent: false });
-            taxiBadge?.setValue('', { emitEvent: false });
-            taxiExpiry?.setValue('', { emitEvent: false });
+            // Release closure: preserve the driver's entered council/taxi values
+            // when Ride is temporarily deselected, so re-selecting Ride does not
+            // silently wipe their licensing data.
         }
 
         [plate, services, councilName, councilNumber, taxiBadge, taxiExpiry, bicycleDeclaration, deliveryEquipment].forEach(control => {
@@ -1548,15 +1587,7 @@ export class OnboardingPage implements OnInit {
             council_name: String(raw['council_name'] || '').trim(),
             council_license_number: String(raw['council_license_number'] || '').trim(),
             taxi_badge_number: String(raw['taxi_badge_number'] || '').trim(),
-            taxi_license_expiry: String(raw['taxi_license_expiry'] || '').trim() || null,
-            private_hire_vehicle_license_url: this.firstProfileValue(profile, [
-                'private_hire_vehicle_license_url',
-                'privateHireVehicleLicenseUrl',
-                'phv_license_url',
-                'vehicle_license_url',
-                'private_hire_vehicle_licence_url',
-                'phv_licence_url'
-            ]) || null
+            taxi_license_expiry: String(raw['taxi_license_expiry'] || '').trim() || null
         };
 
         console.log('[driver-compliance] saving ride fields', payload);
@@ -1758,7 +1789,7 @@ export class OnboardingPage implements OnInit {
                 );
                 await this.refreshOnboardingStatus();
 
-                const label = type === 'license' ? 'Driver licence' : type === 'insurance' ? 'Insurance' : 'Right to work evidence';
+                const label = type === 'license' ? 'Driver licence' : type === 'insurance' ? 'Insurance' : type === 'right_to_work' ? 'Right to work evidence' : type === 'private_hire_vehicle_license' ? 'Private-hire vehicle licence' : type === 'private_hire_insurance' ? 'Passenger-service insurance' : 'Goods-in-transit cover';
                 await this.showToast(`${label} uploaded.`, 'success');
             } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : 'Upload failed.';
@@ -1781,7 +1812,13 @@ export class OnboardingPage implements OnInit {
             ? { driver_license_url: path }
             : type === 'insurance'
                 ? { insurance_url: path }
-                : { right_to_work_url: path, right_to_work_status: 'uploaded' });
+                : type === 'private_hire_vehicle_license'
+                    ? { private_hire_vehicle_license_url: path }
+                    : type === 'private_hire_insurance'
+                        ? { private_hire_insurance_url: path }
+                        : type === 'goods_in_transit'
+                            ? { goods_in_transit_url: path }
+                            : { right_to_work_url: path, right_to_work_status: 'uploaded' });
 
         if (typeof (this.profileService as any).fetchProfile === 'function') {
             await (this.profileService as any).fetchProfile(user.id);
@@ -1860,6 +1897,9 @@ export class OnboardingPage implements OnInit {
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
                 right_to_work_url: this.docs().right_to_work || null,
+                private_hire_vehicle_license_url: this.docs().private_hire_vehicle_license || null,
+                private_hire_insurance_url: this.docs().private_hire_insurance || null,
+                goods_in_transit_url: this.docs().goods_in_transit || null,
                 ...rideCompliancePayload,
                 verification_items: this.buildVerificationItems(raw)
             });
