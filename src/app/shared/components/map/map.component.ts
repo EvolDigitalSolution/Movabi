@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { Component, ElementRef, EventEmitter, OnDestroy, OnInit, Output, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { addIcons } from 'ionicons';
@@ -156,6 +156,13 @@ export class MapComponent implements OnInit, OnDestroy {
   private mapRenderer = inject(MapRendererService);
   private config = inject(AppConfigService);
 
+  /**
+   * Emitted once the MapLibre instance is live. Hosts that render this map
+   * inside a structural directive (@if) must re-bind here instead of relying on
+   * a one-time ngAfterViewInit registration.
+   */
+  @Output() ready = new EventEmitter<MapComponent>();
+
   mapReady = signal(false);
   initializing = signal(true);
   showSearchingOverlay = signal(false);
@@ -176,6 +183,7 @@ export class MapComponent implements OnInit, OnDestroy {
       this.initializing.set(false);
       if (map) {
         this.mapReady.set(true);
+        this.ready.emit(this);
       }
     }, 0);
   }
@@ -208,8 +216,16 @@ export class MapComponent implements OnInit, OnDestroy {
     this.mapRenderer.setCenter(lng, lat, zoom);
   }
 
-  fitBounds(bounds: [[number, number], [number, number]], options?: unknown) {
-    this.mapRenderer.fitBounds(bounds, options);
+  fitBounds(bounds: [[number, number], [number, number]], options?: unknown): boolean {
+    return this.mapRenderer.fitBounds(bounds, options);
+  }
+
+  /**
+   * Live map container size. Returns zeros before the map exists so callers can
+   * detect an unmeasurable viewport and retry later.
+   */
+  getViewportSize(): { width: number; height: number } {
+    return this.mapRenderer.getContainerSize();
   }
 
   resize() {
@@ -241,5 +257,17 @@ export class MapComponent implements OnInit, OnDestroy {
 
   drawRouteGeometry(id: string, coordinates: number[][]): void {
     this.mapRenderer.drawRouteGeometry(id, coordinates);
+  }
+
+  clearRouteGeometry(id: string): void {
+    this.mapRenderer.clearRouteGeometry(id);
+  }
+
+  easeToCenter(lng: number, lat: number, options?: { zoom?: number; duration?: number; padding?: any }): boolean {
+    return this.mapRenderer.easeToCenter(lng, lat, options);
+  }
+
+  onUserMapGesture(callback: (() => void) | null): void {
+    this.mapRenderer.onUserMapGesture(callback);
   }
 }

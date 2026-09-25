@@ -19,41 +19,102 @@ export interface VehicleMarker {
   icon?: string;
 }
 
+export interface FitMapOptions {
+  maxZoom?: number;
+  duration?: number;
+  singlePointZoom?: number;
+  topPadding?: number;
+  sidePadding?: number;
+}
+
 /**
  * Shared map UX helpers for Uber/Bolt-style map behavior
  */
 export class MapUxHelpers {
   /**
-   * Fit map bounds to ensure all points are visible above bottom sheet
+   * Fit the map so every valid point stays visible above the bottom sheet.
+   *
+   * Returns true only when a camera move was actually issued, so callers can
+   * avoid latching camera state onto a failed/deferred fit.
+   *
+   * A single valid point is framed with an explicit zoom + padding instead of a
+   * degenerate (zero-area) bounds box, which MapLibre cannot resolve reliably.
    */
   static fitVisibleMapBounds(
     mapComponent: MapComponent,
     points: MapCoordinates[],
-    bottomSheetPercent: number = 40
-  ): void {
-    if (!points.length) return;
+    bottomSheetPercent: number = 40,
+    options?: FitMapOptions
+  ): boolean {
+    const validPoints = this.filterValidCoordinates(points);
+    if (!validPoints.length) return false;
 
-    // Calculate bottom padding based on bottom sheet height
-    const viewportHeight = window.innerHeight;
-    const bottomPadding = (viewportHeight * bottomSheetPercent) / 100;
-    
-    // Add extra padding to ensure markers are clearly visible
-    const finalBottomPadding = Math.max(bottomPadding + 100, 400);
+    const viewport = this.getViewport(mapComponent);
+    const padding = this.buildSheetPadding(bottomSheetPercent, viewport.height, options);
 
-    const lats = points.map(point => point.lat);
-    const lngs = points.map(point => point.lng);
-    
+    if (validPoints.length === 1) {
+      const point = validPoints[0];
+
+      return mapComponent.easeToCenter(point.lng, point.lat, {
+        zoom: options?.singlePointZoom ?? 15,
+        duration: options?.duration ?? 700,
+        padding
+      });
+    }
+
+    const lats = validPoints.map(point => point.lat);
+    const lngs = validPoints.map(point => point.lng);
+
     const bounds: [[number, number], [number, number]] = [
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)]
     ];
 
-    // Use MapComponent's fitBounds method
-    mapComponent.fitBounds(bounds, {
-      padding: { top: 80, left: 48, right: 48, bottom: finalBottomPadding },
-      maxZoom: 16,
-      duration: 800
+    return mapComponent.fitBounds(bounds, {
+      padding,
+      maxZoom: options?.maxZoom ?? 16,
+      duration: options?.duration ?? 800
     });
+  }
+
+  /**
+   * Build camera padding from the CURRENT bottom-sheet height, using the real
+   * map container height where available. Clamped so MapLibre keeps a usable
+   * viewport instead of collapsing the visible area.
+   */
+  static buildSheetPadding(
+    bottomSheetPercent: number,
+    viewportHeight?: number,
+    options?: FitMapOptions
+  ): { top: number; bottom: number; left: number; right: number } {
+    const parsedHeight = Number(viewportHeight);
+    const height = Number.isFinite(parsedHeight) && parsedHeight > 0
+      ? parsedHeight
+      : window.innerHeight;
+
+    const percent = Math.min(Math.max(Number(bottomSheetPercent) || 0, 0), 90);
+    const sheetPixels = (height * percent) / 100;
+    const maxBottom = Math.max(96, height - 160);
+    const bottom = Math.round(Math.min(Math.max(sheetPixels + 24, 96), maxBottom));
+
+    return {
+      top: options?.topPadding ?? 80,
+      bottom,
+      left: options?.sidePadding ?? 48,
+      right: options?.sidePadding ?? 48
+    };
+  }
+
+  private static getViewport(mapComponent: MapComponent): { width: number; height: number } {
+    if (typeof mapComponent.getViewportSize === 'function') {
+      const size = mapComponent.getViewportSize();
+
+      if (Number.isFinite(size?.width) && Number.isFinite(size?.height)) {
+        return size;
+      }
+    }
+
+    return { width: window.innerWidth, height: window.innerHeight };
   }
 
   /**
@@ -161,12 +222,11 @@ export class MapUxHelpers {
   }
 
   /**
-   * Get bottom sheet padding in pixels for map fitting
+   * Get bottom sheet padding in pixels for map fitting.
+   * Kept for backwards compatibility; delegates to buildSheetPadding.
    */
   static getBottomSheetPadding(bottomSheetPercent: number): number {
-    const viewportHeight = window.innerHeight;
-    const basePadding = (viewportHeight * bottomSheetPercent) / 100;
-    return Math.max(basePadding + 100, 400);
+    return this.buildSheetPadding(bottomSheetPercent, window.innerHeight).bottom;
   }
 
   /**
