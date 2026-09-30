@@ -141,15 +141,15 @@ import {
           <div class="max-w-lg w-full text-center space-y-5">
             <ion-icon name="globe-outline" class="text-6xl text-blue-400"></ion-icon>
             <h1 class="text-3xl font-black">{{ startupMarket()!.title }}</h1><p class="text-slate-300">{{ startupMarket()!.message }}</p>
-            <label class="block text-left text-sm font-bold">Change location<select class="mt-2 w-full p-3 rounded-xl text-slate-900" [value]="appConfig.currentCountry().code" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code">{{country.name}}</option>}</select></label>
-            @if (startupMarket()!.waitingListEnabled) {<div class="flex gap-2"><input class="flex-1 p-3 rounded-xl text-slate-900" type="email" placeholder="Email for launch updates" [value]="waitingEmail()" (input)="waitingEmail.set($any($event.target).value)"><button class="px-4 rounded-xl bg-blue-600 font-bold" (click)="joinWaitingList()">Join</button></div>}
+            <label class="block text-left text-sm font-bold">Change location<select class="mt-2 w-full p-3 rounded-xl text-slate-900" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code" [selected]="country.code === appConfig.currentCountry().code">{{country.name}}</option>}</select></label>
+            @if (startupMarket()!.waitingListEnabled) {<div class="flex gap-2"><input class="flex-1 min-w-0 p-3 rounded-xl text-slate-900" type="email" placeholder="Email for launch updates" [value]="waitingEmail()" (input)="waitingEmail.set($any($event.target).value)"><button type="button" class="shrink-0 whitespace-nowrap px-4 py-3 rounded-xl bg-blue-600 font-bold" (click)="joinWaitingList()">Join</button></div>}
             @if (startupMessage()) {<p class="text-sm text-blue-300">{{startupMessage()}}</p>}
-            <div class="flex gap-3 justify-center"><button class="px-5 py-3 rounded-xl bg-white text-slate-900 font-bold" (click)="checkStartupMarket()">Retry</button><button class="px-5 py-3 rounded-xl border border-white/30 font-bold" (click)="router.navigateByUrl('/auth/login')">Sign in</button></div>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center"><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl bg-white text-slate-900 font-bold" (click)="checkStartupMarket()">Retry</button><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl border border-white/30 font-bold" (click)="router.navigateByUrl('/auth/login')">Sign in</button></div>
           </div>
         </section>
       } @else if (startupMarket() && startupMarket()!.customerAppEnabled && !startupMarket()!.bookingEnabled) {
         <aside class="fixed top-0 left-0 right-0 z-[1100] bg-blue-700 text-white p-3 text-center"><strong>{{startupMarket()!.title}}</strong> — {{startupMarket()!.message}} <button class="underline ml-2" (click)="changeLocationVisible.set(!changeLocationVisible())">Change location</button>
-          @if(changeLocationVisible()){<select class="ml-2 text-slate-900 p-1 rounded" [value]="appConfig.currentCountry().code" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code">{{country.name}}</option>}</select>}
+          @if(changeLocationVisible()){<select class="ml-2 text-slate-900 p-1 rounded" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code" [selected]="country.code === appConfig.currentCountry().code">{{country.name}}</option>}</select>}
         </aside>
       }
 
@@ -295,8 +295,27 @@ export class App implements OnInit {
     }
 
     async checkStartupMarket() {
-        try { this.startupMessage.set(null); this.startupMarket.set(await this.marketAvailability.getStatus({countryCode:this.appConfig.currentCountry().code})); }
-        catch { this.startupMessage.set('We could not check availability. Please retry.'); }
+        const countryCode = this.appConfig.currentCountry().code;
+        try { this.startupMessage.set(null); this.startupMarket.set(await this.marketAvailability.getStatus({countryCode})); }
+        catch {
+            // Never keep a previous country's availability on screen after a failed check.
+            // Replace it with a deterministic, country-agnostic status so the retry and
+            // change-location controls keep working.
+            this.marketAvailability.current.set(null);
+            this.startupMarket.set(this.unavailableStartupStatus(countryCode));
+            this.startupMessage.set('We could not check availability. Please retry.');
+        }
+    }
+
+    private unavailableStartupStatus(countryCode: string): PublicMarketStatus {
+        return {
+            code: 'MARKET_STATUS_UNAVAILABLE', countryCode, marketCity: null, launchStatus: 'coming_soon',
+            customerAppEnabled: false, customerRegistrationEnabled: false, driverRegistrationEnabled: false,
+            driverOnlineEnabled: false, quoteEnabled: false, bookingEnabled: false, paymentEnabled: false,
+            currency: null, timezone: null,
+            title: 'Availability check failed', message: 'We could not check availability. Please retry.',
+            waitingListEnabled: false, resolutionLevel: 'unavailable'
+        };
     }
 
     async changeStartupCountry(code:string) { this.appConfig.setCountry(code); this.changeLocationVisible.set(false); await this.checkStartupMarket(); }
