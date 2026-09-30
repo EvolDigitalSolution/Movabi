@@ -1,3 +1,16 @@
+/* Ionic's normalize.css is an UNLAYERED reset, and unlayered CSS outranks every
+   cascade layer. Its button reset (padding 0, border 0, border-radius 0,
+   line-height 1, text-transform none, appearance button) therefore silently
+   defeated Tailwind's layered utilities for padding, border, border-radius,
+   line-height, text-transform and appearance on every native <button> in the
+   app, collapsing those buttons to their bare text width.
+
+   Declaring this layer BEFORE Tailwind's own layers puts Ionic's reset
+   underneath Tailwind's preflight and utilities, which is what the markup
+   already assumes. Only normalize.css is re-layered; every other Ionic
+   stylesheet stays unlayered so Ion component and helper behaviour is unchanged. */
+@layer ionic-normalize;
+
 @import "@fontsource/inter/400.css";
 @import "@fontsource/inter/500.css";
 @import "@fontsource/inter/600.css";
@@ -10,8 +23,10 @@
 /* Core CSS required for Ionic components to work properly */
 @import "@ionic/angular/css/core.css";
 
-/* Basic CSS for apps built with Ionic */
-@import "@ionic/angular/css/normalize.css";
+/* Basic CSS for apps built with Ionic.
+   The reset is imported into the ionic-normalize layer (declared above) so that
+   Tailwind preflight and utilities win for native controls. */
+@import "@ionic/angular/css/normalize.css" layer(ionic-normalize);
 @import "@ionic/angular/css/structure.css";
 @import "@ionic/angular/css/typography.css";
 
