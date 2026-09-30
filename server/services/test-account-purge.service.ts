@@ -18,21 +18,15 @@ export function isNonAdminResetTarget(role: unknown): boolean {
 const BATCH = 40;
 
 async function deleteWhere(table: string, column: string, value: string): Promise<void> {
-  try {
-    await supabaseAdmin.from(table).delete().eq(column, value);
-  } catch (error) {
-    console.warn(`[TestAccountPurge] ${table}.${column} cleanup failed:`, error);
-  }
+  const { error } = await supabaseAdmin.from(table).delete().eq(column, value);
+  if (error) throw new Error(`Failed to delete ${table} by ${column}: ${error.message}`);
 }
 
 async function deleteWhereIn(table: string, column: string, values: string[]): Promise<void> {
   for (let i = 0; i < values.length; i += BATCH) {
     const chunk = values.slice(i, i + BATCH);
-    try {
-      await supabaseAdmin.from(table).delete().in(column, chunk);
-    } catch (error) {
-      console.warn(`[TestAccountPurge] ${table}.${column} batch cleanup failed:`, error);
-    }
+    const { error } = await supabaseAdmin.from(table).delete().in(column, chunk);
+    if (error) throw new Error(`Failed to delete ${table} by ${column}: ${error.message}`);
   }
 }
 
@@ -170,33 +164,37 @@ export async function purgeTestAccount(adminUserId: string, targetUserId: string
   const email = await resolveAuthEmail(targetUserId);
 
   // 1. Collect and delete the affected test-job aggregate (child-to-parent).
-  const affectedJobIds = await collectAffectedJobIds(targetUserId);
-  await deleteNegotiationEventsForJobs(affectedJobIds);
-  for (const entry of JOB_OWNED_TABLES) {
-    await deleteWhereIn(entry.table, entry.column, affectedJobIds);
+  try {
+    const affectedJobIds = await collectAffectedJobIds(targetUserId);
+    await deleteNegotiationEventsForJobs(affectedJobIds);
+    for (const entry of JOB_OWNED_TABLES) {
+      await deleteWhereIn(entry.table, entry.column, affectedJobIds);
+    }
+    await deleteWhereIn('jobs', 'id', affectedJobIds);
+
+    // 2. Delete target-owned account rows.
+    for (const entry of ACCOUNT_OWNED_TABLES) {
+      await deleteWhere(entry.table, entry.column, targetUserId);
+    }
+    if (email) {
+      await deleteWhere('registration_otps', 'email', email);
+    }
+
+    // 3. Delete the application profile (service_role bypasses ownership guard).
+    const { error: profileDeleteError } = await supabaseAdmin.from('profiles').delete().eq('id', targetUserId);
+    if (profileDeleteError) throw new Error(profileDeleteError.message);
+
+    // 4. HARD-delete the Auth user (releases email for immediate re-registration).
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId, false);
+    if (authError) throw new Error(authError.message);
+
+    // 5. Best-effort storage cleanup (test KYC/profile/vehicle docs).
+    await cleanupStorage(targetUserId);
+
+    return { status: 'purged', recovered: false, removedJobs: affectedJobIds.length };
+  } catch (error) {
+    return { status: 'error', message: error instanceof Error ? error.message : 'Purge failed.' };
   }
-  await deleteWhereIn('jobs', 'id', affectedJobIds);
-
-  // 2. Delete target-owned account rows.
-  for (const entry of ACCOUNT_OWNED_TABLES) {
-    await deleteWhere(entry.table, entry.column, targetUserId);
-  }
-  if (email) {
-    await deleteWhere('registration_otps', 'email', email);
-  }
-
-  // 3. Delete the application profile (service_role bypasses ownership guard).
-  const { error: profileDeleteError } = await supabaseAdmin.from('profiles').delete().eq('id', targetUserId);
-  if (profileDeleteError) return { status: 'error', message: profileDeleteError.message };
-
-  // 4. HARD-delete the Auth user (releases email for immediate re-registration).
-  const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId, false);
-  if (authError) return { status: 'error', message: authError.message };
-
-  // 5. Best-effort storage cleanup (test KYC/profile/vehicle docs).
-  await cleanupStorage(targetUserId);
-
-  return { status: 'purged', recovered: false, removedJobs: affectedJobIds.length };
 }
 
 export function isResetAllTestDataEnabled(env: Record<string, string | undefined> = process.env): boolean {
@@ -272,13 +270,9 @@ async function collectJobIdsForTargets(ids: string[]): Promise<string[]> {
  */
 async function deleteNegotiationEventsForJobs(jobIds: string[]): Promise<void> {
   if (!jobIds.length) return;
-  let sessionIds: string[] = [];
-  try {
-    const { data } = await supabaseAdmin.from('marketplace_negotiation_sessions').select('id').in('job_id', jobIds);
-    sessionIds = ((data || []) as any[]).map((row) => String(row.id));
-  } catch {
-    return;
-  }
+  const { data, error } = await supabaseAdmin.from('marketplace_negotiation_sessions').select('id').in('job_id', jobIds);
+  if (error) throw new Error(`Failed to load negotiation sessions: ${error.message}`);
+  const sessionIds = ((data || []) as any[]).map((row) => String(row.id));
   await deleteWhereIn('marketplace_negotiation_events', 'session_id', sessionIds);
 }
 

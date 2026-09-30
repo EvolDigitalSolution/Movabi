@@ -125,3 +125,26 @@ describe('production FK coverage', () => {
         expect(service).toContain("{ table: 'booking_status_history', column: 'changed_by' }");
     });
 });
+
+describe('destructive cleanup error handling', () => {
+    it('deleteWhere/deleteWhereIn surface returned Supabase DELETE errors (no swallow)', () => {
+        expect(service).toContain('const { error } = await supabaseAdmin.from(table).delete().eq(column, value)');
+        expect(service).toContain('const { error } = await supabaseAdmin.from(table).delete().in(column, chunk)');
+        expect(service).toContain("if (error) throw new Error(`Failed to delete ${table} by ${column}");
+        expect(service).not.toContain('cleanup failed:');
+    });
+
+    it('negotiation session query surfaces returned error (no catch-and-return)', () => {
+        expect(service).toContain("if (error) throw new Error(`Failed to load negotiation sessions");
+    });
+
+    it('individual purge wraps deletion in try/catch returning an error outcome', () => {
+        expect(service).toContain('return { status: \'error\', message: error instanceof Error ? error.message : \'Purge failed.\' }');
+        expect(service).toContain('try {');
+    });
+
+    it('storage cleanup remains intentional best-effort (counts failures)', () => {
+        expect(service).toContain('catch { failures += 1; }');
+        expect(service).toContain('return failures;');
+    });
+});

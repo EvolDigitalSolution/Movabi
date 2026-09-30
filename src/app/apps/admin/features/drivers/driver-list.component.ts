@@ -604,7 +604,7 @@ type AdminDriver = DriverProfile & {
             <button type="button" class="modal-cancel" (click)="purgeModal.set(null); purgeConfirmText.set('')">Cancel</button>
             <button
               type="button"
-              class="px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+              class="shrink-0 whitespace-nowrap px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
               [disabled]="purgeConfirmText() !== 'DELETE' || purging()"
               (click)="confirmPurge()"
             >
