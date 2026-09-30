@@ -278,7 +278,11 @@ export class SignupPage {
   onCountryChange(event: Event) {
     const customEvent = event as CustomEvent;
     const code = customEvent.detail.value;
+    if (!code || code === this.config.currentCountry().code) return;
     this.config.setCountry(code);
+    // A city / operating area belongs to the previously selected country, so it must not
+    // be silently carried over (e.g. "London" submitted together with country_code NG).
+    this.signupForm.patchValue({ marketCity: '' });
   }
 
   passwordMatchValidator(g: FormGroup) {

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { IonApp, IonRouterOutlet, IonIcon } from '@ionic/angular/standalone';
@@ -176,6 +176,12 @@ export class App implements OnInit {
     startupMessage = signal<string|null>(null);
     waitingEmail = signal('');
     changeLocationVisible = signal(false);
+    /** Country whose market availability is currently resolved / being resolved. */
+    private resolvedCountryCode: string | null = null;
+    /** Monotonic token so an older market response can never overwrite a newer country. */
+    private marketRequestSeq = 0;
+    /** false until the bootstrap resolve finishes, so the reactive effect does not duplicate it. */
+    private startupResolved = signal(false);
 
     constructor() {
         addIcons({
@@ -263,6 +269,15 @@ export class App implements OnInit {
             layersOutline,
             cloudOfflineOutline,
         });
+
+        // Any country change (signup dropdown, banner change-location, future entry
+        // points) must re-resolve market availability immediately -- without a reload.
+        effect(() => {
+            const countryCode = this.appConfig.currentCountry().code;
+            if (!this.startupResolved()) return;
+            if (countryCode === this.resolvedCountryCode) return;
+            void this.checkStartupMarket();
+        });
     }
 
     async ngOnInit() {
@@ -280,6 +295,7 @@ export class App implements OnInit {
 
         await this.appConfig.detectRuntimeCountry();
         await this.checkStartupMarket();
+        this.startupResolved.set(true);
         this.notifications.initialize();
     }
 
@@ -296,8 +312,20 @@ export class App implements OnInit {
 
     async checkStartupMarket() {
         const countryCode = this.appConfig.currentCountry().code;
-        try { this.startupMessage.set(null); this.startupMarket.set(await this.marketAvailability.getStatus({countryCode})); }
-        catch {
+        // Claim this request. Any response carrying an older token is discarded, so a
+        // slow answer for a previous country can never overwrite the newest one.
+        const seq = ++this.marketRequestSeq;
+        this.resolvedCountryCode = countryCode;
+        // Drop the previous country's availability immediately: nothing stale may stay
+        // on screen while the new country is still resolving.
+        this.startupMarket.set(null);
+        this.startupMessage.set(null);
+        try {
+            const status = await this.marketAvailability.getStatus({ countryCode });
+            if (seq !== this.marketRequestSeq) return;
+            this.startupMarket.set(status);
+        } catch {
+            if (seq !== this.marketRequestSeq) return;
             // Never keep a previous country's availability on screen after a failed check.
             // Replace it with a deterministic, country-agnostic status so the retry and
             // change-location controls keep working.
