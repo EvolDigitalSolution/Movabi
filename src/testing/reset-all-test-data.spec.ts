@@ -5,6 +5,7 @@ import {
     isResetAllTestDataEnabled,
     createResetChallenge,
     consumeResetChallenge,
+    isNonAdminResetTarget,
     RESET_ALL_CONFIRMATION
 } from '../../server/services/test-account-purge.service';
 
@@ -58,7 +59,7 @@ describe('reset all test data implementation', () => {
     });
 
     it('targets only non-admin accounts (preserves admins)', () => {
-        expect(service).toContain("String(row.role || '').trim().toLowerCase() !== 'admin'");
+        expect(service).toContain('isNonAdminResetTarget(row.role)');
         expect(service).not.toContain('TRUNCATE');
     });
 
@@ -79,7 +80,7 @@ describe('reset all test data implementation', () => {
 
 describe('reset targeting, audit, partial-failure and UI', () => {
     it('targets NULL/blank/non-admin roles and preserves only admin', () => {
-        expect(service).toContain(".filter((row) => String(row.role || '').trim().toLowerCase() !== 'admin')");
+        expect(service).toContain(".filter((row) => isNonAdminResetTarget(row.role))");
         expect(service).not.toContain(".neq('role', 'admin')");
     });
 
@@ -100,5 +101,43 @@ describe('reset targeting, audit, partial-failure and UI', () => {
         expect(settings).toContain('executeReset');
         expect(settings).toContain("'RESET ALL TEST DATA'");
         expect(settings).toContain('resetPreviewData()?.accounts');
+    });
+});
+
+describe('profiles.email hotfix', () => {
+    it('queries only id, role and no longer requires profiles.email', () => {
+        expect(service).toContain(".from('profiles').select('id, role')");
+        expect(service).not.toContain(".select('id, email, role')");
+    });
+
+    it('classifies 1 admin + 5 drivers + 1 customer + 3 NULL as 9 targets', () => {
+        const roles = ['admin', 'driver', 'driver', 'driver', 'driver', 'driver', 'customer', null, null, null];
+        const targets = roles.filter(isNonAdminResetTarget);
+        expect(targets.length).toBe(9);
+    });
+
+    it('excludes admin accounts and includes blank/NULL roles', () => {
+        expect(isNonAdminResetTarget('admin')).toBe(false);
+        expect(isNonAdminResetTarget('ADMIN')).toBe(false);
+        expect(isNonAdminResetTarget('')).toBe(true);
+        expect(isNonAdminResetTarget(null)).toBe(true);
+        expect(isNonAdminResetTarget(undefined)).toBe(true);
+        expect(isNonAdminResetTarget('customer')).toBe(true);
+        expect(isNonAdminResetTarget('driver')).toBe(true);
+    });
+
+    it('profiles query errors throw (fail closed) instead of returning 0 accounts', () => {
+        expect(service).toContain("const { data, error } = await supabaseAdmin.from('profiles').select('id, role')");
+        expect(service).toContain("if (error) throw new Error(`Failed to load reset targets");
+    });
+
+    it('count query errors throw (fail closed) instead of false zero', () => {
+        expect(service).toContain("if (error) throw new Error(`Failed to count ${table}.${column}");
+    });
+
+    it('resolves registration_otps emails from Auth (getUserById), not profiles', () => {
+        expect(service).toContain('resolveAuthEmails');
+        expect(service).toContain('getUserById');
+        expect(service).toContain('registration_otps');
     });
 });

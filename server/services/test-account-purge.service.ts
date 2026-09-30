@@ -10,6 +10,11 @@ export function isTestAccountPurgeEnabled(env: Record<string, string | undefined
   return String(env[TEST_ACCOUNT_PURGE_GATE] || '').trim().toLowerCase() === 'true';
 }
 
+/** A profile is a reset target unless its role is exactly "admin". */
+export function isNonAdminResetTarget(role: unknown): boolean {
+  return String(role || '').trim().toLowerCase() !== 'admin';
+}
+
 const BATCH = 40;
 
 async function deleteWhere(table: string, column: string, value: string): Promise<void> {
@@ -105,12 +110,11 @@ export type PurgeOutcome =
 async function collectAffectedJobIds(targetId: string): Promise<string[]> {
   const ids = new Set<string>();
   for (const column of ['customer_id', 'driver_id', 'accepted_driver_id'] as const) {
-    try {
-      const { data } = await supabaseAdmin.from('jobs').select('id').eq(column, targetId);
-      for (const row of (data || []) as any[]) {
-        if (row?.id) ids.add(String(row.id));
-      }
-    } catch { /* jobs table/column may be absent */ }
+    const { data, error } = await supabaseAdmin.from('jobs').select('id').eq(column, targetId);
+    if (error) throw new Error(`Failed to load affected jobs (${column}): ${error.message}`);
+    for (const row of (data || []) as any[]) {
+      if (row?.id) ids.add(String(row.id));
+    }
   }
   return Array.from(ids);
 }
@@ -140,7 +144,7 @@ async function cleanupStorage(targetId: string): Promise<number> {
 export async function purgeTestAccount(adminUserId: string, targetUserId: string): Promise<PurgeOutcome> {
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
-    .select('id, email, role')
+    .select('id, role')
     .eq('id', targetUserId)
     .maybeSingle();
 
@@ -162,7 +166,8 @@ export async function purgeTestAccount(adminUserId: string, targetUserId: string
     return { status: 'blocked', code: 'CANNOT_PURGE_ADMIN', reason: 'Administrator accounts cannot be purged.' };
   }
 
-  const email = String(profile.email || '').trim().toLowerCase();
+  // Email is resolved from Auth (public.profiles has no email column).
+  const email = await resolveAuthEmail(targetUserId);
 
   // 1. Collect and delete the affected test-job aggregate (child-to-parent).
   const affectedJobIds = await collectAffectedJobIds(targetUserId);
@@ -222,27 +227,40 @@ export function consumeResetChallenge(challengeId: string, adminUserId: string):
   return true;
 }
 
-async function collectNonAdminTargets(): Promise<Array<{ id: string; email: string }>> {
-  // Fetch all profiles and filter server-side: only actual admin accounts are
-  // preserved. NULL/blank/non-admin roles are all reset targets (SQL `<>` would
-  // wrongly exclude NULL roles).
-  const { data } = await supabaseAdmin.from('profiles').select('id, email, role');
+async function collectNonAdminTargets(): Promise<string[]> {
+  // public.profiles has id + role (no email). Only admin accounts are preserved.
+  const { data, error } = await supabaseAdmin.from('profiles').select('id, role');
+  if (error) throw new Error(`Failed to load reset targets: ${error.message}`);
   return ((data || []) as any[])
-    .filter((row) => String(row.role || '').trim().toLowerCase() !== 'admin')
-    .map((row) => ({
-      id: String(row.id),
-      email: String(row.email || '').trim().toLowerCase()
-    }));
+    .filter((row) => isNonAdminResetTarget(row.role))
+    .map((row) => String(row.id));
+}
+
+async function resolveAuthEmail(userId: string): Promise<string> {
+  try {
+    const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
+    return String(data?.user?.email || '').trim().toLowerCase();
+  } catch {
+    return ''; // Auth user may already be gone (partial cleanup)
+  }
+}
+
+async function resolveAuthEmails(ids: string[]): Promise<string[]> {
+  const emails: string[] = [];
+  for (const id of ids) {
+    const email = await resolveAuthEmail(id);
+    if (email) emails.push(email);
+  }
+  return emails;
 }
 
 async function collectJobIdsForTargets(ids: string[]): Promise<string[]> {
   if (!ids.length) return [];
   const jobIds = new Set<string>();
   for (const column of ['customer_id', 'driver_id', 'accepted_driver_id'] as const) {
-    try {
-      const { data } = await supabaseAdmin.from('jobs').select('id').in(column, ids);
-      for (const row of (data || []) as any[]) if (row?.id) jobIds.add(String(row.id));
-    } catch { /* absent column */ }
+    const { data, error } = await supabaseAdmin.from('jobs').select('id').in(column, ids);
+    if (error) throw new Error(`Failed to load affected jobs (${column}): ${error.message}`);
+    for (const row of (data || []) as any[]) if (row?.id) jobIds.add(String(row.id));
   }
   return Array.from(jobIds);
 }
@@ -273,25 +291,19 @@ export interface ResetPreview {
   notifications: number;
 }
 
-const EMPTY_UUID = '00000000-0000-0000-0000-000000000000';
-
 async function countIn(table: string, column: string, values: string[]): Promise<number> {
   if (!values.length) return 0;
-  try {
-    const { count } = await supabaseAdmin.from(table).select('id', { count: 'exact', head: true }).in(column, values);
-    return Number(count || 0);
-  } catch {
-    return 0;
-  }
+  const { count, error } = await supabaseAdmin.from(table).select('id', { count: 'exact', head: true }).in(column, values);
+  if (error) throw new Error(`Failed to count ${table}.${column}: ${error.message}`);
+  return Number(count || 0);
 }
 
 export async function resetPreview(): Promise<ResetPreview> {
-  const targets = await collectNonAdminTargets();
-  const ids = targets.map((t) => t.id);
+  const ids = await collectNonAdminTargets();
   const jobIds = await collectJobIdsForTargets(ids);
 
   return {
-    accounts: targets.length,
+    accounts: ids.length,
     jobs: jobIds.length,
     vehicles: await countIn('vehicles', 'user_id', ids),
     wallets: await countIn('wallets', 'user_id', ids),
@@ -308,9 +320,8 @@ export interface ResetResult {
 }
 
 export async function resetAllTestData(): Promise<ResetResult> {
-  const targets = await collectNonAdminTargets();
-  const ids = targets.map((t) => t.id);
-  const emails = targets.map((t) => t.email).filter(Boolean);
+  const ids = await collectNonAdminTargets();
+  const emails = await resolveAuthEmails(ids);
 
   // 1. Delete the affected test-job aggregate (child-to-parent).
   const jobIds = await collectJobIdsForTargets(ids);

@@ -641,7 +641,7 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                         type="button"
                         (click)="executeReset()"
                         [disabled]="resetPhrase() !== 'RESET ALL TEST DATA' || resetting()"
-                        class="px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+                        class="w-full sm:w-auto whitespace-nowrap px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
                       >
                         {{ resetting() ? 'Resetting…' : 'Execute Reset' }}
                       </button>
