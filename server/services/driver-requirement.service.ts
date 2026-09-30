@@ -3,11 +3,12 @@ import { readPassengerLicence } from '../models/driver-passenger-licence.model';
 
 export type CanonicalDriverService = 'ride' | 'delivery' | 'errand' | 'van-moving';
 export type DriverOperatingVehicle = 'bicycle' | 'motorcycle' | 'car' | 'small_van' | 'large_van' | null;
-export type RequirementState = 'completed' | 'missing' | 'invalid' | 'under_age' | 'under_review' | 'approved' | 'rejected' | 'not_applicable';
+export type RequirementState = 'completed' | 'missing' | 'invalid' | 'under_age' | 'under_review' | 'approved' | 'rejected' | 'not_applicable' | 'expired';
 export interface ResolvedDriverRequirement {
   code: string; label: string; category: 'basic' | 'services' | 'vehicle' | 'documents' | 'agreement' | 'licensing';
   status: RequirementState; required: boolean; completed: boolean; blockingForSubmission: boolean; blockingForOnline: boolean;
   needsAdminReview: boolean; reason: string; services: CanonicalDriverService[];
+  expiryDate?: string | null; expiringSoon?: boolean;
 }
 export interface DriverAdminRequest { id: string; requirementCode: string; requestType?:string|null; item: string; status: 'pending'|'rejected'|'approved'; publicMessage: string; submittedAt: string|null; updatedAt: string|null; resolvedAt: string|null; nextAction: string; }
 export interface DriverRequirementResolution {
@@ -27,7 +28,11 @@ export class DriverRequirementService {
     const profile=input.profile||{}, onboardingItems=this.onboardingItems(profile.verification_items), vehicle:DriverVehicleValidation=input.vehicle||{id:'',userId:'',type:'',make:null,model:null,colour:null,year:null,registrationNumber:null,capacity:null,serviceEligibility:[],status:'missing'}, now=input.now||new Date();
     const canonicalProfile=input.canonicalProfile||mapDriverProfile({id:String(profile.id||''),...profile},input.authEmailConfirmed);
     const selectedServices=this.services(profile,vehicle,onboardingItems); const vehicleType=this.vehicle(vehicle,profile); const requirements:ResolvedDriverRequirement[]=[];
-    const add=(code:string,label:string,category:ResolvedDriverRequirement['category'],ok:boolean,reason:string,services:CanonicalDriverService[]=selectedServices,invalid=false,review=false)=>requirements.push({code,label,category,status:ok?(review?'under_review':'completed'):(invalid?'invalid':'missing'),required:true,completed:ok&&!review,blockingForSubmission:!ok,blockingForOnline:!ok||review,needsAdminReview:review,reason,services});
+    const add=(code:string,label:string,category:ResolvedDriverRequirement['category'],ok:boolean,reason:string,services:CanonicalDriverService[]=selectedServices,invalid=false,review=false,expiryDate:string|null=null,expiringSoon=false)=>requirements.push({code,label,category,status:ok?(review?'under_review':'completed'):(invalid?'invalid':'missing'),required:true,completed:ok&&!review,blockingForSubmission:!ok,blockingForOnline:!ok||review,needsAdminReview:review,reason,services,expiryDate,expiringSoon});
+    // Document/licence requirement with canonical expiry evaluation. Expiry is
+    // date-only (YYYY-MM-DD) and only checked when the document is present and
+    // actually applicable to the selected services.
+    const addDocument=(code:string,label:string,hasDoc:boolean,expiryValue:unknown,missingReason:string,services:CanonicalDriverService[]=selectedServices)=>{const exp=this.expiryState(expiryValue,now);const expired=hasDoc&&exp.expired;const ok=hasDoc&&!expired;requirements.push({code,label,category:'documents',status:hasDoc?(expired?'expired':'completed'):'missing',required:true,completed:ok,blockingForSubmission:!ok,blockingForOnline:!ok,needsAdminReview:false,reason:expired?`${label} has expired.`:missingReason,services,expiryDate:exp.expiryDate,expiringSoon:hasDoc&&exp.expiringSoon});};
     add('profile.full_name','Legal name','basic',this.has(canonicalProfile.fullName),'Add your full legal name.');
     add('profile.phone','Phone','basic',this.has(canonicalProfile.phone),'Add a verified contact number.');
     add('profile.address','Residential address','basic',this.has(canonicalProfile.residentialAddress),'Add your current residential address.');
@@ -46,8 +51,8 @@ export class DriverRequirementService {
         add('vehicle.make','Vehicle make','vehicle',this.has(vehicle.make),'Add the vehicle make.'); add('vehicle.model','Vehicle model','vehicle',this.has(vehicle.model),'Add the vehicle model.');
         add('vehicle.colour','Vehicle colour','vehicle',this.has(vehicle.colour),'Add the vehicle colour.'); add('vehicle.year','Vehicle year','vehicle',Number(vehicle.year)>1900,'Add a valid vehicle year.');
         add('vehicle.registration','Vehicle registration','vehicle',this.has(vehicle.registrationNumber),'Add the registration number.');
-        add('document.driving_licence','Driving licence','documents',this.has(profile.driver_license_url||profile.driving_licence_url),'Upload the appropriate driving licence.');
-        add('document.insurance','Vehicle insurance','documents',this.has(profile.insurance_url||profile.courier_insurance_url||profile.hire_reward_insurance_url),'Upload insurance appropriate to the selected services.');
+        addDocument('document.driving_licence','Driving licence',this.has(profile.driver_license_url||profile.driving_licence_url),profile.driver_license_expiry,'Upload the appropriate driving licence.');
+        addDocument('document.insurance','Vehicle insurance',this.has(profile.insurance_url||profile.courier_insurance_url||profile.hire_reward_insurance_url),profile.insurance_expiry,'Upload insurance appropriate to the selected services.');
       } else if(vehicleType==='bicycle') {
         add('vehicle.bicycle_declaration','Bicycle details','vehicle',this.has(vehicle.type)||onboardingItems['bicycle_declaration']===true,'Add bicycle details or confirm your bicycle declaration.');
         add('vehicle.delivery_equipment','Delivery equipment','vehicle',onboardingItems['delivery_equipment_confirmed']===true,'Confirm suitable delivery equipment.');
@@ -57,22 +62,30 @@ export class DriverRequirementService {
         // satisfied by the canonical council_name + licence number + badge +
         // expiry (readPassengerLicence), NOT by an ad-hoc vehicle-licence URL.
         const passengerLicence=readPassengerLicence(profile, now);
-        add('licence.private_hire','Private-hire/council licensing','licensing',passengerLicence.complete,'Provide the passenger-service licensing configured for this market.',['ride']);
-        add('document.private_hire_vehicle_license','Private-hire vehicle licence','documents',this.has(profile.private_hire_vehicle_license_url),'Upload your private-hire/taxi vehicle licence.',['ride']);
+        const hasAllLicenceFields=!!(passengerLicence.councilName&&passengerLicence.licenceNumber&&passengerLicence.badgeNumber&&passengerLicence.expiryDate);
+        const licenceExpired=!passengerLicence.complete&&hasAllLicenceFields;
+        const licenceExpiry=this.expiryState(passengerLicence.expiryDate,now);
+        const licenceExpiringSoon=passengerLicence.complete&&licenceExpiry.expiringSoon;
+        if(licenceExpired){
+          requirements.push({code:'licence.private_hire',label:'Private-hire/council licensing',category:'licensing',status:'expired',required:true,completed:false,blockingForSubmission:true,blockingForOnline:true,needsAdminReview:false,reason:'Private-hire driver licence has expired.',services:['ride'],expiryDate:passengerLicence.expiryDate,expiringSoon:false});
+        } else {
+          add('licence.private_hire','Private-hire/council licensing','licensing',passengerLicence.complete,'Provide the passenger-service licensing configured for this market.',['ride'],false,false,passengerLicence.expiryDate,licenceExpiringSoon);
+        }
+        addDocument('document.private_hire_vehicle_license','Private-hire vehicle licence',this.has(profile.private_hire_vehicle_license_url),profile.vehicle_license_expiry,'Upload your private-hire/taxi vehicle licence.',['ride']);
         add('document.private_hire_insurance','Private-hire insurance','documents',this.has(profile.private_hire_insurance_url),'Upload passenger-service insurance.',['ride']);
       }
-      if(selectedServices.includes('van-moving')) add('document.goods_in_transit','Goods-in-transit cover','documents',country!=='GB'||this.has(profile.goods_in_transit_url),'Upload configured commercial or goods-in-transit cover.',['van-moving']);
+      if(selectedServices.includes('van-moving')){const gitRequired=country==='GB';addDocument('document.goods_in_transit','Goods-in-transit cover',gitRequired?this.has(profile.goods_in_transit_url):true,gitRequired?profile.goods_in_transit_insurance_expiry:null,'Upload configured commercial or goods-in-transit cover.',['van-moving']);}
     }
     const automaticCodes=new Set(requirements.map(r=>r.code));
     const adminRequests=(input.adminRequests||[]).filter((request,index,array)=>!automaticCodes.has(request.requirementCode)&&array.findIndex(item=>item.requirementCode===request.requirementCode&&item.status!=='approved')===index);
     const required=requirements.filter(r=>r.required); const blockers=required.filter(r=>r.blockingForSubmission);
     const openAdmin=adminRequests.filter(r=>r.status!=='approved'); const review=profile.verification_status==='under_review'||profile.driver_review_status==='under_review'; const actionRequired=profile.verification_status==='action_required'||profile.driver_review_status==='action_required'; const approved=profile.is_verified===true||profile.verification_status==='approved'; const paused=['paused','suspended','blocked'].includes(String(profile.account_status||'').toLowerCase());
-    const overallStatus=paused?'paused':approved?'approved':actionRequired||openAdmin.length||requirements.some(r=>r.status==='invalid'||r.status==='under_age'||r.status==='rejected')?'action_required':review?'under_review':!selectedServices.length?'not_started':blockers.length?'incomplete':'ready_to_submit';
+    const overallStatus=paused?'paused':actionRequired||openAdmin.length||requirements.some(r=>r.status==='invalid'||r.status==='under_age'||r.status==='rejected'||r.status==='expired')?'action_required':approved?'approved':review?'under_review':!selectedServices.length?'not_started':blockers.length?'incomplete':'ready_to_submit';
     const onlineReasons=[...required.filter(r=>r.blockingForOnline).map(r=>r.reason),...openAdmin.map(r=>r.publicMessage||r.item)];
     for(const service of selectedServices){const approvals=profile.service_approval_statuses||{};if((service==='ride'||service==='van-moving')&&approvals[service]!=='approved')onlineReasons.push(`${service} approval is pending.`);}
     if(!approved)onlineReasons.push('Driver onboarding is not approved.'); if(paused)onlineReasons.push('Driver account is paused or suspended.');
     const warnings:ResolvedDriverRequirement[]=[]; if(profile.stripe_connect_status!=='connected')warnings.push({code:'payout.stripe_connect',label:'Stripe payouts',category:'documents',status:'missing',required:false,completed:false,blockingForSubmission:false,blockingForOnline:false,needsAdminReview:false,reason:'Complete Stripe Connect before receiving payouts.',services:[]});
-    const section=(rows:ResolvedDriverRequirement[],applicable=true):DriverSetupSection=>{if(!applicable)return{applicable:false,status:'not_applicable'};if(rows.some(row=>row.status==='invalid'||row.status==='under_age'||row.status==='rejected'))return{applicable:true,status:'action_required'};if(rows.some(row=>row.status==='under_review'))return{applicable:true,status:'under_review'};return{applicable:true,status:rows.length>0&&rows.every(row=>row.completed)?'complete':'incomplete'};};
+    const section=(rows:ResolvedDriverRequirement[],applicable=true):DriverSetupSection=>{if(!applicable)return{applicable:false,status:'not_applicable'};if(rows.some(row=>row.status==='invalid'||row.status==='under_age'||row.status==='rejected'||row.status==='expired'))return{applicable:true,status:'action_required'};if(rows.some(row=>row.status==='under_review'))return{applicable:true,status:'under_review'};return{applicable:true,status:rows.length>0&&rows.every(row=>row.completed)?'complete':'incomplete'};};
     const byCategory=(category:ResolvedDriverRequirement['category'])=>requirements.filter(row=>row.category===category);
     const vehicleRows=byCategory('vehicle'),operatingRows=vehicleRows.filter(row=>row.code==='vehicle.operating_method'),vehicleDetailRows=vehicleRows.filter(row=>row.code!=='vehicle.operating_method');
     const licensingRows=byCategory('licensing');
@@ -85,4 +98,21 @@ export class DriverRequirementService {
   private static vehicle(vehicle:DriverVehicleValidation,profile:any):DriverOperatingVehicle{const value=String(vehicle.capacity||vehicle.type||profile.operating_vehicle||'').toLowerCase();if(!value)return null;if(/bicycle|bike|cycle/.test(value))return'bicycle';if(/motorcycle|motorbike|moped|scooter/.test(value))return'motorcycle';if(/large.?van|luton|box.?van/.test(value))return'large_van';if(/small.?van|\bvan\b/.test(value))return'small_van';return'car';}
   private static age(raw:unknown,now:Date,minimum:number){if(!raw)return{eligible:false,years:null,minimum,state:'missing' as const,reason:'Add your date of birth.'};try{const iso=parseDriverDateOfBirth(raw,now),years=calculateCalendarAge(iso,now),eligible=years>=minimum;return{eligible,years,minimum,state:eligible?'completed' as const:'under_age' as const,reason:eligible?null:'You must meet the minimum driver age requirement to register.'};}catch{return{eligible:false,years:null,minimum,state:'invalid' as const,reason:'Enter a valid date of birth.'};}}
   private static has(value:unknown){return String(value??'').trim().length>0;}
+  /** Date-only expiry evaluation. A DATE expiring today remains valid today. */
+  private static expiryState(expiry: unknown, now: Date): { expired: boolean; expiringSoon: boolean; expiryDate: string | null } {
+    const raw = typeof expiry === 'string' ? expiry.trim() : '';
+    const dateOnly = raw.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return { expired: false, expiringSoon: false, expiryDate: null };
+    const today = this.toDateOnly(now);
+    const expired = dateOnly < today;
+    const expiringSoon = !expired && dateOnly <= this.addDays(today, 30);
+    return { expired, expiringSoon, expiryDate: dateOnly };
+  }
+  private static toDateOnly(d: Date): string {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  private static addDays(dateOnly: string, days: number): string {
+    const [y, m, d] = dateOnly.split('-').map(Number);
+    return this.toDateOnly(new Date(Date.UTC(y, m - 1, d + days)));
+  }
 }

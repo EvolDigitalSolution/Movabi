@@ -31,6 +31,7 @@ import { AuthService } from '@core/services/auth/auth.service';
 import { ProfileService } from '@core/services/profile/profile.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { OneSignalService } from '@core/services/notification/onesignal.service';
+import { DriverOnboardingStatusService } from '@core/services/driver/driver-onboarding-status.service';
 import { ButtonComponent } from '@shared/ui';
 import { Profile } from '@shared/models/booking.model';
 import { CustomerBottomNavComponent } from '@shared/components/customer-shell/customer-bottom-nav.component';
@@ -109,7 +110,10 @@ import { CustomerBottomNavComponent } from '@shared/components/customer-shell/cu
               </span>
               <span class="min-w-0 flex-1">
                 <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Full name</span>
-                <input formControlName="full_name" placeholder="Your name" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300">
+                <input formControlName="full_name" placeholder="Your name" [readonly]="isVerifiedDriver()" [class.text-slate-400]="isVerifiedDriver()" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300">
+                @if (isVerifiedDriver()) {
+                  <span class="block text-xs text-slate-500 mt-1 leading-relaxed">Your legal name is tied to your verified driver identity. Contact support to request a name change.</span>
+                }
               </span>
             </label>
 
@@ -129,7 +133,10 @@ import { CustomerBottomNavComponent } from '@shared/components/customer-shell/cu
               </span>
               <span class="min-w-0 flex-1">
                 <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Country code</span>
-                <input formControlName="country_code" placeholder="GB" maxlength="2" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                <input formControlName="country_code" placeholder="GB" maxlength="2" [readonly]="isVerifiedDriver()" [class.text-slate-400]="isVerifiedDriver()" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                @if (isVerifiedDriver()) {
+                  <span class="block text-xs text-slate-500 mt-1 leading-relaxed">Your operating country is tied to your verified driver identity. Contact support to request a change.</span>
+                }
               </span>
             </label>
 
@@ -251,6 +258,7 @@ export class AccountSettingsPage implements OnInit {
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
     private router = inject(Router);
+    private onboardingStatus = inject(DriverOnboardingStatusService);
 
     saving = signal(false);
     signingOut = signal(false);
@@ -297,6 +305,11 @@ export class AccountSettingsPage implements OnInit {
 
     defaultBackHref(): string {
         return this.auth.userRole() === 'driver' ? '/driver' : '/customer';
+    }
+
+    isVerifiedDriver(): boolean {
+        const profile = this.profileService.profile();
+        return this.auth.userRole() === 'driver' && ((profile as any)?.is_verified === true || (profile as any)?.verification_status === 'approved');
     }
 
     private patchProfile(profile: Profile) {
@@ -376,16 +389,42 @@ export class AccountSettingsPage implements OnInit {
         try {
             const raw = this.form.getRawValue();
             const fullName = String(raw.full_name || '').trim();
+            const countryCode = String(raw.country_code || '').trim().toUpperCase();
+            const isDriver = this.auth.userRole() === 'driver';
+            const profile = this.profileService.profile() as any;
+            const currentName = String(profile?.full_name || '').trim();
+            const currentCountry = String(profile?.country_code || '').trim().toUpperCase();
+            const nameChanged = fullName !== currentName;
+            const countryChanged = countryCode !== currentCountry;
+
+            if (isDriver) {
+                // Legal name and operating country are server-authoritative for
+                // drivers: route any change through /api/driver-onboarding/profile,
+                // which rejects verified drivers.
+                if (nameChanged || countryChanged) {
+                    await this.onboardingStatus.saveCurrentProfile({
+                        ...(nameChanged ? { fullName } : {}),
+                        ...(countryChanged ? { countryCode } : {})
+                    });
+                }
+            } else {
+                const direct: Partial<Profile> = {};
+                if (nameChanged) direct.full_name = fullName;
+                if (countryChanged) direct.country_code = countryCode;
+                if (Object.keys(direct).length) {
+                    await this.profileService.updateProfile(user.id, direct);
+                }
+            }
 
             await this.profileService.updateProfile(user.id, {
-                full_name: fullName,
-                phone: String(raw.phone || '').trim(),
-                country_code: String(raw.country_code || 'GB').trim().toUpperCase()
+                phone: String(raw.phone || '').trim()
             } as Partial<Profile>);
 
             await this.showToast('Account details updated.', 'success');
-        } catch {
-            await this.showToast('Could not save account details.', 'danger');
+        } catch (error: any) {
+            const message = String(error?.message || '');
+            const protectedField = message.includes('legal name') || message.includes('NAME_CHANGE') || message.includes('operating country') || message.includes('COUNTRY_CHANGE');
+            await this.showToast(protectedField ? message : 'Could not save account details.', 'danger');
         } finally {
             this.saving.set(false);
             await loading.dismiss();

@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import { rateLimit } from 'express-rate-limit';
 import { EmailService } from '../services/email.service';
-import { supabaseAdmin } from '../services/supabase.service';
+import { supabaseAdmin, getSupabaseAuthRegistrationClient } from '../services/supabase.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 
 const router = express.Router();
@@ -47,7 +47,7 @@ router.post('/register', registrationLimiter, async (req: Request, res: Response
     const redirectTo = String(req.body?.emailRedirectTo || '');
     const safeRedirect = /^(https:\/\/|http:\/\/localhost(?::\d+)?\/|com\.movabi\.app:\/\/)/i.test(redirectTo) ? redirectTo : undefined;
     const metadata = { ...(req.body?.data || {}), registration_country_code: market.countryCode, registration_market_city: market.marketCity };
-    const { data, error } = await supabaseAdmin.auth.signUp({ email, password, options: { data: metadata, ...(safeRedirect ? { emailRedirectTo: safeRedirect } : {}) } });
+    const { data, error } = await getSupabaseAuthRegistrationClient().auth.signUp({ email, password, options: { data: metadata, ...(safeRedirect ? { emailRedirectTo: safeRedirect } : {}) } });
     if (error) return res.status(error.status || 400).json({ error: error.message });
     return res.status(201).json({ user: data.user, session: data.session, market: { countryCode: market.countryCode, marketCity: market.marketCity } });
   } catch (error) {

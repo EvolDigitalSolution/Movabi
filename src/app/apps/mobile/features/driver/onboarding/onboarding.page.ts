@@ -780,11 +780,10 @@ export class OnboardingPage implements OnInit {
         const profile = this.profile() as DriverProfile | null;
 
         if (!profile) return 'draft';
+        // Current actionable state takes precedence over historical approval.
+        if (profile.driver_review_status === 'action_required' || profile.verification_status === 'action_required') return 'action_required';
         if (profile.is_verified === true || profile.verification_status === 'approved') return 'approved';
-        if (profile.driver_review_status === 'action_required') return 'action_required';
-        if (profile.verification_status === 'action_required') return 'action_required';
-        if (profile.driver_review_status === 'under_review') return 'under_review';
-        if (profile.verification_status === 'under_review') return 'under_review';
+        if (profile.driver_review_status === 'under_review' || profile.verification_status === 'under_review') return 'under_review';
         if (profile.onboarding_completed) return 'under_review';
 
         return 'draft';

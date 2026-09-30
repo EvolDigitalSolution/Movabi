@@ -6,6 +6,7 @@ import { IonicModule } from '@ionic/angular';
 import { BadgeComponent } from '../../../../shared/ui/badge';
 import { ButtonComponent } from '../../../../shared/ui/button';
 import { AuthService } from '../../../../core/services/auth/auth.service';
+import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
 
 @Component({
     selector: 'app-user-list',
@@ -39,7 +40,7 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
             >
           </div>
 
-          <app-button variant="secondary" size="md" [fullWidth]="false" class="px-8 h-12 rounded-2xl">
+          <app-button variant="secondary" size="md" [fullWidth]="false" (clicked)="exportCsv()" class="px-8 h-12 rounded-2xl">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
@@ -94,6 +95,15 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
                   <div class="flex items-center justify-end gap-2">
                     <button
                       type="button"
+                      (click)="openPurgeModal(user)"
+                      class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center"
+                      title="Permanently delete test account"
+                    >
+                      <ion-icon name="trash-outline" class="text-xl"></ion-icon>
+                    </button>
+
+                    <button
+                      type="button"
                       (click)="openModerationModal(user)"
                       class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center"
                       title="Moderate User"
@@ -139,6 +149,37 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
           <div class="flex justify-end gap-3 mt-6">
             <button type="button" class="modal-cancel" (click)="moderationModal.set(null)">Cancel</button>
             <button type="button" class="modal-action" (click)="applyModerationStatus()">Apply</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (purgeModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-xl font-bold text-rose-600">Permanently delete test account</h3>
+          <p class="text-sm font-bold text-slate-800 mt-2">{{ getUserName(purgeModal()) }}</p>
+          <p class="text-xs font-semibold text-slate-500 mt-1">
+            {{ getUserEmail(purgeModal()) }} · {{ purgeModal()?.role || 'unknown' }}
+          </p>
+          <p class="text-sm font-semibold text-rose-600 mt-3">This will permanently delete this test account and its associated test activity. This cannot be undone.</p>
+          <input
+            type="text"
+            [value]="purgeConfirmText()"
+            (input)="setPurgeConfirmText($event)"
+            placeholder="Type DELETE to confirm"
+            class="w-full mt-4 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold focus:outline-none"
+          />
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="purgeModal.set(null); purgeConfirmText.set('')">Cancel</button>
+            <button
+              type="button"
+              class="px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+              [disabled]="purgeConfirmText() !== 'DELETE' || purging()"
+              (click)="confirmPurge()"
+            >
+              {{ purging() ? 'Deleting…' : 'Delete Account' }}
+            </button>
           </div>
         </div>
       </div>
@@ -191,6 +232,10 @@ export class UserListComponent implements OnInit {
         status: string;
     } | null>(null);
 
+    purgeModal = signal<Profile | null>(null);
+    purgeConfirmText = signal('');
+    purging = signal(false);
+
     async ngOnInit() {
         await this.loadUsers();
     }
@@ -240,6 +285,21 @@ export class UserListComponent implements OnInit {
                 return matchesStatus && matchesSearch;
             })
         );
+    }
+
+    exportCsv() {
+        const rows = this.filteredUsers().map((user: any) => [
+            this.getUserName(user),
+            this.getUserEmail(user),
+            user?.phone || '',
+            user?.account_status || 'active',
+            user?.created_at || '',
+            user?.id || ''
+        ]);
+
+        const csv = toCsv(['Name', 'Email', 'Phone', 'Status', 'Joined', 'ID'], rows);
+        downloadCsv(`users-${csvDateStamp()}.csv`, csv);
+        void this.showToast('CSV exported.', 'success');
     }
 
     getUserName(user: any): string {
@@ -327,6 +387,36 @@ export class UserListComponent implements OnInit {
                 error instanceof Error ? error.message : 'Failed to update user status.',
                 'danger'
             );
+        }
+    }
+
+    openPurgeModal(user: Profile) {
+        this.purgeModal.set(user);
+        this.purgeConfirmText.set('');
+    }
+
+    setPurgeConfirmText(event: Event) {
+        this.purgeConfirmText.set((event.target as HTMLInputElement).value || '');
+    }
+
+    async confirmPurge() {
+        const user = this.purgeModal();
+        if (!user || this.purgeConfirmText() !== 'DELETE' || this.purging()) return;
+
+        this.purging.set(true);
+        try {
+            await this.adminService.purgeTestAccount(user.id);
+            await this.showToast('Test account permanently deleted.', 'success');
+            this.purgeModal.set(null);
+            this.purgeConfirmText.set('');
+            await this.loadUsers();
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Failed to purge test account.',
+                'danger'
+            );
+        } finally {
+            this.purging.set(false);
         }
     }
 

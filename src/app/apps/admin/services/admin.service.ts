@@ -7,6 +7,7 @@ import { BookingService } from '@core/services/booking/booking.service';
 import { ApiUrlService } from '@core/services/api-url.service';
 import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
 import { cleanServiceTypePayload } from './admin-pricing-payload';
+import { chunkInClauseIds } from '@shared/utils/chunk-ids';
 
 export interface FailedBooking {
   id: string;
@@ -379,26 +380,22 @@ export class AdminService {
       jobs.map(job => job.service_type_id).filter(Boolean)
     ));
 
-    const jobIds = jobs.map(job => job.id).filter(Boolean);
+    // Bounded, deduplicated IN-list fetches (no oversized PostgREST URLs).
+    const profiles = await this.fetchByIds('profiles', 'id', profileIds);
+    const serviceTypes = await this.fetchByIds('service_types', 'id', serviceTypeIds);
 
-    const { data: profiles } = profileIds.length
-      ? await this.supabase.from('profiles').select('*').in('id', profileIds)
-      : { data: [] };
+    const serviceTypesById = new Map((serviceTypes || []).map((s: any) => [s.id, s]));
 
-    const { data: serviceTypes } = serviceTypeIds.length
-      ? await this.supabase.from('service_types').select('*').in('id', serviceTypeIds)
-      : { data: [] };
+    // Only Errand jobs need Errand detail/funding enrichment.
+    const errandJobs = jobs.filter(job =>
+      job.service_slug === 'errand' || serviceTypesById.get(job.service_type_id)?.slug === 'errand'
+    );
+    const errandJobIds = Array.from(new Set(errandJobs.map((job: any) => job.id).filter(Boolean)));
 
-    const { data: errandDetails } = jobIds.length
-      ? await this.supabase.from('errand_details').select('*').in('job_id', jobIds)
-      : { data: [] };
-
-    const { data: errandFunding } = jobIds.length
-      ? await this.supabase.from('errand_funding').select('*').in('job_id', jobIds)
-      : { data: [] };
+    const errandDetails = await this.fetchByIds('errand_details', 'job_id', errandJobIds);
+    const errandFunding = await this.fetchByIds('errand_funding', 'job_id', errandJobIds);
 
     const profilesById = new Map((profiles || []).map((p: any) => [p.id, p]));
-    const serviceTypesById = new Map((serviceTypes || []).map((s: any) => [s.id, s]));
     const errandDetailsByJobId = new Map((errandDetails || []).map((d: any) => [d.job_id, d]));
     const errandFundingByJobId = new Map((errandFunding || []).map((f: any) => [f.job_id, f]));
 
@@ -420,41 +417,76 @@ export class AdminService {
     });
   }
 
-  async updateAccountStatus(userId: string, status: string, reason: string, adminId: string) {
-    const now = new Date().toISOString();
-    const normalisedStatus = String(status || 'active').trim();
-    const update: any = {
-      account_status: normalisedStatus,
-      moderation_reason: reason,
-      moderated_at: now,
-      moderated_by: adminId
-    };
-
-    if (normalisedStatus === 'closure_requested') {
-      update.closure_requested_at = now;
-      update.account_closure_requested_at = now;
-      update.closure_notes = reason;
+  /**
+   * Fetch rows by a column IN-list in bounded, deduplicated chunks. Keeps
+   * PostgREST URLs small — the giant job_id=in.(...) lists previously overflowed
+   * Kong/nginx upstream headers (502 "upstream sent too big header"). Chunks run
+   * sequentially so a very large list cannot create an unbounded burst of
+   * parallel requests.
+   */
+  private async fetchByIds(table: string, column: string, ids: any[], batchSize = 25): Promise<any[]> {
+    const results: any[] = [];
+    for (const chunk of chunkInClauseIds(ids, batchSize)) {
+      const { data, error } = await this.supabase.from(table).select('*').in(column, chunk);
+      if (error) {
+        console.error(`[AdminService] ${table} ${column} batch fetch failed:`, error);
+        continue;
+      }
+      if (data) results.push(...data);
     }
+    return results;
+  }
 
-    if (normalisedStatus === 'closed') {
-      update.closed_at = now;
-      update.closure_notes = reason;
-      update.is_online = false;
-      update.is_available = false;
-    }
+  async updateAccountStatus(userId: string, status: string, reason: string, _adminId: string) {
+    // Admin moderation runs through the trusted server boundary (service_role),
+    // never a direct authenticated cross-row profile write. The acting admin is
+    // derived server-side from the verified admin session.
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/account-status`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId, status, reason })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Account status could not be updated.');
+    return result;
+  }
 
-    if (normalisedStatus === 'active') {
-      update.reinstated_at = now;
-      update.reinstated_by = adminId || null;
-      update.reinstatement_notes = reason;
-    }
+  async purgeTestAccount(userId: string) {
+    // Destructive purge runs through the trusted server boundary only.
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/test-account/purge`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Test account could not be purged.');
+    return result;
+  }
 
-    const { error } = await this.supabase
-      .from('profiles')
-      .update(update)
-      .eq('id', userId);
+  async prepareResetAllTestData() {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/test-data/reset/prepare`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({})
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Reset preview could not be prepared.');
+    return result;
+  }
 
-    if (error) throw error;
+  async executeResetAllTestData(challengeId: string, confirmation: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/test-data/reset/execute`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ challengeId, confirmation })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Reset could not be executed.');
+    return result;
   }
 
   async getServiceTypes(): Promise<AdminPricingRule[]> {

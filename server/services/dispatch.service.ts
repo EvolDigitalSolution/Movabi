@@ -4,6 +4,7 @@ import { Job, DispatchResult } from '../../src/app/shared/models/booking.model';
 import { EventService } from './event.service';
 import { NotificationService } from './notification.service';
 import { stripe } from './stripe.service';
+import { isDriverEligibleForService, toCanonicalDriverService } from './driver-service-eligibility';
 
 type NearbyDriver = {
     id: string;
@@ -644,29 +645,44 @@ export class DispatchService {
 
         const driverIds = drivers.map(d => d.id).filter(Boolean);
 
-        const { data: vehicles, error: vehiclesError } = driverIds.length
-            ? await this.supabase
-                .from('vehicles')
-                .select('user_id, vehicle_class')
-                .in('user_id', driverIds)
+        // Batch-fetch the canonical eligibility inputs (full profiles + full
+        // vehicles) so the eligibility gate does not issue N+1 queries.
+        const { data: fullProfiles, error: fullProfilesError } = driverIds.length
+            ? await this.supabase.from('profiles').select('*').in('id', driverIds)
             : { data: [] as any[], error: null };
+        if (fullProfilesError) {
+            console.error('[DispatchService] Failed fetching driver profiles:', fullProfilesError);
+            return [];
+        }
 
+        const { data: vehicles, error: vehiclesError } = driverIds.length
+            ? await this.supabase.from('vehicles').select('*').in('user_id', driverIds)
+            : { data: [] as any[], error: null };
         if (vehiclesError) {
             console.error('[DispatchService] Failed fetching driver vehicles:', vehiclesError);
             return [];
         }
 
-        const vehiclesByUser = new Map<string, string[]>();
-        (vehicles || []).forEach((vehicle: any) => {
-            const userId = vehicle.user_id as string;
-            const vehicleClass = vehicle.vehicle_class as string;
-            if (!userId || !vehicleClass) return;
-            const classes = vehiclesByUser.get(userId) || [];
-            classes.push(vehicleClass);
-            vehiclesByUser.set(userId, classes);
+        const profilesById = new Map<string, any>();
+        (fullProfiles || []).forEach((profile: any) => {
+            if (profile?.id) profilesById.set(profile.id, profile);
         });
 
-        // Filter drivers by vehicle compatibility
+        const vehiclesByUser = new Map<string, string[]>();
+        const vehicleRowsByUser = new Map<string, any>();
+        (vehicles || []).forEach((vehicle: any) => {
+            const userId = vehicle.user_id as string;
+            if (!userId) return;
+            if (!vehicleRowsByUser.has(userId)) vehicleRowsByUser.set(userId, vehicle);
+            const vehicleClass = vehicle.vehicle_class as string;
+            if (vehicleClass) {
+                const classes = vehiclesByUser.get(userId) || [];
+                classes.push(vehicleClass);
+                vehiclesByUser.set(userId, classes);
+            }
+        });
+
+        // Filter drivers by vehicle compatibility (frozen MB001 rule).
         const compatibleDrivers = drivers.filter(driver => {
             const vehicleClasses = vehiclesByUser.get(driver.id) || [];
             const serviceType = job.service_slug;
@@ -676,7 +692,23 @@ export class DispatchService {
 
         console.log(`[DispatchService] Vehicle compatibility filter: ${drivers.length} total drivers -> ${compatibleDrivers.length} compatible drivers for service ${job.service_slug}`);
 
-        return (compatibleDrivers as NearbyDriver[]).sort((a, b) => {
+        // ADDITIONAL canonical eligibility gate (does NOT replace MB001). A
+        // driver who became ineligible while still online must not receive NEW
+        // work for the requested service. Unknown service slugs fall through to
+        // preserve existing compatibility-only behaviour.
+        const canonicalService = toCanonicalDriverService(job.service_slug);
+        const eligibleDrivers = canonicalService
+            ? compatibleDrivers.filter(driver => {
+                const profile = profilesById.get(driver.id);
+                if (!profile) return false;
+                const vehicle = vehicleRowsByUser.get(driver.id) || null;
+                return isDriverEligibleForService(profile, vehicle, canonicalService);
+            })
+            : compatibleDrivers;
+
+        console.log(`[DispatchService] Eligibility filter: ${compatibleDrivers.length} compatible -> ${eligibleDrivers.length} eligible for service ${canonicalService || job.service_slug}`);
+
+        return (eligibleDrivers as NearbyDriver[]).sort((a, b) => {
             const scoreA = distanceScore(job, a);
             const scoreB = distanceScore(job, b);
 

@@ -9,6 +9,7 @@ import { IonicModule } from '@ionic/angular';
 import { BadgeComponent } from '../../../../shared/ui/badge';
 import { ButtonComponent } from '../../../../shared/ui/button';
 import { CardComponent } from '../../../../shared/ui/card';
+import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
 
 @Component({
     selector: 'app-booking-list',
@@ -54,7 +55,7 @@ import { CardComponent } from '../../../../shared/ui/card';
             <option value="50">50 / page</option>
           </select>
 
-          <app-button variant="secondary" size="sm" [fullWidth]="false" class="px-5 h-10 rounded-xl">
+          <app-button variant="secondary" size="sm" [fullWidth]="false" (clicked)="exportCsv()" class="px-5 h-10 rounded-xl">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
@@ -683,6 +684,31 @@ export class BookingListComponent implements OnInit {
     onPageSizeChange(event: Event) {
         this.pageSize.set(Number((event.target as HTMLSelectElement).value || 10));
         this.currentPage.set(1);
+    }
+
+    exportCsv() {
+        const rows = this.filteredBookings().map((booking: any) => [
+            booking.id || '',
+            booking.status || '',
+            booking.service_slug || '',
+            booking.pickup_address || '',
+            booking.dropoff_address || '',
+            this.getPersonName(booking.customer, 'Customer'),
+            booking.customer?.email || '',
+            booking.customer?.phone || '',
+            this.getPersonName(booking.driver, 'Unassigned'),
+            booking.price ?? '',
+            this.getCurrency(booking),
+            this.paymentStatus(booking),
+            booking.created_at || ''
+        ]);
+
+        const csv = toCsv(
+            ['ID', 'Status', 'Service', 'Pickup', 'Dropoff', 'Customer', 'Customer Email', 'Customer Phone', 'Driver', 'Price', 'Currency', 'Payment Status', 'Created'],
+            rows
+        );
+        downloadCsv(`bookings-${csvDateStamp()}.csv`, csv);
+        void this.showToast('CSV exported.', 'success');
     }
 
     nextPage() {

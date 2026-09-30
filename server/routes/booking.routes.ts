@@ -11,6 +11,7 @@ import { stripe } from '../services/stripe.service';
 import { rateLimit } from 'express-rate-limit';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 import { mapDriverAcquisitionError } from '../services/driver-eligibility.service';
+import { isDriverEligibleForService, toCanonicalDriverService } from '../services/driver-service-eligibility';
 
 const router = Router();
 
@@ -1272,6 +1273,37 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
                 error: 'There is no driver offer to accept for this job.',
                 code: 'NO_DRIVER_OFFER_TO_ACCEPT'
             });
+        }
+
+        // Defence in depth: re-check the accepted driver's CURRENT service-specific
+        // eligibility immediately before acquisition. Dispatch already filtered the
+        // candidate set, but a pending offer can survive until the driver becomes
+        // ineligible. We reuse the canonical helper (no duplicated rule logic).
+        const canonicalService = toCanonicalDriverService(fullJob.service_slug);
+        if (canonicalService) {
+            const { data: driverProfile, error: driverProfileError } = await supabaseAdmin
+                .from('profiles')
+                .select('*')
+                .eq('id', acceptedDriverId)
+                .maybeSingle();
+            if (driverProfileError || !driverProfile) {
+                return res.status(409).json({ error: 'The selected driver is no longer available.', code: 'DRIVER_NO_LONGER_AVAILABLE' });
+            }
+
+            const { data: driverVehicles, error: driverVehicleError } = await supabaseAdmin
+                .from('vehicles')
+                .select('*')
+                .eq('user_id', acceptedDriverId)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            if (driverVehicleError) {
+                return res.status(409).json({ error: 'The selected driver is no longer available.', code: 'DRIVER_NO_LONGER_AVAILABLE' });
+            }
+            const driverVehicle = (driverVehicles || [])[0] || null;
+
+            if (!isDriverEligibleForService(driverProfile, driverVehicle, canonicalService)) {
+                return res.status(409).json({ error: 'The selected driver is no longer eligible for this service.', code: 'DRIVER_NO_LONGER_ELIGIBLE' });
+            }
         }
 
         const { data: accepted, error: acceptError } = await supabaseAdmin.rpc('accept_driver_offer', {

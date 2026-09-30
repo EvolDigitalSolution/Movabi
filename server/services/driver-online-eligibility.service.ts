@@ -11,6 +11,8 @@ export class DriverOnlineEligibilityService{
   if(market.code==='MARKET_LOCATION_UNRESOLVED')return deny('MARKET_LOCATION_UNRESOLVED','Confirm your operating location','Allow location access or choose the area where you want to work.','SET_LOCATION');
   if(market.code==='MARKET_PAUSED')return deny('MARKET_PAUSED','Driver services temporarily paused','Going online is temporarily unavailable in this area.','TRY_AGAIN_LATER');
   if(!market.allowed)return deny('MARKET_NOT_LIVE','Movabi is not available here yet','Driver services have not launched in this area.','CHANGE_OPERATING_AREA');
+  const expiredBlockers=requirements.automaticRequirements.filter(item=>item.blockingForOnline&&String(item.status)==='expired');
+  if(expiredBlockers.length)return deny('REQUIRED_DOCUMENTS_EXPIRED','Document expired','Replace the expired document before going online.','UPDATE_DOCUMENTS',expiredBlockers.map(item=>item.reason));
   if(requirements.overallStatus==='action_required')return deny('DRIVER_ACTION_REQUIRED','Action required','Update the requested information and resubmit your application.','VIEW_OUTSTANDING_REQUESTS',requirements.onlineEligibility.reasons);
   if(requirements.overallStatus==='under_review')return deny('DRIVER_UNDER_REVIEW','Application under review','Your driver application is being reviewed. No action is required right now.','VIEW_STATUS',requirements.onlineEligibility.reasons);
   if(['not_started','incomplete','ready_to_submit'].includes(requirements.overallStatus))return deny('DRIVER_ONBOARDING_INCOMPLETE','Complete your driver setup','Finish the remaining onboarding steps before going online.','OPEN_DRIVER_SETUP',requirements.onlineEligibility.reasons);

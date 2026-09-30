@@ -8,6 +8,7 @@ import { NotificationService } from '../services/notification.service';
 import { AppVersionService, normaliseAppVersionConfig } from '../services/app-version.service';
 import { MarketplaceConfigService } from '../services/marketplace-config.service';
 import { LocalPlaceSearchService, ProviderBrandService } from '../services/local-place-search.service';
+import { isTestAccountPurgeEnabled, purgeTestAccount, isResetAllTestDataEnabled, createResetChallenge, consumeResetChallenge, resetPreview, resetAllTestData, RESET_ALL_CONFIRMATION } from '../services/test-account-purge.service';
 
 const router = Router();
 
@@ -620,6 +621,135 @@ router.post('/dispute', requireAdmin, async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+/**
+ * Account moderation — narrowly scoped to the existing account-status action.
+ * Runs through the trusted Admin boundary (service_role) so the Admin UI never
+ * performs a direct authenticated cross-row profile write. The acting admin is
+ * derived server-side from the verified admin session, never from the body.
+ */
+router.post('/account-status', requireAdmin, async (req: Request, res: Response) => {
+  const adminUserId = (req as any).adminUserId as string;
+  const targetUserId = String(req.body?.userId || '').trim();
+  const status = String(req.body?.status || '').trim();
+
+  const allowedStatuses = ['active', 'closure_requested', 'closed', 'reinstated', 'suspended', 'banned', 'disabled'];
+  if (!targetUserId) return res.status(400).json({ error: 'Target user is required.' });
+  if (!allowedStatuses.includes(status)) return res.status(400).json({ error: 'Invalid account status.' });
+
+  const now = new Date().toISOString();
+  const update: Record<string, unknown> = {
+    account_status: status,
+    moderation_reason: String(req.body?.reason || '').trim(),
+    moderated_at: now,
+    moderated_by: adminUserId
+  };
+
+  if (status === 'closure_requested') {
+    update.closure_requested_at = now;
+    update.account_closure_requested_at = now;
+    update.closure_notes = String(req.body?.reason || '').trim();
+  }
+  if (status === 'closed') {
+    update.closed_at = now;
+    update.closure_notes = String(req.body?.reason || '').trim();
+    update.is_online = false;
+    update.is_available = false;
+  }
+  if (status === 'active') {
+    update.reinstated_at = now;
+    update.reinstated_by = adminUserId;
+    update.reinstatement_notes = String(req.body?.reason || '').trim();
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .update(update)
+    .eq('id', targetUserId)
+    .select('id, account_status')
+    .maybeSingle();
+
+  if (error) return res.status(400).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'User not found.' });
+
+  return res.json({ ok: true, userId: targetUserId, account_status: data.account_status });
+});
+
+/**
+ * Permanently purge an UNUSED test account (pre-launch testing only).
+ * Fails closed unless ALLOW_ADMIN_TEST_ACCOUNT_PURGE=true. Never accepts table
+ * names/filters/instructions; only a target user id. Admin identity is derived
+ * server-side from the verified admin session.
+ */
+router.post('/test-account/purge', requireAdmin, async (req: Request, res: Response) => {
+  if (!isTestAccountPurgeEnabled()) {
+    return res.status(403).json({ error: 'Test account purge is not enabled.', code: 'TEST_ACCOUNT_PURGE_DISABLED' });
+  }
+
+  const adminUserId = (req as any).adminUserId as string;
+  const targetUserId = String(req.body?.userId || '').trim();
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId)) {
+    return res.status(400).json({ error: 'A valid user ID is required.', code: 'INVALID_USER_ID' });
+  }
+
+  const outcome = await purgeTestAccount(adminUserId, targetUserId);
+
+  switch (outcome.status) {
+    case 'purged':
+      return res.json({ ok: true, purged: true, recovered: outcome.recovered, removedJobs: outcome.removedJobs });
+    case 'not_found':
+      return res.status(404).json({ error: 'User not found.', code: 'USER_NOT_FOUND' });
+    case 'blocked':
+      return res.status(409).json({ error: outcome.reason, code: outcome.code });
+    case 'error':
+      return res.status(500).json({ error: outcome.message, code: 'PURGE_FAILED' });
+  }
+});
+
+/**
+ * Reset All Test Data — pre-launch development utility.
+ * Two-phase: prepare (read-only preview + challenge) then execute.
+ */
+router.post('/test-data/reset/prepare', requireAdmin, async (req: Request, res: Response) => {
+  if (!isTestAccountPurgeEnabled() || !isResetAllTestDataEnabled()) {
+    return res.status(403).json({ error: 'Reset all test data is not enabled.', code: 'RESET_ALL_TEST_DATA_DISABLED' });
+  }
+  const adminUserId = (req as any).adminUserId as string;
+  const preview = await resetPreview();
+  const challenge = createResetChallenge(adminUserId);
+  return res.json({ ...challenge, summary: preview });
+});
+
+router.post('/test-data/reset/execute', requireAdmin, async (req: Request, res: Response) => {
+  if (!isTestAccountPurgeEnabled() || !isResetAllTestDataEnabled()) {
+    return res.status(403).json({ error: 'Reset all test data is not enabled.', code: 'RESET_ALL_TEST_DATA_DISABLED' });
+  }
+  const adminUserId = (req as any).adminUserId as string;
+  const challengeId = String(req.body?.challengeId || '').trim();
+  const confirmation = String(req.body?.confirmation || '').trim();
+
+  if (confirmation !== RESET_ALL_CONFIRMATION) {
+    return res.status(400).json({ error: 'Confirmation phrase is incorrect.', code: 'INVALID_CONFIRMATION' });
+  }
+  if (!consumeResetChallenge(challengeId, adminUserId)) {
+    return res.status(400).json({ error: 'Reset challenge is missing, expired, or already used.', code: 'INVALID_CHALLENGE' });
+  }
+
+  const result = await resetAllTestData();
+  await AuditService.log({
+    userId: adminUserId,
+    action: 'admin_reset_all_test_data',
+    entityType: 'test_data',
+    metadata: {
+      accountsRemoved: result.accountsRemoved,
+      jobsRemoved: result.jobsRemoved,
+      authDeletionFailures: result.authDeletionFailures,
+      storageFailures: result.storageFailures
+    }
+  });
+  return res.json({ ok: true, ...result });
 });
 
 /**

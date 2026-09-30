@@ -138,7 +138,7 @@ type DocType = 'license' | 'insurance';
                 <div>
                   <h2 class="text-sm font-black text-slate-950">Action required</h2>
                   <p class="text-xs text-slate-600 font-semibold leading-relaxed mt-1">
-                    Admin needs more information before your driver account can be approved.
+                    {{ actionRequiredMessage() }}
                   </p>
                 </div>
 
@@ -602,8 +602,8 @@ export class DriverSettingsPage implements OnInit {
     }
 
     isActionRequired(): boolean {
-        const profile = this.profile() as DriverProfile | null;
-        return profile?.driver_review_status === 'action_required' || profile?.verification_status === 'action_required';
+        // Canonical authority: current eligibility, not a stale persisted flag.
+        return this.onboardingStatus.state()?.overallStatus === 'action_required';
     }
 
     verificationNotes(): string | null {
@@ -612,22 +612,28 @@ export class DriverSettingsPage implements OnInit {
     }
 
     reviewBlockers(): string[] {
-        const profile = this.profile() as DriverProfile | null;
-        const vehicle = this.vehicle() as Vehicle | null;
-        const selectedServices = normaliseSelectedServices(profile, vehicle);
-        const authUser = this.auth.currentUser();
-        const engineBlockers = getBlockingRequirements({
-            countryCode: (profile as any)?.country_code || (profile as any)?.country,
-            driver: { ...(profile || {}), auth_email: authUser?.email, user: authUser },
-            vehicle,
-            documents: { ...(profile || {}), ...(vehicle || {}) },
-            selectedServices
-        }).map(requirement => requirement.message);
+        // Canonical automatic requirement blockers (server-authoritative), not
+        // the shared engine or stale persisted blocker text. This keeps
+        // "automatic requirements" distinct from "explicit Admin requests".
+        const state = this.onboardingStatus.state();
+        const automatic = (state?.automaticRequirements || [])
+            .filter((requirement) => requirement.blockingForSubmission)
+            .map((requirement) => requirement.reason);
+        return Array.from(new Set(automatic));
+    }
 
-        return this.filterResolvedBlockers([
-            ...this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers),
-            ...engineBlockers
-        ], profile, vehicle, selectedServices);
+    hasOutstandingRequests(): boolean {
+        return !!(this.onboardingStatus.state()?.outstandingRequests?.length);
+    }
+
+    actionRequiredMessage(): string {
+        if (this.hasOutstandingRequests()) {
+            return 'Admin needs more information before your driver account can be approved.';
+        }
+        if (this.reviewBlockers().length) {
+            return 'Complete the following requirements before you can continue:';
+        }
+        return 'Your application needs to be resubmitted for review.';
     }
 
     private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {

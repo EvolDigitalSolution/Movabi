@@ -7,6 +7,8 @@ export interface DriverProfileRow {
   phone?: string | null;
   date_of_birth?: string | null;
   current_address?: string | null;
+  address_line1?: string | null;
+  home_address?: string | null;
   verification_status?: string | null;
   updated_at?: string | null;
 }
@@ -30,7 +32,10 @@ export function mapDriverProfile(row: DriverProfileRow, emailConfirmed: boolean)
     fullName: value(row.full_name),
     phone: value(row.phone),
     dateOfBirth: value(row.date_of_birth),
-    residentialAddress: value(row.current_address),
+    // Read compatibility: current_address is canonical, but legacy onboarding
+    // also stored address_line1 / home_address. Use the first meaningful value
+    // so a driver with a valid legacy address is not falsely blocked.
+    residentialAddress: value(row.current_address) ?? value(row.address_line1) ?? value(row.home_address),
     emailConfirmed,
     verificationStatus: value(row.verification_status)
   };

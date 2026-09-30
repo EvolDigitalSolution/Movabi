@@ -51,8 +51,8 @@ interface AdminEvent {
   standalone: true,
   imports: [CommonModule, IonicModule, RouterModule, BadgeComponent, MapComponent],
   template: `
-    <div class="space-y-6 container-padding pb-12 bg-slate-50 min-h-screen">
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pt-6">
+    <div class="space-y-5 pb-6 bg-slate-50 min-h-screen">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl md:text-3xl font-display font-bold text-slate-950 tracking-tight">Operations Dashboard</h1>
           <p class="text-sm text-slate-500 font-medium mt-1">Real-time platform monitoring and insights.</p>
@@ -95,10 +95,10 @@ interface AdminEvent {
 
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
         @for (stat of statsList; track stat.label) {
-          <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-5 hover:shadow-lg hover:shadow-slate-200/60 transition">
-            <div class="flex items-start justify-between gap-4 mb-5">
-              <div [class]="'w-12 h-12 rounded-2xl flex items-center justify-center ' + stat.bgClass">
-                <ion-icon [name]="stat.icon" [class]="'text-2xl ' + stat.iconClass"></ion-icon>
+          <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-4 hover:shadow-lg hover:shadow-slate-200/60 transition">
+            <div class="flex items-start justify-between gap-4 mb-4">
+              <div [class]="'w-10 h-10 rounded-2xl flex items-center justify-center ' + stat.bgClass">
+                <ion-icon [name]="stat.icon" [class]="'text-xl ' + stat.iconClass"></ion-icon>
               </div>
 
               <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">{{ stat.label }}</span>
@@ -108,10 +108,10 @@ interface AdminEvent {
               @if (stat.prefix) {
                 <span class="text-base font-bold text-slate-500">{{ stat.prefix }}</span>
               }
-              <h3 class="text-3xl font-display font-black text-slate-950 tracking-tight">{{ stat.value }}</h3>
+              <h3 class="text-2xl font-display font-black text-slate-950 tracking-tight">{{ stat.value }}</h3>
             </div>
 
-            <div class="mt-4 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+            <div class="mt-3 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
               <ion-icon name="pulse-outline" class="text-sm text-emerald-600"></ion-icon>
               <span>{{ stat.note }}</span>
             </div>

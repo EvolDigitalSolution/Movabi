@@ -26,8 +26,9 @@ import {
     MarketplaceConfigService,
     MarketplaceSettings
 } from '../../../../core/services/marketplace/marketplace-config.service';
+import { AdminService } from '../../services/admin.service';
 
-type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'marketplace';
+type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'marketplace' | 'development';
 
 @Component({
     selector: 'app-admin-settings',
@@ -102,6 +103,11 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                     Required
                   </span>
                 }
+              </button>
+
+              <button type="button" (click)="activeTab.set('development')" [class]="activeTab() === 'development' ? 'nav-btn active' : 'nav-btn'">
+                <ion-icon name="trash-outline"></ion-icon>
+                <span>Development / Test Data</span>
               </button>
             </div>
           </div>
@@ -599,6 +605,60 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'm
                 </div>
               }
 
+              @if (activeTab() === 'development') {
+                <div class="bg-white border border-rose-100 rounded-[1.5rem] shadow-sm overflow-hidden">
+                  <div class="p-6 border-b border-rose-100">
+                    <h3 class="text-lg font-bold text-rose-600">Reset All Test Data</h3>
+                    <p class="text-sm text-rose-600 font-semibold mt-1">
+                      Reset All Test Data permanently removes all non-admin test accounts and their associated test activity. This cannot be undone.
+                    </p>
+                  </div>
+                  <div class="p-6 space-y-4">
+                    @if (!resetPreviewData()) {
+                      <button type="button" (click)="openResetPreview()" [disabled]="resetting()" class="secondary-btn">
+                        <ion-icon name="trash-outline"></ion-icon>
+                        Preview Reset
+                      </button>
+                    } @else {
+                      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Accounts</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.accounts }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Jobs</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.jobs }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Vehicles</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.vehicles }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Wallets</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.wallets }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Wallet Txs</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.walletTransactions }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Notifications</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.notifications }}</div></div>
+                      </div>
+
+                      <input
+                        type="text"
+                        [value]="resetPhrase()"
+                        (input)="setResetPhrase($event)"
+                        placeholder="Type RESET ALL TEST DATA"
+                        class="field-control"
+                      />
+
+                      <button
+                        type="button"
+                        (click)="executeReset()"
+                        [disabled]="resetPhrase() !== 'RESET ALL TEST DATA' || resetting()"
+                        class="px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+                      >
+                        {{ resetting() ? 'Resetting…' : 'Execute Reset' }}
+                      </button>
+                    }
+
+                    @if (resetResult()) {
+                      <div class="rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+                        Reset complete: {{ resetResult()?.accountsRemoved }} accounts, {{ resetResult()?.jobsRemoved }} jobs removed.
+                        @if (resetResult()?.authDeletionFailures) {
+                          <span class="text-amber-700"> ({{ resetResult()?.authDeletionFailures }} Auth deletions failed — retry recommended)</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
               @if (activeTab() === 'countries') {
                 <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-hidden">
                   <div class="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -851,12 +911,54 @@ export class AdminSettingsComponent implements OnInit {
     private supabase = inject(SupabaseService);
     private apiUrl = inject(ApiUrlService);
     private marketplaceService = inject(MarketplaceConfigService);
+    private adminService = inject(AdminService);
 
     activeTab = signal<SettingsTab>('general');
     saving = signal(false);
     loading = signal(true);
     testingNotification = signal(false);
     confirmRemoveIndex = signal<number | null>(null);
+
+    resetPreviewData = signal<any>(null);
+    resetChallengeId = signal('');
+    resetPhrase = signal('');
+    resetting = signal(false);
+    resetResult = signal<any>(null);
+
+    async openResetPreview() {
+        this.resetting.set(true);
+        try {
+            const result = await this.adminService.prepareResetAllTestData();
+            this.resetChallengeId.set(result?.challengeId || '');
+            this.resetPreviewData.set(result?.summary || {});
+            this.resetResult.set(null);
+        } catch (error: any) {
+            this.triggerToast(error?.message || 'Reset preview could not be loaded.', 'danger');
+        } finally {
+            this.resetting.set(false);
+        }
+    }
+
+    setResetPhrase(event: Event) {
+        this.resetPhrase.set((event.target as HTMLInputElement).value || '');
+    }
+
+    async executeReset() {
+        if (this.resetPhrase() !== 'RESET ALL TEST DATA' || this.resetting()) return;
+        this.resetting.set(true);
+        try {
+            const result = await this.adminService.executeResetAllTestData(this.resetChallengeId(), this.resetPhrase());
+            this.resetResult.set(result);
+            this.resetPreviewData.set(null);
+            this.resetPhrase.set('');
+            this.resetChallengeId.set('');
+            this.triggerToast('Reset complete.', 'success');
+        } catch (error: any) {
+            this.triggerToast(error?.message || 'Reset could not be executed.', 'danger');
+        } finally {
+            this.resetting.set(false);
+        }
+    }
 
     toastMessage = signal('');
     toastColor = signal<'success' | 'danger' | 'warning'>('success');
