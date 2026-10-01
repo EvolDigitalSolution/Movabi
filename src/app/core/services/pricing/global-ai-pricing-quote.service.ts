@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { ApiUrlService } from '../api-url.service';
 import { MarketAvailabilityClientService } from '../market-availability.service';
 import { ServiceTypeSlug } from '../../models/maps/map-marker.model';
+import { buildQuoteSignature } from '../../../shared/utils/quote-signature';
 
 export interface GlobalAiPricingQuoteRequest {
     lat: number;
@@ -99,12 +100,17 @@ export class GlobalAiPricingQuoteService {
     private recent = new Map<string, { value: GlobalAiPricingQuoteResponse; expiresAt: number }>();
 
     async getQuote(request: GlobalAiPricingQuoteRequest): Promise<GlobalAiPricingQuoteResponse> {
-        await this.marketAvailability.resolve({ countryCode: request.countryCode, marketCity: request.cityName, zoneId: request.zoneId, capability: 'quote' });
         const key = this.requestKey(request);
         const cached = this.recent.get(key);
         if (cached && cached.expiresAt > Date.now()) return cached.value;
         const existing = this.pending.get(key);
         if (existing) return existing;
+
+        // Market authorisation now runs inside the deduped execution, so an equivalent quote
+        // that is already in flight (or freshly cached) no longer re-triggers /markets/resolve
+        // on every call. The server independently re-authorises the quote POST, so this
+        // pre-flight is a UX guard and not the authority.
+        await this.marketAvailability.resolve({ countryCode: request.countryCode, marketCity: request.cityName, zoneId: request.zoneId, capability: 'quote' });
 
         const promise = firstValueFrom(
             this.http.post<GlobalAiPricingQuoteResponse>(
@@ -122,18 +128,8 @@ export class GlobalAiPricingQuoteService {
         }
     }
 
+    /** Single authoritative dedupe key: pricing-relevant inputs including both coordinates. */
     private requestKey(request: GlobalAiPricingQuoteRequest): string {
-        const move = request.moveDetails;
-        return JSON.stringify([
-            request.countryCode || null, request.cityName || null, request.zoneId || null,
-            request.serviceSlug, request.vehicleClass || null,
-            request.distanceKm, request.durationMinutes, request.passengerCount ?? null,
-            request.packageSize || null, request.deliveryUrgency || null,
-            request.errandMode || null, request.itemCount ?? null, request.taskMinutes ?? null,
-            request.currencyCode || null,
-            move?.size || null, move?.helperCount ?? null, move?.stairsInvolved ?? null,
-            move?.packingAssistance ?? null, move?.fragileItems ?? null,
-            request.scheduledTime || null, request.airportOption || null, request.serviceSubtype || null
-        ]);
+        return buildQuoteSignature(request);
     }
 }

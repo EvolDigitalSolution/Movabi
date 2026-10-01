@@ -7,7 +7,7 @@ export interface MarketAvailabilityInput { countryCode?: unknown; marketCity?: u
 export interface MarketCapabilities { customerApp:boolean; customerRegistration:boolean; driverRegistration:boolean; driverOnline:boolean; quote:boolean; booking:boolean; payment:boolean; }
 export interface ResolvedMarketAvailability {
   countryCode:string|null; marketCity:string|null; zoneId:string|null; launchStatus:string; capabilities:MarketCapabilities;
-  currency:string|null; timezone:string|null; title:string; message:string; waitingListEnabled:boolean; resolutionLevel:MarketResolutionLevel;
+  currency:string|null; timezone:string|null; title:string|null; message:string|null; waitingListEnabled:boolean; resolutionLevel:MarketResolutionLevel;
 }
 
 export class MarketAvailabilityError extends Error {
@@ -19,6 +19,45 @@ export class MarketAvailabilityError extends Error {
 const CAPABILITY_COLUMN:Record<MarketCapability,string>={
   customer_app:'customer_app_enabled',customer_registration:'customer_registration_enabled',driver_registration:'driver_registration_enabled',
   driver_online:'driver_online_enabled',quote:'quote_enabled',booking:'booking_enabled',payment:'payment_enabled'
+};
+
+export interface MarketCopy{title:string|null;message:string|null;}
+
+/**
+ * Truthful customer copy for a capability check.
+ *
+ * The bug: unavailable copy was returned unconditionally, so a LIVE market with the
+ * requested capability ALLOWED still carried:
+ *   title:   "Movabi is coming to <city>"
+ *   message: "Bookings are not available in this area yet."
+ * A live, allowed capability now carries no unavailable copy. The decision lives here --
+ * not in resolveMarket -- because only a capability check knows whether the caller is
+ * allowed; `GET /markets/status` legitimately still needs the configured banner copy for
+ * a live market whose bookings are disabled.
+ */
+export function marketCopyForCapability(
+  launchStatus:string,
+  allowed:boolean,
+  code:string|null,
+  market:{title:string|null;message:string|null;}
+):MarketCopy{
+  if(allowed&&String(launchStatus)==='live')return {title:null,message:null};
+  if(code&&!market.message){
+    return {title:market.title??MARKET_CODE_FALLBACK_COPY[code]??null,message:MARKET_CODE_FALLBACK_COPY[code]??null};
+  }
+  return {title:market.title,message:market.message};
+}
+
+/**
+ * Truthful customer copy for a rejection on a market that keeps null unavailable copy,
+ * i.e. a live market whose requested capability is paused or disabled.
+ */
+export const MARKET_CODE_FALLBACK_COPY:Record<string,string>={
+  MARKET_COMING_SOON:'Movabi is coming to this area.',
+  MARKET_PAUSED:'Movabi is temporarily unavailable in this area.',
+  MARKET_CAPABILITY_DISABLED:'This service is not available in this area yet.',
+  MARKET_LOCATION_UNRESOLVED:'Choose a service location so we can check availability.',
+  MARKET_NOT_CONFIGURED:'Bookings are not available in this area yet.'
 };
 
 export class MarketAvailabilityService {
@@ -58,10 +97,14 @@ export class MarketAvailabilityService {
     else if(market.launchStatus==='paused') code='MARKET_PAUSED'; else if(market.launchStatus==='coming_soon') code='MARKET_COMING_SOON';
     else if(!capabilityMap[input.capability]) code='MARKET_CAPABILITY_DISABLED';
     const allowed=!code;
-    const {error}=await supabaseAdmin.from('market_availability_audit').insert({country_code:market.countryCode,market_city:market.marketCity,zone_id:market.zoneId,
-      capability:key.replace('_enabled',''),allowed,launch_status:market.launchStatus,resolution_level:market.resolutionLevel,endpoint:input.endpoint||null,error_code:code});
+    // Strip unavailable copy only when this capability is actually allowed on a live market,
+    // and backfill a truthful reason when a rejection would otherwise carry no message.
+    const copy=marketCopyForCapability(market.launchStatus,allowed,code,market);
+    const resolved={...market,...copy};
+    const {error}=await supabaseAdmin.from('market_availability_audit').insert({country_code:resolved.countryCode,market_city:resolved.marketCity,zone_id:resolved.zoneId,
+      capability:key.replace('_enabled',''),allowed,launch_status:resolved.launchStatus,resolution_level:resolved.resolutionLevel,endpoint:input.endpoint||null,error_code:code});
     if(error) console.error('[MarketAvailability] audit insert failed',error.message);
-    return {allowed,market,code};
+    return {allowed,market:resolved,code};
   }
 
   static async requireCapability(input:MarketAvailabilityInput&{capability:MarketCapability}):Promise<ResolvedMarketAvailability> {

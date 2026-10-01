@@ -1,4 +1,4 @@
-﻿import {
+import {
     Component,
     inject,
     signal,
@@ -74,10 +74,13 @@ import { RoutingService } from '../../../../../core/services/maps/routing.servic
 import { PricingConfigService } from '../../../../../core/services/pricing/pricing-config.service';
 import {
     GlobalAiPricingQuoteService,
-    GlobalAiPricingFareBreakdown
+    GlobalAiPricingFareBreakdown,
+    GlobalAiPricingQuoteRequest
 } from '../../../../../core/services/pricing/global-ai-pricing-quote.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
+import { buildQuoteSignature } from '../../../../../shared/utils/quote-signature';
+import { describeMarketFailure } from '../../../../../shared/utils/market-failure';
 
 import {
     Booking,
@@ -1361,6 +1364,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private lastFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
     private lastQuoteReference: string | null = null;
     private lastQuoteExpiresAt: string | null = null;
+    /** Signature of the last SUCCESSFUL authoritative quote (null until one succeeds). */
+    private lastQuotedSignature: string | null = null;
+    /** Signature currently in flight, to absorb double-clicks and re-entrant triggers. */
+    private quoteInFlightSignature: string | null = null;
     private fareRequestSequence = 0;
     negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
     effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
@@ -2234,7 +2241,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.formValidSignal.set(this.bookingForm.valid);
 
         this.bookingForm.valueChanges
-            .pipe(takeUntilDestroyed(this.destroyRef))
+            .pipe(
+                debounceTime(400),
+                distinctUntilChanged(),
+                takeUntilDestroyed(this.destroyRef)
+            )
             .subscribe(() => {
                 this.syncFormSignals(this.bookingForm.getRawValue());
                 this.formValidSignal.set(this.bookingForm.valid);
@@ -2685,45 +2696,60 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const distanceKm = this.toMoney((route?.distanceMeters || 0) / 1000);
         const durationMinutes = this.toMoney((route?.durationSeconds || 0) / 60);
 
-        const requestId = ++this.fareRequestSequence;
-        this.fareCalculating.set(true);
-        this.fareCalculationError.set(null);
-
         const countryCode = this.config.currentCountry()?.code || 'GB';
         const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
 
+        const quoteRequest: GlobalAiPricingQuoteRequest = {
+            lat: this.pickupLocation.latitude,
+            lng: this.pickupLocation.longitude,
+            dropoffLat: this.dropoffLocation.latitude ?? null,
+            dropoffLng: this.dropoffLocation.longitude ?? null,
+            serviceSlug,
+            distanceKm,
+            durationMinutes,
+            countryCode,
+            currencyCode,
+            vehicleClass: serviceSlug === 'ride' || serviceSlug === 'delivery' || serviceSlug === 'errand'
+                ? this.vehicleClass()
+                : null,
+            passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
+            packageSize: serviceSlug === 'delivery' ? this.packageSize() : null,
+            itemCount: serviceSlug === 'errand' && this.usesItemListMode() ? this.itemCount() : undefined,
+            errandMode: serviceSlug === 'errand' ? (this.usesBudgetMode() ? 'budget' : 'items') : null,
+            budget: serviceSlug === 'errand' && this.usesBudgetMode() ? this.budgetValue() : undefined,
+            moveDetails: serviceSlug === 'van-moving'
+                ? {
+                    size: formVal.size,
+                    helperCount: Number(formVal.helper_count) || 0,
+                    stairsInvolved: !!formVal.stairs_involved,
+                    packingAssistance: !!formVal.packing_assistance,
+                    fragileItems: !!formVal.fragile_items
+                }
+                : null
+        };
+
+        // ONE authoritative dedupe mechanism for every trigger that reaches this method.
+        // The signature covers exactly the pricing-relevant inputs, so an unchanged booking
+        // form (or a duplicate trigger) cannot produce another quote POST, while any genuine
+        // pricing change still does.
+        const signature = buildQuoteSignature(quoteRequest);
+        const existingQuoteStillFresh = signature === this.lastQuotedSignature
+            && !!this.lastQuoteExpiresAt && Date.parse(this.lastQuoteExpiresAt) > Date.now();
+        if (existingQuoteStillFresh) return;
+        if (signature === this.quoteInFlightSignature) return;
+
+        const requestId = ++this.fareRequestSequence;
+        this.quoteInFlightSignature = signature;
+        this.fareCalculating.set(true);
+        this.fareCalculationError.set(null);
+
         try {
-            const response = await this.globalAiPricingQuote.getQuote({
-                lat: this.pickupLocation.latitude,
-                lng: this.pickupLocation.longitude,
-                dropoffLat: this.dropoffLocation.latitude ?? null,
-                dropoffLng: this.dropoffLocation.longitude ?? null,
-                serviceSlug,
-                distanceKm,
-                durationMinutes,
-                countryCode,
-                currencyCode,
-                vehicleClass: serviceSlug === 'ride' || serviceSlug === 'delivery' || serviceSlug === 'errand'
-                    ? this.vehicleClass()
-                    : null,
-                passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
-                packageSize: serviceSlug === 'delivery' ? this.packageSize() : null,
-                itemCount: serviceSlug === 'errand' && this.usesItemListMode() ? this.itemCount() : undefined,
-                errandMode: serviceSlug === 'errand' ? (this.usesBudgetMode() ? 'budget' : 'items') : null,
-                budget: serviceSlug === 'errand' && this.usesBudgetMode() ? this.budgetValue() : undefined,
-                moveDetails: serviceSlug === 'van-moving'
-                    ? {
-                        size: formVal.size,
-                        helperCount: Number(formVal.helper_count) || 0,
-                        stairsInvolved: !!formVal.stairs_involved,
-                        packingAssistance: !!formVal.packing_assistance,
-                        fragileItems: !!formVal.fragile_items
-                    }
-                    : null
-            });
+            const response = await this.globalAiPricingQuote.getQuote(quoteRequest);
 
             // Ignore stale responses if the user changed inputs while this request was in flight.
             if (requestId !== this.fareRequestSequence) return;
+
+            this.lastQuotedSignature = signature;
 
             const breakdown = response.legacy.fareBreakdown;
             this.lastFareBreakdown = breakdown;
@@ -2763,14 +2789,30 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         } catch (error: any) {
             if (requestId !== this.fareRequestSequence) return;
 
-            console.error('[BookingRequest] Failed to fetch backend fare quote', error);
+            // Keep the authoritative market reason instead of collapsing every failure into
+            // the generic fare message. The machine-readable code is preserved for diagnostics
+            // and for the honest customer-facing state.
+            const marketFailure = describeMarketFailure(error);
+            if (marketFailure) {
+                console.warn('[BookingRequest] market rejected the fare quote', { code: marketFailure.code });
+            } else {
+                console.error('[BookingRequest] Failed to fetch backend fare quote', error);
+            }
+
             this.fareEstimate.set(null);
             this.estimatedPrice.set(0);
             this.lastFareBreakdown = null;
             this.lastQuoteReference = null;
             this.lastQuoteExpiresAt = null;
-            this.fareCalculationError.set('Unable to calculate the fare right now. Please try again.');
+            // No successful quote for this signature, so a retry must remain possible.
+            this.lastQuotedSignature = null;
+            this.fareCalculationError.set(
+                marketFailure?.message || 'Unable to calculate the fare right now. Please try again.'
+            );
         } finally {
+            if (this.quoteInFlightSignature === signature) {
+                this.quoteInFlightSignature = null;
+            }
             if (requestId === this.fareRequestSequence) {
                 this.fareCalculating.set(false);
             }

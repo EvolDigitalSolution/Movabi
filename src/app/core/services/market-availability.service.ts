@@ -2,6 +2,7 @@ import {Injectable,inject,signal} from '@angular/core';
 import {HttpClient,HttpErrorResponse,HttpHeaders} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {ApiUrlService} from './api-url.service';
+import {MarketAvailabilityFailure,marketFailureMessage} from '../../shared/utils/market-failure';
 import {SupabaseService} from './supabase/supabase.service';
 export type MarketCapability='customer_app'|'customer_registration'|'driver_registration'|'driver_online'|'quote'|'booking'|'payment';
 export interface PublicMarketStatus { code?:string|null;countryCode:string|null;marketCity:string|null;launchStatus:string;customerAppEnabled:boolean;
@@ -13,7 +14,7 @@ export class MarketAvailabilityClientService{
  private http=inject(HttpClient);private api=inject(ApiUrlService);private supabase=inject(SupabaseService);readonly current=signal<PublicMarketStatus|null>(null);
  async resolve(input:{countryCode?:string|null;marketCity?:string|null;zoneId?:string|null;capability?:MarketCapability}):Promise<PublicMarketStatus>{
   try{const status=await firstValueFrom(this.http.post<PublicMarketStatus>(this.api.getApiUrl('/api/markets/resolve'),input));this.current.set(status);return status;}
-  catch(error:any){const status=error?.error as PublicMarketStatus;if(status?.code){this.current.set(status);throw new Error(status.message||status.title||'Movabi is not available in this area yet.');}throw error;}
+  catch(error:any){const status=error?.error as PublicMarketStatus;if(status?.code){this.current.set(status);throw new MarketAvailabilityFailure(status.code,marketFailureMessage(status.code,status.message||status.title));}throw error;}
  }
  async getStatus(input:{countryCode?:string|null;marketCity?:string|null;zoneId?:string|null}):Promise<PublicMarketStatus>{
   const params=new URLSearchParams();if(input.countryCode)params.set('countryCode',input.countryCode);if(input.marketCity)params.set('marketCity',input.marketCity);if(input.zoneId)params.set('zoneId',input.zoneId);
