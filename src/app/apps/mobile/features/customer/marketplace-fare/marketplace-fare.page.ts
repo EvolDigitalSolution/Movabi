@@ -161,7 +161,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   <div class="grid grid-cols-2 gap-2">
                     <div class="bg-white/70 rounded-2xl px-3 py-2.5 border border-amber-100/60">
                       <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Service Fare</p>
-                      <p class="text-lg font-display font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</p>
+                      <p class="text-lg font-display font-bold text-slate-900">{{ suggestedFareLabel() }}</p>
                     </div>
                     <div class="bg-emerald-50 rounded-2xl px-3 py-2.5 border border-emerald-100">
                       <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Shopping Budget</p>
@@ -175,7 +175,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fare</p>
-                    <p class="text-4xl font-display font-black text-slate-900">{{ formatPrice(suggestedFare()) }}</p>
+                    <p class="text-4xl font-display font-black text-slate-900">{{ suggestedFareLabel() }}</p>
                   </div>
                   <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
                     <ion-icon name="pricetag-outline" class="text-amber-600 text-xl"></ion-icon>
@@ -267,7 +267,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   }
                   <div class="pt-2 border-t border-amber-100/60 flex justify-between items-center">
                     <span class="text-sm font-bold text-slate-700">Total service fare</span>
-                    <span class="text-base font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</span>
+                    <span class="text-base font-bold text-slate-900">{{ suggestedFareLabel() }}</span>
                   </div>
                   @if (isErrand() && itemBudget() > 0) {
                     <div class="flex justify-between items-center">
@@ -317,7 +317,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
               <div class="bg-amber-50 rounded-2xl border border-amber-100 p-3 mb-3 space-y-1">
                 <div class="flex justify-between text-sm">
                   <span class="text-slate-600">Suggested service fare</span>
-                  <span class="font-bold text-slate-900">{{ formatPrice(suggestedFare()) }}</span>
+                  <span class="font-bold text-slate-900">{{ suggestedFareLabel() }}</span>
                 </div>
                 @if (isErrand() && itemBudget() > 0) {
                   <div class="flex justify-between text-sm">
@@ -484,7 +484,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   }
                   <div class="flex justify-between items-center">
                     <span class="text-sm text-emerald-600">{{ isErrand() ? 'Service Fare' : 'Agreed Fare' }}</span>
-                    <span class="font-semibold text-emerald-900">{{ formatPrice(job.agreed_fare || suggestedFare()) }}</span>
+                    <span class="font-semibold text-emerald-900">{{ job.agreed_fare ? formatPrice(job.agreed_fare) : suggestedFareLabel() }}</span>
                   </div>
                   <div class="h-px bg-emerald-100"></div>
                   <div class="flex justify-between items-center">
@@ -720,17 +720,34 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         );
     }
 
-    suggestedFare() {
+    /**
+     * Authoritative suggested fare. Returns null when no authoritative fare exists so the
+     * UI shows an unavailable state instead of manufacturing a legitimate-looking £0.00.
+     */
+    suggestedFare(): number | null {
         const job = this.booking();
         const fb = this.fareBreakdown();
-        return Number(
-            job?.agreed_fare ||
-            fb?.['customerServiceTotal'] ||
-            fb?.['serviceFare'] ||
-            fb?.['total'] ||
-            job?.total_price ||
-            0
-        );
+        const raw =
+            job?.agreed_fare ??
+            fb?.['customerServiceTotal'] ??
+            fb?.['serviceFare'] ??
+            fb?.['total'] ??
+            job?.total_price ??
+            null;
+        if (raw === null || raw === undefined) return null;
+        const value = Number(raw);
+        return Number.isFinite(value) && value > 0 ? value : null;
+    }
+
+    /** True only when an authoritative positive fare is available. */
+    suggestedFareAvailable(): boolean {
+        return this.suggestedFare() !== null;
+    }
+
+    /** Honest display value: never renders a manufactured £0.00 for a missing fare. */
+    suggestedFareLabel(): string {
+        const fare = this.suggestedFare();
+        return fare === null ? 'Fare unavailable' : this.formatPrice(fare);
     }
 
     paymentTotal(): number {
@@ -941,7 +958,9 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     openCounterInput() {
-        this.counterAmount.set(this.suggestedFare());
+        const fare = this.suggestedFare();
+        if (fare === null) return;
+        this.counterAmount.set(fare);
         this.showCounterInput.set(true);
         setTimeout(() => {
             if (this.ionContent) {
@@ -954,10 +973,13 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         const job = this.booking();
         if (!job) return;
 
+        const fare = this.suggestedFare();
+        if (fare === null) return;   // never lock a fare that is not authoritative
+
         try {
             const loading = await this.loadingCtrl.create({ message: 'Locking fare...' });
             await loading.present();
-            await this.negotiationService.lockAgreedFare(job.id, this.suggestedFare());
+            await this.negotiationService.lockAgreedFare(job.id, fare);
             await loading.dismiss();
 
             if (this.hybridEnabled) {
@@ -974,7 +996,9 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     openHybridOfferInput() {
-        this.hybridOfferAmount.set(this.toMoney(this.suggestedFare() * 0.9));
+        const fare = this.suggestedFare();
+        if (fare === null) return;
+        this.hybridOfferAmount.set(this.toMoney(fare * 0.9));
         this.showHybridOfferInput.set(true);
         setTimeout(() => {
             const el = this.offerForm?.nativeElement;
@@ -996,6 +1020,12 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             return;
         }
 
+        const suggestedFare = this.suggestedFare();
+        if (suggestedFare === null) {
+            await this.showToast('We cannot confirm a fare for this request right now.', 'warning');
+            return;
+        }
+
         try {
             const loading = await this.loadingCtrl.create({ message: 'Sending offer...' });
             await loading.present();
@@ -1003,7 +1033,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
                 job.id,
                 this.auth.currentUser()?.id || '',
                 amount,
-                this.suggestedFare()
+                suggestedFare
             );
             await this.supabase
                 .from('jobs')

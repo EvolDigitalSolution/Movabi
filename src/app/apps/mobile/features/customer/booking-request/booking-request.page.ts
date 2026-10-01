@@ -748,7 +748,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                   </div>
                 }
 
-                @if (shouldShowMarketplaceFare()) {
+                @if (shouldShowMarketplaceFare() && quoteValid()) {
                   <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
                     <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
                       <div class="flex items-start justify-between gap-4">
@@ -1368,12 +1368,36 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private lastQuotedSignature: string | null = null;
     /** Signature currently in flight, to absorb double-clicks and re-entrant triggers. */
     private quoteInFlightSignature: string | null = null;
+    /** Signature of the pricing inputs the latest quote attempt was made for. */
+    private currentQuoteSignature = signal<string | null>(null);
+    /** Authoritative quote that succeeded AND belongs to the current pricing inputs. */
+    private authoritativeQuote = signal<{ signature: string; total: number; expiresAt: string | null } | null>(null);
     private fareRequestSequence = 0;
     negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
     effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
 
     shouldShowMarketplaceFare = computed(() => {
         return this.effectiveHybridStatus()?.enabled === true;
+    });
+
+    /**
+     * The single invariant that authorises marketplace continuation, payment and booking
+     * submission. A failed, missing, zero, non-finite, mismatched or stale quote can never
+     * satisfy it, so a failed quote can never become a legitimate £0.00 suggested fare.
+     * This is enforced in the handlers as well as the template, so it cannot be bypassed
+     * by stale UI state or a programmatic click.
+     */
+    quoteValid = computed(() => {
+        const quote = this.authoritativeQuote();
+        if (!quote) return false;
+        if (this.fareCalculating() || this.fareCalculationError()) return false;
+        if (quote.signature !== this.currentQuoteSignature()) return false;
+        const estimate = this.fareEstimate();
+        if (!estimate) return false;
+        const total = Number(estimate.total);
+        if (!Number.isFinite(total) || total <= 0) return false;
+        if (quote.expiresAt && Date.parse(quote.expiresAt) <= Date.now()) return false;
+        return true;
     });
 
     usesItemListMode = computed(() => {
@@ -1453,6 +1477,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     canSubmit = computed(() => {
         if (!this.formValidSignal() || this.submitting() || this.paymentProcessing()) {
+            return false;
+        }
+
+        // A failed, missing, zero, non-finite, mismatched or stale quote can never authorise
+        // progress, so the marketplace CTA cannot appear enabled on a £0.00/missing fare.
+        if (!this.quoteValid()) {
             return false;
         }
 
@@ -1773,7 +1803,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 'Processing...';
         }
 
-        if (this.shouldShowMarketplaceFare()) {
+        if (this.shouldShowMarketplaceFare() && this.quoteValid()) {
             return 'Continue to Marketplace Fare';
         }
 
@@ -2733,6 +2763,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         // form (or a duplicate trigger) cannot produce another quote POST, while any genuine
         // pricing change still does.
         const signature = buildQuoteSignature(quoteRequest);
+        // Record the signature of the inputs we are pricing for BEFORE any early return, so a
+        // previously successful quote for different inputs stops authorising continuation at
+        // once -- the UI cannot keep a stale fare alive after a pricing-relevant change.
+        this.currentQuoteSignature.set(signature);
         const existingQuoteStillFresh = signature === this.lastQuotedSignature
             && !!this.lastQuoteExpiresAt && Date.parse(this.lastQuoteExpiresAt) > Date.now();
         if (existingQuoteStillFresh) return;
@@ -2775,6 +2809,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.fareEstimate.set(estimate);
             this.estimatedPrice.set(estimate.total);
 
+            // Only a positive, finite total for the CURRENT inputs may authorise progression.
+            const quotedTotal = Number(estimate.total);
+            this.authoritativeQuote.set(Number.isFinite(quotedTotal) && quotedTotal > 0
+                ? { signature, total: quotedTotal, expiresAt: this.lastQuoteExpiresAt }
+                : null);
+
             console.log('[BookingRequest] backend fare quote', {
                 serviceSlug,
                 distanceKm,
@@ -2806,6 +2846,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.lastQuoteExpiresAt = null;
             // No successful quote for this signature, so a retry must remain possible.
             this.lastQuotedSignature = null;
+            // Drop the authoritative quote: a failed recalculation must never leave the
+            // previous fare able to authorise marketplace continuation or payment.
+            this.authoritativeQuote.set(null);
             this.fareCalculationError.set(
                 marketFailure?.message || 'Unable to calculate the fare right now. Please try again.'
             );
@@ -2974,7 +3017,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     async submit() {
         if (this.submitting() || this.paymentProcessing()) return;
 
-        if (this.fareCalculating() || !this.fareEstimate() || !this.lastFareBreakdown) {
+        if (this.fareCalculating() || !this.fareEstimate() || !this.lastFareBreakdown || !this.quoteValid()) {
             const toast = await this.toastCtrl.create({
                 message: this.fareCalculationError() || 'Please wait for the fare to finish calculating.',
                 duration: 3000,
