@@ -61,9 +61,9 @@ const rideReadyProfile = () => profile({
 });
 
 describe('driver requirement matrix — goods-in-transit cover (van-moving)', () => {
-    it('1. goods-in-transit is satisfiable via the canonical goods_in_transit_url column', () => {
+    it('1. goods-in-transit is satisfiable via the canonical goods_in_transit_insurance_url column', () => {
         const result = resolve(
-            profile({ driver_service_types: ['van-moving'], goods_in_transit_url: 'git.pdf' }),
+            profile({ driver_service_types: ['van-moving'], goods_in_transit_insurance_url: 'git.pdf' }),
             smallVan()
         );
         const git = result.automaticRequirements.find(r => r.code === 'document.goods_in_transit');
@@ -74,7 +74,7 @@ describe('driver requirement matrix — goods-in-transit cover (van-moving)', ()
 
     it('2. goods-in-transit blocks GB van-moving when the canonical column is absent', () => {
         const result = resolve(
-            profile({ driver_service_types: ['van-moving'], goods_in_transit_url: null }),
+            profile({ driver_service_types: ['van-moving'], goods_in_transit_insurance_url: null }),
             smallVan()
         );
         const git = result.automaticRequirements.find(r => r.code === 'document.goods_in_transit');

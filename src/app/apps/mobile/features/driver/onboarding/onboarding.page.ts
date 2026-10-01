@@ -683,9 +683,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
 
             <div class="grid gap-3">@for(group of setupGroups;track group.section){
               @if(sectionFor(group.section)?.applicable){
-              <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex justify-between gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="sectionFor(group.section)?.status==='complete'" [class.text-sky-600]="sectionFor(group.section)?.status==='under_review'" [class.text-amber-600]="sectionFor(group.section)?.status!=='complete'&&sectionFor(group.section)?.status!=='under_review'">{{sectionFor(group.section)?.status==='complete'?'Complete':sectionFor(group.section)?.status==='under_review'?'Under review':sectionFor(group.section)?.status==='action_required'?'Action required':'Missing'}}</span></div>
-                @if(group.category&&!requirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
-                @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.label}}{{requirement.completed?'':' — '+requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
+              <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex justify-between gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="reviewSectionStatus(group.section)==='complete'" [class.text-sky-600]="reviewSectionStatus(group.section)==='under_review'" [class.text-amber-600]="reviewSectionStatus(group.section)!=='complete'&&reviewSectionStatus(group.section)!=='under_review'">{{reviewSectionStatus(group.section)==='complete'?'Complete':reviewSectionStatus(group.section)==='under_review'?'Under review':reviewSectionStatus(group.section)==='action_required'?'Action required':'Missing'}}</span></div>
+                @if(group.category&&!reviewRequirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
+                @else{<div class="mt-2 space-y-2">@for(requirement of reviewRequirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.label}}{{requirement.completed?'':' — '+requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
               </div>}}
             </div>
           </section>
@@ -1084,6 +1084,32 @@ export class OnboardingPage implements OnInit {
     }
 
     async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
+    /**
+     * The Driver Agreement is persisted through `PUT /agreement` at stage save / submit,
+     * not on every checkbox toggle. Review therefore has to honour the currently checked
+     * control as well as the persisted column, otherwise Review reports "Missing" while the
+     * box is visibly ticked and `canSubmit` already allows submission -- the display would
+     * contradict both the driver and the submit gate.
+     */
+    private agreementAccepted(): boolean {
+        if (this.onboardingForm.get('driver_agreement_accepted')?.valid === true) return true;
+        return this.documentComplete('agreement.driver_terms');
+    }
+
+    /** Review rows: identical to canonical, except the agreement reflects effective acceptance. */
+    reviewRequirementsFor(category: 'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review') {
+        return this.requirementsFor(category).map(row => row.code === 'agreement.driver_terms' && !row.completed && this.agreementAccepted()
+            ? { ...row, completed: true, status: 'completed', blockingForSubmission: false }
+            : row);
+    }
+
+    /** Review section status: the agreement section reflects effective acceptance. */
+    reviewSectionStatus(section: keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus) {
+        const status = this.sectionFor(section)?.status;
+        if (section === 'agreement' && status !== 'complete' && this.agreementAccepted()) return 'complete' as const;
+        return status;
+    }
+
     requirementsFor(category:'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review'){const rows=this.onboardingStatus.state()?.automaticRequirements||[];if(category==='review')return[];if(category==='operating')return rows.filter(item=>item.code==='vehicle.operating_method');if(category==='vehicle')return rows.filter(item=>item.category==='vehicle'&&item.code!=='vehicle.operating_method');return rows.filter(item=>item.category===category);}
     sectionFor(section:keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus){return this.onboardingStatus.state()?.sectionStatus?.[section];}
     setupProgressPercent(){return this.onboardingStatus.state()?.progress?.percentage||0;}
@@ -1570,7 +1596,7 @@ export class OnboardingPage implements OnInit {
                 right_to_work: profile.right_to_work_url ?? this.docs().right_to_work,
                 private_hire_vehicle_license: profile.private_hire_vehicle_license_url ?? this.docs().private_hire_vehicle_license,
                 private_hire_insurance: profile.private_hire_insurance_url ?? this.docs().private_hire_insurance,
-                goods_in_transit: profile.goods_in_transit_url ?? this.docs().goods_in_transit
+                goods_in_transit: profile.goods_in_transit_insurance_url ?? this.docs().goods_in_transit
             });
         }
     }
@@ -2261,7 +2287,7 @@ export class OnboardingPage implements OnInit {
                     : type === 'private_hire_insurance'
                         ? { private_hire_insurance_url: path }
                         : type === 'goods_in_transit'
-                            ? { goods_in_transit_url: path }
+                            ? { goods_in_transit_insurance_url: path }
                             : { right_to_work_url: path, right_to_work_status: 'uploaded' });
 
         if (typeof (this.profileService as any).fetchProfile === 'function') {
@@ -2347,7 +2373,7 @@ export class OnboardingPage implements OnInit {
                 right_to_work_url: this.docs().right_to_work || null,
                 private_hire_vehicle_license_url: this.docs().private_hire_vehicle_license || null,
                 private_hire_insurance_url: this.docs().private_hire_insurance || null,
-                goods_in_transit_url: this.docs().goods_in_transit || null,
+                goods_in_transit_insurance_url: this.docs().goods_in_transit || null,
                 ...rideCompliancePayload,
                 verification_items: this.buildVerificationItems(raw)
             });

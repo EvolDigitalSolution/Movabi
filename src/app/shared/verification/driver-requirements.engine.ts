@@ -260,7 +260,7 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
 
     if (selectedServices.includes('van')) {
         if (country.requireGoodsInTransitForVan) {
-            requirements.push(documentRequirement(driver, ['goods_in_transit_url'], ['goods_in_transit_status'], 'goods_in_transit', 'Goods in transit insurance', 'Goods in transit insurance is missing.', ['van']));
+            requirements.push(documentRequirement(driver, ['goods_in_transit_insurance_url'], ['goods_in_transit_insurance_status'], 'goods_in_transit', 'Goods in transit insurance', 'Goods in transit insurance is missing.', ['van']));
         }
         if (country.requirePublicLiabilityForVan) {
             requirements.push(documentRequirement(driver, ['public_liability_url'], ['public_liability_status'], 'public_liability', 'Public liability insurance', 'Public liability insurance is missing.', ['van']));

@@ -85,7 +85,7 @@ export class DriverRequirementService {
         addDocument('document.private_hire_vehicle_license','Private-hire vehicle licence',this.has(profile.private_hire_vehicle_license_url),profile.vehicle_license_expiry,'Upload your private-hire/taxi vehicle licence.',['ride']);
         add('document.private_hire_insurance','Private-hire insurance','documents',this.has(profile.private_hire_insurance_url),'Insurance covering you to carry passengers for hire or reward.',['ride']);
       }
-      if(selectedServices.includes('van-moving')){const gitRequired=country==='GB';addDocument('document.goods_in_transit','Goods-in-transit cover',gitRequired?this.has(profile.goods_in_transit_url):true,gitRequired?profile.goods_in_transit_insurance_expiry:null,'Upload configured commercial or goods-in-transit cover.',['van-moving']);}
+      if(selectedServices.includes('van-moving')){const gitRequired=country==='GB';addDocument('document.goods_in_transit','Goods-in-transit cover',gitRequired?this.has(profile.goods_in_transit_insurance_url):true,gitRequired?profile.goods_in_transit_insurance_expiry:null,'Upload configured commercial or goods-in-transit cover.',['van-moving']);}
     }
     const automaticCodes=new Set(requirements.map(r=>r.code));
     const adminRequests=(input.adminRequests||[]).filter((request,index,array)=>!automaticCodes.has(request.requirementCode)&&array.findIndex(item=>item.requirementCode===request.requirementCode&&item.status!=='approved')===index);

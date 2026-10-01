@@ -140,7 +140,9 @@ describe('canonical visibility replaces local-only rules', () => {
     });
 
     it('the Review stage renders canonical automaticRequirements with the four status words', () => {
-        expect(template).toContain('@for(requirement of requirementsFor(group.category);track requirement.code)');
+        // Review renders the canonical requirement rows via the effective-state helper, so the
+        // Driver Agreement row reflects the checked control as well as the persisted column.
+        expect(template).toContain('@for(requirement of reviewRequirementsFor(group.category);track requirement.code)');
         expect(page).toContain('reviewRequirements()');
         expect(page).toContain("if (requirement.status === 'under_review') return 'Under review';");
         expect(page).toContain("if (requirement.completed) return 'Complete';");

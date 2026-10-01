@@ -252,7 +252,7 @@ router.post('/submit-review', async (req,res)=>{
           right_to_work_url: submitted.right_to_work_url ?? profileInput.right_to_work_url,
           private_hire_vehicle_license_url: submitted.private_hire_vehicle_license_url ?? profileInput.private_hire_vehicle_license_url,
           private_hire_insurance_url: submitted.private_hire_insurance_url ?? profileInput.private_hire_insurance_url,
-          goods_in_transit_url: submitted.goods_in_transit_url ?? profileInput.goods_in_transit_url,
+          goods_in_transit_insurance_url: submitted.goods_in_transit_insurance_url ?? profileInput.goods_in_transit_insurance_url,
           ...(passengerLicenceUpdate||{})
         }
       : profileInput;
@@ -277,7 +277,7 @@ router.post('/submit-review', async (req,res)=>{
       // `effectiveProfile`, which already falls back to the stored row whenever the
       // request omitted or blanked a field. Canonical licence columns are written
       // only when a valid passenger-licence payload was supplied.
-      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(effectiveProfile.full_name||'').trim()||null,phone:String(effectiveProfile.phone||'').trim()||null,accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:effectiveProfile.driver_license_url||null,insurance_url:effectiveProfile.insurance_url||null,right_to_work_url:effectiveProfile.right_to_work_url||null,private_hire_vehicle_license_url:effectiveProfile.private_hire_vehicle_license_url||null,private_hire_insurance_url:effectiveProfile.private_hire_insurance_url||null,goods_in_transit_url:effectiveProfile.goods_in_transit_url||null,...(passengerLicenceUpdate||{}),verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(effectiveProfile.full_name||'').trim()||null,phone:String(effectiveProfile.phone||'').trim()||null,accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:effectiveProfile.driver_license_url||null,insurance_url:effectiveProfile.insurance_url||null,right_to_work_url:effectiveProfile.right_to_work_url||null,private_hire_vehicle_license_url:effectiveProfile.private_hire_vehicle_license_url||null,private_hire_insurance_url:effectiveProfile.private_hire_insurance_url||null,goods_in_transit_insurance_url:effectiveProfile.goods_in_transit_insurance_url||null,...(passengerLicenceUpdate||{}),verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
       auditEvent='submitted';
     }
     const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated){logSubmitReviewDbError('profile-submit-update',updateError);throw updateError||new Error('Review submission did not update the driver profile.');}

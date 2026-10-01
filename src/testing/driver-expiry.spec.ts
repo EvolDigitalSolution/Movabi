@@ -103,7 +103,7 @@ describe('canonical document expiry', () => {
     it('E. goods in transit: expired -> expired for van-moving (GB)', () => {
         const van = profile({
             driver_service_types: ['van-moving'],
-            goods_in_transit_url: 'git.pdf',
+            goods_in_transit_insurance_url: 'git.pdf',
             goods_in_transit_insurance_expiry: '2026-08-03'
         });
         const smallVan = { ...car, type: 'van', capacity: 'small_van', serviceEligibility: ['van-moving'] };

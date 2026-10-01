@@ -130,8 +130,8 @@ describe('G/H/I submit-review never destroys stored values', () => {
         expect(submitBody).not.toContain('right_to_work_url:submitted?.right_to_work_url||null');
         expect(submitBody).not.toContain('private_hire_vehicle_license_url:submitted?.private_hire_vehicle_license_url||null');
         expect(submitBody).not.toContain('private_hire_insurance_url:submitted?.private_hire_insurance_url||null');
-        expect(submitBody).not.toContain('goods_in_transit_url:submitted?.goods_in_transit_url||null');
-        for (const column of ['driver_license_url', 'insurance_url', 'right_to_work_url', 'private_hire_vehicle_license_url', 'private_hire_insurance_url', 'goods_in_transit_url']) {
+        expect(submitBody).not.toContain('goods_in_transit_insurance_url:submitted?.goods_in_transit_insurance_url||null');
+        for (const column of ['driver_license_url', 'insurance_url', 'right_to_work_url', 'private_hire_vehicle_license_url', 'private_hire_insurance_url', 'goods_in_transit_insurance_url']) {
             expect(submitBody).toContain(`${column}:effectiveProfile.${column}||null`);
         }
     });
