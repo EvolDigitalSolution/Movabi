@@ -71,9 +71,9 @@ describe('five-stage progressive onboarding structure', () => {
     });
 
     it('keeps Admin action-required information visible', () => {
-        // Outstanding Requests are rendered outside every stage block, so an
+        // Information Requests are rendered outside every stage block, so an
         // action_required driver sees them on whichever stage they are on.
-        const outstanding = template.indexOf('Outstanding Requests');
+        const outstanding = template.indexOf('Information Requests');
         const firstStage = template.indexOf('@if (stage() === 1) {');
         expect(outstanding).toBeGreaterThan(-1);
         expect(outstanding).toBeLessThan(firstStage);

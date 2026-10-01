@@ -491,7 +491,7 @@ test.describe('five-stage progressive driver onboarding', () => {
       }]
     }), { phone: null });
 
-    await expect(page.getByText('Outstanding Requests')).toBeVisible();
+    await expect(page.getByText('Information Requests')).toBeVisible();
     await expect(page.getByText('Please upload a clearer insurance certificate.')).toBeVisible();
     await expect(page.getByText('Stage 1 of 5')).toBeVisible();
   });

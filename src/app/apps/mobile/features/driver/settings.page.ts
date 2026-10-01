@@ -120,10 +120,10 @@ type DocType = 'license' | 'insurance';
           </div>
         </div>
 
-        <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Outstanding Requests</h2><button class="text-xs font-bold text-blue-600 disabled:opacity-50" [disabled]="onboardingStatus.loading()" (click)="refreshOnboardingStatus()">{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}</button></div>
+        <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Information Requests</h2><button class="text-xs font-bold text-blue-600 disabled:opacity-50" [disabled]="onboardingStatus.loading()" (click)="refreshOnboardingStatus()">{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}</button></div>
           @if(onboardingStatus.loading()){<p class="mt-3 text-xs text-slate-500">Loading requests…</p>}
           @else if(onboardingStatus.error()){<p class="mt-3 text-xs font-semibold text-rose-600">{{onboardingStatus.error()}}</p>}
-          @else if(!onboardingStatus.state()?.outstandingRequests?.length){<p class="mt-3 text-xs text-slate-500">No outstanding requests.</p>}
+          @else if(!onboardingStatus.state()?.outstandingRequests?.length){<p class="mt-3 text-xs text-slate-500">No information requests. You're all caught up.</p>}
           @else{@for(request of onboardingStatus.state()!.outstandingRequests;track request.id){<div class="mt-3 rounded-xl border border-slate-100 p-3"><div class="flex justify-between"><span class="text-xs font-bold">{{request.item}}</span><app-badge [variant]="request.status==='approved'?'success':request.status==='rejected'?'warning':'secondary'">{{request.status}}</app-badge></div><p class="mt-2 text-xs text-slate-500">{{request.adminMessage||request.nextAction}}</p></div>}}
         </app-card>
 

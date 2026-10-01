@@ -151,10 +151,10 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
         </section>
 
         <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3"><h2 class="font-display font-black text-slate-950">Outstanding Requests</h2><button type="button" class="text-xs font-bold text-blue-600" (click)="refreshOnboardingStatus()">Refresh</button></div>
+          <div class="flex items-center justify-between gap-3"><h2 class="font-display font-black text-slate-950">Information Requests</h2><button type="button" class="text-xs font-bold text-blue-600" (click)="refreshOnboardingStatus()">Refresh</button></div>
           @if (onboardingStatus.loading()) { <p class="mt-3 text-sm text-slate-500">Loading requests…</p> }
           @else if (onboardingStatus.error()) { <p class="mt-3 text-sm font-semibold text-rose-600">{{ onboardingStatus.error() }}</p> }
-          @else if (!onboardingStatus.state()?.outstandingRequests?.length) { <p class="mt-3 text-sm text-slate-500">No outstanding requests.</p> }
+          @else if (!onboardingStatus.state()?.outstandingRequests?.length) { <p class="mt-3 text-sm text-slate-500">No information requests. You're all caught up.</p> }
           @else { <div class="mt-3 space-y-3">@for (request of onboardingStatus.state()!.outstandingRequests; track request.id) {
             <div class="rounded-xl border border-slate-100 p-3"><div class="flex justify-between gap-2"><span class="text-sm font-bold text-slate-900">{{request.item}}</span><app-badge [variant]="request.status === 'approved' ? 'success' : request.status === 'rejected' ? 'warning' : 'secondary'">{{request.status}}</app-badge></div>
             @if(request.adminMessage){<p class="mt-2 text-xs text-slate-600">{{request.adminMessage}}</p>}<p class="mt-2 text-xs font-semibold text-slate-500">{{request.nextAction}}</p></div>
@@ -233,7 +233,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 <div class="flex items-start justify-between gap-3 mb-2">
                   <div>
                     <h3 class="font-display font-black text-slate-950 text-lg">Stripe Connect</h3>
-                    <p class="text-xs text-slate-500 font-semibold">Required for payouts and wallet-funded requests</p>
+                    <p class="text-xs text-slate-500 font-semibold">Set up your account to receive payouts</p>
                   </div>
 
                   <app-badge [variant]="getStripeBadgeVariant()">
@@ -247,7 +247,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   } @else if (isStripePending()) {
                     Your Stripe onboarding has started, but payouts are not fully enabled yet.
                   } @else {
-                    Connect payouts so your completed request earnings can be processed safely.
+                    Connect your payout account so we can securely send you earnings from completed jobs.
                   }
                 </p>
               </div>
@@ -261,7 +261,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 [disabled]="isReadOnly() || submitting()"
                 (clicked)="setupPayouts()"
               >
-                {{ isReadOnly() ? 'Locked During Review' : (isStripePending() ? 'Continue Stripe Setup' : 'Start Stripe Setup') }}
+                {{ isReadOnly() ? 'Locked During Review' : (isStripePending() ? 'Continue Stripe Setup' : 'Set Up Payouts') }}
               </app-button>
             } @else {
               <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
@@ -291,10 +291,10 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 <div class="h-px flex-1 bg-slate-100"></div>
               </div>
 
-              <h3 class="font-display font-black text-slate-950 text-lg mb-2">Starter by default</h3>
+              <h3 class="font-display font-black text-slate-950 text-lg mb-2">Start on the Starter Plan</h3>
               <p class="text-sm text-slate-600 font-medium leading-relaxed">
-                New drivers start on the <span class="font-black text-slate-950">Starter Plan</span>. Upgrade to
-                <span class="font-black text-slate-950"> Pro</span> later only when you choose to subscribe.
+                New drivers automatically start on the <span class="font-black text-slate-950">Starter Plan</span>. You can upgrade to
+                <span class="font-black text-slate-950"> Pro</span> later if you choose.
               </p>
             </div>
           </div>
@@ -411,7 +411,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   </div>
                   <div>
                     <h3 class="font-display font-black text-slate-950">Your vehicle</h3>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Used for dispatch and manual review</p>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tell us what vehicle you'll use for jobs</p>
                   </div>
                 </div>
               </div>
@@ -419,8 +419,8 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               <div class="divide-y divide-slate-50">
                 <div class="p-4 space-y-3">
                   <div>
-                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Class</p>
-                    <p class="text-xs font-semibold text-slate-500">Choose the vehicle you will use.</p>
+                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Type</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose the vehicle you plan to use.</p>
                   </div>
 
                   <div class="grid grid-cols-2 gap-3">
@@ -452,7 +452,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 <div class="p-4 space-y-3">
                   <div>
                     <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Services You Want To Accept</p>
-                    <p class="text-xs font-semibold text-slate-500">Choose the type of work you want to receive.</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose the types of jobs you'd like to receive.</p>
                   </div>
 
                   <div class="grid grid-cols-2 gap-3">
@@ -868,17 +868,17 @@ export class OnboardingPage implements OnInit {
     });
 
     vehicleClassOptions: Array<{ id: DriverVehicleClass; label: string; helper: string; icon: string }> = [
-        { id: 'bike', label: 'Bike', helper: 'Your bicycle, e-bike, scooter, or motorcycle', icon: 'bicycle-outline' },
-        { id: 'standard', label: 'Car', helper: 'Standard car for local work', icon: 'car-sport-outline' },
-        { id: 'xl', label: 'XL / 7 Seater', helper: 'Larger car with 5-7 seats', icon: 'people-outline' },
-        { id: 'small_van', label: 'Small Van', helper: 'Small van for parcels and light moves', icon: 'bus-outline' },
-        { id: 'large_van', label: 'Large Van', helper: 'Large van for bulky delivery and moves', icon: 'bus-outline' }
+        { id: 'bike', label: 'Bike', helper: 'Bicycle, e-bike, scooter or motorcycle', icon: 'bicycle-outline' },
+        { id: 'standard', label: 'Car', helper: 'Standard car for local jobs', icon: 'car-sport-outline' },
+        { id: 'xl', label: 'XL / 7 Seater', helper: 'Larger vehicle with 5–7 passenger seats', icon: 'people-outline' },
+        { id: 'small_van', label: 'Small Van', helper: 'For parcels, deliveries and smaller moves', icon: 'bus-outline' },
+        { id: 'large_van', label: 'Large Van', helper: 'For bulky deliveries and larger moves', icon: 'bus-outline' }
     ];
 
     serviceOptions: Array<{ id: DriverServiceSelection; label: string; helper: string; icon: string }> = [
-        { id: 'ride', label: 'Ride / Passenger', helper: 'Passenger trips only after taxi/private hire approval', icon: 'people-outline' },
-        { id: 'errand', label: 'Shop', helper: 'Collect, deliver, or shop for customers', icon: 'options-outline' },
-        { id: 'delivery', label: 'Deliver', helper: 'Small parcels and local deliveries', icon: 'document-attach-outline' },
+        { id: 'ride', label: 'Ride / Passenger', helper: 'Passenger trips, subject to private hire or taxi approval', icon: 'people-outline' },
+        { id: 'errand', label: 'Shop', helper: 'Shop for customers, collect orders and make deliveries', icon: 'options-outline' },
+        { id: 'delivery', label: 'Deliver', helper: 'Parcels and local deliveries', icon: 'document-attach-outline' },
         { id: 'van', label: 'Move', helper: 'Moving and bulky transport jobs', icon: 'bus-outline' }
     ];
 
@@ -1644,14 +1644,14 @@ export class OnboardingPage implements OnInit {
     vehicleSetupTitle(): string {
         if (this.isBikeVehicle()) return 'Bike courier setup';
         if (this.selectedVehicleClass() === 'small_van' || this.selectedVehicleClass() === 'large_van') return 'Van setup';
-        return 'Car setup';
+        return 'Car requirements';
     }
 
     vehicleSetupMessage(): string {
         const selected = this.selectedServiceTypes();
 
         if (selected.includes('ride')) {
-            return 'Passenger rides require private hire/taxi approval, vehicle licence, insurance, and local licensing details.';
+            return "For passenger trips, you'll need the required private hire or taxi approval, vehicle licence, insurance and any applicable local licensing details.";
         }
 
         if (selected.includes('van')) {

@@ -127,9 +127,9 @@ describe('admin requests reach the canonical resolver and the right stage', () =
     expect(template).toContain('@if (currentStageAdminRequests().length)');
     expect(template).toContain('data-stage-admin-request');
     expect(template).toContain('{{request.publicMessage || request.item}}');
-    // Stage 1 and Stage 5 both surface it; the global Outstanding Requests feed stays.
+    // Stage 1 and Stage 5 both surface it; the global Information Requests feed stays.
     expect(template.indexOf('data-stage-admin-request')).toBeLessThan(template.indexOf('Profile Photo'));
-    expect(template).toContain('Outstanding Requests');
+    expect(template).toContain('Information Requests');
     expect(template).toContain('Review');
   });
 

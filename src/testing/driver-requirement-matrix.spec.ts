@@ -164,14 +164,14 @@ describe('driver requirement matrix — explicit admin requests vs setup gaps', 
         nextAction: 'Correct this item and resubmit it for review.'
     });
 
-    it('7. an explicit admin request surfaces as an adminRequest (and thus in Outstanding Requests)', () => {
+    it('7. an explicit admin request surfaces as an adminRequest (and thus in Information Requests)', () => {
         const result = resolve(profile(), car, [missingInfoRequest()]);
         expect(result.adminRequests.map(r => r.requirementCode)).toContain('admin.missing_info');
     });
 
-    it('8. "no outstanding requests" means no explicit admin requests, not KYC-complete', () => {
+    it('8. "no information requests" means no explicit admin requests, not KYC-complete', () => {
         // A driver with genuine setup gaps but no explicit admin request has an
-        // empty adminRequests list — so "No outstanding requests" is correct even
+        // empty adminRequests list — so "No information requests" is correct even
         // though automaticRequirements still carry blockers.
         const incomplete = profile({ driver_service_types: ['ride'] });
         const result = resolve(incomplete, car, []);

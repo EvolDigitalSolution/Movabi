@@ -75,7 +75,7 @@ describe('driver onboarding production flow', () => {
   });
   it('shows loading, empty, pending, approved, rejected and error states', () => {
     const combined = onboarding + settings + store;
-    for (const state of ['loading','No outstanding requests','pending','approved','rejected','error']) expect(combined).toContain(state);
+    for (const state of ['loading','No information requests','pending','approved','rejected','error']) expect(combined).toContain(state);
   });
   it('preserves Stripe Connect and emits its connected transition once', () => {
     expect(connect).toContain('driver_stripe_connected');
@@ -103,7 +103,7 @@ describe('driver onboarding production flow', () => {
     expect(settings).not.toContain('await Promise.all([');
   });
   it('keeps onboarding failures out of the empty state and provides Retry', () => {
-    expect(settings.indexOf('@else if(onboardingStatus.error())')).toBeLessThan(settings.indexOf("No outstanding requests."));
+    expect(settings.indexOf('@else if(onboardingStatus.error())')).toBeLessThan(settings.indexOf("No information requests. You're all caught up."));
     expect(settings).toContain("{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}");
     expect(settings).toContain('[disabled]="onboardingStatus.loading()"');
   });
