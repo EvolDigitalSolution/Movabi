@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { acquisitionErrorMessage } from '../compliance/acquisition-error';
@@ -43,13 +43,31 @@ export class JobService {
         return await response.json() as DispatchCandidate[];
     }
 
+    /**
+     * Bearer header for the authenticated booking API. The server derives the caller from
+     * this token and there is no global HTTP interceptor, so it must be sent explicitly.
+     * A missing session fails with an intentional, customer-facing message rather than a
+     * mysterious 401 from the API.
+     */
+    private async authHeaders(): Promise<HttpHeaders> {
+        const { data } = await this.supabase.auth.getSession();
+        if (!data.session?.access_token) throw new Error('Please sign in again.');
+        return new HttpHeaders({ Authorization: `Bearer ${data.session.access_token}` });
+    }
+
     async createJob(job: Partial<Job>): Promise<Job> {
         const safeJob = this.toJobsPayload({
             ...job,
             scheduled_time: job.scheduled_time || new Date().toISOString()
         });
 
-        return await firstValueFrom(this.http.post<Job>(this.apiUrlService.getApiUrl('/api/booking/create'), { booking: safeJob }));
+        // /api/booking/create requires an authenticated caller; without this the van-moving
+        // flow failed with 401 for exactly the same reason as the errand/ride flow.
+        return await firstValueFrom(this.http.post<Job>(
+            this.apiUrlService.getApiUrl('/api/booking/create'),
+            { booking: safeJob },
+            { headers: await this.authHeaders() }
+        ));
     }
     async getAvailableJobs(): Promise<Job[]> {
         const { data, error } = await this.supabase

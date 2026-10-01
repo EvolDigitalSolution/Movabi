@@ -364,7 +364,14 @@ export class BookingService {
             }
         };
 
-        const job = await firstValueFrom(this.http.post<Booking>(this.apiUrlService.getApiUrl('/api/booking/create'), { booking: insertPayload }));
+        // /api/booking/create requires an authenticated caller (requireAuthenticatedUser ->
+        // 401 AUTHENTICATION_REQUIRED). There is no global HTTP interceptor in this app, so the
+        // Bearer token must be attached per call -- exactly as cancelBooking/notifyStatus do.
+        const job = await firstValueFrom(this.http.post<Booking>(
+            this.apiUrlService.getApiUrl('/api/booking/create'),
+            { booking: insertPayload },
+            { headers: await this.authHeaders() }
+        ));
 
         const detailsTable = this.getDetailsTable(serviceSlug);
         if (!detailsTable) {

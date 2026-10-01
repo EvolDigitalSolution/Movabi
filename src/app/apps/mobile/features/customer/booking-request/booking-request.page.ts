@@ -81,6 +81,7 @@ import { SupabaseService } from '../../../../../core/services/supabase/supabase.
 import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
 import { buildQuoteSignature } from '../../../../../shared/utils/quote-signature';
 import { describeMarketFailure } from '../../../../../shared/utils/market-failure';
+import { describeHttpFailure } from '../../../../../shared/utils/http-failure';
 
 import {
     Booking,
@@ -3219,7 +3220,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         } catch (e: unknown) {
             console.error('[BookingRequest] submit failed', e);
 
-            const message = e instanceof Error ? e.message : 'An error occurred';
+            // Preserve the authoritative reason (and machine code) instead of collapsing every
+            // failure -- including an expired session -- into 'An error occurred'.
+            const failure = describeHttpFailure(e);
+            const message = failure.message;
+            if (failure.code) {
+                console.warn('[BookingRequest] submit rejected', { status: failure.status, code: failure.code });
+            }
 
             if (booking?.id && (!paymentIntentId || walletReserved)) {
                 try {
