@@ -71,34 +71,20 @@ import { AuthService } from '@core/services/auth/auth.service';
               </label>
 
               <label>
-                <span>Mobile number</span>
+                <span>Phone number</span>
                 <input
                   type="tel"
                   formControlName="phone"
                   placeholder="Mobile number"
                   autocomplete="tel"
                   inputmode="tel"
-                  enterkeyhint="next"
+                  enterkeyhint="done"
                 />
               </label>
 
-              @if (otpSent()) {
-                <label>
-                  <span>Verification code</span>
-                  <input
-                    type="text"
-                    formControlName="otp"
-                    placeholder="6 digit code"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    maxlength="6"
-                  />
-                </label>
-
-                <p class="otp-note">
-                  Enter the code sent to your phone to finish setup.
-                </p>
-              }
+              <p class="field-hint">
+                Add a phone number so drivers and MOVABI can contact you about your bookings when needed.
+              </p>
             </form>
 
             <div class="feature-item">
@@ -130,7 +116,7 @@ import { AuthService } from '@core/services/auth/auth.service';
             [disabled]="isSubmitting()"
             (click)="finishOnboarding()"
           >
-            {{ otpSent() ? 'Verify & Continue' : 'Send Verification Code' }}
+            Finish setup
             <ion-icon name="chevron-forward-outline" slot="end"></ion-icon>
           </ion-button>
         </div>
@@ -260,7 +246,7 @@ import { AuthService } from '@core/services/auth/auth.service';
       background: #fff;
     }
 
-    .otp-note {
+    .field-hint {
       margin: 0;
       color: #64748b;
       font-weight: 700;
@@ -331,13 +317,10 @@ export class CustomerOnboardingPage {
     private fb = inject(FormBuilder);
 
     isSubmitting = signal(false);
-    otpSent = signal(false);
-    private expectedOtp = signal<string | null>(null);
 
     profileForm = this.fb.group({
         fullName: ['', [Validators.required, Validators.minLength(2)]],
-        phone: ['', [Validators.required, Validators.minLength(7)]],
-        otp: ['']
+        phone: ['', [Validators.required, Validators.minLength(7)]]
     });
 
     constructor() {
@@ -371,25 +354,7 @@ export class CustomerOnboardingPage {
 
         if (this.profileForm.invalid) {
             this.profileForm.markAllAsTouched();
-            await this.showSetupAlert('Details needed', 'Enter your full name and mobile number before continuing.');
-            this.isSubmitting.set(false);
-            return;
-        }
-
-        if (!this.otpSent()) {
-            const code = this.generateOtp();
-            this.expectedOtp.set(code);
-            this.otpSent.set(true);
-            this.profileForm.get('otp')?.setValidators([Validators.required, Validators.pattern(/^\d{6}$/)]);
-            this.profileForm.get('otp')?.updateValueAndValidity();
-            await this.showSetupAlert('Verification code sent', `Use code ${code} to verify this test account. Connect an SMS provider before production.`);
-            this.isSubmitting.set(false);
-            return;
-        }
-
-        const enteredOtp = String(this.profileForm.value.otp || '').trim();
-        if (enteredOtp !== this.expectedOtp()) {
-            await this.showSetupAlert('Code not recognised', 'Check the 6 digit code and try again.');
+            await this.showSetupAlert('Details needed', 'Enter your full name and phone number before continuing.');
             this.isSubmitting.set(false);
             return;
         }
@@ -428,10 +393,6 @@ export class CustomerOnboardingPage {
         } finally {
             this.isSubmitting.set(false);
         }
-    }
-
-    private generateOtp(): string {
-        return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
     private async showSetupAlert(header: string, message: string): Promise<void> {
