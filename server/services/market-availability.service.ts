@@ -65,6 +65,34 @@ export class MarketAvailabilityService {
   static normalizeCity(value:unknown):string|null { const v=String(value||'').replace(/\s+/g,' ').trim(); return v?v:null; }
   static normalizeZone(value:unknown):string|null { const v=String(value||'').trim(); return v?v:null; }
 
+  /** GB market service bounds: the only coordinates allowed to fall back to GB. */
+  static readonly GB_SERVICE_BOUNDS={minLat:49.8,maxLat:60.9,minLng:-8.7,maxLng:2.1} as const;
+
+  /** True only for finite coordinates inside the GB service bounds. */
+  static isWithinGbServiceBounds(lat:number,lng:number):boolean {
+    const b=MarketAvailabilityService.GB_SERVICE_BOUNDS;
+    return Number.isFinite(lat)&&Number.isFinite(lng)
+      &&lat>=b.minLat&&lat<=b.maxLat&&lng>=b.minLng&&lng<=b.maxLng;
+  }
+
+  /**
+   * Resolve the market country for a service location.
+   *
+   * A city's stored country may only outrank the geographic fallback when it normalizes to a
+   * valid ISO alpha-2 code. Previously a truthy-but-malformed value (e.g. country='United
+   * Kingdom' on the Manchester row) short-circuited `|| (bounds ? 'GB' : null)`, and
+   * normalizeCountry() then rejected it -- so countryCode became null and a journey
+   * demonstrably inside the GB service bounds failed with MARKET_LOCATION_UNRESOLVED (422).
+   *
+   * Client-supplied country is deliberately NOT accepted here: it is presentation context and
+   * may not authorize a market. The caller still has to pass requireCapability() afterwards.
+   */
+  static resolveServiceCountryCode(cityCountry:unknown,lat:number,lng:number):string|null {
+    const fromCity=this.normalizeCountry(cityCountry);
+    if (fromCity) return fromCity;
+    return this.isWithinGbServiceBounds(lat,lng)?'GB':null;
+  }
+
   static async resolveMarket(input:MarketAvailabilityInput):Promise<ResolvedMarketAvailability> {
     const countryCode=this.normalizeCountry(input.countryCode); const marketCity=this.normalizeCity(input.marketCity); const zoneId=this.normalizeZone(input.zoneId);
     if (!countryCode) return this.unavailable(null,marketCity,zoneId,'MARKET_LOCATION_UNRESOLVED');

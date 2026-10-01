@@ -7,7 +7,6 @@ import { rateLimit } from 'express-rate-limit';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 
 const router = Router();
-const isWithinGbServiceBounds = (lat: number, lng: number) => lat >= 49.8 && lat <= 60.9 && lng >= -8.7 && lng <= 2.1;
 
 const quoteLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
 router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
@@ -27,7 +26,13 @@ router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
     const stats = await dispatchService.getAreaStats(lat, lng);
     // Availability is resolved from the service coordinates. Client/profile
     // country is presentation context only and cannot authorize a market.
-    const countryCode = (city as any)?.country_code || (city as any)?.country || (isWithinGbServiceBounds(lat, lng) ? 'GB' : null);
+    // A city country only outranks the geographic fallback when it is a valid ISO alpha-2
+    // code; a truthy-but-malformed value must not suppress the GB bounds fallback.
+    const countryCode = MarketAvailabilityService.resolveServiceCountryCode(
+      (city as any)?.country_code || (city as any)?.country,
+      lat,
+      lng
+    );
     const cityName = city?.name || null;
     const availability = await MarketAvailabilityService.requireCapability({ countryCode, marketCity: cityName, zoneId: req.body.zoneId, capability: 'quote', endpoint: '/api/pricing/global-ai/quote' });
     const quoteReference = randomUUID();
