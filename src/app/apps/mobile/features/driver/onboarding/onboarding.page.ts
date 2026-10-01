@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, DestroyRef, inject, signal, computed, effect, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -133,14 +133,21 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
         <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
           <div class="flex items-center justify-between"><div><p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Driver Setup</p><h2 class="font-display font-black text-slate-950">{{setupStatusLabel()}}</h2></div><span class="text-sm font-black text-blue-600">{{onboardingStatus.state()?.progress?.completed||0}} / {{onboardingStatus.state()?.progress?.total||0}}</span></div>
           <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-blue-600 transition-all" [style.width.%]="setupProgressPercent()"></div></div>
-          <div class="mt-4 grid gap-3">@for(group of setupGroups;track group.section){
-            @if(sectionFor(group.section)?.applicable){
-            <div class="rounded-2xl border border-slate-100 p-4"><div class="flex justify-between"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="sectionFor(group.section)?.status==='complete'" [class.text-amber-600]="sectionFor(group.section)?.status!=='complete'">{{sectionFor(group.section)?.status==='complete'?'Complete':sectionFor(group.section)?.status==='under_review'?'Under review':sectionFor(group.section)?.status==='action_required'?'Action required':'Incomplete'}}</span></div>
-              @if(group.category&&!requirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
-              @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='invalid'||requirement.status==='rejected'" [class.text-amber-600]="!requirement.completed&&requirement.status!=='invalid'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.completed?requirement.label:requirement.reason}}</span></div>}</div>}
-            </div>}}
-          </div>
-          <div class="mt-4 grid grid-cols-2 gap-2"><button type="button" class="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white" (click)="scrollToSetup()">Continue Setup</button><button type="button" class="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" (click)="saveAndContinue()" [disabled]="savingProgress()">{{savingProgress()?'Saving…':'Save and Continue Later'}}</button></div>
+
+          <nav class="mt-4 grid grid-cols-5 gap-1" aria-label="Driver setup stages" data-stage-nav>
+            @for(item of stages;track item.id){
+              <button type="button" (click)="goToStage(item.id)"
+                class="rounded-xl px-1 py-2 text-[9px] font-black uppercase tracking-wider transition-colors"
+                [attr.aria-current]="stage()===item.id?'step':null"
+                [class.bg-blue-600]="stage()===item.id" [class.text-white]="stage()===item.id"
+                [class.bg-slate-100]="stage()!==item.id" [class.text-slate-500]="stage()!==item.id">
+                <span class="block text-sm leading-none">{{item.id}}</span>
+                <span class="mt-1 block leading-tight">{{item.short}}</span>
+              </button>
+            }
+          </nav>
+          <p class="mt-3 text-xs font-bold text-slate-500">Stage {{stage()}} of {{stages.length}} — {{stageTitle()}}</p>
+          <div class="mt-3"><button type="button" class="w-full rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" (click)="saveAndContinue()" [disabled]="savingProgress()">{{savingProgress()?'Saving…':'Save and Continue Later'}}</button></div>
         </section>
 
         <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -294,6 +301,16 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
         </div>
 
         <form [formGroup]="onboardingForm" (ngSubmit)="submit()" class="space-y-6">
+          @if (stage() === 1) {
+          @if (currentStageAdminRequests().length) {
+            <div class="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-4" data-stage-admin-request>
+              <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">Action required</p>
+              @for(request of currentStageAdminRequests();track request.id){
+                <p class="mt-2 text-sm font-semibold text-amber-900">{{request.publicMessage || request.item}}</p>
+                @if(request.nextAction){<p class="mt-1 text-xs text-amber-800">{{request.nextAction}}</p>}
+              }
+            </div>
+          }
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -377,7 +394,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               </div>
             </div>
           </section>
+          }
 
+          @if (stage() === 4) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -522,8 +541,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               </div>
             </div>
           </section>
+          }
 
-          @if (requiresTaxiLicence()) {
+          @if (stage() === 3 && requirementVisible('licence.private_hire')) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -568,6 +588,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
           </section>
           }
 
+          @if (stage() === 2 || stage() === 3 || stage() === 4) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -575,6 +596,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
             </div>
 
             <div class="grid grid-cols-2 gap-3">
+              @if (stage() === 2) {
               <button type="button" (click)="handleDocumentClick('license')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                 <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm">
                   <ion-icon name="card-outline" class="text-2xl"></ion-icon>
@@ -591,7 +613,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p>
                 }
               </button>
+              }
 
+              @if (stage() === 4) {
               <button type="button" (click)="handleDocumentClick('insurance')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                 <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100 shadow-sm">
                   <ion-icon name="shield-checkmark-outline" class="text-2xl"></ion-icon>
@@ -608,7 +632,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   <p class="text-xs text-slate-500 font-semibold">{{ secondaryDocumentPendingLabel() }}</p>
                 }
               </button>
+              }
 
+              @if (stage() === 3 && requirementVisible('work.right_to_work')) {
               <button type="button" (click)="handleDocumentClick('right_to_work')" class="col-span-2 bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                 <div class="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-4 border border-violet-100 shadow-sm"><ion-icon name="document-text-outline" class="text-2xl"></ion-icon></div>
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
@@ -616,8 +642,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 @if (docs().right_to_work) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
                 @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
               </button>
+              }
 
-              @if (requiresTaxiLicence()) {
+              @if (stage() === 4 && requirementVisible('document.private_hire_vehicle_license')) {
                 <button type="button" (click)="handleDocumentClick('private_hire_vehicle_license')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                   <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100 shadow-sm"><ion-icon name="car-sport-outline" class="text-2xl"></ion-icon></div>
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
@@ -625,7 +652,9 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   @if (docs().private_hire_vehicle_license) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
                   @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
                 </button>
+                }
 
+                @if (stage() === 4 && requirementVisible('document.private_hire_insurance')) {
                 <button type="button" (click)="handleDocumentClick('private_hire_insurance')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                   <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm"><ion-icon name="shield-checkmark-outline" class="text-2xl"></ion-icon></div>
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
@@ -635,7 +664,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 </button>
               }
 
-              @if (requiresGoodsInTransit()) {
+              @if (stage() === 4 && requirementVisible('document.goods_in_transit')) {
                 <button type="button" (click)="handleDocumentClick('goods_in_transit')" class="col-span-2 bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                   <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-4 border border-teal-100 shadow-sm"><ion-icon name="document-attach-outline" class="text-2xl"></ion-icon></div>
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
@@ -644,6 +673,32 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
                 </button>
               }
+            </div>
+          </section>
+          }
+
+          @if (stage() === 5) {
+          @if (currentStageAdminRequests().length) {
+            <div class="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-4" data-stage-admin-request>
+              <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">Action required before review</p>
+              @for(request of currentStageAdminRequests();track request.id){
+                <p class="mt-2 text-sm font-semibold text-amber-900">{{request.publicMessage || request.item}}</p>
+                @if(request.nextAction){<p class="mt-1 text-xs text-amber-800">{{request.nextAction}}</p>}
+              }
+            </div>
+          }
+          <section class="space-y-4">
+            <div class="flex items-center gap-3 ml-1">
+              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Review</h2>
+            </div>
+
+            <div class="grid gap-3">@for(group of setupGroups;track group.section){
+              @if(sectionFor(group.section)?.applicable){
+              <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex justify-between gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="sectionFor(group.section)?.status==='complete'" [class.text-sky-600]="sectionFor(group.section)?.status==='under_review'" [class.text-amber-600]="sectionFor(group.section)?.status!=='complete'&&sectionFor(group.section)?.status!=='under_review'">{{sectionFor(group.section)?.status==='complete'?'Complete':sectionFor(group.section)?.status==='under_review'?'Under review':sectionFor(group.section)?.status==='action_required'?'Action required':'Missing'}}</span></div>
+                @if(group.category&&!requirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
+                @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.completed?requirement.label:requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
+              </div>}}
             </div>
           </section>
 
@@ -711,6 +766,14 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               </p>
             }
           </div>
+          }
+
+          @if (stage() < stages.length) {
+            <div class="mt-2 flex gap-3 rounded-2xl border border-slate-100 bg-white p-3">
+              <button type="button" data-stage-back class="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-40" (click)="backStage()" [disabled]="stage() === 1">Back</button>
+              <button type="button" data-stage-next class="flex-[2] rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50" (click)="advanceStage()" [disabled]="advancing()">{{ advancing() ? 'Saving…' : 'Continue' }}</button>
+            </div>
+          }
         </form>
       </div>
     </ion-content>
@@ -741,6 +804,49 @@ export class OnboardingPage implements OnInit {
     stripeMessageType = signal<StripeMessageType>('success');
     submitting = signal(false);
     savingProgress = signal(false);
+    /** Five-stage progressive journey. PRESENTATION ONLY: the canonical
+     *  requirement resolver stays the single source of truth for what is
+     *  required, what is complete and what may be submitted. */
+    readonly stages = [
+        { id: 1, label: 'About you', short: 'About' },
+        { id: 2, label: 'Identity', short: 'ID' },
+        { id: 3, label: 'Driving & work eligibility', short: 'Work' },
+        { id: 4, label: 'Vehicle & insurance', short: 'Vehicle' },
+        { id: 5, label: 'Review & submit', short: 'Review' }
+    ] as const;
+    stage = signal(1);
+    advancing = signal(false);
+    private formHydrated = false;
+    private draftRestored = false;
+    /**
+     * Fields the driver owns, either because they edited them or because a restored
+     * local draft contains them. Async hydration must never overwrite these.
+     *
+     * This is deliberately ownership-based rather than timing-based: `ngOnInit` awaits
+     * several network calls before hydrating, so a `pristine` check is not enough --
+     * the driver can type (and does) while those awaits are in flight.
+     */
+    private readonly userEditedControls = new Set<string>();
+    private hydrationWriting = false;
+    /**
+     * Hydrate the form when the profile arrives.
+     *
+     * On a direct load or deep link the page can render before ProfileService has
+     * resolved, and `loadExistingData()` would then patch every field blank with no
+     * second chance -- the driver was asked to retype data Movabi already holds.
+     *
+     * A restored draft always wins, and a late profile load must never overwrite
+     * input the driver has already started entering.
+     */
+    private readonly profileHydration = effect(() => {
+        const profile = this.profileService.profile();
+        if (!profile || this.formHydrated || this.draftRestored) return;
+        this.formHydrated = true;
+        if (!this.onboardingForm.pristine) return;
+        this.loadExistingData();
+    });
+    private readonly stageKey = 'driver_onboarding_stage_v1';
+    private stageRestored = false;
     readonly setupGroups = [
         {section:'basicDetails' as const,category:'basic' as const,label:'Basic details',empty:'Add your basic account information.'},
         {section:'services' as const,category:'services' as const,label:'Services',empty:'Select the services you want to provide.'},
@@ -831,10 +937,16 @@ export class OnboardingPage implements OnInit {
     isActionRequired = computed(() => this.verificationStatus() === 'action_required');
 
     canSubmit = computed(() => {
-        const applicableDocumentsReady = this.isBikeVehicle() || (!!this.docs().license && this.secondaryDocumentReady());
+        const canonical = this.onboardingStatus.state();
+        // Compliance completion is decided by the canonical server requirements. Local
+        // optimistic docs() state may keep the form usable, but it must never claim that
+        // a document requirement is satisfied when the server still blocks it.
+        const documentsReady = canonical
+            ? !canonical.automaticRequirements.some(requirement => requirement.category === 'documents' && requirement.blockingForSubmission)
+            : (this.isBikeVehicle() || (!!this.docs().license && this.secondaryDocumentReady()));
         return (
             this.activeVehicleDetailsReady() &&
-            applicableDocumentsReady &&
+            documentsReady &&
             ['full_name','phone','date_of_birth','current_address','driver_agreement_accepted'].every(name=>this.onboardingForm.get(name)?.valid===true) &&
             !this.isReadOnly() &&
             !this.submitting()
@@ -953,6 +1065,9 @@ export class OnboardingPage implements OnInit {
     }
 
     async ngOnInit() {
+        // Installed first: the awaits below can take seconds, and any field the driver
+        // edits in the meantime must be recorded as theirs before hydration runs.
+        this.watchFieldOwnership();
         try {
             await this.onboardingStatus.refresh();
             await this.onboardingStatus.recordRegistrationStartOnce();
@@ -966,6 +1081,11 @@ export class OnboardingPage implements OnInit {
         if (!this.route.snapshot.queryParamMap.get('stripe')) await this.driverService.fetchStripeAccount();
         await this.driverService.fetchVehicle();
         this.loadExistingData();
+        // If the profile was already available this is the authoritative hydration;
+        // otherwise profileHydration completes it as soon as it resolves.
+        this.formHydrated = !!this.profile();
+        // Resume at the right stage once canonical state and the local draft are loaded.
+        this.restoreStage();
 
         await this.handleStripeReturn();
 
@@ -983,6 +1103,241 @@ export class OnboardingPage implements OnInit {
     dateOfBirthEditable(){return this.onboardingStatus.state()?.identityEditability?.dateOfBirthEditable===true;}
     formattedPersistedDateOfBirth(){const value=this.onboardingStatus.state()?.canonicalProfile?.dateOfBirth;if(!value)return'Date of birth unavailable';return new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${value}T00:00:00Z`));}
     async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
+
+    // ---------------------------------------------------------------------
+    // Five-stage progressive journey (presentation only).
+    // ---------------------------------------------------------------------
+    stageTitle(): string { return this.stages.find(item => item.id === this.stage())?.label || ''; }
+
+    /** Canonical visibility: a control is shown only when the resolver reports
+     *  the requirement as applicable to this driver's country and services. */
+    requirementVisible(code: string): boolean {
+        return (this.onboardingStatus.state()?.automaticRequirements || []).some(item => item.code === code);
+    }
+
+    requirementStatusLabel(requirement: { status: string; completed: boolean }): string {
+        if (requirement.status === 'under_review') return 'Under review';
+        if (requirement.completed) return 'Complete';
+        if (requirement.status === 'missing') return 'Missing';
+        return 'Action required';
+    }
+
+    /** Every applicable canonical requirement, for the Review stage. */
+    reviewRequirements(): Array<{ code: string; label: string; reason: string; status: string; completed: boolean; category: string }> {
+        return this.onboardingStatus.state()?.automaticRequirements || [];
+    }
+
+    goToStage(id: number): void {
+        if (id < 1 || id > this.stages.length || id === this.stage()) return;
+        this.stage.set(id);
+        this.persistStage();
+        void this.scrollToTop();
+    }
+
+    backStage(): void {
+        if (this.stage() <= 1) return;
+        this.stage.set(this.stage() - 1);
+        this.persistStage();
+        void this.scrollToTop();
+    }
+
+    /** Save this stage's own data, then move on. No artificial cross-stage deps. */
+    async advanceStage(): Promise<void> {
+        if (this.advancing()) return;
+        this.advancing.set(true);
+        try {
+            await this.saveStage(this.stage());
+            if (this.stage() < this.stages.length) {
+                this.stage.set(this.stage() + 1);
+                this.persistStage();
+                await this.scrollToTop();
+            }
+        } catch (error) {
+            await this.showToast(error instanceof Error ? error.message : 'Unable to save this stage.', 'danger');
+        } finally {
+            this.advancing.set(false);
+        }
+    }
+
+    private persistStage(): void {
+        try { localStorage.setItem(this.stageKey, String(this.stage())); } catch { /* storage unavailable */ }
+    }
+
+    private async scrollToTop(): Promise<void> {
+        try { await (document.querySelector('ion-content') as any)?.scrollToTop?.(0); } catch { /* non-fatal */ }
+    }
+
+    /**
+     * Persist only what a stage owns. Stage 1 must never require vehicle data.
+     */
+    private async saveStage(stage: number): Promise<void> {
+        const raw = this.onboardingForm.getRawValue();
+        if (stage === 1) { await this.saveAboutYouStage(); return; }
+        if (stage === 2) { await this.onboardingStatus.refresh(); return; }
+        if (stage === 3) {
+            await this.persistPassengerLicenceIfSupplied(raw);
+            await this.onboardingStatus.refresh();
+            return;
+        }
+        if (stage === 4) {
+            const existingVehicle = this.vehicle() as Vehicle | null;
+            await this.onboardingStatus.saveVerificationItems({ bicycleDeclaration: raw.bicycle_declaration === true, deliveryEquipmentConfirmed: raw.delivery_equipment_confirmed === true });
+
+            // Validate the values that WOULD be persisted. buildVehiclePayload() enforces the
+            // registration requirement, so genuinely missing vehicle data still blocks here.
+            const vehiclePayload = this.buildVehiclePayload(raw, existingVehicle);
+
+            if (existingVehicle && this.vehicleMatchesPayload(existingVehicle, vehiclePayload)) {
+                // Already persisted exactly as the form describes: final submission must not
+                // rewrite it, and must not re-judge it on Angular's transient control validity.
+                // The same persisted vehicle produced different `control.valid` results between
+                // two submissions, which blocked a driver whose vehicle was already accepted.
+                await this.onboardingStatus.refresh();
+                return;
+            }
+
+            const vehicleFields = this.isBikeVehicle()
+                ? ['vehicle_class', 'service_types', 'bicycle_declaration', 'delivery_equipment_confirmed']
+                : ['make', 'model', 'color', 'year', 'license_plate', 'vehicle_class', 'service_types'];
+            if (!vehicleFields.every(name => this.onboardingForm.get(name)?.valid === true)) throw new Error('Complete the required vehicle details before saving.');
+            await this.driverService.updateVehicle(vehiclePayload);
+            if (!this.driverService.vehicle()) throw new Error('Vehicle details were not persisted.');
+            await this.onboardingStatus.refresh();
+            return;
+        }
+        const agreement = await this.onboardingStatus.saveAgreement(raw.driver_agreement_accepted === true);
+        this.mergeLocalProfile({ accepted_driver_agreement_at: agreement.acceptedAt });
+        await this.onboardingStatus.refresh();
+    }
+
+    /**
+     * Stage 1 — About you. Saves profile data only; deliberately independent of
+     * vehicle/insurance/agreement validation.
+     */
+    private async saveAboutYouStage(): Promise<void> {
+        const raw = this.onboardingForm.getRawValue();
+        const address = String(raw.current_address || '').trim();
+        if (address.length < 5) throw new Error('A valid residential address is required.');
+        const phone = String(raw.phone || '').trim();
+        const name = String(raw.full_name || '').trim();
+        // Only send the legal name when it actually differs: PUT /profile rejects a
+        // present-but-uneditable name even when the value is unchanged.
+        const nameChanged = !!name && name !== String(this.onboardingStatus.state()?.canonicalProfile?.fullName || '');
+        const rawDateOfBirth = String(raw.date_of_birth || '').trim();
+        // An empty date of birth must not block saving the rest of Stage 1: the
+        // canonical resolver reports profile.date_of_birth as its own requirement.
+        const dateOfBirth = this.dateOfBirthEditable() && rawDateOfBirth ? this.dateOfBirthForApi(rawDateOfBirth) : undefined;
+        const saved = await this.onboardingStatus.saveCurrentProfile({
+            residentialAddress: address,
+            ...(phone ? { phone } : {}),
+            ...(nameChanged ? { fullName: name } : {}),
+            ...(dateOfBirth ? { dateOfBirth } : {})
+        });
+        if (!saved.residentialAddress) throw new Error('Residential address was not persisted.');
+        if (phone && !saved.phone) throw new Error('Contact number was not persisted.');
+        if (nameChanged && !saved.fullName) throw new Error('Legal name was not persisted.');
+        if (dateOfBirth && !saved.dateOfBirth) throw new Error('Date of birth was not persisted.');
+        this.mergeLocalProfile({ current_address: saved.residentialAddress, phone: saved.phone, full_name: saved.fullName });
+        if (saved.dateOfBirth) this.onboardingForm.patchValue({ date_of_birth: this.formatDateForInput(saved.dateOfBirth) }, { emitEvent: false });
+        await this.onboardingStatus.refresh();
+    }
+
+    /**
+     * Resume at the right stage: the locally drafted stage wins (unsaved edits),
+     * otherwise derive it from canonical server state so an existing driver
+     * resumes rather than restarts.
+     */
+    private restoreStage(): void {
+        if (this.stageRestored) return;
+        this.stageRestored = true;
+        const drafted = Number(localStorage.getItem(this.stageKey) || '');
+        if (Number.isFinite(drafted) && drafted >= 1 && drafted <= this.stages.length) { this.stage.set(drafted); return; }
+        this.stage.set(this.deriveStageFromCanonicalState());
+    }
+
+    private deriveStageFromCanonicalState(): number {
+        const state = this.onboardingStatus.state();
+        if (!state) return 1;
+        for (let index = 0; index < OnboardingPage.STAGE_REQUIREMENT_CODES.length; index++) {
+            const outstanding = OnboardingPage.STAGE_REQUIREMENT_CODES[index].some(code => {
+                const requirement = state.automaticRequirements.find(item => item.code === code);
+                return !!requirement && requirement.blockingForSubmission;
+            });
+            if (outstanding) return index + 1;
+        }
+        return this.stages.length;
+    }
+
+    /** Canonical requirement codes owned by each stage (index 0 = Stage 1). */
+    private static readonly STAGE_REQUIREMENT_CODES: string[][] = [
+        ['profile.full_name', 'profile.phone', 'profile.address', 'profile.date_of_birth', 'profile.email_verification'],
+        ['document.driving_licence'],
+        ['work.right_to_work', 'licence.private_hire'],
+        ['service.selection', 'vehicle.operating_method', 'vehicle.make', 'vehicle.model', 'vehicle.colour', 'vehicle.year', 'vehicle.registration', 'document.insurance', 'document.private_hire_vehicle_license', 'document.private_hire_insurance', 'document.goods_in_transit', 'vehicle.bicycle_declaration', 'vehicle.delivery_equipment'],
+        ['agreement.driver_terms']
+    ];
+
+    /** The stage an Admin request belongs to, or [] when it is question-wide. */
+    requestStages(request: { requirementCode?: string | null }): number[] {
+        const code = String(request?.requirementCode || '');
+        if (!code) return [];
+        const index = OnboardingPage.STAGE_REQUIREMENT_CODES.findIndex(codes => codes.includes(code));
+        return index >= 0 ? [index + 1] : [];
+    }
+
+    /** Every open Admin request. */
+    openAdminRequests(): Array<{ id: string; item: string; publicMessage?: string | null; requirementCode?: string | null; nextAction?: string | null; status: string }> {
+        return (this.onboardingStatus.state()?.adminRequests || []).filter(request => request.status !== 'approved');
+    }
+
+    /**
+     * Open Admin requests to surface on a stage. Question-wide requests (for example
+     * the generic 'admin.missing_info' bucket) appear on every stage so nothing is
+     * hidden; a request carrying a canonical code appears on the stage that owns it.
+     */
+    adminRequestsForStage(stage: number): Array<{ id: string; item: string; publicMessage?: string | null; requirementCode?: string | null; nextAction?: string | null }> {
+        return this.openAdminRequests().filter(request => {
+            const stages = this.requestStages(request);
+            return stages.length === 0 || stages.includes(stage);
+        });
+    }
+
+    /**
+     * Requests for the visible stage. Review aggregates EVERY open request, so a
+     * problem owned by an earlier stage is still exposed before submission.
+     */
+    currentStageAdminRequests() {
+        if (this.stage() === this.stages.length) return this.openAdminRequests();
+        return this.adminRequestsForStage(this.stage());
+    }
+
+    /** Mark fields as driver-owned so async hydration can never overwrite them. */
+    private claimOwnership(names: string[]): void {
+        for (const name of names) {
+            if (this.onboardingForm.get(name)) this.userEditedControls.add(name);
+        }
+    }
+
+    /**
+     * Record per-field ownership from real user input. Our own hydration writes set
+     * `hydrationWriting` so they are not mistaken for driver edits.
+     */
+    private watchFieldOwnership(): void {
+        for (const name of Object.keys(this.onboardingForm.controls)) {
+            this.onboardingForm.get(name)?.valueChanges
+                .pipe(takeUntilDestroyed(this.destroyRef))
+                .subscribe(() => {
+                    if (!this.hydrationWriting) this.userEditedControls.add(name);
+                });
+        }
+    }
+
+    /** Remove every field the driver owns from a hydration patch. */
+    private withoutOwnedFields<T extends Record<string, unknown>>(patch: T): Partial<T> {
+        const filtered: Record<string, unknown> = { ...patch };
+        for (const name of this.userEditedControls) delete filtered[name];
+        return filtered as Partial<T>;
+    }
 
     getStripeBadgeText(): string {
         if (this.isStripeReady()) return 'Connected';
@@ -1027,30 +1382,62 @@ export class OnboardingPage implements OnInit {
         if(!addressControl?.valid){await this.showToast('Enter a valid current residential address before saving.','warning');return;}
         this.savingProgress.set(true);
         try{
-            await this.persistCurrentSetup();
+            const everythingSaved = await this.saveAllStagesLenient();
+            this.persistStage();
             this.saveDraft();
-            await this.showToast('Your Driver Setup progress was saved.','success');
+            await this.showToast(everythingSaved ? 'Your Driver Setup progress was saved.' : 'Progress saved. Some sections still need completing.', everythingSaved ? 'success' : 'warning');
         }catch{await this.showToast('Unable to save your setup. Your changes were not submitted. Please try again.','danger');}
         finally{this.savingProgress.set(false);}
     }
 
+    /**
+     * Full save used by "Save and Continue Later" and by submit. Composed from the
+     * same per-stage saves the progressive flow uses, so both paths persist exactly
+     * the same data and cannot drift apart.
+     */
     private async persistCurrentSetup():Promise<DriverOnboardingStatus>{
-        const raw=this.onboardingForm.getRawValue();const address=String(raw.current_address||'').trim();
-        if(address.length<5)throw new Error('A valid residential address is required.');
-        const vehicleFields=this.isBikeVehicle()?['vehicle_class','service_types','bicycle_declaration','delivery_equipment_confirmed']:['make','model','color','year','license_plate','vehicle_class','service_types'];
-        if(!vehicleFields.every(name=>this.onboardingForm.get(name)?.valid===true))throw new Error('Complete the required vehicle details before saving.');
-        const dateOfBirth=this.dateOfBirthEditable()?this.dateOfBirthForApi(raw.date_of_birth):undefined;
-        const savedProfile=await this.onboardingStatus.saveCurrentProfile({residentialAddress:address,...(dateOfBirth?{dateOfBirth}:{})});
-        if(!savedProfile.residentialAddress)throw new Error('Residential address was not persisted.');
-        if(!savedProfile.dateOfBirth)throw new Error('Date of birth was not persisted.');
-        this.mergeLocalProfile({current_address:savedProfile.residentialAddress,date_of_birth:savedProfile.dateOfBirth});
-        this.onboardingForm.patchValue({date_of_birth:this.formatDateForInput(savedProfile.dateOfBirth)},{emitEvent:false});
-        await this.onboardingStatus.saveVerificationItems({bicycleDeclaration:raw.bicycle_declaration===true,deliveryEquipmentConfirmed:raw.delivery_equipment_confirmed===true});
-        await this.driverService.updateVehicle(this.buildVehiclePayload(raw,this.vehicle() as Vehicle|null));
-        if(!this.driverService.vehicle())throw new Error('Vehicle details were not persisted.');
-        const agreement=await this.onboardingStatus.saveAgreement(raw.driver_agreement_accepted===true);
-        this.mergeLocalProfile({accepted_driver_agreement_at:agreement.acceptedAt});
+        await this.saveAboutYouStage();
+        await this.saveStage(4);
+        await this.saveStage(3);
+        await this.saveStage(5);
         return this.onboardingStatus.refresh();
+    }
+
+    /**
+     * Save every stage that can be saved yet. Used by "Save and Continue Later":
+     * Stage 1 progress must persist even when later stages are still incomplete.
+     */
+    private async saveAllStagesLenient(): Promise<boolean> {
+        await this.saveAboutYouStage();
+        let allSaved = true;
+        for (const stage of [4, 3, 5]) {
+            try { await this.saveStage(stage); } catch { allSaved = false; }
+        }
+        await this.onboardingStatus.refresh();
+        return allSaved;
+    }
+
+    /**
+     * Persist the canonical passenger-licence fields through the canonical endpoint
+     * during setup.
+     *
+     * These four fields used to be written only from inside /submit-review, which the
+     * blocking `licence.private_hire` requirement prevented from ever running -- so a
+     * ride driver could never clear it. Saving them here keeps the canonical status
+     * authoritative and removes the deadlock. A failure is not thrown: the canonical
+     * status reports the real reason (missing fields, or an expired licence).
+     */
+    private async persistPassengerLicenceIfSupplied(raw:Record<string,unknown>):Promise<void>{
+        const rawServices=raw['service_types'];
+        const serviceList=(Array.isArray(rawServices)?rawServices.map(String):String(rawServices??'').split(',')).map(value=>value.trim().toLowerCase());
+        if(!serviceList.includes('ride'))return;
+        const councilName=String(raw['council_name']||'').trim();
+        const licenceNumber=String(raw['council_license_number']||'').trim();
+        const badgeNumber=String(raw['taxi_badge_number']||'').trim();
+        const expiryDate=String(raw['taxi_license_expiry']||'').trim();
+        if(!councilName||!licenceNumber||!badgeNumber||!expiryDate)return;
+        try{await this.onboardingStatus.savePassengerLicence({councilName,licenceNumber,badgeNumber,expiryDate});}
+        catch{/* canonical status surfaces the licence blocker (missing fields or expired) */}
     }
 
     private restoreDraft() {
@@ -1061,8 +1448,14 @@ export class OnboardingPage implements OnInit {
             const draft = JSON.parse(raw) as DriverOnboardingDraft;
 
             if (draft?.form) {
+                this.draftRestored = true;
                 this.onboardingForm.patchValue(
                     {
+                        // Stage 1 fields are part of the draft too: dropping them here
+                        // discarded the address the driver had already typed.
+                        full_name: draft.form['full_name'] ?? '',
+                        date_of_birth: draft.form['date_of_birth'] ?? '',
+                        current_address: draft.form['current_address'] ?? '',
                         make: draft.form['make'] ?? '',
                         model: draft.form['model'] ?? '',
                         color: draft.form['color'] ?? '',
@@ -1078,6 +1471,9 @@ export class OnboardingPage implements OnInit {
                     },
                     { emitEvent: false }
                 );
+                // The restored draft owns these fields: a later server hydration must
+                // not overwrite what the driver had already saved locally.
+                this.claimOwnership(Object.keys(draft.form));
             }
 
             if (draft?.docs) {
@@ -1121,24 +1517,31 @@ export class OnboardingPage implements OnInit {
             const verificationItems = this.parseVerificationItems(profile.verification_items);
             const profileWithVerificationItems = { ...verificationItems, ...profile };
 
-            this.onboardingForm.patchValue(
-                {
-                    full_name: profile.full_name ?? profile.legal_name ?? profile.name ?? user?.user_metadata?.['full_name'] ?? '',
-                    email: profile.email ?? user?.email ?? '',
-                    council_name: this.firstProfileValue(profileWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
-                    council_license_number: this.firstProfileValue(profileWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number']),
-                    taxi_badge_number: this.firstProfileValue(profileWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
-                    taxi_license_expiry: this.firstProfileValue(profileWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry']),
-                    service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
-                    phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? '',
-                    date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob),
-                    current_address: profile.current_address ?? profile.address_line1 ?? profile.home_address ?? '',
-                    driver_agreement_accepted: !!profile.accepted_driver_agreement_at,
-                    bicycle_declaration: verificationItems['bicycle_declaration'] === 'true' || verificationItems['bicycle_declaration'] === true,
-                    delivery_equipment_confirmed: verificationItems['delivery_equipment_confirmed'] === 'true' || verificationItems['delivery_equipment_confirmed'] === true
-                },
-                { emitEvent: false }
-            );
+            // Hydrate only the fields the driver does not already own. `ngOnInit` awaits
+            // network calls before reaching here, so the driver may have typed already;
+            // an unconditional patch would silently discard their input.
+            const hydrationPatch = this.withoutOwnedFields({
+                full_name: profile.full_name ?? profile.legal_name ?? profile.name ?? user?.user_metadata?.['full_name'] ?? '',
+                email: profile.email ?? user?.email ?? '',
+                council_name: this.firstProfileValue(profileWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+                council_license_number: this.firstProfileValue(profileWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number']),
+                taxi_badge_number: this.firstProfileValue(profileWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+                taxi_license_expiry: this.firstProfileValue(profileWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry']),
+                service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
+                phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? '',
+                date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob),
+                current_address: profile.current_address ?? profile.address_line1 ?? profile.home_address ?? '',
+                driver_agreement_accepted: !!profile.accepted_driver_agreement_at,
+                bicycle_declaration: verificationItems['bicycle_declaration'] === 'true' || verificationItems['bicycle_declaration'] === true,
+                delivery_equipment_confirmed: verificationItems['delivery_equipment_confirmed'] === 'true' || verificationItems['delivery_equipment_confirmed'] === true
+            });
+
+            this.hydrationWriting = true;
+            try {
+                this.onboardingForm.patchValue(hydrationPatch, { emitEvent: false });
+            } finally {
+                this.hydrationWriting = false;
+            }
 
             this.docs.set({
                 license: profile.driver_license_url ?? this.docs().license,
@@ -1473,7 +1876,12 @@ export class OnboardingPage implements OnInit {
     }
 
     private getCanonicalPlate(vehicle: Vehicle | null | undefined, fallback?: unknown): string {
-        return String(vehicle?.license_plate ?? fallback ?? '').trim();
+        // An existing vehicle whose plate column is blank/whitespace must not discard a
+        // plate the driver has typed: `?? fallback` only handles null/undefined, so a
+        // stored '' previously won and blocked the whole re-save.
+        const fromVehicle = String(vehicle?.license_plate ?? '').trim();
+        if (fromVehicle) return fromVehicle;
+        return String(fallback ?? '').trim();
     }
 
     private async refreshVehicleForValidation(): Promise<Vehicle | null> {
@@ -1591,6 +1999,22 @@ export class OnboardingPage implements OnInit {
 
         console.log('[driver-compliance] saving ride fields', payload);
         return payload;
+    }
+
+    /**
+     * True when the persisted vehicle already carries exactly what the form describes, so
+     * there is nothing to re-write. Used to keep final submission idempotent.
+     */
+    private vehicleMatchesPayload(vehicle: Vehicle, payload: Partial<Vehicle>): boolean {
+        const same = (left: unknown, right: unknown) =>
+            String(left ?? '').trim().toLowerCase() === String(right ?? '').trim().toLowerCase();
+        return same(vehicle.make, payload.make)
+            && same(vehicle.model, payload.model)
+            && same(vehicle.color, payload.color)
+            && Number(vehicle.year) === Number(payload.year)
+            && same(vehicle.license_plate, payload.license_plate)
+            && same((vehicle as any).type, payload.type)
+            && same((vehicle as any).capacity, payload.capacity);
     }
 
     private vehicleClassFromVehicle(vehicle: Vehicle | null): DriverVehicleClass {
@@ -1824,6 +2248,10 @@ export class OnboardingPage implements OnInit {
         }
 
         await this.driverService.fetchVehicle();
+        // The checklist and section statuses come from the canonical onboarding status,
+        // so it must be re-fetched or the upload stays invisible as "Incomplete" until a
+        // reload.
+        try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ }
     }
 
     private isAllowedFile(file: File): boolean {
@@ -1906,6 +2334,13 @@ export class OnboardingPage implements OnInit {
             await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'onboarding', this.verificationStatus(), 'under_review');
             this.authService.onboardingCompleted.set(true);
             this.authService.userRole.set('driver');
+
+            // role.guard reads `profileService.profile()?.onboarding_completed ?? authService...`,
+            // so the CACHED profile wins. submitForReview has just set onboarding_completed=true
+            // server-side, but the cache still holds the pre-submission row (false), and the guard
+            // only refetches when that cache is falsy. Without this reload the guard would bounce
+            // the driver straight back to /driver/onboarding.
+            await this.profileService.fetchProfile(user.id);
 
             this.clearDraft();
 

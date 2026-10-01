@@ -6,7 +6,7 @@ import { DriverOnboardingNotificationService } from '../services/driver-onboardi
 import { DriverRequirementService } from '../services/driver-requirement.service';
 import { DriverIdentityEditabilityService } from '../services/driver-identity-editability.service';
 import { DriverVehicleRow, mapDriverVehicleRow, parseDriverVehicleInput } from '../models/driver-vehicle.model';
-import { CANONICAL_DRIVER_PROFILE_SELECT, calculateCalendarAge, mapDriverProfile, parseDriverDateOfBirth, parseResidentialAddress } from '../models/driver-profile.model';
+import { CANONICAL_DRIVER_PROFILE_SELECT, calculateCalendarAge, mapDriverProfile, parseDriverDateOfBirth, parseDriverPhone, parseResidentialAddress } from '../models/driver-profile.model';
 import { parseDriverPassengerLicenceInput, passengerLicenceColumns, readPassengerLicence } from '../models/driver-passenger-licence.model';
 import { evaluateDriverServiceEligibility } from '../services/driver-eligibility.service';
 
@@ -106,22 +106,23 @@ router.post('/events', async (req, res) => {
 });
 
 router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
-  const body=req.body&&typeof req.body==='object'?req.body:{};const residentialAddressPresent=typeof body.residentialAddress==='string';const dateOfBirthPresent=typeof body.dateOfBirth==='string';const fullNamePresent=typeof body.fullName==='string';const countryCodePresent=typeof body.countryCode==='string';
-  console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent,dateOfBirthPresent,fullNamePresent,countryCodePresent});
-  if(!residentialAddressPresent&&!dateOfBirthPresent&&!fullNamePresent&&!countryCodePresent)throw new Error('Provide a residential address, date of birth, legal name, or country.');
+  const body=req.body&&typeof req.body==='object'?req.body:{};const residentialAddressPresent=typeof body.residentialAddress==='string';const dateOfBirthPresent=typeof body.dateOfBirth==='string';const fullNamePresent=typeof body.fullName==='string';const countryCodePresent=typeof body.countryCode==='string';const phonePresent=typeof body.phone==='string';
+  console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent,dateOfBirthPresent,fullNamePresent,countryCodePresent,phonePresent});
+  if(!residentialAddressPresent&&!dateOfBirthPresent&&!fullNamePresent&&!countryCodePresent&&!phonePresent)throw new Error('Provide a residential address, date of birth, legal name, country, or contact number.');
   let previousDateOfBirth:string|null=null;
   if(dateOfBirthPresent||fullNamePresent||countryCodePresent){const{data:identityProfile,error:identityError}=await supabaseAdmin.from('profiles').select('date_of_birth,full_name,is_verified,onboarding_completed,verification_status,driver_review_status').eq('id',driverId).single();if(identityError||!identityProfile)throw identityError||new Error('Driver profile not found.');const{data:correctionRows,error:correctionError}=await supabaseAdmin.from('driver_onboarding_requests').select('status,request_type,permission_consumed_at').eq('driver_id',driverId).eq('request_type','identity_correction');if(correctionError)throw correctionError;const editability=DriverIdentityEditabilityService.resolve(identityProfile,correctionRows||[]);if(fullNamePresent&&!editability.fullNameEditable)return res.status(403).json({code:'NAME_CHANGE_NOT_ALLOWED',message:editability.fullNameReason||'Your legal name cannot be changed after driver verification.'});if(countryCodePresent&&!editability.countryCodeEditable)return res.status(403).json({code:'COUNTRY_CHANGE_NOT_ALLOWED',message:editability.countryCodeReason||'Your operating country cannot be changed after driver verification.'});if(dateOfBirthPresent&&!editability.dateOfBirthEditable)return res.status(403).json({code:'DOB_CHANGE_NOT_ALLOWED',message:'Date of birth cannot be changed after verification has started.'});previousDateOfBirth=identityProfile.date_of_birth||null;}
-  const profileUpdates:{current_address?:string;date_of_birth?:string;full_name?:string;country_code?:string;updated_at:string}={updated_at:new Date().toISOString()};
+  const profileUpdates:{current_address?:string;date_of_birth?:string;full_name?:string;country_code?:string;phone?:string;updated_at:string}={updated_at:new Date().toISOString()};
   if(residentialAddressPresent)profileUpdates.current_address=parseResidentialAddress(body);
   if(dateOfBirthPresent){profileUpdates.date_of_birth=parseDriverDateOfBirth(body.dateOfBirth);calculateCalendarAge(profileUpdates.date_of_birth);}
   if(fullNamePresent){const name=String(body.fullName).trim();if(name.length<2)throw new Error('Enter a valid legal name.');profileUpdates.full_name=name;}
   if(countryCodePresent){const country=String(body.countryCode).trim().toUpperCase();if(!/^[A-Z]{2}$/.test(country))throw new Error('Enter a valid country code.');profileUpdates.country_code=country;}
+  if(phonePresent){profileUpdates.phone=parseDriverPhone(body.phone);}
   console.info('[DriverOnboarding] profile update payload',{userId:driverId,keys:Object.keys(profileUpdates)});
   const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(error||!data)throw error||new Error('Profile save returned no record.');
   if(dateOfBirthPresent&&previousDateOfBirth!==data.date_of_birth){const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'dob_changed',actor_id:driverId,selected_services:[],requirement_codes:['profile.date_of_birth'],metadata:{previousDateOfBirth,newDateOfBirth:data.date_of_birth}});if(auditError)throw auditError;}
-  const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(residentialAddressPresent&&!profile.residentialAddress)throw new Error('Residential address was not persisted.');if(dateOfBirthPresent&&!profile.dateOfBirth)throw new Error('Date of birth was not persisted.');if(fullNamePresent&&!profile.fullName)throw new Error('Legal name was not persisted.');
-  console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent,dateOfBirthPresent,fullNamePresent,countryCodePresent});return res.json({profile});
- }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const message=details.message||'Unable to save driver profile.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message,details:details.details||null,hint:details.hint||null});return res.status(/date of birth|valid current residential|legal name|country code/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
+  const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(residentialAddressPresent&&!profile.residentialAddress)throw new Error('Residential address was not persisted.');if(dateOfBirthPresent&&!profile.dateOfBirth)throw new Error('Date of birth was not persisted.');if(fullNamePresent&&!profile.fullName)throw new Error('Legal name was not persisted.');if(phonePresent&&!profile.phone)throw new Error('Contact number was not persisted.');
+  console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent,dateOfBirthPresent,fullNamePresent,countryCodePresent,phonePresent});return res.json({profile});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const message=details.message||'Unable to save driver profile.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message,details:details.details||null,hint:details.hint||null});return res.status(/date of birth|valid current residential|legal name|country code|contact number/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
 
 router.post('/dob-correction-request',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const reason=String(req.body?.reason||'').trim();if(reason.length<10)return res.status(422).json({error:'Explain why your date of birth needs correcting.',code:'INVALID_CORRECTION_REASON'});const{data:existing,error:readError}=await supabaseAdmin.from('driver_onboarding_requests').select('id,status').eq('driver_id',driverId).eq('request_type','identity_correction').in('status',['pending','approved','rejected']).maybeSingle();if(readError)throw readError;if(existing)return res.json({requested:true,status:existing.status});const{data,error}=await supabaseAdmin.from('driver_onboarding_requests').insert({driver_id:driverId,requirement_code:'profile.date_of_birth',request_type:'identity_correction',item:'Date of birth correction',public_message:reason,status:'pending'}).select('id,status').single();if(error||!data)throw error||new Error('Correction request was not created.');const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'dob_correction_requested',actor_id:driverId,selected_services:[],requirement_codes:['profile.date_of_birth'],metadata:{requestId:data.id}});if(auditError)throw auditError;return res.status(201).json({requested:true,status:data.status});}catch(error:unknown){const details=error as Error&{code?:string};return res.status(500).json({error:details.message||'Unable to request a date of birth correction.',code:details.code||'DOB_CORRECTION_REQUEST_FAILED'});}});
 
@@ -234,9 +235,12 @@ router.post('/submit-review', async (req,res)=>{
     // (current profile merged with the submitted canonical passenger-licence +
     // ride-document fields), so a first-time submission is not blocked by stale
     // DB state. Resubmission re-uses the stored profile unchanged.
-    let passengerLicenceUpdate: Record<string, unknown> = { council_name: null, council_license_number: null, taxi_badge_number: null, taxi_license_expiry: null };
+    // Only a VALID submitted passenger-licence payload may touch the canonical licence
+    // columns. An absent or invalid payload must never null out existing valid stored
+    // values, so it is skipped entirely rather than merged as a set of nulls.
+    let passengerLicenceUpdate: Record<string, unknown> | null = null;
     if (submitted) {
-      try { passengerLicenceUpdate = passengerLicenceColumns(parseDriverPassengerLicenceInput(submitted, new Date())); } catch { /* keep nulls */ }
+      try { passengerLicenceUpdate = passengerLicenceColumns(parseDriverPassengerLicenceInput(submitted, new Date())); } catch { passengerLicenceUpdate = null; }
     }
     const effectiveProfile = submitted
       ? {
@@ -249,7 +253,7 @@ router.post('/submit-review', async (req,res)=>{
           private_hire_vehicle_license_url: submitted.private_hire_vehicle_license_url ?? profileInput.private_hire_vehicle_license_url,
           private_hire_insurance_url: submitted.private_hire_insurance_url ?? profileInput.private_hire_insurance_url,
           goods_in_transit_url: submitted.goods_in_transit_url ?? profileInput.goods_in_transit_url,
-          ...passengerLicenceUpdate
+          ...(passengerLicenceUpdate||{})
         }
       : profileInput;
     const canonicalProfile=mapDriverProfile(effectiveProfile,!!auth.user?.email_confirmed_at);
@@ -269,7 +273,11 @@ router.post('/submit-review', async (req,res)=>{
     }else{
       const existingItems=parseOnboardingItems(profile.verification_items);
       const submittedItems=parseOnboardingItems(submitted?.verification_items);
-      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(submitted?.full_name||'').trim(),phone:String(submitted?.phone||'').trim(),accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:submitted?.driver_license_url||null,insurance_url:submitted?.insurance_url||null,right_to_work_url:submitted?.right_to_work_url||null,private_hire_vehicle_license_url:submitted?.private_hire_vehicle_license_url||null,private_hire_insurance_url:submitted?.private_hire_insurance_url||null,goods_in_transit_url:submitted?.goods_in_transit_url||null,...passengerLicenceUpdate,verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+      // Non-destructive write: every persisted value comes from the merged
+      // `effectiveProfile`, which already falls back to the stored row whenever the
+      // request omitted or blanked a field. Canonical licence columns are written
+      // only when a valid passenger-licence payload was supplied.
+      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(effectiveProfile.full_name||'').trim()||null,phone:String(effectiveProfile.phone||'').trim()||null,accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:effectiveProfile.driver_license_url||null,insurance_url:effectiveProfile.insurance_url||null,right_to_work_url:effectiveProfile.right_to_work_url||null,private_hire_vehicle_license_url:effectiveProfile.private_hire_vehicle_license_url||null,private_hire_insurance_url:effectiveProfile.private_hire_insurance_url||null,goods_in_transit_url:effectiveProfile.goods_in_transit_url||null,...(passengerLicenceUpdate||{}),verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
       auditEvent='submitted';
     }
     const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated)throw updateError||new Error('Review submission did not update the driver profile.');

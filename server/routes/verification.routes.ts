@@ -316,13 +316,20 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       ? selectedBlockers.join(' · ').slice(0, 160)
       : 'Update your details';
     const requestMessage = String(notes || '').trim() || requestItem;
-    const { data: existingOpenRequest } = await supabase
+    // Deterministic single-row lookup. `.maybeSingle()` ERRORS when more than one
+    // row matches, which previously left `data` null and fell through to an INSERT
+    // -- tripping idx_driver_onboarding_requests_one_open and failing the Admin
+    // request with a 500. Take the newest open row explicitly instead.
+    const { data: existingOpenRequests, error: existingOpenError } = await supabase
       .from('driver_onboarding_requests')
       .select('id')
       .eq('driver_id', driverId)
       .eq('requirement_code', 'admin.missing_info')
       .in('status', ['pending', 'rejected'])
-      .maybeSingle();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (existingOpenError) throw existingOpenError;
+    const existingOpenRequest = existingOpenRequests?.[0] ?? null;
     const requestPatch = {
       item: requestItem,
       public_message: requestMessage,
@@ -394,6 +401,48 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
     if (!testingOverride) {
       return res.status(400).json({
         error: 'Manual approval requires testingOverride=true'
+      });
+    }
+
+    // Approval must never contradict the canonical requirement engine: evaluate the
+    // exact same requirements the driver sees before granting approval.
+    const { data: approvalProfile, error: approvalProfileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', driverId)
+      .single();
+
+    if (approvalProfileError || !approvalProfile) {
+      return res.status(404).json({ error: approvalProfileError?.message || 'Driver profile not found.' });
+    }
+
+    const { data: approvalVehicleRow } = await supabase
+      .from('vehicles')
+      .select('*')
+      .eq('user_id', driverId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: approvalAuth } = await supabase.auth.admin.getUserById(driverId);
+    const approvalCanonicalProfile = mapDriverProfile(approvalProfile, !!approvalAuth?.user?.email_confirmed_at);
+    const approvalResolution = DriverRequirementService.resolve({
+      profile: approvalProfile,
+      canonicalProfile: approvalCanonicalProfile,
+      vehicle: approvalVehicleRow ? mapDriverVehicleRow(approvalVehicleRow) : null,
+      authEmailConfirmed: approvalCanonicalProfile.emailConfirmed,
+      countryCode: approvalProfile.country_code,
+      marketCity: approvalProfile.market_city || approvalProfile.city
+    });
+
+    const approvalBlockers = approvalResolution.automaticRequirements.filter((item) => item.blockingForSubmission);
+
+    if (approvalBlockers.length) {
+      return res.status(422).json({
+        error: approvalBlockers[0].reason,
+        code: 'DRIVER_REQUIREMENTS_INCOMPLETE',
+        requirements: approvalBlockers,
+        progress: approvalResolution.progress
       });
     }
 

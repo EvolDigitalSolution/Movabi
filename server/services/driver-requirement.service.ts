@@ -34,7 +34,7 @@ export class DriverRequirementService {
     // actually applicable to the selected services.
     const addDocument=(code:string,label:string,hasDoc:boolean,expiryValue:unknown,missingReason:string,services:CanonicalDriverService[]=selectedServices)=>{const exp=this.expiryState(expiryValue,now);const expired=hasDoc&&exp.expired;const ok=hasDoc&&!expired;requirements.push({code,label,category:'documents',status:hasDoc?(expired?'expired':'completed'):'missing',required:true,completed:ok,blockingForSubmission:!ok,blockingForOnline:!ok,needsAdminReview:false,reason:expired?`${label} has expired.`:missingReason,services,expiryDate:exp.expiryDate,expiringSoon:hasDoc&&exp.expiringSoon});};
     add('profile.full_name','Legal name','basic',this.has(canonicalProfile.fullName),'Add your full legal name.');
-    add('profile.phone','Phone','basic',this.has(canonicalProfile.phone),'Add a verified contact number.');
+    add('profile.phone','Phone','basic',this.has(canonicalProfile.phone),'Add your contact number.');
     add('profile.address','Residential address','basic',this.has(canonicalProfile.residentialAddress),'Add your current residential address.');
     add('profile.email_verification','Email verified','basic',canonicalProfile.emailConfirmed,'Confirm your sign-in email address.');
     const age=this.age(canonicalProfile.dateOfBirth,now,18);
@@ -66,10 +66,21 @@ export class DriverRequirementService {
         const licenceExpired=!passengerLicence.complete&&hasAllLicenceFields;
         const licenceExpiry=this.expiryState(passengerLicence.expiryDate,now);
         const licenceExpiringSoon=passengerLicence.complete&&licenceExpiry.expiringSoon;
+        // Name exactly which canonical fields are outstanding so a driver is never
+        // left with an unexplained generic "Incomplete".
+        const missingLicenceFields=[
+          !passengerLicence.councilName?'licensing authority':null,
+          !passengerLicence.licenceNumber?'private hire licence number':null,
+          !passengerLicence.badgeNumber?'taxi/private hire badge number':null,
+          !passengerLicence.expiryDate?'licence expiry date':null
+        ].filter((item):item is string=>item!==null);
+        const licenceReason=missingLicenceFields.length
+          ? `Provide the passenger-service licensing configured for this market. Missing: ${missingLicenceFields.join(', ')}.`
+          : 'Provide the passenger-service licensing configured for this market.';
         if(licenceExpired){
           requirements.push({code:'licence.private_hire',label:'Private-hire/council licensing',category:'licensing',status:'expired',required:true,completed:false,blockingForSubmission:true,blockingForOnline:true,needsAdminReview:false,reason:'Private-hire driver licence has expired.',services:['ride'],expiryDate:passengerLicence.expiryDate,expiringSoon:false});
         } else {
-          add('licence.private_hire','Private-hire/council licensing','licensing',passengerLicence.complete,'Provide the passenger-service licensing configured for this market.',['ride'],false,false,passengerLicence.expiryDate,licenceExpiringSoon);
+          add('licence.private_hire','Private-hire/council licensing','licensing',passengerLicence.complete,licenceReason,['ride'],false,false,passengerLicence.expiryDate,licenceExpiringSoon);
         }
         addDocument('document.private_hire_vehicle_license','Private-hire vehicle licence',this.has(profile.private_hire_vehicle_license_url),profile.vehicle_license_expiry,'Upload your private-hire/taxi vehicle licence.',['ride']);
         add('document.private_hire_insurance','Private-hire insurance','documents',this.has(profile.private_hire_insurance_url),'Upload passenger-service insurance.',['ride']);

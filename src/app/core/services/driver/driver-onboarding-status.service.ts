@@ -122,9 +122,9 @@ export class DriverOnboardingStatusService {
             {headers:this.headers(token),params:{service}}
         ));
     }
-    async saveCurrentProfile(input:{residentialAddress?:string;dateOfBirth?:string;fullName?:string;countryCode?:string}):Promise<CanonicalDriverProfile>{
+    async saveCurrentProfile(input:{residentialAddress?:string;dateOfBirth?:string;fullName?:string;countryCode?:string;phone?:string}):Promise<CanonicalDriverProfile>{
         const result=await this.authenticatedPut<{profile:CanonicalDriverProfile}>('/api/driver-onboarding/profile',input,true);
-        this.state.update(snapshot=>snapshot?{...snapshot,canonicalProfile:result.profile,profile:{...snapshot.profile,current_address:result.profile.residentialAddress,date_of_birth:result.profile.dateOfBirth,full_name:result.profile.fullName}}:snapshot);
+        this.state.update(snapshot=>snapshot?{...snapshot,canonicalProfile:result.profile,profile:{...snapshot.profile,current_address:result.profile.residentialAddress,date_of_birth:result.profile.dateOfBirth,full_name:result.profile.fullName,phone:result.profile.phone}}:snapshot);
         return result.profile;
     }
     async saveVerificationItems(input:{bicycleDeclaration:boolean;deliveryEquipmentConfirmed:boolean}):Promise<void>{await this.authenticatedPut<{saved:true}>('/api/driver-onboarding/verification-items',input,true);}

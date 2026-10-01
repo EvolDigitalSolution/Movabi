@@ -36,8 +36,13 @@ export const profiles = {
     role: 'driver',
     first_name: 'Dara',
     last_name: 'Driver',
+    full_name: 'Dara Driver',
     email: 'driver@movabi.test',
     phone: '+447700900123',
+    // Shape the driver onboarding page hydrates from (loadExistingData).
+    date_of_birth: '1990-01-01',
+    current_address: '1 High Street, Bolton, BL1 1AA',
+    driver_service_types: ['delivery'],
     onboarding_completed: true,
     account_status: 'active',
     is_verified: true,

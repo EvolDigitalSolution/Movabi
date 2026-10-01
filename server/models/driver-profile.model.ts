@@ -48,6 +48,22 @@ export function parseResidentialAddress(input: unknown): string {
   return address;
 }
 
+/**
+ * Contact-number normalisation for `profiles.phone`.
+ *
+ * Only separators are removed (spaces, dashes, dots, parentheses). Digits are
+ * never invented or altered and no verification is implied: the driver
+ * requirement for `profile.phone` checks PRESENCE only. An unusable value is
+ * rejected rather than silently coerced into something that looks valid.
+ */
+export function parseDriverPhone(input: unknown): string {
+  const raw = value(input);
+  if (!raw) throw new Error('Add your contact number.');
+  const normalized = raw.replace(/[\s().-]/g, '');
+  if (!/^\+?\d{7,15}$/.test(normalized)) throw new Error('Enter a valid contact number.');
+  return normalized;
+}
+
 export function parseDriverDateOfBirth(input: unknown, now = new Date()): string {
   const raw = value(input);
   if (!raw) throw new Error('Add your date of birth.');
