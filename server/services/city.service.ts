@@ -14,16 +14,44 @@ export interface CityConfig {
 
 export class CityService {
   /**
-   * Get all active cities
+   * True when a PostgREST error means the `cities.is_active` column is absent.
+   * 42703 is undefined_column; the message check covers differently-shaped errors.
+   */
+  static isMissingIsActiveColumn(error: unknown): boolean {
+    const value = (error && typeof error === 'object' ? error : {}) as Record<string, unknown>;
+    if (String(value['code'] ?? '') === '42703') return true;
+    return /is_active/i.test(String(value['message'] ?? ''));
+  }
+
+  /**
+   * Get all active cities.
+   *
+   * The committed `cities` DDL defines only id/name/country/lat/lng/radius_km/created_at --
+   * there is no `is_active` column and no migration adds one. The filtered query therefore
+   * fails with 42703 on such a schema, and this method used to rethrow. Because the quote
+   * route calls findCityForLocation() at its very top (before the market-capability gate and
+   * before any pricing lookup), that throw aborted the whole request -- so a valid GB journey
+   * could never obtain a fare, no matter that the GB market is live with quote enabled.
+   *
+   * The activity filter is now treated as OPTIONAL: it is applied whenever the column exists
+   * and skipped when it does not. This preserves deactivation wherever it is supported, never
+   * invents a column, and keeps every market/country restriction intact (the city is only a
+   * country hint; it authorises nothing on its own).
    */
   static async getActiveCities(): Promise<CityConfig[]> {
-    const { data, error } = await supabaseAdmin
+    const filtered = await supabaseAdmin
       .from('cities')
       .select('*')
       .eq('is_active', true);
 
-    if (error) throw error;
-    return data || [];
+    if (!filtered.error) return filtered.data || [];
+
+    if (!this.isMissingIsActiveColumn(filtered.error)) throw filtered.error;
+
+    console.warn('[CityService] cities.is_active is not available on this schema; reading cities without the activity filter');
+    const unfiltered = await supabaseAdmin.from('cities').select('*');
+    if (unfiltered.error) throw unfiltered.error;
+    return unfiltered.data || [];
   }
 
   /**
