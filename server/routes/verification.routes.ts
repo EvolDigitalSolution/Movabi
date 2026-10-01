@@ -264,9 +264,12 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       return res.status(400).json({ error: 'Add at least one blocker or review note before sending.' });
     }
 
+    // See DriverOnboardingNotificationService.enqueue: `profiles.first_name` does not exist
+    // in this schema, so a hand-written column list here would 42703 the same way. The
+    // name fallback below tolerates the columns being absent.
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('driver_review_history, full_name, first_name, last_name, email')
+      .select('*')
       .eq('id', driverId)
       .single();
 

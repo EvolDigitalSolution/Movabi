@@ -225,7 +225,7 @@ router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(
 router.post('/submit-review', async (req,res)=>{
   const driverId=await authenticatedDriver(req,res);if(!driverId)return;
   try{
-    const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile)throw profileError||new Error('Driver profile not found.');
+    const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile){logSubmitReviewDbError('profile-read',profileError);throw profileError||new Error('Driver profile not found.');}
     const vehicle=await currentVehicle(driverId);
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
     const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
@@ -260,7 +260,7 @@ router.post('/submit-review', async (req,res)=>{
     const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city});
     const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
     const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:resubmission?'resubmission_validated':'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
-    if(auditError)throw auditError;
+    if(auditError){logSubmitReviewDbError('requirement-audit-insert',auditError);throw auditError;}
     if(blockers.length){console.warn('[DriverOnboarding] review resubmission blocked',{userId:driverId,resubmission,blockerCodes:blockers.map(item=>item.code)});return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});}
     const submittedAt=new Date().toISOString();
     let updates:Record<string,unknown>;
@@ -280,11 +280,39 @@ router.post('/submit-review', async (req,res)=>{
       updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(effectiveProfile.full_name||'').trim()||null,phone:String(effectiveProfile.phone||'').trim()||null,accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:effectiveProfile.driver_license_url||null,insurance_url:effectiveProfile.insurance_url||null,right_to_work_url:effectiveProfile.right_to_work_url||null,private_hire_vehicle_license_url:effectiveProfile.private_hire_vehicle_license_url||null,private_hire_insurance_url:effectiveProfile.private_hire_insurance_url||null,goods_in_transit_url:effectiveProfile.goods_in_transit_url||null,...(passengerLicenceUpdate||{}),verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
       auditEvent='submitted';
     }
-    const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated)throw updateError||new Error('Review submission did not update the driver profile.');
-    const{error:consumeError}=await supabaseAdmin.from('driver_onboarding_requests').update({permission_consumed_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','identity_correction').eq('status','approved').is('permission_consumed_at',null);if(consumeError)throw consumeError;
-    const{error:resolveError}=await supabaseAdmin.from('driver_onboarding_requests').update({status:'approved',resolved_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','missing_info').in('status',['pending','rejected']);if(resolveError)throw resolveError;
+    const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated){logSubmitReviewDbError('profile-submit-update',updateError);throw updateError||new Error('Review submission did not update the driver profile.');}
+    const{error:consumeError}=await supabaseAdmin.from('driver_onboarding_requests').update({permission_consumed_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','identity_correction').eq('status','approved').is('permission_consumed_at',null);if(consumeError){logSubmitReviewDbError('identity-permission-consume',consumeError);throw consumeError;}
+    const{error:resolveError}=await supabaseAdmin.from('driver_onboarding_requests').update({status:'approved',resolved_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','missing_info').in('status',['pending','rejected']);if(resolveError){logSubmitReviewDbError('missing-info-resolve',resolveError);throw resolveError;}
     return res.json({submitted:true,resubmission,event:auditEvent,reviewState:'under_review',profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
-  }catch(error:unknown){const message=error instanceof Error?error.message:'Unable to validate driver submission.';return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});}
+  }catch(error:unknown){
+    // Supabase/PostgREST errors are plain objects, so `error instanceof Error` reduced the
+    // real cause to an anonymous message. Log the structured failure and surface its message.
+    logSubmitReviewDbError('unhandled',error);
+    const caught=(error&&typeof error==='object')?error as Record<string,unknown>:{};
+    const message=typeof caught['message']==='string'?caught['message']:error instanceof Error?error.message:'Unable to validate driver submission.';
+    return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});
+  }
 });
+
+/**
+ * Log the structured Supabase/PostgREST error for a submit-review database boundary.
+ *
+ * Supabase errors are plain objects rather than `Error` instances, so `instanceof Error`
+ * collapsed the real cause into an anonymous message. Only non-sensitive diagnostic fields
+ * are logged: never tokens, headers, document URLs/contents, or profile values.
+ */
+function logSubmitReviewDbError(boundary: string, error: unknown): void {
+  if (!error) return;
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  console.error('[DriverOnboarding] submit-review database failure', {
+    boundary,
+    code: typeof value['code'] === 'string' ? value['code'] : undefined,
+    message: typeof value['message'] === 'string'
+      ? value['message']
+      : error instanceof Error ? error.message : undefined,
+    details: typeof value['details'] === 'string' ? value['details'] : undefined,
+    hint: typeof value['hint'] === 'string' ? value['hint'] : undefined
+  });
+}
 
 export default router;

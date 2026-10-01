@@ -48,8 +48,12 @@ export class DriverOnboardingNotificationService {
   }
 
   static async enqueue(driverId: string, input: DriverOnboardingEventInput): Promise<{ id: string; duplicate: boolean }> {
+    // Select the row, not a hand-written column list: production proved this schema has
+    // no `profiles.first_name` (42703), and the other named columns are unproven too.
+    // `select('*')` is what the canonical /status route already uses successfully, and
+    // every derived field below already falls back when a column is absent.
     const { data: profile, error } = await supabaseAdmin.from('profiles')
-      .select('full_name,first_name,last_name,email,phone,phone_number,country_code,market_city,city')
+      .select('*')
       .eq('id', driverId).single();
     if (error || !profile) throw error || new Error('Driver profile not found');
     const { data: auth } = await supabaseAdmin.auth.admin.getUserById(driverId);

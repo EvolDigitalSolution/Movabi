@@ -52,7 +52,7 @@ export class DriverRequirementService {
         add('vehicle.colour','Vehicle colour','vehicle',this.has(vehicle.colour),'Add the vehicle colour.'); add('vehicle.year','Vehicle year','vehicle',Number(vehicle.year)>1900,'Add a valid vehicle year.');
         add('vehicle.registration','Vehicle registration','vehicle',this.has(vehicle.registrationNumber),'Add the registration number.');
         addDocument('document.driving_licence','Driving licence',this.has(profile.driver_license_url||profile.driving_licence_url),profile.driver_license_expiry,'Upload the appropriate driving licence.');
-        addDocument('document.insurance','Vehicle insurance',this.has(profile.insurance_url||profile.courier_insurance_url||profile.hire_reward_insurance_url),profile.insurance_expiry,'Upload insurance appropriate to the selected services.');
+        addDocument('document.insurance','Vehicle insurance',this.has(profile.insurance_url||profile.courier_insurance_url||profile.hire_reward_insurance_url),profile.insurance_expiry,'Insurance covering your vehicle for the services you accept.');
       } else if(vehicleType==='bicycle') {
         add('vehicle.bicycle_declaration','Bicycle details','vehicle',this.has(vehicle.type)||onboardingItems['bicycle_declaration']===true,'Add bicycle details or confirm your bicycle declaration.');
         add('vehicle.delivery_equipment','Delivery equipment','vehicle',onboardingItems['delivery_equipment_confirmed']===true,'Confirm suitable delivery equipment.');
@@ -83,7 +83,7 @@ export class DriverRequirementService {
           add('licence.private_hire','Private-hire/council licensing','licensing',passengerLicence.complete,licenceReason,['ride'],false,false,passengerLicence.expiryDate,licenceExpiringSoon);
         }
         addDocument('document.private_hire_vehicle_license','Private-hire vehicle licence',this.has(profile.private_hire_vehicle_license_url),profile.vehicle_license_expiry,'Upload your private-hire/taxi vehicle licence.',['ride']);
-        add('document.private_hire_insurance','Private-hire insurance','documents',this.has(profile.private_hire_insurance_url),'Upload passenger-service insurance.',['ride']);
+        add('document.private_hire_insurance','Private-hire insurance','documents',this.has(profile.private_hire_insurance_url),'Insurance covering you to carry passengers for hire or reward.',['ride']);
       }
       if(selectedServices.includes('van-moving')){const gitRequired=country==='GB';addDocument('document.goods_in_transit','Goods-in-transit cover',gitRequired?this.has(profile.goods_in_transit_url):true,gitRequired?profile.goods_in_transit_insurance_expiry:null,'Upload configured commercial or goods-in-transit cover.',['van-moving']);}
     }

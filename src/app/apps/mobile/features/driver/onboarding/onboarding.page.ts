@@ -607,11 +607,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 </p>
                 <h4 class="font-display font-black text-slate-950 text-sm mb-3">{{ primaryDocumentLabel() }}</h4>
 
-                @if (docs().license) {
-                  <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge>
-                } @else {
-                  <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p>
-                }
+                <app-badge [variant]="documentBadgeVariant('license')">{{ documentBadgeLabel('license') }}</app-badge>
               </button>
               }
 
@@ -626,11 +622,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 </p>
                 <h4 class="font-display font-black text-slate-950 text-sm mb-3">{{ secondaryDocumentLabel() }}</h4>
 
-                @if (docs().insurance) {
-                  <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge>
-                } @else {
-                  <p class="text-xs text-slate-500 font-semibold">{{ secondaryDocumentPendingLabel() }}</p>
-                }
+                <app-badge [variant]="documentBadgeVariant('insurance')">{{ documentBadgeLabel('insurance') }}</app-badge>
               </button>
               }
 
@@ -639,8 +631,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 <div class="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-4 border border-violet-100 shadow-sm"><ion-icon name="document-text-outline" class="text-2xl"></ion-icon></div>
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
                 <h4 class="font-display font-black text-slate-950 text-sm mb-3">Right to work evidence</h4>
-                @if (docs().right_to_work) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
-                @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                <app-badge [variant]="documentBadgeVariant('right_to_work')">{{ documentBadgeLabel('right_to_work') }}</app-badge>
               </button>
               }
 
@@ -649,8 +640,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100 shadow-sm"><ion-icon name="car-sport-outline" class="text-2xl"></ion-icon></div>
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
                   <h4 class="font-display font-black text-slate-950 text-sm mb-3">Private-hire vehicle licence</h4>
-                  @if (docs().private_hire_vehicle_license) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
-                  @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                  <app-badge [variant]="documentBadgeVariant('private_hire_vehicle_license')">{{ documentBadgeLabel('private_hire_vehicle_license') }}</app-badge>
                 </button>
                 }
 
@@ -658,9 +648,8 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                 <button type="button" (click)="handleDocumentClick('private_hire_insurance')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                   <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm"><ion-icon name="shield-checkmark-outline" class="text-2xl"></ion-icon></div>
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
-                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Passenger-service insurance</h4>
-                  @if (docs().private_hire_insurance) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
-                  @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Private-hire insurance</h4>
+                  <app-badge [variant]="documentBadgeVariant('private_hire_insurance')">{{ documentBadgeLabel('private_hire_insurance') }}</app-badge>
                 </button>
               }
 
@@ -669,8 +658,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-4 border border-teal-100 shadow-sm"><ion-icon name="document-attach-outline" class="text-2xl"></ion-icon></div>
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
                   <h4 class="font-display font-black text-slate-950 text-sm mb-3">Goods-in-transit cover</h4>
-                  @if (docs().goods_in_transit) { <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge> }
-                  @else { <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p> }
+                  <app-badge [variant]="documentBadgeVariant('goods_in_transit')">{{ documentBadgeLabel('goods_in_transit') }}</app-badge>
                 </button>
               }
             </div>
@@ -697,7 +685,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               @if(sectionFor(group.section)?.applicable){
               <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex justify-between gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="sectionFor(group.section)?.status==='complete'" [class.text-sky-600]="sectionFor(group.section)?.status==='under_review'" [class.text-amber-600]="sectionFor(group.section)?.status!=='complete'&&sectionFor(group.section)?.status!=='under_review'">{{sectionFor(group.section)?.status==='complete'?'Complete':sectionFor(group.section)?.status==='under_review'?'Under review':sectionFor(group.section)?.status==='action_required'?'Action required':'Missing'}}</span></div>
                 @if(group.category&&!requirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
-                @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.completed?requirement.label:requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
+                @else{<div class="mt-2 space-y-2">@for(requirement of requirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.label}}{{requirement.completed?'':' — '+requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
               </div>}}
             </div>
           </section>
@@ -1339,6 +1327,39 @@ export class OnboardingPage implements OnInit {
         return filtered as Partial<T>;
     }
 
+    /**
+     * Canonical completion for a compliance document — the SAME authority Review uses.
+     * `docs()` is local/draft state and must never independently claim completion: it is
+     * set right after the storage upload, before profiles.update() has persisted the path.
+     */
+    documentComplete(code: string): boolean {
+        return (this.onboardingStatus.state()?.automaticRequirements || []).some(item => item.code === code && item.completed);
+    }
+
+    /** Canonical requirement code owned by an upload card. */
+    documentRequirementCode(type: DocumentType): string {
+        switch (type) {
+            case 'license': return 'document.driving_licence';
+            case 'insurance': return 'document.insurance';
+            case 'right_to_work': return 'work.right_to_work';
+            case 'private_hire_vehicle_license': return 'document.private_hire_vehicle_license';
+            case 'private_hire_insurance': return 'document.private_hire_insurance';
+            case 'goods_in_transit': return 'document.goods_in_transit';
+        }
+    }
+
+    /** Green ONLY when the canonical requirement is complete. A local-only path is amber. */
+    documentBadgeVariant(type: DocumentType): 'success' | 'warning' | 'secondary' {
+        if (this.documentComplete(this.documentRequirementCode(type))) return 'success';
+        return this.docs()[type] ? 'warning' : 'secondary';
+    }
+
+    documentBadgeLabel(type: DocumentType): string {
+        if (this.documentComplete(this.documentRequirementCode(type))) return this.isReadOnly() ? 'Open File' : 'Uploaded';
+        if (this.docs()[type]) return 'Not confirmed';
+        return this.isReadOnly() ? 'Not saved' : 'Tap to select';
+    }
+
     getStripeBadgeText(): string {
         if (this.isStripeReady()) return 'Connected';
         if (this.isStripePending()) return 'Pending';
@@ -1698,7 +1719,7 @@ export class OnboardingPage implements OnInit {
     }
 
     secondaryDocumentLabel(): string {
-        return this.isBikeVehicle() ? 'Courier insurance' : 'Insurance';
+        return this.isBikeVehicle() ? 'Courier insurance' : 'Vehicle insurance';
     }
 
     secondaryDocumentReady(): boolean {
@@ -2212,7 +2233,7 @@ export class OnboardingPage implements OnInit {
                 );
                 await this.refreshOnboardingStatus();
 
-                const label = type === 'license' ? 'Driver licence' : type === 'insurance' ? 'Insurance' : type === 'right_to_work' ? 'Right to work evidence' : type === 'private_hire_vehicle_license' ? 'Private-hire vehicle licence' : type === 'private_hire_insurance' ? 'Passenger-service insurance' : 'Goods-in-transit cover';
+                const label = type === 'license' ? 'Driver licence' : type === 'insurance' ? 'Vehicle insurance' : type === 'right_to_work' ? 'Right to work evidence' : type === 'private_hire_vehicle_license' ? 'Private-hire vehicle licence' : type === 'private_hire_insurance' ? 'Private-hire insurance' : 'Goods-in-transit cover';
                 await this.showToast(`${label} uploaded.`, 'success');
             } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : 'Upload failed.';
