@@ -3576,6 +3576,16 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  -- Release closure: a driver may only fetch their own opportunities.
+  -- RESTORED: this guard is defined by
+  -- 20261203000000_release_authority_hardening.sql and had been lost from this
+  -- reconcile file. Without it, re-running the reconcile silently removed the
+  -- protection and let any authenticated driver pass a foreign p_driver_id and
+  -- read another driver's opportunity set.
+  IF auth.uid() IS NOT NULL AND auth.uid() <> p_driver_id THEN
+    RAISE EXCEPTION 'You can only fetch your own opportunities';
+  END IF;
+
   RETURN QUERY
   SELECT
     s.id AS session_id,
@@ -3583,8 +3593,21 @@ BEGIN
     s.customer_id,
     s.suggested_fare,
     s.customer_offer,
-    NULLIF(j.metadata->>'distance_km', '')::NUMERIC AS distance_km,
-    NULLIF(j.metadata->>'duration_seconds', '')::INTEGER AS eta_seconds,
+    -- Free-form JSON metadata must never raise: guard then convert (repo
+    -- convention, cf. `~ '^\d{4}-\d{2}-\d{2}$'` date guards in scripts/db).
+    CASE
+      WHEN BTRIM(j.metadata->>'distance_km') ~ '^[0-9]+(\.[0-9]+)?$'
+      THEN (BTRIM(j.metadata->>'distance_km'))::NUMERIC
+      ELSE NULL
+    END AS distance_km,
+    -- Fractional seconds are a legitimate value ("643.9" -> 644). The previous
+    -- NULLIF(...,'')::INTEGER raised 22P02 on any fractional duration and
+    -- aborted the entire RPC, so drivers received no hybrid opportunities.
+    CASE
+      WHEN BTRIM(j.metadata->>'duration_seconds') ~ '^[0-9]+(\.[0-9]+)?$'
+      THEN LEAST(2147483647::NUMERIC, ROUND((BTRIM(j.metadata->>'duration_seconds'))::NUMERIC))::INTEGER
+      ELSE NULL
+    END AS eta_seconds,
     COALESCE(st.name, 'Request') AS service_name,
     COALESCE(st.slug, '') AS service_slug,
     j.pickup_address,
