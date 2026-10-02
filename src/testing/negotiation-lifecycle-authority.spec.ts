@@ -86,11 +86,13 @@ describe('Patch 1A — canonical negotiation state derivation', () => {
     }
   });
 
-  it('customer offer, UNCLAIMED -> waiting_for_driver with Cancel + Accept Original Fare only', () => {
+  it('customer offer, UNCLAIMED -> waiting_for_driver with Cancel Offer only', () => {
     const state = getNegotiationState(session({ status: 'open' }),
       [offerEvent('customer', 'customer_offer', '2026-10-02T11:59:00.000Z')], NOW);
     expect(state.phase).toBe('waiting_for_driver');
-    expect(state.allowedCustomerActions).toEqual(['cancel_offer', 'accept_original_fare']);
+    // Accept Original Fare & Pay is intentionally ABSENT: its authoritative RPC does
+    // not exist, and an outstanding offer must not expose a competing action.
+    expect(state.allowedCustomerActions).toEqual(['cancel_offer']);
     expect(state.allowedDriverActions).toEqual([]);          // no driver actions until claimed
     expect(state.pendingOffer).toEqual({ by: 'customer', amount: 6.78 });
   });
@@ -100,15 +102,15 @@ describe('Patch 1A — canonical negotiation state derivation', () => {
       [offerEvent('customer', 'customer_offer', '2026-10-02T11:59:00.000Z')], NOW);
     expect(state.phase).toBe('driver_turn');
     expect(state.allowedDriverActions).toEqual(['accept', 'counter', 'release']);
-    expect(state.allowedCustomerActions).toEqual(['cancel_offer', 'accept_original_fare']);
+    expect(state.allowedCustomerActions).toEqual(['cancel_offer']);
   });
 
-  it('driver counter -> customer may Accept / Counter / Decline / Accept Original Fare', () => {
+  it('driver counter -> customer may Accept / Counter / Decline', () => {
     const state = getNegotiationState(
       session({ status: 'negotiating', active_driver_id: 'd1', driver_counter_offer: 7.0 }),
       [offerEvent('driver', 'driver_counter', '2026-10-02T11:59:00.000Z')], NOW);
     expect(state.phase).toBe('customer_turn');
-    expect(state.allowedCustomerActions).toEqual(['accept', 'counter', 'decline', 'accept_original_fare']);
+    expect(state.allowedCustomerActions).toEqual(['accept', 'counter', 'decline']);
     expect(state.pendingOffer).toEqual({ by: 'driver', amount: 7.0 });
   });
 
@@ -158,7 +160,12 @@ describe('Patch 1A — canonical negotiation state derivation', () => {
   });
 
   it('null/empty inputs degrade safely', () => {
-    expect(getNegotiationState(null, [], NOW).phase).toBe('cancelled');
+    // A MISSING session is the legitimate pre-negotiation state (job created, no
+    // offer yet) and must still allow `make_offer` — see the regression suite below.
+    const notStarted = getNegotiationState(null, [], NOW);
+    expect(notStarted.phase).toBe('not_started');
+    expect(notStarted.allowedCustomerActions).toEqual(['make_offer']);
+    expect(notStarted.pendingOffer).toBeNull();
     expect(getNegotiationState(session(), null, NOW).phase).toBe('waiting_for_driver');
     expect(latestEventOf([])).toBeNull();
     expect(latestFareEvent([offerEvent('driver', 'session_claimed', '2026-10-02T11:59:00.000Z')])).toBeNull();
@@ -271,5 +278,98 @@ describe('Patch 1A — preserves proven behaviour (item 25)', () => {
     expect(fix).toContain("BTRIM(j.metadata->>'duration_seconds') ~ '^[0-9]+(\\.[0-9]+)?$'");
     expect(fix).toContain("RAISE EXCEPTION 'You can only fetch your own opportunities';");
     expect(fix).toContain('s.active_driver_id IS NULL');
+  });
+});
+
+/**
+ * REGRESSION SUITE — "Make an Offer" was hidden on a session-less booking.
+ *
+ * dc812c5 gated the control on `makeOfferEnabled && canCustomer('make_offer')`, but
+ * getNegotiationState(null, …) returned phase 'cancelled' with NO actions. A freshly
+ * created negotiating job has NO session row until the customer offers, so the
+ * legitimate initial state produced no `make_offer` and the negotiation path was
+ * unreachable in the browser.
+ */
+describe('regression — session-less pre-negotiation state must expose Make an Offer', () => {
+  const FARE_PAGE = read('src/app/apps/mobile/features/customer/marketplace-fare/marketplace-fare.page.ts');
+
+  it('1. eligible initial page with NO session => make_offer is allowed', () => {
+    const state = getNegotiationState(null, [], NOW);
+    expect(state.phase).toBe('not_started');
+    expect(canCustomer(state, 'make_offer')).toBe(true);
+    // and it must NOT masquerade as an outstanding offer
+    expect(state.pendingOffer).toBeNull();
+    expect(canCustomer(state, 'cancel_offer')).toBe(false);
+    expect(canCustomer(state, 'accept_original_fare')).toBe(false);
+    // the page gate is the AND of the market flag and this canonical action
+    expect(FARE_PAGE).toContain("makeOfferEnabled && canCustomer('make_offer')");
+  });
+
+  it('1b. an undefined session behaves the same as an empty one', () => {
+    expect(canCustomer(getNegotiationState(undefined, undefined, NOW), 'make_offer')).toBe(true);
+    expect(getNegotiationState(undefined, undefined, NOW).phase).toBe('not_started');
+  });
+
+  it('1c. "offer sent" panel is NOT shown before any offer exists', () => {
+    // the page derives it from these two phases, which the pre-negotiation phase is not
+    expect(getNegotiationState(null, [], NOW).phase).not.toBe('waiting_for_driver');
+    expect(getNegotiationState(null, [], NOW).phase).not.toBe('driver_turn');
+    expect(FARE_PAGE).toContain("state.phase === 'waiting_for_driver' || state.phase === 'driver_turn'");
+  });
+
+  it('2. outstanding customer offer => duplicate make_offer unavailable', () => {
+    for (const status of ['open', 'driver_claimed', 'negotiating']) {
+      const state = getNegotiationState(
+        session({ status, active_driver_id: status === 'open' ? null : 'd1' }),
+        [offerEvent('customer', 'customer_offer', '2026-10-02T11:59:00.000Z')], NOW);
+      expect(canCustomer(state, 'make_offer'), status).toBe(false);
+      expect(canCustomer(state, 'cancel_offer'), status).toBe(true);
+    }
+  });
+
+  it('3. outstanding customer offer => Accept Original Fare unavailable', () => {
+    // Not merely unrendered: the action is absent from the canonical state, so a future
+    // caller cannot wire a button for it while an offer is outstanding.
+    for (const status of ['open', 'driver_claimed', 'negotiating']) {
+      const state = getNegotiationState(
+        session({ status, active_driver_id: status === 'open' ? null : 'd1' }),
+        [offerEvent('customer', 'customer_offer', '2026-10-02T11:59:00.000Z')], NOW);
+      expect(canCustomer(state, 'accept_original_fare'), status).toBe(false);
+      expect(state.allowedCustomerActions).not.toContain('accept_original_fare');
+    }
+    // ...and it must not reappear on the driver-counter turn either
+    const counterTurn = getNegotiationState(
+      session({ status: 'negotiating', active_driver_id: 'd1', driver_counter_offer: 7 }),
+      [offerEvent('driver', 'driver_counter', '2026-10-02T11:59:00.000Z')], NOW);
+    expect(canCustomer(counterTurn, 'accept_original_fare')).toBe(false);
+    // no UI or helper surface exposes it at all
+    expect(FARE_PAGE).not.toContain('accept_original_fare');
+    expect(read('src/app/shared/marketplace/negotiation-state.ts')).not.toContain("'accept_original_fare']");
+  });
+
+  it('4. cancellation / release / terminal states stay canonical (no stale flags)', () => {
+    const cancelled = getNegotiationState(session({ status: 'customer_declined' }), [], NOW);
+    expect(cancelled.phase).toBe('cancelled');
+    expect([...cancelled.allowedCustomerActions, ...cancelled.allowedDriverActions]).toEqual([]);
+
+    const released = getNegotiationState(
+      session({ status: 'released', active_driver_id: null }), [], NOW);
+    // released is LIVE (driver left; request back in the pool with the offer retained)
+    expect(released.phase).toBe('waiting_for_driver');
+    expect(canCustomer(released, 'cancel_offer')).toBe(true);
+    expect(canCustomer(released, 'make_offer')).toBe(false);   // offer retained: no duplicate
+    // released without a retained offer falls back to the pre-negotiation state
+    const releasedNoOffer = getNegotiationState(
+      session({ status: 'released', active_driver_id: null, customer_offer: null }), [], NOW);
+    expect(releasedNoOffer.phase).toBe('not_started');
+    expect(canCustomer(releasedNoOffer, 'make_offer')).toBe(true);
+
+    const expired = getNegotiationState(session({ status: 'open', expires_at: past() }), [], NOW);
+    expect(expired.phase).toBe('expired');
+    expect(expired.allowedCustomerActions).toEqual([]);
+
+    const agreed = getNegotiationState(session({ status: 'fare_agreed' }), [], NOW);
+    expect(agreed.allowedCustomerActions).toEqual(['pay']);
+    expect(canCustomer(agreed, 'make_offer')).toBe(false);
   });
 });

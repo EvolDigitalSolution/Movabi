@@ -17,6 +17,7 @@
  */
 
 export type NegotiationPhase =
+  | 'not_started'
   | 'waiting_for_driver'
   | 'driver_turn'
   | 'customer_turn'
@@ -88,7 +89,8 @@ export interface NegotiationState {
   allowedDriverActions: NegotiationAction[];
 }
 
-const TERMINAL_CANCELLED = new Set(['customer_declined', 'driver_declined', 'released']);
+/** Genuinely TERMINAL customer-facing states. `released` is deliberately NOT here. */
+const TERMINAL_CANCELLED = new Set(['customer_declined', 'driver_declined']);
 
 /** Latest event by created_at (malformed/missing timestamps fall back to array order). */
 export function latestEventOf(events: readonly NegotiationEventLike[] | null | undefined): NegotiationEventLike | null {
@@ -135,10 +137,20 @@ export function getNegotiationState(
   events: readonly NegotiationEventLike[] | null | undefined,
   now: number = Date.now()
 ): NegotiationState {
-  const none: NegotiationState = {
-    phase: 'cancelled', pendingOffer: null, allowedCustomerActions: [], allowedDriverActions: []
-  };
-  if (!session) return none;
+  // NO SESSION ROW YET = the legitimate PRE-NEGOTIATION state (a freshly created
+  // negotiating job has no session until the customer submits an offer). This must
+  // still permit `make_offer`. It is deliberately its OWN phase rather than
+  // 'waiting_for_driver' so the UI does not render an "offer sent / waiting for a
+  // driver" panel before any offer exists. Returning no actions here is the
+  // regression that hid "Make an Offer" on an eligible, session-less booking.
+  if (!session) {
+    return {
+      phase: 'not_started',
+      pendingOffer: null,
+      allowedCustomerActions: ['make_offer'],
+      allowedDriverActions: []
+    };
+  }
 
   const status = String(session.status ?? '').toLowerCase();
   const claimed = !!String(session.active_driver_id ?? '').trim();
@@ -164,6 +176,27 @@ export function getNegotiationState(
     return { phase: 'cancelled', pendingOffer: null, allowedCustomerActions: [], allowedDriverActions: [] };
   }
 
+  // `released` is NOT terminal. The driver left and the request went back to the
+  // opportunity pool: fetch_hybrid_opportunities accepts status IN ('open','released'),
+  // create_customer_offer re-opens a released row, and customer_cancel_offer explicitly
+  // allows cancelling a released session. The customer's offer is retained, so they are
+  // still "waiting for a driver" and may cancel — but may NOT submit a duplicate offer.
+  if (status === 'released') {
+    return Number.isFinite(offer) && offer > 0
+      ? {
+          phase: 'waiting_for_driver',
+          pendingOffer: { by: 'customer', amount: offer },
+          allowedCustomerActions: ['cancel_offer'],
+          allowedDriverActions: []
+        }
+      : {
+          phase: 'not_started',
+          pendingOffer: null,
+          allowedCustomerActions: ['make_offer'],
+          allowedDriverActions: []
+        };
+  }
+
   // ---- turn comes ONLY from the latest fare proposal ----
   const proposal = latestFareEvent(events);
   const byCustomer = String(proposal?.proposed_by_role ?? '') === 'customer';
@@ -174,7 +207,7 @@ export function getNegotiationState(
     return {
       phase: 'customer_turn',
       pendingOffer: Number.isFinite(counter) && counter > 0 ? { by: 'driver', amount: counter } : null,
-      allowedCustomerActions: ['accept', 'counter', 'decline', 'accept_original_fare'],
+      allowedCustomerActions: ['accept', 'counter', 'decline'],
       allowedDriverActions: []
     };
   }
@@ -184,7 +217,7 @@ export function getNegotiationState(
     return {
       phase: claimed ? 'driver_turn' : 'waiting_for_driver',
       pendingOffer: Number.isFinite(offer) && offer > 0 ? { by: 'customer', amount: offer } : null,
-      allowedCustomerActions: ['cancel_offer', 'accept_original_fare'],
+      allowedCustomerActions: ['cancel_offer'],
       allowedDriverActions: claimed ? ['accept', 'counter', 'release'] : []
     };
   }
