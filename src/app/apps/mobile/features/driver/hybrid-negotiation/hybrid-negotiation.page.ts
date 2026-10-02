@@ -3,10 +3,17 @@ import {
     inject,
     OnInit,
     OnDestroy,
-    signal
+    signal,
+    computed
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import {
+    canDriver,
+    getNegotiationState,
+    type NegotiationAction,
+    type NegotiationState
+} from '@shared/marketplace/negotiation-state';
 import { IonicModule, LoadingController, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
@@ -134,17 +141,19 @@ import { AppConfigService } from '@core/services/config/app-config.service';
 
           @if (s.status === 'driver_claimed' || s.status === 'negotiating') {
             <div class="space-y-3 mb-4">
-              @if (s.customer_offer && !s.driver_counter_offer) {
+              @if (canDriver('accept')) {
                 <button
                   type="button"
                   (click)="acceptOffer()"
-                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
+                  [disabled]="mutationBusy()"
+                  class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-3xl font-black text-lg active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3 disabled:opacity-50"
                 >
                   <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
                   Accept Customer Offer
                 </button>
               }
 
+              @if (canDriver('counter')) {
               <div class="bg-white rounded-2xl border border-slate-100 p-4">
                 <label class="text-sm font-bold text-slate-700 mb-2 block">Your counter offer</label>
                 <input
@@ -156,22 +165,26 @@ import { AppConfigService } from '@core/services/config/app-config.service';
                 <button
                   type="button"
                   (click)="submitCounter()"
-                  [disabled]="!counterAmount() || counterAmount() <= 0"
+                  [disabled]="mutationBusy() || !counterAmount() || counterAmount() <= 0"
                   class="w-full mt-3 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <ion-icon name="send-outline" class="text-lg"></ion-icon>
                   Send Counter
                 </button>
               </div>
+              }
 
+              @if (canDriver('release')) {
               <button
                 type="button"
                 (click)="pass()"
-                class="w-full py-4 bg-white border-2 border-red-200 text-red-700 rounded-3xl font-black text-lg active:scale-95 transition-all flex items-center justify-center gap-3"
+                [disabled]="mutationBusy()"
+                class="w-full py-4 bg-white border-2 border-red-200 text-red-700 rounded-3xl font-black text-lg active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 <ion-icon name="close-circle-outline" class="text-xl"></ion-icon>
                 Pass
               </button>
+              }
             </div>
           }
 
@@ -209,6 +222,31 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     jobId = signal<string>('');
     session = signal<any>(null);
     events = signal<any[]>([]);
+
+    /**
+     * Patch 1A — CANONICAL negotiation state (same helper as the customer page).
+     *
+     * The driver's available actions come from PERSISTED session + events, so the
+     * driver is offered accept/counter/release only when the live fare proposal is
+     * the CUSTOMER's. On the customer's turn no driver mutation control is offered.
+     * Lifecycle events (session_claimed etc.) never transfer the turn.
+     */
+    readonly negotiationState = computed<NegotiationState>(() =>
+        getNegotiationState(this.session(), this.events())
+    );
+
+    /** True only when the canonical state permits this driver action. */
+    canDriver(action: NegotiationAction): boolean {
+        return canDriver(this.negotiationState(), action);
+    }
+
+    /**
+     * UX-only double-submit guard for driver negotiation mutations (accept /
+     * counter / release). The database RPC transitions remain the real authority;
+     * this merely disables buttons and ignores repeated clicks while a call is in
+     * flight. It must never gate initial page load.
+     */
+    mutationBusy = signal<boolean>(false);
     effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
     counterAmount = signal<number>(0);
     customerProfile = signal<any>(null);
@@ -396,8 +434,10 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     }
 
     async pass() {
+        if (this.mutationBusy()) return;
         const user = this.auth.currentUser();
         if (!user?.id) return;
+        this.mutationBusy.set(true);
         const loading = await this.loadingCtrl.create({ message: 'Releasing...' });
         try {
             await loading.present();
@@ -409,40 +449,52 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             console.error('[HybridNegotiation] pass failed', error);
             await loading.dismiss();
             await this.showToast(error.message || 'Unable to pass.', 'danger');
+        } finally {
+            this.mutationBusy.set(false);
         }
     }
 
     async acceptOffer() {
+        if (this.mutationBusy()) return;
         const user = this.auth.currentUser();
         if (!user?.id) return;
+        this.mutationBusy.set(true);
         try {
             const session = this.session();
             if (!session) return;
             const updated = await this.hybridService.acceptCustomerOffer(session.id);
             this.session.set(updated);
+            await this.load(); // persisted authoritative reload of session + events + job
             await this.showToast('Offer accepted! Waiting for customer payment.', 'success');
         } catch (error: any) {
             console.error('[HybridNegotiation] accept offer failed', error);
             await this.showToast(error.message || 'Unable to accept offer.', 'danger');
+        } finally {
+            this.mutationBusy.set(false);
         }
     }
 
     async submitCounter() {
+        if (this.mutationBusy()) return;
         const amount = this.counterAmount();
         if (!amount || amount <= 0) {
             await this.showToast('Please enter a valid amount.', 'warning');
             return;
         }
+        this.mutationBusy.set(true);
         try {
             const session = this.session();
             if (!session) return;
             const updated = await this.hybridService.driverCounterOffer(session.id, amount);
             this.session.set(updated);
             this.counterAmount.set(0);
+            await this.load(); // persisted authoritative reload (events now include driver_counter)
             await this.showToast('Counter offer sent.', 'success');
         } catch (error: any) {
             console.error('[HybridNegotiation] counter failed', error);
             await this.showToast(error.message || 'Unable to send counter.', 'danger');
+        } finally {
+            this.mutationBusy.set(false);
         }
     }
 

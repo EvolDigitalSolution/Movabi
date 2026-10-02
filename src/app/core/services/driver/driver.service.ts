@@ -282,8 +282,39 @@ export class DriverService {
 
         if (user?.id) {
             await this.fetchHybridOpportunities();
+            await this.fetchRecoverableNegotiations();
         } else {
             this.hybridOpportunities.set([]);
+            this.recoverableNegotiations.set([]);
+        }
+    }
+
+    /**
+     * Patch 1A — persisted RECOVERABLE negotiations for this driver.
+     *
+     * A successful claim sets active_driver_id, which (correctly) removes the
+     * session from fetch_hybrid_opportunities. If navigation or rendering then
+     * failed, the driver previously had NO way back. This is populated on every
+     * opportunity refresh so a claimed negotiation survives refresh/restart.
+     * Recovery is a READ: it must never re-claim.
+     */
+    recoverableNegotiations = signal<any[]>([]);
+
+    async fetchRecoverableNegotiations(): Promise<any[]> {
+        const user = this.auth.currentUser();
+        if (!user?.id) {
+            this.recoverableNegotiations.set([]);
+            return [];
+        }
+
+        try {
+            const sessions = await this.hybridService.getActiveDriverSessions();
+            this.recoverableNegotiations.set(sessions);
+            return sessions;
+        } catch (error) {
+            console.warn('[DriverService] recoverable negotiations not available', error);
+            this.recoverableNegotiations.set([]);
+            return [];
         }
     }
 

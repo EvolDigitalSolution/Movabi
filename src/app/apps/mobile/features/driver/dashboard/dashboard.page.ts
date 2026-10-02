@@ -553,6 +553,30 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                   </div>
               } @else {
                 <div class="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+5rem)]">
+                  @if (recoverableNegotiations().length > 0) {
+                    <div class="mb-4">
+                      <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-display font-bold text-slate-900">
+                          My negotiation in progress
+                        </h3>
+                      </div>
+                      <div class="space-y-3">
+                        @for (item of recoverableNegotiations(); track item.id) {
+                          <button
+                            type="button"
+                            (click)="openRecoveredNegotiation(item.job_id)"
+                            class="w-full bg-white border border-emerald-300 rounded-xl p-4 text-left active:scale-[0.98] transition-all"
+                          >
+                            <p class="text-sm font-bold text-slate-900">Continue negotiation</p>
+                            <p class="text-xs text-slate-600 mt-1">
+                              You have already claimed this request. Tap to continue.
+                            </p>
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  }
+
                   @if (hybridEnabled && hybridOpportunities().length > 0) {
                     <div class="mb-4">
                       <div class="flex items-center justify-between mb-3">
@@ -976,6 +1000,23 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return this.jobs().find(job => job.id === id) || null;
     });
     hybridOpportunities = computed(() => this.driverService.hybridOpportunities());
+
+    /**
+     * Patch 1A — a successfully claimed negotiation that correctly left the
+     * unclaimed opportunity pool. Sourced from the persisted active_driver_id
+     * lookup so it survives refresh / app restart and does not depend on
+     * fetch_hybrid_opportunities.
+     */
+    recoverableNegotiations = computed(() => this.driverService.recoverableNegotiations());
+
+    /**
+     * Open an ALREADY-CLAIMED negotiation. Deliberately does NOT call
+     * claimHybridSession: the session is already claimed by this driver, so
+     * re-claiming would fail or wrongly re-assert authority instead of recovering.
+     */
+    openRecoveredNegotiation(jobId: string) {
+        void this.router.navigate(['/driver/hybrid-negotiation', jobId]);
+    }
     selectedHybridOpportunity = signal<any>(null);
     locationError = this.locationService.locationError;
 

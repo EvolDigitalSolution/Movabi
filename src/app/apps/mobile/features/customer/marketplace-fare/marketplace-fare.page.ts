@@ -4,6 +4,7 @@ import {
     OnInit,
     AfterViewInit,
     signal,
+    computed,
     OnDestroy,
     effect,
     ElementRef,
@@ -11,6 +12,12 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import {
+    canCustomer,
+    getNegotiationState,
+    type NegotiationAction,
+    type NegotiationState
+} from '@shared/marketplace/negotiation-state';
 import { IonicModule, IonContent, LoadingController, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
@@ -297,7 +304,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   Accept Fare &amp; Pay
                 </button>
               }
-              @if (makeOfferEnabled) {
+              @if (makeOfferEnabled && canCustomer('make_offer')) {
                 <button
                   type="button"
                   (click)="openHybridOfferInput()"
@@ -305,6 +312,29 @@ import { StripeCardElement } from '@stripe/stripe-js';
                 >
                   <ion-icon name="pricetag-outline" class="text-xl"></ion-icon>
                   Make an Offer
+                </button>
+              }
+              <!--
+                Patch 1A: once a customer offer is outstanding, "Make an Offer" is no
+                longer permitted by the canonical negotiation state. The persisted state
+                is shown instead, and the authority for this is the RPC — not this gate.
+              -->
+              @if (customerOfferOutstanding()) {
+                <div class="bg-amber-50 border border-amber-200 rounded-3xl p-4 space-y-1">
+                  <p class="text-sm font-bold text-slate-900">
+                    Offer sent{{ negotiationState().pendingOffer ? ': ' + formatPrice(negotiationState().pendingOffer!.amount) : '' }}
+                  </p>
+                  <p class="text-xs text-slate-600">Waiting for a driver response.</p>
+                </div>
+              }
+              @if (canCustomer('cancel_offer')) {
+                <button
+                  type="button"
+                  (click)="cancelHybridRequest()"
+                  [disabled]="negotiationBusy()"
+                  class="w-full py-3 bg-white border border-rose-200 text-rose-700 rounded-2xl font-bold text-base active:scale-95 transition-all disabled:opacity-50"
+                >
+                  Cancel Offer
                 </button>
               }
             </div>
@@ -721,6 +751,37 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     /**
+     * Patch 1A — CANONICAL negotiation state.
+     *
+     * The phase and the available actions are derived from PERSISTED session +
+     * events via the shared helper; the template never re-implements the state
+     * machine and never relies on transient component flags. Lifecycle events
+     * (session_claimed / session_released / session_expired / payment_completed)
+     * do not transfer the negotiation turn.
+     */
+    readonly negotiationState = computed<NegotiationState>(() =>
+        getNegotiationState(this.hybridSession(), this.hybridEvents())
+    );
+
+    /** True only when the canonical state permits this customer action. */
+    canCustomer(action: NegotiationAction): boolean {
+        return canCustomer(this.negotiationState(), action);
+    }
+
+    /** A customer offer is awaiting a response (drives the "offer sent" panel). */
+    readonly customerOfferOutstanding = computed<boolean>(() => {
+        const state = this.negotiationState();
+        return state.phase === 'waiting_for_driver' || state.phase === 'driver_turn';
+    });
+
+    /**
+     * UX-only double-submit guard. This is NOT the authority: the database RPC
+     * transitions are the real protection against duplicate or out-of-turn
+     * negotiation mutations.
+     */
+    readonly negotiationBusy = signal<boolean>(false);
+
+    /**
      * Authoritative suggested fare. Returns null when no authoritative fare exists so the
      * UI shows an unavailable state instead of manufacturing a legitimate-looking £0.00.
      */
@@ -1027,22 +1088,17 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         }
 
         try {
+            this.negotiationBusy.set(true);
             const loading = await this.loadingCtrl.create({ message: 'Sending offer...' });
             await loading.present();
-            const session = await this.hybridService.createCustomerOffer(
-                job.id,
-                this.auth.currentUser()?.id || '',
-                amount,
-                suggestedFare
-            );
-            await this.supabase
-                .from('jobs')
-                .update({
-                    status: 'pending_fare_confirmation',
-                    negotiation_mode_enabled: true,
-                    updated_at: new Date().toISOString()
-                } as any)
-                .eq('id', job.id);
+            // Patch 1A: session creation is DB-authoritative. Identity, reference
+            // fare, expiry and round are derived inside create_customer_offer.
+            const session = await this.hybridService.createCustomerOffer(job.id, amount);
+            // The previous direct client `jobs` UPDATE (status /
+            // negotiation_mode_enabled) was REMOVED: create_customer_offer only
+            // succeeds when the job already satisfies exactly those predicates,
+            // so the write could not change anything - it was a redundant
+            // client-side lifecycle write.
             await loading.dismiss();
             this.hybridSession.set(session);
             this.showHybridOfferInput.set(false);
@@ -1051,6 +1107,8 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         } catch (error) {
             console.error('[MarketplaceFare] submit offer failed', error);
             await this.showToast('Unable to send offer. Please try again.', 'danger');
+        } finally {
+            this.negotiationBusy.set(false);
         }
     }
 
@@ -1058,7 +1116,8 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         const session = this.hybridSession();
         if (!session) return;
         try {
-            const updated = await this.hybridService.acceptDriverCounter(session.id, session.driver_counter_offer);
+            this.negotiationBusy.set(true);
+            const updated = await this.hybridService.acceptDriverCounter(session.id);
             this.hybridSession.set(updated);
             await this.loadBooking(session.job_id);
             await this.initializeStripe();
@@ -1066,6 +1125,8 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         } catch (error) {
             console.error('[MarketplaceFare] accept counter failed', error);
             await this.showToast('Unable to accept. Please try again.', 'danger');
+        } finally {
+            this.negotiationBusy.set(false);
         }
     }
 
@@ -1074,12 +1135,15 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         const amount = this.hybridOfferAmount();
         if (!session || !amount || amount <= 0) return;
         try {
+            this.negotiationBusy.set(true);
             const updated = await this.hybridService.customerCounterOffer(session.id, amount);
             this.hybridSession.set(updated);
             await this.showToast('Counter offer sent.', 'success');
         } catch (error) {
             console.error('[MarketplaceFare] counter failed', error);
             await this.showToast('Unable to send counter. Please try again.', 'danger');
+        } finally {
+            this.negotiationBusy.set(false);
         }
     }
 
@@ -1100,12 +1164,15 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         const session = this.hybridSession();
         if (!session) return;
         try {
-            await this.hybridService.customerDecline(session.id);
+            this.negotiationBusy.set(true);
+            await this.hybridService.customerCancelOffer(session.id);
             await this.showToast('Request cancelled.', 'success');
             await this.router.navigate(['/customer']);
         } catch (error) {
             console.error('[MarketplaceFare] cancel failed', error);
             await this.showToast('Unable to cancel. Please try again.', 'danger');
+        } finally {
+            this.negotiationBusy.set(false);
         }
     }
 

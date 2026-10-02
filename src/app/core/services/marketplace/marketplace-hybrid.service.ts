@@ -191,39 +191,67 @@ export class MarketplaceHybridService {
         return (data as MarketplaceNegotiationEvent[] | null) ?? [];
     }
 
-    async createCustomerOffer(jobId: string, customerId: string, amount: number, suggestedFare: number): Promise<MarketplaceNegotiationSession> {
-        const expiresAt = new Date(Date.now() + this.getNegotiationTimeoutSeconds() * 1000).toISOString();
+    /**
+     * Patch 1A — driver claimed-session RECOVERY.
+     *
+     * Once a driver claims a session the RPC sets `active_driver_id`, and
+     * fetch_hybrid_opportunities filters on `active_driver_id IS NULL`, so the session
+     * correctly leaves the unclaimed opportunity pool. Previously nothing queried the
+     * driver's OWN claims, so a successful claim followed by a navigation/render failure
+     * left the driver with no way back — the negotiation appeared lost.
+     *
+     * This lookup is authorised by the EXISTING participant SELECT policy
+     * (hybrid_sessions_owner_or_driver: customer_id = auth.uid() OR
+     * active_driver_id = auth.uid()), so no new RLS is required and no arbitrary id is
+     * trusted from the client. Only genuinely ACTIVE driver states are returned;
+     * released/expired/terminal sessions are excluded.
+     */
+    async getActiveDriverSessions(): Promise<MarketplaceNegotiationSession[]> {
+        const userId = this.auth.currentUser()?.id;
+        if (!userId) return [];
+
         const { data, error } = await this.supabase
             .from('marketplace_negotiation_sessions')
-            .insert({
-                job_id: jobId,
-                customer_id: customerId,
-                status: 'open',
-                suggested_fare: suggestedFare,
-                customer_offer: amount,
-                driver_counter_offer: null,
-                agreed_fare: null,
-                round_count: 1,
-                attempt_count: 0,
-                expires_at: expiresAt
-            } as any)
-            .select()
-            .single();
+            .select('*')
+            .eq('active_driver_id', userId)
+            .in('status', ['driver_claimed', 'negotiating'])
+            .order('updated_at', { ascending: false });
 
         if (error) throw error;
-        const session = data as MarketplaceNegotiationSession;
 
-        await this.addEvent({
-            session_id: session.id,
-            job_id: jobId,
-            proposed_by: customerId,
-            proposed_by_role: 'customer',
-            event_type: 'customer_offer',
-            amount,
-            message: 'Customer offer',
-            round_number: 1
+        // Expiry is enforced in the database by the cleanup service, but a session can be
+        // past its window before cleanup runs — never surface one as recoverable.
+        const now = Date.now();
+        return ((data as MarketplaceNegotiationSession[] | null) ?? []).filter((session) => {
+            const expiresAt = Date.parse(String(session?.expires_at ?? ''));
+            return !Number.isFinite(expiresAt) || expiresAt > now;
+        });
+    }
+
+    /**
+     * Patch 1A — session creation is now DB-AUTHORITATIVE.
+     *
+     * Previously this performed a direct client INSERT supplying customer_id,
+     * suggested_fare, round_count and expires_at itself. A repeat click surfaced
+     * a raw 23505 from the job_id UNIQUE constraint, and the client was trusted
+     * for identity and reference fare.
+     *
+     * `create_customer_offer` now derives identity from auth.uid(), the
+     * reference fare from the persisted job, the expiry from the configured
+     * timeout, and returns a controlled domain error for a duplicate
+     * outstanding offer. `customerId`/`suggestedFare` are no longer accepted,
+     * because neither may be supplied as authority by the client.
+     */
+    async createCustomerOffer(jobId: string, amount: number): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('create_customer_offer', {
+            p_job_id: jobId,
+            p_amount: amount
         });
 
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This offer could not be sent.'));
+        const session = data as MarketplaceNegotiationSession;
+
+        // Notification stays BEST-EFFORT and only after the authoritative mutation.
         await this.notify({ action: 'notify_drivers', jobId });
         return session;
     }
@@ -289,155 +317,150 @@ export class MarketplaceHybridService {
         return session;
     }
 
+    /**
+     * Patch 1A — driver counter is now DB-AUTHORITATIVE.
+     * The RPC derives the actor from auth.uid() and requires it to equal the
+     * session's active_driver_id, enforces turn (the live proposal must be the
+     * customer's), expiry and the configured maxRounds, and writes the session
+     * mutation and the `driver_counter` event atomically.
+     *
+     * `message` is retained only for call-site compatibility; the authoritative
+     * event is owned by the RPC and is no longer client-supplied.
+     */
     async driverCounterOffer(sessionId: string, amount: number, message?: string): Promise<MarketplaceNegotiationSession> {
-        const userId = this.userId;
-        if (!userId) throw new Error('Authentication required');
-
-        const session = await this.getSessionById(sessionId);
-        if (!session) throw new Error('Session not found');
-
-        const nextRound = (session.round_count || 0) + 1;
-        if (nextRound > this.getMaxRounds()) {
-            throw new Error('Maximum negotiation rounds reached');
-        }
-
-        const { data, error } = await this.supabase
-            .from('marketplace_negotiation_sessions')
-            .update({
-                driver_counter_offer: amount,
-                status: 'negotiating',
-                round_count: nextRound,
-                expires_at: new Date(Date.now() + this.getNegotiationTimeoutSeconds() * 1000).toISOString(),
-                updated_at: new Date().toISOString()
-            } as any)
-            .eq('id', sessionId)
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        await this.addEvent({
-            session_id: sessionId,
-            job_id: session.job_id,
-            proposed_by: userId,
-            proposed_by_role: 'driver',
-            event_type: 'driver_counter',
-            amount,
-            message: message || 'Driver counter offer',
-            round_number: nextRound
+        void message;
+        const { data, error } = await this.rpc('driver_counter_offer', {
+            p_session_id: sessionId,
+            p_amount: amount
         });
 
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be sent.'));
+        const session = data as MarketplaceNegotiationSession;
+
+        if (session?.customer_id) {
+            await this.notify({
+                action: 'notify',
+                jobId: session.job_id,
+                recipientUserId: session.customer_id,
+                title: 'Driver counter offer',
+                body: `A driver has countered with ${this.formatCurrency(amount)}. Open the app to review.`,
+                data: { action: 'driver_counter', amount }
+            });
+        }
+
+        return session;
+    }
+
+    /**
+     * Patch 1A — customer counter is now DB-AUTHORITATIVE.
+     * The RPC requires the live proposal to belong to the DRIVER, so a customer
+     * cannot counter twice consecutively, and enforces expiry and maxRounds.
+     */
+    async customerCounterOffer(sessionId: string, amount: number): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('customer_counter_offer', {
+            p_session_id: sessionId,
+            p_amount: amount
+        });
+
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be sent.'));
+        const session = data as MarketplaceNegotiationSession;
+
+        if (session?.active_driver_id) {
+            await this.notify({
+                action: 'notify',
+                jobId: session.job_id,
+                recipientUserId: session.active_driver_id,
+                title: 'Customer counter offer',
+                body: 'The customer has sent a new counter offer. Open the app to review.',
+                data: { action: 'customer_counter', amount }
+            });
+        }
+
+        return session;
+    }
+
+    /**
+     * Patch 1A — AUTHORITY INVERSION FIXED.
+     *
+     * This previously called `lockFare(session.job_id, session.active_driver_id, amount)`,
+     * i.e. the CUSTOMER invoked the DRIVER-authority `lock_marketplace_fare` RPC while
+     * passing the driver's UUID. The RPC's precondition was satisfied because it compared
+     * active_driver_id to the id the caller had just supplied, so a customer obtained
+     * driver authority by supplying a driver UUID.
+     *
+     * Now the customer calls a CUSTOMER-authority transition whose actor is auth.uid()
+     * and whose agreed fare is read from the persisted session.driver_counter_offer —
+     * no amount and no driver id is accepted from the client.
+     */
+    async acceptDriverCounter(sessionId: string): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('customer_accept_driver_counter', {
+            p_session_id: sessionId
+        });
+
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be accepted.'));
+        const session = data as MarketplaceNegotiationSession;
+
+        await this.notifyFareAgreed(session);
+        return session;
+    }
+
+    /**
+     * Patch 1A — driver accepts the customer's live offer.
+     * Actor = auth.uid(), which the RPC requires to equal active_driver_id; the agreed
+     * fare is read from the persisted session.customer_offer, never from the client.
+     */
+    async acceptCustomerOffer(sessionId: string): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('driver_accept_customer_offer', {
+            p_session_id: sessionId
+        });
+
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This offer could not be accepted.'));
+        const session = data as MarketplaceNegotiationSession;
+
+        await this.notifyFareAgreed(session);
+        return session;
+    }
+
+    /** Best-effort customer notification after an authoritative agreement. */
+    private async notifyFareAgreed(session: MarketplaceNegotiationSession | null | undefined): Promise<void> {
+        if (!session?.customer_id) return;
         await this.notify({
             action: 'notify',
             jobId: session.job_id,
             recipientUserId: session.customer_id,
-            title: 'Driver counter offer',
-            body: `A driver has countered with ${this.formatCurrency(amount)}. Open the app to review.`,
-            data: { action: 'driver_counter', amount }
+            title: 'Fare agreed!',
+            body: 'Your fare has been agreed. Complete payment to confirm your booking.',
+            data: { action: 'fare_agreed' }
+        });
+    }
+
+    /**
+     * Patch 1A — CUSTOMER CANCEL OFFER (terminal withdrawal before agreement).
+     * Replaces the previous direct client UPDATE that rewrote status and
+     * active_driver_id itself. Reuses event_type='customer_decline' with the
+     * exact message 'Customer cancelled offer' — no new event taxonomy.
+     */
+    async customerCancelOffer(sessionId: string): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('customer_cancel_offer', {
+            p_session_id: sessionId
         });
 
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This offer could not be cancelled.'));
         return data as MarketplaceNegotiationSession;
     }
 
-    async customerCounterOffer(sessionId: string, amount: number): Promise<MarketplaceNegotiationSession> {
-        const userId = this.userId;
-        if (!userId) throw new Error('Authentication required');
-
-        const session = await this.getSessionById(sessionId);
-        if (!session) throw new Error('Session not found');
-
-        const nextRound = (session.round_count || 0) + 1;
-        if (nextRound > this.getMaxRounds()) {
-            throw new Error('Maximum negotiation rounds reached');
-        }
-
-        const { data, error } = await this.supabase
-            .from('marketplace_negotiation_sessions')
-            .update({
-                customer_offer: amount,
-                status: 'negotiating',
-                round_count: nextRound,
-                expires_at: new Date(Date.now() + this.getNegotiationTimeoutSeconds() * 1000).toISOString(),
-                updated_at: new Date().toISOString()
-            } as any)
-            .eq('id', sessionId)
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        await this.addEvent({
-            session_id: sessionId,
-            job_id: session.job_id,
-            proposed_by: userId,
-            proposed_by_role: 'customer',
-            event_type: 'customer_offer',
-            amount,
-            message: 'Customer counter offer',
-            round_number: nextRound
+    /**
+     * Patch 1A — CUSTOMER DECLINE DRIVER COUNTER.
+     * NOT a cancellation: the booking stays alive and the request is released back to
+     * the opportunity pool with the customer's own offer retained. Distinguished from
+     * cancel by the RPC invoked, the exact message, and the resulting session status.
+     */
+    async customerDeclineCounter(sessionId: string): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('customer_decline_counter', {
+            p_session_id: sessionId
         });
 
-        await this.notify({
-            action: 'notify',
-            jobId: session.job_id,
-            recipientUserId: session.active_driver_id,
-            title: 'Customer counter offer',
-            body: 'The customer has sent a new counter offer. Open the app to review.',
-            data: { action: 'customer_counter', amount }
-        });
-
-        return data as MarketplaceNegotiationSession;
-    }
-
-    async acceptDriverCounter(sessionId: string, amount: number): Promise<MarketplaceNegotiationSession> {
-        const userId = this.userId;
-        if (!userId) throw new Error('Authentication required');
-
-        const session = await this.getSessionById(sessionId);
-        if (!session) throw new Error('Session not found');
-
-        return this.lockFare(session.job_id, session.active_driver_id || '', amount);
-    }
-
-    async acceptCustomerOffer(sessionId: string): Promise<MarketplaceNegotiationSession> {
-        const session = await this.getSessionById(sessionId);
-        if (!session) throw new Error('Session not found');
-
-        const amount = session.customer_offer ?? session.suggested_fare;
-        return this.lockFare(session.job_id, session.active_driver_id || '', amount);
-    }
-
-    async customerDecline(sessionId: string): Promise<MarketplaceNegotiationSession> {
-        const userId = this.userId;
-        if (!userId) throw new Error('Authentication required');
-
-        const session = await this.getSessionById(sessionId);
-        if (!session) throw new Error('Session not found');
-
-        const { data, error } = await this.supabase
-            .from('marketplace_negotiation_sessions')
-            .update({
-                status: 'customer_declined',
-                active_driver_id: null,
-                updated_at: new Date().toISOString()
-            } as any)
-            .eq('id', sessionId)
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        await this.addEvent({
-            session_id: sessionId,
-            job_id: session.job_id,
-            proposed_by: userId,
-            proposed_by_role: 'customer',
-            event_type: 'customer_decline',
-            amount: null,
-            message: 'Customer declined',
-            round_number: session.round_count
-        });
-
+        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be declined.'));
         return data as MarketplaceNegotiationSession;
     }
 
@@ -503,13 +526,11 @@ export class MarketplaceHybridService {
         }
     }
 
-    async addEvent(event: Omit<MarketplaceNegotiationEvent, 'id' | 'created_at'>): Promise<void> {
-        const { error } = await this.supabase
-            .from('marketplace_negotiation_events')
-            .insert(event as any);
-
-        if (error) throw error;
-    }
+    // Patch 1A: the direct-client event writer (`addEvent`) was REMOVED. Every
+    // negotiation event is now written inside an authoritative SECURITY DEFINER
+    // transition, so no client-side event INSERT path remains. The matching
+    // `hybrid_events_participants_insert` RLS policy is dropped in
+    // 20261231000000_negotiation_lifecycle_authority.sql.
 
     async fetchHybridOpportunities(driverId: string): Promise<HybridOpportunity[]> {
         const { data, error } = await this.supabase

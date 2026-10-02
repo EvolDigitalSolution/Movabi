@@ -47,7 +47,7 @@ describe('N34 hybrid notification URL and failure handling', () => {
         // be reported to the user as an acceptance failure.
         const notifyStart = source.indexOf('private async notify(');
         expect(notifyStart, 'notify() not found').toBeGreaterThan(-1);
-        const notifyBody = source.slice(notifyStart, source.indexOf('\n    async addEvent(', notifyStart));
+        const notifyBody = source.slice(notifyStart, source.indexOf('\n    async fetchHybridOpportunities(', notifyStart));
         expect(notifyBody.length).toBeGreaterThan(0);
         expect(notifyBody).not.toMatch(/\bthrow\b/);
     });

@@ -1,4 +1,4 @@
-﻿-- ==============================================================================
+-- ==============================================================================
 -- MIGRATION: Supabase Incremental Schema Reconcile
 -- DESCRIPTION: Reconciles existing production database with codebase expectations.
 --              Idempotent, non-destructive, and backward-compatible.
@@ -3733,13 +3733,12 @@ CREATE POLICY hybrid_sessions_owner_or_driver
     OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
   );
 
+-- Patch 1A (20261231000000_negotiation_lifecycle_authority.sql):
+-- the broad participant UPDATE policy is REMOVED. All lifecycle mutation now flows
+-- through SECURITY DEFINER RPCs, so authenticated clients must not directly rewrite
+-- status / agreed_fare / active_driver_id / round_count / fares. Realtime and history
+-- reconstruction rely only on the SELECT policy above.
 DROP POLICY IF EXISTS hybrid_sessions_owner_write ON public.marketplace_negotiation_sessions;
-CREATE POLICY hybrid_sessions_owner_write
-  ON public.marketplace_negotiation_sessions
-  FOR UPDATE
-  TO authenticated
-  USING (customer_id = auth.uid() OR active_driver_id = auth.uid())
-  WITH CHECK (customer_id = auth.uid() OR active_driver_id = auth.uid());
 
 DROP POLICY IF EXISTS hybrid_events_participants ON public.marketplace_negotiation_events;
 CREATE POLICY hybrid_events_participants
@@ -3755,19 +3754,10 @@ CREATE POLICY hybrid_events_participants
     OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
   );
 
+-- Patch 1A: direct client event INSERT is REMOVED — every negotiation event is now
+-- written inside an authoritative SECURITY DEFINER transition. Participant SELECT
+-- above is retained for history reconstruction and Realtime.
 DROP POLICY IF EXISTS hybrid_events_participants_insert ON public.marketplace_negotiation_events;
-CREATE POLICY hybrid_events_participants_insert
-  ON public.marketplace_negotiation_events
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    proposed_by = auth.uid()
-    AND EXISTS (
-      SELECT 1 FROM public.marketplace_negotiation_sessions s
-      WHERE s.id = marketplace_negotiation_events.session_id
-        AND (s.customer_id = auth.uid() OR s.active_driver_id = auth.uid())
-    )
-  );
 
 DO $$
 BEGIN

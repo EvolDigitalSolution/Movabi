@@ -97,10 +97,19 @@ export class ProfileService {
     return data;
   }
 
+  /**
+   * Patch 1A: this method previously requested a `vehicles` sub-embed alongside the
+   * profile, which requires a PostgREST profiles->vehicles foreign-key relationship that
+   * does not exist (there is no committed DDL, FK or RLS policy for `vehicles`), so every
+   * call failed with PGRST200 "Could not find a relationship between 'profiles' and
+   * 'vehicles'". The repository also cannot prove production `vehicles` RLS, so the
+   * customer client must NOT read that table directly. Only the profile is fetched here;
+   * callers omit vehicle detail gracefully until a display-safe server path exists.
+   */
   async fetchDriverProfile(userId: string): Promise<DriverProfile | null> {
     const { data, error } = await this.supabase
       .from('profiles')
-      .select('*, vehicles(*)')
+      .select('*')
       .eq('id', userId)
       .maybeSingle();
 

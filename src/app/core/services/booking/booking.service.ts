@@ -134,10 +134,12 @@ export class BookingService {
             return false;
         }
 
-        if (status === 'pending_fare_confirmation') {
-            return false;
-        }
-
+        // Patch 1A: `pending_fare_confirmation` is the status a live negotiation job is
+        // created with (booking.routes.ts), and getBookingLifecycleState() already
+        // classifies it as 'negotiating' (see the mapper below). The former early
+        // `return false` for this status contradicted that mapper and made every active
+        // negotiation invisible in Activities. It is deliberately NOT filtered here.
+        // `is_draft` is likewise NOT a hiding reason for a live negotiation.
         const state = this.getBookingLifecycleState(job);
         return ['negotiating', 'fare_agreed_unpaid'].includes(state);
     }
