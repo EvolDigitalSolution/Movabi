@@ -1,6 +1,7 @@
 import { Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
+import { userFacingError } from '@shared/utils/http-failure';
 import { FormsModule } from '@angular/forms';
 import {
     IonHeader,
@@ -2089,7 +2090,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             await this.router.navigate(['/driver/hybrid-negotiation', jobId]);
         } catch (error: any) {
             console.error('[DriverDashboard] claim hybrid session failed', error);
-            this.showToast(error.message || 'Unable to start negotiation. It may be claimed by another driver.', 'danger');
+            this.showToast(userFacingError(error, 'Unable to start negotiation. It may be claimed by another driver.'), 'danger');
         }
     }
 
@@ -2525,7 +2526,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 marketCity: (profile as any)?.market_city || (profile as any)?.city_name || null, zoneId: (profile as any)?.zone_id || null });
         } catch (error) {
             if(this.isOnlineEligibility(error)){await this.showOnlineDenial(error);}
-            else this.showToast(error instanceof Error ? error.message : 'Unable to check online eligibility.', 'warning');
+            else this.showToast(userFacingError(error, 'Unable to check online eligibility.'), 'warning');
             return;
         }
 
@@ -2675,7 +2676,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             await loading.dismiss();
             this.submitting.set(false);
 
-            const message = e instanceof Error ? e.message : 'Request no longer available';
+            const message = userFacingError(e, 'Request no longer available');
             this.showToast(message, 'danger');
 
             await this.driverService.fetchAvailableJobs();
@@ -2728,7 +2729,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.sheetHeight.set(40);
             this.showToast('Excellent! You accepted the customer offer. This job is now assigned to you.', 'success');
         } catch (e: unknown) {
-            const message = e instanceof Error ? e.message : 'Could not accept offer';
+            const message = userFacingError(e, 'Could not accept offer');
             this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();
@@ -2762,7 +2763,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.sheetHeight.set(40);
             this.showToast('Your counter offer has been sent to the customer. You\'ll be notified if they accept.', 'success');
         } catch (e: unknown) {
-            const message = e instanceof Error ? e.message : 'Could not send counter offer';
+            const message = userFacingError(e, 'Could not send counter offer');
             this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();

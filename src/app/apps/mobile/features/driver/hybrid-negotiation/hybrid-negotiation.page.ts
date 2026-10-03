@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { userFacingError } from '@shared/utils/http-failure';
 import {
     canDriver,
     deadlineKey,
@@ -648,7 +649,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             this.ensureRealtimeSubscription();
         } catch (error: any) {
             console.error('[HybridNegotiation] claim failed', error);
-            await this.showToast(error.message || 'Another driver may already be negotiating.', 'danger');
+            await this.showToast(userFacingError(error, 'Another driver may already be negotiating.'), 'danger');
         } finally {
             // GUARANTEED cleanup: no rejection may leave the overlay on screen.
             try { await loading.dismiss(); } catch { /* already dismissed */ }
@@ -669,7 +670,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             await this.reconcile();
         } catch (error: any) {
             console.error('[HybridNegotiation] accept suggested failed', error);
-            await this.showToast(error.message || 'Unable to accept fare.', 'danger');
+            await this.showToast(userFacingError(error, 'Unable to accept fare.'), 'danger');
         } finally {
             try { await loading.dismiss(); } catch { /* already dismissed */ }
         }
@@ -688,7 +689,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             await this.router.navigate(['/driver']);
         } catch (error: any) {
             console.error('[HybridNegotiation] pass failed', error);
-            await this.showToast(error.message || 'Unable to pass.', 'danger');
+            await this.showToast(userFacingError(error, 'Unable to pass.'), 'danger');
         } finally {
             try { await loading.dismiss(); } catch { /* already dismissed */ }
             this.mutationBusy.set(false);
@@ -712,7 +713,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             // A failed mutation must not leave the UI looking settled: reconcile
             // from persisted state so the card reflects the authoritative session.
             await this.load();
-            await this.showToast(error.message || 'Unable to accept offer.', 'danger');
+            await this.showToast(userFacingError(error, 'Unable to accept offer.'), 'danger');
         } finally {
             this.mutationBusy.set(false);
         }
@@ -736,7 +737,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             await this.showToast('Counter offer sent.', 'success');
         } catch (error: any) {
             console.error('[HybridNegotiation] counter failed', error);
-            await this.showToast(error.message || 'Unable to send counter.', 'danger');
+            await this.showToast(userFacingError(error, 'Unable to send counter.'), 'danger');
         } finally {
             this.mutationBusy.set(false);
         }

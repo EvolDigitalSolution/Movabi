@@ -1,5 +1,6 @@
 import { Component, DestroyRef, inject, signal, computed, effect, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { userFacingError } from '@shared/utils/http-failure';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -1060,7 +1061,7 @@ export class OnboardingPage implements OnInit {
             await this.onboardingStatus.refresh();
             await this.onboardingStatus.recordRegistrationStartOnce();
         } catch (error) {
-            await this.showToast(error instanceof Error?error.message:'Driver onboarding is not available in this area yet.','warning');
+            await this.showToast(userFacingError(error,'Driver onboarding is not available in this area yet.'),'warning');
             await this.router.navigate(['/driver'],{replaceUrl:true});
             return;
         }
@@ -1167,7 +1168,7 @@ export class OnboardingPage implements OnInit {
                 await this.scrollToTop();
             }
         } catch (error) {
-            await this.showToast(error instanceof Error ? error.message : 'Unable to save this stage.', 'danger');
+            await this.showToast(userFacingError(error, 'Unable to save this stage.'), 'danger');
         } finally {
             this.advancing.set(false);
         }
@@ -2162,7 +2163,7 @@ export class OnboardingPage implements OnInit {
                 await this.showToast('Driver photo uploaded.', 'success');
             } catch (error: any) {
                 console.error('[DriverOnboarding] Driver photo upload failed:', error);
-                await this.showToast(error?.message || 'Driver photo upload failed.', 'danger');
+                await this.showToast(userFacingError(error, 'Driver photo upload failed.'), 'danger');
             } finally {
                 target.value = '';
                 await loading.dismiss();
@@ -2262,7 +2263,7 @@ export class OnboardingPage implements OnInit {
                 const label = type === 'license' ? 'Driver licence' : type === 'insurance' ? 'Vehicle insurance' : type === 'right_to_work' ? 'Right to work evidence' : type === 'private_hire_vehicle_license' ? 'Private-hire vehicle licence' : type === 'private_hire_insurance' ? 'Private-hire insurance' : 'Goods-in-transit cover';
                 await this.showToast(`${label} uploaded.`, 'success');
             } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : 'Upload failed.';
+                const message = userFacingError(error, 'Upload failed.');
                 await this.showToast(message, 'danger');
             } finally {
                 await loading.dismiss();

@@ -2440,7 +2440,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'delivered':
                 return 'Complete the request';
             default:
-                return 'Review request details';
+                return 'View Details';
         }
     }
 

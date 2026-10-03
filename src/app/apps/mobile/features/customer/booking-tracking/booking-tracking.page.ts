@@ -1,4 +1,4 @@
-﻿import {
+import {
     Component,
     inject,
     OnInit,
@@ -11,6 +11,7 @@ import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
+import { serviceDisplayName } from '@shared/utils/service-display';
 import { addIcons } from 'ionicons';
 
 import {
@@ -594,7 +595,7 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                 </div>
                 <div>
                   <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Service</p>
-                  <p class="mt-1 font-bold text-slate-900 capitalize">{{ booking()?.service_slug || 'Request' }}</p>
+                  <p class="mt-1 font-bold text-slate-900">{{ serviceLabel() }}</p>
                 </div>
                 <div class="col-span-2">
                   <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</p>
@@ -1186,6 +1187,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+    /** Canonical user-facing service name (never the raw database slug). */
+    serviceLabel(): string {
+        return serviceDisplayName(this.booking()?.service_slug);
+    }
+
     getStatusLabel(status: string): string {
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             const errandMap: Record<string, string> = this.isShoppingErrand()
@@ -1238,17 +1244,24 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
 
         const map: Record<string, string> = {
+            pending: 'Request received',
+            pending_payment: 'Payment needed',
+            payment_authorized: 'Payment confirmed',
             pending_fare_confirmation: 'Confirm fare',
             negotiating: 'Negotiating',
             fare_agreed: 'Fare agreed',
             searching: 'Searching',
+            broadcasting: 'Searching',
+            waiting: 'Waiting',
             accepted: 'Assigned',
             assigned: 'Assigned',
             heading_to_pickup: 'To pickup',
+            driver_en_route: 'On the way',
             arrived: 'Arrived',
             in_progress: 'In progress',
             arrived_at_store: 'At store',
             shopping_in_progress: 'Shopping',
+            picked_up: 'Picked up',
             collected: 'Collected',
             en_route_to_customer: 'On the way',
             delivered: 'Delivered',
@@ -1256,11 +1269,14 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             settled: 'Settled',
             cancelled: 'Cancelled',
             canceled: 'Cancelled',
+            expired: 'Expired',
             no_driver_found: 'No driver',
-            requires_review: 'Review'
+            requires_review: 'Review',
+            failed: 'Failed'
         };
 
-        return map[status] ?? status.replace(/_/g, ' ');
+        // Never surface an unknown/future status as raw snake_case internals.
+        return map[status] ?? 'Updating…';
     }
 
     getStatusHint(status: string): string {

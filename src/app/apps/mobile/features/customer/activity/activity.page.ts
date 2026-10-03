@@ -373,10 +373,11 @@ export class ActivityPage implements OnInit {
         }
     }
 
-    formatStatus(status: string): string {
-        return String(status || 'pending')
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, char => char.toUpperCase());
+    formatStatus(_status?: string): string {
+        // Never surface an unknown/future status as raw snake_case internals.
+        // Known statuses are mapped by the callers; this is the neutral fallback.
+        // The parameter is retained so existing callers keep working unchanged.
+        return 'Updating…';
     }
 
     formatPrice(amount: number | null | undefined) {
