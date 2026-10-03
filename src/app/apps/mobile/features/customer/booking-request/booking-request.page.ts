@@ -1581,9 +1581,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         this.type = nextType;
         this.lastResolvedType = nextType;
-        this.serviceType.set(null);
-        this.fareEstimate.set(null);
-        this.estimatedPrice.set(0);
+        this.resetRequestState();
 
         this.initForm();
 
@@ -1611,6 +1609,53 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.pickupExpanded.set(true);
             }
         }
+    }
+
+    /**
+     * Reset every request-scoped field so a previous request never bleeds into a
+     * new service. Called whenever the route resolves a DIFFERENT service type
+     * (starting a new request). Deliberately does NOT touch authentication,
+     * profile, saved addresses, or any persistent user preference.
+     */
+    private resetRequestState(): void {
+        // Pricing / route / quote state belongs to the previous request.
+        this.serviceType.set(null);
+        this.fareEstimate.set(null);
+        this.estimatedPrice.set(0);
+        this.routeResult.set(null);
+        this.lastFareBreakdown = null;
+        this.lastQuoteReference = null;
+        this.lastQuoteExpiresAt = null;
+
+        // Invalidate the COMPLETE quote authority/dedupe generation. Clearing the
+        // visible reference is not enough: these fields can otherwise keep the
+        // previous request's consumed quote authoritative and re-submit its
+        // quote_id (23505 idx_jobs_unique_quote_reference).
+        this.lastQuotedSignature = null;
+        this.quoteInFlightSignature = null;
+        this.currentQuoteSignature.set(null);
+        this.authoritativeQuote.set(null);
+        // fareRequestSequence is a MONOTONIC generation counter (++ on every quote
+        // attempt). It is advanced, NOT reset to 0: resetting it would let a late
+        // response from the PREVIOUS request (requestId == N) collide with this
+        // request's generation (N again) and become authoritative. Advancing it
+        // keeps every in-flight response's `requestId !== fareRequestSequence`,
+        // so a stale response can never populate authoritativeQuote /
+        // lastQuoteReference / lastFareBreakdown in this new request.
+        this.fareRequestSequence += 1;
+
+        // Draft locations belong to the previous request. A new request starts
+        // with empty pickup/dropoff (pickup is then re-autofilled from GPS).
+        this.pickupLocation = { source: 'manual', address: '' };
+        this.dropoffLocation = { source: 'manual', address: '' };
+        this.pickupManuallyChanged.set(false);
+
+        // Clear the map presentation (markers + route geometry) without a
+        // browser reload. The MapRenderer rebuild-on-service-change fix is
+        // retained; this removes the previous request's leftover primitives.
+        this.mapComponent?.removeMarker('pickup');
+        this.mapComponent?.removeMarker('dropoff');
+        this.mapComponent?.clearRoute();
     }
 
     ngOnDestroy() {

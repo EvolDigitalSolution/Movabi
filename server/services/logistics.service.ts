@@ -250,8 +250,28 @@ export class LogisticsService {
     // (reserved/settled separately), never driver earnings.
     const totalPrice = requestedTotalPrice;
 
-    const platformFee = this.roundMoney(totalPrice * (safeCommissionRate / 100));
-    const driverPayout = this.roundMoney(Math.max(0, Math.min(totalPrice, totalPrice - platformFee)));
+    // Authoritative commission basis = the effective SERVICE fare, EXCLUDING the
+    // customer-side platform fee. market-pricing.service.ts derives the platform fee
+    // and the driver commission SEPARATELY from the same service fare and records
+    // them as distinct values ("never merged"). Commissioning the customer total
+    // would charge the driver commission on Movabi's own platform fee and disagree
+    // with the recorded quote payout. The persisted fare_breakdown carries the
+    // authoritative pre-platform-fee service fare; negotiated jobs keep using
+    // agreed_fare (a service fare, not a platform-fee-inclusive total). When the
+    // breakdown is absent we preserve the prior (customer-total) basis.
+    const breakdown = (job.fare_breakdown && typeof job.fare_breakdown === 'object')
+        ? (job.fare_breakdown as Record<string, unknown>)
+        : {};
+    const storedServiceFare = Number(breakdown.serviceFareBeforePlatformFee);
+    const hasAgreedFare = Number.isFinite(Number(job.agreed_fare)) && Number(job.agreed_fare) > 0;
+    const commissionBasis = hasAgreedFare
+        ? totalPrice
+        : (Number.isFinite(storedServiceFare) && storedServiceFare > 0
+            ? this.roundMoney(storedServiceFare)
+            : totalPrice);
+
+    const platformFee = this.roundMoney(commissionBasis * (safeCommissionRate / 100));
+    const driverPayout = this.roundMoney(Math.max(0, commissionBasis - platformFee));
 
     const payoutAmountInPence = Math.round(driverPayout * 100);
 

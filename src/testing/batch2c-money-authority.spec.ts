@@ -69,8 +69,14 @@ describe('PHASE C2 — customer checkout, payment & money authority', () => {
         expect(WEBHOOK).toContain("case 'payment_intent.succeeded':");
         expect(WEBHOOK).toContain("case 'payment_intent.payment_failed':");
         expect(WEBHOOK).toContain(".from('stripe_events')");
-        expect(WEBHOOK).toContain(".eq('payment_status', 'pending')");
-        expect(WEBHOOK).toContain(".is('driver_id', null)");
+        // Migration 360: the webhook no longer writes paid state directly. It goes
+        // through the atomic finalization authority, which re-verifies the fare
+        // agreement under lock so a delayed event cannot resurrect it. The old
+        // guard (payment_status='pending' AND driver_id IS NULL) was SATISFIED by a
+        // released/expired agreement, because expiry clears driver_id.
+        expect(WEBHOOK).toContain("supabase.rpc('finalize_job_payment'");
+        expect(WEBHOOK).toContain('p_require_unowned: true');
+        expect(WEBHOOK).not.toMatch(/from\('jobs'\)\s*[\r\n\s]*\.update\(\{ payment_status:/);
     });
 
     it('6. completion payout uses the same agreed_fare-first basis as the charge', () => {
@@ -96,14 +102,21 @@ describe('PHASE C2A.1 — server-owned confirmation & negotiation authority', ()
         expect(PAYMENT).toContain('CURRENCY_MISMATCH');
         expect(PAYMENT).toContain('AMOUNT_MISMATCH');
         expect(PAYMENT).toContain("pi.status !== 'requires_capture' && pi.status !== 'succeeded'");
-        expect(PAYMENT).toContain(".eq('payment_status', 'pending')");
+        // Migration 360: the check-and-write is now ONE atomic, agreement-aware RPC
+        // (the old .eq('payment_status','pending') guard admitted a released job).
+        expect(PAYMENT).toContain("supabaseAdmin.rpc('finalize_job_payment'");
+        expect(PAYMENT).toContain('AGREEMENT_LOST');
+        expect(PAYMENT).toContain('compensateUnauthorizedIntent');
         // The client body amount / intent id are not read.
         expect(PAYMENT).not.toMatch(/confirm[^{]*req\.body\.amount/);
     });
 
     it('9. webhook handles the manual-capture authorization event', () => {
         expect(WEBHOOK).toContain("case 'payment_intent.amount_capturable_updated':");
-        expect(WEBHOOK).toContain("payment_status: 'authorized', status: 'searching'");
+        // Migration 360: the authorized/searching state is now requested through the
+        // atomic finalization authority rather than written directly.
+        expect(WEBHOOK).toContain("p_payment_status: 'authorized'");
+        expect(WEBHOOK).toContain("p_job_status: 'searching'");
     });
 
     it('10. client confirmJobPayment no longer performs a direct jobs payment/status write', () => {

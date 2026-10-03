@@ -14,6 +14,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
     canCustomer,
+    deadlineKey,
+    deadlineRemainingMs,
+    formatRemaining as formatDeadlineRemaining,
     getNegotiationState,
     type NegotiationAction,
     type NegotiationState
@@ -322,9 +325,11 @@ import { StripeCardElement } from '@stripe/stripe-js';
               @if (customerOfferOutstanding()) {
                 <div class="bg-amber-50 border border-amber-200 rounded-3xl p-4 space-y-1">
                   <p class="text-sm font-bold text-slate-900">
-                    Offer sent{{ negotiationState().pendingOffer ? ': ' + formatPrice(negotiationState().pendingOffer!.amount) : '' }}
+                    Offer{{ negotiationState().pendingOffer ? ' ' + formatPrice(negotiationState().pendingOffer!.amount) : '' }}
                   </p>
-                  <p class="text-xs text-slate-600">Waiting for a driver response.</p>
+                  <p class="text-xs text-slate-600">
+                    {{ awaitingNextDriver() ? 'Finding another driver…' : 'Waiting for a driver response.' }}
+                  </p>
                 </div>
               }
               @if (canCustomer('cancel_offer')) {
@@ -431,34 +436,48 @@ import { StripeCardElement } from '@stripe/stripe-js';
                     </div>
                   }
 
-                  @if (hybridSession().driver_counter_offer) {
-                    <div class="bg-amber-50 rounded-2xl border border-amber-100 p-4">
-                      <p class="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-1">Driver Counter</p>
-                      <p class="text-2xl font-display font-black text-amber-900">{{ formatPrice(hybridSession().driver_counter_offer) }}</p>
-                    </div>
+                  <!--
+                    Canonical gate: the driver-counter card is rendered ONLY while the
+                    canonical state still offers a customer response. Once the lease
+                    lapses (phase expires) or the request is released, the stale counter
+                    is NOT actionable and these controls disappear immediately.
+                  -->
+                  @if (canCustomer('accept') || canCustomer('decline')) {
+                    @if (hybridSession().driver_counter_offer) {
+                      <div class="bg-amber-50 rounded-2xl border border-amber-100 p-4">
+                        <p class="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-1">Driver Counter</p>
+                        <p class="text-2xl font-display font-black text-amber-900">{{ formatPrice(hybridSession().driver_counter_offer) }}</p>
+                      </div>
+                    }
                     <div class="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        (click)="acceptDriverCounter()"
-                        class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-lg"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        type="button"
-                        (click)="openHybridOfferInput()"
-                        class="w-full py-3 bg-white border border-amber-500 text-amber-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
-                      >
-                        Counter
-                      </button>
+                      @if (canCustomer('accept')) {
+                        <button
+                          type="button"
+                          (click)="acceptDriverCounter()"
+                          class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-all shadow-lg"
+                        >
+                          Accept
+                        </button>
+                      }
+                      @if (canCustomer('counter')) {
+                        <button
+                          type="button"
+                          (click)="openHybridOfferInput()"
+                          class="w-full py-3 bg-white border border-amber-500 text-amber-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
+                        >
+                          Counter
+                        </button>
+                      }
                     </div>
-                    <button
-                      type="button"
-                      (click)="tryAnotherDriver()"
-                      class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
-                    >
-                      Try Another Driver
-                    </button>
+                    @if (canCustomer('decline')) {
+                      <button
+                        type="button"
+                        (click)="tryAnotherDriver()"
+                        class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
+                      >
+                        Try Another Driver
+                      </button>
+                    }
                   }
                 </div>
               }
@@ -485,13 +504,16 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   }
                 </div>
               }
-              <button
-                type="button"
-                (click)="cancelHybridRequest()"
-                class="w-full mt-4 py-3 bg-white border border-red-200 text-red-700 rounded-2xl font-bold text-sm active:scale-95 transition-all"
-              >
-                Cancel Request
-              </button>
+              @if (canCustomer('cancel_offer')) {
+                <button
+                  type="button"
+                  (click)="cancelHybridRequest()"
+                  [disabled]="negotiationBusy()"
+                  class="w-full mt-4 py-3 bg-white border border-red-200 text-red-700 rounded-2xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {{ negotiationState().paymentExpired ? 'Find Another Driver' : 'Cancel Request' }}
+                </button>
+              }
             </div>
           }
 
@@ -504,7 +526,12 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   <ion-icon name="checkmark-circle-outline" class="text-white text-2xl"></ion-icon>
                 </div>
                 <h3 class="text-xl font-bold text-emerald-900 mb-2">Fare Successfully Agreed!</h3>
-                <p class="text-emerald-700 mb-4">Your fare is locked in. Pay here to confirm your booking and start finding a driver.</p>
+                @if (negotiationState().paymentExpired) {
+                  <p class="text-rose-700 mb-4 font-semibold">Payment time expired. This fare agreement is no longer valid.</p>
+                } @else {
+                  <p class="text-emerald-700 mb-1 font-semibold">Fare agreed — complete payment within {{ formatRemaining(paymentCountdown()) }}</p>
+                  <p class="text-emerald-700 mb-4">Pay here to confirm your booking and start finding a driver.</p>
+                }
                 <div class="bg-white/70 rounded-2xl p-4 mb-5 border border-emerald-100 space-y-2 text-left">
                   @if (isErrand()) {
                     <div class="flex justify-between items-center">
@@ -522,7 +549,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                     <span class="text-2xl font-black text-emerald-900">{{ formatPrice(paymentTotal()) }}</span>
                   </div>
                 </div>
-                @if (hybridEnabled) {
+                @if (hybridEnabled && !negotiationState().paymentExpired) {
                   <div class="bg-white rounded-2xl border border-emerald-100 p-4 mb-4 text-left">
                     <div #cardElementHost class="py-3 px-2 border border-slate-200 rounded-xl bg-white min-h-[50px]"></div>
                     @if (cardError()) {
@@ -532,7 +559,7 @@ import { StripeCardElement } from '@stripe/stripe-js';
                   <button
                     type="button"
                     (click)="payWithCard()"
-                    [disabled]="!cardReady() || paymentProcessing()"
+                    [disabled]="!cardReady() || paymentProcessing() || negotiationState().paymentExpired"
                     class="w-full py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-2xl font-bold text-base active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-70"
                   >
                     @if (paymentProcessing()) {
@@ -682,6 +709,16 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         }
 
         await this.loadBooking(id);
+
+        // Terminal guard: a stale Activity card, browser history, or a direct
+        // route must not make a terminal request actionable. Reconcile the
+        // authoritative persisted job first and fail closed to Activity.
+        if (this.isTerminalBooking) {
+            await this.showToast('This request is no longer active.', 'warning');
+            await this.router.navigate(['/customer/activity'], { replaceUrl: true });
+            return;
+        }
+
         await this.hybridService.loadSettings();
         await this.loadEffectiveHybridStatus();
         this.subscribeToJob(id);
@@ -689,6 +726,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         if (this.hybridEnabled) {
             await this.loadHybridSession(id);
             this.subscribeToHybridSession(id);
+            this.startLeaseTimer();
         }
     }
 
@@ -710,6 +748,9 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             this.hybridEventsChannel.unsubscribe();
             this.hybridEventsChannel = undefined;
         }
+        // Scoped negotiation subscription: one disposer, no duplicate channels.
+        this.disposeHybridSubscription();
+        this.stopLeaseTimer();
         this.stopCountdown();
 
         // Clear signals to free memory
@@ -760,7 +801,10 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
      * do not transfer the negotiation turn.
      */
     readonly negotiationState = computed<NegotiationState>(() =>
-        getNegotiationState(this.hybridSession(), this.hybridEvents())
+        // negotiationClock() is a wall-clock tick: computed() only re-derives when a
+        // dependency changes, and Realtime emits nothing merely because time passed.
+        // Without it a lapsed lease kept rendering a stale, actionable driver counter.
+        getNegotiationState(this.hybridSession(), this.hybridEvents(), this.negotiationClock())
     );
 
     /** True only when the canonical state permits this customer action. */
@@ -772,6 +816,27 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     readonly customerOfferOutstanding = computed<boolean>(() => {
         const state = this.negotiationState();
         return state.phase === 'waiting_for_driver' || state.phase === 'driver_turn';
+    });
+
+    /**
+     * Canonical: the RETAINED customer proposal is waiting for ANOTHER driver after
+     * a previous driver's claim ended (released / lease lapsed). The offer stays
+     * authoritative and only Cancel is permitted — never a fresh initial proposal.
+     */
+    readonly awaitingNextDriver = computed<boolean>(() => this.negotiationState().awaitingNextDriver === true);
+
+    /**
+     * AUTHORITATIVE payment countdown (ms) — derived from the persisted
+     * marketplace_negotiation_sessions.payment_deadline, never from a fresh
+     * client-side timer. A 1-second display clock (negotiationClock) makes the
+     * computed re-derive; a refresh/re-entry therefore shows the SAME remaining
+     * time because the deadline is server-persisted.
+     */
+    readonly paymentCountdown = computed<number>(() => {
+        const session = this.hybridSession();
+        if (!session || this.negotiationState().phase !== 'agreed_payment_required') return 0;
+        const raw = (session as any)?.payment_deadline ?? (session as any)?.expires_at ?? null;
+        return deadlineRemainingMs(raw, this.negotiationClock());
     });
 
     /**
@@ -812,7 +877,20 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     paymentTotal(): number {
+        const job = this.booking();
         const fb = this.fareBreakdown();
+
+        // MONEY AUTHORITY: for a NEGOTIATED job the agreed fare IS the complete
+        // customer service charge — exactly what the server derives through
+        // PaymentAuthorityService (`agreed_fare + itemBudget`, no platform fee
+        // added). The persisted ORIGINAL quote's `totalAuthorisation` predates the
+        // negotiation and must never override the agreed fare.
+        const agreed = Number(job?.agreed_fare);
+        if (Number.isFinite(agreed) && agreed > 0) {
+            return this.toMoney(agreed + this.itemBudget());
+        }
+
+        // Non-negotiated: the persisted quote breakdown IS authoritative.
         return Number(
             fb?.['totalAuthorisation'] ||
             (Number(this.suggestedFare()) + this.itemBudget())
@@ -975,6 +1053,65 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     // Countdown timer methods with performance optimizations
     private countdownUpdateTimer?: any;
+
+    // ---------------------------------------------------------------------
+    // Lease clock: canonical state must react when expires_at is REACHED.
+    // Postgres Realtime generates no event for the passage of time, so the
+    // client is responsible for re-deriving at local expiry (never by polling).
+    // ---------------------------------------------------------------------
+
+    /** Wall-clock tick fed into getNegotiationState(). */
+    private negotiationClock = signal<number>(Date.now());
+    private leaseTimer?: any;
+    private leaseReconciledFor: string | null = null;
+
+    private startLeaseTimer(): void {
+        this.stopLeaseTimer();
+        this.leaseTimer = setInterval(() => {
+            this.negotiationClock.set(Date.now());
+
+            const session = this.hybridSession();
+            const expiresAt = String((session as any)?.expires_at ?? '').trim();
+            if (!session || !expiresAt) return;
+
+            const parsed = Date.parse(expiresAt);
+            if (!Number.isFinite(parsed) || parsed > Date.now()) {
+                this.leaseReconciledFor = null;
+                return;
+            }
+
+            // Reconcile ONCE per lapsed lease (never a poll loop): the authoritative
+            // reload reveals whether the server released the attempt to the market.
+            const key = deadlineKey(session.id, expiresAt);
+            if (!key || this.leaseReconciledFor === key) return;
+            this.leaseReconciledFor = key;
+
+            const jobId = this.booking()?.id || this.route.snapshot.paramMap.get('id') || '';
+            const sessionStatus = String((session as any)?.status ?? '').toLowerCase();
+
+            if (sessionStatus === 'fare_agreed') {
+                // The PAYMENT window lapsed (expires_at mirrors payment_deadline).
+                // Run the AUTHORITATIVE expiry transition exactly ONCE for this
+                // deadline, then converge — instead of waiting for another Realtime
+                // event, which wall-clock passage never produces.
+                void this.hybridService.customerExpireUnpaidAgreement(session.id)
+                    .catch((error) => console.warn('[MarketplaceFare] agreement expiry failed', error))
+                    .finally(() => {
+                        if (jobId) void this.reconcileHybridNegotiation(jobId);
+                    });
+                return;
+            }
+
+            if (jobId) void this.reconcileHybridNegotiation(jobId);
+        }, 1000);
+    }
+
+    private stopLeaseTimer(): void {
+        if (this.leaseTimer) {
+            clearInterval(this.leaseTimer);
+            this.leaseTimer = undefined;
+        }
+    }
     
     startCountdown() {
         this.stopCountdown();
@@ -1011,6 +1148,11 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
+    /** Shared zero-padded MM:SS for the AUTHORITATIVE payment countdown. */
+    formatRemaining(ms: number): string {
+        return formatDeadlineRemaining(ms);
+    }
+
     formatCountdown(milliseconds: number): string {
         const totalSeconds = Math.floor(milliseconds / 1000);
         const minutes = Math.floor(totalSeconds / 60);
@@ -1032,10 +1174,17 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     async acceptSuggestedFare() {
         const job = this.booking();
-        if (!job) return;
+        if (!job) {
+            await this.showToast('Unable to load this booking. Please refresh and try again.', 'danger');
+            return;
+        }
 
         const fare = this.suggestedFare();
-        if (fare === null) return;   // never lock a fare that is not authoritative
+        if (fare === null) {
+            // Never lock a fare that is not authoritative - and never do it silently.
+            await this.showToast('We cannot confirm a fare for this request right now.', 'warning');
+            return;
+        }
 
         try {
             const loading = await this.loadingCtrl.create({ message: 'Locking fare...' });
@@ -1045,8 +1194,18 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
             if (this.hybridEnabled) {
                 await this.loadBooking(job.id);
-                await this.initializeStripe();
-                return;
+                // In-place Stripe init is valid ONLY once an authoritative agreement
+                // exists: driver_accept_customer_offer / customer_accept_driver_counter
+                // are what move jobs.status to 'fare_agreed'. When the customer simply
+                // accepts the authoritative SUGGESTED fare there is no agreement yet,
+                // lockAgreedFare() is a deliberate no-op, the job stays
+                // 'pending_fare_confirmation', and initializeStripe() returns at its
+                // `status !== 'fare_agreed'` guard - so this button silently did
+                // nothing. Fall through to the existing payment route in that case.
+                if (this.booking()?.status === 'fare_agreed') {
+                    await this.initializeStripe();
+                    return;
+                }
             }
 
             await this.router.navigate(['/customer/marketplace-payment', job.id]);
@@ -1057,6 +1216,23 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     openHybridOfferInput() {
+        // CANONICAL GATE: the proposal form may open ONLY when canonical persisted
+        // state permits THIS customer to propose — an initial offer (make_offer) or a
+        // counter to a live driver counter (counter). After a lease expiry / release
+        // / reassignment the retained offer is still authoritative ("finding another
+        // driver"), so the form must NOT open and create_customer_offer must be
+        // unreachable from the UI. Server authority remains as defence-in-depth.
+        const state = this.negotiationState();
+        if (!canCustomer(state, 'make_offer') && !canCustomer(state, 'counter')) {
+            void this.showToast(
+                state.awaitingNextDriver
+                    ? 'Finding another driver for your offer.'
+                    : 'Your offer is already awaiting a response.',
+                'warning'
+            );
+            return;
+        }
+
         const fare = this.suggestedFare();
         if (fare === null) return;
         this.hybridOfferAmount.set(this.toMoney(fare * 0.9));
@@ -1087,29 +1263,131 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             return;
         }
 
+        if (this.negotiationBusy()) return;
+
+        let loading: any = null;
         try {
             this.negotiationBusy.set(true);
-            const loading = await this.loadingCtrl.create({ message: 'Sending offer...' });
+
+            // TURN-AWARE DISPATCH from CANONICAL PERSISTED STATE (never a local flag).
+            //
+            // create_customer_offer is ONLY for the INITIAL customer proposal for a
+            // job. Once a session exists and the canonical phase is the customer's
+            // turn (a driver counter is live), the next proposal MUST use
+            // customer_counter_offer. Calling create_customer_offer again is
+            // correctly rejected by the server with
+            // 'An offer is already awaiting a response for this request'.
+            const session = this.hybridSession();
+            const phase = this.negotiationState().phase;
+            const isCustomerCounter = !!session && phase === 'customer_turn';
+
+            if (session && !isCustomerCounter && phase !== 'not_started') {
+                // waiting_for_driver / driver_turn / agreed_payment_required / paid /
+                // cancelled / expired -> this screen may not open another proposal.
+                await this.reconcileHybridNegotiation(job.id);
+                await this.showToast(
+                    phase === 'expired'
+                        ? 'This negotiation has expired.'
+                        : (phase === 'cancelled' || phase === 'paid' || phase === 'agreed_payment_required')
+                            ? 'This negotiation has ended.'
+                            : 'Your offer is already awaiting a response.',
+                    'warning'
+                );
+                return;
+            }
+
+            loading = await this.loadingCtrl.create({ message: 'Sending offer...' });
             await loading.present();
-            // Patch 1A: session creation is DB-authoritative. Identity, reference
-            // fare, expiry and round are derived inside create_customer_offer.
-            const session = await this.hybridService.createCustomerOffer(job.id, amount);
-            // The previous direct client `jobs` UPDATE (status /
-            // negotiation_mode_enabled) was REMOVED: create_customer_offer only
-            // succeeds when the job already satisfies exactly those predicates,
-            // so the write could not change anything - it was a redundant
-            // client-side lifecycle write.
-            await loading.dismiss();
-            this.hybridSession.set(session);
+
+            const updated = isCustomerCounter
+                ? await this.hybridService.customerCounterOffer(session!.id, amount)
+                : await this.hybridService.createCustomerOffer(job.id, amount);
+
+            this.hybridSession.set(updated);
             this.showHybridOfferInput.set(false);
-            await this.showToast('Offer sent. Waiting for a driver to start negotiation.', 'success');
-            await this.loadBooking(job.id);
+            // Always converge on authoritative persisted session + events.
+            await this.reconcileHybridNegotiation(job.id);
+            await this.showToast(
+                isCustomerCounter
+                    ? 'Counter offer sent.'
+                    : 'Offer sent. Waiting for a driver to start negotiation.',
+                'success'
+            );
         } catch (error) {
             console.error('[MarketplaceFare] submit offer failed', error);
             await this.showToast('Unable to send offer. Please try again.', 'danger');
+            // A controlled rejection is usually stale local state: reconcile authority.
+            const jobId = this.booking()?.id;
+            if (jobId) await this.reconcileHybridNegotiation(jobId);
         } finally {
+            // GUARANTEED cleanup: a rejected RPC can never leave the
+            // "Sending offer..." overlay on screen. Previously dismiss() ran only on
+            // the success path, so a 400 left the modal up indefinitely.
+            if (loading) {
+                try { await loading.dismiss(); } catch { /* already dismissed */ }
+            }
             this.negotiationBusy.set(false);
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Scoped live convergence for THIS negotiation session.
+    // ---------------------------------------------------------------------
+
+    private hybridRealtimeDispose: (() => void) | null = null;
+    private hybridRealtimeSessionId: string | null = null;
+    /** Monotonic token: a stale async reload must never overwrite newer state. */
+    private hybridReloadToken = 0;
+
+    /**
+     * Authoritative reload of the negotiation session + event ledger (and the
+     * driver profile). Realtime callbacks request THIS; they never inject
+     * optimistic state. A monotonic token discards a reload that a newer one
+     * superseded while it was in flight.
+     */
+    private async reconcileHybridNegotiation(jobId: string): Promise<void> {
+        const token = ++this.hybridReloadToken;
+        try {
+            const session = await this.hybridService.getSessionByJob(jobId);
+            if (token !== this.hybridReloadToken) return;
+            this.hybridSession.set(session);
+
+            if (!session) return;
+
+            const events = await this.hybridService.getSessionEvents(session.id);
+            if (token !== this.hybridReloadToken) return;
+            this.hybridEvents.set(events);
+            await this.loadDriverProfile(session.active_driver_id);
+            if (token !== this.hybridReloadToken) return;
+            this.ensureHybridSubscription(session);
+        } catch (error) {
+            console.warn('[MarketplaceFare] negotiation reconcile failed', error);
+        }
+    }
+
+    /**
+     * Establish (or RE-establish) the ONE scoped subscription for this session.
+     * Idempotent per session id, so re-entry and every successful mutation cannot
+     * accumulate duplicate channels.
+     */
+    private ensureHybridSubscription(session: { id?: string | null } | null | undefined): void {
+        const sessionId = String(session?.id ?? '').trim();
+        if (!sessionId) return;
+        if (this.hybridRealtimeSessionId === sessionId && this.hybridRealtimeDispose) return;
+
+        this.disposeHybridSubscription();
+        this.hybridRealtimeSessionId = sessionId;
+
+        const jobId = this.booking()?.id || this.route.snapshot.paramMap.get('id') || '';
+        this.hybridRealtimeDispose = this.hybridService.subscribeToNegotiation(sessionId, () => {
+            if (jobId) void this.reconcileHybridNegotiation(jobId);
+        });
+    }
+
+    private disposeHybridSubscription(): void {
+        try { this.hybridRealtimeDispose?.(); } catch { /* already disposed */ }
+        this.hybridRealtimeDispose = null;
+        this.hybridRealtimeSessionId = null;
     }
 
     async acceptDriverCounter() {
@@ -1149,28 +1427,74 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
     async tryAnotherDriver() {
         const session = this.hybridSession();
-        if (!session || !session.active_driver_id) return;
+        if (!session) return;
         try {
-            await this.hybridService.releaseSession(session.job_id, session.active_driver_id, 'pass');
+            this.negotiationBusy.set(true);
+            // CUSTOMER-AUTHORITATIVE transition. `release_marketplace_negotiation` is
+            // DRIVER-owned and the server correctly rejects it for a customer
+            // ("You can only release your own negotiation session").
+            // customer_decline_counter IS this action: verify customer ownership,
+            // release the active driver, clear the stale driver counter, RETAIN the
+            // customer offer, increment attempt_count and return the request to the
+            // eligible-driver pool.
+            const updated = await this.hybridService.customerDeclineCounter(session.id);
+            this.hybridSession.set(updated);
+            await this.reconcileHybridNegotiation(session.job_id);
             await this.showToast('Looking for another driver.', 'success');
-            await this.loadHybridSession(session.job_id);
         } catch (error) {
-            console.error('[MarketplaceFare] release failed', error);
+            console.error('[MarketplaceFare] try another driver failed', error);
+            if (session.job_id) await this.reconcileHybridNegotiation(session.job_id);
             await this.showToast('Unable to switch driver. Please try again.', 'danger');
+        } finally {
+            this.negotiationBusy.set(false);
         }
     }
 
     async cancelHybridRequest() {
         const session = this.hybridSession();
         if (!session) return;
+        if (this.negotiationBusy()) return;
+
+        // CANONICAL GUARD: never invoke a withdrawal RPC the current phase does
+        // not permit (that produced the repeated 400 'Negotiation can no longer be
+        // cancelled' while the request was already agreed/terminal).
+        const state = this.negotiationState();
+        if (!canCustomer(state, 'cancel_offer')) {
+            if (session.job_id) await this.reconcileHybridNegotiation(session.job_id);
+            await this.showToast('This request can no longer be cancelled here.', 'warning');
+            return;
+        }
+
+        const expiredAgreement = state.paymentExpired === true;
+
         try {
             this.negotiationBusy.set(true);
-            await this.hybridService.customerCancelOffer(session.id);
+            // PHASE-AWARE AUTHORITY: a lapsed UNPAID agreement goes through the
+            // expiry transition ("find another driver" / recycle the SAME request);
+            // every other cancellable phase is a genuine customer withdrawal.
+            await (expiredAgreement
+                ? this.hybridService.customerExpireUnpaidAgreement(session.id)
+                : this.hybridService.customerCancelOffer(session.id));
+
+            if (expiredAgreement) {
+                await this.showToast('Payment time expired. Finding another driver.', 'success');
+                await this.reconcileHybridNegotiation(session.job_id);
+                return;
+            }
+
             await this.showToast('Request cancelled.', 'success');
             await this.router.navigate(['/customer']);
         } catch (error) {
             console.error('[MarketplaceFare] cancel failed', error);
-            await this.showToast('Unable to cancel. Please try again.', 'danger');
+            // A state-conflict rejection means our view was stale: reconcile
+            // authoritative state instead of leaving stale controls actionable.
+            if (session.job_id) await this.reconcileHybridNegotiation(session.job_id);
+            await this.showToast(
+                expiredAgreement
+                    ? 'This agreement has already changed. Refreshed.'
+                    : 'Unable to cancel. Please try again.',
+                'danger'
+            );
         } finally {
             this.negotiationBusy.set(false);
         }
@@ -1372,19 +1696,18 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
+    /**
+     * Enter-time convergence for THIS job.
+     *
+     * Always performs ONE authoritative reconcile, and establishes the scoped
+     * subscription from the reconciled session. This also works when NO session
+     * exists at page entry (the request is created on this very page): the previous
+     * implementation returned early when `getSessionByJob` was null and therefore
+     * never subscribed at all — which is exactly why a driver's counter only became
+     * visible after leaving and re-entering the screen.
+     */
     private subscribeToHybridSession(jobId: string): void {
-        this.hybridService.getSessionByJob(jobId).then(session => {
-            if (!session) return;
-
-            this.hybridSessionChannel = this.hybridService.subscribeToSession(session.id, (payload: any) => {
-                this.hybridSession.set(payload.new);
-                this.loadDriverProfile(payload.new?.active_driver_id);
-            });
-
-            this.hybridEventsChannel = this.hybridService.subscribeToEvents(session.id, (payload: any) => {
-                this.hybridEvents.update(events => [...events, payload.new]);
-            });
-        }).catch(() => undefined);
+        void this.reconcileHybridNegotiation(jobId);
     }
 
     private isPaymentHandled(job: Booking | null | undefined): boolean {
@@ -1395,6 +1718,21 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             'completed',
             'cancelled'
         ].includes(this.bookingService.getBookingLifecycleState(job));
+    }
+
+    /**
+     * Fail-closed terminal guard. A persisted job that is already terminal
+     * (cancelled / expired / no_driver_found / settled / completed) must never be
+     * treated as an actionable fare. The authoritative persisted job wins over any
+     * stale quote, session, Activity-card, or browser-history state.
+     */
+    get isTerminalBooking(): boolean {
+        const job = this.booking();
+        if (!job) return false;
+        const status = String(job.status || '').toLowerCase();
+        const expiredAt = String((job as any)?.expired_at || '').trim();
+        if (expiredAt || status === 'expired') return true;
+        return ['cancelled', 'no_driver_found', 'settled', 'completed'].includes(status);
     }
 
     private async initializeStripe() {

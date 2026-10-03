@@ -114,12 +114,24 @@ describe('Patch 1A — canonical negotiation state derivation', () => {
     expect(state.pendingOffer).toEqual({ by: 'driver', amount: 7.0 });
   });
 
-  it('agreed -> customer may only Pay; driver has no fare mutation', () => {
+  it('agreed -> customer may Pay or withdraw the unpaid agreement; driver has no fare mutation', () => {
     const state = getNegotiationState(
       session({ status: 'fare_agreed', active_driver_id: 'd1', agreed_fare: 7.0 }), [], NOW);
     expect(state.phase).toBe('agreed_payment_required');
-    expect(state.allowedCustomerActions).toEqual(['pay']);
+    // BEFORE the payment deadline: pay, or withdraw the unpaid agreement. After
+    // it, Pay disappears and only the expiry/restart action remains.
+    expect(state.paymentExpired).toBe(false);
+    expect(state.allowedCustomerActions).toEqual(['pay', 'cancel_offer']);
     expect(state.allowedDriverActions).toEqual([]);
+  });
+
+  it('agreed + payment deadline elapsed -> Pay is gone, only the expiry action remains', () => {
+    const lapsed = getNegotiationState(
+      session({ status: 'fare_agreed', agreed_fare: 9.0, payment_deadline: past() }), [], NOW);
+    expect(lapsed.phase).toBe('agreed_payment_required');
+    expect(lapsed.paymentExpired).toBe(true);
+    expect(lapsed.allowedCustomerActions).toEqual(['cancel_offer']);
+    expect(canCustomer(lapsed, 'pay')).toBe(false);
   });
 
   it('paid / cancelled / expired expose no negotiation mutation actions', () => {
@@ -369,7 +381,7 @@ describe('regression — session-less pre-negotiation state must expose Make an 
     expect(expired.allowedCustomerActions).toEqual([]);
 
     const agreed = getNegotiationState(session({ status: 'fare_agreed' }), [], NOW);
-    expect(agreed.allowedCustomerActions).toEqual(['pay']);
+    expect(agreed.allowedCustomerActions).toEqual(['pay', 'cancel_offer']);
     expect(canCustomer(agreed, 'make_offer')).toBe(false);
   });
 });

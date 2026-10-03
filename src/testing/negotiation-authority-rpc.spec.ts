@@ -148,7 +148,9 @@ describe('Patch 1A(b) — client service conversion', () => {
 
 describe('Patch 1A(b) — UI wiring', () => {
   it('marketplace-fare consumes the canonical helper and gates Make an Offer', () => {
-    expect(FARE_PAGE).toContain('getNegotiationState(this.hybridSession(), this.hybridEvents())');
+    // canonical helper invoked with the PERSISTED session+events; the trailing
+    // wall-clock argument is a later, legitimate addition (lease expiry).
+    expect(FARE_PAGE).toContain('getNegotiationState(this.hybridSession(), this.hybridEvents()');
     expect(FARE_PAGE).toContain("canCustomer('make_offer')");
     expect(FARE_PAGE).toContain("canCustomer('cancel_offer')");
   });
@@ -164,7 +166,7 @@ describe('Patch 1A(b) — UI wiring', () => {
   });
 
   it('driver detail consumes the canonical helper and gates driver actions by turn', () => {
-    expect(DRIVER_PAGE).toContain('getNegotiationState(this.session(), this.events())');
+    expect(DRIVER_PAGE).toContain('getNegotiationState(this.session(), this.events()');
     expect(DRIVER_PAGE).toContain("canDriver('accept')");
   });
 

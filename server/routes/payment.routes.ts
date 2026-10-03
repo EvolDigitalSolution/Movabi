@@ -253,6 +253,66 @@ router.post('/create-intent', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Payment has already been handled for this job' });
     }
 
+    // ---------------------------------------------------------------------
+    // NEGOTIATED AGREEMENT DEADLINE (server authority).
+    //
+    // A fare agreed through negotiation is payable ONLY until the persisted
+    // payment window closes. The browser is never trusted for this: a stale or
+    // tampered client must not be able to authorise payment after the deadline,
+    // and a superseded/released/cancelled agreement must never be payable.
+    // Checked BEFORE PaymentIntent reuse so an expired agreement cannot even
+    // resume an existing intent.
+    // ---------------------------------------------------------------------
+    const agreedFareMajor = Number(job.agreed_fare);
+    if (Number.isFinite(agreedFareMajor) && agreedFareMajor > 0) {
+      const { data: agreedSession } = await supabaseAdmin
+        .from('marketplace_negotiation_sessions')
+        .select('id,status,agreed_fare,active_driver_id,payment_deadline,expires_at')
+        .eq('job_id', jobId)
+        .maybeSingle();
+
+      if (agreedSession) {
+        const agreementStatus = String((agreedSession as any).status || '').toLowerCase();
+        const deadlineRaw = String(
+          (agreedSession as any).payment_deadline || (agreedSession as any).expires_at || ''
+        ).trim();
+        const deadlineMs = deadlineRaw ? Date.parse(deadlineRaw) : NaN;
+        const deadlinePassed = Number.isFinite(deadlineMs) && deadlineMs <= Date.now();
+
+        if (agreementStatus !== 'fare_agreed') {
+          return res.status(409).json({
+            error: 'This fare agreement is no longer valid. Start the negotiation again.',
+            code: 'AGREEMENT_NOT_ACTIVE'
+          });
+        }
+
+        if (deadlinePassed) {
+          // PERSIST the authoritative expiry transition HERE, at the payment
+          // boundary. Never merely report the expiry while leaving the session
+          // fare_agreed, the driver attached and the deadline stale — that state
+          // would otherwise only converge if some driver happened to open Driver
+          // Hub. The helper is idempotent, locked and paid-guarded.
+          const { error: expireError } = await supabaseAdmin.rpc('expire_unpaid_fare_agreement', {
+            p_session_id: (agreedSession as any).id
+          });
+
+          if (expireError) {
+            console.error('[PaymentRoutes] authoritative agreement expiry failed:', {
+              jobId,
+              sessionId: (agreedSession as any).id,
+              code: (expireError as any)?.code,
+              message: expireError.message
+            });
+          }
+
+          return res.status(409).json({
+            error: 'Payment time expired. This fare agreement is no longer valid.',
+            code: 'AGREEMENT_EXPIRED'
+          });
+        }
+      }
+    }
+
     if (job.payment_intent_id) {
       try {
         const existing = await stripe.paymentIntents.retrieve(job.payment_intent_id);
@@ -520,6 +580,53 @@ router.post('/confirm-wallet-topup', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * COMPENSATION for an external Stripe success whose DB finalization LOST.
+ *
+ * The job must NEVER be reactivated. Under the EXISTING manual-capture lifecycle
+ * (`capture_method: 'manual'` at create time) a successful authorization is
+ * `requires_capture` — money is authorized but NOT captured — so releasing it with
+ * `paymentIntents.cancel` is the correct, already-supported lifecycle action. That
+ * is NOT a refund, which is why no refund is issued here.
+ *
+ * A CAPTURED intent (`succeeded`) is deliberately NOT auto-refunded: refunds move
+ * money and must go through the reviewed admin `/refund` path. It is logged loudly
+ * for manual reconciliation instead, so no refund behaviour is invented.
+ */
+async function compensateUnauthorizedIntent(job: any, reason: string) {
+  const intentId = job?.payment_intent_id ? String(job.payment_intent_id) : '';
+
+  if (!intentId) {
+    return { attempted: false, action: 'no_intent' };
+  }
+
+  try {
+    const pi = await stripe.paymentIntents.retrieve(intentId);
+
+    if (['requires_capture', 'requires_confirmation', 'requires_payment_method'].includes(pi.status)) {
+      const cancelled = await stripe.paymentIntents.cancel(intentId);
+      console.warn('[PaymentRoutes] released in-flight authorization after finalization lost:', {
+        jobId: job?.id, intentId, reason, stripeStatus: cancelled.status
+      });
+      return { attempted: true, action: 'authorization_cancelled', stripeStatus: cancelled.status };
+    }
+
+    if (pi.status === 'succeeded') {
+      console.error('[PaymentRoutes] CAPTURED Stripe payment for a non-finalizable agreement — manual reconciliation required:', {
+        jobId: job?.id, intentId, reason, amountMinor: pi.amount, currency: pi.currency
+      });
+      return { attempted: true, action: 'captured_requires_manual_reconciliation', stripeStatus: pi.status };
+    }
+
+    return { attempted: true, action: 'no_action_needed', stripeStatus: pi.status };
+  } catch (error: any) {
+    console.error('[PaymentRoutes] compensation failed:', {
+      jobId: job?.id, intentId, reason, message: error?.message
+    });
+    return { attempted: true, action: 'compensation_failed', error: error?.message };
+  }
+}
+
 router.post('/confirm', async (req: Request, res: Response) => {
   try {
     const { jobId } = req.body;
@@ -549,9 +656,18 @@ router.post('/confirm', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only the customer can confirm this payment' });
     }
 
+    // C2: ONE shared server-derived payable amount, computed once and reused for
+    // both the Stripe amount check and the atomic finalization authority.
+    const payable = await PaymentAuthorityService.resolve(job);
+
     // Wallet path: the reservation was already authorised server-side by
     // pay_job_from_wallet; here we only advance dispatch, and only once.
     const walletPaid = String(job.payment_status || '').toLowerCase() === 'wallet_funded';
+
+    // Captured for the ATOMIC FINALIZATION AUTHORITY below: the intent's real
+    // amount/currency are proven against the persisted negotiation authority.
+    let intentAmountMinor: number | null = null;
+    let intentCurrency: string | null = null;
 
     if (!walletPaid) {
       if (!job.payment_intent_id) {
@@ -568,12 +684,14 @@ router.post('/confirm', async (req: Request, res: Response) => {
         return res.status(409).json({ error: 'PaymentIntent currency does not match the job', code: 'CURRENCY_MISMATCH' });
       }
 
-      // C2: one shared server-derived payable amount.
-      const payable = await PaymentAuthorityService.resolve(job);
+      // C2: one shared server-derived payable amount (computed above).
       const expectedMinor = PaymentAuthorityService.minorUnits(payable.totalAuthorisationMajor);
       if (pi.amount !== expectedMinor) {
         return res.status(409).json({ error: 'PaymentIntent amount does not match the job', code: 'AMOUNT_MISMATCH' });
       }
+
+      intentAmountMinor = pi.amount;
+      intentCurrency = String(pi.currency || '').toLowerCase();
 
       // Manual capture: successful authorization is `requires_capture` (card
       // authorized, capture deferred to completion). `succeeded` is also accepted.
@@ -591,31 +709,59 @@ router.post('/confirm', async (req: Request, res: Response) => {
     const nextStatus = hasLockedDriver ? 'assigned' : (scheduledInFuture ? 'requested' : 'searching');
     const nextPaymentStatus = walletPaid ? 'wallet_funded' : 'authorized';
 
-    // Idempotent: only an unpaid job advances.
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from('jobs')
-      .update({
-        payment_status: nextPaymentStatus,
-        status: nextStatus,
-        dispatch_started_at: (hasLockedDriver || deferred) ? null : new Date().toISOString(),
-        driver_search_expires_at: (hasLockedDriver || deferred) ? null : new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-        dispatch_attempts: (hasLockedDriver || deferred) ? 0 : 1,
-        no_driver_reason: null
-      })
-      .eq('id', jobId)
-      .eq('payment_status', 'pending')
-      .select('*, service_type:service_types(*)')
-      .single();
+    // ATOMIC FINALIZATION AUTHORITY (migration 360).
+    //
+    // The ENTIRE check-and-write happens in one DB transaction with the job and its
+    // negotiation session locked (deterministic order: job, then session). An
+    // agreement released/expired/cancelled while Stripe was in flight can therefore
+    // no longer be resurrected as a paid booking — the previous guard
+    // (payment_status='pending') matched that state because the expiry/cancel
+    // transitions deliberately leave payment_status untouched.
+    const { data: finalizeResult, error: finalizeError } = await supabaseAdmin.rpc('finalize_job_payment', {
+      p_job_id: jobId,
+      p_payment_intent_id: job.payment_intent_id ? String(job.payment_intent_id) : null,
+      p_payment_status: nextPaymentStatus,
+      p_job_status: nextStatus,
+      p_expected_service_fare: payable.serviceFareMajor,
+      p_require_unowned: false,
+      p_dispatch_started_at: (hasLockedDriver || deferred) ? null : new Date().toISOString(),
+      p_driver_search_expires_at: (hasLockedDriver || deferred) ? null : new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      p_dispatch_attempts: (hasLockedDriver || deferred) ? 0 : 1,
+      p_intent_amount_minor: intentAmountMinor,
+      p_currency: intentCurrency
+    });
 
-    if (updateError) {
-      // Already advanced (idempotent): return the current state as success.
-      const { data: current } = await supabaseAdmin
-        .from('jobs')
-        .select('*, service_type:service_types(*)')
-        .eq('id', jobId)
-        .single();
-      return res.json({ success: true, alreadyConfirmed: true, booking: current });
+    if (finalizeError) {
+      throw finalizeError;
     }
+
+    if (finalizeResult !== 'finalized') {
+      // Idempotent repeat of an already-successful confirm.
+      if (finalizeResult === 'already_finalized') {
+        const { data: current } = await supabaseAdmin
+          .from('jobs')
+          .select('*, service_type:service_types(*)')
+          .eq('id', jobId)
+          .maybeSingle();
+        return res.json({ success: true, alreadyConfirmed: true, booking: current });
+      }
+
+      // The agreement lost the race (or was already terminal). NEVER reactivate it.
+      const compensation = await compensateUnauthorizedIntent(job, String(finalizeResult));
+
+      return res.status(409).json({
+        error: 'This fare agreement is no longer valid. The payment was not activated.',
+        code: 'AGREEMENT_LOST',
+        reason: finalizeResult,
+        compensation
+      });
+    }
+
+    const { data: updated } = await supabaseAdmin
+      .from('jobs')
+      .select('*, service_type:service_types(*)')
+      .eq('id', jobId)
+      .single();
 
     return res.json({ success: true, booking: updated });
   } catch (error: any) {

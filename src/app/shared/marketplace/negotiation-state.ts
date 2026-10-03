@@ -71,6 +71,7 @@ export interface NegotiationSessionLike {
   agreed_fare?: number | null;
   round_count?: number | null;
   expires_at?: string | null;
+  payment_deadline?: string | null;
 }
 
 export interface NegotiationEventLike {
@@ -85,6 +86,23 @@ export interface NegotiationState {
   phase: NegotiationPhase;
   /** The outstanding proposal awaiting a response, if any. */
   pendingOffer: { by: 'customer' | 'driver'; amount: number } | null;
+  /**
+   * True when the RETAINED customer proposal is waiting for a driver AFTER a
+   * previous driver's claim ended (session status 'released' — e.g. the driver
+   * lease lapsed and the request was handed back to the market).
+   *
+   * This is FINDING ANOTHER DRIVER: the retained offer is still authoritative and
+   * the customer may only cancel — they must NOT be offered a fresh initial
+   * proposal. It is deliberately NOT the same as 'not_started'.
+   */
+  awaitingNextDriver?: boolean;
+  /**
+   * True when a fare agreement is unpaid but its AUTHORITATIVE payment window has
+   * elapsed (session.payment_deadline, falling back to expires_at). Pay is then
+   * gone and only the expiry/restart action remains — the page must never offer
+   * payment, and must never call the withdrawal RPC for this state.
+   */
+  paymentExpired?: boolean;
   allowedCustomerActions: NegotiationAction[];
   allowedDriverActions: NegotiationAction[];
 }
@@ -162,10 +180,21 @@ export function getNegotiationState(
     return { phase: 'paid', pendingOffer: null, allowedCustomerActions: [], allowedDriverActions: [] };
   }
   if (['fare_agreed', 'payment_pending'].includes(status)) {
+    const isAgreed = status === 'fare_agreed';
+    const payDeadline = String(session.payment_deadline ?? session.expires_at ?? '').trim();
+    const payDeadlineMs = payDeadline ? Date.parse(payDeadline) : NaN;
+    const paymentExpired = isAgreed && Number.isFinite(payDeadlineMs) && payDeadlineMs <= now;
+
     return {
-      phase: status === 'fare_agreed' ? 'agreed_payment_required' : 'paid',
+      phase: isAgreed ? 'agreed_payment_required' : 'paid',
       pendingOffer: null,
-      allowedCustomerActions: status === 'fare_agreed' ? ['pay'] : [],
+      paymentExpired,
+      // Before the deadline the customer may pay OR withdraw the unpaid
+      // agreement. After it, Pay is gone and only the expiry/restart action
+      // remains — the withdrawal RPC must not be offered for this state.
+      allowedCustomerActions: isAgreed
+        ? (paymentExpired ? ['cancel_offer'] : ['pay', 'cancel_offer'])
+        : [],
       allowedDriverActions: []
     };
   }
@@ -186,6 +215,9 @@ export function getNegotiationState(
       ? {
           phase: 'waiting_for_driver',
           pendingOffer: { by: 'customer', amount: offer },
+          // The customer proposal survived the previous driver: the request is
+          // FINDING ANOTHER DRIVER, never a fresh negotiation.
+          awaitingNextDriver: true,
           allowedCustomerActions: ['cancel_offer'],
           allowedDriverActions: []
         }
@@ -199,8 +231,28 @@ export function getNegotiationState(
 
   // ---- turn comes ONLY from the latest fare proposal ----
   const proposal = latestFareEvent(events);
-  const byCustomer = String(proposal?.proposed_by_role ?? '') === 'customer';
-  const byDriver = String(proposal?.proposed_by_role ?? '') === 'driver';
+  let byCustomer = String(proposal?.proposed_by_role ?? '') === 'customer';
+  let byDriver = String(proposal?.proposed_by_role ?? '') === 'driver';
+
+  // PERSISTED-SESSION FALLBACK. The event ledger is canonical for proposal
+  // ORDERING when it is available, but it may legitimately be empty or stale:
+  // submitHybridOffer sets the session from the RPC response before events are
+  // reloaded, and realtime delivery can lag. Correctness must not depend on the
+  // ledger, or a persisted outstanding offer is misread as a "fresh session" and
+  // the UI re-offers Make an Offer next to an "Offer sent" panel.
+  //
+  // The SQL transitions keep these two fields sufficient to recover the LIVE
+  // proposal without the ledger:
+  //   * driver_counter_offer is cleared by the customer's next counter/accept, so
+  //     a non-null value IS the live driver proposal;
+  //   * customer_offer is retained as the live customer proposal until answered.
+  if (!byCustomer && !byDriver) {
+    if (Number.isFinite(counter) && counter > 0) {
+      byDriver = true;
+    } else if (Number.isFinite(offer) && offer > 0) {
+      byCustomer = true;
+    }
+  }
 
   if (byDriver) {
     // Driver proposed -> customer's turn. Customer may also abandon for the original fare.
@@ -236,3 +288,90 @@ export const canCustomer = (state: NegotiationState, action: NegotiationAction):
   state.allowedCustomerActions.includes(action);
 export const canDriver = (state: NegotiationState, action: NegotiationAction): boolean =>
   state.allowedDriverActions.includes(action);
+
+/**
+ * SHARED PAYMENT/LEASE DEADLINE HELPERS.
+ *
+ * One pure implementation for every countdown in the app, so the customer and
+ * driver screens can never disagree. The DEADLINE ITSELF is always the
+ * persisted authority (marketplace_negotiation_sessions.payment_deadline /
+ * expires_at); these only convert it against a wall-clock tick. No timers, no
+ * polling, no global interval service — each caller owns its own 1-second tick.
+ */
+
+/** Remaining milliseconds until an ISO deadline (never negative; 0 if absent/invalid). */
+export function deadlineRemainingMs(deadline: string | null | undefined, now: number = Date.now()): number {
+  const raw = String(deadline ?? '').trim();
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, parsed - now);
+}
+
+/** True only when a real ISO deadline exists AND has elapsed. */
+export function isDeadlineElapsed(deadline: string | null | undefined, now: number = Date.now()): boolean {
+  const raw = String(deadline ?? '').trim();
+  if (!raw) return false;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) && parsed <= now;
+}
+
+/** Zero-padded MM:SS for a remaining duration (e.g. 300000 -> "05:00"). */
+export function formatRemaining(ms: number): string {
+  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Stable one-shot key for a session+deadline, so a 1s tick cannot re-fire a mutation. */
+export function deadlineKey(sessionId: string | null | undefined, deadline: string | null | undefined): string {
+  const id = String(sessionId ?? '').trim();
+  const at = String(deadline ?? '').trim();
+  if (!id || !at) return '';
+  return `${id}:${at}`;
+}
+
+/** Phases in which the negotiation is over or not actionable by either party. */
+const TERMINAL_PHASES: ReadonlySet<NegotiationPhase> = new Set<NegotiationPhase>([
+  'not_started',
+  'agreed_payment_required',
+  'paid',
+  'cancelled',
+  'expired'
+]);
+
+/** True when the canonical phase is terminal / no longer actionable. */
+export const isTerminalNegotiationPhase = (phase: NegotiationPhase): boolean => TERMINAL_PHASES.has(phase);
+
+/**
+ * A LIVE negotiation this driver already authoritatively OWNS.
+ *
+ * Exists to RECOVER an owned negotiation whose ancillary configuration read is
+ * unavailable — e.g. the driver-side `jobs` SELECT is filtered by RLS while
+ * `jobs.driver_id` is still NULL and the job is `pending_fare_confirmation`, so
+ * the page cannot resolve `effectiveHybridStatus`. Unknown configuration must not
+ * be mistaken for explicitly-disabled configuration when the driver demonstrably
+ * owns a live session.
+ *
+ * Ownership and liveness are taken ONLY from authoritative persisted state:
+ *   1. the session exists;
+ *   2. `session.active_driver_id` === the authenticated driver;
+ *   3. the canonical phase is not terminal — so expired / cancelled / paid /
+ *      already-agreed sessions are rejected here by the SAME rules as everywhere
+ *      else, never by a second hand-rolled status list.
+ */
+export function isLiveOwnedNegotiation(
+  session: NegotiationSessionLike | null | undefined,
+  driverId: string | null | undefined,
+  events: readonly NegotiationEventLike[] | null | undefined,
+  now: number = Date.now()
+): boolean {
+  if (!session) return false;
+
+  const owner = String(session.active_driver_id ?? '').trim();
+  const driver = String(driverId ?? '').trim();
+  if (!owner || !driver || owner !== driver) return false;
+
+  return !isTerminalNegotiationPhase(getNegotiationState(session, events, now).phase);
+}

@@ -166,6 +166,7 @@ router.post('/', async (req: Request, res: Response) => {
         // is verified against the stored intent + authoritative amount/currency,
         // then advances only an unpaid, unowned job. Idempotent and guarded.
         const jobId = await verifyJobPaymentIntent(event);
+        const authorizedIntent = event.data.object as Stripe.PaymentIntent;
         if (jobId) {
           const { data: alreadyProcessed } = await supabase
             .from('stripe_events')
@@ -180,12 +181,27 @@ router.post('/', async (req: Request, res: Response) => {
               created_at: new Date().toISOString(),
               processed_at: new Date().toISOString()
             });
-            await supabase
-              .from('jobs')
-              .update({ payment_status: 'authorized', status: 'searching' })
-              .eq('id', jobId)
-              .eq('payment_status', 'pending')
-              .is('driver_id', null);
+            // ATOMIC FINALIZATION AUTHORITY (migration 360). The old guard
+            // (payment_status='pending' AND driver_id IS NULL) was SATISFIED by a
+            // released/expired agreement — expiry clears driver_id — so a delayed
+            // event resurrected it. The RPC re-verifies the agreement under lock.
+            const { data: finalizeResult } = await supabase.rpc('finalize_job_payment', {
+              p_job_id: jobId,
+              p_payment_status: 'authorized',
+              p_job_status: 'searching',
+              p_require_unowned: true,
+              p_dispatch_started_at: new Date().toISOString(),
+              p_driver_search_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+              p_dispatch_attempts: 1,
+              p_intent_amount_minor: authorizedIntent.amount,
+              p_currency: authorizedIntent.currency
+            });
+
+            if (finalizeResult !== 'finalized') {
+              console.warn('[StripeWebhook] authorization NOT activated (agreement lost):', {
+                jobId, finalizeResult
+              });
+            }
           }
         }
         break;
@@ -212,15 +228,27 @@ router.post('/', async (req: Request, res: Response) => {
               processed_at: new Date().toISOString()
             });
 
-            // Guard: only an unpaid, unowned job advances to searching.
-            const { error } = await supabase
-              .from('jobs')
-              .update({ payment_status: 'paid', status: 'searching' })
-              .eq('id', jobId)
-              .eq('payment_status', 'pending')
-              .is('driver_id', null);
+            // ATOMIC FINALIZATION AUTHORITY (migration 360). A delayed success must
+            // NOT resurrect a released/cancelled/expired agreement.
+            const { data: finalizeResult } = await supabase.rpc('finalize_job_payment', {
+              p_job_id: jobId,
+              p_payment_status: 'paid',
+              p_job_status: 'searching',
+              p_require_unowned: true,
+              p_dispatch_started_at: new Date().toISOString(),
+              p_driver_search_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+              p_dispatch_attempts: 1,
+              p_intent_amount_minor: paymentIntent.amount,
+              p_currency: paymentIntent.currency
+            });
 
-            if (!error) {
+            if (finalizeResult !== 'finalized') {
+              console.warn('[StripeWebhook] payment NOT activated (agreement lost):', {
+                jobId, finalizeResult
+              });
+            }
+
+            if (finalizeResult === 'finalized') {
               await supabase.from('booking_status_history').insert({
                 job_id: jobId,
                 status: 'searching',

@@ -155,10 +155,23 @@ export class MapRendererService {
     }
 
     try {
-      let marker = this.markers.get(options.id);
-      
+      let marker: Marker | undefined | null = this.markers.get(options.id);
+      const serviceType = String(options.serviceType ?? '');
+      const kind = String(options.kind ?? '');
+
       if (marker) {
-        if (options.kind === 'driver') {
+        const prevServiceType = String((marker as any)._movabiServiceType ?? '');
+        const prevKind = String((marker as any)._movabiKind ?? '');
+        const changed = serviceType !== prevServiceType || kind !== prevKind;
+
+        if (changed) {
+          // Service/kind changed: rebuild the DOM element so a stale service icon
+          // (e.g. an errand cart pin) cannot survive into a new service request.
+          this.cancelMarkerAnimation(options.id);
+          marker.remove();
+          this.markers.delete(options.id);
+          marker = null;
+        } else if (options.kind === 'driver') {
           this.animateMarkerMovement(
             options.id,
             marker,
@@ -166,26 +179,30 @@ export class MapRendererService {
             options.coordinates.lat,
             options.heading
           );
+          return;
         } else {
           marker.setLngLat([options.coordinates.lng, options.coordinates.lat]);
+          return;
         }
-      } else {
-        const el = this.markerFactory.createMarkerElement(options.kind, options.serviceType, options.label);
-        if (options.onClick) {
-          el.addEventListener('click', () => options.onClick?.(options.id));
-        }
-        marker = new Marker({ element: el })
-          .setLngLat([options.coordinates.lng, options.coordinates.lat])
-          .addTo(this.map);
-
-        (marker as any)._movabiId = options.id;
-
-        if (options.heading !== undefined) {
-          this.rotateMarker(marker, options.heading);
-        }
-        
-        this.markers.set(options.id, marker);
       }
+
+      const el = this.markerFactory.createMarkerElement(options.kind, options.serviceType, options.label);
+      if (options.onClick) {
+        el.addEventListener('click', () => options.onClick?.(options.id));
+      }
+      marker = new Marker({ element: el })
+        .setLngLat([options.coordinates.lng, options.coordinates.lat])
+        .addTo(this.map);
+
+      (marker as any)._movabiId = options.id;
+      (marker as any)._movabiServiceType = serviceType;
+      (marker as any)._movabiKind = kind;
+
+      if (options.heading !== undefined) {
+        this.rotateMarker(marker, options.heading);
+      }
+
+      this.markers.set(options.id, marker);
     } catch (error) {
       console.error(`[MapRenderer] Failed to add/update marker ${options.id}:`, error);
     }

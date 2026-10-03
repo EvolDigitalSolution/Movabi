@@ -306,4 +306,34 @@ describe('PHASE C2C — completion money-movement behavior', () => {
         // completeJob accepts no amount/commission parameter at all.
         expect(LogisticsService.completeJob.length).toBeLessThanOrEqual(3);
     });
+
+    it('J. commission basis excludes the customer-side platform fee (non-negotiated)', async () => {
+        // £7.15 customer total = £7.00 service fare + £0.15 platform fee.
+        // The 10% commission must apply to £7.00, NOT £7.15, so the driver is never
+        // commissioned on Movabi's own platform fee (matches the quote/recorded model).
+        M.state.select['jobs'] = baseJob({
+            payment_status: 'authorized',
+            agreed_fare: null,
+            total_price: 7.15,
+            price: 7.15,
+            estimated_price: null,
+            fare_breakdown: { serviceFareBeforePlatformFee: 7.00 }
+        });
+        M.state.select['driver_earnings'] = null;
+        M.state.select['profiles'] = baseDriver();
+        M.state.update['jobs'] = { ...baseJob({ status: 'completed', payment_status: 'paid' }), stripe_transfer_id: 'tr_test_transfer' };
+
+        await LogisticsService.completeJob(JOB_ID, null, DRIVER_ID);
+
+        const [payload] = M.stripe.transfers.create.mock.calls[0];
+        // 10% of £7.00 = £0.70 → driver payout £6.30 (NOT £7.15 − £0.72 = £6.43).
+        // The transfer amount is in PENCE and is therefore exact/deterministic.
+        expect(payload.amount).toBe(630);
+        expect(Number(payload.metadata.driver_payout)).toBe(6.3);
+        expect(Number(payload.metadata.platform_fee)).toBe(0.7);
+        // Customer total is unchanged and still £7.15.
+        expect(payload.metadata.total_price).toBe('7.15');
+        // No double dip, in pence: driver payout + commission + platform fee == 715.
+        expect(630 + 70 + 15).toBe(715);
+    });
 });

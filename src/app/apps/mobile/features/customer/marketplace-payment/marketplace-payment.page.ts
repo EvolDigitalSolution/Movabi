@@ -4,11 +4,17 @@ import {
     OnInit,
     AfterViewInit,
     signal,
+    computed,
     OnDestroy,
     effect,
     ElementRef,
     ViewChild
 } from '@angular/core';
+import {
+    deadlineKey,
+    deadlineRemainingMs,
+    isDeadlineElapsed
+} from '@shared/marketplace/negotiation-state';
 import { CommonModule } from '@angular/common';
 import { IonicModule, ToastController, LoadingController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -356,20 +362,87 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
         await this.loadBooking(id);
         await this.loadWallet();
         this.subscribeToJob(id);
+        await this.loadPaymentDeadline(id);
+        this.startDeadlineTimer();
     }
 
     async ngAfterViewInit() {
         if (this.redirectingToTracking() || this.isPaymentHandled(this.booking())) return;
+        // FAIL CLOSED: never mount payment controls for an already-lapsed agreement.
+        if (this.paymentExpired()) return;
         await this.initializeStripe();
     }
 
     ngOnDestroy() {
         this.jobChannel?.unsubscribe();
+        this.stopDeadlineTimer();
         if (this.card) {
             this.card.destroy();
             this.card = null;
         }
         this.cardMounted = false;
+    }
+
+    // ---------------------------------------------------------------------
+    // AUTHORITATIVE PAYMENT DEADLINE (fail closed).
+    //
+    // The deadline is PERSISTED on the negotiation session — never a component
+    // timer. A page entered directly, or left open past expiry, must not present
+    // OR submit payment merely because it loaded before the deadline.
+    // ---------------------------------------------------------------------
+    paymentDeadline = signal<string | null>(null);
+    private paymentClock = signal<number>(Date.now());
+    private deadlineTimer?: any;
+    private expiredActionedFor: string | null = null;
+
+    readonly paymentCountdown = computed<number>(() =>
+        deadlineRemainingMs(this.paymentDeadline(), this.paymentClock())
+    );
+
+    readonly paymentExpired = computed<boolean>(() =>
+        isDeadlineElapsed(this.paymentDeadline(), this.paymentClock())
+    );
+
+    private async loadPaymentDeadline(jobId: string): Promise<void> {
+        try {
+            const { data } = await this.supabase
+                .from('marketplace_negotiation_sessions')
+                .select('id,status,payment_deadline,expires_at')
+                .eq('job_id', jobId)
+                .maybeSingle();
+
+            const session = data as any;
+            if (!session) return;
+            if (String(session.status || '').toLowerCase() !== 'fare_agreed') return;
+            this.paymentDeadline.set(String(session.payment_deadline || session.expires_at || '').trim() || null);
+        } catch (error) {
+            console.warn('[MarketplacePayment] payment deadline unavailable', error);
+        }
+    }
+
+    private startDeadlineTimer(): void {
+        this.stopDeadlineTimer();
+        this.deadlineTimer = setInterval(() => {
+            this.paymentClock.set(Date.now());
+
+            const deadline = this.paymentDeadline();
+            if (!deadline || !isDeadlineElapsed(deadline, Date.now())) return;
+
+            // ONE authoritative reconcile per deadline (never a poll loop).
+            const key = deadlineKey(this.booking()?.id, deadline);
+            if (!key || this.expiredActionedFor === key) return;
+            this.expiredActionedFor = key;
+
+            const jobId = this.booking()?.id;
+            if (jobId) void this.loadBooking(jobId);
+        }, 1000);
+    }
+
+    private stopDeadlineTimer(): void {
+        if (this.deadlineTimer) {
+            clearInterval(this.deadlineTimer);
+            this.deadlineTimer = undefined;
+        }
     }
 
     isErrand(): boolean {
@@ -399,7 +472,17 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     }
 
     paymentTotal(): number {
+        const job = this.booking();
         const fb = this.fareBreakdown();
+
+        // Same money authority as the server (PaymentAuthorityService): a
+        // NEGOTIATED agreed fare is the COMPLETE customer service charge, so the
+        // original quote's `totalAuthorisation` is stale and must not override it.
+        const agreed = Number(job?.agreed_fare);
+        if (Number.isFinite(agreed) && agreed > 0) {
+            return this.toMoney(agreed + this.itemBudget());
+        }
+
         return Number(fb?.['totalAuthorisation'] || (this.serviceFare() + this.itemBudget()));
     }
 
@@ -413,6 +496,14 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     }
 
     platformFeeAmount(): number {
+        const job = this.booking();
+        // A negotiated agreed fare is the COMPLETE customer service charge — the
+        // server's money authority adds NO platform fee to it. The original quote's
+        // platform-fee line is therefore stale for a negotiated job and must not be
+        // presented as an additional customer charge (it would contradict
+        // Total Authorisation, which equals the agreed fare plus the budget).
+        if (Number(job?.agreed_fare) > 0) return 0;
+
         const fb = this.fareBreakdown();
         return this.toMoney(fb?.['platformFeeAmount'] ?? fb?.['platformFee']);
     }
@@ -490,6 +581,14 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
     }
 
     async payWithCard() {
+        // FAIL CLOSED: re-check the AUTHORITATIVE persisted deadline immediately
+        // before any payment mutation. A page left open past expiry, or a stale
+        // direct entry, must never be able to initiate payment.
+        if (this.paymentExpired()) {
+            this.paymentError.set('Payment time expired. This fare agreement is no longer valid.');
+            await this.showToast('Payment time expired. This fare agreement is no longer valid.', 'danger');
+            return;
+        }
         const job = this.booking();
         if (!job || !this.card || !this.cardReady()) return;
 

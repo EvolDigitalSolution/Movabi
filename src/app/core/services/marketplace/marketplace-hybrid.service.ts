@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { acquisitionErrorMessage } from '../compliance/acquisition-error';
+import { negotiationErrorMessage } from '../../../shared/marketplace/negotiation-error';
 import { AuthService } from '../auth/auth.service';
 import { ApiUrlService } from '../api-url.service';
 import {
@@ -78,6 +79,19 @@ export class MarketplaceHybridService {
 
     private rpc(name: string, args?: Record<string, unknown>) {
         return this.supabase.rpc(name, args);
+    }
+
+    /**
+     * Message for a failed negotiation call.
+     *
+     * Composition order matters and preserves the reserved acquisition contract:
+     *   1. MB001/MB002  -> acquisitionErrorMessage returns its specific copy;
+     *   2. a known negotiation authority message (P0001 closed set) -> mapped copy;
+     *   3. otherwise -> the caller's own fallback.
+     * Raw Postgres detail/hint/unknown SQLSTATE text is never surfaced.
+     */
+    private negotiationError(error: unknown, fallback: string): string {
+        return acquisitionErrorMessage(error, negotiationErrorMessage(error, fallback));
     }
 
     private get userId() {
@@ -248,7 +262,7 @@ export class MarketplaceHybridService {
             p_amount: amount
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This offer could not be sent.'));
+        if (error) throw new Error(this.negotiationError(error, 'This offer could not be sent.'));
         const session = data as MarketplaceNegotiationSession;
 
         // Notification stays BEST-EFFORT and only after the authoritative mutation.
@@ -262,7 +276,7 @@ export class MarketplaceHybridService {
             p_driver_id: driverId
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This job is no longer available to claim.'));
+        if (error) throw new Error(this.negotiationError(error, 'This job is no longer available to claim.'));
         const session = data as MarketplaceNegotiationSession;
 
         if (session?.customer_id) {
@@ -300,6 +314,9 @@ export class MarketplaceHybridService {
             p_amount: amount
         });
 
+        // `lock_marketplace_fare` is the legacy driver-authority acquisition lock;
+        // its rejections are MB001/MB002 acquisition failures, not negotiation
+        // authority messages, so it stays on the acquisition mapper.
         if (error) throw new Error(acquisitionErrorMessage(error, 'This fare could not be locked.'));
         const session = data as MarketplaceNegotiationSession;
 
@@ -334,7 +351,7 @@ export class MarketplaceHybridService {
             p_amount: amount
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be sent.'));
+        if (error) throw new Error(this.negotiationError(error, 'This counter-offer could not be sent.'));
         const session = data as MarketplaceNegotiationSession;
 
         if (session?.customer_id) {
@@ -362,7 +379,7 @@ export class MarketplaceHybridService {
             p_amount: amount
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be sent.'));
+        if (error) throw new Error(this.negotiationError(error, 'This counter-offer could not be sent.'));
         const session = data as MarketplaceNegotiationSession;
 
         if (session?.active_driver_id) {
@@ -397,7 +414,7 @@ export class MarketplaceHybridService {
             p_session_id: sessionId
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be accepted.'));
+        if (error) throw new Error(this.negotiationError(error, 'This counter-offer could not be accepted.'));
         const session = data as MarketplaceNegotiationSession;
 
         await this.notifyFareAgreed(session);
@@ -414,7 +431,7 @@ export class MarketplaceHybridService {
             p_session_id: sessionId
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This offer could not be accepted.'));
+        if (error) throw new Error(this.negotiationError(error, 'This offer could not be accepted.'));
         const session = data as MarketplaceNegotiationSession;
 
         await this.notifyFareAgreed(session);
@@ -445,7 +462,25 @@ export class MarketplaceHybridService {
             p_session_id: sessionId
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This offer could not be cancelled.'));
+        if (error) throw new Error(this.negotiationError(error, 'This offer could not be cancelled.'));
+        return data as MarketplaceNegotiationSession;
+    }
+
+    /**
+     * "Find another driver" for a LAPSED unpaid fare agreement.
+     *
+     * After the authoritative payment_deadline elapses, withdrawing the request is
+     * NOT customer_cancel_offer — the agreement must go through the expiry
+     * transition instead, which invalidates the stale agreement and returns the
+     * SAME request to the pool (or terminalises it once the overall job deadline
+     * has also passed). Idempotent on the server.
+     */
+    async customerExpireUnpaidAgreement(sessionId: string): Promise<MarketplaceNegotiationSession> {
+        const { data, error } = await this.rpc('customer_expire_unpaid_agreement', {
+            p_session_id: sessionId
+        });
+
+        if (error) throw new Error(this.negotiationError(error, 'This agreement could not be expired.'));
         return data as MarketplaceNegotiationSession;
     }
 
@@ -460,7 +495,7 @@ export class MarketplaceHybridService {
             p_session_id: sessionId
         });
 
-        if (error) throw new Error(acquisitionErrorMessage(error, 'This counter-offer could not be declined.'));
+        if (error) throw new Error(this.negotiationError(error, 'This counter-offer could not be declined.'));
         return data as MarketplaceNegotiationSession;
     }
 
@@ -562,5 +597,37 @@ export class MarketplaceHybridService {
                 filter: `session_id=eq.${sessionId}`
             }, callback)
             .subscribe();
+    }
+
+    /**
+     * Scoped live subscription for ONE negotiation session — the single shared
+     * primitive both negotiation screens use, so channel logic is not duplicated.
+     *
+     * Subscribes to BOTH the session row and its event ledger (a transition writes
+     * the session AND appends an event), coalescing a burst into ONE callback so a
+     * single transition cannot trigger two reloads. The callback is a REQUEST TO
+     * RELOAD authoritative state — never an optimistic state injection.
+     *
+     * Returns a disposer: the caller owns teardown, so navigating away and back
+     * cannot leave duplicate channels behind.
+     */
+    subscribeToNegotiation(sessionId: string, onReload: () => void): () => void {
+        let coalesced = false;
+        const schedule = () => {
+            if (coalesced) return;
+            coalesced = true;
+            setTimeout(() => {
+                coalesced = false;
+                onReload();
+            }, 60);
+        };
+
+        const sessionChannel = this.subscribeToSession(sessionId, schedule);
+        const eventsChannel = this.subscribeToEvents(sessionId, schedule);
+
+        return () => {
+            try { sessionChannel?.unsubscribe(); } catch { /* already gone */ }
+            try { eventsChannel?.unsubscribe(); } catch { /* already gone */ }
+        };
     }
 }

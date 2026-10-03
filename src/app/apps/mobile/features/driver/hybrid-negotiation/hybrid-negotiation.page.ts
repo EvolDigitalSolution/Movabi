@@ -10,7 +10,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
     canDriver,
+    deadlineKey,
+    deadlineRemainingMs,
+    formatRemaining as formatDeadlineRemaining,
     getNegotiationState,
+    isLiveOwnedNegotiation,
     type NegotiationAction,
     type NegotiationState
 } from '@shared/marketplace/negotiation-state';
@@ -192,7 +196,11 @@ import { AppConfigService } from '@core/services/config/app-config.service';
             <div class="bg-emerald-50 rounded-3xl border border-emerald-100 p-6 text-center">
               <ion-icon name="checkmark-circle-outline" class="text-5xl text-emerald-500 mb-3"></ion-icon>
               <h3 class="text-xl font-bold text-emerald-900 mb-2">Fare Agreed!</h3>
-              <p class="text-emerald-700 font-medium">Waiting for customer to complete payment.</p>
+              @if (negotiationState().paymentExpired) {
+                <p class="text-rose-700 font-medium">Payment window expired. Releasing this agreement…</p>
+              } @else {
+                <p class="text-emerald-700 font-medium">Customer has {{ formatRemaining(paymentCountdown()) }} to complete payment.</p>
+              }
             </div>
           }
         </div>
@@ -232,8 +240,22 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
      * Lifecycle events (session_claimed etc.) never transfer the turn.
      */
     readonly negotiationState = computed<NegotiationState>(() =>
-        getNegotiationState(this.session(), this.events())
+        // leaseClock() is a wall-clock tick so canonical state re-derives when the
+        // per-driver LEASE expires (Realtime emits nothing for elapsed time).
+        getNegotiationState(this.session(), this.events(), this.leaseClock())
     );
+
+    /**
+     * AUTHORITATIVE payment countdown (ms) — the SAME persisted
+     * marketplace_negotiation_sessions.payment_deadline the customer sees, so both
+     * parties converge on one deadline. A 1-second display clock only; no polling.
+     */
+    readonly paymentCountdown = computed<number>(() => {
+        const session = this.session();
+        if (!session || this.negotiationState().phase !== 'agreed_payment_required') return 0;
+        const raw = (session as any)?.payment_deadline ?? (session as any)?.expires_at ?? null;
+        return deadlineRemainingMs(raw, this.leaseClock());
+    });
 
     /** True only when the canonical state permits this driver action. */
     canDriver(action: NegotiationAction): boolean {
@@ -278,13 +300,137 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         this.jobId.set(id);
         await this.load();
         if (!this.hybridEnabled) {
-            await this.router.navigate(['/driver']);
-            return;
+            // Distinguish UNKNOWN configuration from EXPLICITLY DISABLED configuration.
+            //
+            // `effectiveHybridStatus` is resolved from the driver-side `jobs` SELECT,
+            // which production RLS correctly denies while this driver is only
+            // `active_driver_id` on the session (jobs.driver_id is still NULL and the
+            // job is `pending_fare_confirmation`). Unknown must NOT be treated as
+            // disabled when authoritative session state proves this driver already
+            // owns a LIVE, non-expired, non-terminal negotiation — otherwise a driver
+            // can never reopen the negotiation they own.
+            //
+            // An explicitly disabled configuration (a resolved status with
+            // enabled === false) is NEVER converted into an allowed one.
+            const configurationUnknown = this.effectiveHybridStatus() === null;
+            const recoverableOwnedSession = configurationUnknown && isLiveOwnedNegotiation(
+                this.session(),
+                this.auth.currentUser()?.id,
+                this.events()
+            );
+
+            if (!recoverableOwnedSession) {
+                await this.router.navigate(['/driver']);
+                return;
+            }
+
+            console.warn('[HybridNegotiation] configuration undetermined (ancillary jobs read unavailable); recovering owned live negotiation', {
+                jobId: id,
+                sessionId: this.session()?.id ?? null,
+                phase: this.negotiationState().phase
+            });
         }
         this.startCountdown();
+        this.ensureRealtimeSubscription();
+        this.startLeaseTimer();
+    }
+
+    // ---------------------------------------------------------------------
+    // Scoped live convergence for THIS negotiation session.
+    // ---------------------------------------------------------------------
+
+    private realtimeDispose: (() => void) | null = null;
+    private realtimeSessionId: string | null = null;
+    /** Monotonic token: a stale async reload must never overwrite newer state. */
+    private reloadToken = 0;
+
+    /** Wall-clock tick fed into getNegotiationState() so lease expiry is visible. */
+    private leaseClock = signal<number>(Date.now());
+    private leaseTimer?: any;
+    private leaseReconciledFor: string | null = null;
+
+    private startLeaseTimer(): void {
+        this.stopLeaseTimer();
+        this.leaseTimer = setInterval(() => {
+            this.leaseClock.set(Date.now());
+
+            const session = this.session();
+            const expiresAt = String((session as any)?.expires_at ?? '').trim();
+            if (!session || !expiresAt) return;
+
+            const parsed = Date.parse(expiresAt);
+            if (!Number.isFinite(parsed) || parsed > Date.now()) {
+                this.leaseReconciledFor = null;
+                return;
+            }
+
+            // Reconcile ONCE per lapsed lease; the authoritative reload reveals
+            // whether the request was released back to the market.
+            const key = deadlineKey(session.id, expiresAt);
+            if (!key || this.leaseReconciledFor === key) return;
+            this.leaseReconciledFor = key;
+            void this.reconcile();
+        }, 1000);
+    }
+
+    private stopLeaseTimer(): void {
+        if (this.leaseTimer) {
+            clearInterval(this.leaseTimer);
+            this.leaseTimer = undefined;
+        }
+    }
+
+    /**
+     * Authoritative reload of session + event ledger (+ customer profile).
+     * Realtime callbacks request THIS — they never inject optimistic state — and a
+     * monotonic token discards a reload superseded while it was in flight.
+     */
+    private async reconcile(): Promise<void> {
+        const jobId = this.jobId();
+        if (!jobId) return;
+        const token = ++this.reloadToken;
+        try {
+            const session = await this.hybridService.getSessionByJob(jobId);
+            if (token !== this.reloadToken) return;
+            this.session.set(session);
+            if (!session) return;
+
+            const events = await this.hybridService.getSessionEvents(session.id);
+            if (token !== this.reloadToken) return;
+            this.events.set(events);
+            await this.loadCustomerProfile(session.customer_id);
+            if (token !== this.reloadToken) return;
+            this.ensureRealtimeSubscription();
+        } catch (error) {
+            console.warn('[HybridNegotiation] reconcile failed', error);
+        }
+    }
+
+    /**
+     * Establish (or RE-establish) the ONE scoped subscription for this session.
+     * Idempotent per session id, so re-entry cannot accumulate duplicate channels.
+     */
+    private ensureRealtimeSubscription(): void {
+        const sessionId = String(this.session()?.id ?? '').trim();
+        if (!sessionId) return;
+        if (this.realtimeSessionId === sessionId && this.realtimeDispose) return;
+
+        this.disposeRealtimeSubscription();
+        this.realtimeSessionId = sessionId;
+        this.realtimeDispose = this.hybridService.subscribeToNegotiation(sessionId, () => {
+            void this.reconcile();
+        });
+    }
+
+    private disposeRealtimeSubscription(): void {
+        try { this.realtimeDispose?.(); } catch { /* already disposed */ }
+        this.realtimeDispose = null;
+        this.realtimeSessionId = null;
     }
 
     ngOnDestroy() {
+        this.disposeRealtimeSubscription();
+        this.stopLeaseTimer();
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
         }
@@ -327,6 +473,11 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         return this.config.formatCurrency(Number(amount || 0));
     }
 
+    /** Shared zero-padded MM:SS for the AUTHORITATIVE payment countdown. */
+    formatRemaining(ms: number): string {
+        return formatDeadlineRemaining(ms);
+    }
+
     formatCountdown(ms: number): string {
         const totalSeconds = Math.max(0, Math.floor(ms / 1000));
         const minutes = Math.floor(totalSeconds / 60);
@@ -358,6 +509,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
                 const events = await this.hybridService.getSessionEvents(session.id);
                 this.events.set(events);
                 await this.loadCustomerProfile(session.customer_id);
+                this.ensureRealtimeSubscription();
             }
         } catch (error) {
             console.error('[HybridNegotiation] load failed', error);
@@ -405,12 +557,15 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             await loading.present();
             const session = await this.hybridService.claimSession(this.jobId(), user.id);
             this.session.set(session);
-            await loading.dismiss();
             await this.showToast('Negotiation started! Make your offer or accept.', 'success');
+            await this.reconcile();
+            this.ensureRealtimeSubscription();
         } catch (error: any) {
             console.error('[HybridNegotiation] claim failed', error);
-            await loading.dismiss();
             await this.showToast(error.message || 'Another driver may already be negotiating.', 'danger');
+        } finally {
+            // GUARANTEED cleanup: no rejection may leave the overlay on screen.
+            try { await loading.dismiss(); } catch { /* already dismissed */ }
         }
     }
 
@@ -424,12 +579,13 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             const amount = session?.suggested_fare || 0;
             const updated = await this.hybridService.lockFare(this.jobId(), user.id, amount);
             this.session.set(updated);
-            await loading.dismiss();
             await this.showToast('Suggested fare accepted! Waiting for customer payment.', 'success');
+            await this.reconcile();
         } catch (error: any) {
             console.error('[HybridNegotiation] accept suggested failed', error);
-            await loading.dismiss();
             await this.showToast(error.message || 'Unable to accept fare.', 'danger');
+        } finally {
+            try { await loading.dismiss(); } catch { /* already dismissed */ }
         }
     }
 
@@ -442,14 +598,13 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         try {
             await loading.present();
             await this.hybridService.releaseSession(this.jobId(), user.id, 'pass');
-            await loading.dismiss();
             await this.showToast('You passed. The request will go to the next driver.', 'success');
             await this.router.navigate(['/driver']);
         } catch (error: any) {
             console.error('[HybridNegotiation] pass failed', error);
-            await loading.dismiss();
             await this.showToast(error.message || 'Unable to pass.', 'danger');
         } finally {
+            try { await loading.dismiss(); } catch { /* already dismissed */ }
             this.mutationBusy.set(false);
         }
     }
@@ -468,6 +623,9 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             await this.showToast('Offer accepted! Waiting for customer payment.', 'success');
         } catch (error: any) {
             console.error('[HybridNegotiation] accept offer failed', error);
+            // A failed mutation must not leave the UI looking settled: reconcile
+            // from persisted state so the card reflects the authoritative session.
+            await this.load();
             await this.showToast(error.message || 'Unable to accept offer.', 'danger');
         } finally {
             this.mutationBusy.set(false);
