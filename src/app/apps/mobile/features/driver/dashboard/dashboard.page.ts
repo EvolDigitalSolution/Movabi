@@ -253,7 +253,14 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               @if (activeJob()) {
                 @let currentJob = activeJob();
                 <div class="min-h-0 flex-1 flex flex-col">
-                  <div class="flex-1 overflow-y-auto overscroll-contain pb-5">
+                  <div
+                    class="flex-1 overflow-y-auto overscroll-contain pb-5 cursor-pointer"
+                    role="button"
+                    tabindex="0"
+                    (click)="resumeActiveJob()"
+                    (keydown.enter)="resumeActiveJob()"
+                    (keydown.space)="onActiveCardSpace($event)"
+                  >
                     <div class="space-y-4">
                       <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0 flex-1">
@@ -335,7 +342,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                       (click)="resumeActiveJob()"
                       class="col-span-2 w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all"
                     >
-                      Continue Request
+                      Continue Job
                     </button>
                   </div>
                 </div>
@@ -774,7 +781,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Trips</p>
               <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ activeJob() ? activeJobTitle() : 'No active request' }}</h2>
               <p class="mt-1 text-sm font-semibold text-slate-600">{{ activeJob() ? activeJobShortRouteLabel() : 'Accepted requests will appear here so you can continue them.' }}</p>
-              <button type="button" (click)="activeJob() ? resumeActiveJob() : setHubTab('requests')" class="mt-4 w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ activeJob() ? 'Continue Request' : 'Browse Requests' }}</button>
+              <button type="button" (click)="activeJob() ? resumeActiveJob() : setHubTab('requests')" class="mt-4 w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ activeJob() ? 'Continue Job' : 'Browse Requests' }}</button>
             </app-card>
           } @else if (activeHubTab() === 'wallet') {
             <div class="space-y-4">
@@ -1475,6 +1482,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         await this.router.navigate(['/driver/job-details', jobId]);
+    }
+
+    /** Keyboard Space on the active-job card: suppress page scroll, then resume. */
+    onActiveCardSpace(event: Event): void {
+        event.preventDefault();
+        void this.resumeActiveJob();
     }
 
     async openActiveJobChat(job: Booking | null | undefined): Promise<void> {

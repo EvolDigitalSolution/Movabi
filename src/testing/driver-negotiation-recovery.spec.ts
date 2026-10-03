@@ -159,14 +159,14 @@ describe('HybridNegotiationPage recovery wiring', () => {
     expect(fn).toContain('if (!id) {');
   });
 
-  it('6. jobDetails is NOT required after recovery (only optional display)', () => {
+  it('6. jobDetails tolerates null for display; the transition predicate is its only other reader', () => {
     // jobDistanceEta tolerates a null jobDetails
     const eta = PAGE.slice(PAGE.indexOf('jobDistanceEta(): string {'), PAGE.indexOf('formatPrice(amount:'));
     expect(eta).toContain('const job = this.jobDetails();');
     expect(eta).toContain("if (!job) return '';");
-    // no other member dereferences jobDetails
+    // jobDetails is now also read (once) by the post-payment transition predicate
     const usages = PAGE.split('this.jobDetails()').length - 1;
-    expect(usages).toBe(1);
+    expect(usages).toBe(2);
   });
 
   it('transitions stay session/RPC-authoritative (no jobDetails dependency)', () => {
@@ -174,8 +174,12 @@ describe('HybridNegotiationPage recovery wiring', () => {
     expect(PAGE).toContain('this.hybridService.releaseSession(');
   });
 
-  it('no realtime subscription is added by the recovery path', () => {
-    // the page has no subscription in EITHER path, so recovery cannot diverge
-    expect(PAGE).not.toContain('.subscribe(');
+  it('recovery path adds the SCOPED, id-filtered job subscription (payment finalization)', () => {
+    const fn = PAGE.slice(PAGE.indexOf('private ensureJobRealtimeSubscription(): void {'), PAGE.indexOf('private disposeJobRealtimeSubscription('));
+    expect(fn).toContain("table: 'jobs'");
+    expect(fn).toContain('filter: `id=eq.${jobId}`');
+    expect(fn).toContain('void this.reconcile();');
+    // ...and it is cleaned up on destroy
+    expect(PAGE).toContain('this.disposeJobRealtimeSubscription();');
   });
 });

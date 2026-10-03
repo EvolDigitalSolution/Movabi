@@ -58,6 +58,8 @@ export class DriverService {
 
     private stripeStatusInFlight = new Map<string, Promise<void>>();
     private lastStripeRefreshAt = new Map<string, number>();
+    /** Monotonic token: a stale opportunity fetch must not overwrite a newer one. */
+    private hybridFetchToken = 0;
 
     async toggleOnline(status: DriverStatus) {
         const user = this.auth.currentUser();
@@ -97,11 +99,13 @@ export class DriverService {
 
         if (status === 'online') {
             this.subscribeToJobs();
+            this.subscribeToNegotiationSessions();
             await this.fetchStripeAccount();
             await this.fetchAvailableJobs();
         } else {
             this.availableJobs.set([]);
             this.supabase.channel('available-jobs').unsubscribe();
+            this.supabase.channel('negotiation-sessions').unsubscribe();
         }
     }
 
@@ -254,6 +258,29 @@ export class DriverService {
         void this.fetchAvailableJobs();
     }
 
+    private subscribeToNegotiationSessions() {
+        // One dashboard-scope channel (not per-card). Session-only transitions
+        // (customer cancellation, voluntary release, expiry) may NOT touch `jobs`,
+        // so the jobs subscription never fires for them. Realtime here is a TRIGGER
+        // only: re-fetch the authoritative lists rather than mutating arrays from
+        // the raw payload. fetchHybridOpportunities is a full replace, so terminal
+        // or released-away jobs are pruned; fetchRecoverableNegotiations clears a
+        // session this driver no longer owns.
+        this.supabase.channel('negotiation-sessions').unsubscribe();
+
+        this.supabase
+            .channel('negotiation-sessions')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'marketplace_negotiation_sessions' },
+                () => {
+                    void this.fetchHybridOpportunities();
+                    void this.fetchRecoverableNegotiations();
+                }
+            )
+            .subscribe();
+    }
+
     async fetchVehicle() {
         const user = this.auth.currentUser();
         if (!user) return null;
@@ -325,18 +352,24 @@ export class DriverService {
             return [];
         }
 
+        const token = ++this.hybridFetchToken;
         try {
             const opportunities = await this.hybridService.fetchHybridOpportunities(user.id);
+            if (token !== this.hybridFetchToken) return this.hybridOpportunities();
+
             const checks = await Promise.all(opportunities.map(async (op) => ({
                 opportunity: op,
                 enabled: (await this.hybridService.getEffectiveHybridStatus(op.service_slug)).enabled
             })));
+            if (token !== this.hybridFetchToken) return this.hybridOpportunities();
+
             const allowed = checks
                 .filter((entry) => entry.enabled)
                 .map((entry) => entry.opportunity);
             this.hybridOpportunities.set(allowed);
             return allowed;
         } catch (error) {
+            if (token !== this.hybridFetchToken) return this.hybridOpportunities();
             console.warn('[DriverService] hybrid opportunities not available', error);
             this.hybridOpportunities.set([]);
             return [];

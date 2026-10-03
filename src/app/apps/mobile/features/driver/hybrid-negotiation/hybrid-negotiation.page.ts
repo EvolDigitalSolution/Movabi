@@ -349,6 +349,11 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     private leaseTimer?: any;
     private leaseReconciledFor: string | null = null;
 
+    /** Post-payment navigation guard: navigate away from this page AT MOST once. */
+    private lifecycleResolved = false;
+    /** Scoped live JOB subscription so payment finalization is observed (session-only changes are already covered). */
+    private jobRealtimeDispose: (() => void) | null = null;
+
     private startLeaseTimer(): void {
         this.stopLeaseTimer();
         this.leaseTimer = setInterval(() => {
@@ -393,14 +398,28 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             const session = await this.hybridService.getSessionByJob(jobId);
             if (token !== this.reloadToken) return;
             this.session.set(session);
-            if (!session) return;
+            if (!session) {
+                // Session is gone (released/cancelled away) — confirm via the job.
+                await this.loadJobDetails(jobId);
+                if (token !== this.reloadToken) return;
+                this.checkForActiveJobTransition();
+                return;
+            }
 
             const events = await this.hybridService.getSessionEvents(session.id);
             if (token !== this.reloadToken) return;
             this.events.set(events);
+
+            // Reload the AUTHORITATIVE job (status/payment/driver) so payment
+            // finalization and customer cancellation are observed, not inferred.
+            await this.loadJobDetails(jobId);
+            if (token !== this.reloadToken) return;
+
             await this.loadCustomerProfile(session.customer_id);
             if (token !== this.reloadToken) return;
             this.ensureRealtimeSubscription();
+            this.ensureJobRealtimeSubscription();
+            this.checkForActiveJobTransition();
         } catch (error) {
             console.warn('[HybridNegotiation] reconcile failed', error);
         }
@@ -430,6 +449,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.disposeRealtimeSubscription();
+        this.disposeJobRealtimeSubscription();
         this.stopLeaseTimer();
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
@@ -505,6 +525,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             const session = await this.hybridService.getSessionByJob(this.jobId());
             this.session.set(session);
             await this.loadJobDetails(this.jobId());
+            this.ensureJobRealtimeSubscription();
+            this.checkForActiveJobTransition();
             if (session) {
                 const events = await this.hybridService.getSessionEvents(session.id);
                 this.events.set(events);
@@ -521,7 +543,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         try {
             const { data, error } = await this.supabase
                 .from('jobs')
-                .select('distance_km, estimated_distance_km, duration_seconds, estimated_duration, service_type:service_types(*)')
+                .select('status, payment_status, driver_id, distance_km, estimated_distance_km, duration_seconds, estimated_duration, service_type:service_types(*)')
                 .eq('id', jobId)
                 .maybeSingle();
             if (!error) {
@@ -534,6 +556,70 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         } catch (error) {
             console.warn('[HybridNegotiation] job details load failed', error);
         }
+    }
+
+    /**
+     * POST-PAYMENT / CANCELLATION CONVERGENCE.
+     *
+     * After an AUTHORITATIVE job reload this decides the page's lifecycle. It never
+     * reads a raw Realtime payload and never navigates from fare_agreed / countdown /
+     * customer state alone — only the persisted job + session, and only once.
+     */
+    private checkForActiveJobTransition(): void {
+        if (this.lifecycleResolved) return;
+        const job = this.jobDetails();
+        const driverId = this.auth.currentUser()?.id;
+        if (!job || !driverId) return;
+
+        const status = String((job as any)?.status ?? '').toLowerCase();
+        const paymentStatus = String((job as any)?.payment_status ?? '').toLowerCase();
+        const sessionStatus = String((this.session() as any)?.status ?? '').toLowerCase();
+
+        // CUSTOMER CANCELLATION / TERMINAL — never leave the driver on a stale screen.
+        if (['cancelled', 'canceled'].includes(status) || sessionStatus === 'customer_declined') {
+            this.leaveToHub('This request was cancelled by the customer.');
+            return;
+        }
+        if (['expired', 'completed'].includes(status) || sessionStatus === 'expired') {
+            this.leaveToHub('This request is no longer available.');
+            return;
+        }
+
+        // AUTHORITATIVE ACTIVE PAID ASSIGNMENT owned by this driver.
+        if (status === 'assigned' && paymentStatus === 'authorized' && (job as any)?.driver_id === driverId) {
+            this.lifecycleResolved = true;
+            void this.router.navigate(['/driver/job-details', this.jobId()]);
+        }
+    }
+
+    private leaveToHub(message: string): void {
+        if (this.lifecycleResolved) return;
+        this.lifecycleResolved = true;
+        this.stopLeaseTimer();
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+            this.countdownInterval = null;
+        }
+        void this.showToast(message, 'warning');
+        void this.router.navigate(['/driver']);
+    }
+
+    /** Observe the job's own authoritative transition (payment finalization writes jobs, not the session). */
+    private ensureJobRealtimeSubscription(): void {
+        const jobId = this.jobId();
+        if (!jobId || this.jobRealtimeDispose) return;
+        const channel = this.supabase
+            .channel(`negotiation-job-${jobId}`)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs', filter: `id=eq.${jobId}` }, () => {
+                void this.reconcile();
+            })
+            .subscribe();
+        this.jobRealtimeDispose = () => { try { channel.unsubscribe(); } catch { /* already disposed */ } };
+    }
+
+    private disposeJobRealtimeSubscription(): void {
+        try { this.jobRealtimeDispose?.(); } catch { /* already disposed */ }
+        this.jobRealtimeDispose = null;
     }
 
     private async loadCustomerProfile(customerId: string) {

@@ -17,6 +17,9 @@ export class MapRendererService {
   private markerAnimationFrames = new globalThis.Map<string, number>();
   private routeLayerId = 'movabi-route-layer';
   private routeSourceId = 'movabi-route-source';
+  /** Latest route requested while the style was still loading (one slot; latest wins). */
+  private pendingRoute: RouteSummary | null = null;
+  private routeStyleListenerRegistered = false;
 
   // Camera-follow support. Genuine user gestures are identified by MapLibre's
   // originalEvent metadata; programmatic easeTo events do not carry it.
@@ -58,6 +61,8 @@ export class MapRendererService {
   destroyMap() {
     this.cancelAllMarkerAnimations();
     this.detachUserGestureListeners();
+    this.pendingRoute = null;
+    this.routeStyleListenerRegistered = false;
     if (this.map) {
       this.map.remove();
       this.map = null;
@@ -329,6 +334,38 @@ export class MapRendererService {
   drawRoute(route: RouteSummary) {
     if (!this.map || !route.geometry) return;
 
+    this.pendingRoute = route;
+
+    if (!this.map.isStyleLoaded()) {
+      // Style not ready: defer EXACTLY once via MapLibre's own style.load event.
+      // A repeated pre-ready draw overwrites pendingRoute, so the latest route
+      // wins without accumulating duplicate listeners or source/layer work.
+      this.ensureRouteStyleListener();
+      return;
+    }
+
+    this.renderRoute(route);
+  }
+
+  private ensureRouteStyleListener(): void {
+    if (!this.map || this.routeStyleListenerRegistered) return;
+    this.routeStyleListenerRegistered = true;
+
+    this.map.once('style.load', () => {
+      this.routeStyleListenerRegistered = false;
+      const route = this.pendingRoute;
+      this.pendingRoute = null;
+
+      // The map may have been destroyed before readiness — do nothing then.
+      if (route && this.map && this.map.isStyleLoaded()) {
+        this.renderRoute(route);
+      }
+    });
+  }
+
+  private renderRoute(route: RouteSummary) {
+    if (!this.map || !route.geometry) return;
+
     this.clearRoute();
 
     this.map.addSource(this.routeSourceId, {
@@ -377,7 +414,7 @@ export class MapRendererService {
   }
 
   clearRoute() {
-    if (!this.map) return;
+    if (!this.map || !this.map.isStyleLoaded()) return;
     if (this.map.getLayer(this.routeLayerId)) this.map.removeLayer(this.routeLayerId);
     if (this.map.getSource(this.routeSourceId)) this.map.removeSource(this.routeSourceId);
   }
