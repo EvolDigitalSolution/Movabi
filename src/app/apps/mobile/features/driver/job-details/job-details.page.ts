@@ -186,21 +186,26 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
             <app-card class="overflow-hidden">
               <div class="p-4 border-b border-slate-100">
                 <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">{{ navigationSectionLabel() }}</p>
-                <h3 class="mt-1 text-base font-display font-black text-slate-950">{{ pickupMapTitle() }}</h3>
-                <p class="mt-1 text-xs text-slate-500 font-semibold">{{ pickupMapSubtitle() }}</p>
+                <p class="mt-1 text-xs text-slate-500 font-semibold break-words">{{ navigationTargetAddress() || 'Address unavailable' }}</p>
+              </div>
+              @if (!isNavigationTerminal()) {
+                <div class="p-4 border-b border-slate-100">
+                  <button
+                    type="button"
+                    (click)="openMap(navigationTargetAddress())"
+                    class="w-full h-12 rounded-2xl bg-blue-600 text-white font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-blue-600/20"
+                  >
+                    <ion-icon name="navigate"></ion-icon>
+                    {{ navigateButtonLabel() }}
+                  </button>
+                </div>
+              }
+              <div class="px-4 py-3 border-b border-slate-100">
+                <p class="text-sm font-semibold text-slate-700">{{ pickupMapTitle() }}</p>
+                <p class="mt-0.5 text-xs text-slate-500 font-semibold">{{ pickupMapSubtitle() }}</p>
               </div>
               <div class="h-64 bg-slate-50">
                 <app-map #pickupMap></app-map>
-              </div>
-              <div class="p-4">
-                <button
-                  type="button"
-                  (click)="openMap(navigationTargetAddress())"
-                  class="w-full h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
-                >
-                  <ion-icon name="navigate"></ion-icon>
-                  {{ navigateButtonLabel() }}
-                </button>
               </div>
             </app-card>
 
@@ -2083,22 +2088,57 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     openMap(address?: string | null) {
+        const coords = this.navigationDestinationCoordinates();
         const safeAddress = String(address || '').trim();
 
-        if (!safeAddress) {
+        // Prefer validated stored coordinates; fall back to the address. 0,0 (and
+        // near-zero) coordinates are never treated as a legitimate destination.
+        const destination = coords
+            ? `${coords.lat},${coords.lng}`
+            : (safeAddress ? encodeURIComponent(safeAddress) : '');
+
+        if (!destination) {
             void this.showToast('Address is unavailable.', 'warning');
             return;
         }
 
-        window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeAddress)}`, '_blank');
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank');
     }
 
     /**
-     * Context-sensitive navigation target for the current lifecycle stage:
-     * the origin (pickup/store/collection) until the driver is heading to the
-     * customer, then the destination (customer/recipient).
+     * Preferred navigation destination as validated stored coordinates for the
+     * current stage (pickup/origin until heading to the customer, then dropoff),
+     * or null when only the address is usable.
+     */
+    private navigationDestinationCoordinates(): { lat: number; lng: number } | null {
+        const job = this.job();
+        const heading = this.isHeadingToCustomer();
+        const lat = heading ? job?.dropoff_lat : job?.pickup_lat;
+        const lng = heading ? job?.dropoff_lng : job?.pickup_lng;
+        if (typeof lat === 'number' && typeof lng === 'number' && this.isValidCoordinate(lat) && this.isValidCoordinate(lng)) {
+            return { lat, lng };
+        }
+        return null;
+    }
+
+    /** Whether the current stage navigates toward the customer/destination. */
+    private isHeadingToCustomer(): boolean {
+        const status = String(this.job()?.status || '');
+        return status === 'en_route_to_customer' || status === 'in_progress';
+    }
+
+    /** Terminal statuses where operational navigation no longer applies. */
+    isNavigationTerminal(): boolean {
+        const status = String(this.job()?.status || '');
+        return ['delivered', 'completed', 'cancelled', 'canceled', 'failed'].includes(status);
+    }
+
+    /**
+     * Context-sensitive navigation destination for the current lifecycle stage.
+     * Returns undefined for terminal jobs so no operational action is offered.
      */
     navigationTargetAddress(): string | undefined {
+        if (this.isNavigationTerminal()) return undefined;
         return this.isHeadingToCustomer()
             ? this.job()?.dropoff_address
             : this.job()?.pickup_address;
@@ -2108,11 +2148,6 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         return this.isHeadingToCustomer()
             ? `Navigate to ${this.destinationActionLabel()}`
             : `Navigate to ${this.originActionLabel()}`;
-    }
-
-    private isHeadingToCustomer(): boolean {
-        const status = String(this.job()?.status || '');
-        return status === 'en_route_to_customer' || status === 'in_progress';
     }
 
     private async renderPickupRoute(): Promise<void> {
@@ -2220,15 +2255,16 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     navigationSectionLabel(): string {
+        const heading = this.isHeadingToCustomer();
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store navigation';
+                return heading ? 'Customer navigation' : 'Store navigation';
             case ServiceTypeEnum.DELIVERY:
-                return 'Collection navigation';
+                return heading ? 'Recipient navigation' : 'Collection navigation';
             case ServiceTypeEnum.VAN:
-                return 'Move pickup navigation';
+                return heading ? 'Move destination navigation' : 'Move pickup navigation';
             default:
-                return 'Pickup navigation';
+                return heading ? 'Destination navigation' : 'Pickup navigation';
         }
     }
 
@@ -2640,8 +2676,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private formatDuration(seconds: number | null): string {
-        if (!seconds || !Number.isFinite(seconds)) return 'ETA unavailable';
-        const minutes = Math.max(1, Math.round(seconds / 60));
+        if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return 'ETA unavailable';
+        if (seconds < 60) return 'Arriving';
+        const minutes = Math.round(seconds / 60);
         return `${minutes} min`;
     }
 

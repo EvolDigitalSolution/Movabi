@@ -2910,9 +2910,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const availableJobs = this.jobs();
         const activeJob = this.activeJob();
 
-        // Stop alert if there's an active job or no available jobs
-        if (activeJob || availableJobs.length === 0) {
+        // An active job silences every incoming alarm unconditionally.
+        if (activeJob) {
             this.stopAllRequestSounds();
+            return;
+        }
+
+        // No ordinary available requests: stop only a JOB-owned alarm. A
+        // negotiation-owned alarm must survive an empty ordinary-jobs refresh;
+        // ownership is judged against the current actionable negotiations, so a
+        // transient empty jobs array never clobbers a negotiation alarm.
+        if (availableJobs.length === 0) {
+            const owner = this.activeRequestId();
+            const isNegotiationOwner = !!owner && this.hybridOpportunities().some((op) => op.session_id === owner);
+            if (!isNegotiationOwner) {
+                this.stopAllRequestSounds();
+            }
             return;
         }
 
@@ -2929,6 +2942,41 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.autoShownJobIds.add(newestJob.id);
             this.selectedJobId.set(newestJob.id);
             this.sheetHeight.set(80);
+        }
+    });
+
+    /**
+     * Negotiation opportunity audible alert.
+     *
+     * Reuses the SAME alarm architecture as ordinary requests (startRequestSound,
+     * request-notification.mp3, requestAlertInterval). Deduplicates on the
+     * authoritative negotiation identity `session_id`, never on `job_id`, so a
+     * job's separate negotiation sessions each alert exactly once. Yields to an
+     * active job and to ordinary available requests, preserving the existing
+     * job-alarm priority and exclusivity.
+     */
+    private negotiationAlertEffect = effect(() => {
+        const activeJob = this.activeJob();
+        const availableJobs = this.jobs();
+        const opportunities = this.hybridOpportunities();
+
+        // An active job or an ordinary available request owns the alarm.
+        if (activeJob || availableJobs.length > 0) return;
+
+        if (opportunities.length === 0) {
+            // Stop only a NEGOTIATION-owned alarm; an ordinary-request-owned
+            // alarm must survive an empty/unchanged opportunities refresh.
+            const owner = this.activeRequestId();
+            const isJobOwner = !!owner && this.jobs().some((job) => job.id === owner);
+            if (!isJobOwner) {
+                this.stopAllRequestSounds();
+            }
+            return;
+        }
+
+        const newest = opportunities[0];
+        if (newest?.session_id && this.activeRequestId() !== newest.session_id) {
+            this.startRequestSound(newest.session_id);
         }
     });
 

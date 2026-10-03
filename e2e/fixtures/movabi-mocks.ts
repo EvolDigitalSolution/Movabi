@@ -423,6 +423,9 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
     // DriverService.fetchVehicle() -> awaited by fetchAvailableJobs() AND by the
     // acceptance gate. Must use the API shape fromVehicleApi() maps:
     // { id, userId, make, model, colour, year, registrationNumber, type, capacity, status }.
+    if (url.includes('/api/driver-onboarding/status')) {
+      return json(route, { onboarding_completed: true, account_status: 'active', is_verified: true });
+    }
     if (url.includes('/api/driver-onboarding/vehicle')) {
       return json(route, {
         vehicle: {
