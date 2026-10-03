@@ -2,6 +2,24 @@ import { expect, Page, Route } from '@playwright/test';
 
 export type E2ERole = 'customer' | 'driver' | 'admin';
 
+/**
+ * Statuses `DriverService.fetchActiveJob()` treats as an in-progress job.
+ * Kept in sync with that query so the mock honours the same filter.
+ */
+export const ACTIVE_JOB_STATUSES = [
+  'assigned',
+  'accepted',
+  'heading_to_pickup',
+  'arrived',
+  'arrived_at_store',
+  'shopping_in_progress',
+  'collected',
+  'en_route_to_customer',
+  'in_progress',
+  'delivered',
+  'over_budget_requested'
+];
+
 export const ids = {
   tenant: '00000000-0000-4000-8000-000000000001',
   city: '00000000-0000-4000-8000-000000000002',
@@ -47,6 +65,10 @@ export const profiles = {
     account_status: 'active',
     is_verified: true,
     verification_status: 'approved',
+    // Required by DriverService.getAcceptanceBlockers(): without these the
+    // acceptance gate blocks every accept and the flow never reaches the RPC.
+    insurance_url: 'https://storage.movabi.test/driver/insurance.pdf',
+    driver_license_url: 'https://storage.movabi.test/driver/licence.pdf',
     pricing_plan: 'starter',
     commission_rate: 15,
     stripe_connect_status: 'enabled',
@@ -97,6 +119,31 @@ export const pricingConfig = [
   { service_type: 'van-moving', base_fare: 25, per_km: 1.6, per_min: 0.25, service_fee: 1.5, minimum_fare: 30, currency_code: 'GBP', is_active: true }
 ];
 
+/**
+ * Deterministic LAUNCHED market. Without this the driver resolves to an
+ * unavailable market, stays offline, and never requests available jobs.
+ * Shape matches `PublicMarketStatus` (core/services/market-availability.service).
+ */
+export const marketLive = {
+  code: 'GB-BOLTON',
+  countryCode: 'GB',
+  marketCity: 'Bolton',
+  launchStatus: 'live',
+  customerAppEnabled: true,
+  customerRegistrationEnabled: true,
+  driverRegistrationEnabled: true,
+  driverOnlineEnabled: true,
+  quoteEnabled: true,
+  bookingEnabled: true,
+  paymentEnabled: true,
+  currency: 'GBP',
+  timezone: 'Europe/London',
+  title: 'Movabi UK',
+  message: 'Live',
+  waitingListEnabled: false,
+  resolutionLevel: 'city'
+};
+
 export const baseJob = {
   id: ids.rideJob,
   customer_id: ids.customer,
@@ -132,6 +179,25 @@ export const baseJob = {
   updated_at: now
 };
 
+/**
+ * A SECOND independently eligible available request, so the Available Requests
+ * list, per-card selection and the Back control can be certified with >1 job.
+ * It is never the auto-presented (newest/first) job.
+ */
+export const secondAvailableJob = {
+  ...baseJob,
+  id: '50000000-0000-4000-8000-000000000002',
+  pickup_address: 'Deansgate, Manchester',
+  dropoff_address: 'Piccadilly Station, Manchester',
+  pickup_lat: 53.478,
+  pickup_lng: -2.249,
+  dropoff_lat: 53.477,
+  dropoff_lng: -2.23,
+  price: 4.75,
+  total_price: 4.75,
+  estimated_price: 4.75
+};
+
 export function roleFromEmail(email: string): E2ERole {
   if (email.includes('driver')) return 'driver';
   if (email.includes('admin')) return 'admin';
@@ -140,10 +206,20 @@ export function roleFromEmail(email: string): E2ERole {
 
 export async function installMovabiMocks(page: Page, role: E2ERole = 'customer') {
   let activeRole = role;
-  let activeJob = { ...baseJob };
+  // The driver starts with NO active job so the dashboard renders the
+  // AVAILABLE list; accepting via the accept_* RPC below assigns it.
+  let activeJob = { ...baseJob, driver_id: null, accepted_driver_id: null, status: 'searching' } as typeof baseJob;
   const wallet = { id: 'wallet-1', user_id: ids.customer, available_balance: 42.5, reserved_balance: 3.5, currency_code: 'GBP' };
 
   await page.addInitScript(() => {
+    // Deterministic launched market for the driver online/availability gate.
+    window.localStorage.setItem('movabi_country_code', 'GB');
+    // Mark the first-run product tours as seen. The tour overlay is a
+    // full-screen layer that intercepts pointer events and would otherwise
+    // block every dashboard interaction in these specs.
+    window.localStorage.setItem('movabi_customer_tour_completed', 'true');
+    window.localStorage.setItem('movabi_driver_tour_completed', 'true');
+    window.localStorage.setItem('movabi_admin_tour_completed', 'true');
     class MockBroadcastChannel {
       name: string;
       onmessage: ((event: MessageEvent) => void) | null = null;
@@ -184,6 +260,21 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
 
     if (url.includes('api.maptiler.com') || url.includes('api.openrouteservice.org')) {
       return json(route, { features: [], routes: [{ summary: { distance: 870, duration: 128 }, geometry: { coordinates: [[-2.43, 53.585], [-2.421, 53.592]] } }] });
+    }
+
+    // ---- Market rollout gate (/api/markets/*) -------------------------------
+    // The driver cannot go online (and therefore cannot see available jobs)
+    // unless the market resolves as live with driverOnlineEnabled.
+    if (url.includes('/api/markets/')) {
+      if (url.includes('/driver-online')) {
+        return json(route, { allowed: true, code: 'OK', title: '', message: '', action: null, blockers: [] });
+      }
+      if (url.includes('/driver-registration/check')) {
+        return json(route, { allowed: true, code: 'OK', title: '', message: '', action: null, blockers: [] });
+      }
+      if (url.includes('/waitlist')) return json(route, { ok: true });
+      // /resolve and /status
+      return json(route, marketLive);
     }
 
     if (url.includes('/auth/v1/token')) {
@@ -254,14 +345,46 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
         return json(route, [activeJob]);
       }
 
-      if (url.includes('driver_id=is.null') || url.includes('status=in')) {
-        return json(route, [{ ...baseJob, driver_id: null, accepted_driver_id: null, status: 'searching' }]);
+      if (url.includes('driver_id.is.null')) {
+        // AVAILABLE list query (or=(and(status.in.(...),...,driver_id.is.null))) -> ARRAY.
+        // `activeJob` is only still available while it is genuinely 'searching',
+        // so an accepted request correctly drops out of the pool.
+        const available: unknown[] = [];
+        if (String(activeJob.status) === 'searching') {
+          available.push({ ...activeJob, driver_id: null, accepted_driver_id: null });
+        }
+        available.push({ ...secondAvailableJob, driver_id: null, accepted_driver_id: null, status: 'searching' });
+        return json(route, available);
+      }
+
+      if (url.includes('select=id') && url.includes('status=in.')) {
+        // ACTIVE job lookup via .maybeSingle() -> single OBJECT (or null).
+        // Must honour the status filter, otherwise a 'searching' job would be
+        // wrongly reported as this driver's active job.
+        return json(route, ACTIVE_JOB_STATUSES.includes(String(activeJob.status)) ? { id: activeJob.id } : null);
+      }
+
+      if (url.includes('id=eq.')) {
+        // Single job by id via .maybeSingle() -> OBJECT. Each id returns its own
+        // record so selecting a specific available card opens that request.
+        if (url.includes(`id=eq.${secondAvailableJob.id}`)) {
+          return json(route, { ...secondAvailableJob, driver_id: null, accepted_driver_id: null, status: 'searching' });
+        }
+        return json(route, activeJob);
       }
 
       return json(route, activeJob);
     }
 
     if (url.includes('/rest/v1/rpc/accept_searching_job') || url.includes('/rest/v1/rpc/accept_job') || url.includes('/rest/v1/rpc/accept_job_request')) {
+      // DriverDashboard.accept() requires the RPC to resolve to boolean `true`;
+      // anything else is treated as "no longer available".
+      activeJob = { ...activeJob, driver_id: ids.driver, accepted_driver_id: ids.driver, status: 'accepted' };
+      return json(route, true);
+    }
+
+    if (url.includes('/rest/v1/rpc/accept_assigned_job')) {
+      // Job-details confirmAssignedJob() expects the confirmed job back.
       activeJob = { ...activeJob, driver_id: ids.driver, accepted_driver_id: ids.driver, status: 'accepted' };
       return json(route, activeJob);
     }
@@ -292,7 +415,42 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
     if (url.includes('/api/logistics/enqueue')) return json(route, { job: activeJob, status: 'queued' });
     if (url.includes('/api/connect/status')) return json(route, { onboarding_complete: true, status: 'enabled' });
     if (url.includes('/api/connect/account-link')) return json(route, { url: 'https://connect.stripe.test/onboarding' });
+    if (url.includes('/api/connect/payout-settings')) return json(route, { payouts_enabled: true, requirements: [], currently_due: [] });
+    if (url.includes('/api/connect/refresh-account-status')) {
+      return json(route, { status: 'enabled', onboarding_complete: true, charges_enabled: true, payouts_enabled: true });
+    }
+    if (url.includes('/api/issuing/driver-card/ensure')) return json(route, { card: null, status: 'unavailable', configured: false });
+    // DriverService.fetchVehicle() -> awaited by fetchAvailableJobs() AND by the
+    // acceptance gate. Must use the API shape fromVehicleApi() maps:
+    // { id, userId, make, model, colour, year, registrationNumber, type, capacity, status }.
+    if (url.includes('/api/driver-onboarding/vehicle')) {
+      return json(route, {
+        vehicle: {
+          id: 'vehicle-driver-1',
+          userId: ids.driver,
+          make: 'Toyota',
+          model: 'Prius',
+          colour: 'Silver',
+          year: 2022,
+          registrationNumber: 'MV22 TST',
+          type: 'car',
+          capacity: '4 seats',
+          status: 'approved'
+        }
+      });
+    }
     if (url.includes('/api/admin') || url.includes('/rest/v1/subscription')) return json(route, []);
+
+    // Config/negotiation reads awaited BEFORE the available-jobs query.
+    if (url.includes('/rest/v1/marketplace_settings')) return json(route, []);
+    if (url.includes('/rest/v1/system_configs')) return json(route, []);
+    if (url.includes('/rest/v1/marketplace_negotiation_sessions')) return json(route, []);
+    if (url.includes('/rest/v1/marketplace_negotiation_events')) return json(route, []);
+    if (url.includes('/rest/v1/marketplace_commission_overrides')) return json(route, []);
+    if (url.includes('/rest/v1/notifications')) return json(route, []);
+
+    // No Supabase REST call may ever reach the production project during E2E.
+    if (url.includes('/rest/v1/')) return json(route, []);
 
     return route.continue();
   });

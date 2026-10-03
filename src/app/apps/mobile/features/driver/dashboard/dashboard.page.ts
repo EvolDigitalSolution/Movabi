@@ -206,7 +206,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
       }
 
       @if (activeHubTab() === 'requests') {
-        <div class="relative h-[calc(100vh-10.75rem)] min-h-[560px] overflow-hidden bg-slate-100 mb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
+        <div class="relative h-[calc(100dvh-10.75rem)] overflow-hidden bg-slate-100 mb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
           <div class="absolute inset-0">
             <app-map
               #map
@@ -352,6 +352,15 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                   <div class="min-h-0 flex-1 flex flex-col">
                     <div class="flex-1 overflow-y-auto overscroll-contain pb-5">
                       <div class="space-y-4">
+                      <button
+                        type="button"
+                        (click)="showAvailableRequests()"
+                        aria-label="Back to Available Requests"
+                        class="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-slate-900 active:scale-95 transition-all"
+                      >
+                        <span aria-hidden="true">&larr;</span>
+                        Back to Available Requests
+                      </button>
                       <div class="flex items-start justify-between gap-3">
                         <div class="flex-1">
                           <app-badge variant="primary">{{ getServiceName(selectedJob!) }}</app-badge>
@@ -3309,6 +3318,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         if (tab === 'wallet' || tab === 'earnings') {
             void this.loadWalletEarnings();
         }
+    }
+
+    /**
+     * Return from an auto-presented available request back to the Available
+     * Requests list.
+     *
+     * Clears ONLY the local selection: it does not reject/pass the request, does
+     * not change its status, does not call any acquisition RPC, does not refetch,
+     * and leaves the already-fetched jobs list untouched.
+     */
+    showAvailableRequests(): void {
+        this.selectedJobId.set(null);
     }
 
     selectJob(jobId: string) {

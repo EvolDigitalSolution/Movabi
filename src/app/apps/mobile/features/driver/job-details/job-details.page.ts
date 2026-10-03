@@ -168,6 +168,21 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </div>
             </div>
 
+            @if (job()?.status === 'assigned') {
+              <div class="rounded-[1.5rem] bg-amber-50 border border-amber-200 p-4 space-y-3">
+                <div class="flex items-start gap-3">
+                  <div class="w-9 h-9 shrink-0 rounded-xl bg-amber-100 flex items-center justify-center">
+                    <ion-icon name="hand-left" class="text-amber-600 text-lg"></ion-icon>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-display font-black text-slate-950">This request is assigned to you</p>
+                    <p class="mt-0.5 text-xs text-slate-600 font-semibold leading-relaxed">Accept it to confirm you'll complete it. You can review the route and details after.</p>
+                  </div>
+                </div>
+                <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" [loading]="confirmingAssignment()" (clicked)="confirmAssignedJob()">Accept This Request</app-button>
+              </div>
+            }
+
             <app-card class="overflow-hidden">
               <div class="p-4 border-b border-slate-100">
                 <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">{{ navigationSectionLabel() }}</p>
@@ -180,11 +195,11 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               <div class="p-4">
                 <button
                   type="button"
-                  (click)="openMap(job()?.pickup_address)"
+                  (click)="openMap(navigationTargetAddress())"
                   class="w-full h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
                 >
                   <ion-icon name="navigate"></ion-icon>
-                  Open navigation
+                  {{ navigateButtonLabel() }}
                 </button>
               </div>
             </app-card>
@@ -711,9 +726,6 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
 
               @switch (job()?.status) {
-                @case ('assigned') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="confirmAssignedJob()">Accept This Request</app-button>
-                }
                 @case ('accepted') {
                   <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
                 }
@@ -820,6 +832,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     cardDetailsVisible = signal(false);
     cardDetailsError = signal('');
     isLoading = signal(true);
+    confirmingAssignment = signal(false);
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
     pickupMapReady = signal(false);
@@ -1617,6 +1630,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
      * the existing accepted -> arrived workflow continues unchanged.
      */
     async confirmAssignedJob() {
+        if (this.confirmingAssignment()) return;
+
         const currentJob = this.job();
 
         if (!currentJob?.id) {
@@ -1624,6 +1639,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
+        this.confirmingAssignment.set(true);
         const loading = await this.loadingCtrl.create({ message: 'Confirming request...' });
         await loading.present();
 
@@ -1644,6 +1660,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();
+            this.confirmingAssignment.set(false);
         }
     }
 
@@ -2074,6 +2091,28 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeAddress)}`, '_blank');
+    }
+
+    /**
+     * Context-sensitive navigation target for the current lifecycle stage:
+     * the origin (pickup/store/collection) until the driver is heading to the
+     * customer, then the destination (customer/recipient).
+     */
+    navigationTargetAddress(): string | undefined {
+        return this.isHeadingToCustomer()
+            ? this.job()?.dropoff_address
+            : this.job()?.pickup_address;
+    }
+
+    navigateButtonLabel(): string {
+        return this.isHeadingToCustomer()
+            ? `Navigate to ${this.destinationActionLabel()}`
+            : `Navigate to ${this.originActionLabel()}`;
+    }
+
+    private isHeadingToCustomer(): boolean {
+        const status = String(this.job()?.status || '');
+        return status === 'en_route_to_customer' || status === 'in_progress';
     }
 
     private async renderPickupRoute(): Promise<void> {
