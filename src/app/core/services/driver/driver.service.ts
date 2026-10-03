@@ -345,6 +345,27 @@ export class DriverService {
         }
     }
 
+    /**
+     * Audible-alert acknowledgement for negotiation opportunities.
+     *
+     * The request alarm is an ATTENTION alarm: once the driver intentionally
+     * engages with a negotiation session it is acknowledged for alert purposes
+     * and must not ring again for that same session. Keyed on `session_id`
+     * (never `job_id`) and kept in memory for the application session, so it
+     * survives Dashboard re-creation but resets on app restart / logout.
+     */
+    private acknowledgedNegotiationAlerts = new Set<string>();
+
+    acknowledgeNegotiationAlert(sessionId: string | null | undefined): void {
+        const key = String(sessionId || '').trim();
+        if (key) this.acknowledgedNegotiationAlerts.add(key);
+    }
+
+    isNegotiationAlertAcknowledged(sessionId: string | null | undefined): boolean {
+        const key = String(sessionId || '').trim();
+        return !!key && this.acknowledgedNegotiationAlerts.has(key);
+    }
+
     async fetchHybridOpportunities(): Promise<HybridOpportunity[]> {
         const user = this.auth.currentUser();
         if (!user?.id) {
@@ -367,6 +388,12 @@ export class DriverService {
                 .filter((entry) => entry.enabled)
                 .map((entry) => entry.opportunity);
             this.hybridOpportunities.set(allowed);
+            // A session that terminated frees its acknowledgement, so a genuinely
+            // new negotiation (even for the same job) can alert again.
+            const liveSessionIds = new Set(allowed.map((op) => String(op?.session_id || '')));
+            for (const acknowledged of [...this.acknowledgedNegotiationAlerts]) {
+                if (!liveSessionIds.has(acknowledged)) this.acknowledgedNegotiationAlerts.delete(acknowledged);
+            }
             return allowed;
         } catch (error) {
             if (token !== this.hybridFetchToken) return this.hybridOpportunities();

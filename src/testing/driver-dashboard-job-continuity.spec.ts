@@ -15,6 +15,7 @@ import { resolve as pathResolve } from 'node:path';
 const read = (p: string) => readFileSync(pathResolve(process.cwd(), p), 'utf8');
 const DASH = read('src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts');
 const JD = read('src/app/apps/mobile/features/driver/job-details/job-details.page.ts');
+const SVC = read('src/app/core/services/driver/driver.service.ts');
 
 const count = (src: string, needle: string) => src.split(needle).length - 1;
 const lineOf = (src: string, needle: string) => {
@@ -207,5 +208,57 @@ describe('Alarm ownership safety', () => {
 
   it('an active job still silences all alarms unconditionally', () => {
     expect(DASH).toContain('An active job silences every incoming alarm unconditionally.');
+  });
+});
+
+describe('Negotiation alarm acknowledgement (attention alarm)', () => {
+  it('acknowledges by session_id, never by job_id', () => {
+    expect(SVC).toContain('private acknowledgedNegotiationAlerts = new Set<string>();');
+    expect(SVC).toContain('acknowledgeNegotiationAlert(sessionId: string | null | undefined): void');
+    expect(SVC).toContain('isNegotiationAlertAcknowledged(sessionId: string | null | undefined): boolean');
+    expect(SVC).not.toMatch(/acknowledgedNegotiationAlerts\.add\(String\(jobId/);
+  });
+
+  it('the click handler acknowledges BEFORE claim/navigation', () => {
+    const start = DASH.indexOf('async startHybridNegotiation(jobId: string, sessionId?: string) {');
+    expect(start).toBeGreaterThan(-1);
+    const beforeClaim = DASH.slice(start, DASH.indexOf('claimHybridSession', start));
+    expect(beforeClaim).toContain('this.acknowledgeNegotiationAlert(sessionId, jobId);');
+    expect(beforeClaim).not.toContain('claimHybridSession');
+  });
+
+  it('acknowledgement stops the active negotiation alarm immediately', () => {
+    const ackStart = DASH.indexOf('private acknowledgeNegotiationAlert(');
+    expect(ackStart).toBeGreaterThan(-1);
+    const ackBody = DASH.slice(ackStart, ackStart + 700);
+    expect(ackBody).toContain('this.driverService.acknowledgeNegotiationAlert(resolved);');
+    expect(ackBody).toContain('if (this.activeRequestId() === resolved)');
+    expect(ackBody).toContain('this.stopRequestSound(resolved);');
+  });
+
+  it('an acknowledged session can never re-arm the alarm', () => {
+    expect(DASH).toContain('!this.driverService.isNegotiationAlertAcknowledged(op?.session_id)');
+    expect(DASH).toContain('const actionable = opportunities.filter(');
+  });
+
+  it('the card passes the authoritative session_id', () => {
+    expect(DASH).toContain('startHybridNegotiation(opportunity.job_id, opportunity.session_id)');
+  });
+
+  it('disappearance frees the acknowledgement so a new session can alert', () => {
+    expect(SVC).toContain('const liveSessionIds = new Set(allowed.map((op) => String(op?.session_id || \'\')));');
+    expect(SVC).toContain('this.acknowledgedNegotiationAlerts.delete(acknowledged)');
+  });
+
+  it('ordinary job alarms are untouched by negotiation acknowledgement', () => {
+    const jobStart = DASH.indexOf('private urgentRequestEffect = effect(');
+    const nextEffect = DASH.indexOf('private negotiationAlertEffect', jobStart);
+    expect(jobStart).toBeGreaterThan(-1);
+    expect(nextEffect).toBeGreaterThan(jobStart);
+    expect(DASH.slice(jobStart, nextEffect)).not.toContain('isNegotiationAlertAcknowledged');
+  });
+
+  it('keeps exactly one request audio subsystem', () => {
+    expect(count(DASH, "new Audio('assets/sounds/request-notification.mp3')")).toBe(1);
   });
 });

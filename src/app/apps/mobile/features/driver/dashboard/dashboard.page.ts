@@ -608,7 +608,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                         @for (opportunity of hybridOpportunities(); track opportunity.session_id) {
                           <button
                             type="button"
-                            (click)="startHybridNegotiation(opportunity.job_id)"
+                            (click)="startHybridNegotiation(opportunity.job_id, opportunity.session_id)"
                             class="w-full bg-white border border-amber-200 rounded-xl p-4 text-left active:scale-[0.98] transition-all hover:bg-amber-50"
                           >
                             <div class="flex items-start justify-between gap-3">
@@ -2092,7 +2092,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         this.showToast('Requests refreshed.', 'success');
     }
 
-    async startHybridNegotiation(jobId: string) {
+    async startHybridNegotiation(jobId: string, sessionId?: string) {
+        // The request alarm is an ATTENTION alarm: an intentional engagement
+        // acknowledges it audibly and stops it immediately, BEFORE any claim or
+        // navigation, so it cannot outlive the tap even when Ionic keeps the
+        // Dashboard mounted.
+        this.acknowledgeNegotiationAlert(sessionId, jobId);
         try {
             const session = await this.driverService.claimHybridSession(jobId);
             this.selectedHybridOpportunity.set(session);
@@ -2100,6 +2105,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         } catch (error: any) {
             console.error('[DriverDashboard] claim hybrid session failed', error);
             this.showToast(userFacingError(error, 'Unable to start negotiation. It may be claimed by another driver.'), 'danger');
+        }
+    }
+
+    /**
+     * Acknowledge a negotiation for alert purposes and stop its alarm now.
+     * Prefers the explicit `session_id` and falls back to resolving it from the
+     * current opportunities by `job_id`. Never touches ordinary job alarms.
+     */
+    private acknowledgeNegotiationAlert(sessionId: string | undefined, jobId: string): void {
+        const resolved = String(sessionId || '').trim()
+            || String(this.hybridOpportunities().find((op) => op?.job_id === jobId)?.session_id || '').trim();
+        if (!resolved) return;
+
+        this.driverService.acknowledgeNegotiationAlert(resolved);
+        if (this.activeRequestId() === resolved) {
+            this.stopRequestSound(resolved);
         }
     }
 
@@ -2974,7 +2995,20 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             return;
         }
 
-        const newest = opportunities[0];
+        // Acknowledged sessions never re-alarm for the rest of this app session.
+        const actionable = opportunities.filter((op) => !this.driverService.isNegotiationAlertAcknowledged(op?.session_id));
+        if (actionable.length === 0) {
+            // Every live opportunity is acknowledged: nothing may own the
+            // negotiation alarm. Stop a negotiation-owned alarm, never a job one.
+            const owner = this.activeRequestId();
+            const isJobOwner = !!owner && this.jobs().some((job) => job.id === owner);
+            if (!isJobOwner) {
+                this.stopAllRequestSounds();
+            }
+            return;
+        }
+
+        const newest = actionable[0];
         if (newest?.session_id && this.activeRequestId() !== newest.session_id) {
             this.startRequestSound(newest.session_id);
         }
