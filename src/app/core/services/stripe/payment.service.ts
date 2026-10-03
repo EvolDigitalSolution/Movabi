@@ -148,6 +148,7 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             const response = await firstValueFrom(
                 this.http.post<CreateWalletTopupIntentResponse>(
                     `${this.apiUrl}/create-wallet-topup-intent`,
@@ -156,7 +157,8 @@ export class PaymentService {
                         amount,
                         currency: currencyCode,
                         tenantId
-                    }
+                    },
+                    { headers }
                 )
             );
 
@@ -237,8 +239,9 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             return await firstValueFrom(
-                this.http.post(`${this.apiUrl}/confirm-wallet-topup`, data)
+                this.http.post(`${this.apiUrl}/confirm-wallet-topup`, data, { headers })
             );
         } catch (error: any) {
             console.error('[PaymentService] confirmWalletTopup failed:', error);
@@ -256,10 +259,11 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             return await firstValueFrom(
                 this.http.get<Record<string, unknown>[]>(
                     `${this.apiUrlService.getApiUrl('/api/wallet')}/transactions`,
-                    { params: { userId } }
+                    { params: { userId }, headers }
                 )
             );
         } catch (error: any) {
@@ -283,12 +287,13 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             return await firstValueFrom(
                 this.http.post(`${this.apiUrl}/refund`, {
                     paymentIntentId,
                     amount,
                     reason
-                })
+                }, { headers })
             );
         } catch (error: any) {
             console.error('[PaymentService] refundPayment failed:', error);

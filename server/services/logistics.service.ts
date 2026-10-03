@@ -631,17 +631,28 @@ export class LogisticsService {
    */
   static async updateDriverReliability(driverId: string) {
     try {
-      const { data: jobs } = await supabaseAdmin
+      // Cancellation reason lives in jobs.metadata (written by cancel_job_safely
+      // as metadata.cancellation_reason), NOT in a cancellation_reason column.
+      // Selecting a nonexistent column made PostgREST reject the query, so the
+      // reliability stats silently never updated.
+      const { data: jobs, error: jobsError } = await supabaseAdmin
         .from('jobs')
-        .select('status, cancellation_reason')
+        .select('status, metadata')
         .eq('driver_id', driverId);
 
+      if (jobsError) {
+        console.error('[LogisticsService] Error fetching jobs for reliability:', jobsError);
+        return;
+      }
       if (!jobs || jobs.length === 0) return;
 
       const total = jobs.length;
       const completed = jobs.filter(j => j.status === 'completed').length;
-      const cancelledByDriver = jobs.filter(j => j.status === 'cancelled' && j.cancellation_reason?.toLowerCase().includes('driver')).length;
-      
+      const cancelledByDriver = jobs.filter(j =>
+        j.status === 'cancelled' &&
+        String((j.metadata as any)?.cancellation_reason ?? '').toLowerCase().includes('driver')
+      ).length;
+
       const completionRate = (completed / total) * 100;
       const cancellationRate = (cancelledByDriver / total) * 100;
 

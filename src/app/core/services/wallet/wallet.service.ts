@@ -34,6 +34,18 @@ export class WalletService {
   private readonly paymentApiUrl = this.apiUrlService.getApiUrl('/api/payment');
   private readonly walletApiUrl = this.apiUrlService.getApiUrl('/api/wallet');
 
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    const { data } = await this.supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      throw new Error('Please sign in again to continue.');
+    }
+    return {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  }
+
   wallet = signal<Wallet | null>(null);
 
   async fetchWallet(): Promise<Wallet | null> {
@@ -158,6 +170,7 @@ export class WalletService {
       throw new Error('Top-up amount must be greater than zero');
     }
 
+    const headers = await this.getAuthHeaders();
     return firstValueFrom(
       this.http.post<CreateWalletTopupIntentResponse>(
         `${this.paymentApiUrl}/create-wallet-topup-intent`,
@@ -166,7 +179,8 @@ export class WalletService {
           amount,
           currency: currencyCode || this.auth.profileService.profile()?.currency_code || 'GBP',
           tenantId: this.auth.tenantId()
-        }
+        },
+        { headers }
       )
     );
   }
@@ -190,6 +204,7 @@ export class WalletService {
     }
 
     try {
+      const headers = await this.getAuthHeaders();
       const response = await firstValueFrom(
         this.http.post<WalletJobPaymentResponse>(
           `${this.walletApiUrl}/pay-job`,
@@ -199,7 +214,8 @@ export class WalletService {
             amount,
             currency: currencyCode || this.auth.profileService.profile()?.currency_code || 'GBP',
             tenantId: this.auth.tenantId()
-          }
+          },
+          { headers }
         )
       );
 
