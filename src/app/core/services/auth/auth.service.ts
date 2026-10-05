@@ -132,6 +132,25 @@ export class AuthService {
         return result;
     }
 
+    /**
+     * Phase 1 — server-authoritative role selection.
+     *
+     * The server enforces the role's OWN market capability
+     * (customer_registration / driver_registration) and refuses to change an
+     * existing role, so role choice cannot bypass a disabled capability.
+     */
+    async selectRole(role: 'customer' | 'driver'): Promise<{ role: string; changed: boolean }> {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) throw new Error('Please sign in again to choose your role.');
+
+        return await firstValueFrom(this.http.post<{ role: string; changed: boolean }>(
+            this.apiUrl.getApiUrl('/api/auth/select-role'),
+            { role },
+            { headers: { Authorization: `Bearer ${token}` } }
+        ));
+    }
+
     async signIn(email: string, password: string) {
         const { data: result, error } = await this.supabase.auth.signInWithPassword({
             email,

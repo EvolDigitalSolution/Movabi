@@ -202,8 +202,9 @@ export class RoleSelectionPage {
     await loading.present();
 
     try {
-      // Update profile in DB
-      await this.profileService.updateProfile(user.id, { role });
+      // Phase 1 — server-authoritative role selection: the server validates this
+      // role's own market capability and refuses to change an established role.
+      await this.authService.selectRole(role);
       
       // Update local state
       this.authService.userRole.set(role);

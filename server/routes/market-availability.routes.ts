@@ -1,6 +1,7 @@
 import {NextFunction,Request,Response,Router} from 'express';
 import {supabaseAdmin} from '../services/supabase.service';
 import {MarketAvailabilityError,MarketAvailabilityService,MarketCapability} from '../services/market-availability.service';
+import {RegistrationEligibilityService} from '../services/registration-eligibility.service';
 import {rateLimit} from 'express-rate-limit';
 import {DriverRequirementService} from '../services/driver-requirement.service';
 import {DriverOnlineEligibilityService} from '../services/driver-online-eligibility.service';
@@ -51,5 +52,35 @@ router.put('/admin/:id',requireAdmin,async(req,res)=>{const{id,...unsafe}=req.bo
  if(unsafe.market_city&&String(unsafe.market_city).trim().length>120)return res.status(400).json({error:'City is too long'});if(unsafe.supported_currency&&!/^[A-Z]{3}$/.test(String(unsafe.supported_currency).toUpperCase()))return res.status(400).json({error:'Valid ISO currency required'});
  const payload={...unsafe,updated_at:new Date().toISOString()};delete(payload as any).created_at;
  const{data,error}=await supabaseAdmin.from('market_availability').update(payload).eq('id',req.params.id).select('*').single();if(error)return res.status(400).json({error:error.message});res.json(data);});
+// --- Phase 1 registration-market eligibility (authenticated; identity from the session only) ---
+
+/** Pending/activated registration state. Never re-gates on current location. */
+router.get('/registration-status',async(req,res)=>{try{
+ const userId=await authUser(req);
+ if(!userId)return res.status(401).json({error:'Authentication required'});
+ const state=await RegistrationEligibilityService.getState(userId);
+ if(!state)return res.status(404).json({error:'Profile not found',code:'PROFILE_NOT_FOUND'});
+ return res.json(state);
+}catch(error){return res.status(500).json({error:error instanceof Error?error.message:'Unable to read registration status'});}});
+
+/**
+ * Resolve registration eligibility for a pending OAuth / direct-auth identity.
+ * The caller id is taken ONLY from the Bearer session, and there is no
+ * caller-supplied activation flag: activation is decided here after the
+ * market capability check. Idempotent.
+ */
+router.post('/registration-eligibility',async(req,res)=>{try{
+ const userId=await authUser(req);
+ if(!userId)return res.status(401).json({error:'Authentication required'});
+ const state=await RegistrationEligibilityService.ensureEligibility(
+   userId,
+   {countryCode:req.body?.countryCode??req.body?.country_code,marketCity:req.body?.marketCity??req.body?.market_city},
+   'customer_registration'
+ );
+ return res.json(state);
+}catch(error){
+ if(error instanceof MarketAvailabilityError)return res.status(error.httpStatus).json({error:error.message,code:error.code,market:error.market});
+ return res.status(400).json({error:error instanceof Error?error.message:'Registration eligibility could not be resolved'});}});
+
 export function sendMarketError(res:Response,error:unknown){if(error instanceof MarketAvailabilityError)return res.status(error.httpStatus).json({...publicShape(error.market,error.code),error:error.message});return null;}
 export default router;

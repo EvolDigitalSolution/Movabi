@@ -4,8 +4,17 @@ import { rateLimit } from 'express-rate-limit';
 import { EmailService } from '../services/email.service';
 import { supabaseAdmin, getSupabaseAuthRegistrationClient } from '../services/supabase.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { RegistrationEligibilityService } from '../services/registration-eligibility.service';
 
 const router = express.Router();
+
+/** Resolve the authenticated user id from the Bearer session (never the body). */
+const authUser = async (req: Request): Promise<string | null> => {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+  const { data } = await supabaseAdmin.auth.getUser(token);
+  return data.user?.id || null;
+};
 
 const otpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -49,10 +58,81 @@ router.post('/register', registrationLimiter, async (req: Request, res: Response
     const metadata = { ...(req.body?.data || {}), registration_country_code: market.countryCode, registration_market_city: market.marketCity };
     const { data, error } = await getSupabaseAuthRegistrationClient().auth.signUp({ email, password, options: { data: metadata, ...(safeRedirect ? { emailRedirectTo: safeRedirect } : {}) } });
     if (error) return res.status(error.status || 400).json({ error: error.message });
-    return res.status(201).json({ user: data.user, session: data.session, market: { countryCode: market.countryCode, marketCity: market.marketCity } });
+
+    // Server-authoritative registration activation. Market eligibility was
+    // validated ABOVE (before auth creation), so this identity is eligible. The
+    // pending profile created by handle_new_user() is activated here and never
+    // from client-settable auth metadata.
+    let registration = null as Awaited<ReturnType<typeof RegistrationEligibilityService.getState>>;
+    if (data.user?.id) {
+      try {
+        registration = await RegistrationEligibilityService.activate(data.user.id, {
+          countryCode: market.countryCode,
+          marketCity: market.marketCity
+        });
+      } catch (activationError) {
+        // The identity and its pending profile still exist; the client can retry
+        // through /api/markets/registration-eligibility. Never fail auth creation.
+        console.error('[AuthRoutes] registration activation failed:', activationError);
+        registration = await RegistrationEligibilityService.getState(data.user.id);
+      }
+    }
+
+    return res.status(201).json({ user: data.user, session: data.session, market: { countryCode: market.countryCode, marketCity: market.marketCity }, registration });
   } catch (error) {
     if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Registration failed' });
+  }
+});
+
+/**
+ * Server-authoritative role selection (Phase 1).
+ *
+ * Registration must already be activated, and the role's OWN market capability
+ * is enforced here, so a customer-registered market with driver registration
+ * disabled cannot be bypassed by switching role. An account that already has a
+ * role is returned unchanged (established users are never re-gated).
+ */
+router.post('/select-role', async (req: Request, res: Response) => {
+  try {
+    const userId = await authUser(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    const role = String(req.body?.role || '').toLowerCase();
+    if (role !== 'customer' && role !== 'driver') {
+      return res.status(400).json({ error: 'Choose customer or driver.', code: 'INVALID_ROLE' });
+    }
+
+    const registration = await RegistrationEligibilityService.getState(userId);
+    if (!registration) return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
+    if (!registration.activated) {
+      return res.status(409).json({ error: 'Complete your registration market eligibility first.', code: 'REGISTRATION_PENDING' });
+    }
+
+    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', userId).maybeSingle();
+    const existingRole = String((profile as { role?: string } | null)?.role || '').toLowerCase();
+    if (existingRole) {
+      // Established role: never reassign or re-gate.
+      return res.json({ role: existingRole, changed: false, registration });
+    }
+
+    const capability = role === 'driver' ? 'driver_registration' : 'customer_registration';
+    await MarketAvailabilityService.requireCapability({
+      countryCode: registration.registrationCountryCode,
+      marketCity: registration.registrationMarketCity,
+      capability,
+      endpoint: '/api/auth/select-role'
+    });
+
+    const { error } = await supabaseAdmin.from('profiles').update({ role }).eq('id', userId);
+    if (error) return res.status(400).json({ error: error.message });
+
+    return res.json({ role, changed: true, registration });
+  } catch (error) {
+    if (error instanceof MarketAvailabilityError) {
+      return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
+    }
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Could not set your role.' });
   }
 });
 
