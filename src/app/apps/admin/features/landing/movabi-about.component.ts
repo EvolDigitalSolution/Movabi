@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, afterNextRender, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { IonButton, IonContent, IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
@@ -29,7 +29,6 @@ import {
   trendingUpOutline,
   walletOutline
 } from 'ionicons/icons';
-import { AuthService } from '@core/services/auth/auth.service';
 
 @Component({
   selector: 'app-admin-movabi-about',
@@ -50,11 +49,11 @@ import { AuthService } from '@core/services/auth/auth.service';
           </a>
 
           <nav class="desktop-nav" aria-label="Main navigation">
-            <a href="#why">Why Movabi</a>
-            <a href="#services">Services</a>
-            <a href="#drivers">Drivers</a>
-            <a href="#investors">Investors</a>
-            <a href="#download">Download</a>
+            <a href="/about-movabi#why" (click)="onSectionLink($event, 'why')">Why Movabi</a>
+            <a href="/about-movabi#services" (click)="onSectionLink($event, 'services')">Services</a>
+            <a href="/about-movabi#drivers" (click)="onSectionLink($event, 'drivers')">Drivers</a>
+            <a href="/about-movabi#investors" (click)="onSectionLink($event, 'investors')">Investors</a>
+            <a href="/about-movabi#download" (click)="onSectionLink($event, 'download')">Download</a>
             <a routerLink="/auth/login">Sign in</a>
           </nav>
 
@@ -65,44 +64,59 @@ import { AuthService } from '@core/services/auth/auth.service';
 
         @if (menuOpen()) {
           <nav class="mobile-menu" aria-label="Mobile navigation">
-            <a href="#why" (click)="menuOpen.set(false)">Why Movabi</a>
-            <a href="#services" (click)="menuOpen.set(false)">Services</a>
-            <a href="#drivers" (click)="menuOpen.set(false)">Drivers</a>
-            <a href="#investors" (click)="menuOpen.set(false)">Investors</a>
-            <a href="#download" (click)="menuOpen.set(false)">Download</a>
+            <a href="/about-movabi#why" (click)="onSectionLink($event, 'why', { closeMenu: true })">Why Movabi</a>
+            <a href="/about-movabi#services" (click)="onSectionLink($event, 'services', { closeMenu: true })">Services</a>
+            <a href="/about-movabi#drivers" (click)="onSectionLink($event, 'drivers', { closeMenu: true })">Drivers</a>
+            <a href="/about-movabi#investors" (click)="onSectionLink($event, 'investors', { closeMenu: true })">Investors</a>
+            <a href="/about-movabi#download" (click)="onSectionLink($event, 'download', { closeMenu: true })">Download</a>
             <a routerLink="/help" (click)="menuOpen.set(false)">How it works</a>
             <a routerLink="/privacy" (click)="menuOpen.set(false)">Privacy</a>
             <a routerLink="/auth/login" (click)="menuOpen.set(false)">Sign in</a>
           </nav>
         }
 
-        <section class="hero">
-          <div class="hero-content">
-            <p class="eyebrow">Local transport made simpler</p>
-            <h1>Movabi is the everyday app for rides, errands, delivery and moving help.</h1>
-            <p class="hero-text">
-              Customers get clear upfront pricing, live tracking and protected payments. Drivers get local jobs,
-              guided workflows and payout tools. Cities get a practical movement network built for real daily needs.
-            </p>
+        <section class="hero" aria-labelledby="about-hero-title">
+          <div class="hero-inner">
+            <div class="hero-copy">
+              <p class="hero-eyebrow">LOCAL TRANSPORT MADE SIMPLER</p>
+              <h1 id="about-hero-title" class="hero-title">Your everyday move, made simple.</h1>
+              <p class="hero-lede">Rides, errands, deliveries and moving — all in one app.</p>
 
-            <div class="hero-actions">
-              <ion-button routerLink="/auth/signup" class="primary-action">
-                Join Movabi
-                <ion-icon name="arrow-forward-outline" slot="end"></ion-icon>
-              </ion-button>
-              <ion-button href="#download" fill="outline" class="secondary-action">
-                Download app
-                <ion-icon name="download-outline" slot="end"></ion-icon>
-              </ion-button>
+              <div class="hero-actions">
+                <ion-button class="primary-action" (click)="onSectionLink($event, 'services')">
+                  Explore services
+                  <ion-icon name="arrow-forward-outline" slot="end"></ion-icon>
+                </ion-button>
+                <ion-button routerLink="/auth/signup" fill="outline" class="secondary-action">
+                  Become a driver
+                </ion-button>
+              </div>
+
+              <p class="hero-note">
+                <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
+                <span>Available services vary by location.</span>
+              </p>
+
+              <ul class="hero-services" aria-label="Movabi services">
+                @for (service of heroServices; track service.label) {
+                  <li>
+                    <ion-icon [name]="service.icon" aria-hidden="true"></ion-icon>
+                    <span>{{ service.label }}</span>
+                  </li>
+                }
+              </ul>
             </div>
 
-            <div class="hero-proof" aria-label="Movabi highlights">
-              @for (point of proofPoints; track point.label) {
-                <span>
-                  <strong>{{ point.value }}</strong>
-                  {{ point.label }}
-                </span>
-              }
+            <div class="hero-media">
+              <img
+                src="/assets/images/movabi-about-hero.webp"
+                alt="A Movabi driver smiling at the wheel while driving through the city"
+                width="517"
+                height="378"
+                decoding="async"
+                (error)="heroImageFailed.set(true)"
+                [class.is-hidden]="heroImageFailed()"
+              >
             </div>
           </div>
         </section>
@@ -384,20 +398,153 @@ import { AuthService } from '@core/services/auth/auth.service';
       font-weight: 900;
     }
 
+    /* ---- Hero: navy canvas, amber accents, photograph on the right ---- */
     .hero {
-      min-height: calc(100vh - 76px);
-      display: flex;
-      align-items: flex-end;
-      padding: 88px 18px 54px;
-      background:
-        linear-gradient(90deg, rgba(17, 24, 39, 0.88), rgba(17, 24, 39, 0.58), rgba(17, 24, 39, 0.12)),
-        url('/assets/images/movabi-hero-main.webp') center / cover no-repeat;
-      color: white;
+      position: relative;
+      isolation: isolate;
+      /* Navy fallback paints first and always, so the hero is complete even if
+         the photograph is missing or fails to load. */
+      background: #0b1b33;
+      color: #f8fafc;
+      overflow: hidden;
     }
 
-    .hero-content {
-      width: min(1120px, 100%);
+    /* Controlled navy gradient: keeps a warm amber glow at the left, holds
+       contrast behind the copy, then eases toward the photograph. */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(120% 95% at 10% 12%, rgba(245, 158, 11, 0.18), transparent 55%),
+        linear-gradient(100deg, #0b1b33 0%, #0f2445 44%, rgba(15, 36, 69, 0.74) 60%, rgba(11, 27, 51, 0.3) 100%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      width: min(1180px, calc(100% - 36px));
       margin: 0 auto;
+      padding: 52px 0;
+      display: grid;
+      gap: 30px;
+      align-items: center;
+    }
+
+    .hero-copy {
+      max-width: 620px;
+    }
+
+    .hero-eyebrow {
+      margin: 0 0 14px;
+      color: #fbbf24;
+      font-weight: 900;
+      font-size: 0.74rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .hero-title {
+      margin: 0;
+      max-width: 20ch;
+      color: #ffffff;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.01em;
+      font-size: clamp(2.5rem, 6.2vw, 4rem);
+    }
+
+    .hero-lede {
+      margin: 16px 0 0;
+      max-width: 46ch;
+      color: #dbe4f0;
+      font-size: clamp(1rem, 2.2vw, 1.18rem);
+      line-height: 1.7;
+      font-weight: 700;
+    }
+
+    .hero-note {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 20px 0 0;
+      color: #b6c5da;
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+
+    .hero-note ion-icon {
+      color: #fbbf24;
+      font-size: 1.05rem;
+      flex-shrink: 0;
+    }
+
+    .hero-services {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .hero-services li {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #f8fafc;
+      font-size: 0.86rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .hero-services li ion-icon {
+      color: #fbbf24;
+      font-size: 1.05rem;
+    }
+
+    .hero-media {
+      position: relative;
+      width: 100%;
+      border-radius: 28px;
+      overflow: hidden;
+      /* Navy fallback for the media panel itself. */
+      background: linear-gradient(150deg, #14305a, #0b1b33);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 30px 60px rgba(2, 8, 20, 0.45);
+      aspect-ratio: 5 / 4;
+    }
+
+    .hero-media img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* Keep the driver's face and the wheel in frame. */
+      object-position: 62% 30%;
+    }
+
+    .hero-media img.is-hidden {
+      display: none;
+    }
+
+    /* Visible keyboard focus for every hero control. */
+    .hero a:focus-visible,
+    .hero ion-button:focus-visible,
+    .hero ion-button::part(native):focus-visible {
+      outline: 3px solid #fbbf24;
+      outline-offset: 3px;
+      border-radius: 8px;
+    }
+
+    .hero ion-button.primary-action::part(native):focus-visible,
+    .hero ion-button.secondary-action::part(native):focus-visible {
+      border-radius: 18px;
     }
 
     .eyebrow {
@@ -409,7 +556,6 @@ import { AuthService } from '@core/services/auth/auth.service';
       text-transform: uppercase;
     }
 
-    .hero .eyebrow,
     .final-cta .eyebrow {
       color: #fbbf24;
     }
@@ -421,21 +567,14 @@ import { AuthService } from '@core/services/auth/auth.service';
       letter-spacing: 0;
     }
 
-    h1 {
-      margin: 0;
-      max-width: 850px;
-      font-size: clamp(2.35rem, 8vw, 5.4rem);
-      line-height: 0.98;
-      font-weight: 900;
-    }
-
-    .hero-text {
-      max-width: 700px;
-      margin: 20px 0 0;
-      color: #e5e7eb;
-      font-size: 1.08rem;
-      line-height: 1.75;
-      font-weight: 700;
+    /* Same-page section targets: clear the sticky top navigation when scrolled
+       into view, so no heading lands underneath it. */
+    #why,
+    #services,
+    #drivers,
+    #investors,
+    #download {
+      scroll-margin-top: 88px;
     }
 
     .hero-actions {
@@ -478,33 +617,6 @@ import { AuthService } from '@core/services/auth/auth.service';
     .secondary-action.light {
       --border-color: rgba(255, 255, 255, 0.72);
       --color: white;
-    }
-
-    .hero-proof {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      max-width: 700px;
-      margin-top: 28px;
-    }
-
-    .hero-proof span {
-      min-height: 86px;
-      padding: 16px;
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.14);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #e5e7eb;
-      font-weight: 800;
-      backdrop-filter: blur(14px);
-    }
-
-    .hero-proof strong {
-      display: block;
-      color: white;
-      font-size: 1.55rem;
-      font-weight: 900;
-      margin-bottom: 4px;
     }
 
     .value-strip,
@@ -806,10 +918,6 @@ import { AuthService } from '@core/services/auth/auth.service';
     }
 
     @media (max-width: 430px) {
-      .hero-proof {
-        grid-template-columns: 1fr;
-      }
-
       .brand-row strong {
         font-size: 1.25rem;
       }
@@ -844,8 +952,10 @@ import { AuthService } from '@core/services/auth/auth.service';
         display: none;
       }
 
-      .hero {
-        padding-bottom: 76px;
+      .hero-inner {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        gap: 48px;
+        padding: 76px 0;
       }
 
       .service-grid,
@@ -859,15 +969,55 @@ import { AuthService } from '@core/services/auth/auth.service';
     }
   `]
 })
-export class AdminMovabiAboutComponent implements OnInit {
-  private auth = inject(AuthService);
-
+export class AdminMovabiAboutComponent {
   menuOpen = signal(false);
 
-  proofPoints = [
-    { value: '4-in-1', label: 'ride, errand, package and moving services' },
-    { value: 'Clear', label: 'upfront pricing and payment protection' },
-    { value: 'Live', label: 'tracking, chat and customer handover PIN' }
+  /** True once the hero photograph fails to load: the navy panel stays visible. */
+  heroImageFailed = signal(false);
+
+  private route = inject(ActivatedRoute);
+
+  /**
+   * In-page section navigation for the public About page.
+   *
+   * Every section link carries its real destination (`/about-movabi#section`) so
+   * opening it in a new tab, copying it or sharing it resolves correctly — a
+   * bare `href="#section"` would resolve against Angular's `<base href="/">` to
+   * `/#section`. A plain primary click is intercepted for a smooth in-page
+   * scroll; modified clicks (ctrl/cmd/shift/alt) and non-primary buttons are
+   * left entirely to the browser so open-in-new-tab keeps working.
+   */
+  onSectionLink(event: MouseEvent, id: string, options?: { closeMenu?: boolean }): void {
+    if (options?.closeMenu) this.menuOpen.set(false);
+
+    const isModifiedOrNonPrimary =
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey;
+
+    if (isModifiedOrNonPrimary) return;
+
+    const target = typeof document !== 'undefined' ? document.getElementById(id) : null;
+    if (!target) return;
+
+    event.preventDefault();
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Scroll to an existing section without changing global router scroll config. */
+  private scrollToSection(id: string): void {
+    if (typeof document === 'undefined') return;
+    document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }
+
+  heroServices = [
+    { label: 'Ride', icon: 'car-outline' },
+    { label: 'Errands', icon: 'basket-outline' },
+    { label: 'Delivery', icon: 'cube-outline' },
+    { label: 'Moving', icon: 'storefront-outline' }
   ];
 
   valuePoints = [
@@ -1012,13 +1162,13 @@ export class AdminMovabiAboutComponent implements OnInit {
       trendingUpOutline,
       walletOutline
     });
-  }
 
-  async ngOnInit() {
-    const user = this.auth.currentUser();
-
-    if (user) {
-      await this.auth.handlePostAuthRedirect();
-    }
+    // Landing on /about-movabi#section (direct entry, refresh, or a new tab)
+    // must reach that section once it has rendered — the element does not exist
+    // yet when the browser first resolves the fragment.
+    afterNextRender(() => {
+      const fragment = this.route.snapshot.fragment;
+      if (fragment) this.scrollToSection(fragment);
+    });
   }
 }

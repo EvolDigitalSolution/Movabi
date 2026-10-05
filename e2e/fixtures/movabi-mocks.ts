@@ -144,6 +144,19 @@ export const marketLive = {
   resolutionLevel: 'city'
 };
 
+/**
+ * Registration-market eligibility state for the E2E identities: established,
+ * already-activated accounts. Shape matches `RegistrationState`
+ * (core/services/auth/registration.service).
+ */
+export const REGISTRATION_ACTIVATED = {
+  activated: true,
+  pending: false,
+  registrationCountryCode: 'GB',
+  registrationMarketCity: 'Bolton',
+  activatedAt: '2026-01-01T00:00:00.000Z'
+};
+
 export const baseJob = {
   id: ids.rideJob,
   customer_id: ids.customer,
@@ -271,6 +284,15 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
       }
       if (url.includes('/driver-registration/check')) {
         return json(route, { allowed: true, code: 'OK', title: '', message: '', action: null, blockers: [] });
+      }
+      // Registration-market eligibility. The E2E identities are established,
+      // already-activated accounts; without this the Phase 2 registration guard
+      // fails closed and bounces every authenticated route to /auth/registration.
+      if (url.includes('/registration-status')) {
+        return json(route, REGISTRATION_ACTIVATED);
+      }
+      if (url.includes('/registration-eligibility')) {
+        return json(route, REGISTRATION_ACTIVATED);
       }
       if (url.includes('/waitlist')) return json(route, { ok: true });
       // /resolve and /status
