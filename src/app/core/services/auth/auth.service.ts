@@ -3,6 +3,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { Router, Route } from '@angular/router';
 import { ProfileService } from '../profile/profile.service';
+import { RegistrationService } from './registration.service';
 import { AccountStatus } from '@shared/models/booking.model';
 import { environment } from '@env/environment';
 import { Capacitor } from '@capacitor/core';
@@ -18,6 +19,7 @@ export class AuthService {
     private supabase = inject(SupabaseService);
     private router = inject(Router);
     public profileService = inject(ProfileService);
+    private registration = inject(RegistrationService);
     private http = inject(HttpClient);
     private apiUrl = inject(ApiUrlService);
 
@@ -260,6 +262,16 @@ export class AuthService {
                 return;
             }
 
+            // AUTHENTICATED is not the same as REGISTRATION-ACTIVATED. A valid
+            // session (including one Google created before Movabi was involved)
+            // must confirm its registration market first. An already-activated
+            // account passes straight through and is never re-gated on location.
+            const registration = await this.registration.ensureLoaded(true);
+            if (registration?.pending) {
+                await this.safeNavigate(['/auth/registration']);
+                return;
+            }
+
             const role = String(profile?.role || this.userRole() || '').toLowerCase();
             const onboardingCompleted = profile?.onboarding_completed ?? this.onboardingCompleted();
 
@@ -384,6 +396,7 @@ export class AuthService {
         this.accountStatus.set('active');
         this.stripeConnectStatus.set('not_started');
         this.profileService.profile.set(null);
+        this.registration.clear();
     }
 
     private markReturningUser(): void {

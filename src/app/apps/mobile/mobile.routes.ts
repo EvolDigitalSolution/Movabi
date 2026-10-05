@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@core/guards/auth.guard';
 import { roleGuard } from '@core/guards/role.guard';
+import { registrationGuard } from '@core/guards/registration.guard';
 
 export const MOBILE_ROUTES: Routes = [
     {
@@ -63,8 +64,13 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/auth/callback.page').then((m) => m.AuthCallbackPage)
             },
             {
-                path: 'role-selection',
+                path: 'registration',
                 canActivate: [authGuard],
+                loadComponent: () => import('@mobile/features/auth/registration.page').then((m) => m.RegistrationPage)
+            },
+            {
+                path: 'role-selection',
+                canActivate: [authGuard, registrationGuard],
                 loadComponent: () => import('@mobile/features/auth/role-selection.page').then((m) => m.RoleSelectionPage)
             },
             {
@@ -75,7 +81,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'customer/onboarding',
-        canActivate: [authGuard],
+        canActivate: [authGuard, registrationGuard],
         loadComponent: () => import('@mobile/features/customer/onboarding/onboarding.page').then((m) => m.CustomerOnboardingPage)
     },
     {
@@ -85,7 +91,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'driver/onboarding',
-        canActivate: [authGuard],
+        canActivate: [authGuard, registrationGuard],
         loadComponent: () => import('@mobile/features/driver/onboarding/onboarding.page').then((m) => m.OnboardingPage)
     },
     {
@@ -105,7 +111,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'customer',
-        canActivate: [authGuard, roleGuard],
+        canActivate: [authGuard, registrationGuard, roleGuard],
         data: { role: 'customer' },
         loadComponent: () => import('@shared/ui/router-outlet.component').then((m) => m.RouterOutletComponent),
         children: [
@@ -158,7 +164,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'driver',
-        canActivate: [authGuard, roleGuard],
+        canActivate: [authGuard, registrationGuard, roleGuard],
         data: { role: 'driver' },
         loadComponent: () => import('@shared/ui/router-outlet.component').then((m) => m.RouterOutletComponent),
         children: [
