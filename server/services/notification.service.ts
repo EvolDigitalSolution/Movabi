@@ -9,6 +9,27 @@ export interface NotificationPayload {
   type: 'booking_update' | 'payment_success' | 'system_alert' | 'chat_message' | 'driver_review_action_required';
 }
 
+/**
+ * Canonical driver opportunity/negotiation push contract.
+ *
+ * Informational ONLY — never job or session authority. Contains no auth tokens,
+ * no customer PII, no precise addresses, no payment data. `job_id` is the
+ * canonical key (camelCase `jobId` is retained only as a transient alias for
+ * legacy in-app consumers). `session_id` is intentionally NOT emitted: driver
+ * opportunities are open marketplace broadcasts, not private 1:1 sessions.
+ */
+export interface DriverPushData {
+  action: 'new_job' | 'negotiation';
+  job_id: string;
+  jobId: string;
+  open: 'driver_marketplace';
+  role: 'driver';
+}
+
+function driverPushData(action: DriverPushData['action'], jobId: string): DriverPushData {
+  return { action, job_id: jobId, jobId, open: 'driver_marketplace', role: 'driver' };
+}
+
 export class NotificationService {
   /**
    * Send a notification to a user
@@ -215,7 +236,20 @@ export class NotificationService {
       title: 'New Job Available!',
       body: 'A new booking is available in your area. Open the app to accept.',
       type: 'booking_update',
-      data: { jobId, action: 'new_job' }
+      data: driverPushData('new_job', jobId)
+    });
+  }
+
+  /**
+   * Notify driver of a new fare negotiation/offer (distinct from a new job).
+   */
+  static async notifyDriverNegotiation(driverId: string, jobId: string) {
+    return this.sendNotification({
+      userId: driverId,
+      title: 'New fare offer',
+      body: 'A customer made a new fare offer in your area. Open the app to review it.',
+      type: 'booking_update',
+      data: driverPushData('negotiation', jobId)
     });
   }
 

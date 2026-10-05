@@ -7,10 +7,8 @@ import { Device } from '@capacitor/device';
 import { Haptics, NotificationType } from '@capacitor/haptics';
 import { Keyboard, KeyboardResize, KeyboardStyle } from '@capacitor/keyboard';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { PushNotifications, Token } from '@capacitor/push-notifications';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { ReplaySubject } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class NativePlatformService {
@@ -20,7 +18,6 @@ export class NativePlatformService {
   readonly isNative = Capacitor.isNativePlatform();
   readonly platform = Capacitor.getPlatform();
   readonly appIsActive = signal(true);
-  readonly pushToken$ = new ReplaySubject<string>(1);
 
   async initialize(): Promise<void> {
     if (!this.isNative || this.initialized) return;
@@ -39,9 +36,7 @@ export class NativePlatformService {
       await StatusBar.setBackgroundColor({ color: '#F8FAFC' }).catch(() => undefined);
     }
 
-    await this.configurePushListeners();
     await this.configureKeyboardListeners();
-    await this.registerPushWhenAlreadyGranted();
 
     await App.addListener('appStateChange', ({ isActive }) => this.appIsActive.set(isActive));
     await App.addListener('appUrlOpen', ({ url }) => {
@@ -60,12 +55,10 @@ export class NativePlatformService {
   async requestNotificationPermission(): Promise<boolean> {
     if (!this.isNative) return false;
 
-    const pushPermission = await PushNotifications.requestPermissions();
+    // OneSignal owns native push (FCM/APNs) delivery. The redundant
+    // @capacitor/push-notifications registration is no longer performed.
     const localPermission = await LocalNotifications.requestPermissions();
-    const granted = pushPermission.receive === 'granted';
-
-    if (granted) await PushNotifications.register();
-    return granted && localPermission.display === 'granted';
+    return localPermission.display === 'granted';
   }
 
   async showForegroundNotification(title: string, body: string, extra?: Record<string, unknown>): Promise<void> {
@@ -87,23 +80,6 @@ export class NativePlatformService {
         iconColor: '#F59E0B'
       }]
     });
-  }
-
-  private async configurePushListeners(): Promise<void> {
-    await PushNotifications.addListener('registration', (token: Token) => this.pushToken$.next(token.value));
-    await PushNotifications.addListener('registrationError', (error) => {
-      console.warn('[NativePlatform] Push registration failed', error);
-    });
-    await PushNotifications.addListener('pushNotificationActionPerformed', ({ notification }) => {
-      const data = notification.data || {};
-      const route = String(data['route'] || data['url'] || '').trim();
-      if (route.startsWith('/')) void this.router.navigateByUrl(route);
-    });
-  }
-
-  private async registerPushWhenAlreadyGranted(): Promise<void> {
-    const permission = await PushNotifications.checkPermissions();
-    if (permission.receive === 'granted') await PushNotifications.register();
   }
 
   private async configureKeyboardListeners(): Promise<void> {

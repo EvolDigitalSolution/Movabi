@@ -581,9 +581,15 @@ export class DispatchService {
             return;
         }
 
+        const isNegotiating = String((job as any).status || '').toLowerCase() === 'negotiating';
+
         for (const driver of eligibleDrivers.slice(0, MAX_NOTIFY_DRIVERS)) {
             try {
-                await NotificationService.notifyNewJob(driver.id, job.id);
+                if (isNegotiating) {
+                    await NotificationService.notifyDriverNegotiation(driver.id, job.id);
+                } else {
+                    await NotificationService.notifyNewJob(driver.id, job.id);
+                }
 
                 await this.supabase
                     .from('dispatch_logs')

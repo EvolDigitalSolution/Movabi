@@ -47,7 +47,6 @@ export class NotificationService {
   initialize(): void {
     if (this.initialized()) return;
     this.initialized.set(true);
-    this.nativePlatform.pushToken$.subscribe(token => void this.savePushToken(token));
     void this.oneSignal.init();
   }
 
@@ -119,6 +118,14 @@ export class NotificationService {
         const routeData = this.getNotificationRouteData(newNotif);
         this.notifications.update(list => [newNotif, ...list]);
         this.updateUnreadCount();
+
+        // Driver opportunity/negotiation attention is owned by the certified
+        // in-app realtime Audio alarm. Do not duplicate a local notification or
+        // tone for the same foreground event.
+        if (this.isDriverOpportunity(newNotif)) {
+          return;
+        }
+
         void this.playNotificationToneOnce(newNotif);
         void this.nativePlatform.showForegroundNotification(
           newNotif.title,
@@ -131,26 +138,6 @@ export class NotificationService {
 
   async enableNativeNotifications(): Promise<boolean> {
     return this.oneSignal.requestPermission();
-  }
-
-  private async savePushToken(token: string): Promise<void> {
-    const user = this.auth.currentUser();
-    if (!user || !token) return;
-
-    const { error } = await this.supabase
-      .from('device_push_tokens')
-      .upsert({
-        user_id: user.id,
-        token,
-        provider: 'capacitor',
-        external_id: user.id,
-        platform: Capacitor.getPlatform(),
-        enabled: true,
-        last_seen_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'token' });
-
-    if (error) console.warn('[NotificationService] Could not save push token', error);
   }
 
   private async syncOneSignalIdentity(role?: string | null): Promise<void> {
@@ -181,6 +168,13 @@ export class NotificationService {
       ...data,
       ...(route ? { route } : {})
     };
+  }
+
+  private isDriverOpportunity(notification: Notification): boolean {
+    const data = this.getNotificationRouteData(notification);
+    const role = String(data['role'] || '').toLowerCase();
+    const action = String(data['action'] || '').toLowerCase();
+    return role === 'driver' && (action === 'new_job' || action === 'negotiation');
   }
 
   private shouldPlayTone(notification: Notification): boolean {

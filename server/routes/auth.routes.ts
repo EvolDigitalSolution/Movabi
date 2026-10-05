@@ -136,6 +136,48 @@ router.post('/select-role', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Logout / account-switch hygiene: disable the CURRENT authenticated user's
+ * device push registrations so they stop receiving pushes after signing out.
+ *
+ * The identity is derived ONLY from the Bearer session; a caller can never
+ * disable another user's tokens. Uses existing `device_push_tokens` columns —
+ * no migration.
+ */
+router.post('/push-logout', async (req: Request, res: Response) => {
+  try {
+    const userId = await authUser(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    // CURRENT-DEVICE invalidation. The client sends ITS OWN device subscription
+    // id (never a userId); the user is still derived only from the session, so a
+    // caller can never disable another user's tokens or another device. A user
+    // signed in on several devices keeps push on their other devices.
+    const subscriptionId = typeof req.body?.subscriptionId === 'string'
+      ? req.body.subscriptionId.trim()
+      : '';
+
+    if (!subscriptionId) {
+      // No device identity to scope to (e.g. push never granted). Nothing to
+      // invalidate; the client-side OneSignal unbind already stops delivery for
+      // this device.
+      return res.json({ success: true });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('device_push_tokens')
+      .update({ enabled: false, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('subscription_id', subscriptionId);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to disable push registrations' });
+  }
+});
+
 router.post('/registration-otp/send', otpLimiter, async (req: Request, res: Response) => {
   const email = normalizeEmail(req.body?.email);
 

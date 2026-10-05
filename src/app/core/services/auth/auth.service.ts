@@ -11,6 +11,7 @@ import { Browser } from '@capacitor/browser';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { ApiUrlService } from '../api-url.service';
+import { OneSignalService } from '../notification/onesignal.service';
 
 @Injectable({
     providedIn: 'root'
@@ -22,6 +23,7 @@ export class AuthService {
     private registration = inject(RegistrationService);
     private http = inject(HttpClient);
     private apiUrl = inject(ApiUrlService);
+    private oneSignal = inject(OneSignalService);
 
     currentUser = signal<User | null>(null);
     session = signal<Session | null>(null);
@@ -33,6 +35,9 @@ export class AuthService {
     stripeConnectStatus = signal<'not_started' | 'pending' | 'restricted' | 'enabled' | 'connected'>('not_started');
 
     private redirecting = false;
+
+    /** Upper bound (ms) for the whole pre-logout push-identity cleanup. */
+    private static readonly PUSH_LOGOUT_TIMEOUT_MS = 2500;
 
     constructor() {
         void this.init();
@@ -213,6 +218,12 @@ export class AuthService {
     }
 
     async signOut() {
+        // Deterministic, bounded push-identity cleanup while the current session
+        // is still valid (server invalidation needs the Bearer; OneSignal unbind
+        // targets the still-bound identity). Neither step can block logout: each
+        // is bounded by a short timeout and failures are swallowed.
+        await this.cleanupPushIdentity();
+
         try {
             const { error } = await this.supabase.auth.signOut();
             if (error) throw error;
@@ -402,5 +413,66 @@ export class AuthService {
     private markReturningUser(): void {
         if (typeof localStorage === 'undefined') return;
         localStorage.setItem('movabi_returning_user', 'true');
+    }
+
+    /**
+     * Bounded, fail-safe push-identity cleanup. Runs server invalidation and the
+     * OneSignal unbind in parallel, each capped by a short timeout, so logout is
+     * never delayed indefinitely and never blocked by offline/API/OneSignal.
+     */
+    private async cleanupPushIdentity(): Promise<void> {
+        await Promise.allSettled([
+            this.invalidatePushTokens(),
+            this.unbindOneSignalIdentity()
+        ]);
+    }
+
+    /**
+     * Disable THIS device's push registration for the current user. The device
+     * identity (subscription_id) is sent in the body, but the USER is always
+     * derived server-side from the Bearer session, so a caller cannot disable
+     * another user's tokens or a device it does not own.
+     */
+    private async invalidatePushTokens(): Promise<void> {
+        try {
+            await this.withTimeout(this.doInvalidatePushTokens(), AuthService.PUSH_LOGOUT_TIMEOUT_MS);
+        } catch {
+            // Fail-safe: never blocks logout.
+        }
+    }
+
+    private async doInvalidatePushTokens(): Promise<void> {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const subscriptionId = await this.oneSignal.getSubscriptionId().catch(() => null);
+
+        await firstValueFrom(this.http.post(
+            this.apiUrl.getApiUrl('/api/auth/push-logout'),
+            { subscriptionId: subscriptionId || undefined },
+            { headers: { Authorization: `Bearer ${token}` } }
+        ));
+    }
+
+    /**
+     * Unbind this device's OneSignal identity while the current account is still
+     * the bound identity. Idempotent (logout/removeExternalUserId are no-ops on
+     * an already-unbound device); the reactive user-null effect in
+     * NotificationService remains a harmless safety net.
+     */
+    private async unbindOneSignalIdentity(): Promise<void> {
+        try {
+            await this.withTimeout(this.oneSignal.logout(), AuthService.PUSH_LOGOUT_TIMEOUT_MS);
+        } catch {
+            // Fail-safe: never blocks logout.
+        }
+    }
+
+    private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+        return Promise.race([
+            promise,
+            new Promise<T>((_, reject) => setTimeout(() => reject(new Error('push cleanup timed out')), ms))
+        ]);
     }
 }
