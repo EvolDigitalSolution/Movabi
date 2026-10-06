@@ -75,6 +75,7 @@ import { PricingConfigService } from '../../../../../core/services/pricing/prici
 import {
     GlobalAiPricingQuoteService,
     GlobalAiPricingFareBreakdown,
+    GlobalAiPricingNoShowTerms,
     GlobalAiPricingQuoteRequest
 } from '../../../../../core/services/pricing/global-ai-pricing-quote.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
@@ -988,6 +989,27 @@ type PackageSize = 'small' | 'medium' | 'large';
                   </div>
                 }
 
+                @if (showNoShowDisclosure()) {
+                  <div data-testid="no-show-disclosure" class="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                    <p class="text-sm font-bold text-slate-900 flex items-start gap-2">
+                      <ion-icon name="information-circle-outline" class="text-slate-500 text-lg shrink-0"></ion-icon>
+                      If you do not meet your driver within 5 minutes of verified arrival, a no-show fee may apply: £5 or half your agreed ride fare, whichever is lower.
+                    </p>
+                    <p class="text-xs font-bold text-slate-700">
+                      Applicable no-show fee for this ride:
+                      <span class="text-rose-600 font-black">{{ noShowFeeDisplay() }}</span>
+                    </p>
+                    <ion-checkbox
+                      [checked]="noShowAcknowledged()"
+                      (ionChange)="noShowAcknowledged.set($event.detail.checked)"
+                      color="primary"
+                      aria-label="Acknowledge the no-show policy and fee"
+                      class="text-xs font-bold text-slate-700">
+                      I understand and accept the no-show policy and fee.
+                    </ion-checkbox>
+                  </div>
+                }
+
               <div class="pt-4">
                 <app-button
                   type="submit"
@@ -1491,12 +1513,26 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return true;
         }
 
+        // Customer no-show disclosure: explicit acknowledgement is required before
+        // commitment when the feature is enabled for a UK/GBP ride.
+        if (this.showNoShowDisclosure() && !this.noShowAcknowledged()) {
+            return false;
+        }
+
         if (this.cardFallbackRequired()) {
             return this.cardReady() && this.cardComplete();
         }
 
         return this.walletPaymentRequired() > 0;
     });
+
+    // Customer no-show disclosure — driven ENTIRELY by the server-issued quote
+    // terms (`response.noShow`). No client override controls booking terms.
+    quoteNoShow = signal<GlobalAiPricingNoShowTerms | null>(null);
+    noShowAcknowledged = signal(false);
+    showNoShowDisclosure = computed(() => !!this.quoteNoShow() && !this.shouldShowMarketplaceFare());
+    noShowFeeMinor = computed(() => this.quoteNoShow()?.feeMinor ?? 0);
+    noShowFeeDisplay = computed(() => this.config.formatCurrency(this.noShowFeeMinor() / 100));
 
     moveSizes = signal([
         { id: 'small', label: 'Small (Few items)', icon: 'cube-outline' },
@@ -2835,6 +2871,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.lastFareBreakdown = breakdown;
             this.lastQuoteReference = response.quoteReference;
             this.lastQuoteExpiresAt = response.priceLockedUntil;
+            // Server-issued no-show terms (absent when disabled/ineligible).
+            this.quoteNoShow.set(response.noShow ?? null);
+            this.noShowAcknowledged.set(false);
 
             const estimate: FareEstimate = {
                 serviceType: serviceSlug,
@@ -3165,6 +3204,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     quote_expires_at: this.lastQuoteExpiresAt,
                     customer_service_total: serviceCharge,
                     total_authorisation: totalDue,
+                    no_show_acknowledged: this.noShowAcknowledged(),
+                    no_show_policy_version: this.noShowAcknowledged() ? 'ride-no-show-v1' : null,
                     pricing_plan: 'starter',
                     service_vehicle_class: this.vehicleClass(),
                     service_option_surcharge: this.vehicleSurcharge(),

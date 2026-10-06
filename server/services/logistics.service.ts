@@ -3,8 +3,9 @@ import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
 import { calculatePayoutBreakdown } from './payout-calculator';
 import { IssuingService } from './issuing.service';
-import { MarketplaceConfigService } from './marketplace-config.service';
 import { PaymentAuthorityService } from './payment-authority.service';
+import { FareSplitService, HistoricalFareReconciliationRequired, FareSplitSnapshot } from './fare-split.service';
+import { PayoutEligibilityService } from './payout-eligibility.service';
 
 export class LogisticsService {
   private static readonly EARTH_RADIUS_KM = 6371;
@@ -101,6 +102,99 @@ export class LogisticsService {
     }
 
     return !!data;
+  }
+
+  /** Resolve the frozen fare split; never recompute from live configuration. */
+  private static resolveFareSplit(job: any): FareSplitSnapshot {
+    try {
+      return FareSplitService.fromSnapshot(job.fare_breakdown, job.currency_code);
+    } catch (error) {
+      if (error instanceof HistoricalFareReconciliationRequired) throw error;
+      throw new HistoricalFareReconciliationRequired('Fare split snapshot is missing or malformed.');
+    }
+  }
+
+  /**
+   * Atomically acquire the settlement claim: transition `settlement_status` from a
+   * claimable state to 'claimed' and persist the immutable settlement identity in
+   * the SAME update. Exactly one writer wins (the WHERE admits one transition).
+   * `stripe_transfer_id` is never used as a claim token here.
+   */
+  private static readonly SETTLEMENT_LEASE_MS = 120_000;
+
+  private static async claimSettlement(
+    jobId: string,
+    immutable: { amountMinor: number; currency: string; destination: string }
+  ): Promise<boolean> {
+    const { data, error } = await supabaseAdmin.rpc('claim_job_settlement', {
+      p_job_id: jobId,
+      p_amount_minor: immutable.amountMinor,
+      p_currency: immutable.currency,
+      p_destination: immutable.destination,
+      p_lease_seconds: Math.round(this.SETTLEMENT_LEASE_MS / 1000)
+    });
+
+    if (error) throw error;
+    return Boolean(data);
+  }
+
+  /** Read the current settlement state (status + genuine transfer id). */
+  private static async readSettlementState(jobId: string): Promise<{ status: string; transferId: string | null } | null> {
+    const { data, error } = await supabaseAdmin
+      .from('jobs')
+      .select('settlement_status, stripe_transfer_id')
+      .eq('id', jobId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      status: String((data as any).settlement_status || 'pending').toLowerCase(),
+      transferId: (data as any).stripe_transfer_id || null
+    };
+  }
+
+  /**
+   * Persist a settlement state transition. `transferId: null` clears the claim
+   * (definitive failure); an omitted transferId leaves stripe_transfer_id alone.
+   */
+  private static async markSettlement(
+    jobId: string,
+    opts: { status: string; transferId?: string | null; error?: string; errorType?: string; metadata?: Record<string, any> }
+  ): Promise<void> {
+    await supabaseAdmin
+      .from('jobs')
+      .update({
+        settlement_status: opts.status,
+        stripe_transfer_status: opts.status,
+        ...(opts.transferId === null ? { stripe_transfer_id: null } : {}),
+        ...(opts.error
+          ? {
+            metadata: {
+              ...(opts.metadata || {}),
+              stripe_transfer_error: opts.error,
+              stripe_transfer_error_type: opts.errorType || ''
+            }
+          }
+          : {}),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+  }
+
+  /**
+   * Reconcile an ambiguous/stale settlement against Stripe by transfer_group and
+   * destination. Never infers "no transfer" from a missing local id — it asks
+   * Stripe. Returns the real transfer id, or null (which keeps the job blocked).
+   */
+  private static async reconcileTransfer(jobId: string, destination: string): Promise<string | null> {
+    try {
+      const transfers = await stripe.transfers.list({ transfer_group: `job_${jobId}`, destination, limit: 5 });
+      const first = (transfers?.data || [])[0];
+      return first ? String(first.id) : null;
+    } catch (error) {
+      console.error('[LogisticsService.reconcileTransfer] Stripe lookup failed:', error);
+      return null;
+    }
   }
 
   /**
@@ -200,15 +294,6 @@ export class LogisticsService {
 
     const completionMetadata = await this.assertCompletionPin(job, completionPin);
 
-    // C2: the payout/commission basis MUST be the same authoritative fare the
-    // customer was charged (agreed_fare first), otherwise a negotiated fare is
-    // charged while a pre-negotiation fare is paid out and commissioned.
-    const requestedTotalPrice = Number(job.agreed_fare ?? job.total_price ?? job.estimated_price ?? job.price ?? 0);
-
-    if (!Number.isFinite(requestedTotalPrice) || requestedTotalPrice <= 0) {
-      throw new Error('Invalid job amount');
-    }
-
     const { data: driverProfile } = await supabaseAdmin
       .from('profiles')
       .select('*')
@@ -227,57 +312,67 @@ export class LogisticsService {
 
     const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
 
-    const effectiveCommissionRate = await MarketplaceConfigService.getEffectiveCommissionPercent(
-      String(job.service_slug || '').toLowerCase() || null,
-      String(job.city_zone || '') || null,
-      String(driverProfile?.tier || job.driver_tier_at_assignment || '') || null,
-      String(job.tenant_id || '') || null
-    );
+    // One authoritative fare split, frozen at quote/agreement time. Never
+    // recompute from live config; a missing/ambiguous snapshot fails closed for
+    // explicit reconciliation instead of inventing a new entitlement.
+    const split = this.resolveFareSplit(job);
+    const totalPrice = split.customerCharge;
+    const platformFee = split.platformFeeAmount;
+    const driverPayout = split.driverEntitlement;
+    const safeCommissionRate = split.commissionPercent;
 
-    // C2 final-release closure: commission is SERVER-authoritative. The client
-    // round-tripped fare_breakdown.commissionPercent / commission_rate_used are
-    // NOT trusted; the admin-configured MarketplaceConfigService is the single
-    // authority for the platform fee / driver payout split.
-    const commissionRate = plan === 'pro' ? 0 : Number(effectiveCommissionRate ?? 0);
-    const safeCommissionRate = Number.isFinite(commissionRate)
-      ? commissionRate
-      : 0;
+    // UK-only payout scope: verify the actual Stripe account country/capabilities
+    // before any money movement. Fails closed on unsupported/unknown eligibility.
+    await PayoutEligibilityService.assertEligible(driverId, stripeAccountId);
 
-    let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
-    const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';
-    // Release closure: the payout/commission basis is ALWAYS the authoritative
-    // SERVICE fare. The errand purchase budget is customer purchasing money
-    // (reserved/settled separately), never driver earnings.
-    const totalPrice = requestedTotalPrice;
-
-    // Authoritative commission basis = the effective SERVICE fare, EXCLUDING the
-    // customer-side platform fee. market-pricing.service.ts derives the platform fee
-    // and the driver commission SEPARATELY from the same service fare and records
-    // them as distinct values ("never merged"). Commissioning the customer total
-    // would charge the driver commission on Movabi's own platform fee and disagree
-    // with the recorded quote payout. The persisted fare_breakdown carries the
-    // authoritative pre-platform-fee service fare; negotiated jobs keep using
-    // agreed_fare (a service fare, not a platform-fee-inclusive total). When the
-    // breakdown is absent we preserve the prior (customer-total) basis.
-    const breakdown = (job.fare_breakdown && typeof job.fare_breakdown === 'object')
-        ? (job.fare_breakdown as Record<string, unknown>)
-        : {};
-    const storedServiceFare = Number(breakdown.serviceFareBeforePlatformFee);
-    const hasAgreedFare = Number.isFinite(Number(job.agreed_fare)) && Number(job.agreed_fare) > 0;
-    const commissionBasis = hasAgreedFare
-        ? totalPrice
-        : (Number.isFinite(storedServiceFare) && storedServiceFare > 0
-            ? this.roundMoney(storedServiceFare)
-            : totalPrice);
-
-    const platformFee = this.roundMoney(commissionBasis * (safeCommissionRate / 100));
-    const driverPayout = this.roundMoney(Math.max(0, commissionBasis - platformFee));
-
-    const payoutAmountInPence = Math.round(driverPayout * 100);
+    const settlementCurrency = String(split.currency || job.currency_code || 'gbp').toUpperCase();
+    const payoutAmountInPence = FareSplitService.toMinor(driverPayout, settlementCurrency);
 
     if (payoutAmountInPence <= 0) {
       throw new Error('Invalid driver payout amount');
     }
+
+    // Resolve the current settlement state. `stripe_transfer_id` is only ever a
+    // genuine Stripe transfer id (never a claim token), so its presence means a
+    // transfer already happened and we are resuming.
+    let stripeTransferId: string | null = job.stripe_transfer_id || null;
+
+    if (!stripeTransferId) {
+      // Atomically acquire the claim + persist the immutable settlement identity.
+      const claimed = await this.claimSettlement(job.id, {
+        amountMinor: payoutAmountInPence,
+        currency: settlementCurrency,
+        destination: stripeAccountId
+      });
+
+      if (!claimed) {
+        const state = await this.readSettlementState(job.id);
+        // Reconcile against Stripe by transfer_group before deciding there is no
+        // transfer. Never infer "no transfer" from a missing local id.
+        if (state && (state.status === 'unknown' || state.status === 'claimed')) {
+          const reconciledId = await this.reconcileTransfer(job.id, stripeAccountId);
+          if (reconciledId) {
+            stripeTransferId = reconciledId;
+          } else {
+            // No transfer found. A transfer_group lookup returning nothing cannot
+            // prove the original (now-expired) claim will never succeed, so we
+            // must NOT re-transfer. A stale 'claimed' is demoted to 'unknown'
+            // (blocked) for reconciliation; it never auto-becomes claimable.
+            if (state.status === 'claimed') {
+              await this.markSettlement(job.id, { status: 'unknown' });
+            }
+            console.warn('[LogisticsService.completeJob] settlement blocked and unreconciled, skipping:', job.id, state.status);
+            return job;
+          }
+        } else {
+          console.warn('[LogisticsService.completeJob] settlement not claimable, skipping:', job.id, state?.status);
+          return job;
+        }
+      }
+    }
+
+    let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
+    const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';
 
     if (finalPaymentStatus === 'paid') {
       console.log('[LogisticsService.completeJob] Payment already paid, skipping capture:', job.id);
@@ -332,15 +427,14 @@ export class LogisticsService {
       throw new Error(`Payment has not been authorized. Current status: ${finalPaymentStatus}`);
     }
 
-    let stripeTransferId = job.stripe_transfer_id || null;
-
     if (!stripeTransferId) {
       try {
         const transfer = await stripe.transfers.create(
           {
             amount: payoutAmountInPence,
-            currency: String(job.currency_code || 'gbp').toLowerCase(),
+            currency: settlementCurrency.toLowerCase(),
             destination: stripeAccountId,
+            transfer_group: `job_${job.id}`,
             description: `Movabi driver payout for job ${job.id}`,
             metadata: {
               job_id: String(job.id),
@@ -363,30 +457,23 @@ export class LogisticsService {
         const statusCode = Number(transferError?.statusCode || 0);
         // A 4xx is a definitive Stripe rejection: the transfer did NOT happen.
         // A connection error, timeout, or 5xx is AMBIGUOUS: Stripe may have
-        // completed the transfer even though the response never reached us.
-        // Because the deterministic transfer-job-<id> idempotency key makes an
-        // ambiguous retry safely resume the SAME transfer, the durable marker is
-        // honest ('unknown') rather than claiming a definitive 'failed'. The
-        // capture already succeeded, so this also records the diagnosable state
-        // a support operator needs to see.
+        // completed the transfer even though the response never reached us. We do
+        // NOT assume "no transfer" from a missing local id; ambiguous outcomes
+        // become 'unknown' and block further transfers until reconciled.
         const markerStatus = (statusCode >= 400 && statusCode < 500) ? 'failed' : 'unknown';
         try {
-          await supabaseAdmin
-            .from('jobs')
-            .update({
-              stripe_transfer_status: markerStatus,
-              metadata: {
-                ...(job.metadata || {}),
-                stripe_transfer_error: message,
-                stripe_transfer_error_type: String(transferError?.type || '')
-              },
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', job.id);
+          await this.markSettlement(job.id, {
+            status: markerStatus,
+            // Definitive failure releases the claim (re-claimable); ambiguous keeps
+            // stripe_transfer_id untouched (still null) but status 'unknown' blocks.
+            transferId: markerStatus === 'failed' ? null : undefined,
+            error: message,
+            errorType: String(transferError?.type || ''),
+            metadata: job.metadata
+          });
         } catch (markError) {
-          // Best-effort bookkeeping: never mask the economically important
-          // Stripe error with a marker-persistence failure. The original error
-          // is still rethrown below with its full context.
+          // Best-effort bookkeeping: never mask the economically important Stripe
+          // error with a marker-persistence failure.
           console.error('[LogisticsService.completeJob] failed to persist transfer failure marker:', markError);
         }
         throw transferError instanceof Error ? transferError : new Error(message);
@@ -404,60 +491,38 @@ export class LogisticsService {
       }
       : completionMetadata;
 
-    const { data: updatedJob, error: updateError } = await supabaseAdmin
+    // Atomically record transfer success + earnings in ONE database transaction
+    // (record_job_settlement). This is the single write path; atomicity is real.
+    const { data: settledRows, error: settleError } = await supabaseAdmin.rpc('record_job_settlement', {
+      p_job_id: job.id,
+      p_driver_id: driverId,
+      p_total_price: totalPrice,
+      p_driver_payout: driverPayout,
+      p_platform_fee: platformFee,
+      p_commission_fee: split.driverCommissionAmount,
+      p_commission_rate: safeCommissionRate,
+      p_stripe_transfer_id: stripeTransferId,
+      p_currency_code: job.currency_code || 'GBP',
+      p_country_code: job.country_code || 'GB',
+      p_was_already_completed: wasAlreadyCompleted
+    });
+
+    if (settleError) {
+      console.error('[LogisticsService.completeJob] settlement recording failed:', settleError);
+      throw new Error(settleError.message || 'Failed to record settlement');
+    }
+
+    const updatedJob = Array.isArray(settledRows) ? settledRows[0] : settledRows;
+
+    // Completion-pin evidence is not money-critical; write it idempotently.
+    await supabaseAdmin
       .from('jobs')
-      .update({
-        // Keep the ORIGINAL completed status/timestamp when resuming a partially
-        // completed job rather than rewriting when it actually finished.
-        status: wasAlreadyCompleted ? String(job.status) : 'completed',
-        payment_status: 'paid',
-        driver_id: driverId,
-        price: totalPrice,
-        total_price: totalPrice,
-        driver_payout: driverPayout,
-        platform_fee: platformFee,
-        stripe_transfer_id: stripeTransferId,
-        stripe_transfer_status: 'paid',
-        transferred_at: job.transferred_at || now,
-        updated_at: now,
-        ...(wasAlreadyCompleted ? {} : { completed_at: job.completed_at || now }),
-        metadata: completedMetadata
-      })
-      .eq('id', job.id)
-      .select('*')
-      .single();
-
-    if (updateError) {
-      console.error('[LogisticsService.completeJob] update failed:', updateError);
-      throw new Error(updateError.message || 'Failed to complete job');
-    }
-
-    const { error: earningError } = await supabaseAdmin
-      .from('driver_earnings')
-      .upsert(
-        {
-          driver_id: driverId,
-          job_id: job.id,
-          amount: driverPayout,
-          platform_fee: platformFee,
-          gross_amount: totalPrice,
-          status: 'paid',
-          currency_code: job.currency_code || 'GBP',
-          country_code: job.country_code || 'GB',
-          stripe_transfer_id: stripeTransferId,
-          created_at: job.created_at || now
-        },
-        { onConflict: 'job_id' }
-      );
-
-    if (earningError) {
-      console.error('[LogisticsService.completeJob] earning upsert failed:', earningError);
-      throw new Error(earningError.message || 'Failed to sync driver earnings');
-    }
+      .update({ metadata: completedMetadata, updated_at: now })
+      .eq('id', job.id);
 
     await AuditService.logBooking(job.customer_id, 'job_completed', job.id, {
       total_price: totalPrice,
-      reserved_price: requestedTotalPrice,
+      reserved_price: totalPrice,
       driver_payout: driverPayout,
       platform_fee: platformFee,
       stripe_transfer_id: stripeTransferId,

@@ -12,6 +12,8 @@ import { rateLimit } from 'express-rate-limit';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 import { mapDriverAcquisitionError } from '../services/driver-eligibility.service';
 import { isDriverEligibleForService, toCanonicalDriverService } from '../services/driver-service-eligibility';
+import { PayoutEligibilityService } from '../services/payout-eligibility.service';
+import { NoShowService, NO_SHOW_ARRIVAL_MAX_DISTANCE_M, NO_SHOW_ARRIVAL_MAX_LOCATION_AGE_MS } from '../services/no-show.service';
 
 const router = Router();
 
@@ -33,6 +35,25 @@ async function getAuthUserId(req: Request): Promise<string | null> {
     }
 
     return data.user.id;
+}
+
+/**
+ * Fail closed before a driver can acquire paid work: the driver must be in the
+ * supported payout scope (role, registration activation, country, and a ready
+ * Stripe Connect account). This does NOT affect login — only job acquisition.
+ * Returns false after writing the 403 response.
+ */
+async function requirePayoutEligible(driverId: string, res: Response): Promise<boolean> {
+    try {
+        await PayoutEligibilityService.assertEligible(driverId);
+        return true;
+    } catch (error: any) {
+        res.status(403).json({
+            error: error?.message || 'Driver is not eligible to accept paid work.',
+            code: error?.code || 'PAYOUT_INELIGIBLE'
+        });
+        return false;
+    }
 }
 
 /**
@@ -198,6 +219,38 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             insertPayload.expires_at = null;
         }
         insertPayload.agreed_fare = null;
+        // Authoritative customer no-show disclosure: enabled server-side, computed
+        // from the AUTHORITATIVE quoted fare, never a client-supplied version/fee.
+        // Direct-checkout UK/GBP rides require explicit acknowledgement; the
+        // disclosed snapshot is persisted so later config changes cannot alter it.
+        const noShowConfig = await NoShowService.getEnabledConfig();
+        const isRide = canonicalService === 'ride';
+        const isUkGbp = String(payload.country_code || quoteAudit.country_code || '').toUpperCase() === 'GB'
+            && String(payload.currency_code || quoteAudit.currency || '').toUpperCase() === 'GBP';
+        const isDirectCheckout = insertPayload.status !== 'pending_fare_confirmation';
+
+        if (noShowConfig.noShowEnabled && isRide && isUkGbp && isDirectCheckout) {
+            if (metadata.no_show_acknowledged !== true) {
+                return res.status(409).json({
+                    error: 'The no-show policy must be acknowledged before booking.',
+                    code: 'NO_SHOW_ACKNOWLEDGEMENT_REQUIRED'
+                });
+            }
+            const noShow = NoShowService.computeNoShowSplit(
+                Math.round(quotedFare * 100),
+                String(payload.currency_code || quoteAudit.currency || 'GBP')
+            );
+            const existingBreakdown = (insertPayload.fare_breakdown && typeof insertPayload.fare_breakdown === 'object')
+                ? insertPayload.fare_breakdown
+                : {};
+            insertPayload.fare_breakdown = {
+                ...existingBreakdown,
+                noShowPolicyVersion: noShow.policyVersion,
+                noShowFeeMinor: noShow.feeMinor,
+                noShowDriverShareMinor: noShow.driverShareMinor,
+                noShowPlatformShareMinor: noShow.platformShareMinor
+            };
+        }
         // C2 final-release closure: the client is NEVER authoritative for payment
         // state or monetary breakdown. A fresh booking always starts 'pending';
         // a forged payment_status='paid' (or a client commission/payout snapshot)
@@ -541,6 +594,9 @@ router.post('/accept', async (req: Request, res: Response) => {
             });
         }
 
+        // UK-only payout scope: a driver who cannot be paid must not acquire work.
+        if (!(await requirePayoutEligible(driverId, res))) return;
+
         if (!LogisticsService.isValidBookingTransition(job.status, 'accepted')) {
             return res.status(400).json({
                 error: `Invalid transition from ${job.status} to accepted`
@@ -596,6 +652,124 @@ router.post('/accept', async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('Accept job error:', error);
         return res.status(500).json({ error: error.message || 'Failed to accept job' });
+    }
+});
+
+/**
+ * Server-authoritative arrival (ride pickup). Records an immutable server
+ * timestamp + grace deadline. Repeated arrival never resets the timer.
+ */
+router.post('/arrive', async (req: Request, res: Response) => {
+    try {
+        if (!(await NoShowService.getEnabledConfig()).noShowEnabled) {
+            // Explicit, machine-readable disabled signal. Clients must NOT treat a
+            // bare 404 (wrong route, proxy, typo) as "feature disabled".
+            return res.status(404).json({ error: 'Not found', code: 'NO_SHOW_DISABLED' });
+        }
+
+        const driverId = await requireAuthenticatedUser(req, res);
+        if (!driverId) return;
+        const { jobId, lat, lng, measuredAt } = req.body || {};
+
+        if (!jobId) return res.status(400).json({ error: 'jobId required' });
+
+        const job = await getJob(jobId);
+        if (String(job.driver_id || '') !== driverId) {
+            return res.status(403).json({ error: 'Only the assigned driver can mark arrival.', code: 'NOT_ASSIGNED_DRIVER' });
+        }
+
+        // UK/GBP ride pickup only.
+        if (!NoShowService.isSupported(job.country_code, job.currency_code)) {
+            return res.status(400).json({ error: 'No-show arrival is not supported for this booking.', code: 'NO_SHOW_SCOPE_UNSUPPORTED' });
+        }
+        if (String(job.service_slug || '').toLowerCase() !== 'ride' && String(job.service_slug || '').toLowerCase() !== 'delivery') {
+            return res.status(400).json({ error: 'No-show arrival is ride-pickup only.', code: 'NO_SHOW_SCOPE_UNSUPPORTED' });
+        }
+
+        // Location measurement freshness. Server now() is NOT location freshness:
+        // the client must timestamp its measurement and we reject stale or future
+        // evidence. Client coordinates/timestamps remain SPOOFABLE supporting
+        // evidence, not proof — the server arrival timestamp is the authority.
+        const measuredMs = Date.parse(String(measuredAt || ''));
+        const nowMs = Date.now();
+        if (!Number.isFinite(measuredMs)
+            || (nowMs - measuredMs) > NO_SHOW_ARRIVAL_MAX_LOCATION_AGE_MS
+            || measuredMs > nowMs + 60_000) {
+            return res.status(400).json({ error: 'Location measurement is stale or invalid.', code: 'ARRIVAL_LOCATION_STALE' });
+        }
+
+        // Conservative proximity default: the driver must be within 200m of the
+        // server-known pickup.
+        const distanceKm = LogisticsService.calculateDistance(
+            Number(lat), Number(lng),
+            Number(job.pickup_lat), Number(job.pickup_lng)
+        );
+        if (!Number.isFinite(distanceKm) || distanceKm > (NO_SHOW_ARRIVAL_MAX_DISTANCE_M / 1000)) {
+            return res.status(400).json({ error: 'Driver location is not near the pickup.', code: 'ARRIVAL_LOCATION_INVALID' });
+        }
+
+        const arrived = await NoShowService.recordArrival(String(jobId), driverId);
+        if (!arrived) {
+            return res.status(400).json({ error: 'Arrival is not allowed in the current booking state.', code: 'ARRIVAL_INVALID_STATE' });
+        }
+
+        if (job.customer_id) {
+            await NotificationService.notifyJobStatusUpdate(job.customer_id, String(jobId), 'driver_arrived');
+        }
+
+        // Surface the frozen, server-computed no-show terms so the driver UI shows
+        // the authoritative fee and compensation (never re-derived client-side).
+        const noShowTerms = NoShowService.splitFromBreakdown(job.fare_breakdown);
+
+        return res.json({
+            success: true,
+            arrived_at: arrived.no_show_arrived_at,
+            grace_until: arrived.no_show_grace_until,
+            no_show: noShowTerms ? {
+                policyVersion: noShowTerms.policyVersion,
+                feeMinor: noShowTerms.feeMinor,
+                driverShareMinor: noShowTerms.driverShareMinor,
+                platformShareMinor: noShowTerms.platformShareMinor,
+                currency: noShowTerms.currency,
+                graceSeconds: NoShowService.GRACE_MINUTES * 60
+            } : null
+        });
+    } catch (error: any) {
+        console.error('[BookingRoutes] arrive error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to mark arrival' });
+    }
+});
+
+/**
+ * Customer no-show finalise (ride pickup). Server-verified grace expiry, then a
+ * terminal cancellation + money movement via NoShowService.
+ */
+router.post('/no-show', async (req: Request, res: Response) => {
+    try {
+        if (!(await NoShowService.getEnabledConfig()).noShowEnabled) {
+            return res.status(404).json({ error: 'Not found', code: 'NO_SHOW_DISABLED' });
+        }
+
+        const driverId = await requireAuthenticatedUser(req, res);
+        if (!driverId) return;
+        const { jobId, reason, contactAttempted, confirmed } = req.body || {};
+
+        if (!jobId) return res.status(400).json({ error: 'jobId required' });
+        if (!reason || String(reason).trim().length < 3) return res.status(400).json({ error: 'A cancellation reason is required.' });
+        if (confirmed !== true) return res.status(400).json({ error: 'Driver must confirm the no-show.', code: 'NO_SHOW_CONFIRMATION_REQUIRED' });
+
+        const job = await getJob(jobId);
+        if (String(job.driver_id || '') !== driverId) {
+            return res.status(403).json({ error: 'Only the assigned driver can mark a no-show.', code: 'NOT_ASSIGNED_DRIVER' });
+        }
+
+        const finalized = await NoShowService.finalizeNoShow(String(jobId), driverId, String(reason), Boolean(contactAttempted));
+
+        return res.json({ success: true, no_show_status: finalized.no_show_status });
+    } catch (error: any) {
+        console.error('[BookingRoutes] no-show error:', error);
+        const status = /eligible/i.test(error.message) ? 400 : 500;
+        return res.status(status).json({ error: error.message || 'Failed to finalise no-show' });
     }
 });
 
@@ -902,7 +1076,11 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
                 metadata: nextMetadata,
                 updated_at: new Date().toISOString()
             })
-            .eq('id', jobId);
+            .eq('id', jobId)
+            // Close the TOCTOU window with the pre-check above: a job that reached a
+            // terminal state (e.g. a customer no-show) after the read must never be
+            // blindly re-released back into the driver pool.
+            .not('status', 'in', '(cancelled,completed,settled)');
 
         if (error) throw error;
 
@@ -1407,6 +1585,9 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
         await MarketAvailabilityService.requireCapability({ countryCode: job.country_code || jobMetadata.country_code,
             marketCity: job.market_city || jobMetadata.market_city || jobMetadata.pickup_city, zoneId: job.zone_id || jobMetadata.zone_id,
             capability: 'booking', endpoint: '/api/booking/negotiation/driver-accept' });
+
+        // UK-only payout scope: a driver who cannot be paid must not acquire work.
+        if (!(await requirePayoutEligible(userId, res))) return;
 
         if (!job.negotiation_mode_enabled) {
             return res.status(400).json({ error: 'Job is not in negotiation mode' });

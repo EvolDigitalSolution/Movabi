@@ -43,6 +43,13 @@ export const profiles = {
     first_name: 'Test',
     last_name: 'Customer',
     email: 'customer@movabi.test',
+    // ComplianceService.getCustomerMissingRequirements blocks booking unless the
+    // customer has a phone and accepted terms + privacy. These mirror a real
+    // completed customer profile; email_verified is intentionally omitted so the
+    // optional email-verification capability is not asserted.
+    phone: '+447700900456',
+    accepted_terms_at: now,
+    accepted_privacy_at: now,
     onboarding_completed: true,
     account_status: 'active',
     created_at: now,
@@ -223,7 +230,6 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
   // AVAILABLE list; accepting via the accept_* RPC below assigns it.
   let activeJob = { ...baseJob, driver_id: null, accepted_driver_id: null, status: 'searching' } as typeof baseJob;
   const wallet = { id: 'wallet-1', user_id: ids.customer, available_balance: 42.5, reserved_balance: 3.5, currency_code: 'GBP' };
-
   await page.addInitScript(() => {
     // Deterministic launched market for the driver online/availability gate.
     window.localStorage.setItem('movabi_country_code', 'GB');
@@ -272,7 +278,22 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
     }
 
     if (url.includes('api.maptiler.com') || url.includes('api.openrouteservice.org')) {
-      return json(route, { features: [], routes: [{ summary: { distance: 870, duration: 128 }, geometry: { coordinates: [[-2.43, 53.585], [-2.421, 53.592]] } }] });
+      // ORS directions contract: routes[0] needs summary{distance,duration},
+      // a GeoJSON geometry and bbox[minLon,minLat,maxLon,maxLat] — RoutingService
+      // reads bbox[0..3] and draws geometry as GeoJSON.
+      return json(route, {
+        features: [],
+        routes: [
+          {
+            summary: { distance: 2400, duration: 420 },
+            geometry: {
+              type: 'LineString',
+              coordinates: [[-2.43, 53.585], [-2.422, 53.592], [-2.4155, 53.5985]]
+            },
+            bbox: [-2.43, 53.585, -2.4155, 53.5985]
+          }
+        ]
+      });
     }
 
     // ---- Market rollout gate (/api/markets/*) -------------------------------
@@ -338,7 +359,11 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
 
       return json(route, pricingConfig);
     }
-    if (url.includes('/rest/v1/wallets')) return json(route, wallet);
+    if (url.includes('/rest/v1/wallets')) {
+      return json(route, walletBalanceOverride === null
+        ? wallet
+        : { ...wallet, available_balance: walletBalanceOverride });
+    }
     if (url.includes('/rest/v1/wallet_transactions')) return json(route, [
       { id: 'txn-1', user_id: ids.customer, amount: 25, transaction_type: 'topup', description: 'Card top up', created_at: now }
     ]);
@@ -350,6 +375,9 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
     if (url.includes('/rest/v1/ratings')) return json(route, { id: 'rating-1', job_id: activeJob.id, rating: 5 });
 
     if (url.includes('/rest/v1/jobs')) {
+      if (noShowJobOverride) {
+        activeJob = { ...activeJob, ...noShowJobOverride } as typeof activeJob;
+      }
       if (route.request().method() === 'POST') {
         activeJob = {
           ...activeJob,
@@ -411,13 +439,83 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
       return json(route, activeJob);
     }
 
+    if (url.includes('/api/pricing/global-ai/quote')) {
+      const body = (route.request().postDataJSON() || {}) as { serviceSlug?: string };
+      const isRide = (body.serviceSlug || 'ride') === 'ride';
+      const resp: Record<string, unknown> = {
+        quoteReference: 'quote-no-show-test',
+        market: { countryCode: 'GB', currency: 'GBP', city: 'Bolton', zoneId: null },
+        price: { base: 2.5 },
+        ai: { livePricingEnabled: false, finalTotalMinor: 350 },
+        guardrails: {},
+        priceLockedUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+        fallback: { used: false, reason: null, source: 'mock' },
+        legacy: {
+          totalPrice: 3.5,
+          currencyCode: 'GBP',
+          source: 'mock',
+          fareBreakdown: { baseFare: 2.5, distanceCost: 0.8, durationCost: 0.2, serviceFee: 0, currencyCode: 'GBP', currencySymbol: '£' }
+        }
+      };
+      if (quoteNoShowEnabled && isRide) {
+        resp.noShow = { policyVersion: 'ride-no-show-v1', fareMinor: 350, feeMinor: 175, driverShareMinor: 140, platformShareMinor: 35, graceSeconds: 300, currency: 'GBP' };
+      }
+      return json(route, resp);
+    }
     if (url.includes('/api/payment/calculate-price')) return json(route, { amount: 3.5, price: 3.5, total: 3.5, totalPrice: 3.5 });
     if (url.includes('/api/payment/create-intent')) return json(route, { clientSecret: 'pi_test_secret_mock', paymentIntentId: 'pi_test' });
-    if (url.includes('/api/wallet/pay-job')) return json(route, { ok: true, payment_status: 'wallet_funded', wallet });
+    if (url.includes('/api/payment/confirm')) {
+      // BookingService.confirmJobPayment contract: POST { jobId } -> { booking }.
+      activeJob = { ...activeJob, payment_status: 'wallet_funded', status: 'searching' };
+      return json(route, { booking: activeJob });
+    }
+    if (url.includes('/api/wallet/pay-job')) {
+      // WalletService.payJobFromWallet contract: { success, paymentMethod, amount }.
+      const body = (route.request().postDataJSON() || {}) as { amount?: number };
+      return json(route, { success: true, paymentMethod: 'wallet', amount: Number(body.amount || 3.5) });
+    }
     if (url.includes('/api/wallet/top-up')) return json(route, { clientSecret: 'pi_topup_secret_mock', paymentIntentId: 'pi_topup' });
     if (url.includes('/api/booking/confirm-payment')) {
       activeJob = { ...activeJob, payment_status: 'wallet_funded' };
       return json(route, activeJob);
+    }
+    if (url.includes('/api/booking/arrive')) {
+      if (arrivalFailure) {
+        return json(route, arrivalFailure.body, arrivalFailure.status);
+      }
+      if (noShowArrivalDisabled) {
+        // Feature off: the explicit code is what authorises the legacy arrival flow.
+        return json(route, { error: 'Not found', code: 'NO_SHOW_DISABLED' }, 404);
+      }
+      // Server-authoritative arrival: returns the immutable grace deadline + the
+      // frozen no-show terms the driver UI must display.
+      const arrivedAt = new Date().toISOString();
+      const graceUntil = new Date(Date.now() + arrivalGraceMs).toISOString();
+      activeJob = {
+        ...activeJob,
+        no_show_arrived_at: arrivedAt,
+        no_show_grace_until: graceUntil,
+        fare_breakdown: { ...(activeJob as any).fare_breakdown, ...NO_SHOW_FARE_BREAKDOWN }
+      } as typeof activeJob;
+      return json(route, { success: true, arrived_at: arrivedAt, grace_until: graceUntil, no_show: NO_SHOW_TERMS });
+    }
+    if (url.includes('/api/booking/no-show')) {
+      if (noShowFinalizeOutcome) {
+        return json(route, noShowFinalizeOutcome.body, noShowFinalizeOutcome.status);
+      }
+      const body = (route.request().postDataJSON() || {}) as Record<string, unknown>;
+      activeJob = {
+        ...activeJob,
+        status: 'cancelled',
+        no_show_status: 'fee_charged',
+        no_show_reason: body['reason'] || null,
+        fare_breakdown: { ...(activeJob as any).fare_breakdown, ...NO_SHOW_FARE_BREAKDOWN }
+      } as typeof activeJob;
+      return json(route, { success: true, no_show_status: 'fee_charged' });
+    }
+    if (url.includes('/api/booking/create')) {
+      lastBookingCreateBody = (route.request().postDataJSON() || {}) as Record<string, unknown>;
+      return json(route, { id: 'booking-test', negotiation_mode_enabled: false, status: 'searching', payment_status: 'pending' });
     }
     if (url.includes('/api/booking/cancel')) {
       activeJob = { ...activeJob, status: 'cancelled' };
@@ -481,6 +579,76 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
   });
 }
 
+export let lastBookingCreateBody: Record<string, unknown> | null = null;
+export let quoteNoShowEnabled = false;
+export let walletBalanceOverride: number | null = null;
+
+export function setQuoteNoShowEnabled(value: boolean): void {
+  quoteNoShowEnabled = value;
+}
+
+/** Force the mocked wallet's available balance (e.g. to exercise card fallback). */
+export function setWalletBalance(value: number | null): void {
+  walletBalanceOverride = value;
+}
+
+/** Clear the captured create payload so a test asserts on ITS OWN submission. */
+export function resetBookingCreateBody(): void {
+  lastBookingCreateBody = null;
+}
+
+/**
+ * No-show E2E controls. `noShowJobOverride` merges server-issued no-show fields
+ * into the active job; `arrivalGraceMs` sets the mocked grace deadline relative to
+ * now (positive = still counting down, negative = expired).
+ */
+export let noShowJobOverride: Record<string, unknown> | null = null;
+export let arrivalGraceMs = 120_000;
+export let noShowFinalizeOutcome: { status: number; body: Record<string, unknown> } | null = null;
+
+export function setNoShowJob(fields: Record<string, unknown> | null): void {
+  noShowJobOverride = fields;
+}
+
+export function setArrivalGraceMs(value: number): void {
+  arrivalGraceMs = value;
+}
+
+/** Simulate the no-show feature being OFF: /api/booking/arrive returns the explicit code. */
+export let noShowArrivalDisabled = false;
+export function setNoShowArrivalDisabled(value: boolean): void {
+  noShowArrivalDisabled = value;
+}
+
+/** Force an arbitrary /api/booking/arrive failure (e.g. a generic 404 without the disabled code). */
+export let arrivalFailure: { status: number; body: Record<string, unknown> } | null = null;
+export function setArrivalFailure(value: { status: number; body: Record<string, unknown> } | null): void {
+  arrivalFailure = value;
+}
+
+/** Force the finalise response (e.g. a 409 trip-start conflict). */
+export function setNoShowFinalizeOutcome(value: { status: number; body: Record<string, unknown> } | null): void {
+  noShowFinalizeOutcome = value;
+}
+
+/** The frozen terms persisted on the booking at creation (ride-no-show-v1, £3.50 → £1.75/£1.40). */
+export const NO_SHOW_TERMS = {
+  policyVersion: 'ride-no-show-v1',
+  feeMinor: 175,
+  driverShareMinor: 140,
+  platformShareMinor: 35,
+  currency: 'GBP',
+  graceSeconds: 300
+};
+
+export const NO_SHOW_FARE_BREAKDOWN = {
+  noShowPolicyVersion: 'ride-no-show-v1',
+  noShowFeeMinor: 175,
+  noShowDriverShareMinor: 140,
+  noShowPlatformShareMinor: 35,
+  currency: 'GBP'
+};
+
 export async function loginAs(page: Page, role: E2ERole) {
   await installMovabiMocks(page, role);
   await page.goto('/auth/login');
@@ -531,6 +699,22 @@ async function json(route: Route, data: unknown, status = 200) {
 function geocodeFeatures(query: string, proximity?: string | null) {
   const normalized = String(query || '').toLowerCase();
   const isBoltonIntent = normalized.includes('bolton') || normalized.includes('bl2') || String(proximity || '').includes('-2.43');
+
+  // Distinct destination so pickup and drop-off resolve to different coordinates
+  // and a real route (nonzero distance/duration) can be computed between them.
+  if (normalized.includes('tonge')) {
+    const label = 'Tonge Moor Primary Academy, Bolton, England, United Kingdom';
+    const coordinates: [number, number] = [-2.4155, 53.5985];
+    return [
+      {
+        place_name: label,
+        text: label,
+        properties: { label, name: label },
+        center: coordinates,
+        geometry: { coordinates }
+      }
+    ];
+  }
 
   if (normalized.includes('mcdonald') || normalized.includes('asda')) {
     const label = normalized.includes('mcdonald')

@@ -277,22 +277,29 @@ export class PaymentService {
     // =========================
 
     async refundPayment(
-        paymentIntentId: string,
+        jobId: string,
         amount?: number,
-        reason?: string
+        reason?: string,
+        idempotencyKey?: string
     ): Promise<unknown> {
 
-        if (!paymentIntentId) {
-            throw new Error('paymentIntentId is required');
+        if (!jobId) {
+            throw new Error('jobId is required');
         }
+
+        // One stable operation identity per refund action: the caller supplies it
+        // and reuses it on retries; a separate legitimate refund uses a NEW key.
+        // (The server generates a fresh key only when none is supplied.)
+        const operationKey = idempotencyKey || `refund-${jobId}-${crypto.randomUUID()}`;
 
         try {
             const headers = await this.getAuthHeaders();
             return await firstValueFrom(
                 this.http.post(`${this.apiUrl}/refund`, {
-                    paymentIntentId,
+                    jobId,
                     amount,
-                    reason
+                    reason,
+                    idempotencyKey: operationKey
                 }, { headers })
             );
         } catch (error: any) {

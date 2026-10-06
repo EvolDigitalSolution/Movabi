@@ -168,6 +168,55 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </div>
             </div>
 
+            @if (noShowGraceUntil() && (noShowRemainingSeconds() ?? 0) > 0) {
+              <div class="rounded-2xl bg-slate-100 border border-slate-200 p-3 mt-3" role="timer" [attr.aria-label]="'No-show grace countdown'" data-testid="no-show-countdown">
+                <p class="text-xs font-bold text-slate-700">
+                  Customer no-show grace: {{ noShowRemainingSeconds() }}s remaining
+                </p>
+              </div>
+            }
+
+            @if (noShowGraceUntil() && noShowGraceExpired() && noShowTerms()) {
+              <div class="rounded-2xl bg-rose-50 border border-rose-200 p-4 mt-3 space-y-3" data-testid="no-show-panel">
+                <p class="text-sm font-black text-rose-900">Customer no-show</p>
+                <p class="text-xs font-bold text-slate-700">
+                  Grace period has ended. Recording a no-show cancels this request and charges
+                  the customer
+                  <span class="text-rose-700 font-black" data-testid="no-show-fee">{{ noShowFeeDisplay() }}</span>.
+                  Your compensation is
+                  <span class="text-emerald-700 font-black" data-testid="no-show-driver-share">{{ noShowDriverShareDisplay() }}</span>.
+                </p>
+
+                <label class="flex items-start gap-2 text-xs font-bold text-slate-700">
+                  <input type="checkbox" data-testid="no-show-contact"
+                         [checked]="noShowContactAttempted()"
+                         (change)="noShowContactAttempted.set($any($event.target).checked)" />
+                  I attempted to contact the customer.
+                </label>
+
+                <textarea data-testid="no-show-reason" rows="2" aria-label="No-show reason"
+                          class="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold"
+                          placeholder="Reason (e.g. waited 5 minutes, no answer)"
+                          [value]="noShowReason()"
+                          (input)="noShowReason.set($any($event.target).value)"></textarea>
+
+                <label class="flex items-start gap-2 text-xs font-bold text-slate-700">
+                  <input type="checkbox" data-testid="no-show-confirm"
+                         [checked]="noShowConfirmed()"
+                         (change)="noShowConfirmed.set($any($event.target).checked)" />
+                  I confirm the customer did not show up.
+                </label>
+
+                @if (noShowError()) {
+                  <p class="text-xs font-bold text-rose-700" role="alert" data-testid="no-show-error">{{ noShowError() }}</p>
+                }
+
+                <app-button type="button" [disabled]="!noShowCanSubmit()" (click)="submitNoShow()" data-testid="no-show-submit">
+                  {{ noShowSubmitting() ? 'Recording...' : 'Record no-show' }}
+                </app-button>
+              </div>
+            }
+
             @if (job()?.status === 'assigned') {
               <div class="rounded-[1.5rem] bg-amber-50 border border-amber-200 p-4 space-y-3">
                 <div class="flex items-start gap-3">
@@ -831,6 +880,39 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     errandDetails = computed(() => this.details() as ErrandDetails | null);
     funding = signal<ErrandFunding | null>(null);
     issuingCardStatus = signal<ErrandIssuingCardStatus | null>(null);
+
+    // No-show countdown (server deadline) + driver confirmation panel.
+    noShowGraceUntil = signal<string | null>(null);
+    noShowRemainingSeconds = signal<number | null>(null);
+    noShowTerms = signal<{ policyVersion: string; feeMinor: number; driverShareMinor: number; platformShareMinor: number; currency: string; graceSeconds: number } | null>(null);
+    noShowReason = signal('');
+    noShowContactAttempted = signal(false);
+    noShowConfirmed = signal(false);
+    noShowSubmitting = signal(false);
+    noShowError = signal<string | null>(null);
+    private noShowCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+    /** Grace expiry: the confirmation controls unlock only after the server deadline. */
+    noShowGraceExpired = computed(() => {
+        const deadline = this.noShowGraceUntil();
+        if (!deadline) return false;
+        return Date.parse(deadline) <= Date.now();
+    });
+    noShowFeeDisplay = computed(() => {
+        const terms = this.noShowTerms();
+        return terms ? this.formatPrice(terms.feeMinor / 100) : '';
+    });
+    noShowDriverShareDisplay = computed(() => {
+        const terms = this.noShowTerms();
+        return terms ? this.formatPrice(terms.driverShareMinor / 100) : '';
+    });
+    noShowCanSubmit = computed(() =>
+        this.noShowGraceExpired()
+        && !this.noShowSubmitting()
+        && this.noShowContactAttempted()
+        && this.noShowConfirmed()
+        && this.noShowReason().trim().length >= 3
+    );
     isSettingUpIssuingCard = signal(false);
     isProvisioningToWallet = signal(false);
     isRevealingCardDetails = signal(false);
@@ -1150,6 +1232,76 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         
         this.unmountIssuingCardElements();
         this.locationService.stopTracking();
+        this.clearNoShowCountdown();
+    }
+
+    private clearNoShowCountdown(): void {
+        if (this.noShowCountdownTimer) {
+            clearInterval(this.noShowCountdownTimer);
+            this.noShowCountdownTimer = null;
+        }
+    }
+
+    private startNoShowCountdown(): void {
+        this.clearNoShowCountdown();
+        this.noShowCountdownTimer = setInterval(() => {
+            const deadline = this.noShowGraceUntil();
+            if (!deadline) {
+                this.noShowRemainingSeconds.set(null);
+                return;
+            }
+            const remaining = Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000));
+            this.noShowRemainingSeconds.set(remaining);
+            if (remaining === 0) {
+                this.clearNoShowCountdown();
+            }
+        }, 1000);
+    }
+
+    /**
+     * Driver-confirmed customer no-show. The client only gates the UI (grace expiry,
+     * contact attempt, reason, explicit confirmation); the SERVER re-validates grace
+     * and ownership and owns the money movement. Duplicate submission is blocked by
+     * the in-flight guard and by treating an "already finalised" conflict as done.
+     */
+    async submitNoShow() {
+        const currentJob = this.job();
+        if (!currentJob?.id || this.noShowSubmitting()) return;
+
+        const reason = this.noShowReason().trim();
+        if (!this.noShowContactAttempted()) {
+            this.noShowError.set('Confirm you attempted to contact the customer.');
+            return;
+        }
+        if (reason.length < 3) {
+            this.noShowError.set('Add a short reason (at least 3 characters).');
+            return;
+        }
+        if (!this.noShowConfirmed()) {
+            this.noShowError.set('Tick the confirmation box to record the no-show.');
+            return;
+        }
+
+        this.noShowSubmitting.set(true);
+        this.noShowError.set(null);
+
+        try {
+            await this.driverService.confirmNoShow(currentJob.id, reason, true, true);
+            this.clearNoShowCountdown();
+            await this.loadJob(currentJob.id);
+            await this.showToast('No-show recorded. Your compensation is being processed.', 'success');
+        } catch (error: unknown) {
+            const status = (error as { status?: number })?.status;
+            const raw = error instanceof Error ? error.message : 'No-show failed';
+            // A terminal conflict (already cancelled / trip already started) is not
+            // recoverable by retrying, so surface it plainly and refresh the job.
+            this.noShowError.set(status === 409 || status === 400
+                ? `${raw} Refresh the request to see its current state.`
+                : `Could not record the no-show: ${raw}`);
+            await this.loadJob(currentJob.id);
+        } finally {
+            this.noShowSubmitting.set(false);
+        }
     }
 
     async loadJob(id: string) {
@@ -1681,6 +1833,39 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
+            // Ride pickup arrival is SERVER-authoritative: obtain a real location
+            // measurement + its timestamp and submit it; never write 'arrived'
+            // directly. The server returns the immutable grace deadline.
+            // When the no-show feature is DISABLED the endpoint 404s, so the
+            // original arrival flow is preserved by falling through below.
+            if (status === 'arrived') {
+                const position = await this.locationService.getCurrentPosition();
+                if (!position) {
+                    await this.showToast('Location unavailable. Enable GPS and retry.', 'danger');
+                    return;
+                }
+                try {
+                    const result = await this.driverService.markArrival(
+                        currentJob.id,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        new Date(position.timestamp).toISOString()
+                    );
+                    this.noShowGraceUntil.set(result.grace_until);
+                    this.noShowTerms.set(result.no_show ?? null);
+                    this.startNoShowCountdown();
+                    await this.loadJob(currentJob.id);
+                    await this.showToast('Arrival recorded.', 'success');
+                    return;
+                } catch (arrivalError: unknown) {
+                    // Legacy arrival is permitted ONLY for the explicit server
+                    // feature-disabled code. Any other 404/403/409/network failure is a
+                    // real error and must never degrade into a direct status write.
+                    const code = (arrivalError as { code?: string | null })?.code;
+                    if (code !== 'NO_SHOW_DISABLED') throw arrivalError;
+                }
+            }
+
             const updated = await this.driverService.updateJobStatus(currentJob.id, status);
             this.driverService.activeJob.set(updated as Booking);
             await this.loadJob(currentJob.id);

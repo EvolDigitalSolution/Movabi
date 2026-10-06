@@ -75,9 +75,9 @@ describe('A/B. displayed payment amount uses the authoritative negotiated fare',
     expect(fn).toContain("return this.toMoney(fb?.['platformFeeAmount'] ?? fb?.['platformFee']);");
   });
 
-  it('H. settlement basis stays consistent (negotiated agreed_fare, else the persisted service fare)', () => {
-    expect(LOGISTICS).toContain('Number(job.agreed_fare ?? job.total_price');
-    expect(LOGISTICS).toContain('serviceFareBeforePlatformFee');
+  it('H. settlement reads the frozen fare-split snapshot (agreed fare and service fare are inside it)', () => {
+    expect(LOGISTICS).toContain('FareSplitService.fromSnapshot(job.fare_breakdown, job.currency_code)');
+    expect(LOGISTICS).toContain('const driverPayout = split.driverEntitlement;');
   });
 });
 

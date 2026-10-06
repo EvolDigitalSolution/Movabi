@@ -2,6 +2,8 @@ import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
 import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
 import { MarketPricingService, resolveMarketPricingStrategy } from './market-pricing.service';
+import { FareSplitService } from './fare-split.service';
+import { NoShowService } from './no-show.service';
 
 export interface PricingOptions {
     lat: number;
@@ -1027,6 +1029,32 @@ export class PricingService {
         scaledBreakdown['totalAuthorisation'] = round(safeAgreed + Number(scaledBreakdown['shoppingBudget'] ?? 0));
         scaledBreakdown['driverGrossEarnings'] = serviceFareBeforePlatformFee;
         scaledBreakdown['driverNetEarnings'] = driverPayout;
+        // Frozen fare-split snapshot (versioned + consolidated fields) so quote,
+        // agreement, capture, settlement and earnings share one definition, and a
+        // re-agreement REPLACES this snapshot before the next authorisation.
+        scaledBreakdown['policyVersion'] = FareSplitService.POLICY_VERSION;
+        scaledBreakdown['baseServiceFare'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['customerCharge'] = safeAgreed;
+        scaledBreakdown['driverBase'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['driverCommissionAmount'] = commissionFee;
+        scaledBreakdown['driverEntitlement'] = driverPayout;
+        scaledBreakdown['grossRevenue'] = round(platformFee + commissionFee);
+        scaledBreakdown['currency'] = String(job?.currency_code || fareBreakdown.currency || 'GBP').toUpperCase();
+        scaledBreakdown['isPro'] = String(job?.pricing_plan_used || '').toLowerCase() === 'pro';
+        scaledBreakdown['platformFeeType'] = (fareBreakdown as any)?.platformFeeType ?? 'percentage';
+        scaledBreakdown['platformFeePercent'] = Number((fareBreakdown as any)?.platformFeePercent ?? 0);
+        scaledBreakdown['platformFeeFixed'] = Number((fareBreakdown as any)?.platformFeeFixed ?? 0);
+        // No-show disclosure (FIXED policy, immutable): min(£5, 50% of the agreed
+        // ride fare), 80/20 split. Persisted so later config changes never alter
+        // this booking's terms; the feature remains default-off server-side.
+        const noShow = NoShowService.computeNoShowSplit(
+          Math.round(Number(safeAgreed || 0) * 100),
+          String(job?.currency_code || fareBreakdown.currency || 'GBP')
+        );
+        scaledBreakdown['noShowPolicyVersion'] = noShow.policyVersion;
+        scaledBreakdown['noShowFeeMinor'] = noShow.feeMinor;
+        scaledBreakdown['noShowDriverShareMinor'] = noShow.driverShareMinor;
+        scaledBreakdown['noShowPlatformShareMinor'] = noShow.platformShareMinor;
         scaledBreakdown['reconciliationValid'] = this.validateFareReconciliation(scaledBreakdown as unknown as FareBreakdown);
 
         return {

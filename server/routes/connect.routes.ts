@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { stripe } from '../services/stripe.service';
 import { supabaseAdmin } from '../services/supabase.service';
 import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
+import { PayoutEligibilityService, SUPPORTED_PAYOUT_COUNTRIES } from '../services/payout-eligibility.service';
 
 const router = Router();
 
@@ -217,10 +218,23 @@ router.post('/create-account', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    // UK-only payout scope: verify role, registration activation and the driver's
+    // authoritative country BEFORE onboarding. Fails closed. A fresh driver with
+    // no connected account yet (NO_STRIPE_ACCOUNT) is allowed through to create.
+    const eligibility = await PayoutEligibilityService.evaluateDriver(userId, null);
+    if (!eligibility.eligible && eligibility.code !== 'NO_STRIPE_ACCOUNT') {
+      return res.status(403).json({ error: eligibility.reason || 'Driver is not eligible for payouts.', code: eligibility.code });
+    }
+
     const existingAccountId = await getStripeAccountId(req, userId);
 
     if (existingAccountId) {
       const account = await stripe.accounts.retrieve(existingAccountId);
+      // Never trust a hard-coded or locally-mirrored country: verify the ACTUAL
+      // connected account country before reusing the account.
+      if (!PayoutEligibilityService.isSupportedCountry(account.country)) {
+        return res.status(403).json({ error: 'Connected account country is not supported in this release.', code: 'PAYOUT_COUNTRY_UNSUPPORTED' });
+      }
       const mapped = mapStripeStatus(account);
       await updateProfileStripeStatus(userId, existingAccountId, mapped);
 
@@ -232,7 +246,7 @@ router.post('/create-account', async (req: Request, res: Response) => {
 
     const account = await stripe.accounts.create({
       type: 'express',
-      country: 'GB',
+      country: SUPPORTED_PAYOUT_COUNTRIES[0],
       email: email || undefined,
       capabilities: {
         card_payments: { requested: true },

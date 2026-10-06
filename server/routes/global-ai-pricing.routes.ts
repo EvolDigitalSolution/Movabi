@@ -5,6 +5,7 @@ import { GlobalAiPricingService } from '../services/global-ai-pricing.service';
 import { randomUUID } from 'node:crypto';
 import { rateLimit } from 'express-rate-limit';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { NoShowService } from '../services/no-show.service';
 
 const router = Router();
 
@@ -51,16 +52,44 @@ router.post('/quote', quoteLimiter, async (req: Request, res: Response) => {
       quoteReference
     });
 
-    return res.json({
+    const legacyResponse = {
+      totalPrice: legacyPricing.totalPrice,
+      currencyCode: legacyPricing.currencyCode,
+      source: legacyPricing.source,
+      fareBreakdown: legacyPricing.fareBreakdown
+    };
+
+    // Server-issued customer no-show terms (enabled + UK/GBP ride only). The fee
+    // is computed from the AUTHORITATIVE quoted fare; never a client value.
+    const serviceSlug = String(req.body.serviceSlug || req.body.serviceType || '').toLowerCase();
+    const isRide = serviceSlug === 'ride';
+    const isUkGbp = String(availability.countryCode || countryCode).toUpperCase() === 'GB'
+        && String(legacyPricing.currencyCode || '').toUpperCase() === 'GBP';
+    const noShowConfig = await NoShowService.getEnabledConfig();
+
+    const responseBody: Record<string, unknown> = {
       quoteReference,
       ...quote,
-      legacy: {
-        totalPrice: legacyPricing.totalPrice,
-        currencyCode: legacyPricing.currencyCode,
-        source: legacyPricing.source,
-        fareBreakdown: legacyPricing.fareBreakdown
-      }
-    });
+      legacy: legacyResponse
+    };
+
+    if (noShowConfig.noShowEnabled && isRide && isUkGbp) {
+      const noShow = NoShowService.computeNoShowSplit(
+        Math.round(Number(legacyPricing.totalPrice) * 100),
+        String(legacyPricing.currencyCode || 'GBP')
+      );
+      responseBody.noShow = {
+        policyVersion: noShow.policyVersion,
+        fareMinor: Math.round(Number(legacyPricing.totalPrice) * 100),
+        feeMinor: noShow.feeMinor,
+        driverShareMinor: noShow.driverShareMinor,
+        platformShareMinor: noShow.platformShareMinor,
+        graceSeconds: NoShowService.GRACE_MINUTES * 60,
+        currency: noShow.currency
+      };
+    }
+
+    return res.json(responseBody);
   } catch (error: any) {
     console.error('[GlobalAiPricingRoutes] quote failed:', error);
     if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, ...error.market });

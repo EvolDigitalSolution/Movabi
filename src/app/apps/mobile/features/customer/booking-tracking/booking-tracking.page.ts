@@ -5,7 +5,8 @@ import {
     OnDestroy,
     signal,
     ViewChild,
-    computed
+    computed,
+    effect
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
@@ -673,6 +674,73 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
               </div>
             }
 
+            @if (arrivalCountdownSeconds() !== null) {
+              <div class="pt-4">
+                <div
+                  class="movabi-card-compact bg-white border border-amber-100 space-y-1"
+                  role="timer"
+                  data-testid="customer-arrival-countdown">
+                  <h3 class="text-base font-bold text-slate-900">Your driver has arrived</h3>
+                  <p class="text-sm font-semibold text-slate-600">
+                    Please meet your driver. If you do not meet them within
+                    5 minutes of the verified arrival, a no-show fee may apply.
+                  </p>
+                  @if ((arrivalCountdownSeconds() ?? 0) > 0) {
+                    <p class="text-sm font-bold text-slate-900">
+                      Time remaining: <span data-testid="customer-arrival-remaining">{{ arrivalCountdownSeconds() }}s</span>
+                    </p>
+                  } @else {
+                    <p class="text-sm font-bold text-rose-700">The grace period has ended.</p>
+                  }
+                </div>
+              </div>
+            }
+
+            @if (noShowOutcome(); as outcome) {
+              <div class="pt-4">
+                <div
+                  class="movabi-card-compact bg-white border border-rose-100 space-y-3"
+                  data-testid="customer-no-show-outcome"
+                  [attr.data-state]="outcome.state">
+                  <h3 class="text-base font-bold text-rose-900">{{ outcome.title }}</h3>
+                  <p class="text-sm font-semibold text-slate-600">{{ outcome.detail }}</p>
+
+                  @if (outcome.feeDisplay) {
+                    <p class="text-sm font-bold text-slate-900">
+                      No-show fee charged:
+                      <span class="text-rose-700 font-black" data-testid="customer-no-show-fee">{{ outcome.feeDisplay }}</span>
+                    </p>
+                  }
+
+                  @if (outcome.state === 'pending') {
+                    <p class="text-xs font-bold text-amber-700" data-testid="customer-refund-pending">
+                      Refund / release pending — this updates automatically.
+                    </p>
+                  }
+                  @if (outcome.state === 'completed') {
+                    <p class="text-xs font-bold text-emerald-700" data-testid="customer-refund-completed">
+                      Any unused authorisation has been released.
+                    </p>
+                  }
+                  @if (outcome.state === 'review') {
+                    <p class="text-xs font-bold text-amber-700" data-testid="customer-review-required">
+                      Review required — our team will confirm the outcome.
+                    </p>
+                  }
+
+                  <button
+                    type="button"
+                    (click)="contactSupport()"
+                    data-testid="customer-dispute-link"
+                    class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left font-bold text-slate-900 flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <ion-icon name="chatbubble-ellipses-outline" class="text-xl text-amber-600 shrink-0"></ion-icon>
+                    <span>Dispute this charge with support</span>
+                  </button>
+                </div>
+              </div>
+            }
+
             <div class="pt-4 space-y-3" [class.hidden]="activeTrackingTab() !== 'help'">
               <div class="movabi-card-compact bg-white border border-slate-100 space-y-3">
                 <div class="flex items-start gap-3">
@@ -790,6 +858,63 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     booking = this.bookingService.activeBooking;
 
+    // ---- Customer no-show: server-verified arrival, grace countdown and outcome ----
+    arrivalCountdownSeconds = signal<number | null>(null);
+    private arrivalCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+    /** Server-issued no-show terms frozen on the booking at creation. */
+    private noShowTerms = computed(() => {
+        const b = this.booking() as unknown as Record<string, unknown> | null;
+        const breakdown = (b?.['fare_breakdown'] && typeof b['fare_breakdown'] === 'object')
+            ? b['fare_breakdown'] as Record<string, unknown>
+            : null;
+        if (!breakdown || breakdown['noShowPolicyVersion'] !== 'ride-no-show-v1') return null;
+        const feeMinor = Number(breakdown['noShowFeeMinor'] || 0);
+        return {
+            feeMinor: Number.isFinite(feeMinor) ? feeMinor : 0,
+            driverShareMinor: Number(breakdown['noShowDriverShareMinor'] || 0)
+        };
+    });
+
+    /**
+     * Terminal no-show outcome. Financial completion is only ever claimed for a
+     * server status that means settled ('fee_charged' / 'compensation_paid');
+     * 'pending' means the money is still moving, and anything else is review.
+     */
+    noShowOutcome = computed(() => {
+        const b = this.booking() as unknown as Record<string, unknown> | null;
+        const arrivalAt = b?.['no_show_arrived_at'];
+        const status = String(b?.['no_show_status'] || '');
+        const isNoShow = String(b?.['status'] || '').toLowerCase() === 'cancelled' && (!!arrivalAt || !!status);
+        if (!isNoShow) return null;
+
+        const feeMinor = this.noShowTerms()?.feeMinor ?? 0;
+        const feeDisplay = feeMinor > 0 ? this.config.formatCurrency(feeMinor / 100) : '';
+
+        if (status === 'fee_charged' || status === 'compensation_paid') {
+            return {
+                state: 'completed' as const,
+                title: 'Cancelled — customer no-show',
+                detail: 'The no-show fee has been charged and any unused authorisation released.',
+                feeDisplay
+            };
+        }
+        if (status === 'pending') {
+            return {
+                state: 'pending' as const,
+                title: 'Cancelled — customer no-show',
+                detail: 'Your payment outcome is being finalised. Any unused authorisation is released automatically.',
+                feeDisplay
+            };
+        }
+        return {
+            state: 'review' as const,
+            title: 'Cancelled — customer no-show',
+            detail: 'We could not confirm the payment outcome automatically. Our team will review it.',
+            feeDisplay
+        };
+    });
+
     details = signal<Record<string, any> | null>(null);
     errandFunding = signal<ErrandFunding | null>(null);
 
@@ -862,6 +987,20 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private findingDriverTimerInterval?: ReturnType<typeof setInterval>;
 
     constructor() {
+        // Server-verified arrival: follow the booking's immutable grace deadline and
+        // run a 1s countdown only while it is live. The effect re-runs on every
+        // booking update, so navigating away or a status change clears the timer.
+        effect(() => {
+            const b = this.booking() as unknown as Record<string, unknown> | null;
+            const graceUntil = b?.['no_show_grace_until'];
+            if (typeof graceUntil === 'string' && graceUntil && String(b?.['status'] ?? '') !== 'cancelled') {
+                this.startArrivalCountdown(graceUntil);
+            } else {
+                this.clearArrivalCountdown();
+                this.arrivalCountdownSeconds.set(null);
+            }
+        });
+
         addIcons({
             chevronBackOutline,
             call,
@@ -986,6 +1125,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     ngOnDestroy(): void {
         this.resetSearchState();
+        this.clearArrivalCountdown();
 
         if (this.pollingInterval) {
             clearInterval(this.pollingInterval);
@@ -1967,6 +2107,34 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.countdownInterval = setInterval(() => {
             this.updateSearchCountdownFromBooking();
         }, 1000);
+    }
+
+    private startArrivalCountdown(graceUntilIso: string): void {
+        this.updateArrivalCountdown(graceUntilIso);
+        if (this.arrivalCountdownTimer) return; // already ticking for this deadline
+
+        this.arrivalCountdownTimer = setInterval(() => {
+            this.updateArrivalCountdown(graceUntilIso);
+        }, 1000);
+    }
+
+    private updateArrivalCountdown(graceUntilIso: string): void {
+        const ms = Date.parse(graceUntilIso);
+        if (!Number.isFinite(ms)) {
+            this.clearArrivalCountdown();
+            this.arrivalCountdownSeconds.set(null);
+            return;
+        }
+        const remaining = Math.max(0, Math.ceil((ms - Date.now()) / 1000));
+        this.arrivalCountdownSeconds.set(remaining);
+        if (remaining === 0) this.clearArrivalCountdown();
+    }
+
+    private clearArrivalCountdown(): void {
+        if (this.arrivalCountdownTimer) {
+            clearInterval(this.arrivalCountdownTimer);
+            this.arrivalCountdownTimer = null;
+        }
     }
 
 

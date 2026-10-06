@@ -5,6 +5,7 @@ import { EventService } from './event.service';
 import { NotificationService } from './notification.service';
 import { stripe } from './stripe.service';
 import { isDriverEligibleForService, toCanonicalDriverService } from './driver-service-eligibility';
+import { SUPPORTED_PAYOUT_COUNTRIES } from './payout-eligibility.service';
 
 type NearbyDriver = {
     id: string;
@@ -619,6 +620,8 @@ export class DispatchService {
             .eq('is_online', true)
             .eq('charges_enabled', true)
             .eq('payouts_enabled', true)
+            // UK-only payout scope: only offer work to drivers in a supported payout country.
+            .in('registration_country_code', SUPPORTED_PAYOUT_COUNTRIES)
             .limit(MAX_NOTIFY_DRIVERS * 2);
 
         if (tenantId) {

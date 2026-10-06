@@ -7,6 +7,10 @@ import { CityService } from '../services/city.service';
 import { GlobalAiPricingService } from '../services/global-ai-pricing.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 import { PaymentAuthorityService } from '../services/payment-authority.service';
+import { TransferReversalService } from '../services/transfer-reversal.service';
+import { FareSplitService } from '../services/fare-split.service';
+import { isDefinitiveStripeRejection } from '../services/stripe-errors';
+import { randomUUID } from 'node:crypto';
 
 const router = Router();
 
@@ -770,7 +774,7 @@ router.post('/confirm', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/refund', async (req: Request, res: Response) => {
+export async function refundHandler(req: Request, res: Response) {
   try {
     const { jobId } = req.body;
 
@@ -797,7 +801,7 @@ router.post('/refund', async (req: Request, res: Response) => {
 
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
-      .select('payment_intent_id,payment_status,refund_id')
+      .select('payment_intent_id,payment_status,refund_id,reversal_id,total_refunded_minor,total_reversed_minor,stripe_transfer_id,stripe_transfer_status,driver_payout,currency_code,metadata,fare_breakdown')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -812,17 +816,188 @@ router.post('/refund', async (req: Request, res: Response) => {
     const pi = await stripe.paymentIntents.retrieve(String(job.payment_intent_id));
 
     if (pi.status === 'succeeded' && (pi.amount_received || 0) > 0) {
-      const refund = await stripe.refunds.create({
-        payment_intent: String(job.payment_intent_id),
-        amount: pi.amount_received
+      const currency = String(job.currency_code || 'gbp');
+      const capturedMinor = Number(pi.amount_received);
+      const breakdown = (job.fare_breakdown && typeof job.fare_breakdown === 'object') ? job.fare_breakdown : {};
+      const customerChargeMajor = Number(breakdown.customerCharge ?? (Number(job.driver_payout || 0) + Number(breakdown.platformFeeAmount ?? 0)));
+      const serviceFareMinor = FareSplitService.toMinor(customerChargeMajor, currency);
+
+      // Partial refund (optional body amount in major units) — default full remaining.
+      const requestedMinor = req.body?.amount === undefined
+        ? Math.max(0, capturedMinor - Number(job.total_refunded_minor || 0))
+        : FareSplitService.toMinor(Number(req.body.amount), currency);
+
+      // Durable per-operation idempotency key. The caller SUPPLIES a stable
+      // request identity for retries; when absent, a unique key is generated so
+      // distinct partial refunds of the SAME amount are never deduplicated.
+      const refundIdemKey = String(req.body?.idempotencyKey || `refund-${jobId}-${randomUUID()}`);
+
+      // ATOMIC reservation with budget-first-then-service allocation + cumulative
+      // component limits. Returns the immutable operation record.
+      const { data: reservedOp, error: reserveError } = await supabaseAdmin.rpc('reserve_refund_operation', {
+        p_job_id: jobId,
+        p_amount_minor: requestedMinor,
+        p_captured_minor: capturedMinor,
+        p_service_fare_minor: serviceFareMinor,
+        p_idempotency_key: refundIdemKey,
+        p_purpose: 'customer_refund'
       });
+
+      if (reserveError) throw reserveError;
+      const op = (Array.isArray(reservedOp) ? reservedOp[0] : reservedOp) as Record<string, any>;
+      if (!op) {
+        return res.status(400).json({
+          error: 'Refund amount exceeds the remaining refundable amount.',
+          code: 'REFUND_AMOUNT_INVALID',
+          remaining: Math.max(0, capturedMinor - Number(job.total_refunded_minor || 0))
+        });
+      }
+
+      // An already-EXECUTED operation returns its recorded result with NO further
+      // Stripe call. An UNKNOWN operation is reconciled against the provider
+      // (never blindly re-issued after the idempotency window).
+      if (op.status === 'executed') {
+        return res.json({ success: true, refundId: op.provider_id, operationId: op.id, amount: FareSplitService.fromMinor(requestedMinor, currency) });
+      }
+
+      // Unknown outcome: reconcile against the provider by payment_intent + amount
+      // (never blindly re-issue after the idempotency window).
+      if (op.status === 'unknown') {
+        const listed = await stripe.refunds.list({ payment_intent: String(job.payment_intent_id), limit: 100 });
+        const match = (listed?.data || []).find(r => (r as any).amount === requestedMinor);
+        if (match) {
+          await supabaseAdmin.rpc('mark_refund_operation', {
+            p_operation_id: op.id, p_provider_id: match.id, p_status: 'executed'
+          });
+          return res.json({ success: true, refundId: match.id, operationId: op.id, amount: FareSplitService.fromMinor(requestedMinor, currency) });
+        }
+        return res.status(409).json({ success: false, pending: true, status: 'unknown', operationId: op.id });
+      }
+
+      let refund: { id: string };
+      try {
+        refund = await stripe.refunds.create(
+          { payment_intent: String(job.payment_intent_id), amount: requestedMinor },
+          { idempotencyKey: refundIdemKey }
+        );
+        const { error: refundMarkError } = await supabaseAdmin.rpc('mark_refund_operation', {
+          p_operation_id: op.id, p_provider_id: refund.id, p_status: 'executed'
+        });
+        if (refundMarkError) throw refundMarkError;
+      } catch (refundError: any) {
+        if (isDefinitiveStripeRejection(refundError)) {
+          // Documented terminal rejection: non-execution established — release.
+          await supabaseAdmin.rpc('mark_refund_operation', {
+            p_operation_id: op.id, p_provider_id: null, p_status: 'failed',
+            p_error: String(refundError?.message || 'Refund rejected')
+          });
+          await supabaseAdmin.rpc('release_refund_operation', { p_operation_id: op.id });
+        } else {
+          // Uncertain/conflicting (timeout/network/5xx/idempotency conflict):
+          // reservation RETAINED and the operation blocks duplicate execution.
+          await supabaseAdmin.rpc('mark_refund_operation', {
+            p_operation_id: op.id, p_provider_id: null, p_status: 'unknown',
+            p_error: String(refundError?.message || 'Refund outcome unknown')
+          });
+        }
+        console.error('[PaymentRoutes] refund failed:', refundError);
+        throw refundError;
+      }
 
       await supabaseAdmin
         .from('jobs')
-        .update({ payment_status: 'refunded', refund_id: refund.id })
+        .update({
+          payment_status: requestedMinor >= capturedMinor ? 'refunded' : 'paid',
+          refund_id: refund.id
+        })
         .eq('id', jobId);
 
-      return res.json({ success: true, refundId: refund.id, amount: Number(pi.amount_received) / 100 });
+      // Driver-share reversal applies only to the SERVICE-FARE component persisted
+      // on THIS operation (errand budget component is refunded without reversal).
+      let reversalId: string | null = null;
+      let reversalWarning: string | null = null;
+      const transferStatus = String(job.stripe_transfer_status || '').toLowerCase();
+      const serviceComponentMinor = Number(op.service_component_minor || 0);
+
+      if (job.stripe_transfer_id && transferStatus !== 'reversed' && transferStatus !== 'reversal_failed'
+          && serviceComponentMinor > 0 && serviceFareMinor > 0) {
+        const transferMinor = FareSplitService.toMinor(Number(job.driver_payout || 0), currency);
+        const reversalMinor = Math.round(serviceComponentMinor * (transferMinor / serviceFareMinor));
+        const reversalIdemKey = `reversal-${jobId}-${reversalMinor}-${op.id}`;
+
+        if (reversalMinor > 0) {
+          const { data: reversalOp, error: revReserveError } = await supabaseAdmin.rpc('reserve_reversal_operation', {
+            p_job_id: jobId,
+            p_amount_minor: reversalMinor,
+            p_transfer_minor: transferMinor,
+            p_idempotency_key: reversalIdemKey,
+            p_purpose: 'refund_reversal'
+          });
+
+          if (!revReserveError && reversalOp) {
+            const rOp = (Array.isArray(reversalOp) ? reversalOp[0] : reversalOp) as Record<string, any>;
+            try {
+              const reversal = await TransferReversalService.reverseDriverTransfer({
+                transferId: String(job.stripe_transfer_id),
+                amountMajor: FareSplitService.fromMinor(reversalMinor, currency),
+                currency,
+                jobId: String(jobId),
+                partialIndex: Number(job.total_reversed_minor || 0) > 0 ? Number(job.total_reversed_minor) : undefined
+              });
+              reversalId = reversal.id;
+              const { error: reversalMarkError } = await supabaseAdmin.rpc('mark_reversal_operation', {
+                p_operation_id: rOp.id, p_provider_id: reversal.id, p_status: 'executed'
+              });
+              if (reversalMarkError) throw reversalMarkError;
+              const fullyReversed = (Number(job.total_reversed_minor || 0) + reversalMinor) >= transferMinor;
+              await supabaseAdmin
+                .from('jobs')
+                .update({
+                  stripe_transfer_status: fullyReversed ? 'reversed' : 'partially_reversed',
+                  settlement_status: fullyReversed ? 'reversed' : 'transferred',
+                  reversal_id: reversal.id
+                })
+                .eq('id', jobId);
+            } catch (reversalError: any) {
+              if (isDefinitiveStripeRejection(reversalError)) {
+                await supabaseAdmin.rpc('mark_reversal_operation', {
+                  p_operation_id: rOp.id, p_provider_id: null, p_status: 'failed',
+                  p_error: String(reversalError?.message || 'Reversal rejected')
+                });
+                await supabaseAdmin.rpc('release_reversal_operation', { p_operation_id: rOp.id });
+              } else {
+                await supabaseAdmin.rpc('mark_reversal_operation', {
+                  p_operation_id: rOp.id, p_provider_id: null, p_status: 'unknown',
+                  p_error: String(reversalError?.message || 'Reversal outcome unknown')
+                });
+              }
+              reversalWarning = String(reversalError?.message || 'Transfer reversal failed');
+              console.error('[PaymentRoutes] transfer reversal failed:', reversalError);
+              await supabaseAdmin
+                .from('jobs')
+                .update({
+                  stripe_transfer_status: 'reversal_failed',
+                  metadata: { ...(job.metadata || {}), reversal_error: reversalWarning },
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', jobId);
+            }
+          }
+        }
+      }
+
+      // If the reversal failed, Movabi has refunded the customer out of platform
+      // balance while the driver still holds the transferred funds. That exposure
+      // is surfaced explicitly (platformFundedRefund) — never concealed.
+      return res.json({
+        success: true,
+        refundId: refund.id,
+        operationId: op.id,
+        amount: FareSplitService.fromMinor(requestedMinor, currency),
+        reversalId,
+        reversalWarning,
+        platformFundedRefund: !!reversalWarning
+      });
     }
 
     if (pi.status === 'requires_capture') {
@@ -840,6 +1015,8 @@ router.post('/refund', async (req: Request, res: Response) => {
     console.error('[PaymentRoutes] refund failed:', error);
     return res.status(500).json({ error: error.message || 'Refund failed' });
   }
-});
+}
+
+router.post('/refund', refundHandler);
 
 export default router;

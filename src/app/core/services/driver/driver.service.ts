@@ -881,6 +881,80 @@ export class DriverService {
         return response;
     }
 
+    /**
+     * Server-authoritative arrival: sends the driver's location measurement with
+     * its client timestamp. The server validates ownership, proximity, freshness
+     * and returns the immutable grace deadline.
+     */
+    async markArrival(jobId: string, lat: number, lng: number, measuredAt: string): Promise<{
+        success: boolean;
+        arrived_at: string;
+        grace_until: string;
+        no_show: { policyVersion: string; feeMinor: number; driverShareMinor: number; platformShareMinor: number; currency: string; graceSeconds: number } | null;
+    }> {
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+        try {
+            const response = await firstValueFrom(
+                this.http.post<{
+                    success: boolean;
+                    arrived_at: string;
+                    grace_until: string;
+                    no_show: { policyVersion: string; feeMinor: number; driverShareMinor: number; platformShareMinor: number; currency: string; graceSeconds: number } | null;
+                }>(
+                    this.apiUrlService.getApiUrl('/api/booking/arrive'),
+                    { jobId, lat, lng, measuredAt },
+                    { headers: await this.authHeaders() }
+                )
+            );
+            return response;
+        } catch (error: any) {
+            // Preserve the status AND machine code so callers can require an explicit
+            // feature-disabled signal instead of treating any 404 as "disabled".
+            const status = Number(error?.status ?? error?.error?.status ?? 0);
+            const code = error?.error?.code || error?.code || null;
+            const message = error?.error?.error
+                || error?.error?.message
+                || error?.message
+                || 'Arrival could not be recorded.';
+            const normalized = new Error(String(message)) as Error & { status?: number; code?: string | null };
+            if (Number.isFinite(status) && status > 0) normalized.status = status;
+            normalized.code = code ? String(code) : null;
+            throw normalized;
+        }
+    }
+
+    /**
+     * Driver-confirmed customer no-show (after grace expiry). The server returns
+     * the financial status; the driver sees the fee and their compensation before
+     * confirming (caller must pass `confirmed: true`).
+     */
+    async confirmNoShow(jobId: string, reason: string, contactAttempted: boolean, confirmed: boolean): Promise<{ success: boolean; no_show_status: string }> {
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+        try {
+            return await firstValueFrom(
+                this.http.post<{ success: boolean; no_show_status: string }>(
+                    this.apiUrlService.getApiUrl('/api/booking/no-show'),
+                    { jobId, reason, contactAttempted, confirmed },
+                    { headers: await this.authHeaders() }
+                )
+            );
+        } catch (error: any) {
+            // Preserve the server's reason and status so the UI can distinguish a
+            // terminal conflict (trip already started / already cancelled) from a
+            // transient failure the driver can retry.
+            const status = Number(error?.status ?? error?.error?.status ?? 0);
+            const message = error?.error?.error
+                || error?.error?.message
+                || error?.message
+                || 'No-show could not be recorded.';
+            const normalized = new Error(String(message)) as Error & { status?: number };
+            if (Number.isFinite(status) && status > 0) normalized.status = status;
+            throw normalized;
+        }
+    }
+
     async recordErrandSpending(jobId: string, amount: number, notes?: string) {
         const [job, details, funding] = await Promise.all([
             this.bookingService.getBooking(jobId),

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase.service';
+import { FareSplitService } from './fare-split.service';
 import {
     InternalMarketSignalsInput,
     InternalMarketSignalsResult,
@@ -253,10 +254,23 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
 
     const effectiveServiceFare = adjustmentApplied ? adjustedServiceFare : safeBaseFare;
 
-    const platformFeeAmount = roundMoney(effectiveServiceFare * (Number(platformFeePercent) || 0) / 100);
-    const customerTotal = roundMoney(effectiveServiceFare + platformFeeAmount);
-    const driverCommissionAmount = roundMoney(effectiveServiceFare * (Number(driverCommissionPercent) || 0) / 100);
-    const driverPayout = roundMoney(effectiveServiceFare - driverCommissionAmount);
+    // Single authoritative fare split (policy: P inside C, D on C − P,
+    // entitlement = C − P − D, revenue = P + D). Replaces the previous inline
+    // arithmetic so the quote, capture, earnings and the Stripe transfer all
+    // derive from one definition. driverCommissionPercent is already resolved
+    // (callers set it to 0 for pro), so it is passed through as-is.
+    const split = FareSplitService.compute({
+      baseServiceFare: effectiveServiceFare,
+      currency: 'GBP',
+      platformFee: FareSplitService.percentageFee(Number(platformFeePercent) || 0),
+      driverCommissionPercent: Number(driverCommissionPercent) || 0,
+      isPro: false
+    });
+
+    const platformFeeAmount = split.platformFeeAmount;
+    const customerTotal = split.customerCharge;
+    const driverCommissionAmount = split.driverCommissionAmount;
+    const driverPayout = split.driverEntitlement;
 
     // --- Fallback / outcome label (descriptive, not necessarily blocking) ---
     let fallbackReason: string | null;
@@ -299,7 +313,8 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         fallbackReason: marginRatioBelowFloor && fallbackReason === 'market_adjustment_applied'
             ? 'platform_margin_percent_unreachable_via_scaling'
             : fallbackReason,
-        calculationVersion
+        calculationVersion,
+        policyVersion: split.policyVersion
     };
 }
 

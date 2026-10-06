@@ -136,6 +136,8 @@ export interface MarketPricingResult {
 
   fallbackReason?: string | null;
   calculationVersion: string;
+  /** Fare-split policy snapshot version (frozen at quote time). */
+  policyVersion?: string;
 }
 
 export interface MarketPricingSettings {

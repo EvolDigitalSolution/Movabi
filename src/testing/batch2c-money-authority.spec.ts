@@ -79,8 +79,10 @@ describe('PHASE C2 — customer checkout, payment & money authority', () => {
         expect(WEBHOOK).not.toMatch(/from\('jobs'\)\s*[\r\n\s]*\.update\(\{ payment_status:/);
     });
 
-    it('6. completion payout uses the same agreed_fare-first basis as the charge', () => {
-        expect(LOGISTICS_SERVICE).toContain('Number(job.agreed_fare ?? job.total_price ?? job.estimated_price ?? job.price ?? 0)');
+    it('6. completion payout uses the frozen fare-split snapshot (never recomputes from live config)', () => {
+        expect(LOGISTICS_SERVICE).toContain('const split = this.resolveFareSplit(job);');
+        expect(LOGISTICS_SERVICE).toContain('FareSplitService.fromSnapshot(job.fare_breakdown, job.currency_code)');
+        expect(LOGISTICS_SERVICE).toContain('const driverPayout = split.driverEntitlement;');
     });
 
     it('7. completion short-circuits only on a settled earnings row', () => {
@@ -280,10 +282,10 @@ describe('PHASE C2C — settlement idempotency', () => {
     });
 
     it('29. completion persists an HONEST transfer-failure marker and preserves the error', () => {
-        expect(LOGISTICS_SERVICE).toContain("stripe_transfer_status: markerStatus");
+        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_status: opts.status');
         expect(LOGISTICS_SERVICE).toContain("const markerStatus = (statusCode >= 400 && statusCode < 500) ? 'failed' : 'unknown'");
-        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error: message');
-        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error_type: String(transferError?.type || \'\')');
+        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error: opts.error');
+        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error_type: opts.errorType || \'\'');
         expect(LOGISTICS_SERVICE).toContain('throw transferError instanceof Error ? transferError : new Error(message)');
     });
 
@@ -486,11 +488,11 @@ describe('PHASE 2.1 — release closure authority hardening', () => {
         expect(BOOKING_ROUTE).toContain('insertPayload.driver_payout = null;');
     });
 
-    it('41. completion commission is server-authoritative (no client fare_breakdown/commission_rate_used)', () => {
+    it('41. completion commission is the frozen snapshot (not live config or client round-trip)', () => {
         const LOGISTICS_SERVICE = read('server/services/logistics.service.ts');
-        // The client-snapshotted commission fields are no longer the payout basis.
-        expect(LOGISTICS_SERVICE).toContain('const commissionRate = plan === \'pro\' ? 0 : Number(effectiveCommissionRate ?? 0);');
-        expect(LOGISTICS_SERVICE).not.toContain('Number(storedCommission ?? 0)');
+        // The frozen fare-split snapshot is the payout basis; live config is never re-read.
+        expect(LOGISTICS_SERVICE).toContain('const safeCommissionRate = split.commissionPercent;');
+        expect(LOGISTICS_SERVICE).not.toContain('getEffectiveCommissionPercent(');
     });
 
     it('42. pricing propagates quoteReference into the market-pricing audit', () => {
@@ -538,8 +540,8 @@ describe('PHASE 2.1 — final zero-blocker hardening', () => {
         expect(FINAL_MIG).not.toContain('total_price = v_amount');
     });
 
-    it('47. completion payout basis is the service fare; card errands capture fare + actual spend', () => {
-        expect(LOGISTICS_SERVICE).toContain('const totalPrice = requestedTotalPrice;');
+    it('47. completion payout basis is the frozen snapshot; card errands capture fare + actual spend', () => {
+        expect(LOGISTICS_SERVICE).toContain('const totalPrice = split.customerCharge;');
         expect(LOGISTICS_SERVICE).not.toContain('resolveWalletSettlementAmount(job, requestedTotalPrice)');
         expect(LOGISTICS_SERVICE).toContain('amount_to_capture: captureAmountInPence');
         expect(LOGISTICS_SERVICE).toContain('PaymentAuthorityService.resolve(job)');

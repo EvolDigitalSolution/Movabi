@@ -281,7 +281,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
                           <div class="flex items-center justify-end gap-2 mt-1">
                             <app-badge [variant]="getEarningStatus(earning) === 'paid' ? 'success' : 'warning'">
-                              {{ getEarningStatus(earning) }}
+                              {{ getStripePayoutLabel(earning) }}
                             </app-badge>
 
                             <ion-icon
@@ -625,13 +625,14 @@ export class EarningsPage implements OnInit {
     }
 
     getStripePayoutLabel(earning: any): string {
+        // "Transferred to Stripe account" is NOT "paid to bank": the transfer
+        // landed in the driver's Stripe balance; the bank payout is Stripe's
+        // separate, automatic step. Never label a transfer as a bank payment.
         if (earning?.stripe_transfer_id) {
-            return 'Transferred to Stripe';
+            return 'Transferred to Stripe account';
         }
 
-        return this.getEarningStatus(earning) === 'paid'
-            ? 'Paid'
-            : 'Pending transfer';
+        return 'Pending transfer';
     }
 
     getCommissionAmount(earning: any): number {

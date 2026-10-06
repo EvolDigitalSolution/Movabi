@@ -67,6 +67,16 @@ export interface GlobalAiPricingFareBreakdown {
     [key: string]: unknown;
 }
 
+export interface GlobalAiPricingNoShowTerms {
+    policyVersion: string;
+    fareMinor: number;
+    feeMinor: number;
+    driverShareMinor: number;
+    platformShareMinor: number;
+    graceSeconds: number;
+    currency: string;
+}
+
 export interface GlobalAiPricingQuoteResponse {
     quoteReference: string;
     market: { countryCode: string; currency: string; city: string | null; zoneId: string | null };
@@ -81,6 +91,7 @@ export interface GlobalAiPricingQuoteResponse {
         source: string;
         fareBreakdown: GlobalAiPricingFareBreakdown;
     };
+    noShow?: GlobalAiPricingNoShowTerms;
 }
 
 /**
