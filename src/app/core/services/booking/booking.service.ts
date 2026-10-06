@@ -1144,9 +1144,18 @@ export class BookingService {
 
         if (error) throw error;
 
+        // A list endpoint must answer with an array. A non-array (an error envelope,
+        // a single object, or null) is a MALFORMED response: throw so the caller's
+        // error handling runs instead of silently rendering an empty history.
+        if (!Array.isArray(jobs)) {
+            throw new Error(`History response was not a list (received ${jobs === null ? 'null' : typeof jobs}).`);
+        }
+
+        const jobRows: any[] = jobs;
+
         const driverIds = Array.from(
             new Set(
-                (jobs || [])
+                jobRows
                     .map((job: any) => job.driver_id)
                     .filter(Boolean)
             )
@@ -1166,7 +1175,7 @@ export class BookingService {
             }, {});
         }
 
-        const allBookings = (jobs || []).map((job: any) =>
+        const allBookings = jobRows.map((job: any) =>
             this.mapJobToBooking({
                 ...job,
                 driver: job.driver_id ? driversById[job.driver_id] || null : null

@@ -217,6 +217,71 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </div>
             }
 
+            <!-- Current-action controls: directly below the job header/status summary
+                 (and the arrival/no-show countdown + confirmation, which stay with it)
+                 and above the detailed content. Sticky below the app header. -->
+            @if (showStickyActionForTab()) {
+              <div
+                class="sticky top-0 z-20 -mx-3 px-3 py-2 bg-slate-50 border-b border-slate-200 shadow-sm max-h-[calc(100vh-9rem)] overflow-y-auto space-y-2"
+                data-testid="job-action-panel">
+                @if (job()?.status !== 'completed') {
+                  <div class="bg-white rounded-[1.35rem] border border-slate-100 shadow-sm p-2.5">
+                    <div class="flex items-start justify-between gap-3 mb-2">
+                      <div class="min-w-0">
+                        <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Next step</p>
+                        <h3 class="text-base font-display font-black text-slate-950">{{ actionTitle() }}</h3>
+                      </div>
+                      <app-badge [variant]="actionBadgeVariant()">{{ formatStatus(job()?.status) }}</app-badge>
+                    </div>
+                    <div class="h-2 rounded-full bg-slate-100 overflow-hidden mb-2">
+                      <div class="h-full rounded-full bg-blue-600 transition-all duration-300" [style.width.%]="actionProgress()"></div>
+                    </div>
+                    <p class="text-xs text-slate-500 font-semibold leading-relaxed">{{ actionHint() }}</p>
+                  </div>
+                }
+
+                @switch (job()?.status) {
+                  @case ('accepted') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
+                  }
+                  @case ('arrived') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(startStatus())">Start Request</app-button>
+                  }
+                  @case ('arrived_at_store') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(nextArrivedAtStoreStatus())">{{ arrivedAtStoreActionLabel() }}</app-button>
+                  }
+                  @case ('shopping_in_progress') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('collected')">Items Collected</app-button>
+                  }
+                  @case ('collected') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('en_route_to_customer')">En Route to Customer</app-button>
+                  }
+                  @case ('en_route_to_customer') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
+                  }
+                  @case ('in_progress') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
+                  }
+                  @case ('delivered') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
+                  }
+                  @case ('completed') {
+                    <div class="bg-emerald-50 p-5 rounded-[1.5rem] text-center border border-emerald-100">
+                      <div class="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <ion-icon name="checkmark-circle" class="text-3xl text-emerald-600"></ion-icon>
+                      </div>
+                      <h3 class="text-lg font-display font-black text-slate-950 mb-2">Request Completed</h3>
+                      <p class="text-sm text-slate-600 font-medium mb-4">Earnings will appear once settlement is complete.</p>
+                      <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">Back to Dashboard</app-button>
+                    </div>
+                  }
+                  @default {
+                    <app-button variant="secondary" size="lg" class="w-full h-14 rounded-2xl" (clicked)="nav.navigateRoot('/driver')">Back to Dashboard</app-button>
+                  }
+                }
+              </div>
+            }
+
             @if (job()?.status === 'assigned') {
               <div class="rounded-[1.5rem] bg-amber-50 border border-amber-200 p-4 space-y-3">
                 <div class="flex items-start gap-3">
@@ -759,66 +824,6 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                 </button>
               }
             </app-card>
-          }
-
-          @if (showStickyActionForTab()) {
-            <div class="sticky bottom-3 z-20">
-              @if (job()?.status !== 'completed') {
-                <div class="bg-white/95 backdrop-blur rounded-[1.35rem] border border-slate-100 shadow-xl shadow-slate-200/60 p-3 mb-3">
-                  <div class="flex items-start justify-between gap-4 mb-3">
-                    <div class="min-w-0">
-                      <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Next step</p>
-                      <h3 class="text-base font-display font-black text-slate-950">{{ actionTitle() }}</h3>
-                    </div>
-                    <app-badge [variant]="actionBadgeVariant()">{{ formatStatus(job()?.status) }}</app-badge>
-                  </div>
-                  <div class="h-2 rounded-full bg-slate-100 overflow-hidden mb-3">
-                    <div class="h-full rounded-full bg-blue-600 transition-all duration-300" [style.width.%]="actionProgress()"></div>
-                  </div>
-                  <p class="text-xs text-slate-500 font-semibold leading-relaxed">{{ actionHint() }}</p>
-                </div>
-              }
-
-              @switch (job()?.status) {
-                @case ('accepted') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
-                }
-                @case ('arrived') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(startStatus())">Start Request</app-button>
-                }
-                @case ('arrived_at_store') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(nextArrivedAtStoreStatus())">{{ arrivedAtStoreActionLabel() }}</app-button>
-                }
-                @case ('shopping_in_progress') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('collected')">Items Collected</app-button>
-                }
-                @case ('collected') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('en_route_to_customer')">En Route to Customer</app-button>
-                }
-                @case ('en_route_to_customer') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
-                }
-                @case ('in_progress') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
-                }
-                @case ('delivered') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
-                }
-                @case ('completed') {
-                  <div class="bg-emerald-50 p-5 rounded-[1.5rem] text-center border border-emerald-100">
-                    <div class="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <ion-icon name="checkmark-circle" class="text-3xl text-emerald-600"></ion-icon>
-                    </div>
-                    <h3 class="text-lg font-display font-black text-slate-950 mb-2">Request Completed</h3>
-                    <p class="text-sm text-slate-600 font-medium mb-4">Earnings will appear once settlement is complete.</p>
-                    <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">Back to Dashboard</app-button>
-                  </div>
-                }
-                @default {
-                  <app-button variant="secondary" size="lg" class="w-full h-14 rounded-2xl" (clicked)="nav.navigateRoot('/driver')">Back to Dashboard</app-button>
-                }
-              }
-            </div>
           }
         } @else {
           <div class="min-h-[70vh] flex flex-col items-center justify-center py-20 text-center space-y-8">
@@ -1833,12 +1838,20 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
+            // Service scoping: the server-authoritative arrival + customer no-show
+            // flow is a RIDE PICKUP policy only. Errand/delivery/moving keep their
+            // existing arrival transition (the direct status write below), so they
+            // must never call the ride-only /api/booking/arrive endpoint.
+            //
             // Ride pickup arrival is SERVER-authoritative: obtain a real location
             // measurement + its timestamp and submit it; never write 'arrived'
             // directly. The server returns the immutable grace deadline.
-            // When the no-show feature is DISABLED the endpoint 404s, so the
-            // original arrival flow is preserved by falling through below.
-            if (status === 'arrived') {
+            // When the no-show feature is DISABLED the endpoint answers with the
+            // explicit NO_SHOW_DISABLED code, and only then does the ride flow fall
+            // through to the legacy transition. A generic 404 (an API without the
+            // route), 403, 409 or network failure is a real error and never
+            // degrades into a direct status write.
+            if (status === 'arrived' && currentJob.service_slug === ServiceTypeEnum.RIDE) {
                 const position = await this.locationService.getCurrentPosition();
                 if (!position) {
                     await this.showToast('Location unavailable. Enable GPS and retry.', 'danger');

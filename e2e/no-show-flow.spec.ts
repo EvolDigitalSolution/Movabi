@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
   ids,
   loginAs,
+  serviceTypes,
   setArrivalFailure,
   setArrivalGraceMs,
   setNoShowArrivalDisabled,
@@ -157,6 +158,45 @@ test.describe('driver no-show confirmation', () => {
     await expect.poll(() => legacyArrivalWrites, { timeout: 15_000 }).toBeGreaterThan(0);
 
     setNoShowArrivalDisabled(false);
+  });
+
+  test('service scoping: a RIDE arrival calls the server arrival endpoint', async ({ page }) => {
+    setArrivalGraceMs(120_000);
+
+    let arriveCalls = 0;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/booking/arrive')) arriveCalls += 1;
+    });
+
+    await openDriverJob(page);
+    await markArrived(page);
+
+    await expect.poll(() => arriveCalls, { timeout: 15_000 }).toBe(1);
+  });
+
+  test('service scoping: an ERRAND arrival never calls the ride-only arrival endpoint', async ({ page }) => {
+    // The same "I Have Arrived" control, on an errand job. `mapJobToBooking`
+    // prefers `service_type.slug`, so the service type must be switched too.
+    const errandService = serviceTypes.find((s) => s.slug === 'errand')!;
+    setNoShowJob({ service_slug: 'errand', service_type: errandService, service_type_id: errandService.id });
+
+    let arriveCalls = 0;
+    let legacyWrites = 0;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/booking/arrive')) arriveCalls += 1;
+      if (req.method() === 'PATCH' && req.url().includes('/rest/v1/jobs')) legacyWrites += 1;
+    });
+
+    await openDriverJob(page);
+    await markArrived(page);
+
+    // The ride-only endpoint must never be contacted for an errand...
+    await page.waitForTimeout(2_500);
+    expect(arriveCalls).toBe(0);
+    // ...and the existing arrival transition is used instead.
+    await expect.poll(() => legacyWrites, { timeout: 15_000 }).toBeGreaterThan(0);
+
+    setNoShowJob(null);
   });
 
   test('regression: a generic 404 must NOT degrade into a direct arrival status write', async ({ page }) => {

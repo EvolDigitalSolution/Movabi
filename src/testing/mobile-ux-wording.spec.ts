@@ -72,7 +72,24 @@ describe('job status display', () => {
 
   it('activity never de-underscores an unknown status', () => {
     expect(ACTIVITY).not.toMatch(/replace\(\/_\/g,\s*' '\)\s*\.replace/);
-    expect(ACTIVITY).toContain("return 'Updating…';");
+    // An unknown/missing status is reported neutrally — never as raw internals and
+    // never silently assumed to be a cancellation.
+    expect(ACTIVITY).toContain("return 'Unknown status';");
+    expect(ACTIVITY).not.toContain("return 'Updating…';");
+  });
+
+  it('activity maps terminal statuses instead of leaving them pending', () => {
+    // The authoritative stored spelling is `cancelled`; both spellings collapse.
+    expect(ACTIVITY).toContain("cancelled: 'Cancelled'");
+    expect(ACTIVITY).toContain("canceled: 'Cancelled'");
+    expect(ACTIVITY).toContain("completed: 'Completed'");
+    expect(ACTIVITY).toContain("no_driver_found: 'No driver found'");
+  });
+
+  it('activity clears its loading flag on both success and error', () => {
+    expect(ACTIVITY).toContain('isLoadingHistory');
+    expect(ACTIVITY).toContain('historyError');
+    expect(ACTIVITY).toMatch(/finally\s*\{[\s\S]*isLoadingHistory\.set\(false\)/);
   });
 
   it('internal job status values are unchanged (display map keys only)', () => {

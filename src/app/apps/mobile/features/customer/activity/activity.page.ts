@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnInit } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { addIcons } from 'ionicons';
@@ -51,6 +51,26 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
               <p class="text-xs font-semibold text-slate-500 truncate">Ride, errand, delivery, and moving history will appear here.</p>
             </div>
           </button>
+        }
+
+        @if (isLoadingHistory()) {
+          <div class="py-10 text-center" data-testid="activity-loading">
+            <p class="text-sm font-bold text-slate-500">Loading your activity…</p>
+          </div>
+        }
+
+        @if (historyError(); as loadError) {
+          <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 space-y-2" data-testid="activity-error">
+            <p class="text-sm font-bold text-rose-800">{{ loadError }}</p>
+            <button
+              type="button"
+              (click)="loadHistory()"
+              data-testid="activity-retry"
+              class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-black text-rose-700"
+            >
+              Try again
+            </button>
+          </div>
         }
 
         @if (activeBookings().length > 0) {
@@ -170,6 +190,9 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
                       <p class="text-sm font-black text-slate-900 mt-1.5">
                         {{ formatPrice(booking.total_price || booking.price || 0) }}
                       </p>
+                      @if (paymentStateLabel(booking); as payState) {
+                        <p class="text-[10px] font-bold text-slate-500 mt-0.5" data-testid="history-payment-state">{{ payState }}</p>
+                      }
                     </div>
                   </div>
                 </app-card>
@@ -219,6 +242,9 @@ export class ActivityPage implements OnInit {
 
     history = this.bookingService.bookingHistory;
 
+    isLoadingHistory = signal(true);
+    historyError = signal<string | null>(null);
+
     pendingMarketplace = computed(() => this.bookingService.pendingMarketplaceBookings());
 
     activeBookings = computed(() => {
@@ -252,7 +278,26 @@ export class ActivityPage implements OnInit {
     }
 
     ngOnInit() {
-        void this.bookingService.getHistory();
+        void this.loadHistory();
+    }
+
+    /**
+     * Load the activity list with an explicit loading/error lifecycle. The loading
+     * flag is ALWAYS cleared, on success and on failure, so the screen can never
+     * stay stuck on "Loading…" or hide a failed load behind an empty list.
+     */
+    async loadHistory(): Promise<void> {
+        this.isLoadingHistory.set(true);
+        this.historyError.set(null);
+
+        try {
+            await this.bookingService.getHistory();
+        } catch (error) {
+            console.error('[ActivityPage] history load failed:', error);
+            this.historyError.set('We could not load your activity. Please try again.');
+        } finally {
+            this.isLoadingHistory.set(false);
+        }
     }
 
     continueActive(booking: Booking): void {
@@ -373,11 +418,87 @@ export class ActivityPage implements OnInit {
         }
     }
 
-    formatStatus(_status?: string): string {
-        // Never surface an unknown/future status as raw snake_case internals.
-        // Known statuses are mapped by the callers; this is the neutral fallback.
-        // The parameter is retained so existing callers keep working unchanged.
-        return 'Updating…';
+    /**
+     * History/past badge label.
+     *
+     * A terminal job must never sit on a pending "Updating…" label, so the
+     * authoritative `jobs.status` is mapped explicitly. Both the stored British
+     * spelling (`cancelled` — the only one accepted by `jobs_status_check`) and the
+     * American spelling collapse to "Cancelled".
+     *
+     * An unknown/missing status is reported neutrally: it is never de-underscored
+     * into raw internals, and it is never silently presented as a cancellation.
+     */
+    formatStatus(status?: string): string {
+        const key = String(status || '').trim().toLowerCase();
+        if (!key) return 'Unknown status';
+
+        const labels: Record<string, string> = {
+            // terminal
+            completed: 'Completed',
+            cancelled: 'Cancelled',
+            canceled: 'Cancelled',
+            refunded: 'Refunded',
+            settled: 'Settled',
+            failed: 'Failed',
+            no_driver_found: 'No driver found',
+            requires_review: 'Under review',
+            // still in flight (history can briefly contain these)
+            pending: 'Request received',
+            requested: 'Request received',
+            searching: 'Finding your driver',
+            assigned: 'Driver assigned',
+            accepted: 'Driver confirmed',
+            heading_to_pickup: 'Driver heading to pickup',
+            arrived: 'Driver has arrived',
+            arrived_at_store: 'Driver at the shop',
+            shopping_in_progress: 'Shopping in progress',
+            collected: 'Items collected',
+            en_route_to_customer: 'On the way to you',
+            in_progress: 'In progress',
+            delivered: 'Delivered'
+        };
+
+        return labels[key] || 'Unknown status';
+    }
+
+    /**
+     * Money outcome, shown SEPARATELY from the status badge so a cancellation is
+     * never conflated with a refund state. Only rendered for terminal rows and
+     * only when the booking actually carries a payment/refund signal.
+     *
+     * The three refund states are derived from the SERVER's own writes, never
+     * re-derived from Stripe:
+     *   - `payment_status = 'requires_refund'` — a refund is required but not yet
+     *     issued (booking.routes.ts)                      -> pending
+     *   - `payment_status = 'refunded'` — the server only writes this when
+     *     requestedMinor >= capturedMinor (payment.routes.ts) -> completed full
+     *   - a refund id / refunded amount while the status is NOT 'refunded' — the
+     *     server keeps the paid status for a partial refund -> partial
+     */
+    paymentStateLabel(booking: Booking): string | null {
+        const status = String(booking?.status || '').toLowerCase();
+        const terminal = ['cancelled', 'canceled', 'failed', 'no_driver_found', 'refunded'];
+        if (!terminal.includes(status)) return null;
+
+        const record = booking as unknown as Record<string, unknown>;
+        const paymentStatus = String(record['payment_status'] || '').toLowerCase();
+        const refundedMinor = Number(record['total_refunded_minor'] || 0);
+        const hasRefundedAmount = Number.isFinite(refundedMinor) && refundedMinor > 0;
+        const hasRefund = !!record['refund_id'] || hasRefundedAmount;
+
+        // A refund that still has to be issued.
+        if (paymentStatus === 'requires_refund') return 'Refund pending';
+
+        // Completed full refund.
+        if (paymentStatus === 'refunded') return 'Refunded';
+
+        // A refund exists but the charge was not fully returned.
+        if (hasRefund) return 'Partially refunded';
+
+        if (paymentStatus === 'failed') return 'Payment failed';
+        if (paymentStatus === 'pending' || !paymentStatus) return 'Payment pending';
+        return null;
     }
 
     formatPrice(amount: number | null | undefined) {
