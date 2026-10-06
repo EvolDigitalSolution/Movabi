@@ -69,12 +69,19 @@ router.post('/create-portal-session', async (req: Request, res: Response) => {
 });
 
 // Stripe Webhook
-router.post('/webhook', async (req: Request, res: Response) => {
+export async function subscriptionWebhookHandler(req: Request, res: Response) {
   const sig = req.headers['stripe-signature'] as string;
+  const webhookSecret = process.env.STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.error('[Subscriptions webhook] Missing STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET');
+    return res.status(500).send('Missing webhook secret');
+  }
+
   let event: Stripe.Event;
 
   try {
-    event = verifyWebhookSignature(req.body, sig);
+    event = verifyWebhookSignature(req.body, sig, webhookSecret);
   } catch (err: any) {
     console.error('Webhook signature verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -343,7 +350,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
     console.error('Error handling subscription webhook:', error);
     return res.status(500).json({ error: error.message });
   }
-});
+}
+
+router.post('/webhook', subscriptionWebhookHandler);
 
 /**
  * Manually switch pricing plan (for admins or internal use)

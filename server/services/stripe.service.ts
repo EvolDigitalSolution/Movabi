@@ -28,14 +28,15 @@ const isNativeConnectPlatform = (platform?: ConnectPlatform) =>
 
 export const verifyWebhookSignature = (
   payload: string | Buffer,
-  signature: string
+  signature: string,
+  webhookSecret: string
 ) => {
-  if (!stripeWebhookSecret) {
+  if (!webhookSecret) {
     throw new Error('Stripe webhook secret is not configured.');
   }
 
   try {
-    return stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret);
+    return stripe.webhooks.constructEvent(payload, signature, webhookSecret);
   } catch (err: any) {
     throw new Error(`Webhook Error: ${err.message}`);
   }
