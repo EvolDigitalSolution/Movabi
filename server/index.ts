@@ -53,6 +53,8 @@ const app = express();
 
 app.use((req: any, res: any, next: any) => {
   const allowedOrigins = [
+    'https://movabi-develop.apps.evolsolution.com',
+    'http://localhost:4200',
     'http://localhost:3000',
     'http://localhost:8100',
     'https://localhost',
