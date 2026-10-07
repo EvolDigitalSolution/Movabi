@@ -1,3 +1,4 @@
+import { environment } from '../../../../../../environments/environment';
 import { Component, inject, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
@@ -658,7 +659,7 @@ export class EarningsPage implements OnInit {
     }
 
     private getApiBaseUrl(): string {
-        return 'https://movabi-api.apps.evolsolution.com';
+        return environment.apiUrl.replace(/\/+$/, '');
     }
 
     private getStoredAccessToken(): string | null {
