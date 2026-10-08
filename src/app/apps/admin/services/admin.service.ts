@@ -187,17 +187,14 @@ export class AdminService {
   }
 
   async getUsers() {
-    const { data, error } = await this.supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'customer')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('getUsers error:', error);
-      return [];
-    }
-
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(
+      `${this.apiUrlService.getBaseUrl()}/api/admin/users`,
+      { method: 'GET', headers }
+    );
+    if (!response.ok) throw new Error('Failed to load customer accounts');
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('Invalid customer account response');
     return data as Profile[];
   }
 
