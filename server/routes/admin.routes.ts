@@ -374,9 +374,8 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
  */
 // Customer messages are informational and use the same inbox as driver messages.
 
-router.get('/users', async (req: Request, res: Response) => {
+router.get('/users', requireAdmin, async (req: Request, res: Response) => {
   try {
-    if (!(await requireAdmin(req, res))) return;
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
