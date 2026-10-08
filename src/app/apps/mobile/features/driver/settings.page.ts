@@ -120,6 +120,18 @@ type DocType = 'license' | 'insurance';
           </div>
         </div>
 
+        <app-card class="p-4">
+          <h2 class="text-sm font-black text-slate-950">Messages from Admin</h2>
+          @for(message of onboardingStatus.state()?.adminMessages || []; track message.id){
+            <div class="mt-3 rounded-xl border border-slate-100 p-3"><p class="text-xs font-bold">{{message.title}}</p><p class="mt-2 whitespace-pre-wrap text-sm text-slate-700">{{message.body}}</p><p class="mt-2 text-xs text-slate-400">{{message.created_at | date:'medium'}}</p></div>
+          } @empty { <p class="mt-3 text-xs text-slate-500">No messages yet.</p> }
+        </app-card>
+        <app-card class="p-4">
+          <h2 class="text-sm font-black text-slate-950">Vehicle & Services</h2>
+          <p class="mt-2 text-xs text-slate-500">Change your vehicle or the services you offer. Changes to approved details require review before you can go online again.</p>
+          <app-button class="mt-3 w-full" variant="secondary" (clicked)="router.navigate(['/driver/onboarding'], {queryParams:{edit:'vehicle'}})">Edit Vehicle & Services</app-button>
+        </app-card>
+
         <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Information Requests</h2><button class="text-xs font-bold text-blue-600 disabled:opacity-50" [disabled]="onboardingStatus.loading()" (click)="refreshOnboardingStatus()">{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}</button></div>
           @if(onboardingStatus.loading()){<p class="mt-3 text-xs text-slate-500">Loading requests…</p>}
           @else if(onboardingStatus.error()){<p class="mt-3 text-xs font-semibold text-rose-600">{{onboardingStatus.error()}}</p>}
@@ -217,6 +229,10 @@ type DocType = 'license' | 'insurance';
                   <p class="text-sm font-bold text-slate-900 mt-1 break-words">{{ driverEmail() }}</p>
                 </div>
 
+                <label class="block">
+                  <span class="text-[10px] font-black uppercase text-slate-400">Residential address</span>
+                  <textarea class="mt-1 w-full rounded-2xl border border-slate-200 p-3 text-sm" [value]="residentialAddressDraft()" (input)="residentialAddressDraft.set($any($event.target).value)" placeholder="Street, town and postcode"></textarea>
+                </label>
                 @if (dateOfBirthEditable()) {<label class="block">
                   <span class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</span>
                   <input
@@ -227,9 +243,9 @@ type DocType = 'license' | 'insurance';
                   >
                 </label>} @else {<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4"><p class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</p><p class="mt-1 text-sm font-bold text-slate-900">{{formattedDateOfBirth()}}</p><p class="mt-2 text-xs font-bold text-slate-600">Locked identity information</p><p class="mt-1 text-xs text-slate-500">Your date of birth is used for identity and driver eligibility checks.</p><button type="button" class="mt-3 text-xs font-bold text-blue-600" (click)="requestDobCorrection()">Request a correction</button></div>}
 
-                @if(dateOfBirthEditable()){<app-button size="sm" class="w-full" [disabled]="savingPersonalDetails()" (clicked)="savePersonalDetails()">
+                <app-button size="sm" class="w-full" [disabled]="savingPersonalDetails()" (clicked)="savePersonalDetails()">
                   {{ savingPersonalDetails() ? 'Saving...' : 'Save Personal Details' }}
-                </app-button>}
+                </app-button>
               </div>
             </div>
           </app-card>
@@ -549,6 +565,7 @@ export class DriverSettingsPage implements OnInit {
     loadingStripe = signal(false);
     resubmitting = signal(false);
     savingPersonalDetails = signal(false);
+    residentialAddressDraft = signal('');
     dateOfBirthDraft = signal('');
 
     constructor() {
@@ -781,19 +798,20 @@ export class DriverSettingsPage implements OnInit {
         this.savingPersonalDetails.set(true);
 
         try {
-            if(!this.dateOfBirthEditable())throw new Error('Date of birth is locked.');
-            await this.onboardingStatus.saveCurrentProfile({dateOfBirth:this.dateOfBirthDraft()});
+            const residentialAddress = this.residentialAddressDraft().trim();
+            if (residentialAddress.length < 5) throw new Error('Enter your full residential address.');
+            await this.onboardingStatus.saveCurrentProfile({residentialAddress, ...(this.dateOfBirthEditable() ? {dateOfBirth:this.dateOfBirthDraft()} : {})});
 
             if (typeof (this.profileService as any).fetchProfile === 'function') {
                 await (this.profileService as any).fetchProfile(user.id);
             }
 
             this.syncPersonalDraft();
-            await this.onboardingStatus.recordEvent('driver_profile_updated_for_review', 'date_of_birth', null, 'updated');
+            await this.onboardingStatus.recordEvent('driver_profile_updated_for_review', 'personal_details', null, 'updated');
             await this.refreshOnboardingStatus();
             await this.showToast('Personal details saved.', 'success');
-        } catch {
-            await this.showToast('Could not save personal details.', 'danger');
+        } catch (error) {
+            await this.showToast(error instanceof Error ? error.message : 'Could not save personal details.', 'danger');
         } finally {
             this.savingPersonalDetails.set(false);
         }
@@ -801,6 +819,7 @@ export class DriverSettingsPage implements OnInit {
 
     private syncPersonalDraft() {
         const profile = this.profile() as any;
+        this.residentialAddressDraft.set(String(this.onboardingStatus.state()?.canonicalProfile?.residentialAddress || profile?.current_address || ''));
         this.dateOfBirthDraft.set(this.formatDateForInput(profile?.date_of_birth ?? profile?.dob));
     }
 

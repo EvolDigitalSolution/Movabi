@@ -356,6 +356,9 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
         taxi_badge_number: firstValue(driverWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
         taxi_license_expiry: firstValue(driverWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry', 'private_hire_expiry', 'council_license_expiry']),
         private_hire_vehicle_license_url: firstValue(driverWithVerificationItems, ['private_hire_vehicle_license_url', 'privateHireVehicleLicenseUrl', 'phv_license_url', 'vehicle_license_url', 'private_hire_vehicle_licence_url', 'phv_licence_url']),
+        current_address: firstValue(driverWithVerificationItems, ['current_address','residential_address','home_address','address']),
+        private_hire_insurance_url: firstValue(driverWithVerificationItems, ['private_hire_insurance_url','privateHireInsuranceUrl','private_hire_insurance_document_url','passenger_insurance_url']),
+        private_hire_insurance_status: firstValue(driverWithVerificationItems, ['private_hire_insurance_status','privateHireInsuranceStatus']),
         vehicles: vehiclesByUser.get(driver.id) || []
       };
     });

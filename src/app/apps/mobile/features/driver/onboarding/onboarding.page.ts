@@ -1217,7 +1217,8 @@ export class OnboardingPage implements OnInit {
             if (!vehicleFields.every(name => this.onboardingForm.get(name)?.valid === true)) throw new Error('Complete the required vehicle details before saving.');
             await this.driverService.updateVehicle(vehiclePayload);
             if (!this.driverService.vehicle()) throw new Error('Vehicle details were not persisted.');
-            await this.onboardingStatus.refresh();
+            const savedStatus = await this.onboardingStatus.refresh();
+            this.mergeLocalProfile(savedStatus.profile);
             return;
         }
         const agreement = await this.onboardingStatus.saveAgreement(raw.driver_agreement_accepted === true);
@@ -1265,6 +1266,7 @@ export class OnboardingPage implements OnInit {
     private restoreStage(): void {
         if (this.stageRestored) return;
         this.stageRestored = true;
+        if (this.route.snapshot.queryParamMap.get('edit') === 'vehicle') { this.stage.set(4); return; }
         const drafted = Number(localStorage.getItem(this.stageKey) || '');
         if (Number.isFinite(drafted) && drafted >= 1 && drafted <= this.stages.length) { this.stage.set(drafted); return; }
         this.stage.set(this.deriveStageFromCanonicalState());

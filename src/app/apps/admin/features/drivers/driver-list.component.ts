@@ -36,6 +36,9 @@ type AdminDriver = DriverProfile & {
     stripe_account_id?: string | null;
     driver_license_url?: string | null;
     insurance_url?: string | null;
+    current_address?: string | null;
+    private_hire_insurance_url?: string | null;
+    private_hire_insurance_status?: string | null;
     verification_blockers?: string[] | string | null;
     testing_approval_override?: boolean | null;
     manual_verification_notes?: string | null;
@@ -307,6 +310,10 @@ type AdminDriver = DriverProfile & {
                     <span class="detail-value">{{ formatDate(selectedDriver()?.date_of_birth) }}</span>
                   </div>
                   @if(selectedDriver()?.dob_correction_request;as correction){<div class="rounded-xl border border-amber-200 bg-amber-50 p-3"><p class="text-xs font-black text-amber-900">DOB correction: {{correction.status}}</p><p class="mt-1 text-xs text-amber-800">{{correction.public_message}}</p>@if(correction.status==='pending'){<div class="mt-2 flex gap-2"><button type="button" class="text-xs font-bold text-green-700" (click)="resolveDobCorrection(selectedDriver(),true)">Allow correction</button><button type="button" class="text-xs font-bold text-rose-700" (click)="resolveDobCorrection(selectedDriver(),false)">Reject</button></div>}</div>}
+                  <div class="sm:col-span-2">
+                    <span class="detail-muted">Residential address:</span>
+                    <span class="detail-value whitespace-pre-line">{{ selectedDriver()?.current_address || 'Not provided' }}</span>
+                  </div>
                   <div>
                     <span class="detail-muted">Driver ID:</span>
                     <span class="detail-value break-all">{{ selectedDriver()?.id }}</span>
@@ -422,6 +429,23 @@ type AdminDriver = DriverProfile & {
                   {{ selectedDriver()?.insurance_url ? 'Open Insurance' : 'Insurance Missing' }}
                 </button>
               </div>
+            </div>
+
+            <div class="detail-card">
+              <p class="detail-label">Passenger / Private Hire Insurance</p>
+              <p class="detail-muted mt-2">Status: {{ selectedDriver()?.private_hire_insurance_status || 'Not reviewed' }}</p>
+              <button type="button" class="modal-doc-btn mt-3" (click)="openDocument(selectedDriver()?.private_hire_insurance_url, 'Passenger / private hire insurance')">
+                {{ selectedDriver()?.private_hire_insurance_url ? 'Open Passenger Insurance' : 'Passenger Insurance Not Uploaded' }}
+              </button>
+            </div>
+            <div class="detail-card">
+              <p class="detail-label">Message Driver</p>
+              <p class="detail-muted mt-1">Send a message to the driver app. This does not change approval or request documents.</p>
+              <textarea class="mt-3 w-full min-h-28 rounded-2xl border border-slate-200 p-3" maxlength="2000"
+                [value]="driverMessageDraft()" (input)="driverMessageDraft.set($any($event.target).value)" placeholder="Write your message..."></textarea>
+              <app-button class="mt-3 w-full" [disabled]="sendingDriverMessage() || !driverMessageDraft().trim()" (clicked)="sendDriverMessage(selectedDriver())">
+                {{ sendingDriverMessage() ? 'Sending...' : 'Send Message' }}
+              </app-button>
             </div>
 
             @if (getBlockers(selectedDriver()).length) {
@@ -858,6 +882,8 @@ export class DriverListComponent implements OnInit {
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
+    driverMessageDraft = signal('');
+    sendingDriverMessage = signal(false);
     reviewFeedbackNotes = signal('');
     selectedReviewBlockers = signal<string[]>([]);
 
@@ -1418,6 +1444,7 @@ export class DriverListComponent implements OnInit {
     }
 
     viewDriver(driver: AdminDriver) {
+        this.driverMessageDraft.set('');
         this.reviewFeedbackNotes.set(
             driver.driver_review_notes ||
             driver.verification_notes ||
@@ -1429,6 +1456,7 @@ export class DriverListComponent implements OnInit {
 
     closeDriverModal() {
         this.selectedDriver.set(null);
+        this.driverMessageDraft.set('');
         this.reviewFeedbackNotes.set('');
         this.selectedReviewBlockers.set([]);
     }
@@ -1520,6 +1548,20 @@ export class DriverListComponent implements OnInit {
     }
 
     async resolveDobCorrection(driver:AdminDriver|null,approved:boolean){const request=driver?.dob_correction_request;if(!driver?.id||!request)return;const publicMessage=window.prompt('Public message for the driver',approved?'Correction approved. You may update your date of birth once.':'Correction request was not approved.')||'';const privateNote=window.prompt('Private Admin note (not shown to the driver)','')||'';try{await this.adminService.resolveDobCorrection(driver.id,request.id,approved,publicMessage,privateNote);await this.loadDrivers();}catch(error){console.error('[Admin] DOB correction resolution failed',error);}}
+
+    async sendDriverMessage(driver: AdminDriver | null) {
+        if (!driver?.id || this.sendingDriverMessage()) return;
+        const message = this.driverMessageDraft().trim();
+        if (!message) return;
+        this.sendingDriverMessage.set(true);
+        try {
+            await this.adminService.sendDriverMessage(driver.id, message);
+            this.driverMessageDraft.set('');
+            await this.showToast('Message saved to the driver app.', 'success');
+        } catch (error) {
+            await this.showToast(error instanceof Error ? error.message : 'Could not send message.', 'danger');
+        } finally { this.sendingDriverMessage.set(false); }
+    }
 
     async sendMissingInfoRequest(driver: any) {
         if (!driver?.id) return;

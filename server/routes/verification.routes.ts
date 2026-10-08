@@ -244,6 +244,28 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
   }
 });
 
+// Informational messages never change verification or outstanding requirements.
+router.post('/drivers/:driverId/message', async (req, res) => {
+  try {
+    const body = String(req.body?.message || '').trim();
+    if (!body || body.length > 2000) return res.status(422).json({ error: 'Enter a message of 1–2000 characters.' });
+    const { driverId } = req.params;
+    const { data: driver, error: profileError } = await supabase.from('profiles').select('id,role').eq('id', driverId).single();
+    if (profileError || !driver || driver.role !== 'driver') return res.status(404).json({ error: 'Driver not found.' });
+    const { data, error } = await supabase.from('notifications').insert({
+      user_id: driverId, title: 'Message from Movabi Admin', body, type: 'system_alert',
+      data: { action: 'admin_driver_message', route: '/driver/settings' },
+      metadata: { action: 'admin_driver_message', route: '/driver/settings' },
+      route: '/driver/settings', is_read: false
+    }).select('id').single();
+    if (error || !data) throw error || new Error('Message was not saved.');
+    return res.status(201).json({ sent: true, messageId: data.id });
+  } catch (error: unknown) {
+    console.error('[AdminDriverMessage] save failed', error);
+    return res.status(500).json({ error: 'Could not save the driver message.' });
+  }
+});
+
 router.post('/drivers/:driverId/request-info', async (req, res) => {
   try {
     if (!serviceRoleKey) {

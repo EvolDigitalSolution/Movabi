@@ -13,6 +13,7 @@ export interface DriverOnboardingStatus {
     driverId: string; registrationAllowed: boolean; overallStatus: 'not_started'|'incomplete'|'ready_to_submit'|'under_review'|'action_required'|'approved'|'paused';
     profile: Record<string, unknown>; canonicalProfile: CanonicalDriverProfile; passengerLicence:DriverPassengerLicence; vehicle: DriverVehicle | null;
     outstandingRequests: DriverOutstandingRequest[]; submissionHistory: unknown[];
+    adminMessages?: Array<{id:string;title:string;body:string;created_at:string}>;
     stripeStatus: string; updatedAt: string | null;
     automaticRequirements: DriverAutomaticRequirement[]; adminRequests: DriverAdminRequest[]; warnings: DriverAutomaticRequirement[];
     progress: { completed: number; total: number; percentage:number }; sectionStatus:DriverSetupSectionStatus; onlineEligibility: { allowed: boolean; reasons: string[] };

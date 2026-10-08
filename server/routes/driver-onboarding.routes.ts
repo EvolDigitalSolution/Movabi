@@ -69,9 +69,13 @@ router.get('/status', async (req, res) => {
     const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
     const visibleRequests=[...resolution.adminRequests,...adminRequests.filter(request=>request.requestType==='identity_correction'&&!resolution.adminRequests.some(item=>item.id===request.id))];
     const outstandingRequests=visibleRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
+    const { data: adminMessages, error: messagesError } = await supabaseAdmin.from('notifications')
+      .select('id,title,body,created_at').eq('user_id',driverId)
+      .contains('data',{action:'admin_driver_message'}).order('created_at',{ascending:false}).limit(20);
+    if (messagesError) throw Object.assign(new Error('Unable to load Admin messages.'), { code: messagesError.code });
     const stripeStatus = profile.stripe_connect_status || 'not_started';
     console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
-    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, passengerLicence, vehicle: canonicalVehicle, outstandingRequests,
+    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, passengerLicence, vehicle: canonicalVehicle, outstandingRequests, adminMessages:adminMessages||[],
       automaticRequirements:resolution.automaticRequirements,adminRequests:visibleRequests,warnings:resolution.warnings,identityEditability,sectionStatus:resolution.sectionStatus,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
@@ -195,6 +199,24 @@ router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(
 router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
   const input=parseDriverVehicleInput(req.body);const existing=await currentVehicle(driverId);
   const values={user_id:driverId,type:input.vehicleType,make:input.make,model:input.model,color:input.colour,year:input.year,license_plate:input.registrationNumber,capacity:input.capacity,service_eligibility:input.serviceEligibility,updated_at:new Date().toISOString()};
+  // Re-review before changing an approved vehicle or its selected services.
+  const fields = ['type','make','model','color','year','license_plate','capacity'] as const;
+  const vehicleChanged = !existing || fields.some(field => String(existing[field] ?? '').trim().toLowerCase() !== String(values[field] ?? '').trim().toLowerCase()) ||
+    JSON.stringify([...(existing.service_eligibility || [])].sort()) !== JSON.stringify([...values.service_eligibility].sort());
+  if (vehicleChanged) {
+    const { data: profile, error: profileError } = await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();
+    if (profileError || !profile) throw profileError || new Error('Driver profile not found.');
+    const serviceItems = serializeOnboardingItems({...parseOnboardingItems(profile.verification_items), driver_service_types:input.serviceEligibility});
+    const needsReview = profile.is_verified || profile.verification_status === 'approved' || profile.driver_review_status === 'approved';
+    const { error: reviewError } = await supabaseAdmin.from('profiles').update({
+      verification_items:serviceItems,
+      ...(Object.prototype.hasOwnProperty.call(profile,'driver_service_types') ? {driver_service_types:input.serviceEligibility} : {}),
+      ...(needsReview ? {is_verified:false, is_online:false, is_available:false, verification_status:'action_required', driver_review_status:'action_required',
+        verification_notes:'Vehicle or services changed. Complete the required details and submit for review.', driver_review_notes:'Vehicle or services changed. Complete the required details and submit for review.'} : {}),
+      updated_at:new Date().toISOString()
+    }).eq('id',driverId);
+    if (reviewError) throw reviewError;
+  }
   const query=existing?supabaseAdmin.from('vehicles').update(values).eq('id',existing.id):supabaseAdmin.from('vehicles').insert(values);
   const{data,error}=await query.select('*').single();if(error||!data)throw error||new Error('Vehicle save returned no record.');
   return res.json({vehicle:mapDriverVehicleRow(data as DriverVehicleRow)});

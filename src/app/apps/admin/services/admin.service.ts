@@ -760,6 +760,16 @@ export class AdminService {
     return result;
   }
 
+  async sendDriverMessage(driverId: string, message: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/message`, {
+      method: 'POST', headers, body: JSON.stringify({ message })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Could not send driver message');
+    return result;
+  }
+
   async sendDriverMissingInfoRequest(driverId: string, notes: string, blockers: string[]) {
     console.log('[admin-driver-review] sending', { driverId, blockers });
     const headers = await this.getAuthenticatedApiHeaders();
