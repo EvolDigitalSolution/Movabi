@@ -3194,7 +3194,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         try {
             const link = await this.connectService.getDashboardLink(accountId);
-            window.location.href = link.url;
+            if (this.connectService.getConnectPlatform() === 'web') {
+                window.location.href = link.url;
+            } else {
+                const { Browser } = await import('@capacitor/browser');
+                await Browser.open({ url: link.url });
+            }
         } catch {
             this.showToast('Failed to open Stripe dashboard', 'danger');
         } finally {
@@ -3264,7 +3269,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 ? await this.connectService.getDashboardLink(accountId)
                 : await this.connectService.getOnboardingLink(accountId, returnUrl, refreshUrl);
 
-            window.location.href = link.url;
+            if (this.connectService.getConnectPlatform() === 'web') {
+                window.location.href = link.url;
+            } else {
+                const { Browser } = await import('@capacitor/browser');
+                await Browser.open({ url: link.url });
+            }
         } catch (error) {
             console.warn('[DriverDashboard] Failed to load payout settings', error);
             this.showToast('Failed to load payout settings', 'danger');

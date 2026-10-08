@@ -32,9 +32,25 @@ function buildConnectReturnUrls(req: Request) {
     };
   }
 
+  const appUrl = new URL(String(process.env.APP_URL || WEB_DRIVER_URL));
+  const allowedOrigins = new Set([appUrl.origin]);
+  const testMode = String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
+
+  if (testMode) {
+    allowedOrigins.add('https://movabi-develop.apps.evolsolution.com');
+    allowedOrigins.add('http://localhost:3000');
+    allowedOrigins.add('http://localhost:4200');
+    allowedOrigins.add('http://localhost:8100');
+  }
+
+  const requestedOrigin = String(req.headers.origin || appUrl.origin);
+  if (!allowedOrigins.has(requestedOrigin)) {
+    throw new Error('Stripe onboarding return origin is not allowed');
+  }
+
   return {
-    refreshUrl: `${WEB_DRIVER_URL}?stripe=refresh`,
-    returnUrl: `${WEB_DRIVER_URL}?stripe=success`
+    refreshUrl: `${requestedOrigin}/driver?stripe=refresh`,
+    returnUrl: `${requestedOrigin}/driver?stripe=success`
   };
 }
 
