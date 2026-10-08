@@ -1,3 +1,4 @@
+import { NotificationService } from '../../../../core/services/notification.service';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
@@ -125,6 +126,24 @@ interface UniverseTile {
     </ion-header>
 
     <ion-content class="movabi-page">
+      @if (dashboardMessages.unreadAdminMessageCount() > 0) {
+        <button type="button"
+          class="mx-4 mt-4 mb-3 block rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left shadow-sm"
+          style="width: calc(100% - 2rem)"
+          (click)="router.navigateByUrl('/account/messages')">
+          <span class="block text-base font-bold text-blue-900">
+            Messages from Movabi
+          </span>
+          <span class="mt-1 block text-sm text-blue-800">
+            {{ dashboardMessages.unreadAdminMessageCount() }}
+            unread {{ dashboardMessages.unreadAdminMessageCount() === 1 ? 'message' : 'messages' }}
+          </span>
+          <span class="mt-2 block text-sm font-bold text-blue-700">
+            Read messages ?
+          </span>
+        </button>
+      }
+
       <div class="max-w-2xl mx-auto p-3 sm:p-5 space-y-6 native-safe-bottom">
 
         <!-- Top service mode navigation -->
@@ -448,6 +467,7 @@ interface UniverseTile {
 })
 export class HomePage implements OnInit, OnDestroy {
     public router = inject(Router);
+    readonly dashboardMessages = inject(NotificationService);
     public auth = inject(AuthService);
     public walletService = inject(WalletService);
 
@@ -534,6 +554,11 @@ export class HomePage implements OnInit, OnDestroy {
     }
 
     async ngOnInit(): Promise<void> {
+        this.dashboardMessages.initialize();
+        void this.dashboardMessages.fetchNotifications().catch(
+            error => console.warn('Dashboard messages refresh failed', error)
+        );
+
         void this.walletService.fetchWallet();
         await this.bookingService.getHistory();
         this.subscribeToCustomerJobs();
