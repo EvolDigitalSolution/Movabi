@@ -1,3 +1,4 @@
+import { matchesVehicleCapacity } from '../../src/app/shared/utils/goods-vehicle-compatibility';
 import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
 import { FraudService } from '../services/fraud.service';
@@ -290,7 +291,7 @@ function normalise(value: unknown): string {
 async function getJob(jobId: string) {
     const { data, error } = await supabaseAdmin
         .from('jobs')
-        .select('*')
+        .select('*, service_type:service_types(slug)')
         .eq('id', jobId)
         .single();
 
@@ -588,7 +589,7 @@ router.post('/accept', async (req: Request, res: Response) => {
         const required = requiredVehicleClass(job);
         const capabilities = driverCapabilities(vehicle);
 
-        if (!capabilities.includes(required)) {
+        if (!matchesVehicleCapacity(job.service_type?.slug || job.service_slug, required, capabilities)) {
             return res.status(400).json({
                 error: `This request needs ${vehicleLabel(required)}. Please update your saved vehicle before accepting.`
             });

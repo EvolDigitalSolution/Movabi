@@ -1,3 +1,4 @@
+import { matchesVehicleCapacity } from '../../../shared/utils/goods-vehicle-compatibility';
 import { Injectable } from '@angular/core';
 import { Booking, ServiceTypeEnum, Vehicle } from '@shared/models/booking.model';
 
@@ -16,7 +17,7 @@ export class VehicleCompatibilityService {
 
         const required = this.getRequiredVehicleClass(job);
 
-        return capabilities.includes(required);
+        return matchesVehicleCapacity(serviceSlug, required, capabilities);
     }
 
     getRequiredVehicleClass(job: Booking | null | undefined): RequiredVehicleClass {

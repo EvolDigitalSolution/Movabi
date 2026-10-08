@@ -1,3 +1,4 @@
+import { goodsVehicleMatches, isGoodsService } from '../../src/app/shared/utils/goods-vehicle-compatibility';
 import { getSupabaseAdmin } from './supabase.service';
 import { MarketAvailabilityService } from './market-availability.service';
 import { Job, DispatchResult } from '../../src/app/shared/models/booking.model';
@@ -695,6 +696,10 @@ export class DispatchService {
         const compatibleDrivers = drivers.filter(driver => {
             const vehicleClasses = vehiclesByUser.get(driver.id) || [];
             const serviceType = job.service_slug;
+
+            if (isGoodsService(serviceType)) {
+                return goodsVehicleMatches(job, vehicleRowsByUser.get(driver.id));
+            }
 
             return vehicleClasses.some(vehicleClass => this.isVehicleCompatible(vehicleClass, serviceType));
         });
