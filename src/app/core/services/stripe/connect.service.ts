@@ -1,6 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, Subject } from 'rxjs';
+import { App } from '@capacitor/app';
+import { AppLauncher } from '@capacitor/app-launcher';
 import { Capacitor } from '@capacitor/core';
 import { ApiUrlService } from '../api-url.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -42,6 +44,47 @@ export class ConnectService {
     private supabase = inject(SupabaseService);
 
     private apiUrl = this.apiUrlService.getApiUrl('/api/connect');
+    readonly returnedToApp = new Subject<void>();
+
+    constructor() {
+        if (Capacitor.isNativePlatform()) {
+            void App.addListener('appStateChange', ({ isActive }) => {
+                if (isActive) this.returnedToApp.next();
+            }).catch(error => console.warn('[Connect] Resume listener failed', error));
+        } else if (typeof window !== 'undefined') {
+            window.addEventListener('focus', () => this.returnedToApp.next());
+        }
+    }
+
+    prepareDashboardTab(): Window | null {
+        if (Capacitor.isNativePlatform()) return null;
+        const tab = window.open('about:blank', '_blank');
+        if (!tab) throw new Error('Allow popups to open the Stripe dashboard.');
+        tab.opener = null;
+        return tab;
+    }
+
+    async openDashboard(url: string, tab: Window | null): Promise<void> {
+        if (new URL(url).protocol !== 'https:') throw new Error('Invalid Stripe dashboard URL');
+        if (Capacitor.isNativePlatform()) {
+            const result = await AppLauncher.openUrl({ url });
+            if (!result.completed) throw new Error('Could not open the external browser');
+        } else {
+            if (!tab || tab.closed) throw new Error('Stripe dashboard tab was closed');
+            tab.location.href = url;
+        }
+    }
+
+    async openOnboarding(url: string): Promise<void> {
+        if (Capacitor.isNativePlatform()) {
+            const { Browser } = await import('@capacitor/browser');
+            await Browser.open({ url });
+        } else {
+            window.location.href = url;
+        }
+    }
+
+    private payoutSettingsInFlightForced = false;
     private payoutSettingsInFlight: Promise<PayoutSettingsResponse> | null = null;
     private payoutSettingsCache: { value: PayoutSettingsResponse; expiresAt: number } | null = null;
     private readonly payoutSettingsCacheMs = 10_000;
@@ -138,17 +181,33 @@ export class ConnectService {
     }
 
     getPayoutSettings(force = false): Promise<PayoutSettingsResponse> {
-        if (this.payoutSettingsInFlight) return this.payoutSettingsInFlight;
+        if (this.payoutSettingsInFlight) {
+            if (!force || this.payoutSettingsInFlightForced) return this.payoutSettingsInFlight;
+            return this.payoutSettingsInFlight.catch(() => undefined)
+                .then(() => this.getPayoutSettings(true));
+        }
         if (!force && this.payoutSettingsCache && this.payoutSettingsCache.expiresAt > Date.now()) {
             return Promise.resolve(this.payoutSettingsCache.value);
         }
 
+        this.payoutSettingsInFlightForced = force;
         const request = (async () => firstValueFrom(
             this.http.get<PayoutSettingsResponse>(
                 `${this.apiUrl}/payout-settings`,
                 { headers: await this.getAuthHeaders() }
             )
-        ))().then(value => {
+        ))().then(async value => {
+            if (force && value.stripeAccountId) {
+                const status = await this.refreshAccountStatus(value.stripeAccountId);
+                value = {
+                    ...value,
+                    connectStatus: status.status,
+                    chargesEnabled: status.charges_enabled === true,
+                    payoutsEnabled: status.payouts_enabled === true,
+                    detailsSubmitted: status.details_submitted === true,
+                    requirementsCurrentlyDue: status.requirements?.currently_due || []
+                };
+            }
             this.payoutSettingsCache = { value, expiresAt: Date.now() + this.payoutSettingsCacheMs };
             return value;
         }).finally(() => {

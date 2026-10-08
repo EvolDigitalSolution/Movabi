@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { DestroyRef, Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -552,6 +552,11 @@ export class DriverSettingsPage implements OnInit {
     dateOfBirthDraft = signal('');
 
     constructor() {
+        const destroyRef = inject(DestroyRef);
+        const resumeSubscription = this.connectService.returnedToApp.subscribe(() => {
+            if (this.router.url.split('?')[0] === '/driver/settings') void this.driverService.fetchStripeAccount(true).catch(error => console.warn('[Stripe] Resume refresh failed', error));
+        });
+        destroyRef.onDestroy(() => resumeSubscription.unsubscribe());
         addIcons({
             alertCircleOutline,
             cardOutline,
@@ -572,7 +577,7 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async ionViewWillEnter(): Promise<void> {
-        await this.refreshPageData(false);
+        await this.refreshPageData(true);
     }
 
     private async refreshPageData(forceStripe: boolean): Promise<void> {
@@ -814,7 +819,7 @@ export class DriverSettingsPage implements OnInit {
 
         try {
             const url = await this.driverService.setupStripeConnect();
-            window.location.href = url;
+            await this.connectService.openOnboarding(url);
         } catch {
             await this.showToast('Failed to load Stripe setup.', 'danger');
         } finally {
@@ -824,14 +829,18 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async openStripeDashboard() {
+        let dashboardTab: Window | null = null;
+        try { dashboardTab = this.connectService.prepareDashboardTab(); }
+        catch { await this.showToast('Allow popups to open the Stripe dashboard.', 'warning'); return; }
         const accountId = this.driverService.stripeAccount()?.stripe_account_id;
 
         if (!accountId) {
+            dashboardTab?.close();
             await this.showToast('Stripe account not found.', 'warning');
             return;
         }
 
-        if (this.loadingStripe()) return;
+        if (this.loadingStripe()) { dashboardTab?.close(); return; }
 
         this.loadingStripe.set(true);
 
@@ -840,8 +849,9 @@ export class DriverSettingsPage implements OnInit {
 
         try {
             const link = await this.connectService.getDashboardLink(accountId);
-            window.location.href = link.url;
+            await this.connectService.openDashboard(link.url, dashboardTab);
         } catch {
+            dashboardTab?.close();
             await this.showToast('Failed to open Stripe dashboard.', 'danger');
         } finally {
             this.loadingStripe.set(false);

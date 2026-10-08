@@ -1,4 +1,4 @@
-import { Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
+import { DestroyRef, Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
 import { userFacingError } from '@shared/utils/http-failure';
@@ -1254,6 +1254,17 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     });
 
     constructor() {
+        const destroyRef = inject(DestroyRef);
+        const resumeSubscription = this.connectService.returnedToApp.subscribe(() => {
+            if (this.router.url.split('?')[0] === '/driver') void this.refreshStripeUiStateFromDb(true).catch(error => console.warn('[Stripe] Resume refresh failed', error));
+        });
+        destroyRef.onDestroy(() => resumeSubscription.unsubscribe());
+        let initialQuery = true;
+        const callbackSubscription = this.route.queryParamMap.subscribe(params => {
+            if (initialQuery) { initialQuery = false; return; }
+            if (params.get('stripe')) void this.handleStripeReturn();
+        });
+        destroyRef.onDestroy(() => callbackSubscription.unsubscribe());
         addIcons({
             shieldCheckmark,
             walletOutline,
@@ -2485,7 +2496,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         if (!stripe) return;
 
         try {
-            await this.refreshStripeUiStateFromDb(true);
+            await this.driverService.fetchStripeAccount(true);
+            await this.refreshStripeUiStateFromDb();
 
             if (stripe === 'success') {
                 this.showToast(
@@ -2499,10 +2511,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             if (stripe === 'refresh') {
                 this.showToast('Please continue completing your Stripe onboarding.', 'warning');
             }
+        } catch (error) {
+            console.warn('[DriverDashboard] Stripe return refresh failed', error);
+            this.showToast('Could not refresh Stripe status. Please try Refresh.', 'warning');
         } finally {
             await this.router.navigate([], {
                 relativeTo: this.route,
-                queryParams: {},
+                queryParams: { stripe: null },
+                queryParamsHandling: 'merge',
                 replaceUrl: true
             });
         }
@@ -3177,11 +3193,15 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     async openStripeDashboard() {
+        let dashboardTab: Window | null = null;
+        try { dashboardTab = this.connectService.prepareDashboardTab(); }
+        catch { await this.showToast('Allow popups to open the Stripe dashboard.', 'warning'); return; }
         await this.refreshStripeUiStateFromDb();
 
         const accountId = this.stripeUiState().accountId;
 
         if (!accountId) {
+            dashboardTab?.close();
             this.showToast('Stripe account not found. Start setup first.', 'warning');
             return;
         }
@@ -3194,13 +3214,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         try {
             const link = await this.connectService.getDashboardLink(accountId);
-            if (this.connectService.getConnectPlatform() === 'web') {
-                window.location.href = link.url;
-            } else {
-                const { Browser } = await import('@capacitor/browser');
-                await Browser.open({ url: link.url });
-            }
+            await this.connectService.openDashboard(link.url, dashboardTab);
         } catch {
+            dashboardTab?.close();
             this.showToast('Failed to open Stripe dashboard', 'danger');
         } finally {
             await loading.dismiss();
@@ -3208,6 +3224,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     async setupPayouts() {
+        if (this.isStripeReady()) { await this.openStripeDashboard(); return; }
         const user = this.auth.currentUser();
 
         if (!user) {
