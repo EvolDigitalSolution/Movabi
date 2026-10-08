@@ -4,6 +4,7 @@ import { roleGuard } from '@core/guards/role.guard';
 import { registrationGuard } from '@core/guards/registration.guard';
 
 export const MOBILE_ROUTES: Routes = [
+    { path:'account/messages', canActivate:[authGuard], loadComponent:()=>import('@mobile/features/account/messages.page').then(m=>m.MessagesPage) },
     {
         path: '',
         loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)

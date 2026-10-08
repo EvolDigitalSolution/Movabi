@@ -18,7 +18,7 @@ async function send(message: string, options: {fail?:boolean;role?:string} = {})
             async single() { return table==='profiles' ? {data:{id:'driver',role:options.role || 'driver'}} : options.fail ? {error:new Error('Save failed')} : {data:{id:'message'}}; }
         }; return query;
     }};
-    runInNewContext(js(messaging), {supabase, router:{post(_path:string, callback:any){handler=callback;}}, console:{error(){}}});
+    runInNewContext(js(messaging), {supabase, NotificationService:{pushSavedAdminMessage:async()=>undefined}, router:{post(_path:string, callback:any){handler=callback;}}, console:{error(){},warn(){}}});
     const res=response();
     await handler({params:{driverId:'driver'},body:{message}},res);
     return {res,writes};

@@ -259,6 +259,7 @@ router.post('/drivers/:driverId/message', async (req, res) => {
       route: '/driver/settings', is_read: false
     }).select('id').single();
     if (error || !data) throw error || new Error('Message was not saved.');
+    await NotificationService.pushSavedAdminMessage(driverId, data.id, 'driver').catch(error => console.warn('[AdminDriverMessage] push failed:', error?.message));
     return res.status(201).json({ sent: true, messageId: data.id });
   } catch (error: unknown) {
     console.error('[AdminDriverMessage] save failed', error);

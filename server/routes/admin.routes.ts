@@ -372,6 +372,24 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
 /**
  * Get heatmap data (supply vs demand)
  */
+// Customer messages are informational and use the same inbox as driver messages.
+router.post('/users/:userId/message', requireAdmin, async (req, res) => {
+  try {
+    const message = String(req.body?.message || '').trim();
+    if (!message || message.length > 2000) return res.status(422).json({error:'Enter a message of 1–2000 characters.'});
+    const userId = String(req.params.userId);
+    const {data:user,error:userError}=await supabaseAdmin.from('profiles').select('id,role').eq('id',userId).single();
+    if(userError || !user || !['customer','user'].includes(String(user.role))) return res.status(404).json({error:'Customer not found.'});
+    const {data,error}=await supabaseAdmin.from('notifications').insert({
+      user_id:userId,title:'Message from Movabi',body:message,type:'system_alert',is_read:false,route:'/account/messages',
+      data:{action:'admin_message',route:'/account/messages'},metadata:{action:'admin_message',route:'/account/messages'}
+    }).select('id').single();
+    if(error || !data) throw error || new Error('Message was not saved.');
+    await NotificationService.pushSavedAdminMessage(userId,data.id,'customer').catch(error=>console.warn('[AdminCustomerMessage] push failed:',error?.message));
+    return res.status(201).json({sent:true,messageId:data.id});
+  }catch(error){console.error('[AdminCustomerMessage] save failed',error);return res.status(500).json({error:'Could not save the customer message.'});}
+});
+
 router.get('/heatmap', requireAdmin, async (req: Request, res: Response) => {
   try {
     // In a real city-scale app, we'd query active zones.

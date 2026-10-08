@@ -1,3 +1,4 @@
+import { NotificationService } from '@core/services/notification.service';
 import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -67,6 +68,7 @@ import { CustomerBottomNavComponent } from '@shared/components/customer-shell/cu
 
     <ion-content class="bg-slate-50">
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24">
+        <button type="button" class="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left" (click)="openMessages()"><span class="text-sm font-bold">Messages from Movabi</span><span class="ml-3 text-xs text-blue-600">{{messages.unreadAdminMessageCount()}} unread</span></button>
         <section class="rounded-[2rem] bg-white border border-slate-200 shadow-xl shadow-slate-900/10 p-5">
           <div class="flex items-start gap-4">
             <button
@@ -258,6 +260,8 @@ export class AccountSettingsPage implements OnInit {
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
     private router = inject(Router);
+    readonly messages = inject(NotificationService);
+    openMessages(){void this.router.navigate(['/account/messages']);}
     private onboardingStatus = inject(DriverOnboardingStatusService);
 
     saving = signal(false);
@@ -287,6 +291,8 @@ export class AccountSettingsPage implements OnInit {
     }
 
     async ngOnInit() {
+        this.messages.initialize();
+        void this.messages.fetchNotifications().catch(() => undefined);
         const user = this.auth.currentUser();
         this.email.set(user?.email || '');
 

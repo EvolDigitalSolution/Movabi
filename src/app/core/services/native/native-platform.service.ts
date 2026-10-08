@@ -1,3 +1,4 @@
+import { adminMessageRoute } from '../../../shared/utils/admin-message-route';
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Capacitor } from '@capacitor/core';
@@ -45,6 +46,14 @@ export class NativePlatformService {
       if (!parsed) return;
       const route = this.routeFromAppUrl(parsed);
       if (route.startsWith('/')) void this.router.navigateByUrl(route);
+    });
+
+    await LocalNotifications.addListener('localNotificationActionPerformed', ({ notification }) => {
+      const data = notification.extra || {};
+      if (data['action'] === 'admin_message' || data['action'] === 'admin_driver_message') {
+        const route = adminMessageRoute(data['message_id']);
+        if (route) void this.router.navigateByUrl(route);
+      }
     });
 
     requestAnimationFrame(() => {

@@ -1,3 +1,4 @@
+import { NotificationService } from '../../../../core/services/notification.service';
 import { DestroyRef, Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
@@ -121,10 +122,9 @@ type DocType = 'license' | 'insurance';
         </div>
 
         <app-card class="p-4">
-          <h2 class="text-sm font-black text-slate-950">Messages from Admin</h2>
-          @for(message of onboardingStatus.state()?.adminMessages || []; track message.id){
-            <div class="mt-3 rounded-xl border border-slate-100 p-3"><p class="text-xs font-bold">{{message.title}}</p><p class="mt-2 whitespace-pre-wrap text-sm text-slate-700">{{message.body}}</p><p class="mt-2 text-xs text-slate-400">{{message.created_at | date:'medium'}}</p></div>
-          } @empty { <p class="mt-3 text-xs text-slate-500">No messages yet.</p> }
+          <h2 class="text-sm font-black text-slate-950">Messages from Movabi</h2>
+          <p class="mt-2 text-xs text-slate-500">Updates and messages from our team.</p>
+          <app-button class="mt-3 w-full" variant="secondary" (clicked)="router.navigate(['/account/messages'])">Open Messages ({{messages.unreadAdminMessageCount()}} unread)</app-button>
         </app-card>
         <app-card class="p-4">
           <h2 class="text-sm font-black text-slate-950">Vehicle & Services</h2>
@@ -550,6 +550,7 @@ export class DriverSettingsPage implements OnInit {
     readonly onboardingStatus = inject(DriverOnboardingStatusService);
 
     profile = this.profileService.profile;
+    readonly messages = inject(NotificationService);
     vehicle = this.driverService.vehicle;
     stripeAccount = this.driverService.stripeAccount;
 
@@ -590,6 +591,8 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async ngOnInit(): Promise<void> {
+        this.messages.initialize();
+        void this.messages.fetchNotifications().catch(() => undefined);
         this.syncPersonalDraft();
     }
 

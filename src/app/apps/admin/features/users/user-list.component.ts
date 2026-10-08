@@ -93,6 +93,7 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
 
                 <td class="px-10 py-6 text-right">
                   <div class="flex items-center justify-end gap-2">
+                    <button type="button" class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700" (click)="openMessageModal(user)">Message</button>
                     <button
                       type="button"
                       (click)="openPurgeModal(user)"
@@ -124,6 +125,17 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
         }
       </div>
     </div>
+
+    @if (messageRecipient(); as recipient) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 flex items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-3xl bg-white p-6">
+          <h3 class="text-xl font-bold">Message {{getUserName(recipient)}}</h3>
+          <p class="mt-2 text-xs text-slate-500">The customer can read this in Messages from Movabi. No account status changes.</p>
+          <textarea class="mt-4 w-full min-h-32 rounded-xl border border-slate-200 p-3" maxlength="2000" [value]="customerMessageDraft()" (input)="customerMessageDraft.set($any($event.target).value)" placeholder="Write your message..."></textarea>
+          <div class="mt-4 flex gap-3"><app-button variant="secondary" [disabled]="sendingCustomerMessage()" (clicked)="messageRecipient.set(null)">Cancel</app-button><app-button [disabled]="sendingCustomerMessage() || !customerMessageDraft().trim()" (clicked)="sendCustomerMessage()">{{sendingCustomerMessage()?'Sending...':'Send Message'}}</app-button></div>
+        </div>
+      </div>
+    }
 
     @if (moderationModal()) {
       <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -219,6 +231,9 @@ export class UserListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
 
+    messageRecipient = signal<Profile | null>(null);
+    customerMessageDraft = signal('');
+    sendingCustomerMessage = signal(false);
     users = signal<Profile[]>([]);
     searchTerm = signal('');
     statusFilter = signal('all');
@@ -238,6 +253,19 @@ export class UserListComponent implements OnInit {
 
     async ngOnInit() {
         await this.loadUsers();
+    }
+
+    openMessageModal(user: Profile) { this.customerMessageDraft.set(''); this.messageRecipient.set(user); }
+    async sendCustomerMessage() {
+        const recipient=this.messageRecipient();
+        if(!recipient?.id || this.sendingCustomerMessage()) return;
+        this.sendingCustomerMessage.set(true);
+        try {
+            await this.adminService.sendCustomerMessage(recipient.id,this.customerMessageDraft().trim());
+            this.messageRecipient.set(null);this.customerMessageDraft.set('');
+            await this.showToast('Message saved. Push will be attempted for enabled devices.','success');
+        }catch(error){await this.showToast(error instanceof Error?error.message:'Could not send message.','danger');}
+        finally{this.sendingCustomerMessage.set(false);}
     }
 
     async loadUsers() {

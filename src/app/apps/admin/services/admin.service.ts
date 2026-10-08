@@ -760,6 +760,16 @@ export class AdminService {
     return result;
   }
 
+  async sendCustomerMessage(userId: string, message: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/users/${userId}/message`, {
+      method:'POST', headers, body:JSON.stringify({message})
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Could not send customer message');
+    return result;
+  }
+
   async sendDriverMessage(driverId: string, message: string) {
     const headers = await this.getAuthenticatedApiHeaders();
     const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/message`, {

@@ -1,4 +1,6 @@
-import { Injectable, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { adminMessageRoute } from '../../shared/utils/admin-message-route';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -23,6 +25,15 @@ export class NotificationService {
 
   notifications = signal<Notification[]>([]);
   unreadCount = signal(0);
+  private messageRouter = inject(Router);
+  incomingAdminMessageId = signal<string | null>(null);
+  openIncomingAdminMessage(){const route=adminMessageRoute(this.incomingAdminMessageId());this.incomingAdminMessageId.set(null);if(route)void this.messageRouter.navigateByUrl(route);}
+  adminMessages = computed(() => this.notifications().filter(notification => {
+    const action = this.getNotificationRouteData(notification)['action'];
+    return action === 'admin_message' || action === 'admin_driver_message';
+  }));
+  unreadAdminMessageCount = computed(() => this.adminMessages().filter(message => !message.is_read).length);
+
 
   constructor() {
     effect(() => {
@@ -39,6 +50,7 @@ export class NotificationService {
         this.channel = undefined;
         this.notifications.set([]);
         this.unreadCount.set(0);
+        this.incomingAdminMessageId.set(null);
         void this.oneSignal.logout();
       }
     });
@@ -66,10 +78,12 @@ export class NotificationService {
   }
 
   async markAsRead(id: string) {
+    const user = this.auth.currentUser();
+    if (!user) throw new Error('Sign in to read this message.');
     const { error } = await this.supabase
       .from('notifications')
       .update({ is_read: true })
-      .eq('id', id);
+      .eq('id', id).eq('user_id', user.id);
 
     if (error) throw error;
     
@@ -118,6 +132,9 @@ export class NotificationService {
         const routeData = this.getNotificationRouteData(newNotif);
         this.notifications.update(list => [newNotif, ...list]);
         this.updateUnreadCount();
+        if (routeData['action'] === 'admin_message' || routeData['action'] === 'admin_driver_message') {
+          this.incomingAdminMessageId.set(newNotif.id);
+        }
 
         // Driver opportunity/negotiation attention is owned by the certified
         // in-app realtime Audio alarm. Do not duplicate a local notification or
@@ -162,6 +179,10 @@ export class NotificationService {
 
   private getNotificationRouteData(notification: Notification): Record<string, unknown> {
     const data = ((notification as any).metadata || (notification as any).data || {}) as Record<string, unknown>;
+    const action = String(data['action'] || '');
+    if (action === 'admin_message' || action === 'admin_driver_message') {
+      return {...data,message_id:notification.id,route:adminMessageRoute(notification.id) || '/account/messages'};
+    }
     const route = (notification as any).route || data['route'];
 
     return {

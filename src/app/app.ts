@@ -153,6 +153,12 @@ import {
         </aside>
       }
 
+      @if(notifications.incomingAdminMessageId()){
+        <aside class="fixed top-4 left-4 right-4 z-[10000] mx-auto max-w-xl rounded-2xl border border-blue-200 bg-white p-4 shadow-xl" aria-live="polite">
+          <p class="text-sm font-bold text-slate-900">New message from Movabi</p>
+          <div class="mt-2 flex gap-4"><button type="button" class="text-sm font-bold text-blue-600" (click)="notifications.openIncomingAdminMessage()">Read Message</button><button type="button" class="text-sm text-slate-500" (click)="notifications.incomingAdminMessageId.set(null)">Dismiss</button></div>
+        </aside>
+      }
       <ion-router-outlet></ion-router-outlet>
       <app-movabi-tour-overlay></app-movabi-tour-overlay>
       <app-movabi-update-required></app-movabi-update-required>
@@ -165,7 +171,7 @@ export class App implements OnInit {
     public appConfig = inject(AppConfigService);
     private network = inject(NetworkService);
     private nativePlatform = inject(NativePlatformService);
-    private notifications = inject(NotificationService);
+    readonly notifications = inject(NotificationService);
     private appVersion = inject(AppVersionService);
     public router = inject(Router);
     private marketAvailability = inject(MarketAvailabilityClientService);

@@ -283,6 +283,13 @@ export class AuthService {
                 return;
             }
 
+            // Restore only this known inbox route after normal account/registration checks.
+            let pendingMessage = '';
+            try { pendingMessage = sessionStorage.getItem('movabi.pendingAdminMessage') || ''; sessionStorage.removeItem('movabi.pendingAdminMessage'); } catch { /* storage unavailable */ }
+            if (/^\/account\/messages(?:\?messageId=[0-9a-f-]{36})?$/i.test(pendingMessage)) {
+                await this.router.navigateByUrl(pendingMessage); return;
+            }
+
             const role = String(profile?.role || this.userRole() || '').toLowerCase();
             const onboardingCompleted = profile?.onboarding_completed ?? this.onboardingCompleted();
 

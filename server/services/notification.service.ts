@@ -84,6 +84,12 @@ export class NotificationService {
     }
   }
 
+  // The inbox record is persisted by the caller; this must not create a duplicate.
+  static async pushSavedAdminMessage(userId: string, messageId: string, role: string): Promise<void> {
+    await this.sendOneSignalPush({userId, title:'Message from Movabi', body:'You have a new message from Movabi.', type:'system_alert',
+      data:{action:'admin_message', message_id:messageId, role, route:`/account/messages?messageId=${encodeURIComponent(messageId)}`}});
+  }
+
   private static async sendOneSignalPush(payload: NotificationPayload): Promise<void> {
     // TODO: Move this to a secured server-only settings store once admin
     // configuration endpoints enforce authorization. Never expose the REST key.

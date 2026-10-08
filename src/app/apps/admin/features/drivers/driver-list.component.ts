@@ -431,13 +431,15 @@ type AdminDriver = DriverProfile & {
               </div>
             </div>
 
-            <div class="detail-card">
+            @if (isRideSelected(selectedDriver()) || selectedDriver()?.private_hire_insurance_url) {
+<div class="detail-card">
               <p class="detail-label">Passenger / Private Hire Insurance</p>
               <p class="detail-muted mt-2">Status: {{ selectedDriver()?.private_hire_insurance_status || 'Not reviewed' }}</p>
               <button type="button" class="modal-doc-btn mt-3" (click)="openDocument(selectedDriver()?.private_hire_insurance_url, 'Passenger / private hire insurance')">
                 {{ selectedDriver()?.private_hire_insurance_url ? 'Open Passenger Insurance' : 'Passenger Insurance Not Uploaded' }}
               </button>
             </div>
+            }
             <div class="detail-card">
               <p class="detail-label">Message Driver</p>
               <p class="detail-muted mt-1">Send a message to the driver app. This does not change approval or request documents.</p>

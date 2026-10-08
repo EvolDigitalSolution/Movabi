@@ -1,3 +1,4 @@
+import { adminMessageRoute } from '../../../shared/utils/admin-message-route';
 import { Injectable, inject, signal } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
 import { Router } from '@angular/router';
@@ -393,7 +394,9 @@ export class OneSignalService {
 
             let route = '';
 
-            if (role === 'driver' || open === 'driver_marketplace') {
+            if (action === 'admin_message' || action === 'admin_driver_message') {
+                route = adminMessageRoute(data['message_id'] || data['messageId']) || '/account/messages';
+            } else if (role === 'driver' || open === 'driver_marketplace') {
                 // The driver marketplace dashboard is the canonical destination.
                 // It refetches authoritative server state (opportunities) and the
                 // driver taps the actual card, which performs the certified
