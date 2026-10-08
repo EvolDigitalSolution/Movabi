@@ -311,6 +311,13 @@ export class DispatchService {
                     await stripe.paymentIntents.cancel(paymentIntentId);
                 }
 
+                // A captured payment cannot be released by cancelling an
+                // authorisation. Preserve it for financial review.
+                if (pi.status === 'succeeded') {
+                    await this.markPaymentRequiresReview(job.id);
+                    return;
+                }
+
                 await this.supabase
                     .from('jobs')
                     .update({ payment_status: 'cancelled', updated_at: nowIso() })

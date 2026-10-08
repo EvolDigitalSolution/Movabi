@@ -119,14 +119,14 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
             <!-- Finding driver status card -->
             @if (booking() && booking()?.status === 'searching') {
               <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
-                <div class="bg-white/95 backdrop-blur rounded-full shadow-lg px-4 py-3 pointer-events-auto">
-                  <div class="flex items-center justify-center gap-3">
+                <div role="status" aria-live="polite" class="bg-white/95 backdrop-blur rounded-2xl shadow-lg px-4 py-3 pointer-events-auto">
+                  <div class="flex flex-wrap items-center gap-3">
                     <div class="flex items-center gap-2">
                       <ion-spinner name="crescent" color="primary" class="w-4 h-4"></ion-spinner>
                       <span class="text-slate-900 font-semibold text-sm">Finding driver</span>
                     </div>
-                    <span class="text-xs text-slate-600">We're looking for a nearby driver</span>
-                    <span class="text-xs text-blue-600 font-medium">{{ formatFindingDriverTime() }}</span>
+                    <span class="text-xs text-slate-600">{{ driverSearchMessage() }}</span>
+                    <span class="text-xs text-blue-600 font-medium">{{ formatFindingDriverTime() }} elapsed</span>
                   </div>
                 </div>
               </div>
@@ -1834,7 +1834,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     canManuallyCancel(): boolean {
         const status = this.booking()?.status || '';
 
-        return ['requested', 'searching'].includes(status);
+        const payment = String((this.booking() as any)?.payment_status || '').toLowerCase();
+        if (['paid', 'succeeded', 'captured'].includes(payment)) return false;
+        return ['requested', 'pending_fare_confirmation', 'negotiating', 'fare_agreed',
+            'searching', 'assigned'].includes(status);
     }
 
     getDisplayedTotal(): string {
@@ -1863,13 +1866,15 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     paymentProtectionIcon(): string {
-        return this.paymentNeedsReview() ? 'information-circle' : 'checkmark-circle-outline';
+        return this.paymentNeedsReview() || !this.paymentReleaseConfirmed() ? 'information-circle' : 'checkmark-circle-outline';
     }
 
     paymentProtectionTitle(): string {
         if (this.paymentNeedsReview()) {
             return 'We are checking your reserved funds';
         }
+
+        if (!this.paymentReleaseConfirmed()) return 'Releasing your reserved funds';
 
         return this.paidByWallet()
             ? 'Your wallet reservation is released'
@@ -1879,6 +1884,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     paymentProtectionMessage(): string {
         if (this.paymentNeedsReview()) {
             return `This ${this.servicePaymentName()} could not be completed normally. Movabi is checking the reservation and will release any unused funds after review.`;
+        }
+
+        if (!this.paymentReleaseConfirmed()) {
+            return `${this.paymentProtectionReason()} The server is confirming release of your unused funds. This page will update when confirmed. Contact support if this remains pending.`;
         }
 
         if (this.paidByWallet()) {
@@ -1895,6 +1904,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     paymentProtectionStatus(): string {
         if (this.paymentNeedsReview()) return 'Review in progress';
+        if (!this.paymentReleaseConfirmed()) return 'Release pending';
         return this.paidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
     }
 
@@ -1922,6 +1932,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const status = String(booking?.payment_status || '').toLowerCase();
 
         return method === 'wallet' || status === 'wallet_funded';
+    }
+
+    private paymentReleaseConfirmed(): boolean {
+        const status = String((this.booking() as any)?.payment_status || '').toLowerCase();
+        return ['cancelled', 'canceled', 'released', 'refunded'].includes(status);
     }
 
     private paymentNeedsReview(): boolean {
@@ -2097,7 +2112,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const mins = Math.floor(total / 60);
         const secs = total % 60;
 
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+        return total === 0 ? 'Checking result…' : `${mins}:${secs.toString().padStart(2, '0')} this attempt`;
     }
 
     private startSearchCountdown(): void {
@@ -2161,7 +2176,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (!expiresAt) {
             if (!this.localSearchFallbackExpiresAt) {
-                this.localSearchFallbackExpiresAt = Date.now() + DRIVER_SEARCH_WINDOW_SECONDS * 1000;
+                const started = Date.parse(b.dispatch_started_at || b.created_at || '');
+                this.localSearchFallbackExpiresAt = (Number.isFinite(started) ? started : Date.now())
+                    + DRIVER_SEARCH_WINDOW_SECONDS * 1000;
             }
 
             expiresAt = this.localSearchFallbackExpiresAt;
@@ -2186,10 +2203,14 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private startFindingDriverTimer(): void {
-        this.findingDriverElapsedSeconds.set(0);
-        this.findingDriverTimerInterval = setInterval(() => {
-            this.findingDriverElapsedSeconds.set(this.findingDriverElapsedSeconds() + 1);
-        }, 1000);
+        const updateElapsed = () => {
+            const b = this.booking() as any;
+            const start = Date.parse(b?.dispatch_started_at || b?.created_at || '');
+            this.findingDriverElapsedSeconds.set(Number.isFinite(start)
+                ? Math.max(0, Math.floor((Date.now() - start) / 1000)) : 0);
+        };
+        updateElapsed();
+        this.findingDriverTimerInterval = setInterval(updateElapsed, 1000);
     }
 
     private stopFindingDriverTimer(): void {
@@ -2197,6 +2218,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             clearInterval(this.findingDriverTimerInterval);
             this.findingDriverTimerInterval = undefined;
         }
+    }
+
+    driverSearchMessage(): string {
+        const attempt = Number((this.booking() as any)?.dispatch_attempts || 1);
+        if (this.searchCountdownSeconds() === 0) {
+            return 'Checking the search result. You can still cancel while waiting.';
+        }
+        if (attempt > 1 || this.findingDriverElapsedSeconds() >= 60) {
+            return `Finding a driver is taking longer. Search attempt ${Math.min(3, attempt)} of 3. You can cancel below. If no driver is found, the search ends and unused funds are released.`;
+        }
+        return 'Looking for an eligible nearby driver. A larger vehicle can handle a smaller delivery or errand. You can cancel below.';
     }
 
     formatFindingDriverTime(): string {
@@ -2904,7 +2936,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                                 data?.reason || 'Customer cancelled'
                             );
 
-                            await this.router.navigate(['/customer']);
+                            // Keep the server's terminal status and release result visible.
+                            await this.loadBookingAndDetails(b.id, false);
                         } catch (error: any) {
                             await this.loadBookingAndDetails(b.id, false);
                             const errorAlert = await this.alertCtrl.create({

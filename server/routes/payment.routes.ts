@@ -767,6 +767,17 @@ router.post('/confirm', async (req: Request, res: Response) => {
       .eq('id', jobId)
       .single();
 
+    // Payment is already committed. Notification failure must not turn a
+    // successful wallet reservation into a failed payment response.
+    if (updated?.status === 'searching' && !updated.driver_id) {
+      try {
+        await dispatchService.notifyNearbyDrivers(updated, updated.tenant_id, updated.city_id);
+      } catch (dispatchError) {
+        console.error('[PaymentRoutes] initial driver notification failed:', dispatchError);
+        // The background dispatch retries retain the persisted search deadline.
+      }
+    }
+
     return res.json({ success: true, booking: updated });
   } catch (error: any) {
     console.error('[PaymentRoutes] confirm failed:', error);
