@@ -12,10 +12,10 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
     selector: 'app-user-list',
     template: `
     <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
-      <div class="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div class="p-4 sm:p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 class="text-2xl font-display font-bold text-slate-900">User Management</h3>
-          <p class="text-slate-500 font-medium mt-1">Manage and monitor all customer accounts.</p>
+          <h3 class="text-lg sm:text-xl leading-tight font-display font-bold text-slate-900">User Management</h3>
+          <p class="text-sm text-slate-500 font-medium mt-1">Manage and monitor all customer accounts.</p>
         </div>
 
         <div class="flex flex-col sm:flex-row items-center gap-4">
