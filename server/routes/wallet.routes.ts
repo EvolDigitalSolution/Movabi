@@ -92,10 +92,14 @@ router.post('/pay-job', async (req: Request, res: Response) => {
 
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
-      .select('customer_id, tenant_id, country_code, market_city, zone_id, currency_code, agreed_fare, total_price, estimated_price, price, fare_breakdown, metadata')
+      .select('*')
       .eq('id', jobId)
       .maybeSingle();
-    if (jobError || !job) return res.status(404).json({ error: 'Job not found' });
+    if (jobError) {
+      console.error('[WalletRoutes] job lookup failed:', jobError);
+      return res.status(500).json({ error: 'Unable to load booking for wallet payment' });
+    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
     if (String(job.customer_id || '') !== String(userId)) return res.status(403).json({ error: 'Only the customer can pay for this job' });
     const breakdown = (job.fare_breakdown && typeof job.fare_breakdown === 'object') ? job.fare_breakdown as Record<string, unknown> : {};
     const metadata = (job.metadata && typeof job.metadata === 'object') ? job.metadata as Record<string, unknown> : {};
