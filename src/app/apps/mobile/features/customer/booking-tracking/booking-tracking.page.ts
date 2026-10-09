@@ -157,7 +157,8 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                 <div class="bg-white/95 backdrop-blur rounded-full shadow-lg px-4 py-2 pointer-events-auto">
                   <div class="flex items-center justify-center gap-3">
                     <span class="text-slate-900 font-semibold text-sm" style="color: #0f172a;">{{ bookingStatusLabel() }}</span>
-                    @if (etaMinutes() !== null && distanceKm() !== null) {
+                    @if(booking()?.driver_id && !driverLocationFresh()){<span class="text-xs text-slate-500">Waiting for driver location</span>}
+                    @if (driverLocationFresh() && etaMinutes() !== null && distanceKm() !== null) {
                       <span class="text-xs text-slate-600" style="color: #475569;"> • {{ etaMinutes() }} mins • {{ distanceKm() }} km</span>
                     }
                   </div>
@@ -932,6 +933,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     showChat = signal(false);
     activeTrackingTab = signal<CustomerTrackingTab>('overview');
     messageCount = signal(0);
+    private journeyClock = signal(Date.now());
+    private driverPointTime = signal(0);
+    private journeyFreshnessTimer: ReturnType<typeof setInterval> | null = null;
+    readonly driverLocationFresh = computed(() => this.driverPointTime() > 0 && this.journeyClock() - this.driverPointTime() < 45000);
     unreadMessageCount = computed(() => {
         const bookingId = this.booking()?.id;
         return bookingId ? this.notificationOrchestrator.getBadgeCount(bookingId) : 0;
@@ -1113,6 +1118,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     async ngOnInit(): Promise<void> {
+        this.journeyFreshnessTimer = setInterval(() => this.journeyClock.set(Date.now()), 5000);
         if (this.route.snapshot.queryParamMap.get('tab') === 'chat' || this.route.snapshot.queryParamMap.get('chat') === '1') {
             this.activeTrackingTab.set('chat');
             this.showChat.set(true);
@@ -1138,6 +1144,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
+        if (this.journeyFreshnessTimer) clearInterval(this.journeyFreshnessTimer);
         this.resetSearchState();
         this.clearArrivalCountdown();
 
@@ -2555,6 +2562,13 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return this.isValidCoordinate(point.lat) && this.isValidCoordinate(point.lng) ? point : null;
     }
 
+    private acceptDriverPointTime(location: DriverLocation): boolean {
+        const time = Date.parse(String(location.updated_at || ''));
+        const lat = Number(location.lat), lng = Number(location.lng);
+        if(!Number.isFinite(time) || time <= this.driverPointTime() || time > Date.now()+30000 || Date.now()-time>90000 || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180) return false;
+        this.driverPointTime.set(time); this.journeyClock.set(Date.now());return true;
+    }
+
     private subscribeToDriverLocation(driverId: string): void {
         if (this.subscribedDriverLocationId === driverId && this.locationSubscription) {
             return;
@@ -2562,10 +2576,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         this.locationSubscription?.unsubscribe();
         this.subscribedDriverLocationId = driverId;
+        this.driverPointTime.set(0);
 
         // Get latest location first, then subscribe for updates
         void this.locationService.getLatestDriverLocation(driverId).then((location) => {
-            if (location) {
+            if (location && this.acceptDriverPointTime(location)) {
                 this.latestDriverPoint = { lat: Number(location.lat), lng: Number(location.lng) };
                 this.renderTrackingMap('driver-initial', false);
             }
@@ -2577,6 +2592,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         this.locationSubscription = this.locationService.subscribeToDriverLocation(
             driverId,
             (location: DriverLocation) => {
+                if (!this.acceptDriverPointTime(location)) return;
                 const coords = { lat: Number(location.lat), lng: Number(location.lng) };
                 console.log('[CT] driver location update', coords);
                 this.latestDriverPoint = coords;

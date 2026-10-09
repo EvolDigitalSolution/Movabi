@@ -1,3 +1,4 @@
+import journeyRoutes from './routes/journey.routes';
 import { JobPayoutService } from './services/job-payout.service';
 import express, { Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
@@ -133,7 +134,9 @@ app.use(failsafeGuard);
 const chatReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 120,
   message: { error: 'Chat refresh limit reached. Please wait a minute.' } });
 const isChatRead = (req: any) => req.method === 'GET' && /^\/communication\/messages\/[0-9a-f-]+(?:\/counts)?$/.test(req.path);
-app.use('/api/', (req, res, next) => isChatRead(req)
+const journeyLimiter = rateLimit({windowMs:60000,max:120,message:{error:'Journey update limit reached'}});
+app.use('/api/', (req,res,next) => req.path.startsWith('/journey/') ? journeyLimiter(req,res,next) : next());
+app.use('/api/', (req, res, next) => req.path.startsWith('/journey/') ? next() : isChatRead(req)
   ? chatReadLimiter(req, res, next) : globalLimiter(req, res, next));
 app.use('/api/booking/create', bookingLimiter);
 
@@ -149,6 +152,7 @@ app.use('/api/app', appRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/logistics', logisticsRoutes);
+app.use('/api/journey', journeyRoutes);
 app.use('/api/connect', connectRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/booking', bookingRoutes);

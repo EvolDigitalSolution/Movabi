@@ -1,3 +1,4 @@
+import { NavigationRoute } from '../../../shared/utils/journey-progress';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
@@ -21,6 +22,19 @@ export class RoutingService {
   private provider = inject(MapProviderService);
   private baseUrl = 'https://api.openrouteservice.org/v2/directions/driving-car';
   private cache = new Map<string, RouteSummary | null>();
+
+  getNavigationRoute(start: {lat:number;lng:number}, end: {lat:number;lng:number}): Observable<NavigationRoute | null> {
+    const apiKey=this.provider.getOpenRouteServiceApiKey();if(!apiKey) return of(null);
+    interface Response {features?:Array<{geometry:{coordinates:number[][]};properties:{summary:{distance:number;duration:number};segments?:Array<{steps?:Array<{instruction:string;distance:number;duration:number;way_points:[number,number]}>}>}}>}
+    return this.http.post<Response>(this.baseUrl+'/geojson',{coordinates:[[start.lng,start.lat],[end.lng,end.lat]],instructions:true},
+      {headers:{Authorization:apiKey,'Content-Type':'application/json'}}).pipe(map(response=>{
+        const feature=response.features?.[0];if(!feature?.geometry?.coordinates?.length || !feature.properties?.summary) return null;
+        const coordinates=feature.geometry.coordinates;
+        if(!coordinates.every(p=>p.length>=2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))) return null;
+        return {coordinates,distanceMeters:feature.properties.summary.distance,durationSeconds:feature.properties.summary.duration,
+          steps:(feature.properties.segments||[]).flatMap(s=>(s.steps||[]).map(step=>({instruction:step.instruction,distanceMeters:step.distance,durationSeconds:step.duration,startIndex:step.way_points[0],endIndex:step.way_points[1]})))};
+      }));
+  }
 
   getRoute(start: { lat: number, lng: number }, end: { lat: number, lng: number }): Observable<RouteSummary | null> {
     const cacheKey = `route:${start.lat},${start.lng}:${end.lat},${end.lng}`;

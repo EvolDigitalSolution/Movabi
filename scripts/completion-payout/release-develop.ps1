@@ -5,7 +5,7 @@ try {
     if ((git branch --show-current) -ne 'movabi-2.2-develop') { throw 'Wrong branch' }
     if (git diff --cached --name-only) { throw 'Staging area must be empty before release' }
     & (Join-Path $PSScriptRoot 'check.ps1')
-    $files = Get-Content (Join-Path $PSScriptRoot 'changed-files.json') -Raw | ConvertFrom-Json
+    $files = @((Get-Content (Join-Path $PSScriptRoot 'changed-files.json') -Raw | ConvertFrom-Json) | ForEach-Object { $_ })
     $changed = @(git status --porcelain --untracked-files=all)
     if ($LASTEXITCODE -ne 0) { throw 'Git status failed' }
     foreach ($line in $changed) {
@@ -18,7 +18,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Staged diff check failed' }
     $staged = @(git diff --cached --name-only)
     if ($staged.Count -gt 0) {
-        git commit -m 'fix: separate completion from payout retries and protect chat and quote margins'
+        git commit -m 'feat: integrate journey navigation and native driver tracking'
         if ($LASTEXITCODE -ne 0) { throw 'Commit failed' }
     }
     if (git status --porcelain) { throw 'Working tree is not clean' }

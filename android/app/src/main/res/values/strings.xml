@@ -4,4 +4,7 @@
     <string name="title_activity_main">Movabi</string>
     <string name="package_name">com.movabi.app</string>
     <string name="custom_url_scheme">com.movabi.app</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Movabi active journey</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_movabi</string>
+    <string name="capacitor_background_geolocation_notification_color">#F59E0B</string>
 </resources>

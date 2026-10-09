@@ -1,3 +1,5 @@
+import { ModalController } from '@ionic/angular/standalone';
+import { JourneyNavigationComponent } from '../navigation/journey-navigation.component';
 import { CommunicationService } from '../../../../../core/services/communication/communication.service';
 import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -882,6 +884,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     ServiceTypeEnum = ServiceTypeEnum;
 
     job = this.driverService.activeJob;
+    private journeyNavigationModal = inject(ModalController);
     details = signal<JobDetails | null>(null);
     anyDetails = computed(() => this.details() as any);
     errandDetails = computed(() => this.details() as ErrandDetails | null);
@@ -2268,7 +2271,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         window.location.href = `tel:${safePhone}`;
     }
 
-    openMap(address?: string | null) {
+    async openMap(address?: string | null) {
         const coords = this.navigationDestinationCoordinates();
         const safeAddress = String(address || '').trim();
 
@@ -2283,8 +2286,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        void this.showToast('External navigation may pause live tracking. Return to Movabi to refresh your location.', 'warning');
-        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');
+        if (coords) {
+            const modal = await this.journeyNavigationModal.create({component:JourneyNavigationComponent,
+                componentProps:{destination:coords,address:safeAddress,label:this.navigationSectionLabel(),serviceType:this.job()?.service_slug}});
+            await modal.present();
+        } else {
+            window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');
+        }
     }
 
     /**
@@ -2340,8 +2348,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        const pickupLat = Number((currentJob as any).pickup_lat);
-        const pickupLng = Number((currentJob as any).pickup_lng);
+        const destination = this.navigationDestinationCoordinates();
+        const pickupLat = destination?.lat ?? NaN;
+        const pickupLng = destination?.lng ?? NaN;
 
         if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) {
             this.pickupMapReady.set(false);
@@ -2353,7 +2362,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             coordinates: { lat: pickupLat, lng: pickupLng },
             kind: 'pickup',
             serviceType: currentJob.service_slug as ServiceTypeSlug,
-            label: this.mapOriginMarkerLabel()
+            label: this.isHeadingToCustomer() ? this.destinationActionLabel() : this.mapOriginMarkerLabel()
         });
 
         const position = await this.locationService.getCurrentPosition();
@@ -2422,10 +2431,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     pickupMapTitle(): string {
         if (this.driverPickupDuration() !== null) {
-            return `${this.formatDuration(this.driverPickupDuration())} to ${this.originTargetLabel()}`;
+            return `${this.formatDuration(this.driverPickupDuration())} to ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}`;
         }
 
-        return `Route to ${this.originTargetLabel()}`;
+        return `Route to ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}`;
     }
 
     pickupMapSubtitle(): string {
@@ -2433,7 +2442,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return `${this.formatDistanceMeters(this.driverPickupDistance())} from your current location.`;
         }
 
-        return `Shows the ${this.originTargetLabel()} and route when GPS is available.`;
+        return `Shows the ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())} and route when GPS is available.`;
     }
 
     navigationSectionLabel(): string {
@@ -2678,7 +2687,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'assigned':
                 return 'Confirm this assignment';
             case 'accepted':
-                return `Go to ${this.originTargetLabel()}`;
+                return `Go to ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}`;
             case 'arrived':
                 if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
                     return this.isShoppingErrand() ? 'Confirm store arrival' : 'Confirm collection arrival';
@@ -2706,7 +2715,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'assigned':
                 return 'Movabi assigned this request to you. Accept it to confirm you will complete it.';
             case 'accepted':
-                return `Open the ${this.originTargetLabel()}, contact the customer if needed, then mark yourself arrived.`;
+                return `Open the ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}, contact the customer if needed, then mark yourself arrived.`;
             case 'arrived':
                 if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
                     return this.isShoppingErrand()

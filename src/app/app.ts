@@ -1,3 +1,4 @@
+import { JourneyTrackingService } from './core/services/logistics/journey-tracking.service';
 import { ChangeDetectionStrategy, Component, effect, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
@@ -175,6 +176,7 @@ export class App implements OnInit {
     private appVersion = inject(AppVersionService);
     public router = inject(Router);
     private marketAvailability = inject(MarketAvailabilityClientService);
+    private journeyTracking = inject(JourneyTrackingService);
 
     isConfigured = this.supabase.isConfigured;
     isOnline = signal(this.network.isOnline);
