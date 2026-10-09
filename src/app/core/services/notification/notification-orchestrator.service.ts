@@ -1,4 +1,5 @@
-import { Injectable, inject } from '@angular/core';
+import { CommunicationService } from '../communication/communication.service';
+import { Injectable, inject, effect } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
 import { NativePlatformService } from '../native/native-platform.service';
@@ -39,6 +40,7 @@ export interface NotificationEvent {
 })
 export class NotificationOrchestratorService {
   private supabase = inject(SupabaseService);
+  private chatCommunication = inject(CommunicationService);
   private auth = inject(AuthService);
   private nativePlatform = inject(NativePlatformService);
   private oneSignal = inject(OneSignalService);
@@ -52,17 +54,17 @@ export class NotificationOrchestratorService {
   public badgeCount$ = this.badgeCountSubject.asObservable();
 
   constructor() {
-    // Initialize current user
-    const user = this.auth.currentUser();
-    if (user) {
-      this.currentUserId = user.id;
-    }
+    effect(() => {
+      const id = this.auth.currentUser()?.id || null;
+      if (id !== this.currentUserId) { this.clearAll(); this.currentUserId = id; }
+    });
   }
 
   /**
    * Subscribe to notifications for a specific job
    */
   subscribeToJob(jobId: string): void {
+    this.currentUserId = this.auth.currentUser()?.id || null;
     if (!this.currentUserId) return;
 
     // Check for existing subscription to prevent duplicates
@@ -94,7 +96,7 @@ export class NotificationOrchestratorService {
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'bookings',
+          table: 'jobs',
           filter: `id=eq.${jobId}`
         },
         (payload) => {
@@ -127,46 +129,17 @@ export class NotificationOrchestratorService {
    * Get unread message count for a specific job
    */
   async getUnreadCount(jobId: string): Promise<number> {
-    if (!this.currentUserId) return 0;
-
-    try {
-      const { data, error } = await this.supabase
-        .from('job_messages')
-        .select('id')
-        .eq('job_id', jobId)
-        .eq('receiver_id', this.currentUserId)
-        .is('read_at', null);
-
-      if (error) throw error;
-      return data?.length || 0;
-    } catch (error) {
-      console.warn('[NotificationOrchestrator] job_messages unavailable, returning 0 unread count:', error);
-      return 0;
-    }
+    try { return (await this.chatCommunication.getMessageCounts(jobId)).unread; }
+    catch (error) { console.warn('Message count unavailable', error); return this.getBadgeCount(jobId); }
   }
 
   /**
    * Mark all messages as read for a specific job
    */
   async markAsRead(jobId: string): Promise<void> {
-    if (!this.currentUserId) return;
-
-    try {
-      const { error } = await this.supabase
-        .from('job_messages')
-        .update({ read_at: new Date().toISOString() })
-        .eq('job_id', jobId)
-        .eq('receiver_id', this.currentUserId)
-        .is('read_at', null);
-
-      if (error) throw error;
-
-      // Update badge count
-      this.updateBadgeCount(jobId, 0);
-      console.log(`[NotificationOrchestrator] Marked messages as read for job: ${jobId}`);
-    } catch (error) {
-      console.warn('[NotificationOrchestrator] job_messages unavailable, could not mark as read:', error);
-    }
+    // Opening a tab is not evidence that history loaded. The chat panel acknowledges
+    // the actual displayed messages through its last received timestamp.
+    this.updateBadgeCount(jobId, await this.getUnreadCount(jobId));
   }
 
   /**

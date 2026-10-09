@@ -1,3 +1,4 @@
+import { CommunicationService } from '../../../../../core/services/communication/communication.service';
 import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
@@ -871,6 +872,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private locationService = inject(LocationService);
     private routing = inject(RoutingService);
     private supabase = inject(SupabaseService);
+    private chatCommunication = inject(CommunicationService);
     private walletProvisioning = inject(WalletProvisioningService);
     private paymentService = inject(PaymentService);
     private profileService = inject(ProfileService);
@@ -1763,27 +1765,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private async refreshMessageCount(id: string): Promise<void> {
-        try {
-            const { count, error } = await this.supabase
-                .from('job_messages')
-                .select('id', { count: 'exact', head: true })
-                .eq('job_id', id);
-
-            if (error) {
-                console.warn('[driver-job-details] message count failed', error);
-                return;
-            }
-
-            const nextCount = count || 0;
-            const previousCount = this.messageCount();
-            this.messageCount.set(nextCount);
-
-            if (this.activeRequestTab() !== 'chat' && nextCount > previousCount) {
-                // unreadMessageCount is now computed, cannot update directly
-            }
-        } catch (error) {
-            console.warn('[driver-job-details] message count unavailable', error);
-        }
+        try { this.messageCount.set((await this.chatCommunication.getMessageCounts(id)).total); }
+        catch (error) { console.warn('Message count unavailable', error); }
     }
 
     /**
@@ -2072,7 +2055,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 await this.loadJob(currentJob.id);
             }
 
-            await this.showToast('Request completed.', 'success');
+            await this.showToast((completed as Booking)?.metadata?.['driver_payout_pending'] ? 'Request completed. Your earnings are recorded; payout is pending.' : 'Request completed.', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Could not complete request.';
             await this.showToast(message, 'danger');

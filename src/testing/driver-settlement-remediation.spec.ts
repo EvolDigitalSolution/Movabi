@@ -58,8 +58,8 @@ describe('one authoritative split', () => {
 
 describe('one settlement path', () => {
   it('claims with dedicated state fields (stripe_transfer_id is never a claim token)', () => {
-    expect(LOG).toContain('claim_job_settlement');
-    expect(LOG).toContain('p_amount_minor: immutable.amountMinor');
+    expect(read('server/services/job-payout.service.ts')).toContain('claim_queued_job_payout');
+    expect(read('server/services/job-payout.service.ts')).toContain('amount: Number(q.amount_minor)');
     // The state-machine transition lives in the migration RPC, not inline.
     expect(MIG2).toContain("settlement_status = 'claimed'");
     // The claim_<uuid> sentinel is gone; stripe_transfer_id holds only real Stripe ids.
@@ -68,21 +68,21 @@ describe('one settlement path', () => {
   });
 
   it('a definitive failure releases the claim; an ambiguous outcome blocks', () => {
-    expect(LOG).toContain("const markerStatus = (statusCode >= 400 && statusCode < 500) ? 'failed' : 'unknown';");
-    expect(LOG).toContain("transferId: markerStatus === 'failed' ? null : undefined");
-    expect(LOG).toContain("settlement_status: opts.status");
+    expect(readFileSync(resolve('server/services/job-payout.service.ts'),'utf8')).toContain("e.code === 'balance_insufficient'");
+    expect(readFileSync(resolve('server/services/job-payout.service.ts'),'utf8')).toContain("definitive ? 'pending' : 'reconcile'");
+    expect(read('server/services/job-payout.service.ts')).toContain('last_error: code');
   });
 
   it('records transfer success and earnings atomically via one RPC', () => {
-    expect(LOG).toContain("supabaseAdmin.rpc('record_job_settlement'");
-    expect(LOG).toContain('transfer_group: `job_${job.id}`');
+    expect(readFileSync(resolve('server/services/job-payout.service.ts'),'utf8')).toContain("supabaseAdmin.rpc('finish_queued_job_payout'");
+    expect(readFileSync(resolve('server/services/job-payout.service.ts'),'utf8')).toContain('transfer_group: `job_${q.job_id}`');
     // The 'transferred' transition lives in the migration RPC.
     expect(MIG2).toContain("settlement_status = 'transferred'");
   });
 
   it('reconciles by transfer_group instead of inferring no-transfer from a missing id', () => {
-    expect(LOG).toContain("stripe.transfers.list({ transfer_group: `job_${jobId}`");
-    expect(LOG).toContain('reconcileTransfer');
+    expect(read('server/services/job-payout.service.ts')).toContain('stripe.transfers.list({ transfer_group: `job_${q.job_id}`');
+    expect(read('server/services/job-payout.service.ts')).toContain('matching.length === 1');
   });
 
   it('the batch payout path is disabled and the legacy runner is removed', () => {
@@ -118,7 +118,7 @@ describe('UK-only payout scope', () => {
   });
 
   it('transfer re-checks eligibility before money movement', () => {
-    expect(LOG).toContain('await PayoutEligibilityService.assertEligible(driverId, stripeAccountId);');
+    expect(readFileSync(resolve('server/services/job-payout.service.ts'),'utf8')).toContain('await PayoutEligibilityService.assertEligible(q.driver_id, q.destination);');
   });
 });
 

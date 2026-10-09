@@ -147,6 +147,16 @@ export class GlobalAiPricingService {
       }
 
       const quote = this.calculateGuardedQuote(input, legacyPricing, market, zone, rule);
+      // The customer, booking and settlement must share the protected canonical split.
+      // Keep AI recommendations visible in audit/shadow mode; never publish a second payable price.
+      if (legacyPricing.fareBreakdown.paymentMargin) {
+        const canonical = this.fallbackQuote(input, legacyPricing, 'Protected canonical fare split');
+        quote.price = canonical.price;
+        quote.ai.finalTotalMinor = canonical.price.totalMinor;
+        quote.ai.shadowMode = true;
+        quote.ai.livePricingEnabled = false;
+        quote.ai.reasons.push('Payment cost and driver entitlement protection');
+      }
       await this.auditQuote(input, legacyPricing, quote);
 
       return { legacyPricing, quote };

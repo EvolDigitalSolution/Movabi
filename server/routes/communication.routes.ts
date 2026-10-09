@@ -4,6 +4,46 @@ import { NotificationService } from '../services/notification.service';
 
 const router = Router();
 
+async function participant(req: Request, res: Response): Promise<string | null> {
+  const jobId = String(req.params.jobId || '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) { res.status(400).json({error:'Invalid job ID'}); return null; }
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i,'').trim();
+  const auth = token ? await supabaseAdmin.auth.getUser(token) : null;
+  const userId = auth?.data?.user?.id;
+  if (!userId || auth?.error) { res.status(401).json({error:'Authentication required'}); return null; }
+  const job = await supabaseAdmin.from('jobs').select('customer_id,driver_id,accepted_driver_id').eq('id',jobId).maybeSingle();
+  if (job.error) throw new Error('Booking lookup unavailable');
+  if (!job.data || ![job.data.customer_id,job.data.driver_id || job.data.accepted_driver_id].includes(userId)) { res.status(403).json({error:'Only booking participants can access messages'}); return null; }
+  return userId;
+}
+router.get('/messages/:jobId', async (req: Request,res: Response) => {
+  try {
+    if (!await participant(req,res)) return;
+    const result = await supabaseAdmin.from('job_messages').select('*').eq('job_id',req.params.jobId).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(200);
+    if (result.error) throw result.error;
+    return res.json((result.data || []).reverse());
+  } catch { return res.status(503).json({error:'Messages could not be loaded. Please retry.'}); }
+});
+router.get('/messages/:jobId/counts', async (req: Request,res: Response) => {
+  try {
+    const userId = await participant(req,res); if (!userId) return;
+    const total = await supabaseAdmin.from('job_messages').select('id',{count:'exact',head:true}).eq('job_id',req.params.jobId);
+    const unread = await supabaseAdmin.from('job_messages').select('id',{count:'exact',head:true}).eq('job_id',req.params.jobId).eq('receiver_id',userId).is('read_at',null);
+    if (total.error || unread.error) throw new Error('Counts unavailable');
+    return res.json({total:total.count || 0,unread:unread.count || 0});
+  } catch { return res.status(503).json({error:'Message counts unavailable'}); }
+});
+router.post('/messages/:jobId/read', async (req: Request,res: Response) => {
+  try {
+    const userId = await participant(req,res); if (!userId) return;
+    const through = String(req.body?.through || '');
+    if (!through || !Number.isFinite(Date.parse(through)) || Date.parse(through)>Date.now()) return res.status(400).json({error:'Displayed-message timestamp required'});
+    const result = await supabaseAdmin.from('job_messages').update({read_at:new Date().toISOString()}).eq('job_id',req.params.jobId).eq('receiver_id',userId).is('read_at',null).lte('created_at',through);
+    if (result.error) throw result.error;
+    return res.json({success:true});
+  } catch { return res.status(503).json({error:'Read acknowledgement unavailable'}); }
+});
+
 router.post('/messages', async (req: Request, res: Response) => {
   try {
     const { jobId, receiverId, message, messageType } = req.body || {};

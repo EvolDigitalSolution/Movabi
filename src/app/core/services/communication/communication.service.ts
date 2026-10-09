@@ -26,22 +26,28 @@ export class CommunicationService {
   private activeJobId: string | null = null;
 
   async getJobMessages(jobId: string): Promise<JobMessage[]> {
-    const { data, error } = await this.supabase
-      .from('job_messages')
-      .select('*')
-      .eq('job_id', jobId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.warn('[CommunicationService] chat history unavailable:', error.code);
-      throw new Error('Messages could not be loaded. Please retry.');
-    }
-
-    const messages = data as JobMessage[];
+    const userId = this.auth.currentUser()?.id;
+    const messages = await firstValueFrom(this.http.get<JobMessage[]>(
+      this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId)),
+      { headers: await this.chatHeaders() }));
+    if (!userId || userId !== this.auth.currentUser()?.id) throw new Error('Session changed. Reload messages.');
     if (this.activeJobId === jobId) this.messagesSubject.next(messages);
     return messages;
   }
 
+  private async chatHeaders(): Promise<{ Authorization: string }> {
+    const { data: { session } } = await this.supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Please sign in again.');
+    return { Authorization: `Bearer ${session.access_token}` };
+  }
+  async getMessageCounts(jobId: string): Promise<{total: number; unread: number}> {
+    return firstValueFrom(this.http.get<{total: number; unread: number}>(
+      this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/counts'), {headers: await this.chatHeaders()}));
+  }
+  async markMessagesRead(jobId: string, through: string): Promise<void> {
+    await firstValueFrom(this.http.post(this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/read'),
+      {through}, {headers: await this.chatHeaders()}));
+  }
   async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text') {
     const user = this.auth.currentUser();
     if (!user) throw new Error('Not authenticated');

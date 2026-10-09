@@ -1,3 +1,4 @@
+import { CommunicationService } from '../../../../../core/services/communication/communication.service';
 import {
     Component,
     inject,
@@ -846,6 +847,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private bookingService = inject(BookingService);
     private supabase = inject(SupabaseService);
+    private chatCommunication = inject(CommunicationService);
     private alertCtrl = inject(AlertController);
     private toastCtrl = inject(ToastController);
     private locationService = inject(LocationService);
@@ -2434,35 +2436,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private async refreshMessageCount(id: string): Promise<void> {
-        const receiverId = this.currentMessageReceiverId();
-
-        if (!receiverId) {
-            this.messageCount.set(0);
-            // unreadMessageCount is now computed, cannot set directly
-            return;
-        }
-
-        try {
-            const { data, error } = await this.supabase
-                .from('job_messages')
-                .select('id, read_at, receiver_id, created_at')
-                .eq('job_id', id)
-                .eq('receiver_id', receiverId)
-                .is('read_at', null)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            if (error) {
-                this.warnMessageCountUnavailable(error);
-                return;
-            }
-
-            const nextCount = data?.length || 0;
-            this.messageCount.set(nextCount);
-            // unreadMessageCount is now computed, cannot set directly
-        } catch (error) {
-            this.warnMessageCountUnavailable(error);
-        }
+        try { this.messageCount.set((await this.chatCommunication.getMessageCounts(id)).unread); }
+        catch (error) { console.warn('Message count unavailable', error); }
     }
 
     private currentMessageReceiverId(): string {
@@ -2470,31 +2445,9 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private async markCurrentMessagesRead(): Promise<void> {
-        const b = this.booking();
-        const receiverId = this.currentMessageReceiverId();
-
-        if (!b?.id || !receiverId) {
-            return;
-        }
-
-        try {
-            const { error } = await this.supabase
-                .from('job_messages')
-                .update({ read_at: new Date().toISOString() })
-                .eq('job_id', b.id)
-                .eq('receiver_id', receiverId)
-                .is('read_at', null);
-
-            if (error) {
-                this.warnMessageCountUnavailable(error);
-                return;
-            }
-
-            this.messageCount.set(0);
-            // unreadMessageCount is now computed, cannot set directly
-        } catch (error) {
-            this.warnMessageCountUnavailable(error);
-        }
+        // The communication panel acknowledges only messages it has displayed.
+        const id = this.booking()?.id;
+        if (id) await this.refreshMessageCount(id);
     }
 
     private warnMessageCountUnavailable(error: unknown): void {

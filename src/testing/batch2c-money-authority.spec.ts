@@ -281,12 +281,9 @@ describe('PHASE C2C — settlement idempotency', () => {
         expect(SETTLE_MIG).not.toContain("v_job.payment_status = 'paid'");
     });
 
-    it('29. completion persists an HONEST transfer-failure marker and preserves the error', () => {
-        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_status: opts.status');
-        expect(LOGISTICS_SERVICE).toContain("const markerStatus = (statusCode >= 400 && statusCode < 500) ? 'failed' : 'unknown'");
-        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error: opts.error');
-        expect(LOGISTICS_SERVICE).toContain('stripe_transfer_error_type: opts.errorType || \'\'');
-        expect(LOGISTICS_SERVICE).toContain('throw transferError instanceof Error ? transferError : new Error(message)');
+    it('29. completion persists a payout outbox and does not wait for Stripe transfer', () => {
+        expect(LOGISTICS_SERVICE).toContain("supabaseAdmin.rpc('complete_job_with_pending_payout'");
+        expect(read('server/services/job-payout.service.ts')).toContain("definitive ? 'pending' : 'reconcile'");
     });
 
     it('30. C2C does not weaken C2B, N12, Phase A, or change any ACL', () => {
@@ -543,7 +540,7 @@ describe('PHASE 2.1 — final zero-blocker hardening', () => {
     it('47. completion payout basis is the frozen snapshot; card errands capture fare + actual spend', () => {
         expect(LOGISTICS_SERVICE).toContain('const totalPrice = split.customerCharge;');
         expect(LOGISTICS_SERVICE).not.toContain('resolveWalletSettlementAmount(job, requestedTotalPrice)');
-        expect(LOGISTICS_SERVICE).toContain('amount_to_capture: captureAmountInPence');
+        expect(LOGISTICS_SERVICE).toContain('amount_to_capture: expectedCapture');
         expect(LOGISTICS_SERVICE).toContain('PaymentAuthorityService.resolve(job)');
     });
 

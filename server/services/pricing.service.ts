@@ -1,3 +1,4 @@
+import { PaymentMarginService, PaymentMarginPolicy } from './payment-margin.service';
 import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
 import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
@@ -69,6 +70,7 @@ export interface PricingResult {
 }
 
 export interface FareBreakdown {
+    paymentMargin?: { policy: PaymentMarginPolicy; adjustment: number; estimatedPaymentCost: number; contribution: number };
     baseFare: number;
     distanceCost: number;
     durationCost: number;
@@ -100,6 +102,7 @@ export interface FareBreakdown {
     platformFeeAmount?: number;
     platformFeeSource?: string;
     platformFeeConfigVersion?: string | null;
+    platformFeeMaximum?: number | null;
     commissionSource?: string;
     commissionConfigVersion?: string | null;
     serviceFare?: number;
@@ -128,6 +131,37 @@ export interface FareBreakdown {
 
 export class PricingService {
     static async resolvePrice(options: PricingOptions): Promise<PricingResult> {
+        const result = await this.resolveUnprotectedPrice(options);
+        const policy = PaymentMarginService.policy(result.currencyCode);
+        const budget = MarketplaceConfigService.canonicalServiceSlug(options.serviceSlug || 'ride') === 'errand'
+            ? this.roundMoney(Number(options.budget ?? result.fareBreakdown.shoppingBudget ?? 0)) : 0;
+        if (budget > 0 && process.env.STRIPE_ISSUING_ENABLED !== 'true') {
+            throw new Error('Shopping funding is temporarily unavailable. Choose a task without a purchase budget or try later.');
+        }
+        const protectedPrice = PaymentMarginService.protect(result.totalPrice, result.driverPayout, budget, policy);
+        const fee = this.roundMoney(result.platformFee + protectedPrice.adjustment);
+        const cap = Number(result.fareBreakdown.platformFeeMaximum || 0);
+        if (cap > 0 && fee > cap) throw new Error('A protected quote exceeds the configured platform fee cap');
+        result.totalPrice = protectedPrice.customerCharge;
+        result.platformFee = fee;
+        Object.assign(result.fareBreakdown, {
+            policyVersion: FareSplitService.POLICY_VERSION,
+            baseServiceFare: this.roundMoney(result.totalPrice - fee), driverBase: this.roundMoney(result.totalPrice - fee),
+            driverCommissionAmount: result.commissionFee, commissionFee: result.commissionFee,
+            driverEntitlement: result.driverPayout, driverNetEarnings: result.driverPayout,
+            currency: result.currencyCode, isPro: result.pricingPlanUsed === 'pro',
+            total: result.totalPrice, serviceFare: result.totalPrice, customerCharge: result.totalPrice,
+            shoppingBudget: budget, totalAuthorisation: this.roundMoney(result.totalPrice + budget), platformFee: fee, platformFeeAmount: fee,
+            platformFeeType: 'fixed_plus_percentage', platformFeeFixed: this.roundMoney(Number(result.fareBreakdown.platformFeeFixed || 0) + protectedPrice.adjustment),
+            grossRevenue: this.roundMoney(fee + result.commissionFee),
+            paymentMargin: { policy, adjustment: protectedPrice.adjustment, estimatedPaymentCost: protectedPrice.paymentCost, contribution: protectedPrice.contribution }
+        });
+        result.fareBreakdown.reconciliationValid = this.validateFareReconciliation(result.fareBreakdown);
+        if (!result.fareBreakdown.reconciliationValid) throw new Error('Protected quote does not reconcile');
+        return result;
+    }
+
+    private static async resolveUnprotectedPrice(options: PricingOptions): Promise<PricingResult> {
         const {
             serviceSlug = 'ride',
             distanceKm = 0,
@@ -662,6 +696,7 @@ export class PricingService {
                 platformFeeAmount: platformFee,
                 platformFeeSource: platformFeeConfig.source,
                 platformFeeConfigVersion: platformFeeConfig.configVersion,
+                platformFeeMaximum: platformFeeConfig.maxFee,
                 commissionSource: commissionConfig.source,
                 commissionConfigVersion: commissionConfig.configVersion,
                 serviceFare: totalPrice,
@@ -805,6 +840,7 @@ export class PricingService {
             platformFeeAmount: fallbackPlatformFee,
             platformFeeSource: fallbackPlatformFeeConfig.source,
             platformFeeConfigVersion: fallbackPlatformFeeConfig.configVersion,
+            platformFeeMaximum: fallbackPlatformFeeConfig.maxFee,
             commissionSource: fallbackCommissionSettings.source,
             commissionConfigVersion: fallbackCommissionSettings.configVersion,
             serviceFare: fallbackTotalPrice,
@@ -1000,6 +1036,10 @@ export class PricingService {
             : Number(fareBreakdown.commissionPercent ?? 0);
         const commissionFee = round(serviceFareBeforePlatformFee * (commissionRateUsed / 100));
         const driverPayout = round(Math.max(0, serviceFareBeforePlatformFee - commissionFee));
+        if (fareBreakdown.paymentMargin?.policy) {
+            const margin = PaymentMarginService.evaluate(safeAgreed, driverPayout, Number(fareBreakdown.shoppingBudget || 0), fareBreakdown.paymentMargin.policy);
+            if (!margin.passes) throw new Error('Agreed fare is below the protected booking minimum');
+        }
         const taxAmount = round(Number(job?.tax_amount || 0) * ratio);
         const baseFareUsed = round(Number(job?.base_fare_used || job?.base_fare || 0) * ratio);
         const pricePerKmUsed = Number(job?.price_per_km_used || 0);

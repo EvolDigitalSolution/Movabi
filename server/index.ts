@@ -1,3 +1,4 @@
+import { JobPayoutService } from './services/job-payout.service';
 import express, { Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
@@ -185,6 +186,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 try {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    JobPayoutService.start();
     
     // Check for critical missing environment variables
     const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];

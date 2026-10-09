@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject, signal, effect } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { CommunicationService } from '../communication/communication.service';
 import { AuthService } from '../auth/auth.service';
@@ -25,19 +25,16 @@ export class UnreadCounterService {
   public unreadCounts$ = this.unreadCountsSubject.asObservable();
 
   private messageSubscriptions = new Map<string, RealtimeChannel>();
+  private polling = new Map<string, ReturnType<typeof setInterval>>();
   private currentUserId: string | null = null;
 
   readonly totalUnreadCount = signal(0);
 
   constructor() {
-    // Initialize current user
-    const user = this.auth.currentUser();
-    if (user) {
-      this.currentUserId = user.id;
-    }
-
-    // Note: Auth service changes would be handled by the components that use this service
-    // The currentUserId is updated when the service is initialized
+    effect(() => {
+      const id = this.auth.currentUser()?.id || null;
+      if (id !== this.currentUserId) { this.clearAllCounts(); this.currentUserId = id; }
+    });
   }
 
   /**
@@ -68,19 +65,17 @@ export class UnreadCounterService {
   /**
    * Mark messages as read for a specific job
    */
-  markAsRead(jobId: string): void {
-    const current = this.unreadCounts.get(jobId);
-    if (current) {
-      current.count = 0;
-      this.unreadCounts.set(jobId, current);
-      this.updateSubject();
-    }
+  async markAsRead(jobId: string, through?: string): Promise<void> {
+    if (!through) return;
+    try { await this.commService.markMessagesRead(jobId, through); await this.calculateInitialUnreadCount(jobId); }
+    catch (error) { console.warn('Message read acknowledgement failed', error); }
   }
 
   /**
    * Subscribe to message updates for a specific job
    */
   subscribeToJob(jobId: string): void {
+    this.currentUserId = this.auth.currentUser()?.id || null;
     if (!this.currentUserId) return;
 
     // Unsubscribe from existing subscription for this job
@@ -108,12 +103,14 @@ export class UnreadCounterService {
       .subscribe();
 
     this.messageSubscriptions.set(jobId, subscription);
+    this.polling.set(jobId, setInterval(() => { void this.calculateInitialUnreadCount(jobId); }, 10000));
   }
 
   /**
    * Unsubscribe from message updates for a specific job
    */
   unsubscribeFromJob(jobId: string): void {
+    const timer = this.polling.get(jobId); if (timer) clearInterval(timer); this.polling.delete(jobId);
     const subscription = this.messageSubscriptions.get(jobId);
     if (subscription) {
       subscription.unsubscribe();
@@ -125,6 +122,7 @@ export class UnreadCounterService {
    * Clear all unread counts (called on logout)
    */
   clearAllCounts(): void {
+    this.polling.forEach(timer => clearInterval(timer)); this.polling.clear();
     this.unreadCounts.clear();
     this.messageSubscriptions.forEach(sub => sub.unsubscribe());
     this.messageSubscriptions.clear();
@@ -138,29 +136,13 @@ export class UnreadCounterService {
     if (!this.currentUserId) return;
 
     try {
-      const { data: messages, error } = await this.supabase
-        .from('job_messages')
-        .select('*')
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const unreadMessages = (messages as JobMessage[]).filter(
-        msg => msg.sender_id !== this.currentUserId
-      );
-
-      const lastMessage = unreadMessages[0] || messages[0];
-
-      this.unreadCounts.set(jobId, {
-        jobId,
-        count: unreadMessages.length,
-        lastMessage
-      });
-
+      const userId = this.auth.currentUser()?.id;
+      const counts = await this.commService.getMessageCounts(jobId);
+      if (userId !== this.auth.currentUser()?.id) return;
+      this.unreadCounts.set(jobId, { jobId, count: counts.unread });
       this.updateSubject();
     } catch (error) {
-      console.warn('[UnreadCounter] job_messages unavailable, returning 0 unread count:', error);
+      console.warn('[UnreadCounter] refresh unavailable; retaining last known count:', error);
     }
   }
 
@@ -170,22 +152,7 @@ export class UnreadCounterService {
   private handleNewMessage(jobId: string, message: JobMessage): void {
     if (!this.currentUserId) return;
 
-    const current = this.unreadCounts.get(jobId) || {
-      jobId,
-      count: 0,
-      lastMessage: undefined
-    };
-
-    // Only increment if message is from someone else
-    if (message.sender_id !== this.currentUserId) {
-      current.count++;
-    }
-
-    // Update last message
-    current.lastMessage = message;
-
-    this.unreadCounts.set(jobId, current);
-    this.updateSubject();
+    void this.calculateInitialUnreadCount(jobId);
   }
 
   /**

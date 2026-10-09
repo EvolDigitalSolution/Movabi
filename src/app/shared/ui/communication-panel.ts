@@ -176,7 +176,7 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
       setTimeout(() => this.scrollToBottom(), 100);
       
       // Check for new messages and trigger notifications
-      this.checkForNewMessages(msgs);
+      this.markMessagesAsRead();
     });
   }
 
@@ -272,14 +272,14 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
   }
 
   private markMessagesAsRead(): void {
-    this.unreadCounter.markAsRead(this.jobId);
+    void this.unreadCounter.markAsRead(this.jobId, this.messages()[this.messages().length - 1]?.created_at);
   }
 
   private checkForNewMessages(messages: JobMessage[]): void {
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && !this.isMe(lastMessage.sender_id)) {
       // This is a new message from someone else
-      console.log('[CommunicationPanel] New message received:', lastMessage);
+
       
       // Mark as read since user is actively viewing the chat
       this.markMessagesAsRead();
