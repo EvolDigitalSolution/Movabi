@@ -217,8 +217,8 @@ BEGIN
 END $$;
 
 -- Budget changes keep the same job -> wallet -> funding lock order as payment.
-CREATE OR REPLACE FUNCTION public.request_errand_over_budget(p_job_id uuid,p_amount numeric,p_reason text)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+CREATE OR REPLACE FUNCTION public.request_errand_over_budget(p_job_id uuid,p_amount numeric,p_reason text DEFAULT NULL::text)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE j public.jobs%ROWTYPE; f public.errand_funding%ROWTYPE;
 BEGIN
  SELECT * INTO STRICT j FROM public.jobs WHERE id=p_job_id FOR UPDATE;
@@ -227,9 +227,10 @@ BEGIN
  SELECT * INTO STRICT f FROM public.errand_funding WHERE job_id=j.id FOR UPDATE;
  IF f.status NOT IN ('reserved','approved','over_budget_requested') OR p_amount IS NULL OR round(p_amount,2)<=f.item_budget OR length(trim(coalesce(p_reason,'')))<3 THEN RAISE EXCEPTION 'Invalid budget increase'; END IF;
  UPDATE public.errand_funding SET status='over_budget_requested',over_budget_status='requested',requested_over_budget_amount=round(p_amount,2),over_budget_amount=round(p_amount-f.item_budget,2),over_budget_reason=p_reason,updated_at=now() WHERE job_id=j.id;
+ RETURN TRUE;
 END $$;
 CREATE OR REPLACE FUNCTION public.approve_errand_over_budget(p_job_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE j public.jobs%ROWTYPE; w public.wallets%ROWTYPE; f public.errand_funding%ROWTYPE; delta numeric;
 BEGIN
  SELECT * INTO STRICT j FROM public.jobs WHERE id=p_job_id FOR UPDATE;
@@ -237,7 +238,7 @@ BEGIN
  IF j.payment_status<>'wallet_funded' OR j.status IN ('cancelled','canceled','expired','failed','no_driver_found','completed','settled','delivered') THEN RAISE EXCEPTION 'Booking is not eligible for budget approval'; END IF;
  SELECT * INTO STRICT w FROM public.wallets WHERE user_id=j.customer_id FOR UPDATE;
  SELECT * INTO STRICT f FROM public.errand_funding WHERE job_id=j.id FOR UPDATE;
- IF f.over_budget_status='approved' AND f.status='reserved' THEN RETURN; END IF;
+ IF f.over_budget_status='approved' AND f.status='reserved' THEN RETURN TRUE; END IF;
  IF f.status<>'over_budget_requested' OR f.over_budget_status<>'requested' THEN RAISE EXCEPTION 'No pending budget increase'; END IF;
  delta:=round(f.requested_over_budget_amount-f.item_budget,2);
  IF delta IS NULL OR delta<=0 OR w.available_balance<delta THEN RAISE EXCEPTION 'Invalid budget increase or insufficient wallet balance'; END IF;
@@ -246,15 +247,17 @@ BEGIN
  VALUES(w.id,j.customer_id,j.id,'reservation',delta,'Additional errand budget approved',jsonb_build_object('payment_method','wallet','reason','budget_increase'),w.available_balance,w.available_balance-delta,w.reserved_balance,w.reserved_balance+delta);
  UPDATE public.errand_funding SET status='reserved',over_budget_status='approved',item_budget=f.requested_over_budget_amount,amount_reserved=f.amount_reserved+delta,metadata=coalesce(metadata,'{}'::jsonb)||jsonb_build_object('item_budget',f.requested_over_budget_amount),updated_at=now() WHERE job_id=j.id;
  UPDATE public.jobs SET metadata=coalesce(metadata,'{}'::jsonb)||jsonb_build_object('wallet_payment',coalesce(metadata->'wallet_payment','{}'::jsonb)||jsonb_build_object('item_budget',f.requested_over_budget_amount,'total_reserved',f.amount_reserved+delta)),updated_at=now() WHERE id=j.id;
+ RETURN TRUE;
 END $$;
 CREATE OR REPLACE FUNCTION public.reject_errand_over_budget(p_job_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE j public.jobs%ROWTYPE;
 BEGIN
  SELECT * INTO STRICT j FROM public.jobs WHERE id=p_job_id FOR UPDATE;
  IF auth.uid() IS DISTINCT FROM j.customer_id AND coalesce(auth.role(),'')<>'service_role' AND session_user NOT IN ('postgres','supabase_admin') THEN RAISE EXCEPTION 'Only the customer can reject a budget increase'; END IF;
  IF j.status IN ('cancelled','canceled','expired','failed','no_driver_found','completed','settled','delivered') THEN RAISE EXCEPTION 'Booking is no longer active'; END IF;
  UPDATE public.errand_funding SET status='reserved',over_budget_status='rejected',requested_over_budget_amount=0,updated_at=now() WHERE job_id=j.id AND status='over_budget_requested';
+ RETURN TRUE;
 END $$;
 REVOKE ALL ON FUNCTION public.request_errand_over_budget(uuid,numeric,text),public.approve_errand_over_budget(uuid),public.reject_errand_over_budget(uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.request_errand_over_budget(uuid,numeric,text),public.approve_errand_over_budget(uuid),public.reject_errand_over_budget(uuid) TO authenticated,service_role;

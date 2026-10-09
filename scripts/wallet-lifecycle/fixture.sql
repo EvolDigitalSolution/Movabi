@@ -156,4 +156,12 @@ BEGIN
 
   RETURN 'finalized';
 END;
-$function$
+$function$;
+
+-- Existing deployed budget RPC contracts, before this migration replaces bodies.
+CREATE FUNCTION public.request_errand_over_budget(p_job_id uuid,p_amount numeric,p_reason text DEFAULT NULL::text)
+RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RETURN TRUE; END $$;
+CREATE FUNCTION public.approve_errand_over_budget(p_job_id uuid)
+RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RETURN TRUE; END $$;
+CREATE FUNCTION public.reject_errand_over_budget(p_job_id uuid)
+RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RETURN TRUE; END $$;
