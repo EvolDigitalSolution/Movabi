@@ -21,14 +21,14 @@ router.post('/messages', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid session' });
     }
 
-    if (!jobId || !receiverId || !cleanMessage) {
+    if (!jobId || !receiverId || !cleanMessage || cleanMessage.length > 2000) {
       return res.status(400).json({ error: 'jobId, receiverId and message are required' });
     }
 
     const { data: job, error: jobError } = await supabaseAdmin
       .schema('public')
       .from('jobs')
-      .select('id, tenant_id, customer_id, driver_id')
+      .select('id, tenant_id, customer_id, driver_id, accepted_driver_id, status')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -36,7 +36,18 @@ router.post('/messages', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    const participants = [job.customer_id, job.driver_id].filter(Boolean);
+    const assignedDriverId = job.driver_id || job.accepted_driver_id;
+    const participants = [job.customer_id, assignedDriverId].filter(Boolean);
+    const expectedReceiver = senderId === job.customer_id ? assignedDriverId : job.customer_id;
+    if (!assignedDriverId || receiverId !== expectedReceiver || receiverId === senderId) {
+      return res.status(403).json({ error: 'Messages must be sent to the other participant on this job' });
+    }
+    if (['completed', 'settled', 'delivered', 'cancelled', 'canceled', 'expired', 'failed', 'no_driver_found'].includes(String(job.status))) {
+      return res.status(409).json({ error: 'This job has ended; its chat history is read-only' });
+    }
+    if (messageType && !['text', 'quick'].includes(messageType)) {
+      return res.status(400).json({ error: 'Unsupported message type' });
+    }
 
     if (!participants.includes(senderId) || !participants.includes(receiverId)) {
       return res.status(403).json({ error: 'You can only message participants on this job' });
@@ -66,7 +77,12 @@ router.post('/messages', async (req: Request, res: Response) => {
       });
     }
 
-    await NotificationService.notifyChatMessage(receiverId, jobId, senderId, cleanMessage);
+    try {
+      await NotificationService.notifyChatMessage(receiverId, jobId, senderId, cleanMessage);
+    } catch (notificationError: any) {
+      // The message is already durable. Push failure must not invite duplicate retries.
+      console.warn('[CommunicationRoutes] chat push unavailable:', notificationError?.code || 'notification_failed');
+    }
 
     return res.json({ success: true, message: data });
   } catch (error: any) {

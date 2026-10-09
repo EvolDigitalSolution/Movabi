@@ -23,6 +23,7 @@ export class CommunicationService {
   public messages$ = this.messagesSubject.asObservable();
   
   private subscription: RealtimeChannel | null = null;
+  private activeJobId: string | null = null;
 
   async getJobMessages(jobId: string): Promise<JobMessage[]> {
     const { data, error } = await this.supabase
@@ -32,13 +33,12 @@ export class CommunicationService {
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.warn('[CommunicationService] job_messages unavailable, chat disabled:', error);
-      this.messagesSubject.next([]);
-      return [];
+      console.warn('[CommunicationService] chat history unavailable:', error.code);
+      throw new Error('Messages could not be loaded. Please retry.');
     }
 
     const messages = data as JobMessage[];
-    this.messagesSubject.next(messages);
+    if (this.activeJobId === jobId) this.messagesSubject.next(messages);
     return messages;
   }
 
@@ -70,7 +70,7 @@ export class CommunicationService {
     }
 
     const currentMessages = this.messagesSubject.value;
-    if (!currentMessages.find(m => m.id === response.message.id)) {
+    if (this.activeJobId === jobId && !currentMessages.find(m => m.id === response.message.id)) {
       this.messagesSubject.next([...currentMessages, response.message]);
     }
 
@@ -82,6 +82,8 @@ export class CommunicationService {
   }
 
   subscribeToJobMessages(jobId: string) {
+    if (this.activeJobId !== jobId) this.messagesSubject.next([]);
+    this.activeJobId = jobId;
     if (this.subscription) {
       this.subscription.unsubscribe();
     }
@@ -97,6 +99,7 @@ export class CommunicationService {
           filter: `job_id=eq.${jobId}`
         },
         (payload) => {
+          if (this.activeJobId !== jobId) return;
           const newMessage = payload.new as JobMessage;
           const currentMessages = this.messagesSubject.value;
           
@@ -115,6 +118,7 @@ export class CommunicationService {
   }
 
   unsubscribeFromJobMessages() {
+    this.activeJobId = null;
     if (this.subscription) {
       this.subscription.unsubscribe();
       this.subscription = null;

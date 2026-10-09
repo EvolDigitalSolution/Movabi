@@ -863,6 +863,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     ServiceTypeEnum = ServiceTypeEnum;
 
     booking = this.bookingService.activeBooking;
+    readonly customerCompletionPin = signal('');
+    private completionPinBookingId: string | null = null;
 
     // ---- Customer no-show: server-verified arrival, grace countdown and outcome ----
     arrivalCountdownSeconds = signal<number | null>(null);
@@ -1868,7 +1870,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const booking = this.booking();
         const status = String(booking?.status || '').toLowerCase();
 
-        return ['cancelled', 'canceled', 'expired', 'failed', 'no_driver_found', 'requires_review'].includes(status);
+        return ['cancelled', 'canceled', 'expired', 'failed', 'no_driver_found', 'expired', 'failed', 'requires_review'].includes(status);
     }
 
     paymentProtectionIcon(): string {
@@ -1914,7 +1916,36 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return this.paidByWallet() ? 'Returned to wallet' : 'Released by Movabi';
     }
 
+    private async refreshCustomerCompletionPin(booking: any): Promise<void> {
+        const currentUserId = this.auth.currentUser()?.id;
+        if (!currentUserId || currentUserId !== booking.customer_id ||
+            !booking.driver_id || this.isTerminalTrackingStatus(String(booking.status))) {
+            this.customerCompletionPin.set('');
+            this.completionPinBookingId = null;
+            return;
+        }
+        if (this.completionPinBookingId === booking.id && this.customerCompletionPin()) return;
+        this.customerCompletionPin.set('');
+        this.completionPinBookingId = null;
+        try {
+            const { data, error } = await this.supabase.client.schema('public')
+                .from('job_completion_secrets')
+                .select('completion_pin')
+                .eq('job_id', booking.id)
+                .maybeSingle();
+            if (error) throw error;
+            if (this.booking()?.id !== booking.id || this.auth.currentUser()?.id !== currentUserId) return;
+            this.customerCompletionPin.set(this.normalizeCompletionPin(data?.completion_pin));
+            this.completionPinBookingId = booking.id;
+        } catch (error: any) {
+            // Do not hide a failed secret lookup permanently; the next poll retries.
+            console.warn('[booking-tracking] completion PIN lookup failed:', error?.code || 'lookup_failed');
+        }
+    }
+
     completionPinForCustomer(): string {
+        if (!this.auth.currentUser()?.id || this.auth.currentUser()?.id !== this.booking()?.customer_id) return '';
+        if (this.completionPinBookingId === this.booking()?.id && this.customerCompletionPin()) return this.customerCompletionPin();
         const metadata = this.bookingMetadata();
         return this.normalizeCompletionPin(
             metadata['completion_pin'] ||
@@ -1929,7 +1960,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         if (!booking?.driver_id || !this.completionPinForCustomer()) return false;
 
-        return !['requested', 'searching', 'completed', 'settled', 'cancelled', 'canceled', 'no_driver_found', 'requires_review'].includes(status);
+        return !['requested', 'searching', 'completed', 'settled', 'cancelled', 'canceled', 'no_driver_found', 'expired', 'failed', 'requires_review'].includes(status);
     }
 
     private paidByWallet(): boolean {
@@ -2497,6 +2528,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
 
             this.bookingService.activeBooking.set(b);
+            await this.refreshCustomerCompletionPin(b);
             if (this.isTerminalTrackingStatus(String(b.status))) void this.walletService.fetchWallet();
             await this.notifyStatusChange(previousStatus, b);
             this.syncSearchUiState();
