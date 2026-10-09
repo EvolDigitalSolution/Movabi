@@ -484,38 +484,12 @@ router.post('/create-intent', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/create-wallet-topup-intent', async (req: Request, res: Response) => {
-  try {
-    const { userId, amount, currency: cur, tenantId } = req.body;
-    const authUserId = await getAuthUserId(req);
-    if (!authUserId) return res.status(401).json({ error: 'Authentication required' });
-    if (String(userId || '') !== authUserId) return res.status(403).json({ error: 'Cannot fund another user wallet' });
-
-    const topupAmount = money(amount);
-
-    if (!userId || !topupAmount) {
-      return res.status(400).json({ error: 'userId and positive amount are required' });
-    }
-
-    const pi = await stripe.paymentIntents.create({
-      amount: Math.round(topupAmount * 100),
-      currency: currency(cur || 'GBP'),
-      payment_method_types: ['card'],
-      metadata: {
-        userId: String(userId),
-        tenantId: String(tenantId || ''),
-        type: 'wallet_topup'
-      }
-    });
-
-    return res.json({
-      clientSecret: pi.client_secret,
-      paymentIntentId: pi.id
-    });
-  } catch (error: any) {
-    console.error('[PaymentRoutes] wallet topup failed:', error);
-    return res.status(500).json({ error: error.message || 'Failed to create wallet top-up intent' });
-  }
+// New wallet funding is retired. Keep confirmation for payments already made.
+router.post('/create-wallet-topup-intent', (_req: Request, res: Response) => {
+  return res.status(410).json({
+    code: 'WALLET_TOPUPS_DISABLED',
+    error: 'Wallet top-ups are no longer available. Pay directly when booking.'
+  });
 });
 
 router.post('/confirm-wallet-topup', async (req: Request, res: Response) => {
