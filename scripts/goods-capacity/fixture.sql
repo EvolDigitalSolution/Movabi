@@ -1,0 +1,272 @@
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE ROLE authenticator NOINHERIT;
+GRANT anon,authenticated,service_role TO authenticator;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('test.user',true),'')::uuid $$;
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$ SELECT current_setting('test.role',true) $$;
+GRANT USAGE ON SCHEMA auth TO anon,authenticated,service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO anon,authenticated,service_role;
+CREATE TABLE service_types(id uuid PRIMARY KEY,slug text,name text);
+CREATE TABLE jobs(id uuid PRIMARY KEY,customer_id uuid,tenant_id uuid,driver_id uuid,accepted_driver_id uuid,status text,payment_status text,payment_method text,payment_intent_id text,
+ service_type_id uuid,agreed_fare numeric,total_price numeric,estimated_price numeric,price numeric,currency_code text,metadata jsonb DEFAULT '{}',fare_breakdown jsonb DEFAULT '{}',quote_id uuid,
+ scheduled_time timestamptz,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now(),confirmed_at timestamptz,dispatch_started_at timestamptz,driver_search_expires_at timestamptz,
+ dispatch_attempts integer DEFAULT 0,no_driver_reason text,last_dispatch_check_at timestamptz);
+CREATE TABLE wallets(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid UNIQUE NOT NULL,available_balance numeric NOT NULL CHECK(available_balance>=0),reserved_balance numeric NOT NULL CHECK(reserved_balance>=0),currency_code text,updated_at timestamptz);
+CREATE TABLE wallet_transactions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),wallet_id uuid NOT NULL REFERENCES wallets(id),user_id uuid NOT NULL,job_id uuid REFERENCES jobs(id),transaction_type text,amount numeric CHECK(amount>0),description text,metadata jsonb DEFAULT '{}',balance_before_available numeric,balance_after_available numeric,balance_before_reserved numeric,balance_after_reserved numeric,created_at timestamptz DEFAULT now());
+CREATE TABLE errand_funding(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),job_id uuid UNIQUE REFERENCES jobs(id),customer_id uuid,item_budget numeric DEFAULT 0,service_estimate numeric DEFAULT 0,amount_reserved numeric DEFAULT 0,actual_item_spend numeric DEFAULT 0,refund_amount numeric DEFAULT 0,status text DEFAULT 'pending',metadata jsonb DEFAULT '{}',updated_at timestamptz,over_budget_status text DEFAULT 'none',over_budget_amount numeric DEFAULT 0,requested_over_budget_amount numeric DEFAULT 0,over_budget_reason text);
+CREATE TABLE errand_details(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),job_id uuid UNIQUE REFERENCES jobs(id),estimated_budget numeric,actual_spending numeric DEFAULT 0);
+CREATE TABLE marketplace_negotiation_sessions(id uuid DEFAULT gen_random_uuid(),job_id uuid,status text,agreed_fare numeric,payment_deadline timestamptz,expires_at timestamptz,active_driver_id uuid,created_at timestamptz DEFAULT now());
+CREATE OR REPLACE FUNCTION public.finalize_job_payment(p_job_id uuid, p_payment_intent_id text, p_payment_status text, p_job_status text, p_expected_service_fare numeric DEFAULT NULL::numeric, p_require_unowned boolean DEFAULT false, p_dispatch_started_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_driver_search_expires_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_dispatch_attempts integer DEFAULT 0, p_intent_amount_minor bigint DEFAULT NULL::bigint, p_currency text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_job public.jobs;
+  v_session public.marketplace_negotiation_sessions;
+  v_status TEXT;
+  v_deadline TIMESTAMPTZ;
+  v_item_budget NUMERIC;
+  v_expected_minor NUMERIC;
+BEGIN
+  IF p_job_id IS NULL THEN
+    RETURN 'job_not_found';
+  END IF;
+
+  -- DETERMINISTIC LOCK ORDER: job, then session. Every authority in this
+  -- migration takes them in this order, so no deadlock is possible.
+  SELECT * INTO v_job FROM public.jobs WHERE id = p_job_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN 'job_not_found';
+  END IF;
+
+  -- IDEMPOTENCY FIRST. A repeat of an already-successful finalization must be
+  -- reported as such (NOT as a lost agreement) — otherwise a legitimate retry or
+  -- duplicate webhook would be misread as a conflict and would wrongly enter the
+  -- Stripe compensation path for an already-paid booking. Terminal/expired/
+  -- cancelled agreements still have payment_status='pending', so they fall
+  -- through to the agreement checks below.
+  IF LOWER(COALESCE(v_job.payment_status, '')) <> 'pending' THEN
+    RETURN 'already_finalized';
+  END IF;
+
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  ORDER BY created_at DESC NULLS LAST
+  LIMIT 1
+  FOR UPDATE;
+
+  IF FOUND THEN
+    -- NEGOTIATED: the fare agreement must STILL be authoritative. This is the
+    -- check the old finalizers were missing.
+    IF v_session.status IS DISTINCT FROM 'fare_agreed' THEN
+      RETURN 'agreement_lost';
+    END IF;
+
+    -- The JOB must still be the live negotiated agreement — not released back to
+    -- the pool, superseded, cancelled or expired.
+    IF LOWER(COALESCE(v_job.status, '')) <> 'fare_agreed' THEN
+      RETURN 'agreement_lost';
+    END IF;
+
+    IF v_session.agreed_fare IS NULL OR v_session.agreed_fare <= 0 THEN
+      RETURN 'agreement_lost';
+    END IF;
+
+    IF v_job.agreed_fare IS NULL THEN
+      RETURN 'agreement_lost';
+    END IF;
+
+    -- AUTHORITATIVE DEADLINE. Effective deadline = persisted payment_deadline,
+    -- falling back to expires_at for agreements accepted BEFORE 360 started
+    -- writing payment_deadline (310 set expires_at = now() + 300s). It must
+    -- EXIST and must NOT have elapsed.
+    v_deadline := COALESCE(v_session.payment_deadline, v_session.expires_at);
+    IF v_deadline IS NULL THEN
+      RETURN 'agreement_lost';
+    END IF;
+    IF v_deadline <= now() THEN
+      RETURN 'agreement_expired';
+    END IF;
+
+    IF p_expected_service_fare IS NOT NULL
+       AND ROUND(p_expected_service_fare, 2) IS DISTINCT FROM ROUND(v_session.agreed_fare, 2) THEN
+      RETURN 'agreed_fare_mismatch';
+    END IF;
+
+    IF v_job.driver_id IS DISTINCT FROM v_session.active_driver_id THEN
+      RETURN 'driver_mismatch';
+    END IF;
+
+    -- AUTHORITATIVE AMOUNT. For a negotiated job the customer charge is exactly
+    -- agreed_fare + item budget. The item budget is READ from its persisted home
+    -- (public.errand_funding is a TABLE, not a job column) using the same
+    -- precedence the client uses; NO pricing/fee formula is duplicated here — this
+    -- only proves the intent amount against the persisted authority, which is what
+    -- stops a stale £9.06 quote from finalising a £9.00 agreement.
+    IF p_intent_amount_minor IS NOT NULL THEN
+      SELECT COALESCE(NULLIF(ef.amount_reserved, 0), NULLIF(ef.item_budget, 0), 0)
+        INTO v_item_budget
+        FROM public.errand_funding ef
+       WHERE ef.job_id = p_job_id
+       LIMIT 1;
+
+      v_item_budget := COALESCE(v_item_budget, 0);
+      v_expected_minor := ROUND((v_session.agreed_fare + v_item_budget) * 100);
+      IF v_expected_minor IS DISTINCT FROM p_intent_amount_minor THEN
+        RETURN 'amount_mismatch';
+      END IF;
+    END IF;
+  ELSE
+    -- NON-NEGOTIATED: preserve the pre-existing semantics exactly. The webhook
+    -- only advances an UNPAID, UNOWNED job; /confirm may advance a locked-driver
+    -- (assigned) job.
+    IF p_require_unowned AND v_job.driver_id IS NOT NULL THEN
+      RETURN 'driver_mismatch';
+    END IF;
+  END IF;
+
+  -- CURRENCY: the money must be in the job's own currency.
+  IF p_currency IS NOT NULL
+     AND LOWER(p_currency) IS DISTINCT FROM LOWER(COALESCE(v_job.currency_code, 'gbp')) THEN
+    RETURN 'currency_mismatch';
+  END IF;
+
+  v_status := LOWER(COALESCE(v_job.status, ''));
+  IF v_status IN ('cancelled', 'canceled', 'expired', 'completed', 'settled') THEN
+    RETURN 'job_terminal';
+  END IF;
+
+  IF p_payment_intent_id IS NOT NULL
+     AND v_job.payment_intent_id IS NOT NULL
+     AND v_job.payment_intent_id IS DISTINCT FROM p_payment_intent_id THEN
+    RETURN 'intent_mismatch';
+  END IF;
+
+  UPDATE public.jobs
+  SET payment_status = p_payment_status,
+      status = p_job_status,
+      dispatch_started_at = p_dispatch_started_at,
+      driver_search_expires_at = p_driver_search_expires_at,
+      dispatch_attempts = COALESCE(p_dispatch_attempts, 0),
+      no_driver_reason = NULL,
+      updated_at = now()
+  WHERE id = p_job_id;
+
+  RETURN 'finalized';
+END;
+$function$;
+
+-- Existing deployed budget RPC contracts, before this migration replaces bodies.
+CREATE FUNCTION public.request_errand_over_budget(p_job_id uuid,p_amount numeric,p_reason text DEFAULT NULL::text)
+RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RETURN TRUE; END $$;
+CREATE FUNCTION public.approve_errand_over_budget(p_job_id uuid)
+RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RETURN TRUE; END $$;
+CREATE FUNCTION public.reject_errand_over_budget(p_job_id uuid)
+RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RETURN TRUE; END $$;
+
+CREATE TABLE vehicles(id uuid DEFAULT gen_random_uuid(),user_id uuid,type text,capacity text);
+CREATE OR REPLACE FUNCTION public.driver_vehicle_can_accept_job(p_job_id uuid, p_driver_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+    v_required TEXT;
+    v_service_slug TEXT;
+    v_metadata JSONB;
+    v_vehicle RECORD;
+    v_vehicle_text TEXT;
+BEGIN
+    IF p_job_id IS NULL OR p_driver_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    SELECT
+        COALESCE(
+            (SELECT COALESCE(st.slug::TEXT, st.name::TEXT)
+               FROM public.service_types st
+              WHERE st.id = j.service_type_id),
+            j.metadata ->> 'service_slug',
+            ''
+        ),
+        COALESCE(j.metadata, '{}'::jsonb)
+    INTO v_service_slug, v_metadata
+    FROM public.jobs j
+    WHERE j.id = p_job_id;
+
+    -- Missing job -> not acceptable.
+    IF NOT FOUND THEN
+        RETURN FALSE;
+    END IF;
+
+    v_required := LOWER(COALESCE(
+        v_metadata ->> 'service_vehicle_class',
+        v_metadata ->> 'vehicle_class',
+        v_metadata ->> 'vehicleClass',
+        v_metadata #>> '{ride_details,vehicle_class}',
+        v_metadata #>> '{delivery_details,vehicleClass}',
+        v_metadata #>> '{errand_details,vehicleClass}',
+        ''
+    ));
+
+    IF v_required LIKE '%bike%' OR v_required LIKE '%motorcycle%' OR v_required LIKE '%scooter%' THEN
+        v_required := 'bike';
+    ELSIF v_required LIKE '%minibus%' OR v_required LIKE '%7 seater%' OR v_required LIKE '%7-seater%' THEN
+        v_required := 'minibus';
+    ELSIF v_required LIKE '%large_van%' OR v_required LIKE '%large van%' OR v_required LIKE '%luton%' THEN
+        v_required := 'large_van';
+    ELSIF v_required LIKE '%small_van%' OR v_required LIKE '%small van%' OR v_required LIKE '%van%' THEN
+        v_required := 'small_van';
+    ELSIF v_required LIKE '%xl%' OR v_required LIKE '%7%' THEN
+        v_required := 'xl';
+    ELSIF v_required LIKE '%standard%' THEN
+        v_required := 'standard';
+    ELSIF v_required LIKE '%car%' THEN
+        v_required := 'car';
+    ELSIF LOWER(v_service_slug) LIKE '%van%' OR LOWER(v_service_slug) LIKE '%moving%' THEN
+        v_required := 'small_van';
+    ELSIF LOWER(v_service_slug) LIKE '%delivery%' OR LOWER(v_service_slug) LIKE '%errand%' THEN
+        v_required := 'car';
+    ELSE
+        v_required := 'standard';
+    END IF;
+
+    SELECT * INTO v_vehicle
+    FROM public.vehicles
+    WHERE user_id = p_driver_id
+    LIMIT 1;
+
+    -- Missing vehicle -> not acceptable.
+    IF NOT FOUND THEN
+        RETURN FALSE;
+    END IF;
+
+    -- service_class has no physical column in production; read it from the row
+    -- as JSON so an absent key degrades to '' instead of erroring.
+    v_vehicle_text := LOWER(
+        COALESCE(to_jsonb(v_vehicle) ->> 'type', '') || ' ' ||
+        COALESCE(to_jsonb(v_vehicle) ->> 'capacity', '') || ' ' ||
+        COALESCE(to_jsonb(v_vehicle) ->> 'service_class', '')
+    );
+
+    IF v_vehicle_text LIKE '%bike%' OR v_vehicle_text LIKE '%motorcycle%' OR v_vehicle_text LIKE '%scooter%' THEN
+        RETURN v_required = 'bike';
+    END IF;
+
+    IF v_vehicle_text LIKE '%minibus%' OR v_vehicle_text LIKE '%7 seater%' OR v_vehicle_text LIKE '%7-seater%' OR v_vehicle_text LIKE '%xl%' OR v_vehicle_text LIKE '%7%' THEN
+        RETURN v_required IN ('standard', 'xl', 'minibus', 'car');
+    END IF;
+
+    IF v_vehicle_text LIKE '%large_van%' OR v_vehicle_text LIKE '%large van%' OR v_vehicle_text LIKE '%luton%' THEN
+        RETURN v_required IN ('standard', 'xl', 'car', 'small_van', 'large_van');
+    END IF;
+
+    IF v_vehicle_text LIKE '%small_van%' OR v_vehicle_text LIKE '%small van%' OR v_vehicle_text LIKE '%van%' THEN
+        RETURN v_required IN ('standard', 'car', 'small_van');
+    END IF;
+
+    RETURN v_required IN ('standard', 'car');
+END;
+$function$;
