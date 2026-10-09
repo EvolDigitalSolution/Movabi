@@ -116,6 +116,12 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
               <app-map #map></app-map>
             </div>
 
+            @if (walletActivationIncomplete()) {
+              <div role="status" class="absolute left-4 right-4 top-3 z-20 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 shadow-lg">
+                Your funds are reserved, but booking activation needs review.
+                You can cancel below to release unused funds. Please do not pay again.
+              </div>
+            }
             <!-- Finding driver status card -->
             @if (booking() && booking()?.status === 'searching') {
               <div class="absolute left-4 right-4 top-3 z-20 pointer-events-none">
@@ -1836,7 +1842,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
         const payment = String((this.booking() as any)?.payment_status || '').toLowerCase();
         if (['paid', 'succeeded', 'captured'].includes(payment)) return false;
-        return ['requested', 'pending_fare_confirmation', 'negotiating', 'fare_agreed',
+        return ['pending', 'requested', 'pending_fare_confirmation', 'negotiating', 'fare_agreed',
             'searching', 'assigned'].includes(status);
     }
 
@@ -1862,7 +1868,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const booking = this.booking();
         const status = String(booking?.status || '').toLowerCase();
 
-        return ['cancelled', 'canceled', 'no_driver_found', 'requires_review'].includes(status);
+        return ['cancelled', 'canceled', 'expired', 'failed', 'no_driver_found', 'requires_review'].includes(status);
     }
 
     paymentProtectionIcon(): string {
@@ -2220,6 +2226,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
+    walletActivationIncomplete(): boolean {
+        const b = this.booking() as any;
+        return b?.payment_status === 'wallet_funded' && ['pending', 'pending_fare_confirmation', 'negotiating', 'fare_agreed'].includes(String(b.status));
+    }
+
     driverSearchMessage(): string {
         const attempt = Number((this.booking() as any)?.dispatch_attempts || 1);
         if (this.searchCountdownSeconds() === 0) {
@@ -2295,7 +2306,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     private isTerminalTrackingStatus(status: string): boolean {
-        return ['completed', 'settled', 'cancelled', 'canceled', 'no_driver_found', 'delivered'].includes(status);
+        return ['completed', 'settled', 'cancelled', 'canceled', 'expired', 'failed', 'no_driver_found', 'delivered'].includes(status);
     }
 
     private startPolling(id: string): void {
@@ -2486,6 +2497,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
             }
 
             this.bookingService.activeBooking.set(b);
+            if (this.isTerminalTrackingStatus(String(b.status))) void this.walletService.fetchWallet();
             await this.notifyStatusChange(previousStatus, b);
             this.syncSearchUiState();
             this.syncDriverLiveState(b);

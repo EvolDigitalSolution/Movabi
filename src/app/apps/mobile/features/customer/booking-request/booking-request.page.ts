@@ -3284,7 +3284,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 throw new Error('Payment confirmation did not complete.');
             }
 
-            await this.bookingService.confirmJobPayment(booking.id, confirmationPaymentId);
+            if (!walletWillCover) await this.bookingService.confirmJobPayment(booking.id, confirmationPaymentId);
             if (walletWillCover) {
                 paymentIntentId = 'wallet_funded';
             }
@@ -3314,22 +3314,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 console.warn('[BookingRequest] submit rejected', { status: failure.status, code: failure.code });
             }
 
-            if (booking?.id && (!paymentIntentId || walletReserved)) {
+            // A lost HTTP response is not proof that payment failed. Never
+            // auto-cancel or directly mutate the job after an ambiguous checkout.
+            if (booking?.id) {
                 try {
-                    if (walletReserved) {
-                        await this.bookingService.cancelBooking(
-                            booking.id,
-                            `Auto-cancelled after wallet checkout failure: ${message}`
-                        );
-                    } else {
-                        await this.bookingService.updateBookingStatus(
-                            booking.id,
-                            'cancelled',
-                            `Auto-cancelled after checkout failure: ${message}`
-                        );
+                    const current = await this.bookingService.getBooking(booking.id);
+                    if (current && ['wallet_funded', 'authorized', 'paid', 'captured', 'succeeded'].includes(String(current.payment_status))) {
+                        await loading.dismiss();
+                        await this.router.navigate(['/customer/tracking', booking.id]);
+                        return;
                     }
-                } catch (cancelError) {
-                    console.error('[BookingRequest] booking auto-cancel failed', cancelError);
+                } catch (lookupError) {
+                    console.warn('[BookingRequest] Could not reconcile checkout; inspect booking before retrying', lookupError);
                 }
             }
 

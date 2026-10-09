@@ -76,20 +76,8 @@ export class WalletService {
       throw new Error('Not authenticated');
     }
 
-    const { data, error } = await this.supabase.rpc('reserve_errand_funds', {
-      p_job_id: jobId,
-      p_customer_id: user.id,
-      p_item_budget: itemBudget,
-      p_service_estimate: serviceEstimate
-    });
-
-    if (error) {
-      console.error('Error reserving funds:', error);
-      throw new Error(`Failed to reserve funds: ${error.message}`);
-    }
-
-    await this.fetchWallet();
-    return data;
+    // The server derives the fare/budget and reserves + activates atomically.
+    return this.payJobFromWallet(jobId, itemBudget + serviceEstimate);
   }
 
   async settleErrandFunds(jobId: string): Promise<void> {

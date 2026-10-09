@@ -89,7 +89,7 @@ export class DispatchService {
         }
 
         for (const job of jobs || []) {
-            const { error: updateError } = await this.supabase
+            const { data: activated, error: updateError } = await this.supabase
                 .from('jobs')
                 .update({
                     status: 'searching',
@@ -101,8 +101,12 @@ export class DispatchService {
                 })
                 .eq('id', job.id)
                 .eq('status', 'requested')
-                .is('driver_id', null);
+                .is('driver_id', null)
+                .select('*').maybeSingle();
 
+            if (activated) {
+                await this.notifyNearbyDrivers(activated as Job, activated.tenant_id, activated.city_id);
+            }
             if (updateError) {
                 console.warn('[DispatchService] scheduled activation skipped (already moved):', job.id, updateError.message);
             }
@@ -227,6 +231,8 @@ export class DispatchService {
             })
             .eq('id', jobId)
             .eq('status', 'searching')
+            .eq('dispatch_attempts', nextAttempt - 1)
+            .lt('driver_search_expires_at', nowIso())
             .is('driver_id', null)
             .select('*')
             .maybeSingle();
@@ -248,28 +254,17 @@ export class DispatchService {
     }
 
     private async markNoDriverFound(jobId: string, tenantId?: string | null) {
-        const { data: job, error } = await this.supabase
-            .from('jobs')
-            .update({
-                status: 'no_driver_found',
-                no_driver_reason: 'No available driver after dispatch attempts',
-                last_dispatch_check_at: nowIso(),
-                updated_at: nowIso()
-            })
-            .eq('id', jobId)
-            .eq('status', 'searching')
-            .is('driver_id', null)
-            .select('id, customer_id, tenant_id, payment_method, payment_status, payment_intent_id')
-            .maybeSingle();
-
+        const { data: job, error } = await this.supabase.rpc('end_job_driver_search', { p_job_id: jobId });
         if (error) {
-            console.error(`[DispatchService] Failed setting no_driver_found for ${jobId}:`, error);
+            console.error(`[DispatchService] Search closure failed for ${jobId}; will retry:`, error);
             return;
         }
-
         if (!job) return;
-
-        await this.releaseNoDriverPayment(job as Job);
+        // Wallet closure + release already committed atomically. Card release
+        // retains the external Stripe compensation/review path.
+        if (job.payment_method !== 'wallet' && job.payment_status !== 'wallet_funded') {
+            await this.releaseNoDriverPayment(job as Job);
+        }
 
         await EventService.logEvent(
             'no_driver_found',
@@ -313,7 +308,7 @@ export class DispatchService {
 
                 // A captured payment cannot be released by cancelling an
                 // authorisation. Preserve it for financial review.
-                if (pi.status === 'succeeded') {
+                if (pi.status !== 'canceled' && !['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'].includes(pi.status)) {
                     await this.markPaymentRequiresReview(job.id);
                     return;
                 }
@@ -371,7 +366,7 @@ export class DispatchService {
                 };
             }
 
-            if (!['pending', 'requested', 'searching', 'no_driver_found'].includes(String(job.status))) {
+            if (!['pending', 'requested', 'searching'].includes(String(job.status))) {
                 await this.supabase
                     .from('job_queue')
                     .update({
@@ -403,7 +398,7 @@ export class DispatchService {
                     updated_at: nowIso()
                 })
                 .eq('id', job.id)
-                .in('status', ['pending', 'requested', 'searching', 'no_driver_found'])
+                .in('status', ['pending', 'requested', 'searching'])
                 .select('*')
                 .maybeSingle();
 
@@ -469,7 +464,7 @@ export class DispatchService {
                 updated_at: nowIso()
             })
             .eq('id', jobId)
-            .in('status', ['pending', 'requested', 'searching', 'no_driver_found'])
+            .in('status', ['pending', 'requested', 'searching'])
             .select('*')
             .maybeSingle();
 

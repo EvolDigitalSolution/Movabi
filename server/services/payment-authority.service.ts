@@ -73,11 +73,16 @@ export class PaymentAuthorityService {
 
     let itemBudgetMajor = 0;
     if (this.isErrand(job)) {
-      const [{ data: funding }, { data: details }] = await Promise.all([
-        supabaseAdmin.from('errand_funding').select('amount_reserved').eq('job_id', job.id).maybeSingle(),
+      const [{ data: funding, error: fundingError }, { data: details, error: detailsError }] = await Promise.all([
+        supabaseAdmin.from('errand_funding').select('item_budget,amount_reserved,status,metadata').eq('job_id', job.id).maybeSingle(),
         supabaseAdmin.from('errand_details').select('estimated_budget').eq('job_id', job.id).maybeSingle()
       ]);
-      itemBudgetMajor = money(funding?.amount_reserved) || money(details?.estimated_budget) || 0;
+      if (fundingError || detailsError) throw new Error('Unable to verify the shopping budget');
+      // amount_reserved is fare + budget once funded. Never add that total
+      // to the fare again; pending legacy rows may still hold just the budget.
+      itemBudgetMajor = money(funding?.item_budget) || money(funding?.metadata?.item_budget)
+        || money(details?.estimated_budget)
+        || (funding?.status === 'pending' ? money(funding?.amount_reserved) : 0);
     }
 
     return {

@@ -710,14 +710,7 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
 
         await this.loadBooking(id);
 
-        // Terminal guard: a stale Activity card, browser history, or a direct
-        // route must not make a terminal request actionable. Reconcile the
-        // authoritative persisted job first and fail closed to Activity.
-        if (this.isTerminalBooking) {
-            await this.showToast('This request is no longer active.', 'warning');
-            await this.router.navigate(['/customer/activity'], { replaceUrl: true });
-            return;
-        }
+        if (!this.booking() || !this.bookingService.isPendingMarketplaceBooking(this.booking())) return;
 
         await this.hybridService.loadSettings();
         await this.loadEffectiveHybridStatus();
@@ -1643,6 +1636,10 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
         try {
             const job = await this.bookingService.getBooking(id);
             this.booking.set(job);
+            if (job && !this.bookingService.isPendingMarketplaceBooking(job)) {
+                await this.router.navigate(['/customer/tracking', job.id], { replaceUrl: true });
+                return;
+            }
             await this.loadEffectiveHybridStatus();
         } catch (error) {
             console.error('[MarketplaceFare] load booking failed', error);

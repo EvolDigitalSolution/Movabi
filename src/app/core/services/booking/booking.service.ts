@@ -105,12 +105,11 @@ export class BookingService {
         const isPaid = paidStatuses.has(paymentStatus) || (hasPaymentIntent && !['failed', 'canceled', 'pending', 'requires_payment_method', 'unpaid'].includes(paymentStatus));
 
         if (['completed', 'settled'].includes(status)) return 'completed';
-        if (status === 'cancelled') {
-            return isPaid || dispatchStarted || hasDriver ? 'cancelled' : 'draft';
-        }
+        if (['cancelled', 'canceled', 'no_driver_found', 'expired', 'failed'].includes(status)) return 'cancelled';
         if (activeStatuses.has(status)) return status === 'delivered' ? 'completed' : 'active';
         if (dispatchStatuses.has(status)) return isPaid ? 'paid_ready_for_dispatch' : 'payment_pending';
         if (status === 'fare_agreed') return isPaid ? 'paid_ready_for_dispatch' : 'fare_agreed_unpaid';
+        if (isPaid && ['pending', 'requested', 'pending_fare_confirmation', 'negotiating'].includes(status)) return 'paid_ready_for_dispatch';
         if (['pending_fare_confirmation', 'negotiating'].includes(status)) return 'negotiating';
         if (paymentPendingStatuses.has(status) || paymentPendingStatuses.has(paymentStatus)) return 'payment_pending';
 

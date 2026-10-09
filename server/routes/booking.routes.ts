@@ -862,7 +862,7 @@ router.post('/cancel', async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Customer identity mismatch.', code: 'IDENTITY_MISMATCH' });
         }
 
-        if (!LogisticsService.isValidBookingTransition(job.status, 'cancelled')) {
+        if (!['cancelled', 'canceled'].includes(String(job.status)) && !LogisticsService.isValidBookingTransition(job.status, 'cancelled')) {
             return res.status(400).json({
                 error: `Cannot cancel job in status: ${job.status}`
             });
@@ -940,7 +940,7 @@ router.post('/cancel', async (req: Request, res: Response) => {
                 } else {
                     await supabaseAdmin
                         .from('jobs')
-                        .update({ payment_status: 'cancelled' })
+                        .update({ payment_status: pi.status === 'canceled' ? 'cancelled' : 'requires_review' })
                         .eq('id', jobId);
                 }
             } catch (stripeError: any) {

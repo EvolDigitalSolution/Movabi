@@ -660,13 +660,19 @@ router.post('/confirm', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only the customer can confirm this payment' });
     }
 
-    // C2: ONE shared server-derived payable amount, computed once and reused for
-    // both the Stripe amount check and the atomic finalization authority.
-    const payable = await PaymentAuthorityService.resolve(job);
-
-    // Wallet path: the reservation was already authorised server-side by
-    // pay_job_from_wallet; here we only advance dispatch, and only once.
+    if (['cancelled', 'canceled', 'expired', 'failed', 'no_driver_found', 'completed', 'settled', 'delivered'].includes(String(job.status))) {
+      return res.status(409).json({ error: 'This booking is no longer payable', code: 'JOB_TERMINAL' });
+    }
     const walletPaid = String(job.payment_status || '').toLowerCase() === 'wallet_funded';
+    if (walletPaid) {
+      // Wallet reservation and activation are now committed by one DB function.
+      // A historical funded-but-unactivated row must never be reported as success.
+      if (job.payment_method !== 'wallet' || !['requested', 'searching', 'assigned', 'accepted', 'heading_to_pickup', 'driver_en_route', 'arrived', 'in_progress', 'shopping_in_progress', 'collected', 'en_route_to_customer'].includes(String(job.status))) {
+        return res.status(409).json({ error: 'Wallet reservation needs reconciliation. You can cancel to release unused funds.', code: 'WALLET_ACTIVATION_INCOMPLETE' });
+      }
+      return res.json({ success: true, alreadyConfirmed: true, booking: job });
+    }
+    const payable = await PaymentAuthorityService.resolve(job);
 
     // Captured for the ATOMIC FINALIZATION AUTHORITY below: the intent's real
     // amount/currency are proven against the persisted negotiation authority.

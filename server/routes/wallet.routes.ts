@@ -1,3 +1,4 @@
+import { dispatchService } from '../services/dispatch.service';
 import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
 import { PaymentAuthorityService } from '../services/payment-authority.service';
@@ -92,7 +93,7 @@ router.post('/pay-job', async (req: Request, res: Response) => {
 
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
-      .select('*')
+      .select('*, service_type:service_types(*)')
       .eq('id', jobId)
       .maybeSingle();
     if (jobError) {
@@ -113,7 +114,7 @@ router.post('/pay-job', async (req: Request, res: Response) => {
     const quoteReference = String((job as any).quote_id || metadata['quote_id'] || breakdown['quoteId'] || '').trim();
     const quoteExpiresAt = String(metadata['quote_expires_at'] || breakdown['quoteExpiresAt'] || '').trim();
     const quoteVersion = String(breakdown['calculationVersion'] || breakdown['marketPricingVersion'] || '').trim();
-    if (!job.agreed_fare && (!quoteReference || !quoteVersion || !quoteExpiresAt || Date.parse(quoteExpiresAt) <= Date.now())) {
+    if (job.payment_status !== 'wallet_funded' && !job.agreed_fare && (!quoteReference || !quoteVersion || !quoteExpiresAt || Date.parse(quoteExpiresAt) <= Date.now())) {
       return res.status(409).json({ error: 'Fare quote is missing or expired', code: 'QUOTE_EXPIRED' });
     }
     // C2: the wallet debit amount is server-derived by the SAME authoritative
@@ -139,6 +140,20 @@ router.post('/pay-job', async (req: Request, res: Response) => {
         details: error.details,
         hint: error.hint
       });
+    }
+
+    // Notify only after the transaction committed. Repeated payment calls must
+    // not reset dispatch or send another round of notifications.
+    if ((data as any)?.status !== 'already_paid') {
+      try {
+        const { data: activated } = await supabaseAdmin.from('jobs')
+          .select('*, service_type:service_types(*)').eq('id', jobId).maybeSingle();
+        if (activated?.status === 'searching' && !activated.driver_id) {
+          await dispatchService.notifyNearbyDrivers(activated, activated.tenant_id, activated.city_id);
+        }
+      } catch (notifyError) {
+        console.error('[WalletRoutes] driver notification failed after payment:', notifyError);
+      }
     }
 
     res.json({

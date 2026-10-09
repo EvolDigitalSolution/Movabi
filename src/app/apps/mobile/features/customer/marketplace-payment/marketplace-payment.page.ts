@@ -563,7 +563,7 @@ export class MarketplacePaymentPage implements OnInit, AfterViewInit, OnDestroy 
                 );
             }
 
-            await this.bookingService.confirmJobPayment(job.id, 'wallet_funded');
+            // The wallet endpoint already committed reservation and activation.
 
             await loading.dismiss();
             await this.showToast('Payment successful! Finding your driver...', 'success');
