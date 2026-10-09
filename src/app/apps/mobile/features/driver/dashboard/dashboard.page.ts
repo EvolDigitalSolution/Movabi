@@ -1,3 +1,4 @@
+import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
 import { DestroyRef, Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
@@ -254,13 +255,14 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
           }
 
           <div 
-            class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 transition-all duration-300 z-20"
+            class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 flex flex-col overflow-hidden z-20"
             [style.height.%]="sheetHeight()"
-            [style.transform]="isDraggingSheet() ? 'scale(0.99)' : 'scale(1)'"
+            [style.transition]="isDraggingSheet() ? 'none' : 'height 220ms ease'"
           >
             <button
               type="button"
-              class="w-full flex justify-center py-3 cursor-grab active:cursor-grabbing"
+              class="w-full shrink-0 flex justify-center items-center min-h-[44px] py-3 cursor-grab active:cursor-grabbing"
+              style="touch-action: none; user-select: none"
               (click)="toggleSheet()"
               (pointerdown)="startDragSheet($event)"
               aria-label="Resize requests sheet"
@@ -268,7 +270,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               <span class="w-12 h-1.5 bg-slate-300 rounded-full"></span>
             </button>
 
-            <div class="px-4 h-[calc(100%-3rem)] overflow-hidden flex flex-col">
+            <div class="px-4 min-h-0 flex-1 overflow-hidden flex flex-col">
               @if (activeJob()) {
                 @let currentJob = activeJob();
                 <div class="min-h-0 flex-1 flex flex-col">
@@ -291,7 +293,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                             {{ activeJobCustomerName(currentJob) }}
                           </p>
                         </div>
-                        <div class="text-right shrink-0">
+                        <div class="text-right shrink-0 whitespace-nowrap">
                           <p class="text-2xl font-display font-black text-slate-950">
                             {{ formatPrice(getRequestFare(currentJob!)) }}
                           </p>
@@ -338,6 +340,9 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                       class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
                     >
                       Chat
+                      @if (activeJobChatUnread() > 0) {
+                        <span class="ml-2 inline-flex min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-bold text-white" aria-label="Unread chat messages">{{ activeJobChatUnread() > 99 ? '99+' : activeJobChatUnread() }}</span>
+                      }
                     </button>
                     @if (activeJobCustomerPhone(currentJob)) {
                       <button
@@ -996,6 +1001,19 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
     activeJob = this.driverService.activeJob;
+    readonly chatAlerts = inject(NotificationOrchestratorService);
+    readonly activeJobChatUnread = computed(() => {
+        const id = this.activeJob()?.id;
+        return id ? this.chatAlerts.getBadgeCount(id) : 0;
+    });
+    private activeJobChatBadgeRefresh = effect((onCleanup) => {
+        const id = this.activeJob()?.id;
+        const user = this.auth.currentUser()?.id;
+        if (!id || !user) return;
+        void this.chatAlerts.markAsRead(id);
+        const timer = setInterval(() => { void this.chatAlerts.markAsRead(id); }, 5000);
+        onCleanup(() => clearInterval(timer));
+    });
     activeHubTab = signal<DriverHubTab>('requests');
     readonly hubTabs: Array<{ key: DriverHubTab; label: string; icon: string }> = [
         { key: 'requests', label: 'Requests', icon: 'location-outline' },
@@ -3504,12 +3522,16 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             return;
         }
 
-        this.sheetHeight.set(this.sheetHeight() >= 70 ? 40 : 80);
+        this.sheetHeight.set(this.sheetHeight() >= 70 ? 40 : 95);
         this.reframeForSheetChange();
     }
 
     startDragSheet(event: PointerEvent) {
+        if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
         event.preventDefault();
+        const handle = event.currentTarget as HTMLElement;
+        const panelHeight = Math.max(handle.parentElement?.parentElement?.getBoundingClientRect().height || window.innerHeight, 1);
+        handle.setPointerCapture?.(event.pointerId);
         this.isDraggingSheet.set(true);
         this.sheetDragMoved = false;
         this.sheetDragStartY = event.clientY;
@@ -3521,9 +3543,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 this.sheetDragMoved = true;
             }
 
-            const viewportHeight = Math.max(window.innerHeight, 1);
+            const viewportHeight = panelHeight;
             const deltaVh = ((this.sheetDragStartY - moveEvent.clientY) / viewportHeight) * 100;
-            const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaVh));
+            const nextHeight = Math.max(40, Math.min(95, this.sheetDragStartHeight + deltaVh));
             this.sheetHeight.set(nextHeight);
         };
 
@@ -3532,7 +3554,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             document.removeEventListener('pointerup', end);
             document.removeEventListener('pointercancel', end);
 
-            const settledHeight = this.sheetHeight() >= 60 ? 80 : 40;
+            const settledHeight = this.sheetHeight() >= 67.5 ? 95 : 40;
             const heightChanged = Math.round(settledHeight / 10) !== Math.round(this.sheetHeight() / 10);
             this.sheetHeight.set(settledHeight);
 

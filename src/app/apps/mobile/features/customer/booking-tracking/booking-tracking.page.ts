@@ -1113,6 +1113,10 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     async ngOnInit(): Promise<void> {
+        if (this.route.snapshot.queryParamMap.get('tab') === 'chat' || this.route.snapshot.queryParamMap.get('chat') === '1') {
+            this.activeTrackingTab.set('chat');
+            this.showChat.set(true);
+        }
         const id = this.route.snapshot.paramMap.get('id');
 
         if (!id) {

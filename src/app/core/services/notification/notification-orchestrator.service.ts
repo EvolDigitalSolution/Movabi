@@ -1,5 +1,7 @@
+import { ToastController } from '@ionic/angular/standalone';
+import { Router } from '@angular/router';
 import { CommunicationService } from '../communication/communication.service';
-import { Injectable, inject, effect } from '@angular/core';
+import { Injectable, inject, effect, signal } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
 import { NativePlatformService } from '../native/native-platform.service';
@@ -44,6 +46,10 @@ export class NotificationOrchestratorService {
   private auth = inject(AuthService);
   private nativePlatform = inject(NativePlatformService);
   private oneSignal = inject(OneSignalService);
+  private toastController = inject(ToastController);
+  private router = inject(Router);
+  private badgeCounts = signal<Map<string, number>>(new Map());
+  private badgePolling = new Map<string, ReturnType<typeof setInterval>>();
 
   private activeJobSubscriptions = new Map<string, RealtimeChannel>();
   private seenEventIds = new Set<string>();
@@ -111,12 +117,17 @@ export class NotificationOrchestratorService {
 
     // Store channel reference
     this.activeJobSubscriptions.set(jobId, channel);
+    void this.markAsRead(jobId);
+    this.badgePolling.set(jobId, setInterval(() => { void this.markAsRead(jobId); }, 5000));
   }
 
   /**
    * Unsubscribe from notifications for a specific job
    */
   unsubscribeFromJob(jobId: string): void {
+    const timer = this.badgePolling.get(jobId);
+    if (timer) clearInterval(timer);
+    this.badgePolling.delete(jobId);
     const channel = this.activeJobSubscriptions.get(jobId);
     if (!channel) return;
 
@@ -139,14 +150,16 @@ export class NotificationOrchestratorService {
   async markAsRead(jobId: string): Promise<void> {
     // Opening a tab is not evidence that history loaded. The chat panel acknowledges
     // the actual displayed messages through its last received timestamp.
-    this.updateBadgeCount(jobId, await this.getUnreadCount(jobId));
+    const userId = this.currentUserId;
+    const count = await this.getUnreadCount(jobId);
+    if (userId && userId === this.currentUserId) this.updateBadgeCount(jobId, count);
   }
 
   /**
    * Get badge count for a specific job
    */
   getBadgeCount(jobId: string): number {
-    const badgeCounts = this.badgeCountSubject.value;
+    const badgeCounts = this.badgeCounts();
     return badgeCounts.get(jobId) || 0;
   }
 
@@ -157,7 +170,7 @@ export class NotificationOrchestratorService {
     if (!this.currentUserId) return;
 
     // Ignore messages from current user
-    if (message.sender_id === this.currentUserId) return;
+    if (message.sender_id === this.currentUserId || message.receiver_id !== this.currentUserId) return;
 
     const eventId = this.generateEventId('job_messages', 'INSERT', message.id, message.created_at);
     if (this.seenEventIds.has(eventId)) return;
@@ -214,6 +227,17 @@ export class NotificationOrchestratorService {
   private async showNotification(event: NotificationEvent): Promise<void> {
     console.log(`[NotificationOrchestrator] Showing notification:`, event);
 
+    const role = this.auth.profileService.profile()?.role === 'driver' ? 'driver' : 'customer';
+    if (event.type === 'new_chat_message') {
+      const route = role === 'driver' ? `/driver/job-details/${event.jobId}?chat=1` : `/customer/tracking/${event.jobId}?tab=chat`;
+      const toast = await this.toastController.create({
+        header: 'New message', message: 'You have a new booking message.',
+        duration: 5000, position: 'top',
+        buttons: [{ text: 'Open chat', handler: () => { void this.router.navigateByUrl(route); } }]
+      });
+      await toast.present();
+    }
+
     // Play sound and vibrate
     await this.playNotificationFeedback(event.type);
 
@@ -225,7 +249,7 @@ export class NotificationOrchestratorService {
         type: event.type,
         jobId: event.jobId,
         open: event.type === 'new_chat_message' ? 'booking_chat' : 'booking_tracking',
-        role: 'customer' // This should be determined based on user role
+        role
       }
     );
   }
@@ -251,6 +275,7 @@ export class NotificationOrchestratorService {
 
   private async playEventSound(eventType: NotificationEventType): Promise<void> {
     const soundMap: Partial<Record<NotificationEventType, string>> = {
+      new_chat_message: 'message-notification.mp3',
       driver_accepted: 'booking-accepted.mp3',
       driver_en_route: 'driver-arrived.mp3',
       driver_arrived: 'driver-arrived.mp3',
@@ -279,6 +304,7 @@ export class NotificationOrchestratorService {
   private updateBadgeCount(jobId: string, count: number): void {
     const currentBadgeCounts = new Map(this.badgeCountSubject.value);
     currentBadgeCounts.set(jobId, count);
+    this.badgeCounts.set(currentBadgeCounts);
     this.badgeCountSubject.next(currentBadgeCounts);
   }
 
@@ -369,6 +395,7 @@ export class NotificationOrchestratorService {
 
     // Clear state
     this.seenEventIds.clear();
+    this.badgeCounts.set(new Map());
     this.badgeCountSubject.next(new Map());
   }
 }

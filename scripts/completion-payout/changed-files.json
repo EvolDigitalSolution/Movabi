@@ -18,6 +18,7 @@
   "server/services/payment-margin.service.ts",
   "server/services/pricing.service.ts",
   "src/app/apps/mobile/features/customer/booking-tracking/booking-tracking.page.ts",
+  "src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts",
   "src/app/apps/mobile/features/driver/job-details/job-details.page.ts",
   "src/app/core/services/communication/communication.service.ts",
   "src/app/core/services/notification/notification-orchestrator.service.ts",
