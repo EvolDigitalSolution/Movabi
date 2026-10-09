@@ -1011,7 +1011,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const user = this.auth.currentUser()?.id;
         if (!id || !user) return;
         void this.chatAlerts.markAsRead(id);
-        const timer = setInterval(() => { void this.chatAlerts.markAsRead(id); }, 5000);
+        const timer = setInterval(() => { void this.chatAlerts.markAsRead(id); }, 30000);
         onCleanup(() => clearInterval(timer));
     });
     activeHubTab = signal<DriverHubTab>('requests');
@@ -2443,7 +2443,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 await this.driverService.fetchAvailableJobs();
                 this.syncMarketplaceMapMarkers();
             }
-        }, 5000);
+        }, 30000);
     }
 
     private async refreshStripeUiStateFromDb(force = false) {
@@ -3596,7 +3596,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         void this.updateDriverLocation();
         this.locationRefreshInterval = setInterval(() => {
             void this.updateDriverLocation();
-        }, 10000);
+        }, 30000);
     }
 
     private async updateDriverLocation(): Promise<MarkerCoordinates | null> {

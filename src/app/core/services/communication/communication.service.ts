@@ -24,6 +24,7 @@ export class CommunicationService {
   
   private subscription: RealtimeChannel | null = null;
   private activeJobId: string | null = null;
+  private countRequests = new Map<string, { expires: number; value?: {total:number;unread:number}; pending?: Promise<{total:number;unread:number}>; error?: unknown }>();
 
   async getJobMessages(jobId: string): Promise<JobMessage[]> {
     const userId = this.auth.currentUser()?.id;
@@ -41,12 +42,38 @@ export class CommunicationService {
     return { Authorization: `Bearer ${session.access_token}` };
   }
   async getMessageCounts(jobId: string): Promise<{total: number; unread: number}> {
-    return firstValueFrom(this.http.get<{total: number; unread: number}>(
-      this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/counts'), {headers: await this.chatHeaders()}));
+    const userId = this.auth.currentUser()?.id;
+    if (!userId) throw new Error('Please sign in again.');
+    const key = `${userId}:${jobId}`;
+    const existing = this.countRequests.get(key);
+    if (existing?.pending) return existing.pending;
+    if (existing && existing.expires > Date.now()) {
+      if (existing.error) throw existing.error;
+      if (existing.value) return existing.value;
+    }
+    const entry: {expires:number;value?:{total:number;unread:number};pending?:Promise<{total:number;unread:number}>;error?:unknown} = {expires:0};
+    const request = (async () => {
+      try {
+        const result = await firstValueFrom(this.http.get<{total:number;unread:number}>(
+          this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/counts'),
+          {headers: await this.chatHeaders()}));
+        entry.value = result; entry.expires = Date.now() + 15000;
+        return result;
+      } catch (error: any) {
+        entry.error = error;
+        const retry = Number(error?.headers?.get('Retry-After'));
+        entry.expires = Date.now() + (error?.status === 429 ? Math.max(60000, Number.isFinite(retry) ? retry * 1000 : 0) : 15000);
+        throw error;
+      } finally { entry.pending = undefined; }
+    })();
+    entry.pending = request; this.countRequests.set(key, entry);
+    if (this.countRequests.size > 50) this.countRequests.delete(this.countRequests.keys().next().value!);
+    return request;
   }
   async markMessagesRead(jobId: string, through: string): Promise<void> {
     await firstValueFrom(this.http.post(this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/read'),
       {through}, {headers: await this.chatHeaders()}));
+    this.countRequests.delete(`${this.auth.currentUser()?.id}:${jobId}`);
   }
   async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text') {
     const user = this.auth.currentUser();

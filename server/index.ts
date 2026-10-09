@@ -128,7 +128,13 @@ const bookingLimiter = rateLimit({
 // 🔥 CRITICAL for your error
 // Apply guards
 app.use(failsafeGuard);
-app.use('/api/', globalLimiter);
+// Chat reads are authenticated by the communication routes. Give live readers a
+// separate finite budget so they cannot exhaust booking/availability requests.
+const chatReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 120,
+  message: { error: 'Chat refresh limit reached. Please wait a minute.' } });
+const isChatRead = (req: any) => req.method === 'GET' && /^\/communication\/messages\/[0-9a-f-]+(?:\/counts)?$/.test(req.path);
+app.use('/api/', (req, res, next) => isChatRead(req)
+  ? chatReadLimiter(req, res, next) : globalLimiter(req, res, next));
 app.use('/api/booking/create', bookingLimiter);
 
 // Stripe webhook needs raw body for signature verification

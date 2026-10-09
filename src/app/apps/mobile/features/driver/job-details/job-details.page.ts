@@ -2283,7 +2283,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank');
+        void this.showToast('External navigation may pause live tracking. Return to Movabi to refresh your location.', 'warning');
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');
     }
 
     /**

@@ -137,14 +137,14 @@ import {
       }
 
       @if (startupMarket() && !startupMarket()!.customerAppEnabled) {
-        <section class="fixed inset-0 z-[1200] bg-slate-950 text-white flex items-center justify-center p-6" aria-live="polite">
-          <div class="max-w-lg w-full text-center space-y-5">
-            <ion-icon name="globe-outline" class="text-6xl text-blue-400"></ion-icon>
-            <h1 class="text-3xl font-black">{{ startupMarket()!.title }}</h1><p class="text-slate-300">{{ startupMarket()!.message }}</p>
-            <label class="block text-left text-sm font-bold">Change location<select class="mt-2 w-full p-3 rounded-xl text-slate-900" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code" [selected]="country.code === appConfig.currentCountry().code">{{country.name}}</option>}</select></label>
-            @if (startupMarket()!.waitingListEnabled) {<div class="flex gap-2"><input class="flex-1 min-w-0 p-3 rounded-xl text-slate-900" type="email" placeholder="Email for launch updates" [value]="waitingEmail()" (input)="waitingEmail.set($any($event.target).value)"><button type="button" class="shrink-0 whitespace-nowrap px-4 py-3 rounded-xl bg-blue-600 font-bold" (click)="joinWaitingList()">Join</button></div>}
-            @if (startupMessage()) {<p class="text-sm text-blue-300">{{startupMessage()}}</p>}
-            <div class="flex flex-col sm:flex-row gap-3 justify-center"><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl bg-white text-slate-900 font-bold" (click)="checkStartupMarket()">Retry</button><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl border border-white/30 font-bold" (click)="router.navigateByUrl('/auth/login')">Sign in</button></div>
+        <section class="fixed inset-0 z-[1200] bg-slate-50 text-slate-900 flex items-center justify-center p-6" aria-live="polite">
+          <div class="max-w-lg w-full rounded-3xl border border-slate-200 bg-white p-6 shadow-xl text-center space-y-5">
+            <ion-icon name="globe-outline" class="text-6xl text-amber-500"></ion-icon>
+            <h1 class="text-3xl font-black">{{ startupMarket()!.title }}</h1><p class="text-slate-600">{{ startupMarket()!.message }}</p>
+            <label class="block text-left text-sm font-bold">Change location<select class="mt-2 w-full p-3 rounded-xl bg-white border border-slate-200 text-slate-900" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code" [selected]="country.code === appConfig.currentCountry().code">{{country.name}}</option>}</select></label>
+            @if (startupMarket()!.waitingListEnabled) {<div class="flex gap-2"><input class="flex-1 min-w-0 p-3 rounded-xl bg-white border border-slate-200 text-slate-900" type="email" placeholder="Email for launch updates" [value]="waitingEmail()" (input)="waitingEmail.set($any($event.target).value)"><button type="button" class="shrink-0 whitespace-nowrap px-4 py-3 rounded-xl bg-amber-500 text-slate-950 font-bold" (click)="joinWaitingList()">Join</button></div>}
+            @if (startupMessage()) {<p class="text-sm text-slate-600">{{startupMessage()}}</p>}
+            <div class="flex flex-col sm:flex-row gap-3 justify-center"><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl bg-amber-500 text-slate-950 font-bold" (click)="checkStartupMarket()">Retry</button><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold" (click)="router.navigateByUrl('/auth/login')">Sign in</button></div>
           </div>
         </section>
       } @else if (startupMarket() && startupMarket()!.customerAppEnabled && !startupMarket()!.bookingEnabled) {

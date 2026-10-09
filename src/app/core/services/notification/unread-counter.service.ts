@@ -103,7 +103,7 @@ export class UnreadCounterService {
       .subscribe();
 
     this.messageSubscriptions.set(jobId, subscription);
-    this.polling.set(jobId, setInterval(() => { void this.calculateInitialUnreadCount(jobId); }, 10000));
+    this.polling.set(jobId, setInterval(() => { void this.calculateInitialUnreadCount(jobId); }, 30000));
   }
 
   /**

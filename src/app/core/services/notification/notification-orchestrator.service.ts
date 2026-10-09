@@ -118,7 +118,7 @@ export class NotificationOrchestratorService {
     // Store channel reference
     this.activeJobSubscriptions.set(jobId, channel);
     void this.markAsRead(jobId);
-    this.badgePolling.set(jobId, setInterval(() => { void this.markAsRead(jobId); }, 5000));
+    this.badgePolling.set(jobId, setInterval(() => { void this.markAsRead(jobId); }, 30000));
   }
 
   /**
