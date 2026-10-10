@@ -2,6 +2,7 @@ import { dispatchService } from '../services/dispatch.service';
 import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
 import { PaymentAuthorityService } from '../services/payment-authority.service';
+import { IssuingCapacityService } from '../services/issuing-capacity.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
 
 const router = Router();
@@ -120,6 +121,14 @@ router.post('/pay-job', async (req: Request, res: Response) => {
     // C2: the wallet debit amount is server-derived by the SAME authoritative
     // resolver as card payment; the client never chooses the amount.
     const payable = await PaymentAuthorityService.resolve(job);
+    // Existing funded wallet bookings remain idempotent; new reservations need capacity.
+    if (job.payment_status !== 'wallet_funded') {
+      try {
+        await IssuingCapacityService.assertAvailable(payable.itemBudgetMajor, payable.currency, String(job.id));
+      } catch (capacityError: any) {
+        return res.status(409).json({ error: capacityError.message, code: 'SHOPPING_CAPACITY_UNAVAILABLE' });
+      }
+    }
     const paymentAmount = payable.totalAuthorisationMajor;
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) return res.status(400).json({ error: 'Job has no valid quoted amount' });
 

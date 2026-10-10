@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { IssuingCapacityService } from '../services/issuing-capacity.service';
 import { stripe } from '../services/stripe.service';
 import { supabaseAdmin } from '../services/supabase.service';
 import { dispatchService } from '../services/dispatch.service';
@@ -315,6 +316,14 @@ router.post('/create-intent', async (req: Request, res: Response) => {
           });
         }
       }
+    }
+
+    // Check old quotes before returning a secret for either a new or reused intent.
+    const capacityPayable = await PaymentAuthorityService.resolve(job);
+    try {
+      await IssuingCapacityService.assertAvailable(capacityPayable.itemBudgetMajor, capacityPayable.currency, String(job.id));
+    } catch (capacityError: any) {
+      return res.status(409).json({ error: capacityError.message, code: 'SHOPPING_CAPACITY_UNAVAILABLE' });
     }
 
     if (job.payment_intent_id) {

@@ -1,3 +1,4 @@
+import { IssuingCapacityService } from './issuing-capacity.service';
 import { PaymentMarginService, PaymentMarginPolicy } from './payment-margin.service';
 import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
@@ -138,6 +139,7 @@ export class PricingService {
         if (budget > 0 && process.env.STRIPE_ISSUING_ENABLED !== 'true') {
             throw new Error('Shopping funding is temporarily unavailable. Choose a task without a purchase budget or try later.');
         }
+        if (budget > 0) await IssuingCapacityService.assertAvailable(budget, result.currencyCode);
         const protectedPrice = PaymentMarginService.protect(result.totalPrice, result.driverPayout, budget, policy);
         const fee = this.roundMoney(result.platformFee + protectedPrice.adjustment);
         const cap = Number(result.fareBreakdown.platformFeeMaximum || 0);

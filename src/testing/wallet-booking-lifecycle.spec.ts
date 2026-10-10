@@ -87,6 +87,7 @@ describe('wallet API activation', () => {
       express: { Router: () => ({ get() {}, post: (path: string, fn: any) => routes[path] = fn }) },
       '../services/supabase.service': { supabaseAdmin: db },
       '../services/payment-authority.service': { PaymentAuthorityService: { resolve: async () => ({ totalAuthorisationMajor: 30 }) } },
+      '../services/issuing-capacity.service': { IssuingCapacityService: { assertAvailable: async () => {} } },
       '../services/dispatch.service': { dispatchService: { notifyNearbyDrivers: async (...args: any[]) => notifications.push(args) } },
       '../services/market-availability.service': { MarketAvailabilityService: { requireCapability: async () => {} }, MarketAvailabilityError: class extends Error {} }
     };

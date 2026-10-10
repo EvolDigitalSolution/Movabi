@@ -2937,7 +2937,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             // previous fare able to authorise marketplace continuation or payment.
             this.authoritativeQuote.set(null);
             this.fareCalculationError.set(
-                marketFailure?.message || 'Unable to calculate the fare right now. Please try again.'
+                marketFailure?.message ||
+                (['This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.',
+                  'Shopping funding could not be verified. Please try again later.']
+                  .includes((error as { error?: { error?: string } })?.error?.error || '')
+                  ? (error as { error?: { error?: string } })?.error?.error : null) || 'Unable to calculate the fare right now. Please try again.'
             );
         } finally {
             if (this.quoteInFlightSignature === signature) {
