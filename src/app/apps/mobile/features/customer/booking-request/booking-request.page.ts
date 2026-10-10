@@ -2026,7 +2026,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private defaultVehicleClass(): VehicleClass {
         if (this.type === ServiceTypeEnum.RIDE) return 'standard';
-        if (this.type === ServiceTypeEnum.DELIVERY || this.type === ServiceTypeEnum.ERRAND) return 'bike';
+        if (this.type === ServiceTypeEnum.DELIVERY || this.type === ServiceTypeEnum.ERRAND) return 'car';
         return 'small_van';
     }
 
@@ -2287,7 +2287,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     items_list: [''],
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
-                    vehicle_class: ['bike', Validators.required],
+                    vehicle_class: ['car', Validators.required],
                     recipient_phone: ['', this.optionalPhoneValidator.bind(this)],
                     recipient_name: [''],
                     substitution_rule: ['contact_me']
@@ -2298,7 +2298,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
-                    vehicle_class: ['bike', Validators.required],
+                    vehicle_class: ['car', Validators.required],
                     package_size: ['small', Validators.required],
                     recipient_name: ['', Validators.required],
                     recipient_phone: ['', [Validators.required, this.requiredPhoneValidator.bind(this)]],
