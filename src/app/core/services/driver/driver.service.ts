@@ -1,3 +1,4 @@
+import { approvedErrandBudget } from '@shared/utils/errand-budget';
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -962,11 +963,7 @@ export class DriverService {
             this.bookingService.getErrandFunding(jobId)
         ]);
         const user = this.auth.currentUser();
-        const initialBudget = Math.max(0, Number(details?.estimated_budget || 0));
-        const approvedExtra = funding?.over_budget_status === 'approved'
-            ? Math.max(0, Number(funding.requested_over_budget_amount ?? funding.over_budget_amount ?? 0))
-            : 0;
-        const approvedBudget = Number((initialBudget + approvedExtra).toFixed(2));
+        const approvedBudget = approvedErrandBudget(funding, details?.estimated_budget);
         const normalizedAmount = Number(Number(amount).toFixed(2));
 
         if (!user || job.driver_id !== user.id) {

@@ -1,3 +1,4 @@
+import { ShoppingBudgetService } from './services/shopping-budget.service';
 import journeyRoutes from './routes/journey.routes';
 import { JobPayoutService } from './services/job-payout.service';
 import express, { Request, Response, NextFunction } from 'express';
@@ -197,6 +198,13 @@ try {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     JobPayoutService.start();
+    let shoppingCleanupRunning = false;
+    setInterval(() => {
+      if (shoppingCleanupRunning) return;
+      shoppingCleanupRunning = true;
+      void ShoppingBudgetService.cleanup().catch(error => console.error('[ShoppingBudget] cleanup failed', error.message))
+        .finally(() => { shoppingCleanupRunning = false; });
+    }, 60000);
     
     // Check for critical missing environment variables
     const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];

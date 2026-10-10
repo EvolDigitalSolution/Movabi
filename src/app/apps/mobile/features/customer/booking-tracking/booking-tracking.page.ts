@@ -1,3 +1,5 @@
+import { ModalController } from '@ionic/angular/standalone';
+import { ShoppingBudgetApprovalComponent } from '@shared/components/shopping-budget-approval/shopping-budget-approval.component';
 import { CommunicationService } from '../../../../../core/services/communication/communication.service';
 import {
     Component,
@@ -853,6 +855,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private toastCtrl = inject(ToastController);
     private locationService = inject(LocationService);
     private walletService = inject(WalletService);
+    private budgetModalController = inject(ModalController);
+    private budgetApprovalBusy = false;
     private routingService = inject(RoutingService);
     private nativePlatform = inject(NativePlatformService);
     private auth = inject(AuthService);
@@ -3134,19 +3138,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const b = this.booking();
         if (!b) return;
 
-        const shortfall = this.getExtraBudgetShortfall();
-
-        if (shortfall > 0) {
-            await this.showWalletShortfallAlert(shortfall);
-            return;
-        }
-
+        if (this.budgetApprovalBusy) return;
+        this.budgetApprovalBusy = true;
         try {
-            await this.walletService.approveErrandOverBudget(b.id);
-            await this.loadBookingAndDetails(b.id, false);
-        } catch (error: unknown) {
-            await this.showOverBudgetError(error, 'Could not approve extra budget.');
-        }
+            const modal = await this.budgetModalController.create({
+                component: ShoppingBudgetApprovalComponent, componentProps: {jobId:b.id,walletPayment:b.payment_method==='wallet' || b.payment_status==='wallet_funded'}, backdropDismiss:false
+            });
+            await modal.present();
+            await modal.onDidDismiss();
+            await this.loadBookingAndDetails(b.id,false);
+        } catch (error:unknown) { await this.showOverBudgetError(error,'Could not approve extra budget.'); }
+        finally { this.budgetApprovalBusy = false; }
     }
 
     async rejectOverBudget(): Promise<void> {
@@ -3162,6 +3164,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getExtraBudgetShortfall(): number {
+        if (this.booking()?.payment_method === 'card') return 0;
         const requested = Number(this.errandFunding()?.over_budget_amount || 0);
         const available = Number(this.walletService.wallet()?.available_balance || 0);
 

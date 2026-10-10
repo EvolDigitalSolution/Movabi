@@ -1,3 +1,4 @@
+import { approvedErrandBudget } from '@shared/utils/errand-budget';
 import { ModalController } from '@ionic/angular/standalone';
 import { JourneyNavigationComponent } from '../navigation/journey-navigation.component';
 import { CommunicationService } from '../../../../../core/services/communication/communication.service';
@@ -1510,13 +1511,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     approvedErrandItemBudget(): number {
-        const initialBudget = Math.max(0, this.toNumber(this.errandDetails()?.estimated_budget));
-        const currentFunding = this.funding();
-        const approvedExtra = currentFunding?.over_budget_status === 'approved'
-            ? Math.max(0, this.toNumber(currentFunding.requested_over_budget_amount ?? currentFunding.over_budget_amount))
-            : 0;
-
-        return Number((initialBudget + approvedExtra).toFixed(2));
+        return approvedErrandBudget(this.funding(), this.errandDetails()?.estimated_budget);
     }
 
     virtualCardDisplayNumber(): string {
@@ -2211,7 +2206,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             this.patchErrandFunding({
                 over_budget_status: 'requested',
                 over_budget_amount: amount,
-                requested_over_budget_amount: amount,
+                requested_over_budget_amount: Number((this.approvedErrandItemBudget() + amount).toFixed(2)),
                 over_budget_reason: reason,
                 status: 'over_budget_requested',
                 updated_at: new Date().toISOString()

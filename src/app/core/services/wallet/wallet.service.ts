@@ -1,3 +1,4 @@
+import { approvedErrandBudget } from '@shared/utils/errand-budget';
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -93,10 +94,17 @@ export class WalletService {
     await this.fetchWallet();
   }
 
-  async requestErrandOverBudget(jobId: string, newRequiredItemBudget: number, reason: string): Promise<void> {
+  async requestErrandOverBudget(jobId: string, additionalAmount: number, reason: string): Promise<void> {
+    const funding = await this.getErrandFunding(jobId);
+    if (!funding || !Number.isFinite(additionalAmount) || additionalAmount <= 0) {
+      throw new Error('Enter a valid additional shopping amount.');
+    }
+    const {data:details,error:detailsError}=await this.supabase.from('errand_details').select('estimated_budget').eq('job_id',jobId).maybeSingle();
+    if(detailsError) throw new Error('Shopping budget could not be verified');
+    const total = Number((approvedErrandBudget(funding,details?.estimated_budget) + additionalAmount).toFixed(2));
     const { error } = await this.supabase.rpc('request_errand_over_budget', {
       p_job_id: jobId,
-      p_amount: newRequiredItemBudget,
+      p_amount: total,
       p_reason: reason
     });
 

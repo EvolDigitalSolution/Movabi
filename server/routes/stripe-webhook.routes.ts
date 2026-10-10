@@ -22,6 +22,7 @@ const supabase = createClient(
  */
 async function verifyJobPaymentIntent(event: Stripe.Event): Promise<string | null> {
   const paymentIntent = event.data.object as Stripe.PaymentIntent;
+  if (paymentIntent.metadata?.purpose === 'shopping_budget_reauthorization') return null;
   const jobId = paymentIntent.metadata?.jobId;
   if (!jobId) return null;
 
@@ -68,7 +69,10 @@ router.post('/', async (req: Request, res: Response) => {
     switch (event.type) {
       case 'issuing_authorization.request': {
         const authorization = event.data.object as Stripe.Issuing.Authorization;
-        const decision = await IssuingService.handleAuthorizationRequest(authorization);
+        const decision = await IssuingService.handleAuthorizationRequest(authorization).catch(error => {
+          console.error('[Issuing] authorization declined after processing error',error.message);
+          return {approved:false};
+        });
 
         return res
           .status(200)
@@ -269,7 +273,8 @@ router.post('/', async (req: Request, res: Response) => {
 
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        const jobId = paymentIntent.metadata?.jobId;
+        if (paymentIntent.metadata?.purpose === 'shopping_budget_reauthorization') return null;
+  const jobId = paymentIntent.metadata?.jobId;
         if (jobId) {
           await supabase.from('stripe_events').upsert({
             id: event.id,

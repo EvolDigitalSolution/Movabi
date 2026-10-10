@@ -1,3 +1,6 @@
+import { ShoppingBudgetService } from './shopping-budget.service';
+import { FareSplitService } from './fare-split.service';
+import { approvedErrandBudget } from '../../src/app/shared/utils/errand-budget';
 import Stripe from 'stripe';
 import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
@@ -29,9 +32,7 @@ type StoredIssuingRecord = Record<string, any>;
 
 const isIssuingEnabled = () => process.env.STRIPE_ISSUING_ENABLED === 'true';
 
-const moneyToMinor = (amount: number): number => {
-  return Math.max(0, Math.round(Number(amount || 0) * 100));
-};
+const moneyToMinor = (amount: number,currency='GBP'): number => FareSplitService.toMinor(amount,currency);
 
 const parseMoney = (value: unknown): number => {
   const amount = Number(value || 0);
@@ -243,14 +244,17 @@ export class IssuingService {
       && budgetLimit > 0
       && (
         Math.abs(parseMoney(existing?.['amount_limit']) - budgetLimit) >= 0.01
-        || controlMetadata['spending_limit_interval'] !== 'all_time'
+        || controlMetadata['spending_limit_interval'] !== 'per_authorization'
       );
 
     if (needsLimitSync) {
       try {
+        if(process.env.STRIPE_ISSUING_FAIL_CLOSED_CONFIRMED !== 'true') throw new Error('Shopping card authorization safety settings require verification');
+        await ShoppingBudgetService.assertCustomerFunds(jobId,budgetLimit);
+        await ShoppingBudgetService.reserve(jobId,budgetLimit,String(job.currency_code || 'GBP'));
         await stripe.issuing.cards.update(card.stripe_card_id, {
           spending_controls: {
-            spending_limits: [{ amount: moneyToMinor(budgetLimit), interval: 'all_time' }]
+            spending_limits: [{ amount: moneyToMinor(budgetLimit,String(job.currency_code || 'GBP')), interval: 'per_authorization' }]
           }
         } as any);
         await supabaseAdmin
@@ -259,8 +263,8 @@ export class IssuingService {
             amount_limit: budgetLimit,
             metadata: {
               ...controlMetadata,
-              spending_limit_minor: moneyToMinor(budgetLimit),
-              spending_limit_interval: 'all_time'
+              spending_limit_minor: moneyToMinor(budgetLimit,String(job.currency_code || 'GBP')),
+              spending_limit_interval: 'per_authorization'
             },
             updated_at: new Date().toISOString()
           })
@@ -314,53 +318,25 @@ export class IssuingService {
       throw new Error('No item budget is reserved for this errand.');
     }
 
+    if(process.env.STRIPE_ISSUING_FAIL_CLOSED_CONFIRMED !== 'true') throw new Error('Shopping card authorization safety settings require verification');
+    await ShoppingBudgetService.assertCustomerFunds(jobId,budget);
+    await ShoppingBudgetService.reserve(jobId,budget,String(job.currency_code || 'GBP'));
     const card = await this.ensureDriverCard(job.driver_id, job.tenant_id);
     await this.assertCardholderCanUseCard(card.stripe_cardholder_id);
 
     const currency = String(job.currency_code || 'GBP').toLowerCase();
-    const limitAmount = moneyToMinor(budget);
+    const limitAmount = moneyToMinor(budget,String(job.currency_code || 'GBP'));
 
-    await stripe.issuing.cards.update(card.stripe_card_id, {
-      status: 'active',
-      spending_controls: {
-        spending_limits: [
-          {
-            amount: limitAmount,
-            interval: 'all_time'
-          }
-        ]
-      },
-      metadata: {
-        active_job_id: jobId,
-        driver_id: job.driver_id,
-        tenant_id: job.tenant_id || ''
-      }
-    } as any);
-
-    await supabaseAdmin
-      .from('job_issuing_spend_controls')
-      .upsert(
-        {
-          job_id: jobId,
-          driver_id: job.driver_id,
-          customer_id: job.customer_id,
-          tenant_id: job.tenant_id,
-          stripe_card_id: card.stripe_card_id,
-          amount_limit: budget,
-          amount_authorized: 0,
-          amount_captured: 0,
-          currency_code: String(job.currency_code || 'GBP').toUpperCase(),
-          status: 'active',
-          metadata: {
-            spending_limit_minor: limitAmount,
-            spending_limit_interval: 'all_time',
-            card_presence: 'in_person_only'
-          },
-          activated_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'job_id' }
-      );
+    const {error: controlError}=await supabaseAdmin.rpc('activate_job_issuing_control',{
+      p_job:jobId,p_card:card.stripe_card_id,p_budget:budget,
+      p_metadata:{spending_limit_minor:limitAmount,spending_limit_interval:'per_authorization',card_presence:'in_person_only'}
+    });
+    if(controlError) throw new Error(controlError.message);
+    await stripe.issuing.cards.update(card.stripe_card_id,{status:'inactive'});
+    await stripe.issuing.cards.update(card.stripe_card_id,{
+      status:'active',spending_controls:{spending_limits:[{amount:limitAmount,interval:'per_authorization'}]},
+      metadata:{active_job_id:jobId,driver_id:job.driver_id,tenant_id:job.tenant_id || ''}
+    });
 
     return this.getErrandCardStatus(jobId);
   }
@@ -381,139 +357,39 @@ export class IssuingService {
   }
 
   static async handleAuthorizationRequest(authorization: Stripe.Issuing.Authorization) {
-    const pendingAmount = Number((authorization as any).pending_request?.amount || 0);
     const cardId = typeof authorization.card === 'string' ? authorization.card : authorization.card?.id;
+    const pending = authorization.pending_request;
+    if (!cardId || !pending || pending.currency !== authorization.currency) return { approved:false };
+    const {data:control,error:controlError}=await supabaseAdmin.from('job_issuing_spend_controls')
+      .select('job_id,amount_limit').eq('stripe_card_id',cardId).eq('status','active').maybeSingle();
+    if(controlError || !control) return {approved:false};
+    await ShoppingBudgetService.assertCustomerFunds(control.job_id,Number(control.amount_limit));
 
-    if (!cardId) {
-      return { approved: false, metadata: { reason: 'missing_card' } };
-    }
-
-    const { data: control } = await supabaseAdmin
-      .from('job_issuing_spend_controls')
-      .select('*')
-      .eq('stripe_card_id', cardId)
-      .eq('status', 'active')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!control) {
-      return { approved: false, metadata: { reason: 'no_active_job_limit' } };
-    }
-
-    const limitMinor = moneyToMinor(control.amount_limit);
-    const alreadyAuthorizedMinor = moneyToMinor(control.amount_authorized);
-    const nextTotalMinor = alreadyAuthorizedMinor + pendingAmount;
-    const approved = pendingAmount > 0 && nextTotalMinor <= limitMinor;
-
-    await supabaseAdmin
-      .from('job_issuing_authorizations')
-      .upsert(
-        {
-          stripe_authorization_id: authorization.id,
-          job_id: control.job_id,
-          driver_id: control.driver_id,
-          stripe_card_id: cardId,
-          amount: pendingAmount / 100,
-          currency_code: String((authorization as any).pending_request?.currency || authorization.currency || control.currency_code || 'GBP').toUpperCase(),
-          approved,
-          merchant_name: authorization.merchant_data?.name || null,
-          merchant_category: authorization.merchant_data?.category || null,
-          status: authorization.status,
-          raw_event: authorization as any,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'stripe_authorization_id' }
-      );
-
-    if (approved) {
-      await supabaseAdmin
-        .from('job_issuing_spend_controls')
-        .update({
-          amount_authorized: nextTotalMinor / 100,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', control.id);
-    }
-
-    return {
-      approved,
-      metadata: {
-        job_id: control.job_id,
-        decision: approved ? 'within_job_budget' : 'over_job_budget'
-      }
-    };
+    const { data,error } = await supabaseAdmin.rpc('record_issuing_authorization_request',{
+      p_card:cardId,p_authorization:authorization.id,p_amount:FareSplitService.fromMinor(pending.amount,pending.currency),
+      p_currency:pending.currency,p_event:authorization
+    });
+    if(error) throw new Error(error.message);
+    return data;
   }
 
   static async syncAuthorization(authorization: Stripe.Issuing.Authorization): Promise<void> {
-    const cardId = typeof authorization.card === 'string' ? authorization.card : authorization.card?.id;
-
-    await supabaseAdmin
-      .from('job_issuing_authorizations')
-      .upsert(
-        {
-          stripe_authorization_id: authorization.id,
-          stripe_card_id: cardId,
-          amount: parseMoney(authorization.amount) / 100,
-          currency_code: String(authorization.currency || 'GBP').toUpperCase(),
-          approved: authorization.approved,
-          merchant_name: authorization.merchant_data?.name || null,
-          merchant_category: authorization.merchant_data?.category || null,
-          status: authorization.status,
-          raw_event: authorization as any,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'stripe_authorization_id' }
-      );
+    const {error}=await supabaseAdmin.from('job_issuing_authorizations').update({
+      status:authorization.status,raw_event:authorization,updated_at:new Date().toISOString()
+    }).eq('stripe_authorization_id',authorization.id);
+    if(error) throw new Error(error.message);
   }
 
   static async syncTransaction(transaction: Stripe.Issuing.Transaction): Promise<void> {
     const cardId = typeof transaction.card === 'string' ? transaction.card : transaction.card?.id;
-    const authId = typeof transaction.authorization === 'string'
-      ? transaction.authorization
-      : transaction.authorization?.id;
-
-    const { data: control } = cardId
-      ? await supabaseAdmin
-        .from('job_issuing_spend_controls')
-        .select('*')
-        .eq('stripe_card_id', cardId)
-        .eq('status', 'active')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      : { data: null };
-
-    await supabaseAdmin
-      .from('job_issuing_transactions')
-      .upsert(
-        {
-          stripe_transaction_id: transaction.id,
-          stripe_authorization_id: authId || null,
-          job_id: control?.job_id || null,
-          driver_id: control?.driver_id || null,
-          stripe_card_id: cardId || null,
-          amount: Math.abs(Number(transaction.amount || 0)) / 100,
-          currency_code: String(transaction.currency || control?.currency_code || 'GBP').toUpperCase(),
-          merchant_name: (transaction as any).merchant_data?.name || null,
-          status: transaction.type,
-          raw_event: transaction as any,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'stripe_transaction_id' }
-      );
-
-    if (control) {
-      const amount = Math.abs(Number(transaction.amount || 0)) / 100;
-
-      await supabaseAdmin
-        .from('job_issuing_spend_controls')
-        .update({
-          amount_captured: parseMoney(control.amount_captured) + amount,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', control.id);
-    }
+    const authId = typeof transaction.authorization === 'string' ? transaction.authorization : transaction.authorization?.id;
+    if(!cardId || !authId) throw new Error('Issuing transaction attribution requires reconciliation');
+    const {error}=await supabaseAdmin.rpc('record_issuing_transaction',{
+      p_id:transaction.id,p_authorization:authId,p_card:cardId,
+      p_amount:FareSplitService.fromMinor(Math.abs(transaction.amount),transaction.currency),
+      p_currency:transaction.currency,p_type:transaction.type,p_event:transaction
+    });
+    if(error) throw new Error(error.message);
   }
 
   private static async getJob(jobId: string): Promise<Record<string, any> | null> {
@@ -566,7 +442,7 @@ export class IssuingService {
     const [{ data: funding }, { data: details }, { data: job }] = await Promise.all([
       supabaseAdmin
         .from('errand_funding')
-        .select('amount_reserved, over_budget_status, over_budget_amount, requested_over_budget_amount, metadata')
+        .select('item_budget, amount_reserved, over_budget_status, over_budget_amount, requested_over_budget_amount, metadata')
         .eq('job_id', jobId)
         .maybeSingle(),
       supabaseAdmin
@@ -593,11 +469,7 @@ export class IssuingService {
       paymentSplit['item_budget']
     );
     const fundingRecord = (funding || {}) as Record<string, any>;
-    const approvedExtra = fundingRecord['over_budget_status'] === 'approved'
-      ? parseMoney(fundingRecord['requested_over_budget_amount'] ?? fundingRecord['over_budget_amount'])
-      : 0;
-
-    return Number((initialItemBudget + Math.max(0, approvedExtra)).toFixed(2));
+    return approvedErrandBudget(fundingRecord, initialItemBudget);
   }
 
   private static firstPositiveMoney(...values: unknown[]): number {

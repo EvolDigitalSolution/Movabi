@@ -456,6 +456,7 @@ router.post('/create-intent', async (req: Request, res: Response) => {
         .upsert({
           job_id: jobId,
           customer_id: job.customer_id,
+          item_budget: itemBudget,
           amount_reserved: itemBudget,
           status: 'reserved',
           over_budget_status: 'none',
