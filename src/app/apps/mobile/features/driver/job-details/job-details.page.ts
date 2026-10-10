@@ -2343,7 +2343,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     /** Whether the current stage navigates toward the customer/destination. */
     private isHeadingToCustomer(): boolean {
         const status = String(this.job()?.status || '');
-        return status === 'en_route_to_customer' || status === 'in_progress';
+        // Once arrival is recorded, navigation previews the next destination.
+        // This does not advance shopping, collection, or completion status.
+        return ['arrived', 'arrived_at_pickup', 'arrived_at_store',
+            'shopping_in_progress', 'shopping_completed', 'items_collected',
+            'collected', 'en_route_to_customer', 'in_progress', 'on_trip'].includes(status);
     }
 
     /** Terminal statuses where operational navigation no longer applies. */

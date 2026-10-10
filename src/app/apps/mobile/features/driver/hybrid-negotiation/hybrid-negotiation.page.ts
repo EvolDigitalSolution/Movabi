@@ -260,7 +260,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
 
     /** True only when the canonical state permits this driver action. */
     canDriver(action: NegotiationAction): boolean {
-        return canDriver(this.negotiationState(), action);
+        return this.session()?.active_driver_id === this.auth.currentUser()?.id && canDriver(this.negotiationState(), action);
     }
 
     /**
@@ -275,6 +275,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     customerProfile = signal<any>(null);
     jobDetails = signal<any>(null);
     private countdownInterval: any;
+    private previouslyOwnedSession = false;
     expiresAt = signal<number>(0);
 
     constructor() {
@@ -398,6 +399,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         try {
             const session = await this.hybridService.getSessionByJob(jobId);
             if (token !== this.reloadToken) return;
+            if (this.session()?.active_driver_id === this.auth.currentUser()?.id ||
+                session?.active_driver_id === this.auth.currentUser()?.id) this.previouslyOwnedSession = true;
             this.session.set(session);
             if (!session) {
                 // Session is gone (released/cancelled away) — confirm via the job.
@@ -524,6 +527,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     private async load() {
         try {
             const session = await this.hybridService.getSessionByJob(this.jobId());
+            if (this.session()?.active_driver_id === this.auth.currentUser()?.id ||
+                session?.active_driver_id === this.auth.currentUser()?.id) this.previouslyOwnedSession = true;
             this.session.set(session);
             await this.loadJobDetails(this.jobId());
             this.ensureJobRealtimeSubscription();
@@ -570,7 +575,15 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         if (this.lifecycleResolved) return;
         const job = this.jobDetails();
         const driverId = this.auth.currentUser()?.id;
-        if (!job || !driverId) return;
+        if (!driverId) return;
+        const currentSession = this.session();
+        if (this.previouslyOwnedSession && currentSession && currentSession.active_driver_id !== driverId) {
+            this.leaveToHub(currentSession.status === 'released'
+                ? 'Your negotiation has ended. The request is available to other drivers; your counter-offer is no longer active.'
+                : 'This negotiation is no longer assigned to you.');
+            return;
+        }
+        if (!job) return;
 
         const status = String((job as any)?.status ?? '').toLowerCase();
         const paymentStatus = String((job as any)?.payment_status ?? '').toLowerCase();
@@ -643,6 +656,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         try {
             await loading.present();
             const session = await this.hybridService.claimSession(this.jobId(), user.id);
+            if (this.session()?.active_driver_id === this.auth.currentUser()?.id ||
+                session?.active_driver_id === this.auth.currentUser()?.id) this.previouslyOwnedSession = true;
             this.session.set(session);
             await this.showToast('Negotiation started! Make your offer or accept.', 'success');
             await this.reconcile();
