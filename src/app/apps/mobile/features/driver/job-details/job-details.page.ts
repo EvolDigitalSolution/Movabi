@@ -2277,6 +2277,29 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         window.location.href = `tel:${safePhone}`;
     }
 
+    private navigationJobActionLabel(): string {
+        switch(this.job()?.status) {
+            case 'accepted': return 'I Have Arrived';
+            case 'arrived': return 'Start Request';
+            case 'arrived_at_store': return this.arrivedAtStoreActionLabel();
+            case 'shopping_in_progress': return 'Items Collected';
+            case 'collected': return 'En Route to Customer';
+            case 'en_route_to_customer': case 'in_progress': case 'delivered': return 'Complete Request';
+            default: return '';
+        }
+    }
+
+    private async runNavigationJobAction(): Promise<void> {
+        switch(this.job()?.status) {
+            case 'accepted': await this.updateStatus('arrived'); break;
+            case 'arrived': await this.updateStatus(this.startStatus()); break;
+            case 'arrived_at_store': await this.updateStatus(this.nextArrivedAtStoreStatus()); break;
+            case 'shopping_in_progress': await this.updateStatus('collected'); break;
+            case 'collected': await this.updateStatus('en_route_to_customer'); break;
+            case 'en_route_to_customer': case 'in_progress': case 'delivered': await this.completeTrip(); break;
+        }
+    }
+
     async openMap(address?: string | null) {
         const coords = this.navigationDestinationCoordinates();
         const safeAddress = String(address || '').trim();
@@ -2294,7 +2317,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         if (coords) {
             const modal = await this.journeyNavigationModal.create({component:JourneyNavigationComponent,
-                componentProps:{destination:coords,address:safeAddress,label:this.navigationSectionLabel(),serviceType:this.job()?.service_slug}});
+                componentProps:{destination:coords,address:safeAddress,label:this.navigationSectionLabel(),serviceType:this.job()?.service_slug,customerName:this.customerName(),actionLabel:this.navigationJobActionLabel(),onJobAction:()=>this.runNavigationJobAction()}});
             await modal.present();
         } else {
             window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');

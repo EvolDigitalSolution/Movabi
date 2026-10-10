@@ -12,13 +12,17 @@ import { firstValueFrom } from 'rxjs';
  imports:[IonHeader,IonToolbar,IonTitle,IonButtons,IonButton,IonContent,MapComponent],providers:[MapRendererService],
  template:`<ion-header><ion-toolbar><ion-title>Journey navigation</ion-title><ion-buttons slot="end"><ion-button (click)="close()">Close</ion-button></ion-buttons></ion-toolbar></ion-header>
  <ion-content><div class="flex min-h-full flex-col bg-slate-50">
- <div class="border-b border-slate-200 bg-white p-4"><p class="text-xs font-bold uppercase text-slate-500">{{label}}</p><p class="mt-1 text-sm font-semibold text-slate-900">{{address}}</p></div>
+ <div class="border-b border-slate-200 bg-white p-4"><p class="text-sm font-bold text-slate-900">{{customerName}}</p><p class="text-xs font-bold uppercase text-slate-500">{{label}}</p><p class="mt-1 text-sm font-semibold text-slate-900">{{address}}</p></div>
  <div style="height:52dvh"><app-map (ready)="ready($event)"></app-map></div>
  <div class="space-y-3 p-4 pb-8"><div class="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p class="text-lg font-bold text-slate-900">{{instruction()}}</p><p class="mt-2 text-sm text-slate-600">{{summary()}}</p></div>
  @if(error()){<p class="rounded-xl bg-white p-3 text-sm text-slate-600">{{error()}}</p><button class="rounded-xl bg-amber-500 px-4 py-3 font-bold" (click)="retry()">Retry route</button>}
+ @if(actionLabel){<button class="w-full rounded-xl bg-amber-500 p-4 font-bold text-slate-950" [disabled]="acting()" (click)="performAction()">{{acting()?'Opening job action…':actionLabel}}</button>}
  <div class="flex gap-3"><button class="flex-1 rounded-xl border border-slate-200 bg-white p-3 font-bold text-slate-800" (click)="voice.set(!voice())">Voice {{voice()?'on':'off'}}</button><button class="flex-1 rounded-xl border border-slate-200 bg-white p-3 font-bold text-slate-800" (click)="external()">Other maps</button></div>
  <p class="text-xs text-slate-500">Road directions and estimated travel time. Follow road signs and current conditions.</p></div></div></ion-content>`})
 export class JourneyNavigationComponent implements OnDestroy {
+ @Input() customerName='Customer'; @Input() actionLabel=''; @Input() onJobAction?:()=>Promise<void>;
+ readonly acting=signal(false);
+ async performAction(){if(this.acting()||!this.onJobAction)return;this.acting.set(true);try{await this.modalController.dismiss();await this.onJobAction();}finally{this.acting.set(false);}}
  @Input() serviceType:ServiceTypeSlug='ride';
  @Input() destination!:{lat:number;lng:number}; @Input() address='';@Input() label='Destination';
  readonly journey=inject(JourneyTrackingService);private locations=inject(LocationService);private routing=inject(RoutingService);private modalController=inject(ModalController);
