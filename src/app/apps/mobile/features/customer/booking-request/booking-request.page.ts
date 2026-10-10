@@ -288,6 +288,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                     <span class="address-field__label">Pickup</span>
                     <app-input
                       [dense]="true"
+                      [embeddedAddress]="true"
                       formControlName="pickup_address"
                       (input)="onAddressInput('pickup', $any($event).target.value)"
                       [placeholder]="pickupPlaceholder()"
@@ -341,6 +342,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                     <span class="address-field__label">Drop-off</span>
                     <app-input
                       [dense]="true"
+                      [embeddedAddress]="true"
                       formControlName="dropoff_address"
                       (input)="onAddressInput('dropoff', $any($event).target.value)"
                       [placeholder]="dropoffPlaceholder()"
@@ -1090,18 +1092,18 @@ type PackageSize = 'small' | 'medium' | 'large';
     .address-field {
       position: relative;
       display: grid;
-      grid-template-columns: 40px minmax(0, 1fr) auto;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       min-height: 64px;
-      padding: 8px 12px;
+      padding: 8px;
       border-radius: 18px;
       background: #f8fafc;
       border: 1px solid #eef2f6;
     }
     .address-field__icon {
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 36px;
       border-radius: 12px;
       background: #fff7ed;
       color: #ea580c;
