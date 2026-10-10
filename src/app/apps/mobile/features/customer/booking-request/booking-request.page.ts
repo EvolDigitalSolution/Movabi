@@ -138,11 +138,11 @@ type PackageSize = 'small' | 'medium' | 'large';
 
     <ion-content class="bg-slate-50" [fullscreen]="true">
       <div class="flex flex-col h-full ion-padding-bottom">
-        <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
+        <div class="w-full h-[33vh] min-h-[250px] relative z-10 isolate overflow-hidden shadow-lg">
           <app-map #map></app-map>
 
           @if (routeResult()) {
-            <div class="absolute bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
+            <div class="absolute z-30 bottom-5 left-4 right-4 bg-white backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
                   <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0">
@@ -940,28 +940,26 @@ type PackageSize = 'small' | 'medium' | 'large';
                         </div>
                       </div>
 
-                      @if (walletShortfall() > 0) {
-                        <div class="p-3 bg-amber-400/15 rounded-xl border border-amber-300/30">
-                          <p class="text-xs font-bold text-amber-100 flex items-center gap-2">
-                            <ion-icon name="alert-circle"></ion-icon>
-                            Wallet is short by {{ config.formatCurrency(walletShortfall()) }}. We will use your card for this request.
-                          </p>
-                        </div>
-                      } @else {
-                        <div class="p-3 bg-emerald-400/15 rounded-xl border border-emerald-300/30">
-                          <p class="text-xs font-bold text-emerald-100 flex items-center gap-2">
-                            <ion-icon name="wallet-outline"></ion-icon>
-                            Your wallet covers this request. No card authorization needed.
-                          </p>
-                        </div>
-                      }
+                      <fieldset class="space-y-2">
+                        <legend class="text-xs font-semibold text-slate-200">Payment method</legend>
+                        <label class="flex items-center gap-2 text-sm text-white">
+                          <input type="radio" name="bookingPaymentChoice" value="card" [checked]="paymentChoice() === 'card'" (change)="paymentChoice.set('card')" [disabled]="submitting() || paymentProcessing()">
+                          Card
+                        </label>
+                        @if (walletBalance() >= walletPaymentRequired() && walletPaymentRequired() > 0) {
+                          <label class="flex items-center gap-2 text-sm text-white">
+                            <input type="radio" name="bookingPaymentChoice" value="wallet" [checked]="paymentChoice() === 'wallet'" (change)="paymentChoice.set('wallet')" [disabled]="submitting() || paymentProcessing()">
+                            Use existing wallet credit
+                          </label>
+                        }
+                      </fieldset>
                     </div>
 
                     @if (cardFallbackRequired()) {
                       <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                         <div class="flex items-center justify-between">
                           <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                            Card Fallback
+                            Card Payment
                           </p>
                           <p class="text-xs font-bold text-slate-700">
                             {{ config.formatCurrency(cardFallbackAmount()) }}
@@ -1481,9 +1479,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return this.toMoney(this.cardChargeRequired() + this.walletBudgetRequired());
     });
 
+    paymentChoice = signal<'card' | 'wallet'>('card');
+
     walletCoversPayment = computed(() => {
         const required = this.walletPaymentRequired();
-        return required > 0 && this.walletBalance() >= required;
+        return this.paymentChoice() === 'wallet' && required > 0 && this.walletBalance() >= required;
     });
 
     walletShortfall = computed(() => {
@@ -1853,7 +1853,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 'Wallet covers this request';
         }
 
-        return 'Card fallback ready';
+        return 'Pay by card';
     }
 
     paymentPlanDescription(): string {
@@ -1865,7 +1865,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 'Movabi will reserve the request amount from wallet before matching a driver.';
         }
 
-        return 'Movabi checks wallet first. Because the balance is lower than this request, card payment is used instead.';
+        return 'Your card will be authorised before matching a driver. Payment is captured after completion; unused authorisation is released.';
     }
 
     itemBudgetDescription(): string {
@@ -1901,7 +1901,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         return this.walletCoversPayment()
             ? 'Secure wallet reservation via Movabi Pay'
-            : 'Secure card fallback via Movabi Pay';
+            : 'Secure card payment via Movabi Pay';
     }
 
     passengerCount(): number {
@@ -2610,7 +2610,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const bounds = this.getSelectedLocationBounds();
             if (bounds) {
                 this.mapComponent?.fitBounds(bounds, {
-                    padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                    padding: { top: 48, bottom: 150, left: 36, right: 56 },
                     maxZoom: 15
                 });
             }
@@ -2659,7 +2659,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                         const bounds = this.getSelectedLocationBounds();
                         if (bounds) {
                             this.mapComponent.fitBounds(bounds, {
-                                padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                                padding: { top: 48, bottom: 150, left: 36, right: 56 },
                                 maxZoom: 15
                             });
                         }
@@ -3074,7 +3074,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const wallet = await this.walletService.fetchWallet();
         const required = this.walletPaymentRequired();
         const walletBalance = this.toMoney(wallet?.available_balance || 0);
-        const needsCardFallback = required > 0 && walletBalance < required;
+        const needsCardFallback = required > 0 && !(this.paymentChoice() === 'wallet' && walletBalance >= required);
 
         if (needsCardFallback) {
             if (!this.card || !this.cardMounted || !this.cardReady()) {

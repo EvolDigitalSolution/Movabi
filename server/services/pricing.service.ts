@@ -158,6 +158,23 @@ export class PricingService {
         });
         result.fareBreakdown.reconciliationValid = this.validateFareReconciliation(result.fareBreakdown);
         if (!result.fareBreakdown.reconciliationValid) throw new Error('Protected quote does not reconcile');
+        // Booking verification must use the final payable quote, including cost protection.
+        if (options.quoteReference) {
+            const { data: audit, error: auditError } = await supabaseAdmin
+                .from('quote_market_adjustments')
+                .update({
+                    returned_customer_fare: result.totalPrice,
+                    customer_total: result.totalPrice,
+                    platform_fee_amount: result.platformFee,
+                    driver_commission_amount: result.commissionFee,
+                    driver_payout: result.driverPayout,
+                    platform_revenue: this.roundMoney(result.platformFee + result.commissionFee)
+                })
+                .eq('quote_reference', options.quoteReference)
+                .select('quote_reference')
+                .single();
+            if (auditError || !audit) throw new Error('Final protected quote could not be verified. Please try again.');
+        }
         return result;
     }
 

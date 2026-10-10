@@ -16,8 +16,8 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
     standalone: true,
     imports: [CommonModule, IonicModule, BadgeComponent, ButtonComponent, CardComponent],
     template: `
-    <div class="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-      <div class="p-6 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+      <div class="p-4 sm:p-6 border-b border-slate-100 flex flex-col gap-4">
         <div>
           <h3 class="text-xl font-display font-bold text-slate-900">Live Bookings</h3>
           <p class="text-sm text-slate-500 font-medium mt-1">
@@ -25,11 +25,12 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
           </p>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
-          <div class="relative w-full sm:w-72">
+        <div class="flex flex-wrap items-center gap-3 w-full">
+          <div class="relative w-full sm:flex-1 sm:min-w-64">
             <ion-icon name="search-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></ion-icon>
             <input
               type="text"
+              aria-label="Search bookings"
               placeholder="Search bookings..."
               (input)="onSearch($event)"
               class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-600 focus:outline-none"
@@ -37,6 +38,7 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
           </div>
 
           <select
+            aria-label="Filter booking status"
             (change)="onStatusFilterChange($event)"
             class="filter-select"
           >
@@ -47,6 +49,7 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
           </select>
 
           <select
+            aria-label="Bookings per page"
             (change)="onPageSizeChange($event)"
             class="filter-select sm:w-32"
           >
@@ -55,50 +58,52 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
             <option value="50">50 / page</option>
           </select>
 
-          <app-button variant="secondary" size="sm" [fullWidth]="false" (clicked)="exportCsv()" class="px-5 h-10 rounded-xl">
+          <app-button variant="secondary" size="sm" [fullWidth]="false" (clicked)="exportCsv()" class="shrink-0">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
         </div>
       </div>
 
-      <div class="overflow-x-auto max-w-full">
-        <table class="w-full text-left border-collapse min-w-[1120px]">
-          <thead>
+      <div class="overflow-x-auto max-w-full max-h-[65vh]">
+        <table class="w-full table-fixed text-left border-collapse min-w-[1080px]">
+          <caption class="sr-only">Bookings with customer, driver, route, payment and status details</caption>
+          <colgroup><col class="w-[12%]"><col class="w-[18%]"><col class="w-[16%]"><col class="w-[24%]"><col class="w-[12%]"><col class="w-[13%]"><col class="w-[5%]"></colgroup>
+          <thead class="sticky top-0 z-10 bg-slate-50">
             <tr class="bg-slate-50/70">
-              <th class="th-cell">Booking</th>
-              <th class="th-cell">Customer</th>
-              <th class="th-cell">Driver</th>
-              <th class="th-cell">Route</th>
-              <th class="th-cell">Price</th>
-              <th class="th-cell">Status</th>
-              <th class="th-cell text-right">Actions</th>
+              <th scope="col" class="th-cell">Booking</th>
+              <th scope="col" class="th-cell">Customer</th>
+              <th scope="col" class="th-cell">Driver</th>
+              <th scope="col" class="th-cell">Route</th>
+              <th scope="col" class="th-cell">Price</th>
+              <th scope="col" class="th-cell">Status</th>
+              <th scope="col" class="th-cell text-right">Actions</th>
             </tr>
           </thead>
 
           <tbody class="divide-y divide-slate-100">
             @for (booking of pagedBookings(); track booking.id) {
               <tr class="hover:bg-slate-50/80 transition-all align-top">
-                <td class="px-4 py-4">
-                  <div class="min-w-[115px]">
-                    <span class="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
+                <td class="px-3 py-3">
+                  <div class="min-w-0">
+                    <button type="button" (click)="viewDetails(booking)" [attr.aria-label]="'View booking ' + shortId(booking.id)" class="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded-md hover:bg-blue-100">
                       #{{ shortId(booking.id) }}
-                    </span>
+                    </button>
                     <p class="text-[11px] text-slate-400 font-medium mt-2">
                       {{ booking.created_at | date:'short' }}
                     </p>
                   </div>
                 </td>
 
-                <td class="px-4 py-4">
-                  <div class="flex items-center gap-3 min-w-[180px]">
+                <td class="px-3 py-3">
+                  <div class="flex items-center gap-3 min-w-0">
                     <div class="avatar bg-blue-50 text-blue-600 border-blue-100">
                       {{ getInitial(booking.customer, 'C') }}
                     </div>
                     <div class="min-w-0">
-                      <h4 class="text-sm font-semibold text-slate-900 truncate">
+                      <button type="button" (click)="viewDetails(booking)" class="block w-full text-left text-xs leading-snug font-semibold text-slate-900 whitespace-normal break-words hover:text-blue-700">
                         {{ getPersonName(booking.customer, 'Customer') }}
-                      </h4>
+                      </button>
                       <p class="text-xs text-slate-500 font-medium truncate">
                         {{ booking.customer?.email || booking.customer?.phone || 'No contact' }}
                       </p>
@@ -106,16 +111,16 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                   </div>
                 </td>
 
-                <td class="px-4 py-4">
+                <td class="px-3 py-3">
                   @if (booking.driver) {
-                    <div class="flex items-center gap-3 min-w-[170px]">
+                    <div class="flex items-center gap-3 min-w-0">
                       <div class="avatar bg-amber-50 text-amber-600 border-amber-100">
                         {{ getInitial(booking.driver, 'D') }}
                       </div>
                       <div class="min-w-0">
-                        <h4 class="text-sm font-semibold text-slate-900 truncate">
-                          {{ getPersonName(booking.driver, 'Driver') }}
-                        </h4>
+                        <button type="button" (click)="viewDetails(booking)" class="block w-full text-left text-xs leading-snug font-semibold text-slate-900 whitespace-normal break-words hover:text-blue-700">
+                        {{ getPersonName(booking.driver, 'Driver') }}
+                      </button>
                         <p class="text-xs text-slate-500 font-medium truncate">
                           ID: {{ shortId(booking.driver.id) }}
                         </p>
@@ -126,8 +131,8 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                   }
                 </td>
 
-                <td class="px-4 py-4">
-                  <div class="text-xs space-y-1.5 font-medium min-w-[250px] max-w-[360px]">
+                <td class="px-3 py-3">
+                  <div class="text-xs space-y-1.5 font-medium min-w-0">
                     <div class="flex items-start gap-2">
                       <span class="text-slate-400 min-w-[36px] font-bold">From:</span>
                       <span class="text-slate-600 line-clamp-1">{{ booking.pickup_address || 'Missing pickup' }}</span>
@@ -139,8 +144,8 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                   </div>
                 </td>
 
-                <td class="px-4 py-4">
-                  <div class="min-w-[120px]">
+                <td class="px-3 py-3">
+                  <div class="min-w-0">
                     <span class="text-sm font-bold text-slate-900">
                       {{ getCurrency(booking) }}{{ toMoney(booking.price) }}
                     </span>
@@ -150,13 +155,13 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                   </div>
                 </td>
 
-                <td class="px-4 py-4">
+                <td class="px-3 py-3">
                   <app-badge [variant]="getBadgeVariant(booking.status)">
                     {{ formatStatus(booking.status) }}
                   </app-badge>
                 </td>
 
-                <td class="px-4 py-4 text-right">
+                <td class="px-3 py-3 text-right">
                   <button
                     type="button"
                     (click)="viewDetails(booking)"
@@ -467,8 +472,12 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
       outline: none;
     }
 
+    @media (min-width: 640px) {
+      .filter-select { width: auto; min-width: 8rem; }
+    }
+
     .th-cell {
-      padding: 1rem;
+      padding: 0.75rem;
       font-size: 10px;
       font-weight: 800;
       color: rgb(148 163 184);
@@ -478,8 +487,8 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
     }
 
     .avatar {
-      width: 2.5rem;
-      height: 2.5rem;
+      width: 2rem;
+      height: 2rem;
       border-radius: 0.75rem;
       border-width: 1px;
       display: inline-flex;

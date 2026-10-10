@@ -1,3 +1,4 @@
+import { AdminFinanceService, reportBounds, dayInZone } from '../services/admin-finance.service';
 import { Router, NextFunction, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
 import { dispatchService } from '../services/dispatch.service';
@@ -373,6 +374,24 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
  * Get heatmap data (supply vs demand)
  */
 // Customer messages are informational and use the same inbox as driver messages.
+
+router.get('/finance/daily', requireAdmin, async (req: Request, res: Response) => {
+  const timezone = String(req.query.timezone || 'Europe/London');
+  let date: string;
+  try {
+    date = String(req.query.date || dayInZone(new Date().toISOString(), timezone));
+    reportBounds(date, timezone);
+  } catch {
+    return res.status(400).json({ error: 'Use a valid report date and IANA timezone' });
+  }
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(await AdminFinanceService.report(date, timezone));
+  } catch (error) {
+    console.error('[AdminFinance] daily report failed', error);
+    return res.status(500).json({ error: 'Financial report could not be loaded. Totals are unavailable.' });
+  }
+});
 
 router.get('/users', requireAdmin, async (req: Request, res: Response) => {
   try {

@@ -1,3 +1,4 @@
+import type { FinanceReport } from '@shared/models/admin-finance.model';
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -184,6 +185,14 @@ export class AdminService {
       day,
       value: 0
     }));
+  }
+
+  async getDailyFinance(date: string, timezone: string): Promise<FinanceReport> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const query = new URLSearchParams({ date, timezone });
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/finance/daily?${query}`, { headers });
+    if (!response.ok) throw new Error('Financial report unavailable. Refresh to try again.');
+    return await response.json() as FinanceReport;
   }
 
   async getUsers() {
