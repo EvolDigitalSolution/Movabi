@@ -441,6 +441,31 @@ type AdminDriver = DriverProfile & {
             </div>
             }
             <div class="detail-card">
+              <div role="tablist" aria-label="Driver communication" class="flex flex-col sm:flex-row gap-2 mb-4">
+                <button type="button" role="tab" id="driver-message-tab"
+                  aria-controls="driver-message-panel" [attr.aria-selected]="driverCommunicationTab() === 'message'"
+                  [attr.tabindex]="driverCommunicationTab() === 'message' ? 0 : -1"
+                  (click)="driverCommunicationTab.set('message')"
+                  (keydown.arrowright)="driverCommunicationTab.set('requirements'); requirementsTab.focus(); $event.preventDefault()"
+                  (keydown.arrowleft)="driverCommunicationTab.set('requirements'); requirementsTab.focus(); $event.preventDefault()"
+                  #messageTab class="flex-1 rounded-xl px-4 py-3 text-sm font-bold border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                  [class.bg-blue-50]="driverCommunicationTab() === 'message'" [class.text-blue-700]="driverCommunicationTab() === 'message'">
+                  Message Driver
+                </button>
+                <button type="button" role="tab" id="driver-requirements-tab"
+                  aria-controls="driver-requirements-panel" [attr.aria-selected]="driverCommunicationTab() === 'requirements'"
+                  [attr.tabindex]="driverCommunicationTab() === 'requirements' ? 0 : -1"
+                  (click)="driverCommunicationTab.set('requirements')"
+                  (keydown.arrowright)="driverCommunicationTab.set('message'); messageTab.focus(); $event.preventDefault()"
+                  (keydown.arrowleft)="driverCommunicationTab.set('message'); messageTab.focus(); $event.preventDefault()"
+                  #requirementsTab class="flex-1 rounded-xl px-4 py-3 text-sm font-bold border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                  [class.bg-blue-50]="driverCommunicationTab() === 'requirements'" [class.text-blue-700]="driverCommunicationTab() === 'requirements'">
+                  Missing Information Request
+                </button>
+              </div>
+              <div role="tabpanel" id="driver-message-panel" aria-labelledby="driver-message-tab"
+                [hidden]="driverCommunicationTab() !== 'message'">
+            <div class="detail-card">
               <p class="detail-label">Message Driver</p>
               <p class="detail-muted mt-1">Send a message to the driver app. This does not change approval or request documents.</p>
               <textarea class="mt-3 w-full min-h-28 rounded-2xl border border-slate-200 p-3" maxlength="2000"
@@ -450,6 +475,9 @@ type AdminDriver = DriverProfile & {
               </app-button>
             </div>
 
+              </div>
+              <div role="tabpanel" id="driver-requirements-panel" aria-labelledby="driver-requirements-tab"
+                [hidden]="driverCommunicationTab() !== 'requirements'" class="space-y-4">
             @if (getBlockers(selectedDriver()).length) {
               <div class="rounded-2xl border border-amber-100 bg-amber-50 p-5">
                 <p class="text-xs font-bold text-amber-900 uppercase tracking-widest mb-3">
@@ -519,6 +547,9 @@ type AdminDriver = DriverProfile & {
               <app-button class="mt-4 w-full" variant="primary" (clicked)="sendMissingInfoRequest(selectedDriver())">
                 Send to Driver
               </app-button>
+            </div>
+
+              </div>
             </div>
 
             @if (selectedDriver()?.manual_verification_notes) {
@@ -884,6 +915,7 @@ export class DriverListComponent implements OnInit {
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
+    driverCommunicationTab = signal<'message' | 'requirements'>('message');
     driverMessageDraft = signal('');
     sendingDriverMessage = signal(false);
     reviewFeedbackNotes = signal('');
@@ -1446,6 +1478,7 @@ export class DriverListComponent implements OnInit {
     }
 
     viewDriver(driver: AdminDriver) {
+        this.driverCommunicationTab.set('message');
         this.driverMessageDraft.set('');
         this.reviewFeedbackNotes.set(
             driver.driver_review_notes ||
