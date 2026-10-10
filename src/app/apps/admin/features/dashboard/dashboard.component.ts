@@ -1,5 +1,5 @@
 import { AdminFinanceComponent } from '../finance/admin-finance.component';
-import { Component, inject, OnDestroy, OnInit, signal, ViewChild } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { RouterModule } from '@angular/router';
@@ -130,11 +130,11 @@ interface AdminEvent {
           </p>
         </div>
 
-        <a href="#daily-finance" class="metric-panel bg-blue-700 text-white block">
+        <button type="button" (click)="showFinancialReport()" class="metric-panel bg-blue-700 text-white block w-full text-left" aria-label="View daily financial report">
           <p class="metric-label !text-white">Financial reporting</p>
           <h4 class="text-xl font-bold text-white">Commission, platform fees and payouts</h4>
           <p class="mt-5 text-xs text-white/90">View daily figures by region and currency below.</p>
-        </a>
+        </button>
 
         <div class="metric-panel bg-indigo-700 text-white">
           <p class="metric-label !text-white">Active Jobs</p>
@@ -165,7 +165,7 @@ interface AdminEvent {
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div class="xl:col-span-2"><app-admin-finance></app-admin-finance></div>
+        <div #financeSection tabindex="-1" class="xl:col-span-2"><app-admin-finance></app-admin-finance></div>
 
         <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-5">
           <div class="flex items-center justify-between gap-4 mb-5">
@@ -359,6 +359,14 @@ interface AdminEvent {
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
   @ViewChild('adminMap') adminMap!: MapComponent;
+  @ViewChild('financeSection') financeSection?: ElementRef<HTMLElement>;
+
+  showFinancialReport() {
+    const section = this.financeSection?.nativeElement;
+    if (!section) return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    section.focus({ preventScroll: true });
+  }
 
   private adminService = inject(AdminService);
   private supabase = inject(SupabaseService);
