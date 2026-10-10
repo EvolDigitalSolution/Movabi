@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, computed, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { Profile } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
@@ -11,18 +11,19 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
 @Component({
     selector: 'app-user-list',
     template: `
-    <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
-      <div class="p-4 sm:p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
+      <div class="p-4 sm:p-6 border-b border-slate-50 flex flex-col gap-4">
         <div>
           <h3 class="text-lg sm:text-xl leading-tight font-display font-bold text-slate-900">User Management</h3>
           <p class="text-sm text-slate-500 font-medium mt-1">Manage and monitor all customer accounts.</p>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-center gap-4">
+        <div class="flex flex-wrap items-center gap-3">
           <select
+            aria-label="Filter users by account status"
             [value]="statusFilter()"
             (change)="onStatusFilter($event)"
-            class="w-full sm:w-56 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-600 focus:outline-none"
+            class="w-full sm:w-44 shrink-0 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-600 focus:outline-none"
           >
             <option value="all">All accounts</option>
             <option value="closure_requested">Closure Requested</option>
@@ -30,75 +31,79 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
             <option value="reinstated">Reinstated</option>
           </select>
 
-          <div class="relative w-full sm:w-72 group">
+          <div class="relative w-full sm:flex-1 sm:min-w-64 group">
             <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"></ion-icon>
             <input
               type="text"
-              placeholder="Search users..."
+              aria-label="Search users"
+              placeholder="Search name, email, phone or ID..."
               (input)="onSearch($event)"
               class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none"
             >
           </div>
 
-          <app-button variant="secondary" size="md" [fullWidth]="false" (clicked)="exportCsv()" class="px-8 h-12 rounded-2xl">
+          <app-button variant="secondary" size="md" [fullWidth]="false" (clicked)="exportCsv()" class="shrink-0">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
         </div>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
+      <div class="overflow-x-auto max-h-[65vh]" tabindex="0" role="region" aria-label="Customer accounts table">
+        <table class="w-full min-w-[850px] table-fixed text-left border-collapse">
+          <caption class="sr-only">Customer accounts with contact details, status and management actions</caption>
+          <colgroup><col class="w-[26%]"><col class="w-[29%]"><col class="w-[13%]"><col class="w-[14%]"><col class="w-[18%]"></colgroup>
+          <thead class="sticky top-0 z-10 bg-slate-50">
             <tr class="bg-slate-50/50">
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">User</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Email</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Joined</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">User</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Joined</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
 
           <tbody class="divide-y divide-slate-50">
-            @for (user of filteredUsers(); track user.id) {
+            @for (user of pagedUsers(); track user.id) {
               <tr class="hover:bg-slate-50/80 transition-all group">
-                <td class="px-10 py-6">
-                  <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100 shadow-sm">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 shrink-0 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100 shadow-sm">
                       {{ getInitial(user) }}
                     </div>
 
-                    <div>
-                      <h4 class="text-sm font-bold text-slate-900">{{ getUserName(user) }}</h4>
-                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                    <div class="min-w-0">
+                      <h4 class="truncate text-sm font-bold text-slate-900" [title]="getUserName(user)">{{ getUserName(user) }}</h4>
+                      <p class="text-[10px] text-slate-400 font-medium tracking-wide mt-0.5">
                         ID: {{ shortId(user?.id) }}
                       </p>
                     </div>
                   </div>
                 </td>
 
-                <td class="px-10 py-6 text-sm font-bold text-slate-900">
-                  {{ getUserEmail(user) }}
+                <td class="px-4 py-3 text-sm font-medium text-slate-700">
+                  <span class="block truncate" [title]="getUserEmail(user)">{{ getUserEmail(user) }}</span>
                 </td>
 
-                <td class="px-10 py-6 text-sm font-bold text-slate-900">
+                <td class="px-4 py-3 whitespace-nowrap text-xs font-medium text-slate-700">
                   {{ user?.created_at ? (user.created_at | date:'mediumDate') : 'N/A' }}
                 </td>
 
-                <td class="px-10 py-6">
+                <td class="px-4 py-3">
                   <app-badge [variant]="getStatusVariant(user?.account_status || 'active')">
                     {{ (user?.account_status || 'active') | uppercase }}
                   </app-badge>
                 </td>
 
-                <td class="px-10 py-6 text-right">
+                <td class="px-4 py-3 text-right">
                   <div class="flex items-center justify-end gap-2">
                     <button type="button" class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700" (click)="openMessageModal(user)">Message</button>
                     <button
                       type="button"
                       (click)="openPurgeModal(user)"
-                      class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center"
+                      class="w-8 h-8 shrink-0 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center"
                       title="Permanently delete test account"
+                      [attr.aria-label]="'Delete test account: ' + getUserName(user)"
                     >
                       <ion-icon name="trash-outline" class="text-xl"></ion-icon>
                     </button>
@@ -106,8 +111,9 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                     <button
                       type="button"
                       (click)="openModerationModal(user)"
-                      class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center"
+                      class="w-8 h-8 shrink-0 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center"
                       title="Moderate User"
+                      [attr.aria-label]="'Moderate user: ' + getUserName(user)"
                     >
                       <ion-icon name="shield-outline" class="text-xl"></ion-icon>
                     </button>
@@ -123,6 +129,19 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
             No users found.
           </div>
         }
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
+        <p aria-live="polite">{{ rangeStart() }}–{{ rangeEnd() }} of {{ filteredUsers().length }} users</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="flex items-center gap-2">Rows
+            <select aria-label="Users per page" [value]="pageSize()" (change)="onPageSize($event)" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+              <option value="25">25</option><option value="50">50</option><option value="100">100</option>
+            </select>
+          </label>
+          <button type="button" (click)="page.set(page() - 1)" [disabled]="page() <= 1" class="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold disabled:opacity-40">Previous</button>
+          <span>Page {{ page() }} of {{ pageCount() }}</span>
+          <button type="button" (click)="page.set(page() + 1)" [disabled]="page() >= pageCount()" class="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold disabled:opacity-40">Next</button>
+        </div>
       </div>
     </div>
 
@@ -238,6 +257,19 @@ export class UserListComponent implements OnInit {
     searchTerm = signal('');
     statusFilter = signal('all');
     filteredUsers = signal<Profile[]>([]);
+    page = signal(1);
+    pageSize = signal(25);
+    pageCount = computed(() => Math.max(1, Math.ceil(this.filteredUsers().length / this.pageSize())));
+    pagedUsers = computed(() => this.filteredUsers().slice((this.page() - 1) * this.pageSize(), this.page() * this.pageSize()));
+    rangeStart = computed(() => this.filteredUsers().length ? (this.page() - 1) * this.pageSize() + 1 : 0);
+    rangeEnd = computed(() => Math.min(this.page() * this.pageSize(), this.filteredUsers().length));
+
+    onPageSize(event: Event) {
+        const size = Number((event.target as HTMLSelectElement).value);
+        if (![25, 50, 100].includes(size)) return;
+        this.pageSize.set(size);
+        this.page.set(1);
+    }
 
     toastMessage = signal<string | null>(null);
     toastType = signal<'success' | 'danger' | 'warning'>('success');
@@ -289,6 +321,7 @@ export class UserListComponent implements OnInit {
     }
 
     applySearchFilter() {
+        this.page.set(1);
         const term = (this.searchTerm() || '').toLowerCase().trim();
         const statusFilter = this.statusFilter();
         const users = this.users() || [];
