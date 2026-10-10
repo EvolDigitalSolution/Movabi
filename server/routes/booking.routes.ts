@@ -261,13 +261,25 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
         insertPayload.platform_fee = null;
         insertPayload.driver_payout = null;
         insertPayload.tax_amount = null;
+        // Snapshot server policy; client metadata cannot disable verification.
+        const pinPolicy = await MarketplaceConfigService.getRawSetting('completion_pin_policy',
+            typeof insertPayload.tenant_id === 'string' ? insertPayload.tenant_id : null);
+        const pinRequired = !(pinPolicy && typeof pinPolicy === 'object' &&
+            'enabled' in pinPolicy && pinPolicy.enabled === false);
+        const safeMetadata = { ...(insertPayload.metadata as Record<string, unknown> || {}) };
+        delete safeMetadata.completion_pin;
+        delete safeMetadata.service_completion_pin;
+        delete safeMetadata.delivery_pin;
+        insertPayload.metadata = { ...safeMetadata, completion_pin_required: pinRequired,
+            completion_pin_policy_version: 'backend-v1' };
         const { data, error } = await supabaseAdmin.from('jobs').insert(insertPayload).select('*, service_type:service_types(*)').single();
         if (error) return res.status(400).json({ error: error.message, code: error.code });
 
         // Release closure: mint the completion PIN SERVER-side and store it in the
         // customer-only secret table (never in jobs.metadata). The PIN is returned
         // to the customer here; the driver has no read path to it.
-        const completionPin = String(1000 + Math.floor(Math.random() * 9000));
+        const completionPin = pinRequired ? String(1000 + Math.floor(Math.random() * 9000)) : null;
+        if (pinRequired) {
         const { error: secretError } = await supabaseAdmin.from('job_completion_secrets').insert({
             job_id: data.id,
             completion_pin: completionPin
@@ -277,6 +289,7 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
             return res.status(500).json({ error: 'Failed to store booking completion secret' });
         }
 
+        }
         return res.status(201).json({ ...data, completion_pin: completionPin });
     } catch (error) {
         if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });

@@ -44,7 +44,7 @@ export class JourneyTrackingService {
           if(!navigator.geolocation) throw new Error('GPS is unavailable');
           this.watch=navigator.geolocation.watchPosition(position=>{
             if(key!==this.desired) return;
-            this.acceptPoint(position.coords.latitude,position.coords.longitude,position.coords.accuracy,position.coords.heading,position.timestamp);
+            if (!this.acceptPoint(position.coords.latitude,position.coords.longitude,position.coords.accuracy,position.coords.heading,position.timestamp)) return;
             if(Date.now()-this.lastPost<10000 || this.posting || this.expires<=Date.now()) return;
             this.lastPost=Date.now();this.posting=true;
             void firstValueFrom(this.http.post(this.api.getApiUrl(`/api/journey/${jobId}/location`),{latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy:position.coords.accuracy,bearing:position.coords.heading,speed:position.coords.speed,time:position.timestamp},{headers:{'X-Movabi-Journey-Token':this.activeToken}})).catch(()=>this.error.set('Waiting for the location connection.')).finally(()=>this.posting=false);
@@ -55,9 +55,12 @@ export class JourneyTrackingService {
       } catch {this.error.set('Journey tracking could not start. Check location permission and connection.');await this.stop();}
     });
   }
-  private acceptPoint(lat:number,lng:number,accuracy:number,heading:number|null,time:number|null) {
-    if(!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180||!Number.isFinite(accuracy)||accuracy>100||accuracy<0||!time||Date.now()-time>90000||time>Date.now()+30000) return;
-    this.point.set({lat,lng,accuracy,heading,time}); this.error.set('');
+  private acceptPoint(lat:number,lng:number,accuracy:number,heading:number|null,time:number|null): boolean {
+    if(!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180||!Number.isFinite(accuracy)||accuracy>100||accuracy<0||!time||Date.now()-time>90000||time>Date.now()+30000) {
+      this.error.set(accuracy > 100 ? 'Waiting for a more accurate GPS position.' : 'Waiting for a fresh GPS position.');
+      return false;
+    }
+    this.point.set({lat,lng,accuracy,heading,time}); this.error.set('');return true;
   }
   private async session(jobId:string):Promise<{token:string;expires:number}> {
     const {data:{session}}=await this.supabase.auth.getSession();

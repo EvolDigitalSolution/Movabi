@@ -21,11 +21,11 @@ import { firstValueFrom } from 'rxjs';
 export class JourneyNavigationComponent implements OnDestroy {
  @Input() serviceType:ServiceTypeSlug='ride';
  @Input() destination!:{lat:number;lng:number}; @Input() address='';@Input() label='Destination';
- readonly journey=inject(JourneyTrackingService);private locations=inject(LocationService);private routing=inject(RoutingService);private modal=inject(ModalController);
+ readonly journey=inject(JourneyTrackingService);private locations=inject(LocationService);private routing=inject(RoutingService);private modalController=inject(ModalController);
  readonly instruction=signal('Finding your route…');readonly summary=signal('Waiting for GPS');readonly error=signal('');readonly voice=signal(false);
  private map:MapComponent|null=null;private timer:ReturnType<typeof setInterval>|null=null;private route:NavigationRoute|null=null;
  private index=0;private requestAt=0;private busy=false;private destroyed=false;private lastPoint:{lat:number;lng:number}|null=null;private offRouteCount=0;private spoken='';private fallbackPoint:ReturnType<JourneyTrackingService['point']>=null;private gpsRequestAt=0;private gpsBusy=false;
- async ready(map:MapComponent){this.map=map;this.timer=setInterval(()=>{void this.tick();},2000);await this.tick();}
+ async ready(map:MapComponent){this.map=map;map.setCenter(this.destination.lng,this.destination.lat,14);map.addOrUpdateMarker({id:'journey-destination',coordinates:this.destination,kind:'destination',serviceType:this.serviceType,label:this.label});this.timer=setInterval(()=>{void this.tick();},2000);await this.tick();}
  private async tick(){
   if(this.destroyed||!this.map) return;
   let point=this.journey.point() || this.fallbackPoint;
@@ -52,11 +52,12 @@ export class JourneyNavigationComponent implements OnDestroy {
   this.busy=true;this.requestAt=Date.now();
   try{const route=await firstValueFrom(this.routing.getNavigationRoute(point,this.destination));if(this.destroyed) return;if(!route) throw new Error('Route unavailable');
     this.route=route;this.index=0;this.offRouteCount=0;this.error.set('');this.instruction.set(route.steps[0]?.instruction||'Follow the route');
+    this.map?.setCenter(point.lng,point.lat,16);
     this.map?.drawRoute({distanceMeters:route.distanceMeters,durationSeconds:route.durationSeconds,geometry:{type:'LineString',coordinates:route.coordinates}});
   }catch{this.error.set('Directions are unavailable right now. Retry or choose Other maps.');}finally{this.busy=false;}
  }
  retry(){this.requestAt=0;this.route=null;void this.tick();}
  external(){window.open(`https://www.google.com/maps/dir/?api=1&destination=${this.destination.lat},${this.destination.lng}`,'_blank','noopener,noreferrer');}
- close(){void this.modal.dismiss();}
+ close(){void this.modalController.dismiss();}
  ngOnDestroy(){this.destroyed=true;if(this.timer)clearInterval(this.timer);if(this.voice()&&typeof speechSynthesis!=='undefined')speechSynthesis.cancel();}
 }

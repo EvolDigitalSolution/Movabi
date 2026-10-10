@@ -1931,7 +1931,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     private async refreshCustomerCompletionPin(booking: any): Promise<void> {
         const currentUserId = this.auth.currentUser()?.id;
-        if (!currentUserId || currentUserId !== booking.customer_id ||
+        if (booking.metadata?.completion_pin_required === false || !currentUserId || currentUserId !== booking.customer_id ||
             !booking.driver_id || this.isTerminalTrackingStatus(String(booking.status))) {
             this.customerCompletionPin.set('');
             this.completionPinBookingId = null;

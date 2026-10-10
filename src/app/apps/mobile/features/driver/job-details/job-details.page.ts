@@ -1167,6 +1167,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         );
     }
 
+    private completionWorkflowInstruction(): string {
+        return this.requiresCompletionPin()
+            ? ' Ask the customer for their completion PIN and enter it to finish the job and start payment processing.'
+            : ' Confirm completion to finish the job and start payment processing.';
+    }
+
     private requiresCompletionPin(): boolean {
         // Release closure: the flag is driver-visible; the PIN value is NOT (it
         // lives in the customer-only job_completion_secrets table). The legacy
@@ -2647,32 +2653,32 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                     return [
                         { title: 'Go to collection point', description: 'Use navigation and mark arrived at the pickup location.', icon: 'navigate-outline' },
                         { title: 'Collect item', description: 'Confirm the item or documents with the customer notes.', icon: 'cube-outline' },
-                        { title: 'Deliver to customer', description: 'Return or deliver to the customer, then complete the request.', icon: 'checkmark-circle-outline' }
+                        { title: 'Deliver to customer', description: 'Return or deliver to the customer, then complete the request.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                     ];
                 }
 
                 return [
                     { title: 'Go to store', description: 'Use navigation and mark arrived before shopping.', icon: 'navigate-outline' },
                     { title: 'Buy items', description: 'Use Movabi Pay or upload a receipt if card setup is not ready.', icon: 'card-outline' },
-                    { title: 'Deliver and complete', description: 'Deliver to the customer, then complete the request.', icon: 'checkmark-circle-outline' }
+                    { title: 'Deliver and complete', description: 'Deliver to the customer, then complete the request.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                 ];
             case ServiceTypeEnum.DELIVERY:
                 return [
                     { title: 'Collect parcel', description: 'Confirm the right item and recipient details.', icon: 'cube-outline' },
                     { title: 'Travel to recipient', description: 'Keep the route and live location active.', icon: 'navigate-outline' },
-                    { title: 'Confirm delivery', description: 'Complete after the parcel is handed over.', icon: 'checkmark-circle-outline' }
+                    { title: 'Confirm delivery', description: 'Complete after the parcel is handed over.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                 ];
             case ServiceTypeEnum.VAN:
                 return [
                     { title: 'Arrive and load', description: 'Confirm the pickup and load items safely.', icon: 'archive-outline' },
                     { title: 'Move to destination', description: 'Follow the route and keep the customer updated.', icon: 'navigate-outline' },
-                    { title: 'Unload and finish', description: 'Complete only when the move is finished.', icon: 'checkmark-circle-outline' }
+                    { title: 'Unload and finish', description: 'Complete only when the move is finished.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                 ];
             default:
                 return [
                     { title: 'Go to pickup', description: 'Navigate to the customer and mark arrived.', icon: 'navigate-outline' },
                     { title: 'Start ride', description: 'Begin only when the customer is ready.', icon: 'car-sport-outline' },
-                    { title: 'Drop off', description: 'Complete after safe arrival at destination.', icon: 'flag-outline' }
+                    { title: 'Drop off', description: 'Complete after safe arrival at destination.' + this.completionWorkflowInstruction(), icon: 'flag-outline' }
                 ];
         }
     }
