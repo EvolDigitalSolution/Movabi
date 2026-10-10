@@ -73,7 +73,10 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                     </div>
 
                     <div class="min-w-0">
-                      <h4 class="truncate text-sm font-bold text-slate-900" [title]="getUserName(user)">{{ getUserName(user) }}</h4>
+                      <button type="button" class="block w-full whitespace-normal break-words text-left text-xs leading-snug font-semibold text-slate-900 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 rounded"
+                        [attr.aria-label]="'View details for ' + getUserName(user)" (click)="userDetails.set(user)">
+                        {{ getUserName(user) }}
+                      </button>
                       <p class="text-[10px] text-slate-400 font-medium tracking-wide mt-0.5">
                         ID: {{ shortId(user?.id) }}
                       </p>
@@ -144,6 +147,33 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
         </div>
       </div>
     </div>
+
+    <ion-modal [isOpen]="userDetails() !== null" (didDismiss)="userDetails.set(null)" class="user-details-modal" aria-labelledby="user-details-title">
+      <ng-template>
+        <ion-header>
+          <ion-toolbar>
+            <ion-title id="user-details-title">Customer details</ion-title>
+            <ion-buttons slot="end"><ion-button (click)="userDetails.set(null)" aria-label="Close customer details">Close</ion-button></ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content>
+          @if (userDetails(); as user) {
+            <div class="p-5 sm:p-6">
+              <h3 class="text-lg font-bold text-slate-900 break-words">{{ getUserName(user) }}</h3>
+              <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-5 text-sm">
+                <div><dt class="text-xs font-semibold text-slate-500">Email</dt><dd class="mt-1 break-all text-slate-900">{{ getUserEmail(user) }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Phone</dt><dd class="mt-1 text-slate-900">{{ user.phone || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Account status</dt><dd class="mt-1 capitalize text-slate-900">{{ (user.account_status || 'active').replaceAll('_', ' ') }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Joined</dt><dd class="mt-1 text-slate-900">{{ user.created_at ? (user.created_at | date:'medium') : 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Country</dt><dd class="mt-1 text-slate-900">{{ user.country_code || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Currency</dt><dd class="mt-1 text-slate-900">{{ user.currency_code || 'Not provided' }}</dd></div>
+                <div class="sm:col-span-2"><dt class="text-xs font-semibold text-slate-500">Customer ID</dt><dd class="mt-1 break-all font-mono text-xs text-slate-700">{{ user.id }}</dd></div>
+              </dl>
+            </div>
+          }
+        </ion-content>
+      </ng-template>
+    </ion-modal>
 
     @if (messageRecipient(); as recipient) {
       <div class="fixed inset-0 z-[10000] bg-slate-900/50 flex items-center justify-center p-4">
@@ -226,6 +256,12 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
     }
   `,
     styles: [`
+      ion-modal.user-details-modal {
+        --width: min(92vw, 640px);
+        --height: min(80vh, 500px);
+        --border-radius: 1.25rem;
+      }
+
       .modal-action {
         border-radius: 0.9rem;
         background: rgb(37 99 235);
@@ -250,6 +286,7 @@ export class UserListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
 
+    userDetails = signal<Profile | null>(null);
     messageRecipient = signal<Profile | null>(null);
     customerMessageDraft = signal('');
     sendingCustomerMessage = signal(false);
