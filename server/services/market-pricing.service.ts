@@ -198,6 +198,17 @@ export function computeMarketAdjustment(input: ComputeMarketAdjustmentInput): Ma
         }
     }
 
+    // Benchmarks are complete customer prices. Convert their inclusive target
+    // into a service fare before adding our platform percentage; commission
+    // remains a driver deduction and must not be added to the customer target.
+    if (competitiveTarget !== null) {
+        const feePercent = Number(platformFeePercent);
+        if (!Number.isFinite(feePercent) || feePercent < 0) {
+            throw new Error('Invalid platform fee for competitor comparison');
+        }
+        competitiveTarget = competitiveTarget / (1 + feePercent / 100);
+    }
+
     // Optional additive internal-signal adjustment (no-op by default - Step 3.5).
     if (competitiveTarget !== null && internalSignalsUsed && Number.isFinite(internalSignalAdjustmentPercent) && internalSignalAdjustmentPercent !== 0) {
         competitiveTarget = competitiveTarget * (1 + internalSignalAdjustmentPercent / 100);

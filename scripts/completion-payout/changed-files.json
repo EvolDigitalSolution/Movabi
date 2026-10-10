@@ -3,6 +3,7 @@
   "capacitor.config.ts",
   "docs/COMPLETION_PAYOUT_CHAT_PRICING.md",
   "docs/JOURNEY_NAVIGATION.md",
+  "docs/STANDARD_FEE_POLICY.md",
   "ios/App/App/Info.plist",
   "package-lock.json",
   "package.json",
@@ -16,6 +17,7 @@
   "scripts/completion-payout/run-postgres-tests.ps1",
   "scripts/completion-payout/settlement-migration.sql",
   "scripts/completion-payout/wallet-migration.sql",
+  "scripts/pricing-policy/apply-develop.sh",
   "server/index.ts",
   "server/routes/communication.routes.ts",
   "server/routes/journey.routes.ts",
@@ -24,6 +26,7 @@
   "server/services/job-payout.service.ts",
   "server/services/journey-location.service.ts",
   "server/services/logistics.service.ts",
+  "server/services/market-pricing.service.ts",
   "server/services/payment-margin.service.ts",
   "server/services/pricing.service.ts",
   "src/app/app.ts",
@@ -42,9 +45,12 @@
   "src/testing/batch2c-money-authority.spec.ts",
   "src/testing/batch2c-settlement-behavior.spec.ts",
   "src/testing/completion-payout-retries.spec.ts",
+  "src/testing/customer-inclusive-market-target.spec.ts",
   "src/testing/driver-settlement-remediation.spec.ts",
   "src/testing/fare-split-authority.spec.ts",
   "src/testing/job-chat.spec.ts",
   "src/testing/journey-navigation.spec.ts",
-  "supabase/migrations/20261242000000_completion_payout_outbox.sql"
+  "src/testing/market-pricing.spec.ts",
+  "supabase/migrations/20261242000000_completion_payout_outbox.sql",
+  "supabase/migrations/20261242100000_standard_fee_policy.sql"
 ]

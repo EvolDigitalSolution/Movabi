@@ -84,7 +84,7 @@ describe('computeMarketAdjustment', () => {
       strategy: baseStrategy({ strategy: 'beat_market', targetDifferencePercent: 10 }),
       marketReferenceFare: 30
     }));
-    expect(result.targetFare).toBeCloseTo(27, 2);
+    expect(result.targetFare).toBeCloseTo(27 / 1.02, 2);
   });
 
   it('5. match_market uses the median (marketReferenceFare) directly', () => {
@@ -92,7 +92,7 @@ describe('computeMarketAdjustment', () => {
       strategy: baseStrategy({ strategy: 'match_market' }),
       marketReferenceFare: 28.4
     }));
-    expect(result.targetFare).toBeCloseTo(28.4, 2);
+    expect(result.targetFare).toBeCloseTo(28.4 / 1.02, 2);
   });
 
   it('6. premium increases the fare above market correctly', () => {
@@ -100,7 +100,7 @@ describe('computeMarketAdjustment', () => {
       strategy: baseStrategy({ strategy: 'premium', targetDifferencePercent: 8, maximumMarketAdjustmentPercent: 50 }),
       marketReferenceFare: 30
     }));
-    expect(result.targetFare).toBeCloseTo(32.4, 2);
+    expect(result.targetFare).toBeCloseTo(32.4 / 1.02, 2);
   });
 
   it('7. lowest_sustainable respects the driver protection floor', () => {
@@ -256,7 +256,7 @@ describe('computeMarketAdjustment', () => {
       benchmarkCount: 3
     }));
     // target = 6.5 * 0.95 = 6.175, which is below the 6.8 floor -> clamp to 6.8.
-    expect(result.targetFare).toBeCloseTo(6.175, 2);
+    expect(result.targetFare).toBeCloseTo(6.175 / 1.02, 2);
     expect(result.minimumSustainableFare).toBeCloseTo(6.8, 2);
     expect(result.adjustedServiceFare).toBeCloseTo(6.8, 2);
     expect(result.fallbackReason).toBe('below_sustainability_floor');
@@ -277,7 +277,7 @@ describe('computeMarketAdjustment', () => {
       benchmarkCount: 3
     }));
     // target = 8 * 0.95 = 7.6, which is above the 6.8 floor.
-    expect(result.adjustedServiceFare).toBeCloseTo(7.6, 2);
+    expect(result.adjustedServiceFare).toBeCloseTo(7.6 / 1.02, 2);
     expect(result.benchmarkUsed).toBe(true);
     expect(result.fallbackReason).toBe('market_adjustment_applied');
   });
@@ -323,7 +323,7 @@ describe('computeMarketAdjustment', () => {
         maximumMarketAdjustmentPercent: 90
       }),
       driverCommissionPercent: 0,
-      marketReferenceFare: 6.8000000000000007, // float noise, should compare equal to 6.80
+      marketReferenceFare: 6.8000000000000007 * 1.02, // float noise, should compare equal to 6.80
       benchmarkCount: 3
     }));
     expect(result.fallbackReason).not.toBe('below_sustainability_floor');
@@ -340,7 +340,7 @@ describe('computeMarketAdjustment', () => {
       strategy: baseStrategy({ strategy: 'beat_market', targetDifferencePercent: 8 })
     }));
     expect(result.marketReferenceFare).toBe(29);
-    expect(result.targetFare).toBeCloseTo(29 * 0.92, 2);
+    expect(result.targetFare).toBeCloseTo(29 * 0.92 / 1.02, 2);
     expect(result.adjustmentApplied).toBe(false); // shadow mode never applies
     expect(result.customerTotal).toBeCloseTo(30.5 * 1.02, 2); // unchanged customer-facing total
   });
