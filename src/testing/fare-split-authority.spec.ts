@@ -260,3 +260,15 @@ describe('snapshot recovery', () => {
     expect(() => FareSplitService.fromSnapshot(null, 'GBP')).toThrow(HistoricalFareReconciliationRequired);
   });
 });
+
+describe('legacy marketplace commission aliases',()=>{
+ const quote={total:7.07,serviceFareBeforePlatformFee:6.93,platformFeeAmount:0.14,commissionAmount:0.69,commissionPercent:10,driverPayout:6.24};
+ it('preserves the stored 10 percent commission and net driver payout',()=>{
+  const split=FareSplitService.fromSnapshot(quote,'GBP');
+  expect(split.driverEntitlement).toBe(6.24);expect(split.driverCommissionAmount).toBe(0.69);expect(split.grossRevenue).toBe(0.83);
+ });
+ it('rejects conflicting commission aliases',()=>expect(()=>FareSplitService.fromSnapshot({...quote,commissionFee:0},'GBP')).toThrow(HistoricalFareReconciliationRequired));
+ it('rejects conflicting payout aliases',()=>expect(()=>FareSplitService.fromSnapshot({...quote,driverNetEarnings:6.93},'GBP')).toThrow(HistoricalFareReconciliationRequired));
+ it('rejects an inconsistent stored payout',()=>expect(()=>FareSplitService.fromSnapshot({...quote,driverPayout:6.93},'GBP')).toThrow(HistoricalFareReconciliationRequired));
+ it('retains explicit zero commission without inventing a new rate',()=>expect(FareSplitService.fromSnapshot({...quote,commissionAmount:0,driverPayout:6.93},'GBP').driverCommissionAmount).toBe(0));
+});

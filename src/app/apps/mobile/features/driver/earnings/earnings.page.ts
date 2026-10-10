@@ -637,6 +637,14 @@ export class EarningsPage implements OnInit {
     }
 
     getCommissionAmount(earning: any): number {
+        // This card shows total deductions, including platform fee and commission.
+        // Persisted gross/net earnings reconcile without fetching live pricing.
+        const gross = Number(earning?.gross_amount);
+        const net = Number(earning?.amount);
+        if (earning?.gross_amount != null && earning?.amount != null &&
+            Number.isFinite(gross) && Number.isFinite(net) && gross >= net && net >= 0) {
+            return Math.round((gross - net + Number.EPSILON) * 100) / 100;
+        }
         return this.toNumber(
             earning?.commission_fee ??
             earning?.platform_fee ??

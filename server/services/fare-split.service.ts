@@ -269,9 +269,23 @@ export class FareSplitService {
     // Legacy quote breakdown — reconstruct strictly from PERSISTED quote numbers.
     const driverBase = num('serviceFareBeforePlatformFee', num('driverGrossEarnings', 0));
     const platformFeeAmount = num('platformFeeAmount', num('platformFee', 0));
-    const commissionFee = num('commissionFee', 0);
+    // Both historical serializers must retain the agreed money, never live config.
+    const legacyMoney = (keys: string[], fallback: number): number => {
+      const values = keys.filter(key => b[key] !== undefined && b[key] !== null).map(key => Number(b[key]));
+      if (values.some(value => !Number.isFinite(value) || value < 0) ||
+          values.some(value => Math.abs(value - values[0]) > 0.000001)) {
+        throw new HistoricalFareReconciliationRequired('Conflicting or invalid historical fare amounts.');
+      }
+      return values.length ? values[0] : fallback;
+    };
+    const commissionFee = legacyMoney(['commissionFee', 'commissionAmount'], 0);
     const customerCharge = num('customerCharge', num('total', num('serviceFare', driverBase + platformFeeAmount)));
-    const driverEntitlement = num('driverEntitlement', num('driverNetEarnings', this.roundMoney(driverBase - commissionFee, currency)));
+    const driverEntitlement = legacyMoney(['driverEntitlement', 'driverNetEarnings', 'driverPayout'], this.roundMoney(driverBase - commissionFee, currency));
+    const tolerance = 0.000001;
+    if (commissionFee > driverBase || Math.abs(driverBase - commissionFee - driverEntitlement) > tolerance ||
+        Math.abs(customerCharge - driverBase - platformFeeAmount) > tolerance) {
+      throw new HistoricalFareReconciliationRequired('Historical fare amounts do not reconcile.');
+    }
 
     if (driverBase <= 0 && platformFeeAmount <= 0 && customerCharge <= 0) {
       throw new HistoricalFareReconciliationRequired();
