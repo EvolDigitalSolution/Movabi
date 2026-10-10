@@ -78,7 +78,7 @@ app.use((req: any, res: any, next: any) => {
   res.header('Vary', 'Origin');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept,Origin,X-Requested-With,apikey,x-client-info');
+  res.header('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept,Origin,X-Requested-With,apikey,x-client-info,X-Movabi-Journey-Token');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).send();

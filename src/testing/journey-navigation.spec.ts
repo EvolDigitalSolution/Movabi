@@ -42,3 +42,27 @@ describe('tracking lifecycle',()=>{
  it('ignores stale native fixes',async()=>{const t=tracker();await t.instance.serial;t.callback()({latitude:53,longitude:-2,accuracy:8,bearing:null,time:Date.now()-100000});expect(t.instance.point()).toBeNull();});
  it('uses foreground browser GPS and clears the watcher',async()=>{const t=tracker(false);await t.instance.serial;expect(t.starts).toHaveLength(0);expect(t.watches).toHaveLength(1);t.change(null,null);await t.instance.serial;expect(t.clears).toEqual([1]);});
 });
+
+function corsPreflight(origin:string) {
+ const source=fs.readFileSync('server/index.ts','utf8');
+ const start=source.indexOf('app.use((req: any, res: any, next: any) => {');
+ const end=source.indexOf('const PORT =',start);
+ let middleware:any;const headers:Record<string,string>={};let status=0,nextCalled=false;
+ const code=ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ vm.runInNewContext(code,{app:{use:(fn:any)=>middleware=fn},console:{warn:()=>{}}});
+ const response:any={header:(k:string,v:string)=>headers[k]=v,status:(v:number)=>{status=v;return response;},send:()=>{}};
+ middleware({method:'OPTIONS',headers:{origin}},response,()=>nextCalled=true);
+ return {headers,status,nextCalled};
+}
+describe('journey CORS preflight',()=>{
+ it('permits the scoped location header from the approved development origin',()=>{
+  const result=corsPreflight('http://localhost:3000');
+  expect(result.status).toBe(204);expect(result.nextCalled).toBe(false);
+  expect(result.headers['Access-Control-Allow-Origin']).toBe('http://localhost:3000');
+  expect(result.headers['Access-Control-Allow-Headers'].toLowerCase().split(',')).toContain('x-movabi-journey-token');
+ });
+ it('does not grant an unapproved origin access',()=>{
+  const result=corsPreflight('https://unapproved.example');
+  expect(result.headers['Access-Control-Allow-Origin']).toBeUndefined();
+ });
+});
