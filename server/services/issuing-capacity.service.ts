@@ -16,8 +16,17 @@ export class IssuingCapacityService {
     if (process.env.STRIPE_ISSUING_ENABLED !== 'true') {
       throw new IssuingCapacityError('Shopping funding is temporarily unavailable. Choose a task without a purchase budget or try later.');
     }
+    const maximum = await this.maximumAvailable(currency, jobId);
+    if (FareSplitService.toMinor(budget, currency) > FareSplitService.toMinor(maximum, currency)) {
+      throw new IssuingCapacityError('This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.');
+    }
+  }
+
+  static async maximumAvailable(currency: string, jobId?: string): Promise<number> {
+    if (process.env.STRIPE_ISSUING_ENABLED !== 'true') return 0;
     try {
       const code = currency.toUpperCase();
+      if (!/^[A-Z]{3}$/.test(code)) throw new Error('Invalid currency');
       const balance = await stripe.balance.retrieve();
       const available = balance.issuing?.available.find(entry => entry.currency === code.toLowerCase())?.amount || 0;
       let reserved = 0;
@@ -36,9 +45,7 @@ export class IssuingCapacityService {
         }
         if (data.length < pageSize) break;
       }
-      if (FareSplitService.toMinor(budget, code) > Math.max(0, available - reserved)) {
-        throw new IssuingCapacityError('This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.');
-      }
+      return FareSplitService.fromMinor(Math.max(0, available - reserved), code);
     } catch (error) {
       if (error instanceof IssuingCapacityError) throw error;
       console.error('[IssuingCapacity] capacity verification failed');

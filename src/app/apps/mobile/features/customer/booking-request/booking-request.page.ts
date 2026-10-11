@@ -57,7 +57,7 @@ import {
     calendarOutline
 } from 'ionicons/icons';
 import { Router, ActivatedRoute } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged, firstValueFrom } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged, firstValueFrom, timer } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
@@ -516,6 +516,8 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
                         <input
                           id="estimated_budget"
+                          [attr.aria-describedby]="shoppingBudgetError() && !fareCalculating() ? 'shopping-budget-error' : null"
+                          [attr.aria-invalid]="shoppingBudgetError() && !fareCalculating() ? 'true' : null"
                           type="text"
                           inputmode="decimal"
                           [value]="displayBudgetValue()"
@@ -524,6 +526,21 @@ type PackageSize = 'small' | 'medium' | 'large';
                           placeholder="0.00"
                           class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
                       </div>
+                      @if (shoppingBudgetError() && !fareCalculating()) {
+                        <p id="shopping-budget-error" role="alert" class="text-red-600 text-xs leading-relaxed mt-1 ml-1">
+                          {{ shoppingBudgetError() }}
+                        </p>
+                      }
+                      <p id="shopping-budget-limit" class="text-xs text-slate-500 leading-relaxed ml-1">
+                        @if (maximumShoppingBudget() !== null) {
+                          Maximum currently reservable: <strong>{{ config.formatCurrency(maximumShoppingBudget()!) }}</strong>.
+                          Availability may change before payment.
+                        } @else if (shoppingCapacityChecked()) {
+                          Maximum shopping budget is temporarily unavailable. Please try again shortly.
+                        } @else {
+                          Checking the maximum available shopping budget…
+                        }
+                      </p>
                       @if (bookingForm.get('estimated_budget')?.hasError('invalidCurrency')) {
                         <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
                       }
@@ -745,7 +762,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                   </div>
                 }
 
-                @if (fareCalculationError() && !fareCalculating()) {
+                @if (fareCalculationError() && !fareCalculating() && !shoppingBudgetError()) {
                   <div class="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-700 text-sm font-medium animate-in fade-in">
                     <ion-icon name="information-circle" class="text-2xl text-red-500 shrink-0"></ion-icon>
                     <p class="flex-1">{{ fareCalculationError() }}</p>
@@ -1383,7 +1400,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
     fareCalculating = signal(false);
+    maximumShoppingBudget = signal<number | null>(null);
+    shoppingCapacityChecked = signal(false);
+    private capacityRequestInFlight = false;
+
+    private async refreshShoppingCapacity(): Promise<void> {
+        if (!this.usesBudgetMode() || this.capacityRequestInFlight) return;
+        const currency = this.config.currencyCode;
+        this.capacityRequestInFlight = true;
+        try {
+            const capacity = await this.pricingService.shoppingCapacity(currency);
+            if (capacity.currency !== this.config.currencyCode || !Number.isFinite(capacity.maximumBudget) || capacity.maximumBudget < 0) {
+                this.maximumShoppingBudget.set(null);
+            } else this.maximumShoppingBudget.set(capacity.maximumBudget);
+        } catch { this.maximumShoppingBudget.set(null); }
+        finally { this.capacityRequestInFlight = false; this.shoppingCapacityChecked.set(true); }
+    }
+
     fareCalculationError = signal<string | null>(null);
+    shoppingBudgetError = computed(() => {
+        const message = this.fareCalculationError();
+        return this.usesBudgetMode() && message && [
+            'This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.',
+            'Shopping funding could not be verified. Please try again later.',
+            'Shopping purchase funding is currently unavailable. Please try later. Collection and delivery without purchases remain available.'
+        ].includes(message) ? message : null;
+    });
     private lastFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
     private lastQuoteReference: string | null = null;
     private lastQuoteExpiresAt: string | null = null;
@@ -1588,6 +1630,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     ngOnInit() {
+        timer(0, 30000).pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe(() => { void this.refreshShoppingCapacity(); });
         void this.config.detectRuntimeCountry();
         void this.walletService.fetchWallet();
         void this.bookingService.getHistory();
@@ -2936,6 +2980,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             // Drop the authoritative quote: a failed recalculation must never leave the
             // previous fare able to authorise marketplace continuation or payment.
             this.authoritativeQuote.set(null);
+            void this.refreshShoppingCapacity();
             this.fareCalculationError.set(
                 marketFailure?.message ||
                 (['This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.',

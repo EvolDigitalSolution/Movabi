@@ -16,6 +16,18 @@ describe('shopping capacity before payment', () => {
   it('blocks the reported GBP120 budget against GBP100', async () => {
     await expect(IssuingCapacityService.assertAvailable(120, 'GBP')).rejects.toThrow('exceeds current funding capacity');
   });
+  it('reports the current maximum without exposing the reserve ledger', async () => {
+    expect(await IssuingCapacityService.maximumAvailable('GBP')).toBe(100);
+  });
+  it('reports the maximum after active reservations', async () => {
+    mocks.query.mockResolvedValue({ data: [{ job_id: 'other', amount_remaining: 30, jobs: { status: 'assigned' } }], error: null });
+    expect(await IssuingCapacityService.maximumAvailable('GBP')).toBe(70);
+  });
+  it('reports zero when purchase funding is disabled', async () => {
+    vi.stubEnv('STRIPE_ISSUING_ENABLED', 'false');
+    expect(await IssuingCapacityService.maximumAvailable('GBP')).toBe(0);
+    expect(mocks.balance).not.toHaveBeenCalled();
+  });
   it('permits exactly the available capacity', async () => {
     await expect(IssuingCapacityService.assertAvailable(100, 'gbp')).resolves.toBeUndefined();
   });

@@ -1,3 +1,4 @@
+import { IssuingCapacityService } from '../services/issuing-capacity.service';
 import { ShoppingBudgetService } from '../services/shopping-budget.service';
 import { Router, Request, Response } from 'express';
 import { IssuingService } from '../services/issuing.service';
@@ -52,6 +53,20 @@ const getProfileTenant = async (userId: string): Promise<string | null> => {
 
   return (data as any)?.tenant_id || null;
 };
+
+router.get('/shopping-capacity', async (req: Request, res: Response) => {
+  try { await requireUser(req); }
+  catch { return res.status(401).json({ error: 'Authentication required' }); }
+  const currency = String(req.query.currency || '').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return res.status(400).json({ error: 'Invalid currency' });
+  res.set('Cache-Control', 'no-store');
+  try {
+    const maximumBudget = await IssuingCapacityService.maximumAvailable(currency);
+    return res.json({ currency, maximumBudget });
+  } catch {
+    return res.status(503).json({ error: 'Shopping funding could not be verified. Please try again later.' });
+  }
+});
 
 router.post('/budget/:jobId/prepare', async (req: Request,res: Response) => {
   try { const user=await requireUser(req); const result=await ShoppingBudgetService.prepare(String(req.params.jobId),user.id); if(result.approved) await IssuingService.activateErrandCard(String(req.params.jobId)).catch(error => console.error('[ShoppingBudget] card activation pending',error.message)); return res.json(result); }
