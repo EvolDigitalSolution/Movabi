@@ -3247,8 +3247,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         let dashboardTab: Window | null = null;
         try { dashboardTab = this.connectService.prepareDashboardTab(); }
         catch { await this.showToast('Allow popups to open the Stripe dashboard.', 'warning'); return; }
-        await this.refreshStripeUiStateFromDb();
-
+        // The server resolves and verifies the signed-in driver's account.
+        // Avoid an extra profile refresh delaying the dashboard request.
         const accountId = this.stripeUiState().accountId;
 
         if (!accountId) {

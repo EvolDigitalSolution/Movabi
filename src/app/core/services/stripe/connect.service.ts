@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { firstValueFrom, Subject } from 'rxjs';
+import { defer, firstValueFrom, Subject, switchMap, timeout } from 'rxjs';
 import { App } from '@capacitor/app';
 import { AppLauncher } from '@capacitor/app-launcher';
 import { Capacitor } from '@capacitor/core';
@@ -57,11 +57,9 @@ export class ConnectService {
     }
 
     prepareDashboardTab(): Window | null {
-        if (Capacitor.isNativePlatform()) return null;
-        const tab = window.open('about:blank', '_blank');
-        if (!tab) throw new Error('Allow popups to open the Stripe dashboard.');
-        tab.opener = null;
-        return tab;
+        // Open only after the authenticated login link is ready.
+        // A pre-opened blank tab can strand the driver on failed requests.
+        return null;
     }
 
     async openDashboard(url: string, tab: Window | null): Promise<void> {
@@ -70,8 +68,8 @@ export class ConnectService {
             const result = await AppLauncher.openUrl({ url });
             if (!result.completed) throw new Error('Could not open the external browser');
         } else {
-            if (!tab || tab.closed) throw new Error('Stripe dashboard tab was closed');
-            tab.location.href = url;
+            if (tab && !tab.closed) tab.location.href = url;
+            else window.location.assign(url);
         }
     }
 
@@ -140,14 +138,11 @@ export class ConnectService {
 
     async getDashboardLink(accountId: string) {
         return firstValueFrom(
-            this.http.post<{ url: string }>(
-                `${this.apiUrl}/dashboard-link`,
-                {
-                    accountId
-                },
-                {
-                    headers: await this.getAuthHeaders()
-                }
+            defer(() => this.getAuthHeaders()).pipe(
+                switchMap(headers => this.http.post<{ url: string }>(
+                    `${this.apiUrl}/dashboard-link`, { accountId }, { headers }
+                )),
+                timeout(15000)
             )
         );
     }
