@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import {
@@ -972,6 +972,16 @@ export class BookingService {
                 .maybeSingle();
 
             data.customer = customer;
+        }
+
+        // Profiles RLS can hide the customer from the assigned driver. Use the scoped API projection.
+        if (data.driver_id === this.auth.currentUser()?.id) {
+            try {
+                const response = await firstValueFrom(this.http.get<{ customer: Record<string, unknown> }>(
+                    this.apiUrlService.getApiUrl(`/api/booking/${bookingId}/customer`),
+                    { headers: await this.authHeaders() }).pipe(timeout(12000)));
+                data.customer = { ...(data.customer || {}), ...response.customer };
+            } catch { /* Keep an already-readable profile when the optional lookup is unreachable. */ }
         }
 
         if (data.driver_id) {

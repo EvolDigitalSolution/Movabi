@@ -1,3 +1,5 @@
+import { customerDisplayName } from '@shared/utils/customer-display';
+import { NetworkService } from '@core/services/network/network.service';
 import { approvedErrandBudget } from '@shared/utils/errand-budget';
 import { ModalController } from '@ionic/angular/standalone';
 import { JourneyNavigationComponent } from '../navigation/journey-navigation.component';
@@ -152,6 +154,12 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
     <ion-content class="bg-slate-50">
       <div class="w-full max-w-xl mx-auto px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+8rem)] space-y-4 overflow-x-hidden">
         @if (job()) {
+          @if (loadError()) {
+            <div role="alert" class="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+              <p>{{ loadError() }}</p>
+              <app-button variant="secondary" size="sm" (clicked)="loadJob(job()?.id || '')">Retry details</app-button>
+            </div>
+          }
           @if (activeRequestTab() === 'overview') {
             <div class="relative overflow-hidden bg-white rounded-[1.5rem] p-4 text-slate-950 shadow-lg shadow-slate-900/10 border border-slate-200">
               <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
@@ -276,7 +284,10 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                       </div>
                       <h3 class="text-lg font-display font-black text-slate-950 mb-2">Request Completed</h3>
                       <p class="text-sm text-slate-600 font-medium mb-4">Earnings will appear once settlement is complete.</p>
-                      <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">Back to Dashboard</app-button>
+                      @if (loadError()) {
+                <app-button variant="primary" size="lg" (clicked)="loadJob(routeJobId())" class="w-full">Retry details</app-button>
+              }
+              <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">Back to Dashboard</app-button>
                     </div>
                   }
                   @default {
@@ -457,67 +468,6 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
             }
 
-            <!-- Shop Details -->
-            @if (job()?.service_slug === 'errand') {
-              @if (errandModeDisplay() || errandCustomerPhone() || errandItemsList().length || estimatedBudget() || substitutionRule()) {
-                <app-card class="p-4 space-y-4 bg-purple-50 border-purple-100">
-                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Shop Details</h3>
-                  
-                  @if (errandModeDisplay()) {
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Shop Mode</span>
-                      <span class="text-xs font-black text-slate-950">{{ errandModeDisplay() }}</span>
-                    </div>
-                  }
-
-                  @if (errandCustomerPhone()) {
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Customer Phone</span>
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs text-slate-700">{{ errandCustomerPhone() }}</span>
-                        <a [href]="'tel:' + errandCustomerPhone()">
-                          <button
-                            type="button"
-                            class="h-8 px-3 rounded-xl bg-purple-100 border border-purple-200 text-purple-700 font-black text-xs flex items-center justify-center gap-1 active:scale-95 transition-all"
-                          >
-                            <ion-icon name="call" class="text-sm"></ion-icon>
-                            Call
-                          </button>
-                        </a>
-                      </div>
-                    </div>
-                  }
-
-                  @if (errandItemsList().length > 0) {
-                    <div>
-                      <p class="text-xs font-semibold text-slate-600 mb-2">Items List</p>
-                      <ul class="space-y-1">
-                        @for (item of errandItemsList(); track item) {
-                          <li class="text-xs text-slate-700 flex items-center gap-2">
-                            <div class="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></div>
-                            {{ item }}
-                          </li>
-                        }
-                      </ul>
-                    </div>
-                  }
-
-                  @if (estimatedBudget()) {
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Estimated Budget</span>
-                      <span class="text-xs font-black text-slate-950">{{ formattedEstimatedBudget() }}</span>
-                    </div>
-                  }
-
-                  @if (substitutionRule()) {
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Substitution Rule</span>
-                      <span class="text-xs font-black text-slate-950">{{ substitutionRule() }}</span>
-                    </div>
-                  }
-                </app-card>
-              }
-            }
           }
 
           @if (activeRequestTab() === 'workflow') {
@@ -557,6 +507,50 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
           }
 
           @if (activeRequestTab() === 'shopping') {
+            <!-- Shop Details -->
+            @if (job()?.service_slug === 'errand') {
+              @if (errandModeDisplay() || errandItemsList().length || estimatedBudget() || substitutionRule()) {
+                <app-card class="p-4 space-y-4 bg-purple-50 border-purple-100">
+                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Shop Details</h3>
+                  
+                  @if (errandModeDisplay()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Shop Mode</span>
+                      <span class="text-xs font-black text-slate-950">{{ errandModeDisplay() }}</span>
+                    </div>
+                  }
+
+                  @if (errandItemsList().length > 0) {
+                    <div>
+                      <p class="text-xs font-semibold text-slate-600 mb-2">Items List</p>
+                      <ul class="space-y-1">
+                        @for (item of errandItemsList(); track item) {
+                          <li class="text-xs text-slate-700 flex items-center gap-2">
+                            <div class="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></div>
+                            {{ item }}
+                          </li>
+                        }
+                      </ul>
+                    </div>
+                  }
+
+                  @if (estimatedBudget()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Estimated Budget</span>
+                      <span class="text-xs font-black text-slate-950">{{ formattedEstimatedBudget() }}</span>
+                    </div>
+                  }
+
+                  @if (substitutionRule()) {
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-slate-600">Substitution Rule</span>
+                      <span class="text-xs font-black text-slate-950">{{ substitutionRule() }}</span>
+                    </div>
+                  }
+                </app-card>
+              }
+            }
+
             @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
               <app-card class="p-4 space-y-4">
                 <div class="rounded-2xl bg-blue-50 border border-blue-100 p-3 flex justify-between items-center gap-3">
@@ -616,9 +610,9 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                       <app-button variant="secondary" size="sm" (clicked)="recordSpending()">
                         {{ hasRecordedErrandSpend() ? 'Update Spend' : 'Record Spend' }}
                       </app-button>
-                      <app-button variant="secondary" size="sm" (clicked)="requestOverBudget()">
-                        Extra Budget
-                      </app-button>
+                      @if (canRequestExtraBudget()) {
+                        <app-button variant="secondary" size="sm" (clicked)="requestOverBudget()">Extra Budget</app-button>
+                      }
                     </div>
                     <div>
                       <input type="file" #receiptInput class="hidden" (change)="onReceiptSelected($event)" accept="image/*,.pdf">
@@ -846,7 +840,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               <div class="space-y-3">
                 <h3 class="text-lg font-display font-black text-slate-950">Request Not Found</h3>
                 <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                  This request may have been cancelled, completed, or assigned to another driver.
+                  {{ loadError() || 'This request may have been cancelled, completed, or assigned to another driver.' }}
                 </p>
               </div>
               <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">
@@ -929,6 +923,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     isRevealingCardDetails = signal(false);
     cardDetailsVisible = signal(false);
     cardDetailsError = signal('');
+    private network = inject(NetworkService);
+    loadError = signal('');
+    budgetRequestBusy = signal(false);
     isLoading = signal(true);
     confirmingAssignment = signal(false);
     driverPickupDistance = signal<number | null>(null);
@@ -942,8 +939,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     });
     requestTabs: Array<{ id: DriverRequestTab; label: string; icon: string }> = [
         { id: 'overview', label: 'Overview', icon: 'information-circle-outline' },
-        { id: 'workflow', label: 'Workflow', icon: 'git-branch-outline' },
         { id: 'shopping', label: 'Shopping', icon: 'bag-handle-outline' },
+        { id: 'workflow', label: 'Workflow', icon: 'git-branch-outline' },
         { id: 'pay', label: 'Pay', icon: 'card-outline' },
         { id: 'chat', label: 'Chat', icon: 'chatbubble-ellipses-outline' },
         { id: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline' }
@@ -1321,8 +1318,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
     }
 
+    routeJobId(): string { return this.job()?.id || this.route.snapshot.paramMap.get('id') || ''; }
+
     async loadJob(id: string) {
         this.isLoading.set(true);
+        this.loadError.set('');
 
         try {
             if (!id) {
@@ -1330,12 +1330,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 return;
             }
 
-            let currentJob = this.job();
-
-            if (!currentJob || currentJob.id !== id) {
-                currentJob = await this.bookingService.getBooking(id);
-                this.driverService.activeJob.set(currentJob as Booking);
-            }
+            const currentJob = await this.bookingService.getBooking(id);
+            this.driverService.activeJob.set(currentJob as Booking);
 
             if (!currentJob) {
                 this.driverService.activeJob.set(null);
@@ -1371,7 +1367,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             void this.renderPickupRoute();
         } catch (error) {
             console.error('Failed to load request details:', error);
-            this.driverService.activeJob.set(null);
+            this.loadError.set(this.network.normalizeError(error));
         } finally {
             this.isLoading.set(false);
         }
@@ -2102,7 +2098,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Save',
-                    handler: (data) => {
+                    handler: async (data) => {
                         const amount = Number(data?.amount);
 
                         if (!Number.isFinite(amount) || amount <= 0) {
@@ -2145,7 +2141,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
     }
 
+    canRequestExtraBudget(): boolean {
+        const job = this.job();
+        return !!job && ['wallet_funded', 'authorized'].includes(String(job.payment_status)) &&
+            ['assigned', 'accepted', 'heading_to_pickup', 'arrived', 'arrived_at_store',
+             'shopping_in_progress', 'collected', 'en_route_to_customer', 'in_progress'].includes(String(job.status)) &&
+            this.funding()?.over_budget_status !== 'requested';
+    }
+
     async requestOverBudget() {
+        if (!this.canRequestExtraBudget()) { await this.showToast('Extra budget is unavailable at this stage, or a request is already awaiting customer approval.', 'warning'); return; }
+        if (this.budgetRequestBusy()) return;
+        if (!this.network.isOnline) { await this.showToast('Reconnect before requesting extra budget.', 'warning'); return; }
         const currentJob = this.job();
 
         if (!currentJob?.id) {
@@ -2182,13 +2189,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                             return false;
                         }
 
-                        if (!reason) {
-                            void this.showToast('Please enter a reason.', 'warning');
+                        if (reason.length < 3) {
+                            void this.showToast('Please enter a reason of at least 3 characters.', 'warning');
                             return false;
                         }
 
-                        void this.sendOverBudgetRequest(currentJob.id, amount, reason);
-                        return true;
+                        return this.sendOverBudgetRequest(currentJob.id, amount, reason);
                     }
                 }
             ]
@@ -2198,6 +2204,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private async sendOverBudgetRequest(jobId: string, amount: number, reason: string) {
+        if (this.budgetRequestBusy()) return false;
+        this.budgetRequestBusy.set(true);
         const loading = await this.loadingCtrl.create({ message: 'Sending request...' });
         await loading.present();
 
@@ -2213,10 +2221,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             });
             await this.loadJob(jobId);
             await this.showToast('Extra budget request sent.', 'success');
+            return true;
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'Failed to send request.';
+            const message = this.network.normalizeError(error);
             await this.showToast(message, 'danger');
+            return false;
         } finally {
+            this.budgetRequestBusy.set(false);
             await loading.dismiss();
         }
     }
@@ -2574,11 +2585,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     customerName(): string {
-        const customer = (this.job() as any)?.customer;
-        const first = String(customer?.first_name || '').trim();
-        const last = String(customer?.last_name || '').trim();
-
-        return first || last || 'Customer';
+        return customerDisplayName((this.job() as any)?.customer);
     }
 
     customerInitial(): string {

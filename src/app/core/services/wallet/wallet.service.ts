@@ -95,23 +95,27 @@ export class WalletService {
   }
 
   async requestErrandOverBudget(jobId: string, additionalAmount: number, reason: string): Promise<void> {
-    const funding = await this.getErrandFunding(jobId);
-    if (!funding || !Number.isFinite(additionalAmount) || additionalAmount <= 0) {
-      throw new Error('Enter a valid additional shopping amount.');
-    }
-    const {data:details,error:detailsError}=await this.supabase.from('errand_details').select('estimated_budget').eq('job_id',jobId).maybeSingle();
-    if(detailsError) throw new Error('Shopping budget could not be verified');
-    const total = Number((approvedErrandBudget(funding,details?.estimated_budget) + additionalAmount).toFixed(2));
-    const { error } = await this.supabase.rpc('request_errand_over_budget', {
-      p_job_id: jobId,
-      p_amount: total,
-      p_reason: reason
-    });
-
-    if (error) {
-      console.error('Error requesting over-budget:', error);
-      throw new Error(`Failed to request over-budget: ${error.message}`);
-    }
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 15000);
+    try {
+      const { data: funding, error: fundingError } = await this.supabase.from('errand_funding')
+        .select('*').eq('job_id', jobId).abortSignal(controller.signal).maybeSingle();
+      if (fundingError) throw fundingError;
+      if (!funding || !Number.isFinite(additionalAmount) || additionalAmount <= 0) {
+        throw new Error('Enter a valid additional shopping amount.');
+      }
+      const {data:details,error:detailsError}=await this.supabase.from('errand_details')
+        .select('estimated_budget').eq('job_id',jobId).abortSignal(controller.signal).maybeSingle();
+      if(detailsError) throw detailsError;
+      const total = Number((approvedErrandBudget(funding,details?.estimated_budget) + additionalAmount).toFixed(2));
+      const { error } = await this.supabase.rpc('request_errand_over_budget', {
+        p_job_id: jobId, p_amount: total, p_reason: reason
+      }).abortSignal(controller.signal);
+      if (error) throw error;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('Request timed out. Check whether the budget request was received before trying again.');
+      throw error;
+    } finally { clearTimeout(deadline); }
   }
 
   async approveErrandOverBudget(jobId: string): Promise<void> {

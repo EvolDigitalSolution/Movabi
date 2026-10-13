@@ -36,19 +36,19 @@ export class NetworkService {
       return 'No internet connection. Please reconnect and try again.';
     }
 
-    if (err.status === 0 || err.name === 'HttpErrorResponse') {
+    if (err.status === 0 || err.name === 'TypeError' && /fetch|network/i.test(err.message || '')) {
       return 'Network error. Please check your connection.';
     }
 
-    if (err.status === 408 || err.message?.toLowerCase().includes('timeout')) {
-      return 'Request timed out. Please try again.';
+    if (err.status === 408 || err.name === 'TimeoutError' || err.name === 'AbortError' || /timeout|timed out/i.test(err.message || '')) {
+      return err.message?.startsWith('Request timed out. Check') ? err.message : 'Request timed out. Please try again.';
     }
 
     if (err.status >= 500) {
-      return 'Server error. Our team has been notified.';
+      return 'The server is temporarily unavailable. Please try again shortly.';
     }
 
-    return err.message || 'An unexpected error occurred. Please try again.';
+    return err.error?.error || err.error?.message || err.message || 'An unexpected error occurred. Please try again.';
   }
 
   private setOnline(status: boolean): void {

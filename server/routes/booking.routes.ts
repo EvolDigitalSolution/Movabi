@@ -1,3 +1,4 @@
+import { customerDisplayName } from '../../src/app/shared/utils/customer-display';
 import { matchesVehicleCapacity } from '../../src/app/shared/utils/goods-vehicle-compatibility';
 import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
@@ -17,6 +18,20 @@ import { PayoutEligibilityService } from '../services/payout-eligibility.service
 import { NoShowService, NO_SHOW_ARRIVAL_MAX_DISTANCE_M, NO_SHOW_ARRIVAL_MAX_LOCATION_AGE_MS } from '../services/no-show.service';
 
 const router = Router();
+
+router.get('/:jobId/customer', async (req: Request, res: Response) => {
+    const userId = await getAuthUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    const { data: job, error } = await supabaseAdmin.from('jobs')
+        .select('customer_id,driver_id').eq('id', String(req.params.jobId)).maybeSingle();
+    if (error || !job || job.driver_id !== userId) return res.status(403).json({ error: 'Assigned driver access required' });
+    const { data: customer, error: profileError } = await supabaseAdmin.from('profiles')
+        .select('*').eq('id', job.customer_id).maybeSingle();
+    if (profileError || !customer) return res.status(503).json({ error: 'Customer details are temporarily unavailable' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ customer: { full_name: customerDisplayName(customer),
+        avatar_url: customer.avatar_url || null, phone: customer.phone || customer.phone_number || null } });
+});
 
 const capturedStatuses = ['paid', 'captured', 'succeeded'];
 const cancellableStripeStatuses = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'];
