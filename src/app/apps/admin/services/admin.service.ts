@@ -187,6 +187,17 @@ export class AdminService {
     }));
   }
 
+  async issuingTestTerminal(path = '', body?: unknown): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/issuing-test-terminal${path}`, {
+      method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30000)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Test checkout unavailable');
+    return result;
+  }
+
   async getDailyFinance(date: string, timezone: string): Promise<FinanceReport> {
     const headers = await this.getAuthenticatedApiHeaders();
     const query = new URLSearchParams({ date, timezone });

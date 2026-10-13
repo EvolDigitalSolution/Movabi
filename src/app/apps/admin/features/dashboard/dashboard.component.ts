@@ -1,3 +1,4 @@
+import { IssuingTestTerminalComponent } from '../issuing-test-terminal/issuing-test-terminal.component';
 import { AdminFinanceComponent } from '../finance/admin-finance.component';
 import { Component, inject, OnDestroy, OnInit, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -50,7 +51,7 @@ interface AdminEvent {
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, IonicModule, RouterModule, BadgeComponent, MapComponent, AdminFinanceComponent],
+  imports: [IssuingTestTerminalComponent, CommonModule, IonicModule, RouterModule, BadgeComponent, MapComponent, AdminFinanceComponent],
   template: `
     <div class="space-y-5 pb-6 bg-slate-50 min-h-screen">
       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -165,7 +166,7 @@ interface AdminEvent {
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div #financeSection tabindex="-1" class="xl:col-span-2"><app-admin-finance></app-admin-finance></div>
+        <div #financeSection tabindex="-1" class="xl:col-span-2"><app-admin-finance></app-admin-finance><div class="mt-5"><app-issuing-test-terminal></app-issuing-test-terminal></div></div>
 
         <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-5">
           <div class="flex items-center justify-between gap-4 mb-5">

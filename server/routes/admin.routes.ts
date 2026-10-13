@@ -1,3 +1,5 @@
+import { AdminIssuingTerminalService } from '../services/admin-issuing-terminal.service';
+import { rateLimit } from 'express-rate-limit';
 import { AdminFinanceService, reportBounds, dayInZone } from '../services/admin-finance.service';
 import { Router, NextFunction, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
@@ -82,6 +84,17 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
   (req as any).adminUserId = authData.user.id;
   return next();
 };
+
+router.get('/issuing-test-terminal', requireAdmin, async (_req: Request,res: Response) => {
+  res.setHeader('Cache-Control','no-store');
+  try { return res.json(await AdminIssuingTerminalService.context()); }
+  catch { return res.status(503).json({error:'Stripe mode or test cards could not be verified. Try again shortly.'}); }
+});
+router.post('/issuing-test-terminal/purchase', requireAdmin,
+  rateLimit({windowMs:60000,limit:10,standardHeaders:true,legacyHeaders:false}), async (req: Request,res: Response) => {
+  try { return res.json(await AdminIssuingTerminalService.purchase((req as any).adminUserId, req.body || {})); }
+  catch(error) { return res.status(400).json({error:error instanceof Error ? error.message : 'Test purchase failed'}); }
+});
 
 function cleanLocalServiceCountry(value: unknown): string | null {
   const country = String(value || '').trim().toUpperCase();
