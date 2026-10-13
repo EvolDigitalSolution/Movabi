@@ -1,3 +1,4 @@
+import { shoppingCardBalance } from '@shared/utils/shopping-card-balance';
 import { customerDisplayName } from '@shared/utils/customer-display';
 import { NetworkService } from '@core/services/network/network.service';
 import { approvedErrandBudget } from '@shared/utils/errand-budget';
@@ -665,16 +666,16 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                       </div>
                       <div class="grid grid-cols-3 gap-3 text-xs">
                         <div>
-                          <p class="font-black uppercase tracking-widest text-white/40">Limit</p>
-                          <p class="mt-1 font-display text-base font-black">{{ formatPrice(issuingCardBudgetLimit()) }}</p>
+                          <p class="font-black uppercase tracking-widest text-white/40">Available</p>
+                          <p class="mt-1 font-display text-base font-black">{{ cardBalance().available === null ? cardBalance().pending ? 'Pending' : 'Checking' : formatPrice(cardBalance().available!) }}</p>
                         </div>
                         <div>
-                          <p class="font-black uppercase tracking-widest text-white/40">Use for</p>
-                          <p class="mt-1 font-black">Errand</p>
+                          <p class="font-black uppercase tracking-widest text-white/40">Spent</p>
+                          <p class="mt-1 font-black">{{ cardBalance().spent === null ? 'Checking' : formatPrice(cardBalance().spent!) }}</p>
                         </div>
                         <div>
-                          <p class="font-black uppercase tracking-widest text-white/40">Spend</p>
-                          <p class="mt-1 font-black">Phone wallet</p>
+                          <p class="font-black uppercase tracking-widest text-white/40">Budget</p>
+                          <p class="mt-1 font-black">{{ formatPrice(issuingCardBudgetLimit()) }}</p>
                         </div>
                       </div>
                     </div>
@@ -933,6 +934,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     driverPickupDuration = signal<number | null>(null);
     mapPreviewOpen = signal(false);
     toggleMapPreview(): void { this.mapPreviewOpen.update(open => !open); if (this.mapPreviewOpen()) setTimeout(() => void this.renderPickupRoute(), 120); }
+    cardBalance() { return shoppingCardBalance(this.issuingCardBudgetLimit(), this.funding()?.metadata); }
     remainingShoppingBudget(): number { return Math.max(0, this.approvedErrandItemBudget() - Number(this.errandDetails()?.actual_spending || 0)); }
     automatedShoppingSpend(): boolean { return (this.issuingCardStatus()?.status === 'active' && !!this.issuingCardStatus()?.cardId) || this.funding()?.metadata?.['shopping_spend_source'] === 'issuing'; }
     pickupMapReady = signal(false);
@@ -1344,6 +1346,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 return;
             }
 
+            // Reconciliation can update details and funding: read them afterwards.
+            if (currentJob.service_slug === ServiceTypeEnum.ERRAND) await this.loadIssuingCardStatus(currentJob.id);
+
             const details = await this.bookingService.getBookingDetails(
                 currentJob.id,
                 currentJob.service_slug as ServiceTypeEnum
@@ -1359,7 +1364,6 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             if (currentJob.service_slug === ServiceTypeEnum.ERRAND && this.isShoppingErrand()) {
                 const funding = await this.bookingService.getErrandFunding(currentJob.id);
                 this.funding.set(funding);
-                await this.loadIssuingCardStatus(currentJob.id);
             } else {
                 this.funding.set(null);
                 this.issuingCardStatus.set(null);
