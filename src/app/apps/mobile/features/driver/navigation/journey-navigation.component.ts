@@ -11,15 +11,30 @@ import { NavigationRoute, journeyProgress, distanceMeters } from '../../../../..
 import { firstValueFrom } from 'rxjs';
 @Component({selector:'app-journey-navigation',standalone:true,
  imports:[IonHeader,IonToolbar,IonTitle,IonButtons,IonButton,IonContent,MapComponent],providers:[MapRendererService],
- template:`<ion-header><ion-toolbar><ion-title>Journey navigation</ion-title><ion-buttons slot="end"><ion-button (click)="close()">Close</ion-button></ion-buttons></ion-toolbar></ion-header>
- <ion-content><div class="flex min-h-full flex-col bg-slate-50">
- <div class="border-b border-slate-200 bg-white p-4"><p class="text-sm font-bold text-slate-900">{{customerName}}</p><p class="text-xs font-bold uppercase text-slate-500">{{label}}</p><p class="mt-1 text-sm font-semibold text-slate-900">{{address}}</p></div>
- <div style="height:52dvh"><app-map (ready)="ready($event)"></app-map></div>
- <div class="space-y-3 p-4 pb-8"><div class="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p class="text-lg font-bold text-slate-900">{{instruction()}}</p><p class="mt-2 text-sm text-slate-600">{{summary()}}</p></div>
- @if(error()){<p class="rounded-xl bg-white p-3 text-sm text-slate-600">{{error()}}</p><button class="rounded-xl bg-amber-500 px-4 py-3 font-bold" (click)="retry()">Retry route</button>}
- @if(actionLabel){<button class="w-full rounded-xl bg-amber-500 p-4 font-bold text-slate-950" [disabled]="acting()" (click)="performAction()">{{acting()?'Opening job action…':actionLabel}}</button>}
- <div class="flex gap-3"><button class="flex-1 rounded-xl border border-slate-200 bg-white p-3 font-bold text-slate-800" (click)="voice.set(!voice())">Voice {{voice()?'on':'off'}}</button><button class="flex-1 rounded-xl border border-slate-200 bg-white p-3 font-bold text-slate-800" (click)="external()">Other maps</button></div>
- <p class="text-xs text-slate-500">Road directions and estimated travel time. Follow road signs and current conditions.</p></div></div></ion-content>`})
+ styles:[`
+ .nav-shell{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:#f8fafc;overflow:hidden}
+ .nav-meta{padding:10px 14px;background:white;border-bottom:1px solid #e2e8f0}
+ .nav-name{font-size:14px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
+ .nav-label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin:3px 0}
+ .nav-address{font-size:12px;line-height:1.4;color:#334155;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .nav-map{min-height:0;position:relative}.nav-map app-map{display:block;width:100%;height:100%}
+ .nav-controls{padding:10px 14px calc(env(safe-area-inset-bottom) + 10px);background:white;border-top:1px solid #e2e8f0}
+ .nav-instruction{font-size:14px;line-height:1.35;font-weight:700;margin:0;color:#0f172a;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .nav-summary{font-size:12px;color:#64748b;margin:4px 0 8px}.nav-tools{display:flex;gap:8px;margin-top:8px}
+ .nav-tools button{flex:1;font-size:12px;font-weight:600;padding:10px 6px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;color:#334155}
+ .nav-action{width:100%;padding:12px;border:0;border-radius:12px;background:#f59e0b;color:#0f172a;font-size:13px;font-weight:700}
+ .nav-error{font-size:11px;line-height:1.3;margin:4px 0;color:#b45309;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ @media(max-height:500px) and (min-width:600px){.nav-shell{grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:auto minmax(0,1fr)}.nav-meta{grid-column:1/-1}.nav-controls{min-height:0;padding:8px}.nav-tools button{padding:8px 4px}}
+ `],
+ template:`<ion-header><ion-toolbar><ion-title style="font-size:16px">Directions</ion-title><ion-buttons slot="end"><ion-button (click)="close()">Close</ion-button></ion-buttons></ion-toolbar></ion-header>
+ <ion-content [scrollY]="false"><div class="nav-shell">
+ <div class="nav-meta"><p class="nav-name" [title]="customerName">{{customerName}}</p><p class="nav-label">{{label}}</p><p class="nav-address" [title]="address">{{address}}</p></div>
+ <div class="nav-map"><app-map (ready)="ready($event)"></app-map></div>
+ <div class="nav-controls"><p class="nav-instruction" [title]="instruction()">{{instruction()}}</p><p class="nav-summary">{{summary()}}</p>
+ @if(error()){<p class="nav-error" role="status">{{error()}}</p>}
+ @if(actionLabel){<button class="nav-action" [disabled]="acting()" (click)="performAction()">{{acting()?'Opening job action…':actionLabel}}</button>}
+ <div class="nav-tools"><button (click)="voice.set(!voice())">Voice {{voice()?'on':'off'}}</button>@if(error()){<button (click)="retry()">Retry</button>}<button (click)="external()">Other maps</button></div>
+ </div></div></ion-content>`})
 export class JourneyNavigationComponent implements OnDestroy {
  @Input() customerName='Customer'; @Input() actionLabel=''; @Input() onJobAction?:()=>Promise<void>;
  readonly requestFeed=inject(DriverRequestFeedService);

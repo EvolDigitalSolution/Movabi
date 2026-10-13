@@ -1,3 +1,4 @@
+import { IssuingSpendService } from './issuing-spend.service';
 import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
@@ -253,6 +254,8 @@ export class LogisticsService {
     if (job.stripe_transfer_id || ['claimed','unknown','transferred','reversed'].includes(String(job.settlement_status))) {
       throw new Error('Existing transfer requires reconciliation before completion');
     }
+    const cardSpend = PaymentAuthorityService.isErrand(job) ? await IssuingSpendService.sync(job.id, true) : { automated: false };
+    if (cardSpend.automated && cardSpend.pending) throw new Error('Shopping card purchases are still pending. Completion payment can continue once they reconcile.');
     let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
     const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';
 
@@ -282,23 +285,9 @@ export class LogisticsService {
         if (detailsError) throw new Error('Shopping spend could not be verified');
         const actualSpending = this.roundMoney(Number(details?.actual_spending || 0));
         if (!Number.isFinite(actualSpending) || actualSpending < 0 || actualSpending > budget) throw new Error('Shopping spend requires budget approval before completion');
-        const [{data:control,error:controlError},{data:authorizations,error:authorizationError},{data:transactions,error:transactionError}]=await Promise.all([
-          supabaseAdmin.from('job_issuing_spend_controls').select('amount_captured').eq('job_id',job.id).maybeSingle(),
-          supabaseAdmin.from('job_issuing_authorizations').select('amount,status,approved').eq('job_id',job.id),
-          supabaseAdmin.from('job_issuing_transactions').select('amount,status').eq('job_id',job.id)
-        ]);
-        if(controlError || authorizationError || transactionError) throw new Error('Shopping card spend could not be reconciled');
-        if(control) {
-          const committed=(authorizations || []).filter(row=>row.approved && !['reversed','expired'].includes(String(row.status)))
-            .reduce((sum,row)=>sum+Number(row.amount),0);
-          const refunds=(transactions || []).filter(row=>row.status==='refund').reduce((sum,row)=>sum+Number(row.amount),0);
-          const verifiedSpend=this.roundMoney(Math.max(Number(control.amount_captured || 0),committed-refunds,0));
-          if(actualSpending!==verifiedSpend) throw new Error('Receipt spending does not match shopping card purchases; reconciliation is required');
-        }
-
         const funding = await supabaseAdmin.from('errand_funding').select('over_budget_status').eq('job_id',job.id).maybeSingle();
         if (funding.error || funding.data?.over_budget_status === 'requested') throw new Error('Shopping budget approval must finish before completion');
-        captureAmountInPence = Math.round((serviceFare + actualSpending) * 100);
+        captureAmountInPence = FareSplitService.toMinor(serviceFare + actualSpending, String(job.currency_code || 'GBP'));
       }
 
       const intent = await stripe.paymentIntents.retrieve(job.payment_intent_id);

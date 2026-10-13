@@ -329,13 +329,11 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   </button>
                 </div>
               }
-              <div class="px-4 py-3 border-b border-slate-100">
-                <p class="text-sm font-semibold text-slate-700">{{ pickupMapTitle() }}</p>
-                <p class="mt-0.5 text-xs text-slate-500 font-semibold">{{ pickupMapSubtitle() }}</p>
-              </div>
-              <div class="h-64 bg-slate-50">
-                <app-map #pickupMap></app-map>
-              </div>
+              <button type="button" (click)="toggleMapPreview()" [attr.aria-expanded]="mapPreviewOpen()"
+                class="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-slate-600">
+                <span>{{ mapPreviewOpen() ? 'Hide map preview' : 'Show map preview' }}</span><span aria-hidden="true">{{ mapPreviewOpen() ? '−' : '+' }}</span>
+              </button>
+              @if (mapPreviewOpen()) { <div class="h-52 bg-slate-50"><app-map #pickupMap></app-map></div> }
             </app-card>
 
             <app-card class="p-4 space-y-4">
@@ -551,6 +549,9 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
             }
 
+            @if (automatedShoppingSpend()) {
+              <div class="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-900">Movabi card purchases update spending automatically. Receipt upload is optional. Recorded spend: {{ formatPrice(errandDetails()?.actual_spending || 0) }}. Budget remaining: {{ formatPrice(remainingShoppingBudget()) }}. Unused customer funds are released when the job payment settles. Pending card purchases must reconcile before payment completion.</div>
+            }
             @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
               <app-card class="p-4 space-y-4">
                 <div class="rounded-2xl bg-blue-50 border border-blue-100 p-3 flex justify-between items-center gap-3">
@@ -607,9 +608,9 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
 
                   @if (showErrandSpendTools()) {
                     <div class="grid grid-cols-2 gap-3 pt-2">
-                      <app-button variant="secondary" size="sm" (clicked)="recordSpending()">
-                        {{ hasRecordedErrandSpend() ? 'Update Spend' : 'Record Spend' }}
-                      </app-button>
+                      @if (!automatedShoppingSpend()) {
+                        <app-button variant="secondary" size="sm" (clicked)="recordSpending()">{{ hasRecordedErrandSpend() ? 'Update Spend' : 'Record Spend' }}</app-button>
+                      }
                       @if (canRequestExtraBudget()) {
                         <app-button variant="secondary" size="sm" (clicked)="requestOverBudget()">Extra Budget</app-button>
                       }
@@ -617,7 +618,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                     <div>
                       <input type="file" #receiptInput class="hidden" (change)="onReceiptSelected($event)" accept="image/*,.pdf">
                       <app-button variant="secondary" size="sm" class="w-full" (clicked)="receiptInput.click()">
-                        {{ errandDetails()?.receipt_url ? 'Update Receipt' : 'Upload Receipt' }}
+                        {{ automatedShoppingSpend() ? 'Add receipt (optional)' : errandDetails()?.receipt_url ? 'Update Receipt' : 'Upload Receipt' }}
                       </app-button>
                     </div>
                   }
@@ -930,6 +931,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     confirmingAssignment = signal(false);
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
+    mapPreviewOpen = signal(false);
+    toggleMapPreview(): void { this.mapPreviewOpen.update(open => !open); if (this.mapPreviewOpen()) setTimeout(() => void this.renderPickupRoute(), 120); }
+    remainingShoppingBudget(): number { return Math.max(0, this.approvedErrandItemBudget() - Number(this.errandDetails()?.actual_spending || 0)); }
+    automatedShoppingSpend(): boolean { return (this.issuingCardStatus()?.status === 'active' && !!this.issuingCardStatus()?.cardId) || this.funding()?.metadata?.['shopping_spend_source'] === 'issuing'; }
     pickupMapReady = signal(false);
     activeRequestTab = signal<DriverRequestTab>('overview');
     messageCount = signal(0);
@@ -1234,6 +1239,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     ngOnDestroy() {
+        this.mapPreviewOpen.set(false);
         void this.channel?.unsubscribe();
         void this.errandFundingChannel?.unsubscribe();
         void this.messagesChannel?.unsubscribe();
@@ -1979,13 +1985,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             const actualSpending = Number(errandDetails?.actual_spending ?? 0);
 
             // If this errand had an item/shopping budget, the driver must enter actual spend.
-            if (estimatedBudget > 0 && actualSpending <= 0) {
+            if (!this.automatedShoppingSpend() && estimatedBudget > 0 && actualSpending <= 0) {
                 await this.showToast('Please enter the actual amount spent before completing.', 'warning');
                 return;
             }
 
             // If money was spent from the customer budget, a receipt is mandatory.
-            if (estimatedBudget > 0 && actualSpending > 0 && !errandDetails?.receipt_url) {
+            if (!this.automatedShoppingSpend() && estimatedBudget > 0 && actualSpending > 0 && !errandDetails?.receipt_url) {
                 await this.showToast('Please upload a receipt before completing this errand.', 'warning');
                 return;
             }
@@ -2380,6 +2386,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private async renderPickupRoute(): Promise<void> {
+        if (!this.mapPreviewOpen()) return;
         const currentJob = this.job();
 
         if (!currentJob || !this.pickupMap) {

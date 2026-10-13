@@ -37,6 +37,7 @@ describe('upfront payment margin protection',()=>{
 });
 function pricingFixture(issuing='false', cap=0) {
  const context:any={exports:{},console,process:{env:{STRIPE_ISSUING_ENABLED:issuing}},require:(name:string)=>{
+  if(name.includes('issuing-capacity'))return {IssuingCapacityService:{assertAvailable:async()=>{}}};
   if(name.includes('payment-margin'))return {PaymentMarginService};
   if(name.includes('fare-split'))return {FareSplitService:{POLICY_VERSION:'fare-split-v1'}};
   if(name.includes('marketplace-config'))return {MarketplaceConfigService:{canonicalServiceSlug:(s:string)=>s}};

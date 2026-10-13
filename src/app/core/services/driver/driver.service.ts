@@ -815,7 +815,8 @@ export class DriverService {
             const actualSpending = details?.actual_spending;
 
             // Shopping budget exists
-            if (estimatedBudget > 0) {
+            const card = await this.getErrandIssuingCardStatus(jobId);
+            if (estimatedBudget > 0 && !(card?.status === 'active' && card?.cardId) && funding?.metadata?.['shopping_spend_source'] !== 'issuing') {
                 // Driver must record what was actually spent
                 if (actualSpending == null || actualSpending <= 0) {
                     throw new Error(

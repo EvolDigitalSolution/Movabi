@@ -1,3 +1,4 @@
+import { IssuingSpendService } from './issuing-spend.service';
 import { ShoppingBudgetService } from './shopping-budget.service';
 import { FareSplitService } from './fare-split.service';
 import { approvedErrandBudget } from '../../src/app/shared/utils/errand-budget';
@@ -199,6 +200,7 @@ export class IssuingService {
       throw new Error('Request not found');
     }
 
+    await IssuingSpendService.sync(jobId);
     const budgetLimit = await this.getReservedBudget(jobId);
     const existing = await this.getJobSpendControl(jobId);
 
@@ -378,6 +380,10 @@ export class IssuingService {
       status:authorization.status,raw_event:authorization,updated_at:new Date().toISOString()
     }).eq('stripe_authorization_id',authorization.id);
     if(error) throw new Error(error.message);
+    const { data: row, error: lookupError } = await supabaseAdmin.from('job_issuing_authorizations')
+      .select('job_id').eq('stripe_authorization_id',authorization.id).maybeSingle();
+    if (lookupError) throw new Error(lookupError.message);
+    if (row) await IssuingSpendService.sync(row.job_id);
   }
 
   static async syncTransaction(transaction: Stripe.Issuing.Transaction): Promise<void> {
@@ -390,6 +396,10 @@ export class IssuingService {
       p_currency:transaction.currency,p_type:transaction.type,p_event:transaction
     });
     if(error) throw new Error(error.message);
+    const { data: row, error: lookupError } = await supabaseAdmin.from('job_issuing_authorizations')
+      .select('job_id').eq('stripe_authorization_id',authId).single();
+    if (lookupError || !row) throw new Error('Shopping transaction attribution is unavailable');
+    await IssuingSpendService.sync(row.job_id);
   }
 
   private static async getJob(jobId: string): Promise<Record<string, any> | null> {
