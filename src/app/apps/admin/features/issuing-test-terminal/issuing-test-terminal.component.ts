@@ -19,7 +19,7 @@ import { AdminService } from '../../services/admin.service';
  <div class="flex flex-wrap gap-3"><button class="rounded-xl bg-amber-500 px-5 py-3 text-sm font-bold disabled:opacity-50" [disabled]="busy() || !jobId() || !!result()" (click)="purchase()">{{busy()?'Processing test purchase…':locked()?'Retry same test purchase':'Authorize & capture test purchase'}}</button>
  <button class="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold" [disabled]="busy()" (click)="reset()">New test purchase</button></div>
  }
- @if(result()){<p role="status" class="rounded-xl bg-slate-50 p-3 text-sm">{{result().captured?'Test purchase captured. Spending updates through Stripe webhooks.':'Purchase declined by the card or budget controls.'}} Reference: {{result().authorizationId}}</p>}
+ @if(result()){<p role="status" class="rounded-xl bg-slate-50 p-3 text-sm">{{result().captured?'Test purchase captured. Spending updates through Stripe webhooks.':'Test purchase declined: '+(result().declineReason || 'unknown')+'.'}} Reference: {{result().authorizationId}}</p>}
  @if(error()){<p role="alert" class="text-sm text-red-700">{{error()}}</p>}
  <button class="text-sm font-semibold text-slate-600 underline" [disabled]="busy()" (click)="load()">Refresh test cards</button>
 </section>`})

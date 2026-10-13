@@ -44,13 +44,16 @@ export class AdminIssuingTerminalService {
         if (!Number.isSafeInteger(amount) || amount <= 0 || FareSplitService.fromMinor(amount,currency) !== body.amount) throw new Error('Use the currency’s supported decimal precision');
         const key = `movabi-admin-pos-${adminId}-${body.requestId}`;
         const authorization = await this.testRequest('authorizations', {
-            card:card.id, amount:String(amount), currency, authorization_method:'contactless',
-            'merchant_data[name]':'Movabi TEST checkout','merchant_data[category]':'grocery_stores_supermarkets','merchant_data[country]':'GB'
+            card:card.id, amount:String(amount), currency, authorization_method:'online',
+            'merchant_data[name]':'Movabi TEST checkout','merchant_data[category]':'grocery_stores_supermarkets','merchant_data[country]':'GB',
+            'merchant_data[city]':'London','merchant_data[postal_code]':'SW1A 1AA','merchant_data[url]':'https://movabi.com',
+            'verification_data[address_line1_check]':'match','verification_data[address_postal_code_check]':'match',
+            'verification_data[cvc_check]':'match','verification_data[expiry_check]':'match'
         }, key+'-authorize');
         if (authorization.livemode) throw new Error('Unexpected live authorization');
         if (!authorization.approved) {
             await AuditService.log({userId:adminId,action:'admin_test_card_declined',entityType:'job',entityId:body.jobId,metadata:{authorizationId:authorization.id,amount,currency}});
-            return { approved:false, captured:false, authorizationId:authorization.id, amount:body.amount, currency };
+            return { approved:false, captured:false, authorizationId:authorization.id, amount:body.amount, currency, declineReason: String(authorization.request_history?.at(-1)?.reason || 'unknown') };
         }
         // The real authorization webhook must have accepted this job/card. Never force approval or capture.
         const { data: approval, error: approvalError } = await supabaseAdmin.from('job_issuing_authorizations')

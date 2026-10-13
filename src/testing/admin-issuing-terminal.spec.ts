@@ -14,7 +14,7 @@ describe('admin issued-card test checkout',()=>{
  afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();});
  it('authorizes and captures a GBP1 simulated shop purchase',async()=>{
   expect((await AdminIssuingTerminalService.purchase('admin',{jobId,requestId,amount:1})).captured).toBe(true);
-  expect(mocks.create.mock.calls[0][0]).toMatchObject({amount:'100',currency:'gbp',card:'ic_test'});
+  expect(mocks.create.mock.calls[0][0]).toMatchObject({amount:'100',currency:'gbp',card:'ic_test',authorization_method:'online','verification_data[cvc_check]':'match','merchant_data[city]':'London'});
   expect(mocks.capture.mock.calls[0][1]).toEqual({capture_amount:'100',close_authorization:'true'});
  });
  it('never simulates a live card purchase',async()=>{
@@ -22,8 +22,9 @@ describe('admin issued-card test checkout',()=>{
   await expect(AdminIssuingTerminalService.purchase('admin',{jobId,requestId,amount:1})).rejects.toThrow('Live cards');expect(mocks.create).not.toHaveBeenCalled();
  });
  it('does not force-capture a declined authorization',async()=>{
-  mocks.create.mockResolvedValue({id:'iauth_test',approved:false,livemode:false});
-  expect((await AdminIssuingTerminalService.purchase('admin',{jobId,requestId,amount:1})).captured).toBe(false);expect(mocks.capture).not.toHaveBeenCalled();
+  mocks.create.mockResolvedValue({id:'iauth_test',approved:false,livemode:false,request_history:[{reason:'suspected_fraud'}]});
+  const result=await AdminIssuingTerminalService.purchase('admin',{jobId,requestId,amount:1});
+  expect(result.declineReason).toBe('suspected_fraud');expect(result.captured).toBe(false);expect(mocks.capture).not.toHaveBeenCalled();
  });
  it('requires verified approval from the Movabi webhook',async()=>{
   mocks.approval=false;await expect(AdminIssuingTerminalService.purchase('admin',{jobId,requestId,amount:1})).rejects.toThrow('No capture performed');expect(mocks.capture).not.toHaveBeenCalled();
