@@ -1,5 +1,6 @@
+import { DriverRequestFeedService } from '@core/services/driver/driver-request-feed.service';
 import { ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
-import { Component, Input, OnDestroy, inject, signal } from '@angular/core';
+import { Component, Input, OnDestroy, inject, signal, effect } from '@angular/core';
 import { IonHeader, IonToolbar, IonTitle, IonButtons, IonButton, IonContent, ModalController } from '@ionic/angular/standalone';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 import { MapRendererService } from '../../../../../core/services/maps/map-renderer.service';
@@ -21,6 +22,29 @@ import { firstValueFrom } from 'rxjs';
  <p class="text-xs text-slate-500">Road directions and estimated travel time. Follow road signs and current conditions.</p></div></div></ion-content>`})
 export class JourneyNavigationComponent implements OnDestroy {
  @Input() customerName='Customer'; @Input() actionLabel=''; @Input() onJobAction?:()=>Promise<void>;
+ readonly requestFeed=inject(DriverRequestFeedService);
+ private requestMarkers=new Set<string>();
+ constructor(){effect(()=>{this.requestFeed.mapJobs();this.syncRequestMarkers();});}
+ private syncRequestMarkers(){
+   if(!this.map||this.destroyed)return;
+   const next=new Set<string>();const groups=new Map<string,{job:ReturnType<DriverRequestFeedService['mapJobs']>[number];lat:number;lng:number;count:number}>();
+   for(const job of this.requestFeed.mapJobs()){
+     if(job.pickup_lat==null||job.pickup_lng==null)continue;
+     const lat=Number(job.pickup_lat),lng=Number(job.pickup_lng);
+     if(!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180)continue;
+     const key=`${lat.toFixed(6)},${lng.toFixed(6)}`;const group=groups.get(key);
+     if(group)group.count++;else groups.set(key,{job,lat,lng,count:1});
+   }
+   for(const {job,lat,lng,count} of groups.values()){
+     const id=`journey-request-${job.id}`;next.add(id);
+     const slug=job.service_slug;
+     const serviceType:ServiceTypeSlug=slug==='errand'||slug==='delivery'||slug==='van-moving'?slug:'ride';
+     this.map.addOrUpdateMarker({id,coordinates:{lat,lng},kind:'pickup',serviceType,
+       label:count>1?`${count} requests`:'Request',onClick:()=>this.requestFeed.show(job.id)});
+   }
+   for(const id of this.requestMarkers)if(!next.has(id))this.map.removeMarker(id);
+   this.requestMarkers=next;
+ }
  readonly acting=signal(false);
  async performAction(){if(this.acting()||!this.onJobAction)return;this.acting.set(true);try{await this.modalController.dismiss();await this.onJobAction();}finally{this.acting.set(false);}}
  @Input() serviceType:ServiceTypeSlug='ride';
@@ -29,7 +53,7 @@ export class JourneyNavigationComponent implements OnDestroy {
  readonly instruction=signal('Finding your route…');readonly summary=signal('Waiting for GPS');readonly error=signal('');readonly voice=signal(false);
  private map:MapComponent|null=null;private timer:ReturnType<typeof setInterval>|null=null;private route:NavigationRoute|null=null;
  private index=0;private requestAt=0;private busy=false;private destroyed=false;private lastPoint:{lat:number;lng:number}|null=null;private offRouteCount=0;private spoken='';private fallbackPoint:ReturnType<JourneyTrackingService['point']>=null;private gpsRequestAt=0;private gpsBusy=false;
- async ready(map:MapComponent){this.map=map;map.setCenter(this.destination.lng,this.destination.lat,14);map.addOrUpdateMarker({id:'journey-destination',coordinates:this.destination,kind:'destination',serviceType:this.serviceType,label:this.label});this.timer=setInterval(()=>{void this.tick();},2000);await this.tick();}
+ async ready(map:MapComponent){this.map=map;this.syncRequestMarkers();map.setCenter(this.destination.lng,this.destination.lat,14);map.addOrUpdateMarker({id:'journey-destination',coordinates:this.destination,kind:'destination',serviceType:this.serviceType,label:this.label});this.timer=setInterval(()=>{void this.tick();},2000);await this.tick();}
  private async tick(){
   if(this.destroyed||!this.map) return;
   let point=this.journey.point() || this.fallbackPoint;

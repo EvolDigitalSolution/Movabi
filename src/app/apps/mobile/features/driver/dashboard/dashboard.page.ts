@@ -1,3 +1,4 @@
+import { DriverRequestFeedService } from '@core/services/driver/driver-request-feed.service';
 import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
 import { DestroyRef, Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -254,6 +255,15 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
             </div>
           }
 
+          @if (activeJob()) {
+            <button type="button" (click)="resumeActiveJob()"
+              class="absolute bottom-4 left-4 right-4 bg-white rounded-2xl shadow-lg border border-slate-100 p-4 z-20 text-left">
+              <p class="text-xs font-bold text-amber-700">{{ activeJobStatusLabel() }}</p>
+              <p class="text-sm font-bold text-slate-950 mt-1">{{ activeJobCustomerName() }} · {{ activeJobTitle() }}</p>
+              <p class="text-xs text-slate-500 mt-1">Continue job →</p>
+            </button>
+          }
+          @if (!activeJob() && recoverableNegotiations().length > 0) {
           <div 
             class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 flex flex-col overflow-hidden z-20"
             [style.height.%]="sheetHeight()"
@@ -746,6 +756,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               }
             </div>
           </div>
+          }
         </div>
       } @else {
         <div class="px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+6.75rem)] space-y-4">
@@ -968,6 +979,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
 
 
 export class DriverDashboardPage implements OnInit, OnDestroy {
+    readonly requestFeed = inject(DriverRequestFeedService);
     public router = inject(Router);
     readonly dashboardMessages = inject(NotificationService);
     private route = inject(ActivatedRoute);
@@ -1096,6 +1108,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     selectedJobId = signal<string | null>(null);
     mapComponent = signal<any>(null);
     driverLocation = signal<{ lat: number; lng: number } | null>(null);
+    readonly mapSheetObstruction = computed(() => this.activeJob() ? 22 : this.recoverableNegotiations().length ? this.sheetHeight() : 0);
     sheetHeight = signal(40); // 40% default height
     isDraggingSheet = signal(false);
     surgeAreas = signal<any[]>([]); // For surge/high-demand areas
@@ -1335,6 +1348,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
 
         effect(() => {
             this.jobs();
+            this.requestFeed.mapJobs();
             this.activeJob();
             this.driverLocation();
             this.activeHubTab();
@@ -1424,8 +1438,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         // Clear signals to free memory
-        this.driverService.availableJobs.set([]);
-        this.activeJob.set(null);
+        // Shared jobs belong to DriverService and must survive navigation away from the hub.
         this.selectedJobId.set(null);
         this.sheetHeight.set(40);
         this.activeRequestId.set(null);
@@ -2988,6 +3001,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     private urgentRequestEffect = effect(() => {
         const availableJobs = this.jobs();
         const activeJob = this.activeJob();
+        if (this.requestFeed.open()) { this.stopAllRequestSounds(); return; }
 
         // An active job silences every incoming alarm unconditionally.
         if (activeJob) {
@@ -3016,12 +3030,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             this.startRequestSound(newestJob.id);
         }
 
-        // Auto-open the popup once per job, but never while another popup is open
-        if (!this.selectedJobId() && !this.autoShownJobIds.has(newestJob.id)) {
-            this.autoShownJobIds.add(newestJob.id);
-            this.selectedJobId.set(newestJob.id);
-            this.sheetHeight.set(80);
-        }
+
     });
 
     /**
@@ -3484,6 +3493,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     selectJob(jobId: string) {
+        this.requestFeed.show(jobId);
         // Expand the sheet FIRST, then focus, so padding reflects the new
         // obstruction instead of the previous sheet height.
         this.selectedJobId.set(jobId);
@@ -3492,7 +3502,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         window.setTimeout(() => {
             this.mapComponent()?.resize?.();
 
-            const job = this.jobs().find(j => j.id === jobId);
+            const job = this.requestFeed.mapJobs().find(j => j.id === jobId);
             if (!job) return;
 
             void this.focusMapOnJob(job);
@@ -3668,7 +3678,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             MapUxHelpers.fitVisibleMapBounds(
                 map,
                 [{ lat: coordinates.lat, lng: coordinates.lng }],
-                this.sheetHeight(),
+                this.mapSheetObstruction(),
                 { duration: 600, maxZoom: 16, singlePointZoom: 16 }
             );
 
@@ -3700,7 +3710,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }
 
         const nextMarkerIds = new Set<string>();
-        for (const job of this.jobs()) {
+        const markedCoordinates = new Set<string>();
+        const mapRequests = this.requestFeed.mapJobs();
+        for (const job of mapRequests) {
             const coordinates = this.resolveJobCoordinates(job);
 
             if (!coordinates || !this.isValidCoordinate(coordinates.lat, coordinates.lng)) {
@@ -3708,6 +3720,13 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 continue;
             }
 
+            const coordinateKey = `${coordinates.lat.toFixed(6)},${coordinates.lng.toFixed(6)}`;
+            if (markedCoordinates.has(coordinateKey)) continue;
+            markedCoordinates.add(coordinateKey);
+            const colocated = mapRequests.filter(candidate => {
+                const point = this.resolveJobCoordinates(candidate);
+                return point && `${point.lat.toFixed(6)},${point.lng.toFixed(6)}` === coordinateKey;
+            });
             const markerId = `available-job-${job.id}`;
             nextMarkerIds.add(markerId);
             map.addOrUpdateMarker({
@@ -3715,7 +3734,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
                 kind: 'pickup',
                 serviceType: this.getMarkerServiceType(job),
                 coordinates,
-                label: this.formatPrice(this.getRequestFare(job)),
+                label: colocated.length > 1 ? `${colocated.length} requests` : this.formatPrice(this.getRequestFare(job)),
                 onClick: () => this.selectJob(job.id)
             });
         }
@@ -3796,7 +3815,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         const applied = MapUxHelpers.fitVisibleMapBounds(
             map,
             points,
-            this.sheetHeight(),
+            this.mapSheetObstruction(),
             {
                 duration: force ? 700 : 600,
                 maxZoom: 16,
@@ -3826,7 +3845,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return [
             `map:${this.mapGeneration}`,
             `driver:${driverState}`,
-            `sheet:${Math.round(this.sheetHeight() / 10)}`,
+            `sheet:${Math.round(this.mapSheetObstruction() / 10)}`,
             `requests:${requestPoints.join('|')}`
         ].join(';');
     }
@@ -3849,7 +3868,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     private getValidMarketplaceRequestPoints(): Array<{ id: string; lat: number; lng: number }> {
         const points: Array<{ id: string; lat: number; lng: number }> = [];
 
-        for (const job of this.jobs()) {
+        for (const job of this.requestFeed.mapJobs()) {
             const coordinates = this.resolveJobCoordinates(job);
 
             if (!coordinates || !this.isValidCoordinate(coordinates.lat, coordinates.lng)) continue;
@@ -4109,7 +4128,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     }
 
     private resolveServiceAreaCoordinates(): MarkerCoordinates | null {
-        for (const job of this.jobs()) {
+        for (const job of this.requestFeed.mapJobs()) {
             const coordinates = this.resolveJobCoordinates(job);
             if (coordinates) return coordinates;
 

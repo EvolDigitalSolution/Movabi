@@ -1,3 +1,4 @@
+import { DriverRequestSheetComponent } from './shared/components/driver-request-sheet/driver-request-sheet.component';
 import { JourneyTrackingService } from './core/services/logistics/journey-tracking.service';
 import { ChangeDetectionStrategy, Component, effect, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
@@ -107,7 +108,7 @@ import {
     changeDetection: ChangeDetectionStrategy.OnPush,
     selector: 'app-root',
     standalone: true,
-    imports: [IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent, MovabiUpdateRequiredComponent],
+    imports: [DriverRequestSheetComponent, IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent, MovabiUpdateRequiredComponent],
     template: `
     <ion-app>
       @if (!isConfigured) {
@@ -161,6 +162,7 @@ import {
         </aside>
       }
       <ion-router-outlet></ion-router-outlet>
+      <app-driver-request-sheet></app-driver-request-sheet>
       <app-movabi-tour-overlay></app-movabi-tour-overlay>
       <app-movabi-update-required></app-movabi-update-required>
     </ion-app>

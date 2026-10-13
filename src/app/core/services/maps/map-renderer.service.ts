@@ -167,7 +167,8 @@ export class MapRendererService {
       if (marker) {
         const prevServiceType = String((marker as any)._movabiServiceType ?? '');
         const prevKind = String((marker as any)._movabiKind ?? '');
-        const changed = serviceType !== prevServiceType || kind !== prevKind;
+        const changed = serviceType !== prevServiceType || kind !== prevKind ||
+          String(options.label || '') !== String((marker as any)._movabiLabel || '');
 
         if (changed) {
           // Service/kind changed: rebuild the DOM element so a stale service icon
@@ -193,7 +194,15 @@ export class MapRendererService {
 
       const el = this.markerFactory.createMarkerElement(options.kind, options.serviceType, options.label);
       if (options.onClick) {
+        el.setAttribute('role', 'button');
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('aria-label', options.label || 'View request');
         el.addEventListener('click', () => options.onClick?.(options.id));
+        el.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault(); options.onClick?.(options.id);
+          }
+        });
       }
       marker = new Marker({ element: el })
         .setLngLat([options.coordinates.lng, options.coordinates.lat])
@@ -202,6 +211,7 @@ export class MapRendererService {
       (marker as any)._movabiId = options.id;
       (marker as any)._movabiServiceType = serviceType;
       (marker as any)._movabiKind = kind;
+      (marker as any)._movabiLabel = options.label || '';
 
       if (options.heading !== undefined) {
         this.rotateMarker(marker, options.heading);
