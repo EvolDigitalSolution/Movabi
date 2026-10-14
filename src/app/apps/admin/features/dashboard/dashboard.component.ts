@@ -530,9 +530,11 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   }
 
   formatJobPrice(job: Job): string {
+    const agreed = Number((job as Job & { agreed_fare?: number | string | null }).agreed_fare);
+    const amount = Number.isFinite(agreed) && agreed > 0 ? agreed : Number(job.total_price ?? job.price ?? 0);
     return job.currency_code
-      ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: job.currency_code, currencyDisplay: 'code' }).format(Number(job.price || 0))
-      : `${Number(job.price || 0).toFixed(2)} (currency unknown)`;
+      ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: job.currency_code, currencyDisplay: 'code' }).format(amount)
+      : `${amount.toFixed(2)} (currency unknown)`;
   }
 
   formatPrice(amount: number) {
