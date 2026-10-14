@@ -23,6 +23,7 @@ export type NotificationEventType =
   | 'driver_cancelled'
   | 'extra_budget_requested'
   | 'extra_budget_approved'
+  | 'extra_budget_rejected'
   | 'receipt_uploaded'
   | 'payment_completed';
 
@@ -110,6 +111,10 @@ export class NotificationOrchestratorService {
         }
       );
 
+    channel.on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'errand_funding', filter: `job_id=eq.${jobId}`
+    }, payload => { void this.handleFundingChange(payload.new as any, jobId); });
+
     // Subscribe only after all handlers are registered
     channel.subscribe((status) => {
       console.log('[NotificationOrchestrator] channel status', jobId, status);
@@ -166,6 +171,31 @@ export class NotificationOrchestratorService {
   /**
    * Handle new job message
    */
+  private async handleFundingChange(funding: any, jobId: string): Promise<void> {
+    const userId = this.currentUserId;
+    const status = String(funding?.over_budget_status || '');
+    if (!userId || !['requested','approved','rejected'].includes(status)) return;
+    try {
+      const { data: job, error } = await this.supabase.client.from('jobs')
+        .select('customer_id,driver_id,accepted_driver_id').eq('id',jobId).maybeSingle();
+      if (error || !job || userId !== this.currentUserId) return;
+      const recipient = status === 'requested' ? job.customer_id : (job.driver_id || job.accepted_driver_id);
+      if (recipient !== userId) return;
+      const request = funding.metadata?.budget_request_id || `${funding.requested_over_budget_amount}:${funding.over_budget_reason || ''}`;
+      const eventId = `budget:${jobId}:${request}:${status}`;
+      if (this.seenEventIds.has(eventId)) return;
+      this.seenEventIds.add(eventId);
+      const type: NotificationEventType = status === 'requested' ? 'extra_budget_requested'
+        : status === 'approved' ? 'extra_budget_approved' : 'extra_budget_rejected';
+      await this.showNotification({ id:eventId,type,jobId,
+        title:status === 'requested' ? 'Shopping budget increase requested' : status === 'approved' ? 'Shopping budget increase approved' : 'Shopping budget increase rejected',
+        body:status === 'requested' ? 'Your driver needs your approval. Open Payment to review the amount and reason.'
+          : status === 'approved' ? 'The customer approved the increased shopping budget. Open the job to check card availability.'
+          : 'The customer rejected the increase. Contact them before spending more.',
+        timestamp:funding.updated_at || new Date().toISOString() });
+    } catch (error) { console.warn('[NotificationOrchestrator] budget alert unavailable',error); }
+  }
+
   private async handleJobMessage(message: any, jobId: string): Promise<void> {
     if (!this.currentUserId) return;
 
@@ -238,6 +268,12 @@ export class NotificationOrchestratorService {
       await toast.present();
     }
 
+    if (['extra_budget_requested','extra_budget_approved','extra_budget_rejected'].includes(event.type)) {
+      const route = role === 'driver' ? `/driver/job-details/${event.jobId}` : `/customer/tracking/${event.jobId}?tab=payment`;
+      const toast = await this.toastController.create({ header:event.title,message:event.body,
+        duration:7000,position:'top',buttons:[{text:'Review',handler:()=>{void this.router.navigateByUrl(route);}}] });
+      await toast.present();
+    }
     // Play sound and vibrate
     await this.playNotificationFeedback(event.type);
 
@@ -275,6 +311,9 @@ export class NotificationOrchestratorService {
 
   private async playEventSound(eventType: NotificationEventType): Promise<void> {
     const soundMap: Partial<Record<NotificationEventType, string>> = {
+      extra_budget_requested: 'request-notification.mp3',
+      extra_budget_approved: 'booking-accepted.mp3',
+      extra_budget_rejected: 'message-notification.mp3',
       new_chat_message: 'message-notification.mp3',
       driver_accepted: 'booking-accepted.mp3',
       driver_en_route: 'driver-arrived.mp3',
@@ -353,6 +392,7 @@ export class NotificationOrchestratorService {
       'driver_cancelled': 'Driver cancelled',
       'extra_budget_requested': 'Extra budget requested',
       'extra_budget_approved': 'Extra budget approved',
+      'extra_budget_rejected': 'Extra budget rejected',
       'receipt_uploaded': 'Receipt uploaded',
       'payment_completed': 'Payment completed'
     };
@@ -377,6 +417,7 @@ export class NotificationOrchestratorService {
       'driver_cancelled': 'Driver cancelled the booking',
       'extra_budget_requested': 'Extra budget has been requested',
       'extra_budget_approved': 'Extra budget has been approved',
+      'extra_budget_rejected': 'Extra budget has been rejected',
       'receipt_uploaded': 'Receipt has been uploaded',
       'payment_completed': 'Payment has been completed'
     };

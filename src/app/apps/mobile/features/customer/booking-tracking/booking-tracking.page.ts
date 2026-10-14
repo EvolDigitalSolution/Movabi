@@ -1123,6 +1123,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     async ngOnInit(): Promise<void> {
         this.journeyFreshnessTimer = setInterval(() => this.journeyClock.set(Date.now()), 5000);
+        if (this.route.snapshot.queryParamMap.get('tab') === 'payment') this.activeTrackingTab.set('payment');
         if (this.route.snapshot.queryParamMap.get('tab') === 'chat' || this.route.snapshot.queryParamMap.get('chat') === '1') {
             this.activeTrackingTab.set('chat');
             this.showChat.set(true);
@@ -2387,7 +2388,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
                     if (nextFunding?.job_id === id) {
                         this.errandFunding.set(nextFunding);
                         await this.walletService.fetchWallet();
-                        await this.notifyFundingUpdate(nextFunding);
+                        // Budget alerts and sound are handled once by NotificationOrchestrator.
                     } else {
                         await this.loadBookingAndDetails(id, false);
                     }
