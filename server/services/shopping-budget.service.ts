@@ -10,8 +10,14 @@ export class ShoppingBudgetService {
     const payable=await PaymentAuthorityService.resolve(job);
     const breakdown=job['fare_breakdown'] as {paymentMargin?:{policy?:PaymentMarginPolicy}} | undefined;
     const policy=breakdown?.paymentMargin?.policy || PaymentMarginService.policy(String(job['currency_code']));
-    const payout=Number(job['driver_payout']);
-    if(job['driver_payout']==null || !Number.isFinite(payout) || payout<0) throw new Error('Driver payment terms require review');
+    // Completion populates driver_payout. Before completion use the same frozen
+    // entitlement as settlement, never today's pricing configuration.
+    let payout:number;
+    try { payout=FareSplitService.fromSnapshot(job['fare_breakdown'],String(job['currency_code'])).driverEntitlement; }
+    catch { throw new Error('Driver payment terms require review'); }
+    if(job['driver_payout']!=null && (!Number.isFinite(Number(job['driver_payout'])) ||
+      FareSplitService.toMinor(Number(job['driver_payout']),String(job['currency_code']))!==FareSplitService.toMinor(payout,String(job['currency_code']))))
+      throw new Error('Driver payment terms require review');
     const result=PaymentMarginService.evaluate(payable.serviceFareMajor,payout,budget,policy);
     if(!result.passes) throw new Error('This larger shopping budget needs a revised service quote to cover processing costs. Contact Movabi before purchasing.');
   }
@@ -46,6 +52,7 @@ export class ShoppingBudgetService {
   static async context(jobId: string, customerId: string) {
     const { data: job, error } = await supabaseAdmin.from('jobs').select('*,service_type:service_types(*)').eq('id',jobId).single();
     if (error || !job || job.customer_id !== customerId) throw new Error('Customer booking not found');
+    if(['completed','settled','cancelled','canceled','expired'].includes(String(job.status).toLowerCase()))throw new Error('Shopping budget cannot be changed after the booking has ended.');
     if (!PaymentAuthorityService.isErrand(job)) throw new Error('Shopping budget is not applicable');
     const { data: funding, error: fundingError } = await supabaseAdmin.from('errand_funding').select('*').eq('job_id',jobId).single();
     if (fundingError || !funding) throw new Error('Shopping budget not found');

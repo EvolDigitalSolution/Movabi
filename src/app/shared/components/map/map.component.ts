@@ -14,7 +14,7 @@ import { RouteSummary } from '../../../core/models/maps/route-result.model';
   imports: [CommonModule, IonicModule],
   template: `
     <div class="w-full h-full relative">
-      <div #mapContainer class="map-container w-full h-full min-h-[300px] relative overflow-hidden" [class.opacity-0]="!mapReady()"></div>
+      <div #mapContainer class="map-container w-full h-full relative overflow-hidden" [class.opacity-0]="!mapReady()"></div>
       
       @if (showSearchingOverlay()) {
         <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-[2px] z-[40] animate-in fade-in duration-500">
@@ -50,6 +50,7 @@ import { RouteSummary } from '../../../core/models/maps/route-result.model';
   `,
   styles: [`
     :host { display: block; width: 100%; height: 100%; }
+    .map-container { min-height: var(--movabi-map-min-height, 300px); }
     .map-container { background: #f8fafc; }
     
     ::ng-deep .movabi-marker {

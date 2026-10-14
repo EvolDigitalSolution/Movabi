@@ -1,3 +1,4 @@
+import { driverPaidNegotiation } from '@shared/utils/driver-paid-negotiation';
 import {
     Component,
     inject,
@@ -193,11 +194,14 @@ import { AppConfigService } from '@core/services/config/app-config.service';
             </div>
           }
 
-          @if (s.status === 'fare_agreed') {
+          @if (paymentConfirmed() || s.status === 'fare_agreed') {
             <div class="bg-emerald-50 rounded-3xl border border-emerald-100 p-6 text-center">
               <ion-icon name="checkmark-circle-outline" class="text-5xl text-emerald-500 mb-3"></ion-icon>
-              <h3 class="text-xl font-bold text-emerald-900 mb-2">Fare Agreed!</h3>
-              @if (negotiationState().paymentExpired) {
+              <h3 class="text-xl font-bold text-emerald-900 mb-2">{{paymentConfirmed() ? 'Payment confirmed' : 'Fare Agreed!'}}</h3>
+              @if (paymentConfirmed()) {
+                <p class="text-emerald-700 font-medium">The customer’s payment is confirmed. Continue to your job.</p>
+                <button type="button" class="mt-4 w-full rounded-2xl bg-emerald-700 p-4 font-bold text-white" (click)="openPaidJob()">View job details</button>
+              } @else if (negotiationState().paymentExpired) {
                 <p class="text-rose-700 font-medium">Payment window expired. Releasing this agreement…</p>
               } @else {
                 <p class="text-emerald-700 font-medium">Customer has {{ formatRemaining(paymentCountdown()) }} to complete payment.</p>
@@ -301,6 +305,7 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         }
         this.jobId.set(id);
         await this.load();
+        this.paymentRecoveryTimer=setInterval(()=>{void this.refreshPaidJob();},3000);
         if (!this.hybridEnabled) {
             // Distinguish UNKNOWN configuration from EXPLICITLY DISABLED configuration.
             //
@@ -344,6 +349,23 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     private realtimeDispose: (() => void) | null = null;
     private realtimeSessionId: string | null = null;
     /** Monotonic token: a stale async reload must never overwrite newer state. */
+    paymentConfirmed=signal(false);
+    private paymentRecoveryTimer:ReturnType<typeof setInterval>|undefined;
+    private paymentRecoveryBusy=false;
+    private paymentRecoveryDestroyed=false;
+    private async refreshPaidJob(){
+        if(this.paymentRecoveryBusy||this.paymentRecoveryDestroyed||this.lifecycleResolved)return;
+        this.paymentRecoveryBusy=true;
+        try{const verified=await this.loadJobDetails(this.jobId());if(!this.paymentRecoveryDestroyed)this.checkForActiveJobTransition();return verified;}
+        finally{this.paymentRecoveryBusy=false;}
+    }
+    async openPaidJob(){
+        const verified=await this.refreshPaidJob();
+        if(!verified||!driverPaidNegotiation(this.jobDetails(),this.auth.currentUser()?.id)){
+            this.paymentConfirmed.set(false);await this.showToast('Job assignment could not be confirmed. Please retry.','warning');return;
+        }
+        await this.router.navigate(['/driver/job-details',this.jobId()],{replaceUrl:true});
+    }
     private reloadToken = 0;
 
     /** Wall-clock tick fed into getNegotiationState() so lease expiry is visible. */
@@ -452,6 +474,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
     }
 
     ngOnDestroy() {
+        if(this.paymentRecoveryTimer)clearInterval(this.paymentRecoveryTimer);
+        this.paymentRecoveryDestroyed=true;
         this.disposeRealtimeSubscription();
         this.disposeJobRealtimeSubscription();
         this.stopLeaseTimer();
@@ -551,7 +575,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
                 .from('jobs')
                 .select('status, payment_status, driver_id, distance_km, estimated_distance_km, duration_seconds, estimated_duration, service_type:service_types(*)')
                 .eq('id', jobId)
-                .maybeSingle();
+                .abortSignal(AbortSignal.timeout(8000)).maybeSingle();
+            if (error) return false;
             if (!error) {
                 this.jobDetails.set(data);
                 const slug = String((data as any)?.service_type?.slug || '').trim();
@@ -559,8 +584,10 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
                     this.effectiveHybridStatus.set(await this.marketplaceConfig.getEffectiveHybridStatus(slug));
                 }
             }
+            return !!data;
         } catch (error) {
             console.warn('[HybridNegotiation] job details load failed', error);
+            return false;
         }
     }
 
@@ -576,6 +603,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
         const job = this.jobDetails();
         const driverId = this.auth.currentUser()?.id;
         if (!driverId) return;
+        if(driverPaidNegotiation(job,driverId)){this.paymentConfirmed.set(true);this.stopLeaseTimer();return;}
+        this.paymentConfirmed.set(false);
         const currentSession = this.session();
         if (this.previouslyOwnedSession && currentSession && currentSession.active_driver_id !== driverId) {
             this.leaveToHub(currentSession.status === 'released'
@@ -599,11 +628,8 @@ export class DriverHybridNegotiationPage implements OnInit, OnDestroy {
             return;
         }
 
-        // AUTHORITATIVE ACTIVE PAID ASSIGNMENT owned by this driver.
-        if (status === 'assigned' && paymentStatus === 'authorized' && (job as any)?.driver_id === driverId) {
-            this.lifecycleResolved = true;
-            void this.router.navigate(['/driver/job-details', this.jobId()]);
-        }
+        // Persisted payment and assignment, never inferred from the agreed fare.
+        if(driverPaidNegotiation(job,driverId)){this.paymentConfirmed.set(true);this.stopLeaseTimer();}
     }
 
     private leaveToHub(message: string): void {
