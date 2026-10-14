@@ -213,7 +213,10 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                         [attr.aria-label]="tab.label + ' tab icon'"
                       ></ion-icon>
                       <span class="block max-w-full truncate">{{ tab.label }}</span>
-                      @if (tab.id === 'chat' && unreadMessageCount() > 0) {
+                      @if (tab.id === 'payment' && notificationOrchestrator.getBudgetBadgeCount(booking()?.id || '') > 0) {
+                    <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white" aria-label="Budget update">1</span>
+                  }
+                  @if (tab.id === 'chat' && unreadMessageCount() > 0) {
                         <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white/70">
                           {{ unreadMessageCount() }}
                         </span>
@@ -860,7 +863,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     private routingService = inject(RoutingService);
     private nativePlatform = inject(NativePlatformService);
     private auth = inject(AuthService);
-    private notificationOrchestrator = inject(NotificationOrchestratorService);
+    readonly notificationOrchestrator = inject(NotificationOrchestratorService);
 
     private localSearchFallbackExpiresAt: number | null = null;
     private messageCountWarningShown = false;
@@ -1068,6 +1071,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     setActiveTrackingTab(tab: CustomerTrackingTab): void {
         this.activeTrackingTab.set(tab);
+        if (tab === 'payment') this.notificationOrchestrator.markBudgetRead(this.booking()?.id || '');
         if (tab === 'chat') {
             this.showChat.set(true);
             // Mark messages as read using NotificationOrchestrator
@@ -1120,6 +1124,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
         this.sheetState.set(newState);
     }
+
+    private budgetBadgeReadEffect = effect(() => {
+        const id = this.booking()?.id;
+        if (id && this.activeTrackingTab() === 'payment' && this.notificationOrchestrator.getBudgetBadgeCount(id) > 0)
+            this.notificationOrchestrator.markBudgetRead(id);
+    });
 
     async ngOnInit(): Promise<void> {
         this.journeyFreshnessTimer = setInterval(() => this.journeyClock.set(Date.now()), 5000);
@@ -2369,7 +2379,17 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }, 5000);
     }
 
+    private fundingRecoveryTimer?: ReturnType<typeof setInterval>;
+    private fundingRecoveryBusy = false;
     private subscribeToErrandFunding(id: string): void {
+        if (this.fundingRecoveryTimer) clearInterval(this.fundingRecoveryTimer);
+        this.fundingRecoveryTimer = setInterval(() => {
+            if (this.fundingRecoveryBusy || this.booking()?.service_slug !== ServiceTypeEnum.ERRAND) return;
+            this.fundingRecoveryBusy = true;
+            void this.bookingService.getErrandFunding(id).then(funding => {
+                if (this.booking()?.id === id) this.errandFunding.set(funding);
+            }).catch(() => {}).finally(() => this.fundingRecoveryBusy = false);
+        },5000);
         this.errandFundingChannel?.unsubscribe();
 
         this.errandFundingChannel = this.supabase

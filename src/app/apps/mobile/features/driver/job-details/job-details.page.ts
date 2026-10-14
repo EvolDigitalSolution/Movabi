@@ -5,7 +5,7 @@ import { approvedErrandBudget } from '@shared/utils/errand-budget';
 import { ModalController } from '@ionic/angular/standalone';
 import { JourneyNavigationComponent } from '../navigation/journey-navigation.component';
 import { CommunicationService } from '../../../../../core/services/communication/communication.service';
-import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -139,6 +139,9 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                     [attr.aria-label]="tab.label + ' tab icon'"
                   ></ion-icon>
                   <span class="block max-w-full truncate">{{ tab.label }}</span>
+                  @if (tab.id === 'pay' && notificationOrchestrator.getBudgetBadgeCount(job()?.id || '') > 0) {
+                    <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white" aria-label="Budget update">1</span>
+                  }
                   @if (tab.id === 'chat' && unreadMessageCount() > 0) {
                     <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white/70">
                       {{ unreadMessageCount() }}
@@ -875,7 +878,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private walletProvisioning = inject(WalletProvisioningService);
     private paymentService = inject(PaymentService);
     private profileService = inject(ProfileService);
-    private notificationOrchestrator = inject(NotificationOrchestratorService);
+    readonly notificationOrchestrator = inject(NotificationOrchestratorService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
@@ -1124,6 +1127,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     setActiveRequestTab(tab: DriverRequestTab): void {
         this.activeRequestTab.set(tab);
+        if (tab === 'pay') this.notificationOrchestrator.markBudgetRead(this.job()?.id || '');
 
         if (tab === 'overview') {
             setTimeout(() => void this.renderPickupRoute(), 120);
@@ -1221,6 +1225,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         });
     }
 
+    private budgetBadgeReadEffect = effect(() => {
+        const id = this.job()?.id;
+        if (id && this.activeRequestTab() === 'pay' && this.notificationOrchestrator.getBudgetBadgeCount(id) > 0)
+            this.notificationOrchestrator.markBudgetRead(id);
+    });
+
     ngOnInit() {
         const id = this.route.snapshot.paramMap.get('id');
 
@@ -1243,6 +1253,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     ngOnDestroy() {
         this.mapPreviewOpen.set(false);
         void this.channel?.unsubscribe();
+        if (this.fundingRecoveryTimer) clearInterval(this.fundingRecoveryTimer);
         void this.errandFundingChannel?.unsubscribe();
         void this.messagesChannel?.unsubscribe();
         
@@ -1723,7 +1734,25 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         this.issuingElements = [];
     }
 
+    private fundingRecoveryTimer?: ReturnType<typeof setInterval>;
+    private fundingRecoveryBusy = false;
+    private async refreshFundingLive(id: string): Promise<void> {
+        if (this.fundingRecoveryBusy || this.job()?.service_slug !== ServiceTypeEnum.ERRAND) return;
+        this.fundingRecoveryBusy = true;
+        try {
+            const next = await this.bookingService.getErrandFunding(id);
+            if (this.job()?.id !== id) return;
+            const previous = this.funding();
+            this.funding.set(next);
+            if (this.activeRequestTab() === 'pay') this.notificationOrchestrator.markBudgetRead(id);
+            if (next?.over_budget_status !== previous?.over_budget_status || next?.amount_reserved !== previous?.amount_reserved)
+                await this.loadIssuingCardStatus(id);
+        } catch (error) { console.warn('[DriverJobDetails] funding recovery failed',error); }
+        finally { this.fundingRecoveryBusy = false; }
+    }
     private subscribeToErrandFunding(id: string): void {
+        if (this.fundingRecoveryTimer) clearInterval(this.fundingRecoveryTimer);
+        this.fundingRecoveryTimer = setInterval(() => { void this.refreshFundingLive(id); },5000);
         void this.errandFundingChannel?.unsubscribe();
 
         this.errandFundingChannel = this.supabase
@@ -1739,12 +1768,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 async (payload) => {
                     const nextFunding = (payload.new || null) as ErrandFunding | null;
 
-                    if (nextFunding?.job_id === id) {
-                        this.funding.set(nextFunding);
-                    }
-
-                    await this.loadIssuingCardStatus(id);
-                    await this.loadJob(id);
+                    await this.refreshFundingLive(id);
                 }
             )
             .subscribe((status) => {
@@ -2332,8 +2356,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (coords) {
-            const modal = await this.journeyNavigationModal.create({component:JourneyNavigationComponent,
-                componentProps:{destination:coords,address:safeAddress,label:this.navigationSectionLabel(),serviceType:this.job()?.service_slug,customerName:this.customerName(),actionLabel:this.navigationJobActionLabel(),onJobAction:()=>this.runNavigationJobAction()}});
+            const modal = await this.journeyNavigationModal.create({id:`journey-${this.job()?.id}`,component:JourneyNavigationComponent,
+                componentProps:{destination:coords,address:safeAddress,label:this.navigationSectionLabel(),serviceType:this.job()?.service_slug,customerName:this.customerName(),actionLabel:this.navigationJobActionLabel(),onJobAction:()=>this.runNavigationJobAction(),navigationModalId:`journey-${this.job()?.id}`,
+                  getJobState:()=>({status:String(this.job()?.status || ''),actionLabel:this.navigationJobActionLabel(),
+                    destination:this.navigationDestinationCoordinates(),address:this.navigationTargetAddress() || '',label:this.navigationSectionLabel()})}});
             await modal.present();
         } else {
             window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');

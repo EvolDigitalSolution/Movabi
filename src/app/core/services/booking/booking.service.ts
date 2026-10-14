@@ -1280,6 +1280,7 @@ export class BookingService {
             .from('errand_funding')
             .select('*')
             .eq('job_id', bookingId)
+            .abortSignal(AbortSignal.timeout(8000))
             .maybeSingle();
 
         if (error) {

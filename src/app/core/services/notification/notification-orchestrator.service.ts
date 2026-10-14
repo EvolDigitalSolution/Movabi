@@ -53,6 +53,24 @@ export class NotificationOrchestratorService {
   private badgePolling = new Map<string, ReturnType<typeof setInterval>>();
 
   private activeJobSubscriptions = new Map<string, RealtimeChannel>();
+  readonly budgetBadges = signal<Map<string, number>>(new Map());
+  private fundingTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private fundingBusy = new Set<string>();
+  getBudgetBadgeCount(jobId: string): number { return this.budgetBadges().get(jobId) || 0; }
+  markBudgetRead(jobId: string): void {
+    if (!this.budgetBadges().has(jobId)) return;
+    this.budgetBadges.update(current => { const next = new Map(current); next.delete(jobId); return next; });
+  }
+  private async recoverFunding(jobId: string): Promise<void> {
+    if (this.fundingBusy.has(jobId) || !this.activeJobSubscriptions.has(jobId)) return;
+    this.fundingBusy.add(jobId);
+    try {
+      const { data,error } = await this.supabase.client.from('errand_funding').select('*').eq('job_id',jobId)
+        .abortSignal(AbortSignal.timeout(8000)).maybeSingle();
+      if (!error && data && this.activeJobSubscriptions.has(jobId)) await this.handleFundingChange(data,jobId);
+    } catch { /* Keep realtime active; recover on the next poll. */ }
+    finally { this.fundingBusy.delete(jobId); }
+  }
   private seenEventIds = new Set<string>();
   private currentUserId: string | null = null;
 
@@ -122,6 +140,8 @@ export class NotificationOrchestratorService {
 
     // Store channel reference
     this.activeJobSubscriptions.set(jobId, channel);
+    this.fundingTimers.set(jobId,setInterval(() => { void this.recoverFunding(jobId); },5000));
+    void this.recoverFunding(jobId);
     void this.markAsRead(jobId);
     this.badgePolling.set(jobId, setInterval(() => { void this.markAsRead(jobId); }, 30000));
   }
@@ -130,6 +150,9 @@ export class NotificationOrchestratorService {
    * Unsubscribe from notifications for a specific job
    */
   unsubscribeFromJob(jobId: string): void {
+    const fundingTimer = this.fundingTimers.get(jobId);
+    if (fundingTimer) clearInterval(fundingTimer);
+    this.fundingTimers.delete(jobId);
     const timer = this.badgePolling.get(jobId);
     if (timer) clearInterval(timer);
     this.badgePolling.delete(jobId);
@@ -185,6 +208,7 @@ export class NotificationOrchestratorService {
       const eventId = `budget:${jobId}:${request}:${status}`;
       if (this.seenEventIds.has(eventId)) return;
       this.seenEventIds.add(eventId);
+      this.budgetBadges.update(current => { const next = new Map(current); next.set(jobId,1); return next; });
       const type: NotificationEventType = status === 'requested' ? 'extra_budget_requested'
         : status === 'approved' ? 'extra_budget_approved' : 'extra_budget_rejected';
       await this.showNotification({ id:eventId,type,jobId,
@@ -436,6 +460,7 @@ export class NotificationOrchestratorService {
 
     // Clear state
     this.seenEventIds.clear();
+    this.budgetBadges.set(new Map());
     this.badgeCounts.set(new Map());
     this.badgeCountSubject.next(new Map());
   }

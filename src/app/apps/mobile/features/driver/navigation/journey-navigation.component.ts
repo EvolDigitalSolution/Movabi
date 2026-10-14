@@ -37,6 +37,8 @@ import { firstValueFrom } from 'rxjs';
  </div></div></ion-content>`})
 export class JourneyNavigationComponent implements OnDestroy {
  @Input() customerName='Customer'; @Input() actionLabel=''; @Input() onJobAction?:()=>Promise<void>;
+ @Input() navigationModalId='';
+ @Input() getJobState?:()=>{status:string;actionLabel:string;destination:{lat:number;lng:number}|null;address:string;label:string};
  readonly requestFeed=inject(DriverRequestFeedService);
  private requestMarkers=new Set<string>();
  constructor(){effect(()=>{this.requestFeed.mapJobs();this.syncRequestMarkers();});}
@@ -61,7 +63,7 @@ export class JourneyNavigationComponent implements OnDestroy {
    this.requestMarkers=next;
  }
  readonly acting=signal(false);
- async performAction(){if(this.acting()||!this.onJobAction)return;this.acting.set(true);try{await this.modalController.dismiss();await this.onJobAction();}finally{this.acting.set(false);}}
+ async performAction(){if(this.acting()||!this.onJobAction)return;this.acting.set(true);try{await this.onJobAction();this.refreshJobState();}catch{this.error.set("Action could not be completed. Please retry.");}finally{this.acting.set(false);}}
  @Input() serviceType:ServiceTypeSlug='ride';
  @Input() destination!:{lat:number;lng:number}; @Input() address='';@Input() label='Destination';
  readonly journey=inject(JourneyTrackingService);private locations=inject(LocationService);private routing=inject(RoutingService);private modalController=inject(ModalController);
@@ -69,7 +71,17 @@ export class JourneyNavigationComponent implements OnDestroy {
  private map:MapComponent|null=null;private timer:ReturnType<typeof setInterval>|null=null;private route:NavigationRoute|null=null;
  private index=0;private requestAt=0;private busy=false;private destroyed=false;private lastPoint:{lat:number;lng:number}|null=null;private offRouteCount=0;private spoken='';private fallbackPoint:ReturnType<JourneyTrackingService['point']>=null;private gpsRequestAt=0;private gpsBusy=false;
  async ready(map:MapComponent){this.map=map;this.syncRequestMarkers();map.setCenter(this.destination.lng,this.destination.lat,14);map.addOrUpdateMarker({id:'journey-destination',coordinates:this.destination,kind:'destination',serviceType:this.serviceType,label:this.label});this.timer=setInterval(()=>{void this.tick();},2000);await this.tick();}
+ private refreshJobState(){
+  const state=this.getJobState?.();if(!state)return;
+  if(['completed','settled','cancelled','canceled'].includes(state.status)){this.close();return;}
+  this.actionLabel=state.actionLabel;this.address=state.address;this.label=state.label;
+  if(state.destination && (state.destination.lat!==this.destination.lat || state.destination.lng!==this.destination.lng)){
+    this.destination=state.destination;this.route=null;this.index=0;this.requestAt=0;this.spoken='';this.lastPoint=null;
+    this.map?.clearRoute();this.instruction.set('Finding your next route…');
+  }
+ }
  private async tick(){
+  this.refreshJobState();
   if(this.destroyed||!this.map) return;
   let point=this.journey.point() || this.fallbackPoint;
   if((!point || Date.now()-point.time>15000) && !this.gpsBusy && Date.now()-this.gpsRequestAt>15000){
@@ -93,7 +105,7 @@ export class JourneyNavigationComponent implements OnDestroy {
  private async load(point:{lat:number;lng:number}){
   if(this.busy || this.destroyed || (this.requestAt && Date.now()-this.requestAt<30000)) return;
   this.busy=true;this.requestAt=Date.now();
-  try{const route=await firstValueFrom(this.routing.getNavigationRoute(point,this.destination));if(this.destroyed) return;if(!route) throw new Error('Route unavailable');
+  try{const target=this.destination;const route=await firstValueFrom(this.routing.getNavigationRoute(point,target));if(this.destroyed || target!==this.destination) return;if(!route) throw new Error('Route unavailable');
     this.route=route;this.index=0;this.offRouteCount=0;this.error.set('');this.instruction.set(route.steps[0]?.instruction||'Follow the route');
     this.map?.setCenter(point.lng,point.lat,16);
     this.map?.drawRoute({distanceMeters:route.distanceMeters,durationSeconds:route.durationSeconds,geometry:{type:'LineString',coordinates:route.coordinates}});
@@ -101,6 +113,6 @@ export class JourneyNavigationComponent implements OnDestroy {
  }
  retry(){this.requestAt=0;this.route=null;void this.tick();}
  external(){window.open(`https://www.google.com/maps/dir/?api=1&destination=${this.destination.lat},${this.destination.lng}`,'_blank','noopener,noreferrer');}
- close(){void this.modalController.dismiss();}
+ close(){this.destroyed=true;void this.modalController.dismiss(undefined,undefined,this.navigationModalId || undefined);}
  ngOnDestroy(){this.destroyed=true;if(this.timer)clearInterval(this.timer);if(this.voice()&&typeof speechSynthesis!=='undefined')speechSynthesis.cancel();}
 }
