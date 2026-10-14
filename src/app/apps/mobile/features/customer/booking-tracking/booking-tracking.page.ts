@@ -1866,7 +1866,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getDisplayedTotal(): string {
-        const bookingTotal = Number(this.booking()?.total_price || 0);
+        const bookingTotal = Number(this.booking()?.agreed_fare ?? this.booking()?.total_price ?? 0);
 
         if (this.booking()?.service_slug === ServiceTypeEnum.ERRAND) {
             return this.config.formatCurrency(this.getErrandTotalReserved());
@@ -2107,6 +2107,7 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const errandDetails = metadata?.errand_details || {};
 
         return this.toMoney(
+            (this.errandFunding() as any)?.item_budget ||
             details['estimated_budget'] ||
             paymentSplit['item_budget'] ||
             errandDetails['budget'] ||
@@ -2115,6 +2116,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getErrandTotalReserved(): number {
+        const agreed = this.toMoney(this.booking()?.agreed_fare);
+        if (agreed > 0) return this.toMoney(agreed + this.getErrandItemBudget());
         const reserved = this.toMoney(this.errandFunding()?.amount_reserved || 0);
         const itemBudget = this.getErrandItemBudget();
         const bookingTotal = this.toMoney(this.booking()?.total_price || 0);
@@ -2123,6 +2126,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     getErrandServiceFee(): number {
+        const agreed = this.toMoney(this.booking()?.agreed_fare);
+        if (agreed > 0) return agreed;
         const bookingTotal = this.toMoney(this.booking()?.total_price || 0);
         const reserved = this.toMoney(this.errandFunding()?.amount_reserved || 0);
         const itemBudget = this.getErrandItemBudget();
