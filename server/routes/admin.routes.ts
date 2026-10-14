@@ -1,3 +1,4 @@
+import { demandZones } from '../services/admin-demand-map.service';
 import { AdminIssuingTerminalService } from '../services/admin-issuing-terminal.service';
 import { rateLimit } from 'express-rate-limit';
 import { AdminFinanceService, reportBounds, dayInZone } from '../services/admin-finance.service';
@@ -454,27 +455,35 @@ router.post('/users/:userId/message', requireAdmin, async (req, res) => {
 
 router.get('/heatmap', requireAdmin, async (req: Request, res: Response) => {
   try {
-    // In a real city-scale app, we'd query active zones.
-    // For now, we'll return a few sample zones based on active bookings/drivers.
-    const { data: activeJobs } = await supabaseAdmin
-      .from('jobs')
-      .select('pickup_lat, pickup_lng')
-      .eq('status', 'searching')
-      .limit(100);
-
-    const zones = await Promise.all((activeJobs || []).map(async (job) => {
-      const stats = await dispatchService.getAreaStats(job.pickup_lat, job.pickup_lng);
-      return {
-        lat: job.pickup_lat,
-        lng: job.pickup_lng,
-        demand: stats.demand,
-        drivers: stats.supply
-      };
-    }));
-
-    res.json({ zones });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    const owner=await supabaseAdmin.from('profiles').select('tenant_id').eq('id',(req as any).adminUserId).single();
+    if(owner.error||!owner.data)throw Error('Admin tenant could not be resolved');
+    const tenant=owner.data.tenant_id;
+    const scoped=(query:any)=>tenant===null?query.is('tenant_id',null):query.eq('tenant_id',tenant);
+    const read=async(table:string,fields:string,filter:(q:any)=>any)=>{
+      const rows:any[]=[];
+      for(let offset=0;;offset+=500){const {data,error}=await filter(scoped(supabaseAdmin.from(table).select(fields))).order('id').range(offset,offset+499).abortSignal(AbortSignal.timeout(8000));if(error)throw error;rows.push(...(data||[]));if((data||[]).length<500)break;}
+      return rows;
+    };
+    const cutoff=new Date(Date.now()-120000).toISOString();
+    const [jobs,drivers]=await Promise.all([
+      read('jobs','id,pickup_lat,pickup_lng',q=>q.eq('status','searching')),
+      read('profiles','id,lat,lng,is_available,last_active_at',q=>q.eq('role','driver').eq('is_online',true))
+    ]);
+    const live:any[]=[];
+    for(let offset=0;offset<drivers.length;offset+=100){
+      const group=drivers.slice(offset,offset+100),ids=group.map(d=>d.id);
+      const [presence,locations]=await Promise.all([
+        supabaseAdmin.from('app_presence_sessions').select('user_id').in('user_id',ids).gt('seen_at',cutoff).abortSignal(AbortSignal.timeout(8000)),
+        scoped(supabaseAdmin.from('driver_locations').select('driver_id,lat,lng,updated_at')).in('driver_id',ids).gt('updated_at',cutoff).order('updated_at',{ascending:false}).abortSignal(AbortSignal.timeout(8000))
+      ]);
+      if(presence.error||locations.error)throw presence.error||locations.error;
+      const active=new Set((presence.data||[]).map(p=>p.user_id));
+      for(const driver of group){if(!active.has(driver.id))continue;const location=(locations.data||[]).find(p=>p.driver_id===driver.id);if(location)live.push({...driver,lat:location.lat,lng:location.lng});else if(driver.last_active_at&&driver.last_active_at>cutoff)live.push(driver);}
+    }
+    res.setHeader('Cache-Control','no-store');
+    return res.json({zones:demandZones(jobs,live),checkedAt:new Date().toISOString(),searchingRequests:jobs.length,locatedDrivers:live.length});
+  } catch {
+    return res.status(503).json({error:'Live demand map is temporarily unavailable.'});
   }
 });
 

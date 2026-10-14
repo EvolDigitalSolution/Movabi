@@ -1,3 +1,4 @@
+import { AppPresenceService } from './core/services/presence/app-presence.service';
 import { DriverRequestSheetComponent } from './shared/components/driver-request-sheet/driver-request-sheet.component';
 import { JourneyTrackingService } from './core/services/logistics/journey-tracking.service';
 import { ChangeDetectionStrategy, Component, effect, inject, OnInit, signal } from '@angular/core';
@@ -179,6 +180,7 @@ export class App implements OnInit {
     public router = inject(Router);
     private marketAvailability = inject(MarketAvailabilityClientService);
     private journeyTracking = inject(JourneyTrackingService);
+    private presence = inject(AppPresenceService);
 
     isConfigured = this.supabase.isConfigured;
     isOnline = signal(this.network.isOnline);

@@ -448,7 +448,7 @@ export class MapRendererService {
         demand: zone.demand,
         drivers: zone.drivers,
         // Color logic: red if demand > drivers, green if drivers >= demand
-        color: zone.demand > zone.drivers ? '#ef4444' : '#10b981',
+        color: zone.demand > zone.drivers ? '#ef4444' : zone.drivers > 0 ? '#10b981' : '#3b82f6',
         radius: Math.min(20 + (zone.demand * 5), 50)
       }
     }));

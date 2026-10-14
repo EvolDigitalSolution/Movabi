@@ -1,7 +1,7 @@
 import type { FinanceReport } from '@shared/models/admin-finance.model';
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { Profile, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
 import { BookingService } from '@core/services/booking/booking.service';
@@ -100,6 +100,12 @@ export class AdminService {
       totalRevenue,
       activeJobs
     });
+  }
+
+  async getLivePresence(){
+    const {data,error}=await this.supabase.rpc('admin_live_presence').abortSignal(AbortSignal.timeout(8000));
+    if(error)throw error;
+    return data as {online_drivers_count:number;online_customers_count:number};
   }
 
   async getOperationalMetrics() {
@@ -678,19 +684,10 @@ export class AdminService {
   }
 
   async getHeatmapData() {
-    try {
-      // Batch 2C Phase B.1: /api/admin/* now requires an admin session, so these
-      // inspection calls must carry the authenticated admin token.
-      const headers = await this.getAuthenticatedApiHeaders();
-      return await firstValueFrom(
-        this.http.get<{ zones: { lat: number; lng: number; demand: number; drivers: number }[] }>(
-          this.apiUrlService.getApiUrl('/api/admin/heatmap'),
-          { headers }
-        )
-      );
-    } catch {
-      return { zones: [] };
-    }
+    const headers=await this.getAuthenticatedApiHeaders();
+    return firstValueFrom(this.http.get<{zones:{lat:number;lng:number;demand:number;drivers:number;busyDrivers:number}[];checkedAt:string}>(
+      this.apiUrlService.getApiUrl('/api/admin/heatmap'),{headers}
+    ).pipe(timeout(10000)));
   }
 
   async getPlatformMetrics() {

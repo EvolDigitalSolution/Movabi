@@ -124,10 +124,10 @@ interface AdminEvent {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div class="metric-panel bg-slate-950">
           <p class="metric-label text-slate-300">Drivers Online</p>
-          <h4 class="metric-value text-white">{{ operationalMetrics()?.online_drivers_count || 0 }}</h4>
+          <h4 class="metric-value text-white">{{ livePresence()?.online_drivers_count ?? '—' }}</h4>
           <p class="metric-note text-slate-300">
             <span class="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse mr-2"></span>
-            Live monitoring active
+            Active app within 2 minutes<br>Customers online: {{ livePresence()?.online_customers_count ?? '—' }}
           </p>
         </div>
 
@@ -151,7 +151,7 @@ interface AdminEvent {
         <div class="p-5 border-b border-slate-100 flex items-center justify-between gap-4">
           <div>
             <h3 class="text-lg font-bold text-slate-950">Demand Heatmap</h3>
-            <p class="text-sm text-slate-500 font-medium">Live demand zones and driver activity.</p>
+            <p class="text-sm text-slate-500 font-medium">Live demand zones and driver activity.</p><p class="text-xs text-slate-500" aria-live="polite">{{mapStatus()}}</p>
           </div>
 
           <div class="hidden sm:flex items-center gap-4">
@@ -377,6 +377,24 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   stats = this.adminService.stats;
   activeJobs = signal<Job[]>([]);
   stuckJobs = signal<JobAnomaly[]>([]);
+  mapStatus=signal('Loading live map…');
+  private mapBusy=false;
+  private mapCentered=false;
+  private async refreshDemandMap(){
+    if(this.mapBusy||!this.adminMap)return;
+    this.mapBusy=true;
+    try{
+      const data=await this.adminService.getHeatmapData();
+      this.adminMap.drawHeatmap(data.zones);
+      if(!this.mapCentered&&data.zones.length){this.adminMap.setCenter(data.zones[0].lng,data.zones[0].lat,12);this.mapCentered=true;}
+      this.mapStatus.set(data.zones.length?'Updated '+new Date(data.checkedAt).toLocaleTimeString():'No current requests or drivers with recent location data.');
+    }catch{this.adminMap.drawHeatmap([]);this.mapStatus.set('Live map unavailable. Retrying…');}
+    finally{this.mapBusy=false;}
+  }
+  livePresence=signal<{online_drivers_count:number;online_customers_count:number}|null>(null);
+  private presenceTimer:ReturnType<typeof setInterval>|null=null;
+  private presenceBusy=false;
+  private async refreshPresence(){if(this.presenceBusy)return;this.presenceBusy=true;try{this.livePresence.set(await this.adminService.getLivePresence());}catch{this.livePresence.set(null);}finally{this.presenceBusy=false;}await this.refreshDemandMap();}
   operationalMetrics = signal<OperationalMetrics | null>(null);
   failedBookings = signal<FailedBooking[]>([]);
   recentPayments = signal<WalletTransaction[]>([]);
@@ -393,12 +411,15 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     }
 
     await this.refreshData();
+    await this.refreshPresence();
+    this.presenceTimer=setInterval(()=>{void this.refreshPresence();},15000);
 
     // Keep disabled until Kong realtime websocket config is stable.
     // this.setupRealtime();
   }
 
   ngOnDestroy() {
+    if(this.presenceTimer)clearInterval(this.presenceTimer);
     this.channels.forEach(channel => channel.unsubscribe());
   }
 
@@ -432,19 +453,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
       this.failedBookings.set(safeFailures);
       this.recentPayments.set(safePayments);
 
-      try {
-        const heatmap = await this.adminService.getHeatmapData();
-
-        if (heatmap?.zones && Array.isArray(heatmap.zones) && this.adminMap) {
-          this.adminMap.drawHeatmap(heatmap.zones);
-
-          if (heatmap.zones.length > 0) {
-            this.adminMap.setCenter(heatmap.zones[0].lng, heatmap.zones[0].lat, 12);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load heatmap', error);
-      }
+      await this.refreshDemandMap();
     } catch (error) {
       console.error('AdminDashboard refreshData failed:', error);
     }
@@ -487,7 +496,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
         note: 'Registered users'
       },
       {
-        label: 'Active Drivers',
+        label: 'Registered Drivers',
         value: this.formatNumber(this.stats().totalDrivers || 0),
         icon: 'car-outline',
         bgClass: 'bg-amber-100',
