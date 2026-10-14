@@ -69,7 +69,27 @@ export class PaymentAuthorityService {
 
   /** Full authoritative payable (fare + errand item budget) for a job. */
   static async resolve(job: any): Promise<AuthoritativePayable> {
-    const serviceFareMajor = this.authoritativeServiceFare(job);
+    let serviceFareMajor = this.authoritativeServiceFare(job);
+    const progressed = ['assigned','accepted','heading_to_pickup','arrived','arrived_at_store',
+      'shopping_in_progress','collected','en_route_to_customer','in_progress','delivered','completed','settled'];
+    const agreed = money(job.agreed_fare);
+    if (agreed > 0 && job.driver_id && progressed.includes(String(job.status || '').toLowerCase())) {
+      // A lifecycle transition must not revert a server-agreed fare to the quote.
+      // Verify persisted negotiation provenance rather than trusting a bare column.
+      const { data: session, error: sessionError } = await supabaseAdmin
+        .from('marketplace_negotiation_sessions')
+        .select('status,active_driver_id,agreed_fare').eq('job_id',job.id).maybeSingle();
+      if (sessionError) throw new Error('Agreed payment terms could not be verified');
+      const hybridVerified = session?.status === 'fare_agreed'
+        && session.active_driver_id === job.driver_id && money(session.agreed_fare) === agreed;
+      if (!hybridVerified) {
+        const { data: offers, error: offerError } = await supabaseAdmin.from('fare_negotiations')
+          .select('driver_id,amount,status').eq('job_id',job.id).eq('status','accepted');
+        if (offerError || !(offers || []).some(offer => offer.driver_id === job.driver_id && money(offer.amount) === agreed))
+          throw new Error('Agreed payment terms require reconciliation');
+      }
+      serviceFareMajor = agreed;
+    }
 
     let itemBudgetMajor = 0;
     if (this.isErrand(job)) {
