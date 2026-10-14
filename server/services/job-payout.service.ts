@@ -1,7 +1,7 @@
 import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { PayoutEligibilityService } from './payout-eligibility.service';
-interface QueueRow { job_id: string; driver_id: string; destination: string; amount_minor: number; currency: string; status: string; attempt: number; token: string; attempted_at: string; }
+interface QueueRow { job_id: string; driver_id: string; destination: string; amount_minor: number; currency: string; status: string; attempt: number; token: string; attempted_at: string; terms?: Record<string, any>; }
 export class JobPayoutService {
   private static running = false;
   static start() {
@@ -47,14 +47,48 @@ export class JobPayoutService {
     // retains its key even when these checks temporarily prevent submission.
     try { await PayoutEligibilityService.assertEligible(q.driver_id, q.destination); }
     catch { await update(q.status === 'reconcile' ? 'reconcile' : 'pending','destination_not_ready'); return; }
-    let balance;
-    try { balance = await stripe.balance.retrieve(); }
-    catch { await update(q.status === 'reconcile' ? 'reconcile' : 'pending','balance_lookup_unavailable'); return; }
-    const available = balance.available.filter(b => b.currency === q.currency).reduce((n,b) => n+b.amount,0);
-    if (available < Number(q.amount_minor)) { await update(q.status === 'reconcile' ? 'reconcile' : 'pending','balance_insufficient'); return; }
+    // Freeze the transfer source before submission, so ambiguous retries keep
+    // precisely the same Stripe parameters and idempotency key across deployments.
+    let sourceTransaction: string | undefined = q.terms?.payout_source_transaction;
+    if (!sourceTransaction && q.status !== 'reconcile') {
+      const { data: job, error } = await supabaseAdmin.from('jobs')
+        .select('payment_method,payment_intent_id,payment_status').eq('id', q.job_id).single();
+      if (error || !job) { await update('pending','payment_source_lookup_unavailable'); return; }
+      if (String(job.payment_method || '').toLowerCase() !== 'wallet') {
+        if (!job.payment_intent_id || job.payment_status !== 'paid') { await update('blocked','captured_payment_required'); return; }
+        try {
+          const payment = await stripe.paymentIntents.retrieve(job.payment_intent_id);
+          const chargeId = typeof payment.latest_charge === 'string' ? payment.latest_charge : payment.latest_charge?.id;
+          if (payment.status !== 'succeeded' || payment.currency !== q.currency || payment.transfer_data || !chargeId) {
+            await update('blocked','payment_source_requires_review'); return;
+          }
+          const charge = await stripe.charges.retrieve(chargeId);
+          const intentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id;
+          if (!charge.paid || !charge.captured || charge.currency !== q.currency || intentId !== job.payment_intent_id ||
+              charge.transfer || charge.amount_captured - charge.amount_refunded < Number(q.amount_minor)) {
+            await update('blocked','charge_source_requires_review'); return;
+          }
+          sourceTransaction = charge.id;
+        } catch { await update('pending','charge_source_lookup_unavailable'); return; }
+        const frozen = await supabaseAdmin.from('job_payout_queue')
+          .update({ terms: { ...q.terms, payout_source_transaction: sourceTransaction } })
+          .eq('job_id',q.job_id).eq('token',q.token).eq('status','processing').select('job_id');
+        if (frozen.error || !frozen.data?.length) throw new Error('Transfer source was not persisted');
+      }
+    }
+    // Wallet payouts and old ambiguous attempts retain their original balance-funded
+    // request. A linked card charge can transfer before its funds become available.
+    if (!sourceTransaction) {
+      let balance;
+      try { balance = await stripe.balance.retrieve(); }
+      catch { await update(q.status === 'reconcile' ? 'reconcile' : 'pending','balance_lookup_unavailable'); return; }
+      const available = balance.available.filter(b => b.currency === q.currency).reduce((n,b) => n+b.amount,0);
+      if (available < Number(q.amount_minor)) { await update(q.status === 'reconcile' ? 'reconcile' : 'pending','balance_insufficient'); return; }
+    }
     let transfer;
     try {
       transfer = await stripe.transfers.create({ amount: Number(q.amount_minor), currency: q.currency, destination: q.destination,
+        ...(sourceTransaction ? { source_transaction: sourceTransaction } : {}),
         transfer_group: `job_${q.job_id}`, metadata: { job_id: q.job_id, driver_id: q.driver_id, payout_policy: 'outbox-v1' } },
         { idempotencyKey: `job-payout-v2-${q.job_id}-${q.attempt}` });
     } catch (error: unknown) {

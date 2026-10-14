@@ -9,13 +9,46 @@ function loadWorker(options: any = {}) {
   const db = { rpc: async (name:string,args:any) => {
     if (name==='claim_queued_job_payout') return {data: options.noClaim?[]:[row]};
     finishes.push(args); return {data:!options.finishFailure,error:options.finishFailure?{}:null};
-  }, from:()=>({update:(value:any)=>{ updates.push(value); const chain:any={eq:()=>chain,in:()=>chain,select:async()=>({data:[{job_id:'job'}]})};return chain;}})};
-  const stripe = {transfers:{list:async()=>({data:options.transfers || [],has_more:!!options.hasMore}),create:async(payload:any,headers:any)=>{creates.push({payload,headers});if(options.failure)throw options.failure;return {id:'tr_new'};}},balance:{retrieve:async()=>({available:[{currency:'gbp',amount:options.balance ?? 1000}]})}};
+  }, from:()=>({select(){return this;},eq(){return this;},single:async()=>({data:options.job || {payment_method:'wallet',payment_status:'paid'},error:options.jobError}),update:(value:any)=>{ updates.push(value); const chain:any={eq:()=>chain,in:()=>chain,select:async()=>({data:options.persistFailure?[]:[{job_id:'job'}]})};return chain;}})};
+  const stripe = {paymentIntents:{retrieve:async()=>options.payment || {status:'succeeded',currency:'gbp',latest_charge:'ch_customer'}},charges:{retrieve:async()=>options.charge || {id:'ch_customer',payment_intent:'pi_customer',paid:true,captured:true,currency:'gbp',amount_captured:4100,amount_refunded:0}},transfers:{list:async()=>({data:options.transfers || [],has_more:!!options.hasMore}),create:async(payload:any,headers:any)=>{creates.push({payload,headers});if(options.failure)throw options.failure;return {id:'tr_new'};}},balance:{retrieve:async()=>({available:[{currency:'gbp',amount:options.balance ?? 1000}]})}};
   const context:any={exports:{},console,Date,setInterval,require:(name:string)=>name.includes('stripe.service')?{stripe}:name.includes('supabase.service')?{supabaseAdmin:db}:{PayoutEligibilityService:{assertEligible:async()=>{if(options.ineligible)throw Error('blocked');}}}};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('server/services/job-payout.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
   return {worker:context.exports.JobPayoutService,updates,creates,finishes};
 }
 describe('durable payout retries',()=>{
+ it('sends only driver earnings from the captured card charge with zero available balance',async()=>{
+  const t=loadWorker({balance:0,job:{payment_method:'card',payment_status:'paid',payment_intent_id:'pi_customer'}});
+  await t.worker.process('job');expect(t.creates[0].payload).toMatchObject({amount:624,source_transaction:'ch_customer',destination:'acct_driver'});
+  expect(t.updates[0].terms.payout_source_transaction).toBe('ch_customer');expect(t.finishes).toHaveLength(1);
+ });
+ it('never submits a transfer if its charge source cannot be persisted',async()=>{
+  const t=loadWorker({persistFailure:true,job:{payment_method:'card',payment_status:'paid',payment_intent_id:'pi_customer'}});
+  await expect(t.worker.process('job')).rejects.toThrow('source was not persisted');expect(t.creates).toHaveLength(0);
+ });
+ it('preserves a frozen charge on an ambiguous retry',async()=>{
+  const t=loadWorker({balance:0,row:{status:'reconcile',terms:{payout_source_transaction:'ch_frozen'}}});await t.worker.process('job');
+  expect(t.creates[0].payload.source_transaction).toBe('ch_frozen');expect(t.creates[0].headers.idempotencyKey).toBe('job-payout-v2-job-1');
+ });
+ it('keeps old ambiguous attempts balance-funded without changing their parameters',async()=>{
+  const t=loadWorker({row:{status:'reconcile'},job:{payment_method:'card',payment_intent_id:'pi_customer',payment_status:'paid'}});
+  await t.worker.process('job');expect(t.creates[0].payload.source_transaction).toBeUndefined();
+ });
+ it.each([
+  {status:'requires_capture',currency:'gbp',latest_charge:'ch_customer'},
+  {status:'succeeded',currency:'usd',latest_charge:'ch_customer'},
+  {status:'succeeded',currency:'gbp',latest_charge:null},
+  {status:'succeeded',currency:'gbp',latest_charge:'ch_customer',transfer_data:{destination:'acct_driver'}}
+ ])('blocks an unsafe customer payment source',async(payment)=>{
+  const t=loadWorker({payment,job:{payment_method:'card',payment_intent_id:'pi_customer',payment_status:'paid'}});
+  await t.worker.process('job');expect(t.creates).toHaveLength(0);expect(t.updates[0].status).toBe('blocked');
+ });
+ it('blocks a refunded charge with insufficient remaining value',async()=>{
+  const t=loadWorker({charge:{id:'ch_customer',payment_intent:'pi_customer',paid:true,captured:true,currency:'gbp',amount_captured:4100,amount_refunded:4000},job:{payment_method:'card',payment_intent_id:'pi_customer',payment_status:'paid'}});
+  await t.worker.process('job');expect(t.creates).toHaveLength(0);expect(t.updates[0].status).toBe('blocked');
+ });
+ it('does not fall back to wallet funds when the card source lookup fails',async()=>{
+  const t=loadWorker({jobError:{message:'offline'}});await t.worker.process('job');expect(t.creates).toHaveLength(0);expect(t.updates[0].last_error).toBe('payment_source_lookup_unavailable');
+ });
  it('does nothing without a database lease',async()=>{const t=loadWorker({noClaim:true});await t.worker.process('job');expect(t.creates).toHaveLength(0);});
  it('keeps earnings pending when Stripe funds are unavailable',async()=>{const t=loadWorker({balance:0});await t.worker.process('job');expect(t.creates).toHaveLength(0);expect(t.updates[0].status).toBe('pending');});
  it('uses the persisted attempt as the idempotency key',async()=>{const t=loadWorker({row:{attempt:3}});await t.worker.process('job');expect(t.creates[0].headers.idempotencyKey).toBe('job-payout-v2-job-3');expect(t.finishes[0].p_transfer_id).toBe('tr_new');});

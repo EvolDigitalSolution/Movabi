@@ -1,3 +1,4 @@
+import { JobPayoutService } from './job-payout.service';
 import { IssuingSpendService } from './issuing-spend.service';
 import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
@@ -344,6 +345,15 @@ export class LogisticsService {
       }
     }
 
+    // The durable queue is already committed. A transfer failure must not undo
+    // completion; the worker will reconcile/retry using its persisted lease/key.
+    try {
+      await JobPayoutService.process(job.id);
+      const refreshed = await supabaseAdmin.from('jobs').select('*').eq('id',job.id).maybeSingle();
+      if (!refreshed.error && refreshed.data) return refreshed.data;
+    } catch (error) {
+      console.error('[LogisticsService.completeJob] immediate transfer deferred:', error);
+    }
     return updatedJob;
   }
 
