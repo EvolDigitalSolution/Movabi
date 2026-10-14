@@ -46,7 +46,7 @@ router.post('/messages/:jobId/read', async (req: Request,res: Response) => {
 
 router.post('/messages', async (req: Request, res: Response) => {
   try {
-    const { jobId, receiverId, message, messageType } = req.body || {};
+    const { jobId, receiverId, message, messageType, purpose } = req.body || {};
     const cleanMessage = String(message || '').trim();
     const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
 
@@ -82,7 +82,12 @@ router.post('/messages', async (req: Request, res: Response) => {
     if (!assignedDriverId || receiverId !== expectedReceiver || receiverId === senderId) {
       return res.status(403).json({ error: 'Messages must be sent to the other participant on this job' });
     }
-    if (['completed', 'settled', 'delivered', 'cancelled', 'canceled', 'expired', 'failed', 'no_driver_found'].includes(String(job.status))) {
+    const lostItem = purpose === 'lost_item';
+    if (purpose && !lostItem) return res.status(400).json({ error: 'Unsupported message purpose' });
+    if (lostItem && (senderId !== job.customer_id || !['completed','settled','delivered'].includes(String(job.status)))) {
+      return res.status(403).json({ error: 'Only the customer can report a lost item after completion' });
+    }
+    if (!lostItem && ['completed', 'settled', 'delivered', 'cancelled', 'canceled', 'expired', 'failed', 'no_driver_found'].includes(String(job.status))) {
       return res.status(409).json({ error: 'This job has ended; its chat history is read-only' });
     }
     if (messageType && !['text', 'quick'].includes(messageType)) {
@@ -101,7 +106,7 @@ router.post('/messages', async (req: Request, res: Response) => {
         job_id: jobId,
         sender_id: senderId,
         receiver_id: receiverId,
-        message: cleanMessage,
+        message: lostItem ? `Lost item report: ${cleanMessage}` : cleanMessage,
         message_type: messageType || 'text'
       })
       .select('*')
@@ -118,7 +123,7 @@ router.post('/messages', async (req: Request, res: Response) => {
     }
 
     try {
-      await NotificationService.notifyChatMessage(receiverId, jobId, senderId, cleanMessage);
+      await NotificationService.notifyChatMessage(receiverId, jobId, senderId, data.message);
     } catch (notificationError: any) {
       // The message is already durable. Push failure must not invite duplicate retries.
       console.warn('[CommunicationRoutes] chat push unavailable:', notificationError?.code || 'notification_failed');

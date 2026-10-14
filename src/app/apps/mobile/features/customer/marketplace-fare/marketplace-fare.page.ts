@@ -724,6 +724,10 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     ngOnDestroy() {
+        this.disposeHybridSubscription();
+        this.hybridPageDestroyed = true;
+        ++this.hybridReloadToken;
+        if (this.hybridRecoveryTimer) clearInterval(this.hybridRecoveryTimer);
         // Clean up all subscriptions
         if (this.jobChannel) {
             this.jobChannel.unsubscribe();
@@ -1338,12 +1342,20 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
      * optimistic state. A monotonic token discards a reload that a newer one
      * superseded while it was in flight.
      */
+    private hybridRecoveryTimer?: ReturnType<typeof setInterval>;
+    private hybridReloadBusy = false;
+    private hybridReloadAgain = false;
+    private hybridPageDestroyed = false;
     private async reconcileHybridNegotiation(jobId: string): Promise<void> {
+        if (this.hybridPageDestroyed) return;
+        if (this.hybridReloadBusy) { this.hybridReloadAgain = true; return; }
+        this.hybridReloadBusy = true;
         const token = ++this.hybridReloadToken;
         try {
             const session = await this.hybridService.getSessionByJob(jobId);
             if (token !== this.hybridReloadToken) return;
             this.hybridSession.set(session);
+            this.ensureHybridSubscription(session);
 
             if (!session) return;
 
@@ -1355,6 +1367,12 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
             this.ensureHybridSubscription(session);
         } catch (error) {
             console.warn('[MarketplaceFare] negotiation reconcile failed', error);
+        } finally {
+            this.hybridReloadBusy = false;
+            if (this.hybridReloadAgain && !this.hybridPageDestroyed) {
+                this.hybridReloadAgain = false;
+                void this.reconcileHybridNegotiation(jobId);
+            }
         }
     }
 
@@ -1705,6 +1723,11 @@ export class MarketplaceFarePage implements OnInit, AfterViewInit, OnDestroy {
      */
     private subscribeToHybridSession(jobId: string): void {
         void this.reconcileHybridNegotiation(jobId);
+        if (this.hybridRecoveryTimer) clearInterval(this.hybridRecoveryTimer);
+        this.hybridRecoveryTimer = setInterval(() => {
+            if (document.visibilityState === 'hidden' || this.hybridReloadBusy || this.negotiationBusy() || this.isPaymentHandled(this.booking())) return;
+            void this.reconcileHybridNegotiation(jobId);
+        }, 3000);
     }
 
     private isPaymentHandled(job: Booking | null | undefined): boolean {

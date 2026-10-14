@@ -6,7 +6,7 @@ import { ApiUrlService } from '../api-url.service';
 import { NotificationManagerService } from '../notification/notification-manager.service';
 import { JobMessage, JobMessageType } from '@shared/models/communication.model';
 import { BehaviorSubject } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 @Injectable({
@@ -75,7 +75,7 @@ export class CommunicationService {
       {through}, {headers: await this.chatHeaders()}));
     this.countRequests.delete(`${this.auth.currentUser()?.id}:${jobId}`);
   }
-  async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text') {
+  async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text', purpose?: 'lost_item') {
     const user = this.auth.currentUser();
     if (!user) throw new Error('Not authenticated');
     const { data: { session } } = await this.supabase.auth.getSession();
@@ -91,12 +91,13 @@ export class CommunicationService {
         jobId,
         receiverId,
         message,
-        messageType: type
+        messageType: type,
+        ...(purpose ? { purpose } : {})
       },
       {
         headers: { Authorization: `Bearer ${token}` }
       }
-    ));
+    ).pipe(timeout(20000)));
 
     if (!response?.message) {
       throw new Error('Message was not sent.');

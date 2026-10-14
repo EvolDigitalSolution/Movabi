@@ -3099,20 +3099,46 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         await alert.present();
     }
 
-    reportLostItem(): void {
-        this.openSupportEmail(
-            'Movabi lost item report',
-            [
-                'Hello Movabi Support,',
-                '',
-                'I think I left or lost an item during this booking.',
-                '',
-                `Booking ID: ${this.booking()?.id || 'Not available'}`,
-                `Completed status: ${this.getStatusLabel(this.booking()?.status || '')}`,
-                '',
-                'Item description:'
-            ].join('\n')
-        );
+    private lostItemDialogOpen = false;
+    async reportLostItem(): Promise<void> {
+        if (this.lostItemDialogOpen) return;
+        const job = this.booking();
+        const driverId = job?.driver_id;
+        if (!job || job.status !== 'completed' || !driverId) {
+            const toast = await this.toastCtrl.create({ message: 'An assigned driver and completed booking are required.', duration: 3500 });
+            await toast.present(); return;
+        }
+        this.lostItemDialogOpen = true;
+        let sending = false;
+        const alert = await this.alertCtrl.create({
+            header: 'Message driver about a lost item',
+            message: 'Describe the item and where you last saw it. The report will be sent to this booking’s driver in Movabi.',
+            backdropDismiss: false,
+            inputs: [{ name: 'description', type: 'textarea', placeholder: 'Item description and where it was left', attributes: { maxlength: 1500 } }],
+            buttons: [
+                { text: 'Cancel', role: 'cancel', handler: () => !sending },
+                { text: 'Send to driver', handler: async (values) => {
+                    if (sending) return false;
+                    const description = String(values?.description || '').trim();
+                    if (description.length < 3 || description.length > 1500) {
+                        const toast = await this.toastCtrl.create({ message: 'Please describe the lost item (3–1500 characters).', duration: 3500 });
+                        await toast.present(); return false;
+                    }
+                    sending = true;
+                    try {
+                        await this.chatCommunication.sendMessage(job.id, driverId, description, 'text', 'lost_item');
+                        this.setActiveTrackingTab('chat');
+                        const toast = await this.toastCtrl.create({ message: 'Lost item report sent to your driver.', duration: 3500 });
+                        await toast.present(); return true;
+                    } catch {
+                        const toast = await this.toastCtrl.create({ message: 'Could not confirm delivery. Check the booking chat before sending again.', duration: 5000 });
+                        await toast.present(); return false;
+                    } finally { sending = false; }
+                } }
+            ]
+        });
+        try { await alert.present(); await alert.onDidDismiss(); }
+        finally { this.lostItemDialogOpen = false; }
     }
 
     cancelUnavailableReason(): string {

@@ -3044,6 +3044,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
      * job-alarm priority and exclusivity.
      */
     private negotiationAlertEffect = effect(() => {
+        if (this.requestFeed.open() || this.requestFeed.busy()) { this.stopAllRequestSounds(); return; }
         const activeJob = this.activeJob();
         const availableJobs = this.jobs();
         const opportunities = this.hybridOpportunities();

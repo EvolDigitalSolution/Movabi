@@ -173,9 +173,9 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   <p class="mt-1 text-xs text-slate-600 font-semibold">ID: {{ shortId(job()?.id) }}</p>
                 </div>
                 <div class="text-right shrink-0">
-                  <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Payout</p>
+                  <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Service fare</p>
                   <span class="text-lg font-display font-black text-slate-950">
-                    {{ formatPrice(job()?.total_price || job()?.price || 0) }}
+                    {{ formatPrice(job()?.agreed_fare ?? job()?.total_price ?? job()?.price ?? 0) }}
                   </span>
                 </div>
               </div>

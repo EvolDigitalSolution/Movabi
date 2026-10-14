@@ -94,6 +94,8 @@ export class DriverRequestFeedService {
         const id = this.selectedId();
         if (!id || this.busy() || this.occupied() || !this.ids().includes(id)) return;
         const offer = this.selectedOffer();
+        // Acknowledge attention immediately, before the claim API resolves.
+        if (offer) this.driver.acknowledgeNegotiationAlert(offer.session_id);
         this.busy.set(true); this.error.set('');
         try {
             if (offer) {
