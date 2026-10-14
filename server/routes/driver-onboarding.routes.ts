@@ -1,3 +1,6 @@
+import { GbMotMonitorService } from '../services/gb-mot-monitor.service';
+import { rateLimit } from 'express-rate-limit';
+import { GbMotService } from '../services/gb-mot.service';
 import { Request, Response, Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../services/supabase.service';
@@ -67,6 +70,9 @@ router.get('/status', async (req, res) => {
     const passengerLicence=readPassengerLicence(profile);
     const identityEditability=DriverIdentityEditabilityService.resolve(profile,requestRows||[]);
     const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
+    const motRestriction=await supabaseAdmin.rpc('gb_driver_mot_blocked',{p_driver:driverId});
+    if(motRestriction.error)throw Error('Unable to verify MOT compliance. Please retry.');
+    if(motRestriction.data)resolution.onlineEligibility={allowed:false,reasons:[...resolution.onlineEligibility.reasons,'Vehicle MOT expired or unverified. Renew your MOT and recheck your registration.']};
     const visibleRequests=[...resolution.adminRequests,...adminRequests.filter(request=>request.requestType==='identity_correction'&&!resolution.adminRequests.some(item=>item.id===request.id))];
     const outstandingRequests=visibleRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
     const { data: adminMessages, error: messagesError } = await supabaseAdmin.from('notifications')
@@ -75,7 +81,7 @@ router.get('/status', async (req, res) => {
     if (messagesError) throw Object.assign(new Error('Unable to load Admin messages.'), { code: messagesError.code });
     const stripeStatus = profile.stripe_connect_status || 'not_started';
     console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
-    return res.json({ driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, passengerLicence, vehicle: canonicalVehicle, outstandingRequests, adminMessages:adminMessages||[],
+    return res.json({ vehicleLookup:{provider:'DVSA_MOT',enabled:GbMotService.enabled(profile.country_code)}, driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, passengerLicence, vehicle: canonicalVehicle, outstandingRequests, adminMessages:adminMessages||[],
       automaticRequirements:resolution.automaticRequirements,adminRequests:visibleRequests,warnings:resolution.warnings,identityEditability,sectionStatus:resolution.sectionStatus,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
       submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
       stripeStatus, updatedAt: profile.updated_at || null });
@@ -194,10 +200,33 @@ router.put('/agreement',async(req,res)=>{const driverId=await authenticatedDrive
   return res.json({agreement:{accepted:!!data.accepted_driver_agreement_at,acceptedAt:data.accepted_driver_agreement_at||null}});
  }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] agreement update failed',{userId:driverId,code:details.code||'AGREEMENT_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save Driver Agreement.',code:details.code||'AGREEMENT_SAVE_FAILED'});}});
 
+router.post('/vehicle-lookup',rateLimit({windowMs:60000,limit:10,standardHeaders:true,legacyHeaders:false}),async(req,res)=>{
+ const driverId=await authenticatedDriver(req,res);if(!driverId)return;
+ try {
+  const {data:profile,error}=await supabaseAdmin.from('profiles').select('country_code').eq('id',driverId).single();
+  if(error||!profile)throw Error('Driver country could not be verified.');
+  if(!GbMotService.enabled(profile.country_code))return res.status(409).json({error:'Vehicle lookup is not enabled for your onboarding country.'});
+  const check=await GbMotService.lookup(req.body?.registrationNumber);
+  const vehicle=await currentVehicle(driverId);
+  if(vehicle)await GbMotMonitorService.record(vehicle.id,check);
+  return res.json({vehicle:check});
+ }catch(error:unknown){const e=error as Error&{httpStatus?:number};return res.status(e.httpStatus||503).json({error:e.message||'Vehicle lookup unavailable.'});}
+});
+
 router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
 
 router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
-  const input=parseDriverVehicleInput(req.body);const existing=await currentVehicle(driverId);
+  const {data:lookupProfile,error:lookupProfileError}=await supabaseAdmin.from('profiles').select('country_code').eq('id',driverId).single();
+  if(lookupProfileError||!lookupProfile)throw Error('Driver country could not be verified.');
+  let mot=null;
+  const body={...req.body};
+  if(GbMotService.enabled(lookupProfile.country_code) && body.vehicleType!=='motorcycle') {
+    mot=await GbMotService.lookup(body.registrationNumber);
+    if(['expired','dangerous_failure'].includes(mot.motStatus))return res.status(422).json({error:'Vehicle MOT is expired or has a dangerous failure. Update the MOT before continuing.'});
+    body.registrationNumber=mot.registration;
+    if(mot.make)body.make=mot.make;if(mot.model)body.model=mot.model;if(mot.colour)body.colour=mot.colour;if(mot.year)body.year=mot.year;
+  }
+  const input=parseDriverVehicleInput(body);const existing=await currentVehicle(driverId);
   const values={user_id:driverId,type:input.vehicleType,make:input.make,model:input.model,color:input.colour,year:input.year,license_plate:input.registrationNumber,capacity:input.capacity,service_eligibility:input.serviceEligibility,updated_at:new Date().toISOString()};
   // Re-review before changing an approved vehicle or its selected services.
   const fields = ['type','make','model','color','year','license_plate','capacity'] as const;
@@ -219,6 +248,8 @@ router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(
   }
   const query=existing?supabaseAdmin.from('vehicles').update(values).eq('id',existing.id):supabaseAdmin.from('vehicles').insert(values);
   const{data,error}=await query.select('*').single();if(error||!data)throw error||new Error('Vehicle save returned no record.');
+  if(mot)await GbMotMonitorService.record(data.id,mot);
+  if(mot){const audit=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,actor_id:driverId,event_type:'vehicle_mot_checked',selected_services:input.serviceEligibility,requirement_codes:['vehicle.registration','vehicle.mot'],metadata:{vehicleId:data.id,provider:'DVSA_MOT',check:mot}});if(audit.error)throw Error('Vehicle saved, but MOT evidence could not be recorded. Please retry before submitting.');}
   return res.json({vehicle:mapDriverVehicleRow(data as DriverVehicleRow)});
 }catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};const validation=/required|valid vehicle year/i.test(details.message);return res.status(details.httpStatus||(validation?422:500)).json({error:details.message,code:details.code||(validation?'INVALID_VEHICLE':'VEHICLE_SAVE_FAILED')});}});
 
@@ -249,6 +280,13 @@ router.post('/submit-review', async (req,res)=>{
   try{
     const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile){logSubmitReviewDbError('profile-read',profileError);throw profileError||new Error('Driver profile not found.');}
     const vehicle=await currentVehicle(driverId);
+    if(vehicle && vehicle.type!=='motorcycle' && GbMotService.enabled(profile.country_code)) {
+      const mot=await GbMotService.lookup(vehicle.license_plate);
+      await GbMotMonitorService.record(vehicle.id,mot);
+      if(['expired','dangerous_failure'].includes(mot.motStatus))return res.status(422).json({error:'Vehicle MOT is expired or has a dangerous failure. Update the MOT before submission.'});
+      if((mot.make && mot.make.toLowerCase()!==String(vehicle.make||'').toLowerCase()) || (mot.model && mot.model.toLowerCase()!==String(vehicle.model||'').toLowerCase()))
+        return res.status(422).json({error:'Vehicle registration details changed. Look up and save the vehicle again.'});
+    }
     const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
     const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
     const resubmission=req.body?.resubmission===true;

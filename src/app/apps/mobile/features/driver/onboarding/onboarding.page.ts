@@ -495,27 +495,41 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                   </div>
                 </div>
 
-                <div class="p-4">
+                @if (useGbMotLookup()) {
+                  <div class="p-4 col-span-full rounded-2xl border border-blue-100 bg-blue-50">
+                    <label for="gb_vehicle_plate" class="block text-sm font-bold">GB registration number</label>
+                    <input id="gb_vehicle_plate" formControlName="license_plate" placeholder="AB12 CDE" [readonly]="isReadOnly() || motLookupBusy()" [class]="fieldInputClass() + ' uppercase'">
+                    <button type="button" (click)="lookupVehicleByPlate()" [disabled]="isReadOnly() || motLookupBusy()" class="mt-3 rounded-xl bg-amber-500 px-4 py-3 font-bold">{{ motLookupBusy() ? 'Checking vehicle…' : 'Find vehicle & MOT details' }}</button>
+                    @if (motLookupError()) { <p role="alert" class="mt-2 text-sm font-semibold text-red-700">{{ motLookupError() }}</p> }
+                    @if (motLookup(); as result) {
+                      <p class="mt-3 text-sm font-bold">{{result.make}} {{result.model}} · {{result.colour}}</p>
+                      <p class="mt-2 text-sm">MOT status: <strong>{{result.motStatus}}</strong> · Expiry: {{result.motExpiryDate || 'Not available'}}</p>
+                      <p class="mt-2 text-xs">Retrieved from DVSA. Missing MOT history requires review; it does not confirm an exemption. Insurance and licensing checks still apply.</p>
+                    }
+                  </div>
+                }
+
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="make" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleMakeLabel() }}</label>
-                  <input id="make" formControlName="make" [placeholder]="vehicleMakePlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="make" formControlName="make" [placeholder]="vehicleMakePlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.make)" [class]="fieldInputClass()">
                 </div>
 
-                <div class="p-4">
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="model" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleModelLabel() }}</label>
-                  <input id="model" formControlName="model" [placeholder]="vehicleModelPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="model" formControlName="model" [placeholder]="vehicleModelPlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.model)" [class]="fieldInputClass()">
                 </div>
 
-                <div class="p-4">
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="color" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleColorLabel() }}</label>
-                  <input id="color" formControlName="color" [placeholder]="vehicleColorPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="color" formControlName="color" [placeholder]="vehicleColorPlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.colour)" [class]="fieldInputClass()">
                 </div>
 
-                <div class="p-4">
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="year" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleYearLabel() }}</label>
-                  <input id="year" type="number" formControlName="year" [placeholder]="vehicleYearPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="year" type="number" formControlName="year" [placeholder]="vehicleYearPlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.year)" [class]="fieldInputClass()">
                 </div>
 
-                @if (!isBikeVehicle()) {
+                @if (!isBikeVehicle() && !useGbMotLookup()) {
                   <div class="p-4">
                     <div class="flex items-center justify-between gap-3 mb-1">
                       <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">License Plate</label>
@@ -1961,6 +1975,7 @@ export class OnboardingPage implements OnInit {
         const vehicleClass = String(raw['vehicle_class'] || this.vehicleClassFromVehicle(vehicle) || 'standard') as DriverVehicleClass;
         const plate = this.getCanonicalPlate(vehicle, raw['license_plate']);
         const isBike = vehicleClass === 'bike';
+        if(this.useGbMotLookup() && this.motLookup()?.registration !== plate.replace(/\s/g,'').toUpperCase()) throw new Error('Find details for this registration before saving the vehicle.');
 
         const registrationRequired = vehicleRequiresRegistration(
             normaliseVehicleClass({ capacity: vehicleClass, type: this.vehicleTypeFromClass(vehicleClass) }),
@@ -2103,18 +2118,32 @@ export class OnboardingPage implements OnInit {
         control?.setValue(plate, { emitEvent: true });
     }
 
+    readonly motLookup = signal<any>(null);
+    readonly motLookupBusy = signal(false);
+    readonly motLookupError = signal('');
+    useGbMotLookup():boolean {
+        return this.onboardingStatus.state()?.vehicleLookup?.enabled === true
+            && String((this.profile() as any)?.country_code || '').toUpperCase() === 'GB' && !this.isBikeVehicle();
+    }
     async lookupVehicleByPlate() {
-        if (this.isReadOnly()) return;
-
+        if (this.isReadOnly() || this.motLookupBusy()) return;
         this.normalizePlate();
-        const plate = String(this.onboardingForm.get('license_plate')?.value || '').trim();
-
-        if (!plate) {
-            await this.showToast('Enter the vehicle registration first.', 'warning');
-            return;
-        }
-
-        await this.showToast('Plate lookup is ready for provider connection. Please enter make, model, colour, and year manually for now.', 'warning');
+        const plate = String(this.onboardingForm.get('license_plate')?.value || '').replace(/\s/g,'').toUpperCase();
+        if (!this.useGbMotLookup()) { await this.showToast('Enter vehicle details manually for your country.', 'warning'); return; }
+        if (!plate) { await this.showToast('Enter the vehicle registration first.', 'warning'); return; }
+        this.motLookupBusy.set(true);this.motLookupError.set('');this.motLookup.set(null);
+        try {
+            const response = await this.driverService.lookupGbVehicle(plate);
+            if (!this.useGbMotLookup() || String(this.onboardingForm.get('license_plate')?.value || '').replace(/\s/g,'').toUpperCase() !== plate) return;
+            const vehicle=response.vehicle;
+            this.motLookup.set(vehicle);
+            const values:Record<string,unknown>={license_plate:vehicle.registration};
+            if(vehicle.make)values['make']=vehicle.make;if(vehicle.model)values['model']=vehicle.model;
+            if(vehicle.colour)values['color']=vehicle.colour;if(vehicle.year)values['year']=vehicle.year;
+            this.onboardingForm.patchValue(values);
+            await this.showToast('Vehicle details retrieved. Check the MOT result and complete any missing fields.', 'success');
+        } catch(error) { this.motLookupError.set(error instanceof Error ? error.message : 'Vehicle lookup unavailable. Please retry.'); }
+        finally { this.motLookupBusy.set(false); }
     }
 
     handleDocumentClick(type: DocumentType) {

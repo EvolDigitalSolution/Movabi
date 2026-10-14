@@ -1019,6 +1019,12 @@ export class DriverService {
         return data;
     }
 
+    async lookupGbVehicle(registrationNumber:string):Promise<any> {
+        try { return await firstValueFrom(this.http.post<any>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle-lookup'),
+          {registrationNumber},{headers:await this.authHeaders()})); }
+        catch(error:unknown){if(error instanceof HttpErrorResponse)throw new Error(String(error.error?.error || 'Vehicle lookup unavailable.'));throw error;}
+    }
+
     async updateVehicle(vehicleData: Partial<Vehicle>) {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');

@@ -10,6 +10,7 @@ export interface DriverOutstandingRequest {
     submittedAt: string | null; updatedAt: string | null; nextAction: string;
 }
 export interface DriverOnboardingStatus {
+    vehicleLookup?:{provider:string;enabled:boolean};
     driverId: string; registrationAllowed: boolean; overallStatus: 'not_started'|'incomplete'|'ready_to_submit'|'under_review'|'action_required'|'approved'|'paused';
     profile: Record<string, unknown>; canonicalProfile: CanonicalDriverProfile; passengerLicence:DriverPassengerLicence; vehicle: DriverVehicle | null;
     outstandingRequests: DriverOutstandingRequest[]; submissionHistory: unknown[];
