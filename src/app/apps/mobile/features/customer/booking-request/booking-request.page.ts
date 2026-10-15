@@ -235,7 +235,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                     </div>
                   </div>
 
-                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver') {
+                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver' && !popularShopsCollapsed()) {
                     <div class="space-y-3">
                       <div class="flex items-center justify-between gap-3">
                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Popular shops</p>
@@ -262,6 +262,9 @@ type PackageSize = 'small' | 'medium' | 'large';
                       </p>
                     </div>
                   }
+                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver' && popularShopsCollapsed()) {
+                    <button type="button" class="text-sm font-bold text-blue-700 py-2" (click)="popularShopsCollapsed.set(false)">Change shop</button>
+                  }
                 </div>
               }
 
@@ -286,7 +289,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                   </span>
                   <div class="address-field__body">
                     <span class="address-field__label">Pickup</span>
-                    <app-input
+                    <app-input #pickupAddressInput
                       [dense]="true"
                       [embeddedAddress]="true"
                       formControlName="pickup_address"
@@ -1795,7 +1798,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return this.localSearchGps || undefined;
     }
 
+    popularShopsCollapsed=signal(false);
+    @ViewChild('pickupAddressInput',{read:ElementRef}) private pickupAddressInput?:ElementRef<HTMLElement>;
+    private focusShopPickup():void{
+        this.popularShopsCollapsed.set(true);
+        this.pickupExpanded.set(true);
+        requestAnimationFrame(()=>{
+            const input=this.pickupAddressInput?.nativeElement.querySelector('input');
+            if(!input)return;
+            input.scrollIntoView({behavior:'smooth',block:'center'});
+            input.focus({preventScroll:true});
+        });
+    }
     selectPopularShop(shop: PopularShopPreset): void {
+        this.focusShopPickup();
         const query = shop.query;
 
         // "Other" (empty query) means the customer wants to type the shop/address
