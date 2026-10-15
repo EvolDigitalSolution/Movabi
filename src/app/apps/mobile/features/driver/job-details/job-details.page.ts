@@ -2787,7 +2787,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'assigned':
                 return 'Movabi assigned this request to you. Accept it to confirm you will complete it.';
             case 'accepted':
-                return `Open the ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}, contact the customer if needed, then mark yourself arrived.`;
+                return `Head to the ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}. When you arrive, mark yourself as arrived. Contact the customer if needed.`;
             case 'arrived':
                 if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
                     return this.isShoppingErrand()
