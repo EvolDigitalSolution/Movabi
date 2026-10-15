@@ -1,0 +1,13 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+import {firstValueFrom,of} from 'rxjs';
+const m=vi.hoisted(()=>({get:vi.fn()}));
+vi.mock('@angular/core',()=>({Injectable:()=>()=>{},inject:()=>({get:m.get,getOpenRouteServiceApiKey:()=> 'test',getMapTilerApiKey:()=> 'test',currentCountry:()=>({code:'GB',name:'United Kingdom',defaultCenter:{lat:51.5,lng:-.12}})})}));
+vi.mock('@angular/common/http',()=>({HttpClient:class{}}));
+vi.mock('../app/core/services/maps/map-provider.service',()=>({MapProviderService:class{}}));
+vi.mock('../app/core/services/config/app-config.service',()=>({AppConfigService:class{}}));
+import {GeocodingService} from '../app/core/services/maps/geocoding.service';
+beforeEach(()=>{m.get.mockReset();m.get.mockReturnValue(of({features:[]}));});
+it('biases both providers toward the customer location',async()=>{await firstValueFrom(new GeocodingService().autocomplete('Tesco near me',{lat:53.58,lng:-2.43}));const calls=m.get.mock.calls;expect(calls.find(c=>c[0].includes('/autocomplete'))?.[1].params).toMatchObject({'focus.point.lat':53.58,'focus.point.lon':-2.43,'boundary.country':'GB'});expect(calls.find(c=>c[0].includes('maptiler'))?.[1].params.proximity).toBe('-2.43,53.58');});
+it('does not reuse the same cache in another town',async()=>{const s=new GeocodingService();await firstValueFrom(s.autocomplete('Tesco near me',{lat:53.58,lng:-2.43}));await firstValueFrom(s.autocomplete('Tesco near me',{lat:51.5,lng:-.12}));expect(m.get).toHaveBeenCalledTimes(6);});
+it('preserves postcode lookup without proximity bias',async()=>{await firstValueFrom(new GeocodingService().autocomplete('BL1 1AA',{lat:53.58,lng:-2.43}));for(const c of m.get.mock.calls){expect(c[1].params.proximity).toBeUndefined();expect(c[1].params['focus.point.lat']).toBeUndefined();}});
+it('keeps existing default behaviour for callers without an origin',async()=>{await firstValueFrom(new GeocodingService().autocomplete('High Street'));expect(m.get.mock.calls.find(c=>c[0].includes('maptiler'))?.[1].params.proximity).toBe('-0.12,51.5');});

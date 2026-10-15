@@ -1788,6 +1788,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.bookingForm.patchValue({ errand_mode: mode });
     }
 
+    private localSearchGps:{lat:number;lng:number}|null=null;
+    private searchOrigin(type:'pickup'|'dropoff'):{lat:number;lng:number}|undefined {
+        const location=type==='pickup'?this.dropoffLocation:this.pickupLocation;
+        if(typeof location.latitude==='number'&&typeof location.longitude==='number'&&Number.isFinite(location.latitude)&&Number.isFinite(location.longitude))return {lat:location.latitude,lng:location.longitude};
+        return this.localSearchGps || undefined;
+    }
+
     selectPopularShop(shop: PopularShopPreset): void {
         const query = shop.query;
 
@@ -2263,6 +2270,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 lng: pos.coords.longitude
             };
 
+            this.localSearchGps=coords;
             this.geocoding.reverseGeocode(coords.lat, coords.lng).subscribe({
                 next: address => {
                     void loading?.dismiss();
@@ -2507,7 +2515,15 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
-        this.geocoding.autocomplete(this.withLocationContext(type, query)).subscribe(results => {
+        const origin=this.searchOrigin(type);
+        if(/\bnear\s+me\b/i.test(query)&&!origin){
+            this.pickupResults.set([]);this.dropoffResults.set([]);
+            void this.toastCtrl.create({message:'Set your current location or delivery address to find nearby shops.',duration:3500,color:'warning'}).then(toast=>toast.present());
+            return;
+        }
+        this.geocoding.autocomplete(this.withLocationContext(type, query),origin).subscribe(results => {
+            const current=type==='pickup'?this.pickupLocation.address:this.dropoffLocation.address;
+            if(current!==query)return;
             if (type === 'pickup') {
                 this.pickupResults.set(results);
                 this.showPickupResults.set(true);
@@ -2567,7 +2583,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (query.length < 3) return;
 
         try {
-            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query)));
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query),this.searchOrigin(type)));
             const result = results?.[0];
 
             if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {

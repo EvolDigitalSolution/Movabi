@@ -1,0 +1,13 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({gps:vi.fn(),track:vi.fn()}));
+vi.mock('@angular/core',()=>({Injectable:()=>()=>{},inject:()=>({track:m.track}),signal:(v:any)=>{const s:any=()=>v;s.set=(n:any)=>v=n;return s;}}));
+vi.mock('../app/core/services/supabase/supabase.service',()=>({SupabaseService:class{}}));
+vi.mock('../app/core/services/auth/auth.service',()=>({AuthService:class{}}));
+vi.mock('../app/core/services/analytics/analytics.service',()=>({AnalyticsService:class{}}));
+vi.mock('../app/core/services/config/app-config.service',()=>({AppConfigService:class{}}));
+import {LocationService} from '../app/core/services/logistics/location.service';
+beforeEach(()=>{vi.useFakeTimers();vi.clearAllMocks();vi.stubGlobal('navigator',{geolocation:{getCurrentPosition:m.gps}});});
+afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();});
+it('shares concurrent GPS calls',async()=>{const s=new LocationService();const a=s.getCurrentPosition(),b=s.getCurrentPosition();expect(m.gps).toHaveBeenCalledTimes(1);m.gps.mock.calls[0][0]({timestamp:Date.now(),coords:{latitude:53,longitude:-2}});expect(await a).toEqual(await b);});
+it('reuses a fresh GPS fix then requests a new one after expiry',async()=>{m.gps.mockImplementation(success=>success({timestamp:Date.now(),coords:{latitude:53,longitude:-2}}));const s=new LocationService();await s.getCurrentPosition();await s.getCurrentPosition();expect(m.gps).toHaveBeenCalledTimes(1);await vi.advanceTimersByTimeAsync(16000);await s.getCurrentPosition();expect(m.gps).toHaveBeenCalledTimes(2);});
+it('backs off failed readings instead of overlapping retries',async()=>{m.gps.mockImplementation((_success,failure)=>failure({code:1,PERMISSION_DENIED:1}));const s=new LocationService();await s.getCurrentPosition();await s.getCurrentPosition();expect(m.gps).toHaveBeenCalledTimes(1);await vi.advanceTimersByTimeAsync(16000);await s.getCurrentPosition();expect(m.gps).toHaveBeenCalledTimes(2);});

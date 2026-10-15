@@ -27,7 +27,21 @@ export class LocationService {
     public locationMode = signal<LocationMode>('auto');
     public usingFallbackLocation = signal(false);
 
-    async getCurrentPosition(): Promise<GeolocationPosition | null> {
+    private positionRequest:Promise<GeolocationPosition|null>|null=null;
+    private lastPosition:GeolocationPosition|null=null;
+    private positionRetryAfter=0;
+    getCurrentPosition():Promise<GeolocationPosition|null>{
+        if(this.positionRequest)return this.positionRequest;
+        if(this.lastPosition && Date.now()-this.lastPosition.timestamp>=0 && Date.now()-this.lastPosition.timestamp<=15000)return Promise.resolve(this.lastPosition);
+        if(Date.now()<this.positionRetryAfter)return Promise.resolve(null);
+        this.positionRequest=this.readCurrentPosition().then(position=>{
+            this.lastPosition=position;
+            this.positionRetryAfter=position?0:Date.now()+15000;
+            return position;
+        }).finally(()=>this.positionRequest=null);
+        return this.positionRequest;
+    }
+    private async readCurrentPosition(): Promise<GeolocationPosition | null> {
         if (!navigator.geolocation) {
             this.locationError.set('Geolocation is not supported by this browser.');
             this.locationMode.set('manual');
@@ -103,6 +117,7 @@ export class LocationService {
     setAutoMode() {
         this.locationMode.set('auto');
         this.usingFallbackLocation.set(false);
+        this.positionRetryAfter=0;this.lastPosition=null;
         this.analytics.track('location_retry_clicked');
     }
 

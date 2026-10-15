@@ -955,7 +955,7 @@ export class BookingService {
             .from('jobs')
             .select('*, service_type:service_types(*)')
             .eq('id', bookingId)
-            .single();
+            .maybeSingle();
 
         if (error) {
             if (error.code === 'PGRST116') {
@@ -963,6 +963,8 @@ export class BookingService {
             }
             throw error;
         }
+
+        if (!data) throw new Error('Booking is unavailable or not accessible to your account.');
 
         if (data.customer_id) {
             const { data: customer } = await this.supabase

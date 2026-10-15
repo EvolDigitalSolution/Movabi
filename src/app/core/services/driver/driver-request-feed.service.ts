@@ -20,6 +20,7 @@ export class DriverRequestFeedService {
     private fetching = false;
     private hydrated = signal<Record<string, Booking>>({});
     private hydrating = new Set<string>();
+    private hydrationRetryAt=new Map<string,number>();
     readonly open = signal(false);
     readonly selectedId = signal<string | null>(null);
     readonly error = signal('');
@@ -45,7 +46,7 @@ export class DriverRequestFeedService {
         effect(() => {
             const owner = this.auth.currentUser()?.id || null;
             if (owner !== this.owner) {
-                this.owner = owner; this.seen.clear(); this.hydrated.set({}); this.open.set(false);
+                this.owner = owner; this.hydrationRetryAt.clear(); this.seen.clear(); this.hydrated.set({}); this.open.set(false);
                 this.driver.availableJobs.set([]); this.driver.hybridOpportunities.set([]);
                 this.driver.activeJob.set(null); this.driver.activeHybridSession.set(null);
                 this.driver.recoverableNegotiations.set([]);
@@ -62,12 +63,12 @@ export class DriverRequestFeedService {
         effect(() => {
             const owner = this.auth.currentUser()?.id;
             for (const offer of this.offers()) {
-                if (this.hydrated()[offer.job_id] || this.hydrating.has(offer.job_id)) continue;
+                if (this.hydrated()[offer.job_id] || this.hydrating.has(offer.job_id) || Date.now()<(this.hydrationRetryAt.get(offer.job_id)||0)) continue;
                 this.hydrating.add(offer.job_id);
                 void this.bookings.getBooking(offer.job_id).then(job => {
                     if (owner === this.auth.currentUser()?.id && this.offers().some(o => o.job_id === job.id))
                         this.hydrated.update(all => ({ ...all, [job.id]: job }));
-                }).catch(() => {}).finally(() => this.hydrating.delete(offer.job_id));
+                }).catch(() => {if(owner===this.auth.currentUser()?.id)this.hydrationRetryAt.set(offer.job_id,Date.now()+60000);}).finally(() => this.hydrating.delete(offer.job_id));
             }
         });
         // Realtime subscriptions remain in DriverService; this also recovers missed updates on other screens.

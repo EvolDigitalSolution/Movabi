@@ -36,14 +36,14 @@ export class GeocodingService {
     private mapTilerGeocodeUrl = 'https://api.maptiler.com/geocoding';
     private cache = new Map<string, AutocompleteResult[]>();
 
-    autocomplete(query: string): Observable<AutocompleteResult[]> {
+    autocomplete(query: string, origin?: {lat:number;lng:number}): Observable<AutocompleteResult[]> {
         const rawQuery = String(query || '').trim();
         const isPostcodeIntent = this.isLikelyUkPostcode(rawQuery);
         const normalizedQuery = isPostcodeIntent ? this.normalizeUkPostcode(rawQuery) : this.normalizeQuery(query);
         if (!normalizedQuery || normalizedQuery.length < 3) return of([]);
 
         const countryCode = this.config.currentCountry().code;
-        const cacheKey = `autocomplete:${countryCode}:${normalizedQuery}:${isPostcodeIntent ? 'pc' : 'txt'}`;
+        const cacheKey = `autocomplete:${countryCode}:${normalizedQuery}:${isPostcodeIntent ? 'pc' : 'txt'}:${origin ? origin.lat.toFixed(4)+','+origin.lng.toFixed(4) : 'default'}`;
 
         if (this.cache.has(cacheKey)) return of(this.cache.get(cacheKey)!);
 
@@ -53,16 +53,16 @@ export class GeocodingService {
                 this.mapTilerSearch(normalizedQuery, 8, { skipProximity: true })
             ]
             : [
-                this.openRouteAutocomplete(normalizedQuery, 8),
-                this.openRouteSearch(normalizedQuery, 8),
-                this.mapTilerSearch(normalizedQuery, 8)
+                this.openRouteAutocomplete(normalizedQuery, 8, origin),
+                this.openRouteSearch(normalizedQuery, 8, {origin}),
+                this.mapTilerSearch(normalizedQuery, 8, {origin})
             ];
 
         return forkJoin(requests).pipe(
             map((groups) => this.rankResults(
                 groups.flat(),
                 normalizedQuery,
-                isPostcodeIntent
+                isPostcodeIntent, /\bnear\s+me\b/i.test(rawQuery)?origin:undefined
             ).slice(0, 8)),
             map(results => {
                 this.cache.set(cacheKey, results);
@@ -75,7 +75,7 @@ export class GeocodingService {
         );
     }
 
-    geocodeAddress(query: string): Observable<AutocompleteResult[]> {
+    geocodeAddress(query: string, origin?: {lat:number;lng:number}): Observable<AutocompleteResult[]> {
         const rawQuery = String(query || '').trim();
         const isPostcodeIntent = this.isLikelyUkPostcode(rawQuery);
         const normalizedQuery = isPostcodeIntent ? this.normalizeUkPostcode(rawQuery) : this.normalizeQuery(query);
@@ -87,12 +87,12 @@ export class GeocodingService {
                 this.mapTilerSearch(normalizedQuery, 5, { skipProximity: true })
             ]
             : [
-                this.openRouteSearch(normalizedQuery, 5),
-                this.mapTilerSearch(normalizedQuery, 5)
+                this.openRouteSearch(normalizedQuery, 5, {origin}),
+                this.mapTilerSearch(normalizedQuery, 5, {origin})
             ];
 
         return forkJoin(requests).pipe(
-            map(groups => this.rankResults(groups.flat(), normalizedQuery, isPostcodeIntent).slice(0, 5)),
+            map(groups => this.rankResults(groups.flat(), normalizedQuery, isPostcodeIntent, /\bnear\s+me\b/i.test(rawQuery)?origin:undefined).slice(0, 5)),
             catchError(error => {
                 console.warn('[GeocodingService] Geocode failed:', error);
                 return of([]);
@@ -149,7 +149,7 @@ export class GeocodingService {
         return `${match[1].toUpperCase()} ${match[2].toUpperCase()}`;
     }
 
-    private openRouteAutocomplete(query: string, size: number): Observable<AutocompleteResult[]> {
+    private openRouteAutocomplete(query: string, size: number, origin?:{lat:number;lng:number}): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getOpenRouteServiceApiKey();
 
         if (!apiKey) return of([]);
@@ -161,7 +161,7 @@ export class GeocodingService {
             layers: 'address,venue,street,locality,neighbourhood'
         };
 
-        this.addOpenRouteBounds(params);
+        this.addOpenRouteBounds(params, false, origin);
 
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/autocomplete`, {
             params
@@ -174,7 +174,7 @@ export class GeocodingService {
         );
     }
 
-    private openRouteSearch(query: string, size: number, options: { skipFocusBias?: boolean; includePostcodeLayer?: boolean } = {}): Observable<AutocompleteResult[]> {
+    private openRouteSearch(query: string, size: number, options: { skipFocusBias?: boolean; includePostcodeLayer?: boolean; origin?:{lat:number;lng:number} } = {}): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getOpenRouteServiceApiKey();
         if (!apiKey) return of([]);
 
@@ -187,7 +187,7 @@ export class GeocodingService {
                 : 'address,venue,street,locality,neighbourhood'
         };
 
-        this.addOpenRouteBounds(params, options.skipFocusBias);
+        this.addOpenRouteBounds(params, options.skipFocusBias, options.origin);
 
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/search`, {
             params
@@ -200,7 +200,7 @@ export class GeocodingService {
         );
     }
 
-    private mapTilerSearch(query: string, limit: number, options: { skipProximity?: boolean } = {}): Observable<AutocompleteResult[]> {
+    private mapTilerSearch(query: string, limit: number, options: { skipProximity?: boolean; origin?:{lat:number;lng:number} } = {}): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getMapTilerApiKey();
 
         if (!apiKey) return of([]);
@@ -217,7 +217,7 @@ export class GeocodingService {
         };
 
         if (!options.skipProximity) {
-            params['proximity'] = `${country.defaultCenter.lng},${country.defaultCenter.lat}`;
+            params['proximity'] = `${options.origin?.lng ?? country.defaultCenter.lng},${options.origin?.lat ?? country.defaultCenter.lat}`;
         }
 
         return this.http.get<{ features: MapTilerFeature[] }>(`${this.mapTilerGeocodeUrl}/${encodedQuery}.json`, {
@@ -251,7 +251,7 @@ export class GeocodingService {
         );
     }
 
-    private addOpenRouteBounds(params: Record<string, string | number>, skipFocusBias = false): void {
+    private addOpenRouteBounds(params: Record<string, string | number>, skipFocusBias = false, origin?:{lat:number;lng:number}): void {
         const country = this.config.currentCountry();
 
         if (country.code) {
@@ -260,8 +260,8 @@ export class GeocodingService {
 
         if (skipFocusBias) return;
 
-        params['focus.point.lat'] = country.defaultCenter.lat;
-        params['focus.point.lon'] = country.defaultCenter.lng;
+        params['focus.point.lat'] = origin?.lat ?? country.defaultCenter.lat;
+        params['focus.point.lon'] = origin?.lng ?? country.defaultCenter.lng;
     }
 
     private normalizeQuery(query: string): string {
@@ -358,7 +358,7 @@ export class GeocodingService {
         };
     }
 
-    private rankResults(results: AutocompleteResult[], query: string, isPostcodeIntent = false): AutocompleteResult[] {
+    private rankResults(results: AutocompleteResult[], query: string, isPostcodeIntent = false, origin?:{lat:number;lng:number}): AutocompleteResult[] {
         const labelledResults = results.map(result => this.preserveTypedHouseNumber(result, query));
         const seen = new Set<string>();
         const deduped = labelledResults.filter(result => {
@@ -369,6 +369,7 @@ export class GeocodingService {
             return true;
         });
 
+        if(origin&&!isPostcodeIntent){const distance=(r:AutocompleteResult)=>(r.lat-origin.lat)**2+((r.lng-origin.lng)*Math.cos(origin.lat*Math.PI/180))**2;return deduped.sort((a,b)=>distance(a)-distance(b));}
         return deduped.sort((a, b) => this.scoreResult(b, query, isPostcodeIntent) - this.scoreResult(a, query, isPostcodeIntent));
     }
 
