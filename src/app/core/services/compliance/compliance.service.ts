@@ -261,8 +261,7 @@ export class ComplianceService {
 
         const payoutReady =
             profile?.stripe_connect_status === 'enabled' ||
-            profile?.stripe_connect_status === 'connected' ||
-            (profile as Partial<DriverProfile>)?.subscription_status === 'active';
+            profile?.stripe_connect_status === 'connected';
         this.requireText(missing, payoutReady, 'payout_setup', 'Payout setup', 'Complete Stripe Connect payout setup.', relaxedLegacy);
 
         const agreementsAccepted = this.hasDate(profile?.accepted_terms_at) &&

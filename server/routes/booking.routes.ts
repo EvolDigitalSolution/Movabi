@@ -187,7 +187,7 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
         if (!quoteReference || !quoteVersion || !quoteExpiresAt || Date.parse(quoteExpiresAt) <= Date.now()) return res.status(409).json({ error: 'A current versioned backend quote is required', code: 'QUOTE_EXPIRED' });
         const { data: existing } = await supabaseAdmin.from('jobs').select('*, service_type:service_types(*)').eq('quote_id', quoteReference).eq('customer_id', userId).maybeSingle();
         if (existing) return res.status(200).json(existing);
-        const { data: quoteAudit, error: quoteError } = await supabaseAdmin.from('quote_market_adjustments').select('quote_reference,country_code,market_city,zone_id,service_type,currency,returned_customer_fare,strategy_version').eq('quote_reference', quoteReference).maybeSingle();
+        const { data: quoteAudit, error: quoteError } = await supabaseAdmin.from('quote_market_adjustments').select('quote_reference,country_code,market_city,zone_id,service_type,currency,returned_customer_fare,strategy_version,protected_fare_snapshot').eq('quote_reference', quoteReference).maybeSingle();
         if (quoteError || !quoteAudit) return res.status(409).json({ error: 'Authoritative quote could not be verified', code: 'QUOTE_NOT_VERIFIED' });
         const requestedService = String(metadata.service_slug || metadata.service_type || '').trim().toLowerCase();
         const canonicalService = ['shop','shopping','errands'].includes(requestedService) ? 'errand' : ['deliver','courier','parcel'].includes(requestedService) ? 'delivery' : ['van','move','moving'].includes(requestedService) ? 'van-moving' : requestedService;
@@ -195,6 +195,18 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
         const quotedFare = Number(quoteAudit.returned_customer_fare);
         const submittedServiceFare = Number(breakdown.customerServiceTotal ?? payload.total_price ?? payload.price);
         if (!Number.isFinite(quotedFare) || !Number.isFinite(submittedServiceFare) || Math.abs(quotedFare - submittedServiceFare) > 0.01) return res.status(409).json({ error: 'Quoted fare changed; customer acceptance is required', code: 'QUOTE_INPUT_CHANGED' });
+        if(quoteAudit.protected_fare_snapshot){
+            // Preserve UI quote identifiers, but all financial terms and the subscription
+            // commission marker come from the server audit, never the submitted form.
+            payload.fare_breakdown={...breakdown,...quoteAudit.protected_fare_snapshot};
+            payload.driver_payout=quoteAudit.protected_fare_snapshot.driverEntitlement;
+            payload.platform_fee=quoteAudit.protected_fare_snapshot.platformFeeAmount;
+            payload.commission_rate_used=quoteAudit.protected_fare_snapshot.commissionPercent;
+            payload.pricing_plan_used='starter';
+        }else if(breakdown.driverCommissionPolicy){
+            const legacyBreakdown={...breakdown};delete legacyBreakdown.driverCommissionPolicy;
+            payload.fare_breakdown=legacyBreakdown;
+        }
         payload.quote_id = quoteReference;
         payload.price = quotedFare; payload.total_price = quotedFare; payload.estimated_price = quotedFare;
         payload.country_code = quoteAudit.country_code || payload.country_code;

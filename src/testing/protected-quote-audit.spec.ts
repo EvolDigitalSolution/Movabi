@@ -21,7 +21,7 @@ function harness(fail = false) {
 describe('protected quote audit',()=>{
  it('persists the final fare and protected split used by booking verification',async()=>{
  const h=harness();await h.pricing.resolvePrice({quoteReference:'q1',serviceSlug:'ride'});
- expect(h.updates).toEqual([{returned_customer_fare:3.79,customer_total:3.79,platform_fee_amount:0.5,driver_commission_amount:0.49,driver_payout:2.8,platform_revenue:0.99}]);
+ expect(h.updates).toEqual([{protected_fare_snapshot:expect.objectContaining({driverCommissionPolicy:expect.objectContaining({version:'subscription-commission-v1',frozen:false})}),returned_customer_fare:3.79,customer_total:3.79,platform_fee_amount:0.5,driver_commission_amount:0.49,driver_payout:2.8,platform_revenue:0.99}]);
  });
  it('rejects a quote when final audit persistence fails',async()=>{
  await expect(harness(true).pricing.resolvePrice({quoteReference:'q1'})).rejects.toThrow('Final protected quote could not be verified');

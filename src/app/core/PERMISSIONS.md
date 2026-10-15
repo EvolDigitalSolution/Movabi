@@ -21,9 +21,9 @@ This document outlines the security and permission boundaries for the Movabi app
 ### 2. Driver
 - **Permissions**:
     - Read/Update their own profile (including vehicle and documents).
-    - Toggle online/offline status (requires active subscription).
+    - Toggle online/offline status (requires driver eligibility; subscription is optional).
     - Read available jobs ('searching' status).
-    - Accept jobs (requires active subscription).
+    - Accept qualified jobs regardless of subscription status.
     - Update status of assigned jobs ('arrived', 'in_progress', 'completed').
     - Read their own earnings.
 - **Restrictions**:
@@ -44,14 +44,14 @@ This document outlines the security and permission boundaries for the Movabi app
 ## Enforcement Points
 
 ### Service Logic (Hardening)
-- **Subscription Checks**: `DriverService` must verify `subscription_status === 'active'` before allowing `toggleOnline` or `acceptJob`.
+- **Subscription Policy**: Subscription never grants or blocks going online, negotiating or accepting qualified work. Active subscriptions waive driver commission; non-subscribers use configured commission. Existing frozen booking terms remain unchanged. Subscription is not proof of Stripe Connect readiness.
 - **Status Transitions**: `BookingService` uses `BookingStatusManager` to ensure bookings follow a valid lifecycle (e.g., cannot go from 'requested' to 'completed' directly).
 - **Payload Validation**: `BookingService` validates that required details (e.g., `passenger_count`) are present for specific service types.
 
 ### Route Guards
 - `AuthGuard`: Ensures the user is authenticated.
 - `RoleGuard`: Restricts access to features based on user role (Customer vs. Driver vs. Admin).
-- `SubscriptionGuard`: Prevents drivers from accessing job-related screens without an active subscription.
+- `SubscriptionGuard`: Compatibility guard only; subscriptions do not restrict job screens. Authentication and role guards still apply.
 
 ## Data Security (RLS)
 - **Bookings**: `customer_id == auth.uid()` for customers; `driver_id == auth.uid() OR status == 'searching'` for drivers.

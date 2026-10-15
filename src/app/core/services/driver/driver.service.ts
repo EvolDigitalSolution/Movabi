@@ -81,9 +81,7 @@ export class DriverService {
                 throw new Error(this.compliance.formatMissingRequirements(complianceBlockers, 'Complete driver requirements before going online.'));
             }
 
-            if (profile.pricing_plan === 'pro' && profile.subscription_status !== 'active') {
-                throw new Error('Active subscription required for Pro Plan to go online');
-            }
+            // Subscription controls commission, not driver availability.
         }
 
         const { error } = await this.supabase
@@ -554,9 +552,7 @@ export class DriverService {
             throw new Error(this.formatAcceptanceBlockers(blockers));
         }
 
-        if (profile.subscription_status !== 'active') {
-            throw new Error('Active subscription required to accept requests');
-        }
+        // Subscription controls commission, not acquisition eligibility.
 
         const job = await this.bookingService.getBooking(bookingId);
         const compliance = this.compliance.canDriverAcceptService(

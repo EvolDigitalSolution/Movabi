@@ -1,3 +1,4 @@
+import { hasActiveCommissionSubscription } from '../services/subscription-policy.service';
 import { Router, Request, Response } from 'express';
 import {
   createStripeCheckoutSession,
@@ -144,8 +145,8 @@ export async function subscriptionWebhookHandler(req: Request, res: Response) {
             const { error: profileError } = await supabaseAdmin
               .from('profiles')
               .update({
-                subscription_status: 'active',
-                pricing_plan: 'pro',
+                subscription_status: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'active' : 'inactive',
+                pricing_plan: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'pro' : 'starter',
                 stripe_customer_id: stripeCustomerId
               })
               .eq('id', userId);
@@ -187,7 +188,9 @@ export async function subscriptionWebhookHandler(req: Request, res: Response) {
           console.error('Error updating subscription status:', error);
         }
 
-        if (event.type === 'customer.subscription.deleted') {
+        // Refresh benefit labels for expiry, payment failure and reactivation too.
+        // Jobs already assigned keep their frozen commission terms.
+        if (!error) {
           const { data: subData } = await supabaseAdmin
             .from('subscriptions')
             .select('user_id')
@@ -198,8 +201,8 @@ export async function subscriptionWebhookHandler(req: Request, res: Response) {
             await supabaseAdmin
               .from('profiles')
               .update({
-                subscription_status: 'inactive',
-                pricing_plan: 'starter'
+                subscription_status: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'active' : 'inactive',
+                pricing_plan: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'pro' : 'starter'
               })
               .eq('id', subData.user_id);
           }

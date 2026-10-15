@@ -235,7 +235,8 @@ export class LogisticsService {
       throw new Error('Driver Stripe Connect account is missing');
     }
 
-    const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
+    // Reporting must describe the frozen booking, not a later subscription change.
+    const plan = String(job.pricing_plan_used || 'starter').toLowerCase();
 
     // One authoritative fare split, frozen at quote/agreement time. Never
     // recompute from live config; a missing/ambiguous snapshot fails closed for

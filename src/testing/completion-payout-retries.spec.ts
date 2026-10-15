@@ -78,15 +78,17 @@ function pricingFixture(issuing='false', cap=0) {
  }};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync('server/services/pricing.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
  const pricing=context.exports.PricingService;
- pricing.resolveUnprotectedPrice=async()=>({totalPrice:7.07,platformFee:.14,commissionFee:.69,driverPayout:6.24,currencyCode:'GBP',pricingPlanUsed:'starter',fareBreakdown:{serviceFareBeforePlatformFee:6.93,platformFeePercent:2,platformFeeFixed:0,platformFeeMaximum:cap}});
+ pricing.resolveUnprotectedPrice=async()=>({totalPrice:7.07,platformFee:.14,commissionFee:.69,commissionRateUsed:10,driverPayout:6.24,currencyCode:'GBP',pricingPlanUsed:'starter',fareBreakdown:{serviceFareBeforePlatformFee:6.93,platformFeePercent:2,platformFeeFixed:0,platformFeeMaximum:cap}});
  return pricing;
 }
 describe('canonical protected quote snapshot',()=>{
  it('keeps quote, capture and settlement numbers aligned',async()=>{
   const result=await pricingFixture().resolvePrice({serviceSlug:'ride'});
-  expect(result.totalPrice).toBe(7.28);expect(result.driverPayout).toBe(6.24);
+  expect(result.totalPrice).toBe(7.99);expect(result.driverPayout).toBe(6.24);
   expect(result.fareBreakdown.driverEntitlement).toBe(6.24);expect(result.fareBreakdown.driverCommissionAmount).toBe(.69);
-  expect(result.fareBreakdown.customerCharge).toBe(7.28);expect(result.fareBreakdown.reconciliationValid).toBe(true);
+  expect(result.fareBreakdown.customerCharge).toBe(7.99);expect(result.fareBreakdown.reconciliationValid).toBe(true);
+  const potentialSubscribedPayout=result.driverPayout+result.commissionFee;
+  expect(PaymentMarginService.evaluate(result.totalPrice,potentialSubscribedPayout,0,result.fareBreakdown.paymentMargin.policy).passes).toBe(true);
  });
  it('does not quote purchase funding when virtual-card funding is disabled',async()=>{
   await expect(pricingFixture().resolvePrice({serviceSlug:'errand',budget:10})).rejects.toThrow('temporarily unavailable');

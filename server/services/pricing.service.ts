@@ -132,7 +132,8 @@ export interface FareBreakdown {
 
 export class PricingService {
     static async resolvePrice(options: PricingOptions): Promise<PricingResult> {
-        const result = await this.resolveUnprotectedPrice(options);
+        // No driver is assigned at customer quote time. Do not trust a client plan.
+        const result = await this.resolveUnprotectedPrice({...options,pricingPlan:'starter'});
         const policy = PaymentMarginService.policy(result.currencyCode);
         const budget = MarketplaceConfigService.canonicalServiceSlug(options.serviceSlug || 'ride') === 'errand'
             ? this.roundMoney(Number(options.budget ?? result.fareBreakdown.shoppingBudget ?? 0)) : 0;
@@ -140,13 +141,14 @@ export class PricingService {
             throw new Error('Shopping funding is temporarily unavailable. Choose a task without a purchase budget or try later.');
         }
         if (budget > 0) await IssuingCapacityService.assertAvailable(budget, result.currencyCode);
-        const protectedPrice = PaymentMarginService.protect(result.totalPrice, result.driverPayout, budget, policy);
+        const protectedPrice = PaymentMarginService.protect(result.totalPrice, this.roundMoney(result.driverPayout + result.commissionFee), budget, policy);
         const fee = this.roundMoney(result.platformFee + protectedPrice.adjustment);
         const cap = Number(result.fareBreakdown.platformFeeMaximum || 0);
         if (cap > 0 && fee > cap) throw new Error('A protected quote exceeds the configured platform fee cap');
         result.totalPrice = protectedPrice.customerCharge;
         result.platformFee = fee;
         Object.assign(result.fareBreakdown, {
+            driverCommissionPolicy: {version:'subscription-commission-v1',frozen:false,standardCommissionAmount:result.commissionFee,standardCommissionPercent:result.commissionRateUsed},
             policyVersion: FareSplitService.POLICY_VERSION,
             baseServiceFare: this.roundMoney(result.totalPrice - fee), driverBase: this.roundMoney(result.totalPrice - fee),
             driverCommissionAmount: result.commissionFee, commissionFee: result.commissionFee,
@@ -165,6 +167,7 @@ export class PricingService {
             const { data: audit, error: auditError } = await supabaseAdmin
                 .from('quote_market_adjustments')
                 .update({
+                    protected_fare_snapshot: result.fareBreakdown,
                     returned_customer_fare: result.totalPrice,
                     customer_total: result.totalPrice,
                     platform_fee_amount: result.platformFee,
@@ -1056,7 +1059,7 @@ export class PricingService {
         const commissionFee = round(serviceFareBeforePlatformFee * (commissionRateUsed / 100));
         const driverPayout = round(Math.max(0, serviceFareBeforePlatformFee - commissionFee));
         if (fareBreakdown.paymentMargin?.policy) {
-            const margin = PaymentMarginService.evaluate(safeAgreed, driverPayout, Number(fareBreakdown.shoppingBudget || 0), fareBreakdown.paymentMargin.policy);
+            const margin = PaymentMarginService.evaluate(safeAgreed, fareBreakdown.driverCommissionPolicy?.version==='subscription-commission-v1'?serviceFareBeforePlatformFee:driverPayout, Number(fareBreakdown.shoppingBudget || 0), fareBreakdown.paymentMargin.policy);
             if (!margin.passes) throw new Error('Agreed fare is below the protected booking minimum');
         }
         const taxAmount = round(Number(job?.tax_amount || 0) * ratio);
@@ -1095,6 +1098,12 @@ export class PricingService {
         scaledBreakdown['baseServiceFare'] = serviceFareBeforePlatformFee;
         scaledBreakdown['customerCharge'] = safeAgreed;
         scaledBreakdown['driverBase'] = serviceFareBeforePlatformFee;
+        if(fareBreakdown.driverCommissionPolicy?.version==='subscription-commission-v1'){
+            const previousBase=Number(fareBreakdown.driverBase);
+            if(!Number.isFinite(previousBase)||previousBase<=0)throw new Error('Frozen commission basis requires reconciliation');
+            scaledBreakdown['driverCommissionPolicy']={...fareBreakdown.driverCommissionPolicy,
+                standardCommissionAmount:round(Number(fareBreakdown.driverCommissionPolicy.standardCommissionAmount)*serviceFareBeforePlatformFee/previousBase)};
+        }
         scaledBreakdown['driverCommissionAmount'] = commissionFee;
         scaledBreakdown['driverEntitlement'] = driverPayout;
         scaledBreakdown['grossRevenue'] = round(platformFee + commissionFee);
