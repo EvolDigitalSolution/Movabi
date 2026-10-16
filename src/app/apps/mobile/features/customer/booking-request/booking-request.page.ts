@@ -1,3 +1,4 @@
+import {automaticPlaceSearch} from '../../../../../shared/utils/place-search-fallback';
 import { PlaceSearchScope, PlaceSearchPlan, validSearchPoint } from '../../../../../shared/utils/local-place-search';
 import {
     Component,
@@ -58,7 +59,7 @@ import {
     calendarOutline
 } from 'ionicons/icons';
 import { Router, ActivatedRoute } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged, firstValueFrom, timer } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged, firstValueFrom, timer, Subscription } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
@@ -304,7 +305,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <div class="address-results__toolbar">
                           <div class="address-results__heading"><span>{{pickupSearchText().trim().length<3?'Recent places':searchArea('pickup').localPlace && pickupSearchScope()!=='country'?'Find a nearby place':'Address & place results'}}</span><button type="button" class="address-results__close" aria-label="Close pickup search results" (mousedown)="$event.preventDefault()" (click)="showPickupResults.set(false)">×</button></div>
                           @if(searchArea('pickup').localPlace && pickupSearchText().trim().length>=3){
-                            <p class="address-results__area">{{searchArea('pickup').needsLocation?'Choose a location for nearby results.':pickupSearchScope()==='country'?'Searching across '+config.currentCountry().name:'Within '+pickupSearchScope()+' km · nearest matches first'}}</p>
+                            <p class="address-results__area">{{locatingSearchArea()?'Finding your location…':searchArea('pickup').needsLocation?'Enable location access or enter a full address.':pickupSearchScope()==='country'?'Searching across '+config.currentCountry().name:'Within '+pickupSearchScope()+' km · nearest matches first'}}</p>
                             <div class="address-results__scopes" aria-label="Pickup search area">
                               <button type="button" [attr.aria-pressed]="pickupSearchScope()===10" (mousedown)="$event.preventDefault()" (click)="setSearchScope('pickup',10)">10 km</button>
                               <button type="button" [attr.aria-pressed]="pickupSearchScope()===25" (mousedown)="$event.preventDefault()" (click)="setSearchScope('pickup',25)">25 km</button>
@@ -341,7 +342,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <p class="address-results__hint">Choose a place to confirm your pickup.</p>
                         </div>
                       } @else if(showPickupResults() && pickupSearchText().trim().length>=3) {
-                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!pickupSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p>@if(searchArea('pickup').radiusKm && !searchArea('pickup').needsLocation){<button type="button" (mousedown)="$event.preventDefault()" (click)="searchAdditionalListings('pickup')">Search additional listings</button>}</div>}</div>
+                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!pickupSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
                       }
                     </app-input>
                   </div>
@@ -380,7 +381,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <div class="address-results__toolbar">
                           <div class="address-results__heading"><span>{{dropoffSearchText().trim().length<3?'Recent places':searchArea('dropoff').localPlace && dropoffSearchScope()!=='country'?'Find a nearby place':'Address & place results'}}</span><button type="button" class="address-results__close" aria-label="Close dropoff search results" (mousedown)="$event.preventDefault()" (click)="showDropoffResults.set(false)">×</button></div>
                           @if(searchArea('dropoff').localPlace && dropoffSearchText().trim().length>=3){
-                            <p class="address-results__area">{{searchArea('dropoff').needsLocation?'Choose a location for nearby results.':dropoffSearchScope()==='country'?'Searching across '+config.currentCountry().name:'Within '+dropoffSearchScope()+' km · nearest matches first'}}</p>
+                            <p class="address-results__area">{{locatingSearchArea()?'Finding your location…':searchArea('dropoff').needsLocation?'Enable location access or enter a full address.':dropoffSearchScope()==='country'?'Searching across '+config.currentCountry().name:'Within '+dropoffSearchScope()+' km · nearest matches first'}}</p>
                             <div class="address-results__scopes" aria-label="Dropoff search area">
                               <button type="button" [attr.aria-pressed]="dropoffSearchScope()===10" (mousedown)="$event.preventDefault()" (click)="setSearchScope('dropoff',10)">10 km</button>
                               <button type="button" [attr.aria-pressed]="dropoffSearchScope()===25" (mousedown)="$event.preventDefault()" (click)="setSearchScope('dropoff',25)">25 km</button>
@@ -417,7 +418,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <p class="address-results__hint">Choose a place to confirm your destination.</p>
                         </div>
                       } @else if(showDropoffResults() && dropoffSearchText().trim().length>=3) {
-                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!dropoffSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p>@if(searchArea('dropoff').radiusKm && !searchArea('dropoff').needsLocation){<button type="button" (mousedown)="$event.preventDefault()" (click)="searchAdditionalListings('dropoff')">Search additional listings</button>}</div>}</div>
+                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!dropoffSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
                       }
                     </app-input>
                   </div>
@@ -1782,6 +1783,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     ngOnDestroy() {
+        this.searchDisposed=true;
+        this.addressSearchSubscriptions?.pickup?.unsubscribe();
+        this.addressSearchSubscriptions?.dropoff?.unsubscribe();
         this.cardReady.set(false);
         this.cardComplete.set(false);
         this.paymentProcessing.set(false);
@@ -1829,12 +1833,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.bookingForm.patchValue({ errand_mode: mode });
     }
 
+    private searchLocationPending:Promise<void>|null=null;
+    private searchLocationRetryAt=0;
+    private searchDisposed=false;
+    private addressSearchSubscriptions:Partial<Record<'pickup'|'dropoff',Subscription>>={};
+    private async refreshSearchLocation():Promise<void>{
+        if(this.searchLocationPending)return this.searchLocationPending;
+        this.locatingSearchArea.set(true);
+        this.searchLocationPending=Promise.resolve().then(async()=>{
+            try{
+                const position=await this.locationService.getCurrentPosition();
+                if(this.searchDisposed)return;
+                const point=position?validSearchPoint({lat:position.coords.latitude,lng:position.coords.longitude}):undefined;
+                if(point){this.localSearchGps=point;this.localSearchGpsAt=Date.now();this.searchLocationRetryAt=0;}
+                else this.searchLocationRetryAt=Date.now()+60_000;
+            }catch{this.searchLocationRetryAt=Date.now()+60_000;}
+            finally{this.locatingSearchArea.set(false);this.searchLocationPending=null;}
+        });
+        return this.searchLocationPending;
+    }
+
     private localSearchGps:{lat:number;lng:number}|null=null;
     private localSearchGpsAt=0;
     private searchOrigin(type:'pickup'|'dropoff'):{lat:number;lng:number}|undefined {
         const age=Date.now()-this.localSearchGpsAt;
         const gps=age>=0&&age<=120000?this.localSearchGps:null;
-        if(type==='pickup' && gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180)return gps;
+        if(gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180)return gps;
         const location=type==='pickup'?this.dropoffLocation:this.pickupLocation;
         if(typeof location.latitude==='number'&&typeof location.longitude==='number'&&Number.isFinite(location.latitude)&&Number.isFinite(location.longitude)&&Math.abs(location.latitude)<=90&&Math.abs(location.longitude)<=180)return {lat:location.latitude,lng:location.longitude};
         return gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180?gps:undefined;
@@ -2547,6 +2571,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
+        this.addressSearchSubscriptions?.[type]?.unsubscribe();
         this.addressSearchVersion[type]++;
         (type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope).set(10);
         (type==='pickup'?this.pickupSearchError:this.dropoffSearchError).set('');
@@ -2572,7 +2597,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.clearRouteAndFare();
     }
 
-    private performSearch(type: 'pickup' | 'dropoff', query: string, additionalListings=false) {
+    private performSearch(type: 'pickup' | 'dropoff', query: string, additionalListings=false, locationChecked=false) {
+        this.addressSearchSubscriptions?.[type]?.unsubscribe();
         const version=this.addressSearchVersion[type];
         const loading=type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading;
         if (!query || query.length < 3) {
@@ -2590,7 +2616,21 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const origin=this.searchOrigin(type),scope=(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)();
         const searchError=type==='pickup'?this.pickupSearchError:this.dropoffSearchError;
         searchError.set('');
-        this.geocoding.autocomplete(this.withLocationContext(type,query),origin,{scope,strict:true,...(additionalListings?{additionalListings:true}:{})}).subscribe({next:results=>{
+        const text=this.withLocationContext(type,query);
+        const plan=this.geocoding.searchPlan(text,origin,{scope});
+        const gpsAge=Date.now()-this.localSearchGpsAt;
+        const freshGps=validSearchPoint(this.localSearchGps) && gpsAge>=0 && gpsAge<=120000;
+        if(plan.localPlace && plan.radiusKm && !freshGps && !locationChecked && Date.now()>=(this.searchLocationRetryAt || 0)){
+            loading.set(true);
+            void this.refreshSearchLocation().then(()=>{
+                if(!this.searchDisposed && version===this.addressSearchVersion[type])this.performSearch(type,query,additionalListings,true);
+            });
+            return;
+        }
+        const primary=this.geocoding.autocomplete(text,origin,{scope,strict:true,...(additionalListings?{additionalListings:true}:{})});
+        const request=automaticPlaceSearch(primary,()=>this.geocoding.autocomplete(text,origin,{scope,strict:true,additionalListings:true}),!additionalListings && !!plan.localPlace && !!plan.radiusKm && !!origin);
+        this.addressSearchSubscriptions ??={};
+        this.addressSearchSubscriptions[type]=request.subscribe({next:results=>{
             const current=type==='pickup'?this.pickupLocation.address:this.dropoffLocation.address;
             if(current!==query||version!==this.addressSearchVersion[type])return;
             loading.set(false);
@@ -2668,6 +2708,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private finishAddressSearch(type:'pickup'|'dropoff'):void {
+        this.addressSearchSubscriptions?.[type]?.unsubscribe();
         this.addressSearchVersion[type]++;
         (type==='pickup'?this.pickupSearchText:this.dropoffSearchText).set('');
         (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(false);
