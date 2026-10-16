@@ -990,7 +990,7 @@ type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
       </div>
     </nav>
   `,
-    styles: [`.trip-history-link,.wallet-history-link{display:grid;width:100%;min-width:0;text-align:left;gap:.5rem;padding:1rem;border:1px solid #e2e8f0;border-radius:1rem;background:#f8fafc;margin-top:.7rem;overflow-wrap:anywhere;line-height:1.4}.wallet-history-link{grid-template-columns:minmax(0,1fr);}.wallet-history-link p{white-space:normal}.wallet-balances{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:.6rem;margin-top:1rem}.trip-history-link:focus-visible,.wallet-history-link:focus-visible{outline:3px solid #2563eb;outline-offset:2px}`]
+    styles: [`.trip-history-link,.wallet-history-link{display:grid;width:100%;min-width:0;text-align:left;gap:.5rem;padding:1rem;border:1px solid #e2e8f0;border-radius:1rem;background:#f8fafc;margin-top:.7rem;overflow-wrap:anywhere;line-height:1.4}.wallet-history-link{grid-template-columns:minmax(0,1fr);}.wallet-history-link p{white-space:normal}.wallet-balances{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.4rem;margin-top:1rem}.wallet-balances>div{min-width:0;padding:.65rem .4rem;text-align:center}.wallet-balances>div>p:first-child{font-size:10px;line-height:1.3;letter-spacing:0;font-weight:700}.wallet-balances>div>p+p{font-size:13px;line-height:1.4;letter-spacing:0;font-weight:800;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.trip-history-link:focus-visible,.wallet-history-link:focus-visible{outline:3px solid #2563eb;outline-offset:2px}`]
 })
 
 
@@ -1052,9 +1052,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     activeHubTab = signal<DriverHubTab>('requests');
     readonly hubTabs: Array<{ key: DriverHubTab; label: string; icon: string }> = [
         { key: 'requests', label: 'Requests', icon: 'location-outline' },
-        { key: 'inbox', label: 'Inbox', icon: 'mail-outline' },
         { key: 'trips', label: 'Trips', icon: 'list-outline' },
         { key: 'wallet', label: 'Wallet', icon: 'wallet-outline' },
+        { key: 'inbox', label: 'Inbox', icon: 'mail-outline' },
         { key: 'profile', label: 'Profile', icon: 'settings-outline' }
     ];
     private readonly dismissedJobsStorageKey = 'movabi_driver_dismissed_jobs';
@@ -3268,34 +3268,26 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         return 'Setup required';
     }
 
+    private stripeDashboardOpening=false;
     async openStripeDashboard() {
-        let dashboardTab: Window | null = null;
-        try { dashboardTab = this.connectService.prepareDashboardTab(); }
-        catch { await this.showToast('Allow popups to open the Stripe dashboard.', 'warning'); return; }
-        // The server resolves and verifies the signed-in driver's account.
-        // Avoid an extra profile refresh delaying the dashboard request.
-        const accountId = this.stripeUiState().accountId;
-
-        if (!accountId) {
-            dashboardTab?.close();
-            this.showToast('Stripe account not found. Start setup first.', 'warning');
-            return;
-        }
-
-        const loading = await this.loadingCtrl.create({
-            message: 'Opening Stripe dashboard...'
-        });
-
-        await loading.present();
-
+        if(this.stripeDashboardOpening)return;
+        const accountId=this.stripeUiState().accountId;
+        if(!accountId){await this.showToast('Stripe account not found. Start setup first.','warning');return;}
+        this.stripeDashboardOpening=true;
+        let dashboardTab:Window|null=null;
+        let loading:HTMLIonLoadingElement|undefined;
         try {
-            const link = await this.connectService.getDashboardLink(accountId);
-            await this.connectService.openDashboard(link.url, dashboardTab);
-        } catch {
+            dashboardTab=this.connectService.prepareDashboardTab();
+            loading=await this.loadingCtrl.create({message:'Opening Stripe dashboard...'});
+            await loading.present();
+            const link=await this.connectService.getDashboardLink(accountId);
+            await this.connectService.openDashboard(link.url,dashboardTab);
+        }catch(error:any){
             dashboardTab?.close();
-            this.showToast('Failed to open Stripe dashboard', 'danger');
-        } finally {
-            await loading.dismiss();
+            await this.showToast(error?.message || 'Failed to open Stripe dashboard','danger');
+        }finally{
+            this.stripeDashboardOpening=false;
+            await loading?.dismiss();
         }
     }
 

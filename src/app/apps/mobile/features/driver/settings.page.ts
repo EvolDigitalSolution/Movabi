@@ -851,34 +851,22 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async openStripeDashboard() {
-        let dashboardTab: Window | null = null;
-        try { dashboardTab = this.connectService.prepareDashboardTab(); }
-        catch { await this.showToast('Allow popups to open the Stripe dashboard.', 'warning'); return; }
-        const accountId = this.driverService.stripeAccount()?.stripe_account_id;
-
-        if (!accountId) {
-            dashboardTab?.close();
-            await this.showToast('Stripe account not found.', 'warning');
-            return;
-        }
-
-        if (this.loadingStripe()) { dashboardTab?.close(); return; }
-
+        if(this.loadingStripe())return;
+        const accountId=this.driverService.stripeAccount()?.stripe_account_id;
+        if(!accountId){await this.showToast('Stripe account not found.','warning');return;}
         this.loadingStripe.set(true);
-
-        const loading = await this.loadingCtrl.create({ message: 'Opening Stripe dashboard...' });
-        await loading.present();
-
-        try {
-            const link = await this.connectService.getDashboardLink(accountId);
-            await this.connectService.openDashboard(link.url, dashboardTab);
-        } catch {
+        let dashboardTab:Window|null=null;
+        let loading:HTMLIonLoadingElement|undefined;
+        try{
+            dashboardTab=this.connectService.prepareDashboardTab();
+            loading=await this.loadingCtrl.create({message:'Opening Stripe dashboard...'});
+            await loading.present();
+            const link=await this.connectService.getDashboardLink(accountId);
+            await this.connectService.openDashboard(link.url,dashboardTab);
+        }catch(error:any){
             dashboardTab?.close();
-            await this.showToast('Failed to open Stripe dashboard.', 'danger');
-        } finally {
-            this.loadingStripe.set(false);
-            await loading.dismiss();
-        }
+            await this.showToast(error?.message || 'Failed to open Stripe dashboard.','danger');
+        }finally{this.loadingStripe.set(false);await loading?.dismiss();}
     }
 
     async refreshStripe() {

@@ -1,4 +1,4 @@
-import { environment } from '../../../../../../environments/environment';
+import { ConnectService } from '../../../../../core/services/stripe/connect.service';
 import { Component, inject, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
@@ -281,6 +281,7 @@ export class EarningsPage implements OnInit {
     openBooking(id:string){void this.nav.navigateForward('/driver/history/'+encodeURIComponent(id));}
 
     private driverService = inject(DriverService);
+    private connectService = inject(ConnectService);
     private config = inject(AppConfigService);
     public nav = inject(NavController);
 
@@ -382,72 +383,18 @@ export class EarningsPage implements OnInit {
     }
 
     async withdrawFunds() {
-        if (this.withdrawLoading()) return;
-
-        this.withdrawError.set(null);
-        this.withdrawLoading.set(true);
-
-        try {
-            const apiBase = this.getApiBaseUrl();
-            const token = this.getStoredAccessToken();
-
-            const endpoints = [
-                `${apiBase}/api/stripe/connect/dashboard-link`,
-                `${apiBase}/api/stripe/connect/login-link`,
-                `${apiBase}/api/connect/dashboard-link`,
-                `${apiBase}/api/connect/login-link`
-            ];
-
-            let lastError = '';
-
-            for (const endpoint of endpoints) {
-                try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {})
-                        }
-                    });
-
-                    const text = await response.text();
-                    let body: any = {};
-
-                    try {
-                        body = text ? JSON.parse(text) : {};
-                    } catch {
-                        body = { raw: text };
-                    }
-
-                    if (!response.ok) {
-                        lastError = body?.error || body?.message || `${response.status} ${response.statusText}`;
-                        continue;
-                    }
-
-                    const url =
-                        body?.url ||
-                        body?.login_url ||
-                        body?.dashboard_url ||
-                        body?.account_link?.url;
-
-                    if (url) {
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                        return;
-                    }
-
-                    lastError = 'Dashboard link response did not include a URL.';
-                } catch (error: any) {
-                    lastError = error?.message || 'Unable to open Stripe dashboard.';
-                }
-            }
-
-            this.withdrawError.set(
-                lastError ||
-                'Unable to open Stripe Express. Please make sure the driver Stripe Connect dashboard endpoint exists.'
-            );
-        } finally {
-            this.withdrawLoading.set(false);
-        }
+        if(this.withdrawLoading())return;
+        this.withdrawError.set(null);this.withdrawLoading.set(true);
+        let dashboardTab:Window|null=null;
+        try{
+            dashboardTab=this.connectService.prepareDashboardTab();
+            // An empty account argument lets the authenticated server resolve this driver.
+            const link=await this.connectService.getDashboardLink('');
+            await this.connectService.openDashboard(link.url,dashboardTab);
+        }catch(error:any){
+            dashboardTab?.close();
+            this.withdrawError.set(error?.message || 'Unable to open Stripe Express. Please retry.');
+        }finally{this.withdrawLoading.set(false);}
     }
 
     toggleEarning(earning: any) {
@@ -546,40 +493,6 @@ export class EarningsPage implements OnInit {
         if (explicitGross > 0) return explicitGross;
 
         return this.toNumber(earning?.amount) + this.getCommissionAmount(earning);
-    }
-
-    private getApiBaseUrl(): string {
-        return environment.apiUrl.replace(/\/+$/, '');
-    }
-
-    private getStoredAccessToken(): string | null {
-        try {
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (!key) continue;
-
-                const value = localStorage.getItem(key);
-                if (!value) continue;
-
-                if (key.includes('auth-token') || key.includes('supabase')) {
-                    try {
-                        const parsed = JSON.parse(value);
-                        const token =
-                            parsed?.access_token ||
-                            parsed?.currentSession?.access_token ||
-                            parsed?.session?.access_token;
-
-                        if (token) return token;
-                    } catch {
-                        // ignore non-json localStorage values
-                    }
-                }
-            }
-        } catch {
-            return null;
-        }
-
-        return null;
     }
 
     private titleCase(value: string): string {

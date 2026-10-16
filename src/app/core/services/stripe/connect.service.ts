@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { defer, firstValueFrom, Subject, switchMap, timeout } from 'rxjs';
 import { App } from '@capacitor/app';
-import { AppLauncher } from '@capacitor/app-launcher';
+import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { ApiUrlService } from '../api-url.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -48,6 +48,7 @@ export class ConnectService {
 
     constructor() {
         if (Capacitor.isNativePlatform()) {
+            void Browser.addListener('browserFinished',()=>this.returnedToApp.next()).catch(error=>console.warn('[Connect] Browser return listener failed',error));
             void App.addListener('appStateChange', ({ isActive }) => {
                 if (isActive) this.returnedToApp.next();
             }).catch(error => console.warn('[Connect] Resume listener failed', error));
@@ -57,20 +58,31 @@ export class ConnectService {
     }
 
     prepareDashboardTab(): Window | null {
-        // Open only after the authenticated login link is ready.
-        // A pre-opened blank tab can strand the driver on failed requests.
-        return null;
+        if(Capacitor.isNativePlatform())return null;
+        const tab=window.open('about:blank','_blank');
+        if(!tab)throw new Error('Allow popups, then tap Stripe Payouts again.');
+        try {
+            tab.opener=null;
+            tab.document.title='Opening Stripe';
+            tab.document.body.textContent='Opening your Stripe payout dashboard…';
+            return tab;
+        }catch(error){tab.close();throw error;}
     }
 
     async openDashboard(url: string, tab: Window | null): Promise<void> {
-        if (new URL(url).protocol !== 'https:') throw new Error('Invalid Stripe dashboard URL');
-        if (Capacitor.isNativePlatform()) {
-            const result = await AppLauncher.openUrl({ url });
-            if (!result.completed) throw new Error('Could not open the external browser');
-        } else {
-            if (tab && !tab.closed) tab.location.href = url;
-            else window.location.assign(url);
-        }
+        try {
+            const parsed=new URL(url);
+            if(parsed.protocol!=='https:' || parsed.username || parsed.password || !(parsed.hostname==='stripe.com'||parsed.hostname.endsWith('.stripe.com'))){
+                throw new Error('Invalid Stripe dashboard URL');
+            }
+            if(Capacitor.isNativePlatform()){
+                await Browser.open({url,windowName:'_blank'});
+            }else{
+                if(!tab || tab.closed)throw new Error('The Stripe tab was closed or blocked. Tap Stripe Payouts again.');
+                tab.location.href=url;
+                tab.focus();
+            }
+        }catch(error){tab?.close();throw error;}
     }
 
     async openOnboarding(url: string): Promise<void> {

@@ -466,6 +466,7 @@ export class ActivityPage implements OnInit {
             refunded: 'Refunded',
             settled: 'Settled',
             failed: 'Failed',
+            expired: 'Expired',
             no_driver_found: 'No driver found',
             requires_review: 'Under review',
             // still in flight (history can briefly contain these)
