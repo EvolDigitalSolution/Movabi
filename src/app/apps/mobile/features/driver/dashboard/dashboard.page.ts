@@ -1,3 +1,5 @@
+import { DriverInboxComponent } from '../inbox/driver-inbox.component';
+import { DriverInboxService } from '../../../../../core/services/driver/driver-inbox.service';
 import { DriverRequestFeedService } from '@core/services/driver/driver-request-feed.service';
 import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
 import { DestroyRef, Component, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
@@ -32,6 +34,7 @@ import {
     searchOutline,
     star,
     statsChart,
+    mailOutline,
     card,
     timeOutline,
     alertCircleOutline,
@@ -68,7 +71,6 @@ import {
     CardComponent,
     BadgeComponent,
     PerformanceBadgeComponent,
-    MovabiCarouselComponent,
     MovabiCarouselSlide
 } from '../../../../../shared/ui';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
@@ -114,13 +116,14 @@ type DismissedJob = {
     dismissedAt: number;
 };
 
-type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
+type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
 
 @Component({
     selector: 'app-driver-dashboard',
     standalone: true,
     imports: [
         CommonModule,
+        DriverInboxComponent,
         FormsModule,
         IonHeader,
         IonToolbar,
@@ -131,8 +134,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
         CardComponent,
         BadgeComponent,
         PerformanceBadgeComponent,
-        MovabiCarouselComponent,
-        MapComponent
+            MapComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -762,66 +764,8 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
         </div>
       } @else {
         <div class="px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+6.75rem)] space-y-4">
-          @if (activeHubTab() === 'earnings') {
-            <app-movabi-carousel [slides]="driverCarouselSlides()"></app-movabi-carousel>
-
-            <div class="grid grid-cols-1 min-[560px]:grid-cols-2 gap-3">
-              <app-card class="p-3 rounded-2xl">
-                <div class="space-y-2.5">
-                  <div class="flex items-start justify-between gap-3">
-                    <p class="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap leading-none">Acceptance</p>
-                    <div class="shrink-0 scale-90 origin-top-right">
-                      <app-performance-badge [type]="hasAcceptanceRate() ? 'reliable' : 'fast-responder'"></app-performance-badge>
-                    </div>
-                  </div>
-                  <div>
-                    <h2 class="text-[1.35rem] leading-none font-display font-black text-slate-950">
-                      {{ acceptanceMetric().display }}
-                    </h2>
-                    <p class="mt-2 text-[11px] leading-snug font-bold text-slate-500 break-normal">
-                      {{ acceptanceMetric().label }}
-                    </p>
-                  </div>
-                </div>
-              </app-card>
-
-              <app-card class="p-3 rounded-2xl">
-                <div class="space-y-2.5">
-                  <div class="flex items-start justify-between gap-3">
-                    <p class="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap leading-none">Rating</p>
-                    <div class="w-8 h-8 shrink-0 rounded-xl bg-amber-50 border border-amber-100 text-amber-500 flex items-center justify-center">
-                      <ion-icon name="star-outline" class="text-lg"></ion-icon>
-                    </div>
-                  </div>
-                  <div>
-                    <h2 class="text-[1.35rem] leading-none font-display font-black text-slate-950">
-                      {{ ratingMetric().isNew ? 'New' : ratingMetric().display }}
-                    </h2>
-                    @if (!ratingMetric().isNew && ratingMetric().value) {
-                      <div class="mt-2 flex items-center gap-1 overflow-hidden" aria-label="Driver rating stars">
-                        @for (starValue of [1, 2, 3, 4, 5]; track starValue) {
-                          <ion-icon
-                            [name]="starValue <= ratingMetric().value! ? 'star' : 'star-outline'"
-                            class="text-[14px] shrink-0"
-                            [class.text-amber-400]="starValue <= ratingMetric().value!"
-                            [class.text-slate-300]="starValue > ratingMetric().value!"
-                          ></ion-icon>
-                        }
-                      </div>
-                    }
-                    <p class="mt-2 text-[11px] leading-snug font-bold text-slate-500 break-normal">
-                      {{ ratingMetric().label }}
-                    </p>
-                  </div>
-                </div>
-              </app-card>
-            </div>
-
-            <app-card class="p-4">
-              <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Future analytics</p>
-              <h2 class="mt-2 text-xl font-display font-black text-slate-950">Performance insights</h2>
-              <p class="mt-1 text-sm font-semibold text-slate-600">Acceptance, service quality, and growth features will appear here without duplicating wallet payouts.</p>
-            </app-card>
+          @if (activeHubTab() === 'inbox') {
+            <app-driver-inbox (requests)="setHubTab('requests')"></app-driver-inbox>
           } @else if (activeHubTab() === 'trips') {
             <app-card class="p-4">
               <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Trips</p>
@@ -903,6 +847,58 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
             </div>
           } @else if (activeHubTab() === 'profile') {
             <div class="space-y-4">
+              <h2 class="text-lg font-black">Performance</h2>
+            <div class="grid grid-cols-1 min-[560px]:grid-cols-2 gap-3">
+              <app-card class="p-3 rounded-2xl">
+                <div class="space-y-2.5">
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap leading-none">Acceptance</p>
+                    <div class="shrink-0 scale-90 origin-top-right">
+                      <app-performance-badge [type]="hasAcceptanceRate() ? 'reliable' : 'fast-responder'"></app-performance-badge>
+                    </div>
+                  </div>
+                  <div>
+                    <h2 class="text-[1.35rem] leading-none font-display font-black text-slate-950">
+                      {{ acceptanceMetric().display }}
+                    </h2>
+                    <p class="mt-2 text-[11px] leading-snug font-bold text-slate-500 break-normal">
+                      {{ acceptanceMetric().label }}
+                    </p>
+                  </div>
+                </div>
+              </app-card>
+
+              <app-card class="p-3 rounded-2xl">
+                <div class="space-y-2.5">
+                  <div class="flex items-start justify-between gap-3">
+                    <p class="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap leading-none">Rating</p>
+                    <div class="w-8 h-8 shrink-0 rounded-xl bg-amber-50 border border-amber-100 text-amber-500 flex items-center justify-center">
+                      <ion-icon name="star-outline" class="text-lg"></ion-icon>
+                    </div>
+                  </div>
+                  <div>
+                    <h2 class="text-[1.35rem] leading-none font-display font-black text-slate-950">
+                      {{ ratingMetric().isNew ? 'New' : ratingMetric().display }}
+                    </h2>
+                    @if (!ratingMetric().isNew && ratingMetric().value) {
+                      <div class="mt-2 flex items-center gap-1 overflow-hidden" aria-label="Driver rating stars">
+                        @for (starValue of [1, 2, 3, 4, 5]; track starValue) {
+                          <ion-icon
+                            [name]="starValue <= ratingMetric().value! ? 'star' : 'star-outline'"
+                            class="text-[14px] shrink-0"
+                            [class.text-amber-400]="starValue <= ratingMetric().value!"
+                            [class.text-slate-300]="starValue > ratingMetric().value!"
+                          ></ion-icon>
+                        }
+                      </div>
+                    }
+                    <p class="mt-2 text-[11px] leading-snug font-bold text-slate-500 break-normal">
+                      {{ ratingMetric().label }}
+                    </p>
+                  </div>
+                </div>
+              </app-card>
+            </div>
               <app-card class="p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div>
@@ -981,12 +977,13 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
           <button
             type="button"
             (click)="setHubTab(tab.key)"
-            class="flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-black transition-all"
+            class="relative flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-black transition-all"
             [class.bg-amber-500]="activeHubTab() === tab.key"
             [class.text-slate-950]="activeHubTab() === tab.key"
             [class.text-slate-500]="activeHubTab() !== tab.key"
           >
             <ion-icon [name]="tab.icon" class="text-base"></ion-icon>
+            @if(tab.key==='inbox' && inbox.unread()>0){<span class="absolute right-1 top-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white" [attr.aria-label]="inbox.unread()+' unread inbox items'">{{inbox.unread()>99?'99+':inbox.unread()}}</span>}
             <span>{{ tab.label }}</span>
           </button>
         }
@@ -1004,6 +1001,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     readonly dashboardMessages = inject(NotificationService);
     private route = inject(ActivatedRoute);
     public auth = inject(AuthService);
+    public inbox = inject(DriverInboxService);
+    private inboxSession = effect((onCleanup) => {
+        const id=this.auth.currentUser()?.id;
+        if(id)this.inbox.start(id);else this.inbox.stop();
+        onCleanup(()=>this.inbox.stop());
+    });
     private driverService = inject(DriverService);
     private locationService = inject(LocationService);
     public profileService = inject(ProfileService);
@@ -1049,7 +1052,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     activeHubTab = signal<DriverHubTab>('requests');
     readonly hubTabs: Array<{ key: DriverHubTab; label: string; icon: string }> = [
         { key: 'requests', label: 'Requests', icon: 'location-outline' },
-        { key: 'earnings', label: 'Earnings', icon: 'stats-chart' },
+        { key: 'inbox', label: 'Inbox', icon: 'mail-outline' },
         { key: 'trips', label: 'Trips', icon: 'list-outline' },
         { key: 'wallet', label: 'Wallet', icon: 'wallet-outline' },
         { key: 'profile', label: 'Profile', icon: 'settings-outline' }
@@ -1346,6 +1349,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             searchOutline,
             star,
             statsChart,
+            mailOutline,
             card,
             timeOutline,
             alertCircleOutline,
@@ -3535,7 +3539,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
             }, 120);
         }
 
-        if (tab === 'wallet' || tab === 'earnings') {
+        if (tab === 'wallet') {
             void this.loadWalletEarnings();
         }
     }

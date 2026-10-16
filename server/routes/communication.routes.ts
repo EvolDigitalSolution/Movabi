@@ -1,3 +1,4 @@
+import { DriverInboxService, inboxKind, inboxCursor } from '../services/driver-inbox.service';
 import { BookingHistoryService } from '../services/booking-history.service';
 import { BookingSupportService } from '../services/booking-support.service';
 import { Router, Request, Response } from 'express';
@@ -144,6 +145,22 @@ async function historyUser(req: Request,res: Response): Promise<{id:string;email
   if(auth?.error || !auth?.data?.user){res.status(401).json({error:'Please sign in again.'});return null;}
   return {id:auth.data.user.id,email:auth.data.user.email};
 }
+router.get('/inbox/counts',async(req:Request,res:Response)=>{
+ try{const user=await historyUser(req,res);if(!user)return;res.setHeader('Cache-Control','no-store');return res.json(await DriverInboxService.counts(user.id));}
+ catch{return res.status(503).json({error:'Unread counts unavailable. Please retry.'});}
+});
+router.get('/inbox',async(req:Request,res:Response)=>{
+ try{const user=await historyUser(req,res);if(!user)return;res.setHeader('Cache-Control','no-store');return res.json(await DriverInboxService.page(user.id,inboxKind(req.query.kind),inboxCursor(req.query.cursor)));}
+ catch(error:any){return res.status(error.status===400?400:503).json({error:'Inbox could not be loaded. Please retry.'});}
+});
+router.post('/inbox/:kind/:id/read',async(req:Request,res:Response)=>{
+ try{const user=await historyUser(req,res);if(!user)return;return res.json(await DriverInboxService.read(user.id,inboxKind(req.params.kind),String(req.params.id)));}
+ catch(error:any){return res.status([400,404].includes(error.status)?error.status:503).json({error:'Could not mark this item read. Please retry.'});}
+});
+router.get('/inbox/:kind/:id/target',async(req:Request,res:Response)=>{
+ try{const user=await historyUser(req,res);if(!user)return;res.setHeader('Cache-Control','no-store');return res.json(await DriverInboxService.target(user.id,inboxKind(req.params.kind),String(req.params.id)));}
+ catch(error:any){return res.status([400,404].includes(error.status)?error.status:503).json({error:'Could not open this item. Please retry.'});}
+});
 router.get('/history/:jobId',async(req:Request,res:Response)=>{
   try {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(req.params.jobId)))return res.status(400).json({error:'Invalid booking reference'});
