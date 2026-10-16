@@ -217,7 +217,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
           </div>
 
           <div class="relative overflow-hidden bg-white rounded-[1.85rem] border border-slate-100 shadow-sm p-5">
-            <div class="relative flex items-start gap-4 mb-5">
+            <div class="relative flex flex-col items-start gap-4 mb-5">
               <div
                 class="w-14 h-14 rounded-2xl flex items-center justify-center border shadow-sm shrink-0"
                 [class.bg-emerald-50]="isStripeReady()"
@@ -231,10 +231,10 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
               </div>
 
               <div class="flex-1 min-w-0">
-                <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex flex-col items-start gap-3 mb-2">
                   <div>
                     <h3 class="font-display font-black text-slate-950 text-lg">Stripe Connect</h3>
-                    <p class="text-xs text-slate-500 font-semibold">Set up your account to receive payouts</p>
+                    <p class="text-xs text-slate-500 font-semibold">{{ isStripeReady() ? "Your payout account is connected" : "Set up your account to receive payouts" }}</p>
                   </div>
 
                   <app-badge [variant]="getStripeBadgeVariant()">
