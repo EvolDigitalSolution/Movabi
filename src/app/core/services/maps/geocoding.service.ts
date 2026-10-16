@@ -1,14 +1,19 @@
+import { localPlacePlan, LocalSearchOptions, PlaceSearchPlan, placeCategory, categoryMatch, searchBoundingBox, searchDistanceKm } from '../../../shared/utils/local-place-search';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
 import { AppConfigService } from '../config/app-config.service';
 import { AutocompleteResult } from '../../models/maps/route-result.model';
-import { catchError, forkJoin, map, Observable, of, timeout } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, timeout, throwError, defer } from 'rxjs';
 
 interface ORSFeature {
     properties: {
         label: string;
         name: string;
+        layer?:string;
+        postalcode?:string;
+        category?:string[];
+        addendum?:any;
     };
     geometry: {
         coordinates: [number, number];
@@ -23,6 +28,9 @@ interface MapTilerFeature {
         coordinates?: [number, number];
     };
     relevance?: number;
+    place_type?:string[];
+    context?:{id?:string;text?:string}[];
+    properties?:{kind?:string;categories?:string[];feature_tags?:Record<string,string>};
 }
 
 @Injectable({
@@ -36,70 +44,51 @@ export class GeocodingService {
     private mapTilerGeocodeUrl = 'https://api.maptiler.com/geocoding';
     private cache = new Map<string, AutocompleteResult[]>();
 
-    autocomplete(query: string, origin?: {lat:number;lng:number}): Observable<AutocompleteResult[]> {
-        origin=this.validOrigin(origin);
-        const rawQuery = String(query || '').trim();
-        const isPostcodeIntent = this.isLikelyUkPostcode(rawQuery);
-        const normalizedQuery = isPostcodeIntent ? this.normalizeUkPostcode(rawQuery) : this.normalizeQuery(query);
-        if (!normalizedQuery || normalizedQuery.length < 3) return of([]);
-
-        const countryCode = this.config.currentCountry().code;
-        const cacheKey = `autocomplete:${countryCode}:${normalizedQuery}:${isPostcodeIntent ? 'pc' : 'txt'}:${origin ? origin.lat.toFixed(4)+','+origin.lng.toFixed(4) : 'default'}`;
-
-        if (this.cache.has(cacheKey)) return of(this.cache.get(cacheKey)!);
-
-        const requests = isPostcodeIntent
-            ? [
-                this.openRouteSearch(normalizedQuery, 8, { skipFocusBias: true, includePostcodeLayer: true }),
-                this.mapTilerSearch(normalizedQuery, 8, { skipProximity: true })
-            ]
-            : [
-                this.openRouteAutocomplete(normalizedQuery, 8, origin),
-                this.openRouteSearch(normalizedQuery, 8, {origin}),
-                this.mapTilerSearch(normalizedQuery, 8, {origin})
-            ];
-
-        return forkJoin(requests).pipe(
-            map((groups) => this.rankResults(
-                groups.flat(),
-                normalizedQuery,
-                isPostcodeIntent, !rawQuery.includes(',')?origin:undefined
-            ).slice(0, 8)),
-            map(results => {
-                if(results.length){if(this.cache.size>=100)this.cache.delete(this.cache.keys().next().value!);this.cache.set(cacheKey,results);}
+    autocomplete(query:string,origin?:{lat:number;lng:number},options:LocalSearchOptions={}):Observable<AutocompleteResult[]>{
+        return this.searchPlaces(query,origin,options,true);
+    }
+    geocodeAddress(query:string,origin?:{lat:number;lng:number},options:LocalSearchOptions={}):Observable<AutocompleteResult[]>{
+        return this.searchPlaces(query,origin,options,false);
+    }
+    searchPlan(query:string,origin?:{lat:number;lng:number},options:LocalSearchOptions={}):PlaceSearchPlan{
+        return localPlacePlan(query,origin,options.scope,this.isPostalSearch(query));
+    }
+    private searchPlaces(query:string,origin:{lat:number;lng:number}|undefined,options:LocalSearchOptions,autocomplete:boolean):Observable<AutocompleteResult[]>{
+        return defer(()=>{
+            const plan=this.searchPlan(query,origin,options);
+            if(plan.needsLocation)return options.strict?throwError(()=>Object.assign(new Error('Set your current location or choose an address before searching nearby.'),{code:'location_required'})):of([]);
+            const rawQuery=plan.query,postcode=this.isPostalSearch(rawQuery);
+            const normalized=postcode?this.normalizeUkPostcode(rawQuery):this.normalizeQuery(rawQuery);
+            if(!normalized || (autocomplete && normalized.length<3))return of([]);
+            const key=JSON.stringify([this.config.currentCountry().code,normalized,plan.origin,plan.radiusKm,autocomplete]);
+            if(autocomplete && this.cache.has(key))return of(this.cache.get(key)!);
+            const ors=!!this.provider.getOpenRouteServiceApiKey(),tiler=!!this.provider.getMapTilerApiKey();
+            const expected=(ors?(autocomplete&&!postcode?2:1):0)+(tiler?1:0);
+            let failures=0;const onFailure=()=>{failures++;};
+            const providerOptions={origin:plan.origin,plan,onFailure,skipFocusBias:postcode,includePostcodeLayer:postcode,skipProximity:postcode};
+            const requests:Observable<AutocompleteResult[]>[]=[];
+            if(ors){if(autocomplete&&!postcode)requests.push(this.openRouteAutocomplete(normalized,10,plan.origin,providerOptions));requests.push(this.openRouteSearch(normalized,10,providerOptions));}
+            if(tiler)requests.push(this.mapTilerSearch(normalized,10,providerOptions));
+            if(!expected)return options.strict?throwError(()=>Object.assign(new Error('Place search is temporarily unavailable. Please retry.'),{code:'provider_unavailable'})):of([]);
+            return forkJoin(requests).pipe(map(groups=>{
+                if(options.strict && failures===expected)throw Object.assign(new Error('Place search is temporarily unavailable. Please retry.'),{code:'provider_unavailable'});
+                const bounded=groups.flat().filter(result=>!plan.radiusKm||!plan.origin||searchDistanceKm(plan.origin,result)<=plan.radiusKm);
+                const results=this.rankResults(bounded,normalized,postcode,!rawQuery.includes(',')?plan.origin:undefined).slice(0,autocomplete?8:5).map(result=>({...result,...(plan.origin?{distanceKm:searchDistanceKm(plan.origin,result)}:{})}));
+                if(autocomplete&&results.length){if(this.cache.size>=100)this.cache.delete(this.cache.keys().next().value!);this.cache.set(key,results);}
                 return results;
-            }),
-            catchError(error => {
-                console.warn('[GeocodingService] Autocomplete failed:', error);
-                return of([]);
-            })
-        );
+            }));
+        });
     }
 
-    geocodeAddress(query: string, origin?: {lat:number;lng:number}): Observable<AutocompleteResult[]> {
-        origin=this.validOrigin(origin);
-        const rawQuery = String(query || '').trim();
-        const isPostcodeIntent = this.isLikelyUkPostcode(rawQuery);
-        const normalizedQuery = isPostcodeIntent ? this.normalizeUkPostcode(rawQuery) : this.normalizeQuery(query);
-        if (!normalizedQuery) return of([]);
-
-        const requests = isPostcodeIntent
-            ? [
-                this.openRouteSearch(normalizedQuery, 5, { skipFocusBias: true, includePostcodeLayer: true }),
-                this.mapTilerSearch(normalizedQuery, 5, { skipProximity: true })
-            ]
-            : [
-                this.openRouteSearch(normalizedQuery, 5, {origin}),
-                this.mapTilerSearch(normalizedQuery, 5, {origin})
-            ];
-
-        return forkJoin(requests).pipe(
-            map(groups => this.rankResults(groups.flat(), normalizedQuery, isPostcodeIntent, !rawQuery.includes(',')?origin:undefined).slice(0, 5)),
-            catchError(error => {
-                console.warn('[GeocodingService] Geocode failed:', error);
-                return of([]);
-            })
-        );
+    private isPostalSearch(query:string):boolean {
+        if(this.isLikelyUkPostcode(query))return true;
+        const code=this.config.currentCountry().code.toUpperCase();
+        const value=String(query || '').trim().split(',').at(-1)!.trim();
+        if(/^\d{4,10}(?:[- ]\d{3,4})?$/.test(value))return true;
+        if(code==='CA' && /^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i.test(value))return true;
+        if(code==='NL' && /^\d{4}\s?[A-Z]{2}$/i.test(value))return true;
+        if(code==='IE' && /^[A-Z][A-Z0-9]{2}\s?[A-Z0-9]{4}$/i.test(value))return true;
+        return code==='GB' && this.isLikelyUkPostcode(value);
     }
 
     /** Returns true when the raw input looks like a full or partial UK postcode (e.g. "OL1 4AW", "OL1", "OL14AW"). */
@@ -151,7 +140,7 @@ export class GeocodingService {
         return `${match[1].toUpperCase()} ${match[2].toUpperCase()}`;
     }
 
-    private openRouteAutocomplete(query: string, size: number, origin?:{lat:number;lng:number}): Observable<AutocompleteResult[]> {
+    private openRouteAutocomplete(query: string, size: number, origin?:{lat:number;lng:number}, options:{plan?:PlaceSearchPlan;onFailure?:()=>void}={}): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getOpenRouteServiceApiKey();
 
         if (!apiKey) return of([]);
@@ -163,7 +152,7 @@ export class GeocodingService {
             layers: 'address,venue,street,locality,neighbourhood'
         };
 
-        this.addOpenRouteBounds(params, false, origin);
+        this.addOpenRouteBounds(params, false, origin,options.plan);
 
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/autocomplete`, {
             params
@@ -171,13 +160,14 @@ export class GeocodingService {
             timeout(6000),
             map(res => this.mapOpenRouteFeaturesToResults(res.features)),
             catchError(error => {
+                options.onFailure?.();
                 console.warn('[GeocodingService] ORS autocomplete failed:', error);
                 return of([]);
             })
         );
     }
 
-    private openRouteSearch(query: string, size: number, options: { skipFocusBias?: boolean; includePostcodeLayer?: boolean; origin?:{lat:number;lng:number} } = {}): Observable<AutocompleteResult[]> {
+    private openRouteSearch(query: string, size: number, options: { skipFocusBias?: boolean; includePostcodeLayer?: boolean; origin?:{lat:number;lng:number};plan?:PlaceSearchPlan;onFailure?:()=>void } = {}): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getOpenRouteServiceApiKey();
         if (!apiKey) return of([]);
 
@@ -190,7 +180,7 @@ export class GeocodingService {
                 : this.isPlaceQuery(query)?'venue':'address,venue,street,locality,neighbourhood'
         };
 
-        this.addOpenRouteBounds(params, options.skipFocusBias, options.origin);
+        this.addOpenRouteBounds(params, options.skipFocusBias, options.origin,options.plan);
 
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/search`, {
             params
@@ -198,13 +188,14 @@ export class GeocodingService {
             timeout(6000),
             map(res => this.mapOpenRouteFeaturesToResults(res.features)),
             catchError(error => {
+                options.onFailure?.();
                 console.warn('[GeocodingService] ORS search failed:', error);
                 return of([]);
             })
         );
     }
 
-    private mapTilerSearch(query: string, limit: number, options: { skipProximity?: boolean; origin?:{lat:number;lng:number} } = {}): Observable<AutocompleteResult[]> {
+    private mapTilerSearch(query: string, limit: number, options: { skipProximity?: boolean; origin?:{lat:number;lng:number};plan?:PlaceSearchPlan;onFailure?:()=>void } = {}): Observable<AutocompleteResult[]> {
         const apiKey = this.provider.getMapTilerApiKey();
 
         if (!apiKey) return of([]);
@@ -217,7 +208,7 @@ export class GeocodingService {
             limit,
             language: 'en',
             country: country.code.toLowerCase(),
-            types: !options.skipProximity && this.isPlaceQuery(query)?'poi':'poi,address,place',
+            types: options.skipProximity?'postal_code,address,place':this.isPlaceQuery(query)?'poi':'poi,address,place',
             fuzzyMatch: 'true'
         };
 
@@ -225,12 +216,14 @@ export class GeocodingService {
             params['proximity'] = `${options.origin?.lng ?? country.defaultCenter.lng},${options.origin?.lat ?? country.defaultCenter.lat}`;
         }
 
+        if(options.plan?.radiusKm && options.plan.origin){const bbox=searchBoundingBox(options.plan.origin,options.plan.radiusKm);if(bbox)params['bbox']=bbox.join(',');}
         return this.http.get<{ features: MapTilerFeature[] }>(`${this.mapTilerGeocodeUrl}/${encodedQuery}.json`, {
             params
         }).pipe(
             timeout(6000),
             map(res => this.mapMapTilerFeaturesToResults(res.features)),
             catchError(() => {
+                options.onFailure?.();
                 return of([]);
             })
         );
@@ -257,7 +250,7 @@ export class GeocodingService {
         );
     }
 
-    private addOpenRouteBounds(params: Record<string, string | number>, skipFocusBias = false, origin?:{lat:number;lng:number}): void {
+    private addOpenRouteBounds(params: Record<string, string | number>, skipFocusBias = false, origin?:{lat:number;lng:number},plan?:PlaceSearchPlan): void {
         const country = this.config.currentCountry();
 
         if (country.code) {
@@ -265,6 +258,7 @@ export class GeocodingService {
         }
 
         if (skipFocusBias) return;
+        if(plan?.radiusKm && plan.origin){params['boundary.circle.lat']=plan.origin.lat;params['boundary.circle.lon']=plan.origin.lng;params['boundary.circle.radius']=plan.radiusKm;}
 
         params['focus.point.lat'] = origin?.lat ?? country.defaultCenter.lat;
         params['focus.point.lon'] = origin?.lng ?? country.defaultCenter.lng;
@@ -318,7 +312,10 @@ export class GeocodingService {
                     lng: Number(f.geometry.coordinates[0]),
                     ...this.splitLabelForDisplay(label),
                     ...(name?{primaryText:name}:{}),
-                    postalCode: this.extractPostcodeFromLabel(label) || undefined
+                    placeType:f.properties?.layer,
+                    categories:Array.isArray(f.properties?.category)?f.properties.category:[],
+                    placeTags:f.properties?.addendum?.osm || {},
+                    postalCode:f.properties?.postalcode || this.extractPostcodeFromLabel(label) || undefined
                 };
             })
             .filter(result =>
@@ -343,7 +340,10 @@ export class GeocodingService {
                     lng: Number(coordinates?.[0]),
                     ...this.splitLabelForDisplay(label),
                     ...(name?{primaryText:name}:{}),
-                    postalCode: this.extractPostcodeFromLabel(label) || undefined
+                    placeType:feature.place_type?.[0] || feature.properties?.kind,
+                    categories:feature.properties?.categories || [],
+                    placeTags:feature.properties?.feature_tags || {},
+                    postalCode:feature.context?.find(context=>context.id?.startsWith('postal_code.'))?.text || this.extractPostcodeFromLabel(label) || undefined
                 };
             })
             .filter(result =>
@@ -367,35 +367,41 @@ export class GeocodingService {
     }
 
     private rankResults(results: AutocompleteResult[], query: string, isPostcodeIntent = false, origin?:{lat:number;lng:number}): AutocompleteResult[] {
-        const labelledResults = results.map(result => this.preserveTypedHouseNumber(result, query));
-        const seen = new Set<string>();
-        const deduped = labelledResults.filter(result => {
-            const key = `${this.normaliseForScore(result.label)}:${result.lat.toFixed(5)}:${result.lng.toFixed(5)}`;
-
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
+        const requestedNumber=this.firstAddressLine(query).match(/^(\d+[a-z]?)\s+/i)?.[1]?.toLowerCase();
+        const labelledResults=results.filter(result=>{
+            if(!requestedNumber)return true;
+            const number=result.label.split(',')[0].trim().match(/^(\d+[a-z]?)\s+/i)?.[1]?.toLowerCase();
+            return !number || number===requestedNumber;
         });
+        const seen=new Map<string,AutocompleteResult>();
+        for(const result of labelledResults){
+            const key=`${this.normaliseForScore(result.primaryText || result.label.split(',')[0])}:${result.lat.toFixed(5)}:${result.lng.toFixed(5)}`;
+            const previous=seen.get(key);
+            if(previous){
+                previous.categories=[...new Set([...(previous.categories || []),...(result.categories || [])])];
+                previous.placeTags={...(previous.placeTags || {}),...(result.placeTags || {})};
+                if(result.label.length>previous.label.length){previous.label=result.label;previous.secondaryText=result.secondaryText;}
+            }else seen.set(key,{...result});
+        }
+        const deduped=[...seen.values()];
 
         const placeQuery=!isPostcodeIntent && this.isPlaceQuery(query);
         const wanted=this.placeTokens(query);
+        const category=placeCategory(query);
         const matches=(result:AutocompleteResult)=>{
             const words=this.normaliseForScore(result.primaryText || result.label.split(',')[0]).split(' ');
             const labelWords=this.normaliseForScore(result.label).split(' ');
             return 2*wanted.filter(token=>words.some(word=>this.placeWordMatches(token,word))).length+wanted.filter(token=>labelWords.some(word=>this.placeWordMatches(token,word))).length;
         };
-        const relevant=placeQuery && wanted.length?deduped.filter(result=>matches(result)>0):deduped;
+        const relevant=category?deduped.filter(result=>categoryMatch(category,result)):placeQuery && wanted.length?deduped.filter(result=>matches(result)>0):deduped;
         return relevant.sort((a,b)=>{
-            if(placeQuery && wanted.length){const relevance=matches(b)-matches(a);if(relevance)return relevance;}
+            if(placeQuery && wanted.length && !category){const relevance=matches(b)-matches(a);if(relevance)return relevance;}
             if(!placeQuery){const score=this.scoreResult(b,query,isPostcodeIntent)-this.scoreResult(a,query,isPostcodeIntent);if(score)return score;}
             if(origin && !isPostcodeIntent){const proximity=this.distanceKm(origin,a)-this.distanceKm(origin,b);if(Math.abs(proximity)>.05)return proximity;}
             return this.scoreResult(b,query,isPostcodeIntent)-this.scoreResult(a,query,isPostcodeIntent);
         });
     }
 
-    private validOrigin(origin?:{lat:number;lng:number}):{lat:number;lng:number}|undefined {
-        return origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng) && Math.abs(origin.lat)<=90 && Math.abs(origin.lng)<=180?origin:undefined;
-    }
     private isPlaceQuery(query:string):boolean {
         const value=this.firstAddressLine(query);
         return !/^\d/.test(value) && !/\b(street|road|avenue|lane|drive|close|way|walk|crescent|postcode|st|rd|ave|blvd)\b/i.test(value);
@@ -416,36 +422,6 @@ export class GeocodingService {
         const rad=Math.PI/180,dLat=(point.lat-origin.lat)*rad,dLng=(point.lng-origin.lng)*rad;
         const a=Math.sin(dLat/2)**2+Math.cos(origin.lat*rad)*Math.cos(point.lat*rad)*Math.sin(dLng/2)**2;
         return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(Math.max(0,1-a)));
-    }
-
-    private preserveTypedHouseNumber(result: AutocompleteResult, query: string): AutocompleteResult {
-        const typedLine = this.firstAddressLine(query);
-        const houseNumber = typedLine.match(/^(\d+[a-z]?)\s+/i)?.[1];
-
-        if (!houseNumber) return result;
-
-        const typedStreet = typedLine.replace(/^(\d+[a-z]?)\s+/i, '').trim();
-
-        if (!typedStreet) return result;
-
-        const normalizedLabel = this.normaliseForScore(result.label);
-        const normalizedStreet = this.normaliseForScore(typedStreet);
-        const normalizedNumber = this.normaliseForScore(houseNumber);
-
-        if (!normalizedLabel.includes(normalizedStreet) || normalizedLabel.includes(normalizedNumber)) {
-            return result;
-        }
-
-        const labelParts = result.label.split(',').map(part => part.trim()).filter(Boolean);
-        const remainingParts = this.normaliseForScore(labelParts[0] || '') === normalizedStreet
-            ? labelParts.slice(1)
-            : labelParts;
-        const formattedLine = this.toTitleCase(typedLine);
-
-        return {
-            ...result,
-            label: [formattedLine, ...remainingParts].join(', ')
-        };
     }
 
     private scoreResult(result: AutocompleteResult, query: string, isPostcodeIntent = false): number {

@@ -28,4 +28,8 @@ export interface AutocompleteResult {
   primaryText?: string;
   secondaryText?: string;
   postalCode?: string;
+  placeType?: string;
+  categories?: string[];
+  placeTags?: Record<string,string>;
+  distanceKm?: number;
 }
