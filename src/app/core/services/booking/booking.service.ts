@@ -1210,7 +1210,7 @@ export class BookingService {
                 customerId: user.id,
                 score,
                 comment
-            })
+            }, { headers: await this.authHeaders() })
         );
     }
 

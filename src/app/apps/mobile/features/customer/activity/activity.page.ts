@@ -154,7 +154,7 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
 
             <div class="space-y-3">
               @for (booking of pastBookings(); track booking.id) {
-                <app-card [hoverable]="false" class="group overflow-hidden">
+                <button type="button" (click)="router.navigate(['/customer/history', booking.id])" class="w-full text-left history-link" [attr.aria-label]="'View ' + getServiceName(booking) + ' booking record'"><app-card [hoverable]="false" class="group overflow-hidden">
                   <div class="flex justify-between items-start gap-4">
                     <div class="flex items-center gap-3 min-w-0">
                       <div
@@ -195,7 +195,7 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
                       }
                     </div>
                   </div>
-                </app-card>
+                </app-card></button>
               }
             </div>
           </div>
@@ -204,7 +204,8 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
     </ion-content>
 
     <app-customer-bottom-nav></app-customer-bottom-nav>
-  `
+  `,
+    styles: [`.history-link{display:block;width:100%;min-width:0}.history-link:focus-visible{outline:3px solid #2563eb;outline-offset:3px;border-radius:1rem}.history-link app-card{display:block;min-width:0}`]
 })
 export class ActivityPage implements OnInit {
     private bookingService = inject(BookingService);
@@ -231,6 +232,10 @@ export class ActivityPage implements OnInit {
         'completed',
         'cancelled',
         'no_driver_found',
+        'canceled',
+        'failed',
+        'expired',
+        'refunded',
         'settled'
     ]);
 

@@ -1147,11 +1147,14 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
 
 router.post('/rate', async (req: Request, res: Response) => {
     try {
-        const { jobId, customerId, score, comment } = req.body || {};
+        const { jobId, score, comment } = req.body || {};
+        const customerId = await getAuthUserId(req);
+        if (!customerId) return res.status(401).json({ error: 'Authentication required' });
         const ratingScore = Number(score);
+        if (String(comment || '').length > 2000) return res.status(400).json({ error: 'Review must be 2000 characters or fewer' });
 
         if (!jobId || !customerId) {
-            return res.status(400).json({ error: 'jobId and customerId required' });
+            return res.status(400).json({ error: 'jobId required' });
         }
 
         if (!Number.isInteger(ratingScore) || ratingScore < 1 || ratingScore > 5) {

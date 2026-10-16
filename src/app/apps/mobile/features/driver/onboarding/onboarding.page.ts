@@ -424,7 +424,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                     <p class="text-xs font-semibold text-slate-500">Choose the vehicle you plan to use.</p>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="setup-option-grid">
                     @for (option of vehicleClassOptions; track option.id) {
                       <button
                         type="button"
@@ -456,7 +456,7 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
                     <p class="text-xs font-semibold text-slate-500">Choose the types of jobs you'd like to receive.</p>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="setup-option-grid">
                     @for (option of availableServiceOptions(); track option.id) {
                       <button
                         type="button"
@@ -780,7 +780,8 @@ const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!c
         </form>
       </div>
     </ion-content>
-  `
+  `,
+    styles: [`.setup-option-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:.8rem}.setup-option-grid>button{height:auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:normal;word-break:normal;padding:1rem}.setup-option-grid>button>div{display:flex;flex-direction:column;align-items:flex-start;gap:.65rem}.setup-option-grid p{white-space:normal;word-break:normal;overflow-wrap:break-word;line-height:1.5}.setup-option-grid>button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
 })
 export class OnboardingPage implements OnInit {
     private fb = inject(FormBuilder);

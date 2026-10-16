@@ -125,6 +125,10 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/customer/booking-request/booking-request.page').then((m) => m.BookingRequestPage)
             },
             {
+                path: 'history/:id',
+                loadComponent: () => import('@shared/pages/booking-history/booking-history.page').then(m => m.BookingHistoryPage)
+            },
+            {
                 path: 'tracking/:id',
                 loadComponent: () => import('@mobile/features/customer/booking-tracking/booking-tracking.page').then((m) => m.BookingTrackingPage)
             },
@@ -176,6 +180,10 @@ export const MOBILE_ROUTES: Routes = [
             {
                 path: 'van-moving',
                 loadComponent: () => import('@mobile/features/driver/van-moving/van-jobs.page').then((m) => m.VanJobsPage)
+            },
+            {
+                path: 'history/:id',
+                loadComponent: () => import('@shared/pages/booking-history/booking-history.page').then(m => m.BookingHistoryPage)
             },
             {
                 path: 'job-details/:id',

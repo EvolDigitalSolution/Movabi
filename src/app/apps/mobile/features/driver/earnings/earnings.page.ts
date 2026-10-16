@@ -34,8 +34,7 @@ import {
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import {
-    EmptyStateComponent,
-    BadgeComponent
+    EmptyStateComponent
 } from '../../../../../shared/ui';
 
 type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
@@ -54,8 +53,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
         IonIcon,
         IonRefresher,
         IonRefresherContent,
-        EmptyStateComponent,
-        BadgeComponent
+        EmptyStateComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -129,7 +127,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-3">
+        <div class="earning-totals">
           <div class="bg-white rounded-[1.5rem] p-4 border border-slate-100 shadow-sm">
             <div class="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
               <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
@@ -208,7 +206,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="flex items-center gap-3">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <div>
-                <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.18em]">
+                <h3 class="text-xs font-black text-slate-500">
                   Transactions
                 </h3>
                 <p class="text-[11px] text-slate-400 font-semibold mt-0.5">
@@ -246,166 +244,35 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
           } @else {
             <div class="space-y-3">
               @for (earning of filteredEarnings(); track getEarningKey(earning)) {
-                <button
-                  type="button"
-                  (click)="toggleEarning(earning)"
-                  class="w-full text-left bg-white rounded-[1.75rem] border border-slate-100 shadow-sm p-4 active:scale-[0.99] transition-all"
-                >
-                  <div class="flex items-start gap-4">
-                    <div
-                      class="w-12 h-12 rounded-2xl flex items-center justify-center border shrink-0"
-                      [class.bg-emerald-50]="getEarningStatus(earning) === 'paid'"
-                      [class.text-emerald-600]="getEarningStatus(earning) === 'paid'"
-                      [class.border-emerald-100]="getEarningStatus(earning) === 'paid'"
-                      [class.bg-amber-50]="getEarningStatus(earning) === 'pending'"
-                      [class.text-amber-600]="getEarningStatus(earning) === 'pending'"
-                      [class.border-amber-100]="getEarningStatus(earning) === 'pending'"
-                    >
-                       <ion-icon [name]="getEarningStatus(earning) === 'paid' ? 'cash' : 'time-outline'" class="text-xl"></ion-icon>
-                    </div>
-
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-start justify-between gap-3 mb-1">
-                        <div class="min-w-0">
-                          <h4 class="font-display font-black text-slate-950 text-base leading-tight whitespace-normal">
-                            {{ getEarningTitle(earning) }}
-                          </h4>
-                         <p class="text-[11px] text-slate-400 font-bold uppercase tracking-[0.08em] mt-1">
-                          {{ earning.created_at | date:'mediumDate' }} - {{ earning.created_at | date:'shortTime' }}
-                     </p>
-                        </div>
-
-                        <div class="text-right shrink-0">
-                          <p class="text-xl font-display font-black text-emerald-600">
-                            +{{ formatPrice(toNumber(earning.amount)) }}
-                          </p>
-
-                          <div class="flex items-center justify-end gap-2 mt-1">
-                            <app-badge [variant]="getEarningStatus(earning) === 'paid' ? 'success' : 'warning'">
-                              {{ getStripePayoutLabel(earning) }}
-                            </app-badge>
-
-                            <ion-icon
-                              [name]="isSelected(earning) ? 'chevron-up-outline' : 'chevron-down-outline'"
-                              class="text-slate-400 text-lg"
-                            ></ion-icon>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="flex flex-wrap items-center gap-2 mt-3">
-                        <app-badge [variant]="formatPlan(earning.pricing_plan_used) === 'Pro' ? 'primary' : 'secondary'">
-                          {{ formatPlan(earning.pricing_plan_used) }}
-                        </app-badge>
-
-                        @if (getCommissionAmount(earning) > 0) {
-                          <app-badge variant="warning">
-                            Fee {{ formatPrice(getCommissionAmount(earning)) }}
-                          </app-badge>
-                        } @else if (formatPlan(earning.pricing_plan_used) === 'Pro') {
-                          <app-badge variant="success">
-                            0% commission
-                          </app-badge>
-                        }
-                      </div>
-
-                      @if (getCommissionAmount(earning) > 0) {
-                        <p class="text-xs text-slate-500 font-semibold mt-3">
-                          Commission deducted:
-                          <span class="font-black text-slate-700">
-                            {{ formatPrice(getCommissionAmount(earning)) }}
-                          </span>
-
-                          @if (earning.commission_rate_used !== null && earning.commission_rate_used !== undefined) {
-                            <span>({{ earning.commission_rate_used }}%)</span>
-                          }
-                        </p>
-                      }
-                    </div>
-                  </div>
-
-                  @if (isSelected(earning)) {
-                    <div class="mt-4 pt-4 border-t border-slate-100 space-y-3">
-                      <div class="grid grid-cols-2 gap-3">
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Stripe status
-                          </p>
-                          <p class="text-sm font-black text-slate-950 uppercase">
-                            {{ getStripePayoutLabel(earning) }}
-                          </p>
-                        </div>
-
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Net payout
-                          </p>
-                          <p class="text-sm font-black text-emerald-600">
-                            {{ formatPrice(toNumber(earning.amount)) }}
-                          </p>
-                        </div>
-
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Fee
-                          </p>
-                          <p class="text-sm font-black text-slate-950">
-                            {{ formatPrice(getCommissionAmount(earning)) }}
-                          </p>
-                        </div>
-
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Gross
-                          </p>
-                          <p class="text-sm font-black text-slate-950">
-                            {{ formatPrice(getGrossAmount(earning)) }}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div class="rounded-2xl bg-slate-50 p-3 space-y-2">
-                        <div class="flex items-center justify-between gap-3">
-                          <span class="text-xs font-black text-slate-400">Date</span>
-                          <span class="text-xs font-bold text-slate-700">
-                            {{ earning.created_at | date:'medium' }}
-                          </span>
-                        </div>
-
-                        @if (earning.job_id) {
-                          <div class="pt-2 border-t border-slate-200">
-                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                              Job ID
-                            </p>
-                            <p class="text-[10px] font-semibold text-slate-500 break-words">
-                              {{ earning.job_id }}
-                            </p>
-                          </div>
-                        }
-
-                        @if ($any(earning).stripe_transfer_id) {
-                          <div class="pt-2 border-t border-slate-200">
-                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                              Stripe transfer
-                            </p>
-                            <p class="text-[10px] font-semibold text-emerald-700 break-words">
-                              {{ $any(earning).stripe_transfer_id }}
-                            </p>
-                          </div>
-                        }
-                      </div>
-                    </div>
+                <article class="earning-record">
+                  <button type="button" class="earning-summary" (click)="toggleEarning(earning)" [attr.aria-expanded]="isSelected(earning)">
+                    <span class="font-black">{{ getEarningTitle(earning) }}</span>
+                    <span class="earning-amount">+{{ formatPrice(toNumber(earning.amount)) }}</span>
+                    <span>{{ earning.created_at | date:'medium' }}</span>
+                    <span class="earning-status">{{ getStripePayoutLabel(earning) }}</span>
+                    <span>{{ formatPlan(earning.pricing_plan_used) }} · Commission {{ formatPrice(getCommissionAmount(earning)) }}</span>
+                    <span>{{ isSelected(earning)?'Hide transaction details':'View transaction details' }}</span>
+                  </button>
+                  @if(isSelected(earning)) {
+                    <dl class="earning-details"><dt>Net payout</dt><dd>{{ formatPrice(toNumber(earning.amount)) }}</dd><dt>Commission</dt><dd>{{ formatPrice(getCommissionAmount(earning)) }} @if(earning.commission_rate_used!==null && earning.commission_rate_used!==undefined){({{earning.commission_rate_used}}%)}</dd><dt>Gross earnings</dt><dd>{{ formatPrice(getGrossAmount(earning)) }}</dd>
+                    @if($any(earning).stripe_transfer_id){<dt>Stripe transfer</dt><dd>{{ $any(earning).stripe_transfer_id }}</dd>}
+                    @if(earning.job_id){<dt>Booking reference</dt><dd>{{earning.job_id}}</dd>}
+                    </dl>
                   }
-                </button>
+                  @if(earning.job_id){<button type="button" class="earning-booking" (click)="openBooking(earning.job_id)">View booking record</button>}
+                </article>
               }
             </div>
           }
         </div>
       </div>
     </ion-content>
-  `
+  `,
+    styles: [`.earning-record{background:white;border:1px solid #e2e8f0;border-radius:1.3rem;padding:1rem;min-width:0;max-width:100%;overflow-wrap:anywhere}.earning-summary{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:.6rem;text-align:left;white-space:normal;min-width:0;line-height:1.4}.earning-summary>*{min-width:0;max-width:100%}.earning-amount{font-weight:800;color:#047857;font-size:1.2rem}.earning-status{background:#f1f5f9;border-radius:.7rem;padding:.45rem .6rem;line-height:1.4}.earning-details{display:grid;gap:.4rem;margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem}.earning-details dt{font-weight:700;color:#64748b}.earning-details dd{margin:0;margin-bottom:.5rem;overflow-wrap:anywhere}.earning-booking{margin-top:1rem;background:#fef3c7;border-radius:.75rem;padding:.75rem 1rem;font-weight:700;width:100%;white-space:normal;text-align:left}.earning-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:.75rem}.earning-record button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
 })
 export class EarningsPage implements OnInit {
+    openBooking(id:string){void this.nav.navigateForward('/driver/history/'+encodeURIComponent(id));}
+
     private driverService = inject(DriverService);
     private config = inject(AppConfigService);
     public nav = inject(NavController);

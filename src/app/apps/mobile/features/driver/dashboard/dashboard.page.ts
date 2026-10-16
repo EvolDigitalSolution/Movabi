@@ -827,6 +827,21 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               <p class="mt-1 text-sm font-semibold text-slate-600">{{ activeJob() ? activeJobShortRouteLabel() : 'Accepted requests will appear here so you can continue them.' }}</p>
               <button type="button" (click)="activeJob() ? resumeActiveJob() : setHubTab('requests')" class="mt-4 w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ activeJob() ? 'Continue Job' : 'Browse Requests' }}</button>
             </app-card>
+            <app-card class="p-4">
+              <h2 class="text-lg font-black">Booking history</h2>
+              @if (tripHistoryLoading()) { <p role="status">Loading your bookings…</p> }
+              @if (tripHistoryError()) { <p role="alert">{{ tripHistoryError() }}</p><button type="button" (click)="loadTripHistory()" class="py-3 font-bold">Try again</button> }
+              @if (!tripHistoryLoading() && !tripHistoryError() && tripHistory().length===0) { <p class="py-3 text-slate-600">Completed and cancelled bookings will appear here.</p> }
+              @for (trip of tripHistory(); track trip.id) {
+                <button type="button" (click)="router.navigate(['/driver/history',trip.id])" class="trip-history-link">
+                  <span class="font-bold">{{ trip.status==='settled'?'Completed':trip.status==='cancelled'?'Cancelled':trip.status==='completed'?'Completed':'Ended booking' }}</span>
+                  <span>{{ trip.created_at | date:'mediumDate' }}</span>
+                  <span>{{ trip.pickup_address || 'Pickup not recorded' }} → {{ trip.dropoff_address || 'Destination not recorded' }}</span>
+                  <span>View booking record</span>
+                </button>
+              }
+              @if(tripHistoryMore() && !tripHistoryError()) { <button type="button" [disabled]="tripHistoryLoading()" (click)="loadTripHistory(true)" class="py-3 font-bold">Load more</button> }
+            </app-card>
           } @else if (activeHubTab() === 'wallet') {
             <div class="space-y-4">
               <app-card class="p-4">
@@ -840,7 +855,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                     {{ getStripeBadgeText() }}
                   </span>
                 </div>
-                <div class="mt-4 grid grid-cols-3 gap-2">
+                <div class="wallet-balances">
                   <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
                     <p class="text-[9px] font-black uppercase tracking-[0.12em] text-emerald-700">Paid</p>
                     <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletPaidTotal()) }}</p>
@@ -870,13 +885,13 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                 } @else {
                   <div class="space-y-2">
                     @for (earning of walletRecentEarnings(); track earning.id || earning.job_id || $index) {
-                      <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                      <button type="button" (click)="openWalletBooking(earning)" class="wallet-history-link">
                         <div class="min-w-0">
-                          <p class="truncate text-sm font-black text-slate-900">{{ earningLabel(earning) }}</p>
+                          <p class="text-sm font-black text-slate-900">{{ earningLabel(earning) }}</p>
                           <p class="text-[11px] font-semibold text-slate-500">{{ earningStatusLabel(earning) }}</p>
                         </div>
                         <p class="shrink-0 text-sm font-black text-slate-950">{{ formatPrice(earningNetAmount(earning)) }}</p>
-                      </div>
+                      </button>
                     }
                   </div>
                 }
@@ -973,7 +988,8 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
         }
       </div>
     </nav>
-  `
+  `,
+    styles: [`.trip-history-link,.wallet-history-link{display:grid;width:100%;min-width:0;text-align:left;gap:.5rem;padding:1rem;border:1px solid #e2e8f0;border-radius:1rem;background:#f8fafc;margin-top:.7rem;overflow-wrap:anywhere;line-height:1.4}.wallet-history-link{grid-template-columns:minmax(0,1fr);}.wallet-history-link p{white-space:normal}.wallet-balances{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:.6rem;margin-top:1rem}.trip-history-link:focus-visible,.wallet-history-link:focus-visible{outline:3px solid #2563eb;outline-offset:2px}`]
 })
 
 
@@ -3465,8 +3481,35 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }, 200);
     }
 
+    tripHistory=signal<any[]>([]);
+    tripHistoryLoading=signal(false);
+    tripHistoryError=signal('');
+    tripHistoryMore=signal(false);
+    async loadTripHistory(append=false): Promise<void> {
+        if(this.tripHistoryLoading())return;
+        const user=this.auth.currentUser();if(!user)return;
+        this.tripHistoryLoading.set(true);this.tripHistoryError.set('');
+        try {
+            const offset=append?this.tripHistory().length:0;
+            const result=await this.supabase.from('jobs').select('id,status,created_at,pickup_address,dropoff_address')
+              .or(`driver_id.eq.${user.id},and(driver_id.is.null,accepted_driver_id.eq.${user.id})`)
+              .in('status',['completed','settled','cancelled','canceled','failed','expired','no_driver_found','refunded'])
+              .order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+49);
+            if(result.error)throw result.error;
+            if(this.auth.currentUser()?.id!==user.id){this.tripHistory.set([]);throw new Error('Session changed');}
+            this.tripHistory.set(append?[...this.tripHistory(),...(result.data || [])]:result.data || []);
+            this.tripHistoryMore.set((result.data || []).length===50);
+        }catch{this.tripHistoryError.set('Could not load your booking history. Please retry.');}
+        finally{this.tripHistoryLoading.set(false);}
+    }
+    openWalletBooking(earning:any): void {
+        if(earning.job_id)void this.router.navigate(['/driver/history',earning.job_id]);
+        else void this.router.navigate(['/driver/earnings']);
+    }
+
     setHubTab(tab: DriverHubTab): void {
         this.activeHubTab.set(tab);
+        if(tab==='trips')void this.loadTripHistory();
 
         if (tab === 'requests') {
             window.setTimeout(() => {

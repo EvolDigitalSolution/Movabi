@@ -1,3 +1,5 @@
+import { BookingHistoryService } from '../services/booking-history.service';
+import { BookingSupportService } from '../services/booking-support.service';
 import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../services/supabase.service';
 import { NotificationService } from '../services/notification.service';
@@ -134,6 +136,28 @@ router.post('/messages', async (req: Request, res: Response) => {
     console.error('[CommunicationRoutes] send message failed:', error);
     return res.status(500).json({ error: error.message || 'Failed to send message' });
   }
+});
+
+async function historyUser(req: Request,res: Response): Promise<{id:string;email?:string} | null> {
+  const token=String(req.headers.authorization || '').replace(/^Bearer\s+/i,'').trim();
+  const auth=token?await supabaseAdmin.auth.getUser(token):null;
+  if(auth?.error || !auth?.data?.user){res.status(401).json({error:'Please sign in again.'});return null;}
+  return {id:auth.data.user.id,email:auth.data.user.email};
+}
+router.get('/history/:jobId',async(req:Request,res:Response)=>{
+  try {
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(req.params.jobId)))return res.status(400).json({error:'Invalid booking reference'});
+    const user=await historyUser(req,res);if(!user)return;
+    res.setHeader('Cache-Control','no-store');
+    return res.json(await BookingHistoryService.load(String(req.params.jobId),user.id));
+  } catch(error:any){return res.status([403,404].includes(error.status)?error.status:503).json({error:error.message || 'History unavailable. Please retry.'});}
+});
+router.post('/support',async(req:Request,res:Response)=>{
+  try {
+    const user=await historyUser(req,res);if(!user)return;
+    const result=await BookingSupportService.submit(user.id,user.email,req.body);
+    return res.status(202).json(result);
+  } catch(error:any){return res.status([400,403,404,409,429].includes(error.status)?error.status:503).json({error:error.message || 'Support request could not be saved. Please retry.'});}
 });
 
 export default router;

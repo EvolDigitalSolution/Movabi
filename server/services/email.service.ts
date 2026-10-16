@@ -18,6 +18,19 @@ export class EmailService {
     },
   });
 
+  static async sendBookingSupportNotification(recipients: string[], message: {id:string;replyTo?:string;subject:string;text:string}): Promise<boolean> {
+    if (!recipients.length || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return false;
+    try {
+      const info = await this.transporter.sendMail({
+        from: `"Movabi Support" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+        to: recipients, replyTo: message.replyTo || undefined,
+        messageId: `<booking-support-${message.id}@movabi.app>`,
+        subject: message.subject, text: message.text
+      });
+      return Array.isArray(info.accepted) && info.accepted.length > 0;
+    } catch { console.warn('[EmailService] Support email queued for retry'); return false; }
+  }
+
   static async sendDriverOnboardingAdminNotification(
     recipients: string[],
     message: { subject: string; text: string; html: string }

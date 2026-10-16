@@ -1,3 +1,4 @@
+import { BookingSupportService } from './services/booking-support.service';
 import { GbMotMonitorService } from './services/gb-mot-monitor.service';
 import { ShoppingBudgetService } from './services/shopping-budget.service';
 import journeyRoutes from './routes/journey.routes';
@@ -199,6 +200,7 @@ try {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     JobPayoutService.start();
+    BookingSupportService.start();
     GbMotMonitorService.start();
     let shoppingCleanupRunning = false;
     setInterval(() => {

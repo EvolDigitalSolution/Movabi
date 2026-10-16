@@ -1,3 +1,4 @@
+import { BookingHelpService } from '../../../../../core/services/support/booking-help.service';
 import { ModalController } from '@ionic/angular/standalone';
 import { ShoppingBudgetApprovalComponent } from '@shared/components/shopping-budget-approval/shopping-budget-approval.component';
 import { CommunicationService } from '../../../../../core/services/communication/communication.service';
@@ -339,12 +340,15 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
               </div>
             </div>
 
+            @if (booking() && ['completed','settled','cancelled','canceled','failed','expired','no_driver_found'].includes(booking()!.status)) {
+              <button type="button" class="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left font-bold text-slate-900" (click)="router.navigate(['/customer/history', booking()!.id])">View booking record & receipt</button>
+            }
             <div class="movabi-card-compact bg-white border border-slate-100" [class.hidden]="activeTrackingTab() !== 'payment'">
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Payment</p>
                   <h3 class="mt-1 text-sm font-bold text-slate-900">{{ paymentAmountLabel() }}</h3>
-                  <p class="mt-1 text-xs font-semibold text-slate-500 leading-snug">Wallet/card reservation is protected by Movabi until the request is complete.</p>
+                  <p class="mt-1 text-xs font-semibold text-slate-500 leading-snug">{{ paymentRecordMessage() }}</p>
                 </div>
                 <p class="movabi-price shrink-0">{{ getDisplayedTotal() }}</p>
               </div>
@@ -796,7 +800,7 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
                     <span>Safety/help</span>
                   </button>
 
-                  @if (booking()?.status === 'completed') {
+                  @if (['completed','settled'].includes(booking()?.status || '')) {
                     <button
                       type="button"
                       (click)="reportLostItem()"
@@ -846,6 +850,8 @@ type CustomerTrackingTab = 'overview' | 'route' | 'details' | 'chat' | 'payment'
   `
 })
 export class BookingTrackingPage implements OnInit, OnDestroy {
+    private bookingHelp = inject(BookingHelpService);
+
     @ViewChild('map') mapComponent?: MapComponent;
 
     private route = inject(ActivatedRoute);
@@ -3004,47 +3010,8 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     }
 
     async showRating(): Promise<void> {
-        const b = this.booking();
-        if (!b) return;
-
-        const alert = await this.alertCtrl.create({
-            header: 'Rate Trip',
-            inputs: [
-                {
-                    name: 'score',
-                    type: 'number',
-                    placeholder: '1-5',
-                    min: 1,
-                    max: 5
-                },
-                {
-                    name: 'comment',
-                    type: 'textarea',
-                    placeholder: 'Comment'
-                }
-            ],
-            buttons: [
-                {
-                    text: 'Skip',
-                    role: 'cancel',
-                    handler: () => this.router.navigate(['/customer'])
-                },
-                {
-                    text: 'Submit',
-                    handler: async (data) => {
-                        await this.bookingService.rateBooking(
-                            b.id,
-                            Number(data.score || 5),
-                            data.comment || ''
-                        );
-
-                        await this.router.navigate(['/customer']);
-                    }
-                }
-            ]
-        });
-
-        await alert.present();
+        const b=this.booking();
+        if(b && ['completed','settled'].includes(String(b.status))) await this.bookingHelp.rate(b.id);
     }
 
     callDriver(): void {
@@ -3055,117 +3022,18 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         }
     }
 
-    contactSupport(): void {
-        const b = this.booking();
-        this.openSupportEmail(
-            'Movabi support request',
-            [
-                'Hello Movabi Support,',
-                '',
-                'I need help with my booking.',
-                '',
-                `Booking ID: ${b?.id || 'Not available'}`,
-                `Status: ${this.getStatusLabel(b?.status || '')}`,
-                `Service: ${b?.service_slug || 'Request'}`
-            ].join('\n')
-        );
+    paymentRecordMessage(): string {
+        const b=this.booking();
+        if(!b)return 'Payment details are loading.';
+        if(['paid','captured'].includes(String(b.payment_status)))return 'Payment is recorded. Open the booking record to view your receipt.';
+        if(this.isTerminalTrackingStatus(String(b.status)))return 'View the booking record for the confirmed payment, refund or authorization status.';
+        return 'Wallet/card reservation is protected by Movabi until the request is complete.';
     }
 
-    async reportIssue(): Promise<void> {
-        const alert = await this.alertCtrl.create({
-            header: 'Report an issue',
-            message: 'Tell Movabi support what happened. We will include this booking reference so the team can help faster.',
-            buttons: [
-                { text: 'Cancel', role: 'cancel' },
-                {
-                    text: 'Contact Support',
-                    handler: () => this.openSupportEmail(
-                        'Movabi booking issue',
-                        [
-                            'Hello Movabi Support,',
-                            '',
-                            'I want to report an issue with this booking.',
-                            '',
-                            `Booking ID: ${this.booking()?.id || 'Not available'}`,
-                            `Status: ${this.getStatusLabel(this.booking()?.status || '')}`,
-                            '',
-                            'Issue:'
-                        ].join('\n')
-                    )
-                }
-            ]
-        });
-
-        await alert.present();
-    }
-
-    async openSafetyHelp(): Promise<void> {
-        const alert = await this.alertCtrl.create({
-            header: 'Safety help',
-            message: 'If you feel unsafe, move to a safe public place and contact local emergency services. Movabi support can also help with this booking.',
-            buttons: [
-                { text: 'OK', role: 'cancel' },
-                {
-                    text: 'Contact Support',
-                    handler: () => this.openSupportEmail(
-                        'Movabi safety support',
-                        [
-                            'Hello Movabi Support,',
-                            '',
-                            'I need safety help with this booking.',
-                            '',
-                            `Booking ID: ${this.booking()?.id || 'Not available'}`,
-                            `Status: ${this.getStatusLabel(this.booking()?.status || '')}`
-                        ].join('\n')
-                    )
-                }
-            ]
-        });
-
-        await alert.present();
-    }
-
-    private lostItemDialogOpen = false;
-    async reportLostItem(): Promise<void> {
-        if (this.lostItemDialogOpen) return;
-        const job = this.booking();
-        const driverId = job?.driver_id;
-        if (!job || job.status !== 'completed' || !driverId) {
-            const toast = await this.toastCtrl.create({ message: 'An assigned driver and completed booking are required.', duration: 3500 });
-            await toast.present(); return;
-        }
-        this.lostItemDialogOpen = true;
-        let sending = false;
-        const alert = await this.alertCtrl.create({
-            header: 'Message driver about a lost item',
-            message: 'Describe the item and where you last saw it. The report will be sent to this booking’s driver in Movabi.',
-            backdropDismiss: false,
-            inputs: [{ name: 'description', type: 'textarea', placeholder: 'Item description and where it was left', attributes: { maxlength: 1500 } }],
-            buttons: [
-                { text: 'Cancel', role: 'cancel', handler: () => !sending },
-                { text: 'Send to driver', handler: async (values) => {
-                    if (sending) return false;
-                    const description = String(values?.description || '').trim();
-                    if (description.length < 3 || description.length > 1500) {
-                        const toast = await this.toastCtrl.create({ message: 'Please describe the lost item (3–1500 characters).', duration: 3500 });
-                        await toast.present(); return false;
-                    }
-                    sending = true;
-                    try {
-                        await this.chatCommunication.sendMessage(job.id, driverId, description, 'text', 'lost_item');
-                        this.setActiveTrackingTab('chat');
-                        const toast = await this.toastCtrl.create({ message: 'Lost item report sent to your driver.', duration: 3500 });
-                        await toast.present(); return true;
-                    } catch {
-                        const toast = await this.toastCtrl.create({ message: 'Could not confirm delivery. Check the booking chat before sending again.', duration: 5000 });
-                        await toast.present(); return false;
-                    } finally { sending = false; }
-                } }
-            ]
-        });
-        try { await alert.present(); await alert.onDidDismiss(); }
-        finally { this.lostItemDialogOpen = false; }
-    }
+    contactSupport(): void { const b=this.booking();if(b)void this.bookingHelp.openSupport(b.id,'help'); }
+    async reportIssue(): Promise<void> { const b=this.booking();if(b)await this.bookingHelp.openSupport(b.id,'issue'); }
+    async openSafetyHelp(): Promise<void> { const b=this.booking();if(b)await this.bookingHelp.openSupport(b.id,'safety'); }
+    async reportLostItem(): Promise<void> { const b=this.booking();if(b && ['completed','settled'].includes(String(b.status)))await this.bookingHelp.openSupport(b.id,'lost_item'); }
 
     cancelUnavailableReason(): string {
         const status = this.getStatusLabel(this.booking()?.status || '');
@@ -3179,11 +3047,6 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
 
     lostItemUnavailableReason(): string {
         return 'Available after the booking is complete.';
-    }
-
-    private openSupportEmail(subject: string, body: string): void {
-        const mailto = `mailto:support@movabi.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        window.open(mailto, '_system');
     }
 
     async approveOverBudget(): Promise<void> {
