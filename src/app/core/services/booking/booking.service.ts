@@ -1139,6 +1139,41 @@ export class BookingService {
         return data;
     }
 
+    /** Bounded history pages; live bookings are loaded independently on refresh. */
+    async getActivityHistoryPage(cursor?: { created_at: string; id: string }): Promise<{
+        bookings: Booking[]; cursor: { created_at: string; id: string } | null;
+    }> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Please sign in again.');
+        const ended = ['completed','settled','cancelled','canceled','failed','expired','no_driver_found','refunded'];
+        let query = this.supabase.from('jobs').select('*, service_type:service_types(*)')
+            .eq('customer_id', user.id).in('status', ended)
+            .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(11);
+        if (cursor) {
+            if (!/^[0-9a-f-]{36}$/i.test(cursor.id) || !/^\d{4}-\d{2}-\d{2}T[\d:.+Z-]+$/.test(cursor.created_at)) {
+                throw new Error('Invalid history cursor');
+            }
+            query = query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`);
+        }
+        const [past, live] = await Promise.all([
+            query,
+            cursor ? Promise.resolve({ data: [], error: null }) : this.supabase.from('jobs')
+                .select('*, service_type:service_types(*)').eq('customer_id', user.id)
+                .not('status', 'in', '(' + ended.join(',') + ')')
+                .order('created_at', { ascending: false })
+        ]);
+        if (this.auth.currentUser()?.id !== user.id) throw new Error('Session changed');
+        if (past.error) throw past.error;
+        if (live.error) throw live.error;
+        if (!Array.isArray(past.data) || !Array.isArray(live.data)) throw new Error('History response was not a list');
+        const rows = past.data.slice(0, 10);
+        const last = rows[rows.length - 1];
+        return {
+            bookings: [...live.data, ...rows].map((row: any) => this.mapJobToBooking(row)),
+            cursor: past.data.length > 10 && last ? { created_at: last.created_at, id: last.id } : null
+        };
+    }
+
     async getHistory(): Promise<void> {
         const user = this.auth.currentUser();
 

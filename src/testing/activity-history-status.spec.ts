@@ -41,9 +41,13 @@ import { ActivityPage } from '../app/apps/mobile/features/customer/activity/acti
  */
 function makePage() {
   const page = Object.create(ActivityPage.prototype) as any;
-  page.isLoadingHistory = signal(true);
+  page.isLoadingHistory = signal(false);
+  page.history = signal([]);
+  page.historyCursor = signal(null);
+  page.auth = {currentUser: () => ({id:"customer"})};
+  page.historyOwner = "customer";
   page.historyError = signal<string | null>(null);
-  page.bookingService = { getHistory: M.getHistory };
+  page.bookingService = { getActivityHistoryPage: M.getHistory };
   return page as ActivityPage & {
     isLoadingHistory: { (): boolean };
     historyError: { (): string | null };
@@ -156,10 +160,10 @@ describe('activity history load lifecycle', () => {
   });
 
   it('clears the loading flag after a successful load', async () => {
-    M.getHistory.mockResolvedValue(undefined);
+    M.getHistory.mockResolvedValue({bookings:[],cursor:null});
     const page = makePage();
 
-    expect(page.isLoadingHistory()).toBe(true);
+    expect(page.isLoadingHistory()).toBe(false);
     await page.loadHistory();
 
     expect(M.getHistory).toHaveBeenCalledTimes(1);
@@ -184,7 +188,7 @@ describe('activity history load lifecycle', () => {
     await page.loadHistory();
     expect(page.historyError()).not.toBeNull();
 
-    M.getHistory.mockResolvedValueOnce(undefined);
+    M.getHistory.mockResolvedValueOnce({bookings:[],cursor:null});
     await page.loadHistory();
 
     expect(page.historyError()).toBeNull();

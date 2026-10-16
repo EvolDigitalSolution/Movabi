@@ -14,6 +14,7 @@ import {
     checkmarkCircle
 } from 'ionicons/icons';
 import { Router } from '@angular/router';
+import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { Booking } from '../../../../../shared/models/booking.model';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
@@ -37,7 +38,7 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
     <ion-content class="bg-slate-50" [fullscreen]="true">
       <div class="max-w-xl mx-auto p-5 space-y-8 native-safe-bottom">
 
-        @if (activeBookings().length === 0 && pendingMarketplace().length === 0 && pastBookings().length === 0) {
+        @if (!isLoadingHistory() && !historyError() && activeBookings().length === 0 && pendingMarketplace().length === 0 && pastBookings().length === 0) {
           <button
             type="button"
             (click)="router.navigate(['/customer/request'])"
@@ -53,7 +54,7 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
           </button>
         }
 
-        @if (isLoadingHistory()) {
+        @if (isLoadingHistory() && history().length === 0) {
           <div class="py-10 text-center" data-testid="activity-loading">
             <p class="text-sm font-bold text-slate-500">Loading your activity…</p>
           </div>
@@ -64,7 +65,7 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
             <p class="text-sm font-bold text-rose-800">{{ loadError }}</p>
             <button
               type="button"
-              (click)="loadHistory()"
+              (click)="loadHistory(history().length > 0 && historyCursor() !== null)"
               data-testid="activity-retry"
               class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-black text-rose-700"
             >
@@ -201,6 +202,9 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
           </div>
         }
       </div>
+      <ion-infinite-scroll threshold="120px" [disabled]="!historyCursor() || !!historyError()" (ionInfinite)="loadMoreHistory($event)">
+        <ion-infinite-scroll-content loadingSpinner="crescent" loadingText="Loading more bookings…"></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
     </ion-content>
 
     <app-customer-bottom-nav></app-customer-bottom-nav>
@@ -209,6 +213,8 @@ import { CustomerBottomNavComponent } from '../../../../../shared/components/cus
 })
 export class ActivityPage implements OnInit {
     private bookingService = inject(BookingService);
+    private auth = inject(AuthService);
+    private historyOwner: string | null = null;
     private config = inject(AppConfigService);
     public router = inject(Router);
 
@@ -245,12 +251,14 @@ export class ActivityPage implements OnInit {
         'fare_agreed'
     ]);
 
-    history = this.bookingService.bookingHistory;
+    history = signal<Booking[]>([]);
+    historyCursor = signal<{ created_at: string; id: string } | null>(null);
 
-    isLoadingHistory = signal(true);
+
+    isLoadingHistory = signal(false);
     historyError = signal<string | null>(null);
 
-    pendingMarketplace = computed(() => this.bookingService.pendingMarketplaceBookings());
+    pendingMarketplace = computed(() => this.history().filter(booking => this.bookingService.isPendingMarketplaceBooking(booking)));
 
     activeBookings = computed(() => {
         const marketplaceIds = new Set(this.pendingMarketplace().map(b => b.id));
@@ -282,22 +290,34 @@ export class ActivityPage implements OnInit {
         });
     }
 
-    ngOnInit() {
-        void this.loadHistory();
-    }
+    ngOnInit() { void this.loadHistory(); }
+    ionViewWillEnter() { void this.loadHistory(); }
 
     /**
      * Load the activity list with an explicit loading/error lifecycle. The loading
      * flag is ALWAYS cleared, on success and on failure, so the screen can never
      * stay stuck on "Loading…" or hide a failed load behind an empty list.
      */
-    async loadHistory(): Promise<void> {
+    async loadMoreHistory(event: Event): Promise<void> {
+        try { if (this.historyCursor()) await this.loadHistory(true); }
+        finally { await (event.target as HTMLIonInfiniteScrollElement).complete(); }
+    }
+
+    async loadHistory(append = false): Promise<void> {
+        if (this.isLoadingHistory()) return;
+        const owner=this.auth.currentUser()?.id || null;
+        if(owner!==this.historyOwner){this.history.set([]);this.historyCursor.set(null);append=false;this.historyOwner=owner;}
         this.isLoadingHistory.set(true);
         this.historyError.set(null);
 
         try {
-            await this.bookingService.getHistory();
+            const page = await this.bookingService.getActivityHistoryPage(append ? this.historyCursor() || undefined : undefined);
+            if(this.auth.currentUser()?.id!==owner){this.history.set([]);this.historyCursor.set(null);throw new Error('Session changed');}
+            const merged = append ? [...this.history(), ...page.bookings] : page.bookings;
+            this.history.set([...new Map(merged.map(booking => [booking.id, booking])).values()]);
+            this.historyCursor.set(page.cursor);
         } catch (error) {
+            if(this.auth.currentUser()?.id!==owner){this.history.set([]);this.historyCursor.set(null);}
             console.error('[ActivityPage] history load failed:', error);
             this.historyError.set('We could not load your activity. Please try again.');
         } finally {

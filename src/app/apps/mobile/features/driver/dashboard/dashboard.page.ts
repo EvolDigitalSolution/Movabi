@@ -13,6 +13,8 @@ import {
     IonContent,
     IonIcon,
     IonToggle,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
     LoadingController,
     ToastController
     ,AlertController
@@ -124,7 +126,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
         IonToolbar,
         IonTitle,
         IonButtons,
-        IonContent,
+        IonContent, IonInfiniteScroll, IonInfiniteScrollContent,
         IonIcon,
         CardComponent,
         BadgeComponent,
@@ -830,7 +832,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
             <app-card class="p-4">
               <h2 class="text-lg font-black">Booking history</h2>
               @if (tripHistoryLoading()) { <p role="status">Loading your bookings…</p> }
-              @if (tripHistoryError()) { <p role="alert">{{ tripHistoryError() }}</p><button type="button" (click)="loadTripHistory()" class="py-3 font-bold">Try again</button> }
+              @if (tripHistoryError()) { <p role="alert">{{ tripHistoryError() }}</p><button type="button" (click)="loadTripHistory(tripHistory().length > 0)" class="py-3 font-bold">Try again</button> }
               @if (!tripHistoryLoading() && !tripHistoryError() && tripHistory().length===0) { <p class="py-3 text-slate-600">Completed and cancelled bookings will appear here.</p> }
               @for (trip of tripHistory(); track trip.id) {
                 <button type="button" (click)="router.navigate(['/driver/history',trip.id])" class="trip-history-link">
@@ -840,7 +842,9 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                   <span>View booking record</span>
                 </button>
               }
-              @if(tripHistoryMore() && !tripHistoryError()) { <button type="button" [disabled]="tripHistoryLoading()" (click)="loadTripHistory(true)" class="py-3 font-bold">Load more</button> }
+              <ion-infinite-scroll threshold="120px" [disabled]="!tripHistoryMore() || !!tripHistoryError()" (ionInfinite)="loadMoreTrips($event)">
+                <ion-infinite-scroll-content loadingSpinner="crescent" loadingText="Loading more bookings…"></ion-infinite-scroll-content>
+              </ion-infinite-scroll>
             </app-card>
           } @else if (activeHubTab() === 'wallet') {
             <div class="space-y-4">
@@ -3481,26 +3485,38 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         }, 200);
     }
 
+    private tripHistoryOwner: string | null = null;
     tripHistory=signal<any[]>([]);
     tripHistoryLoading=signal(false);
     tripHistoryError=signal('');
     tripHistoryMore=signal(false);
     async loadTripHistory(append=false): Promise<void> {
         if(this.tripHistoryLoading())return;
-        const user=this.auth.currentUser();if(!user)return;
+        const user=this.auth.currentUser();
+        if(!user){this.tripHistory.set([]);this.tripHistoryMore.set(false);return;}
+        if(this.tripHistoryOwner!==user.id){this.tripHistory.set([]);this.tripHistoryMore.set(false);append=false;this.tripHistoryOwner=user.id;}
         this.tripHistoryLoading.set(true);this.tripHistoryError.set('');
         try {
-            const offset=append?this.tripHistory().length:0;
-            const result=await this.supabase.from('jobs').select('id,status,created_at,pickup_address,dropoff_address')
-              .or(`driver_id.eq.${user.id},and(driver_id.is.null,accepted_driver_id.eq.${user.id})`)
+            const last=append?this.tripHistory().at(-1):null;
+            let query=this.supabase.from('jobs').select('id,status,created_at,pickup_address,dropoff_address')
+              .or(last ? `and(or(driver_id.eq.${user.id},and(driver_id.is.null,accepted_driver_id.eq.${user.id})),or(created_at.lt.${last.created_at},and(created_at.eq.${last.created_at},id.lt.${last.id})))` : `driver_id.eq.${user.id},and(driver_id.is.null,accepted_driver_id.eq.${user.id})`)
               .in('status',['completed','settled','cancelled','canceled','failed','expired','no_driver_found','refunded'])
-              .order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+49);
+              .order('created_at',{ascending:false}).order('id',{ascending:false}).limit(11);
+            // A stable cursor avoids skips when a newer booking arrives between pages.
+            const result=await query;
+            if(this.auth.currentUser()?.id!==user.id){this.tripHistory.set([]);this.tripHistoryMore.set(false);throw new Error('Session changed');}
             if(result.error)throw result.error;
-            if(this.auth.currentUser()?.id!==user.id){this.tripHistory.set([]);throw new Error('Session changed');}
-            this.tripHistory.set(append?[...this.tripHistory(),...(result.data || [])]:result.data || []);
-            this.tripHistoryMore.set((result.data || []).length===50);
+            if(!Array.isArray(result.data))throw new Error('History response was not a list');
+            const page=result.data.slice(0,10);
+            const merged=append?[...this.tripHistory(),...page]:page;
+            this.tripHistory.set([...new Map(merged.map(row=>[row.id,row])).values()]);
+            this.tripHistoryMore.set(result.data.length>10);
         }catch{this.tripHistoryError.set('Could not load your booking history. Please retry.');}
         finally{this.tripHistoryLoading.set(false);}
+    }
+    async loadMoreTrips(event: Event): Promise<void> {
+        try { if(this.tripHistoryMore()) await this.loadTripHistory(true); }
+        finally { await (event.target as HTMLIonInfiniteScrollElement).complete(); }
     }
     openWalletBooking(earning:any): void {
         if(earning.job_id)void this.router.navigate(['/driver/history',earning.job_id]);

@@ -8,6 +8,8 @@ import {
     IonBackButton,
     IonTitle,
     IonContent,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
     IonIcon,
     IonRefresher,
     IonRefresherContent,
@@ -50,6 +52,8 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
         IonBackButton,
         IonTitle,
         IonContent,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
         IonIcon,
         IonRefresher,
         IonRefresherContent,
@@ -157,7 +161,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
           <div class="grid grid-cols-4 gap-2">
             <button
               type="button"
-              (click)="period.set('all')"
+              (click)="setPeriod('all')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'all'"
               [class.text-white]="period() === 'all'"
@@ -168,7 +172,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
             <button
               type="button"
-              (click)="period.set('today')"
+              (click)="setPeriod('today')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'today'"
               [class.text-white]="period() === 'today'"
@@ -179,7 +183,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
             <button
               type="button"
-              (click)="period.set('week')"
+              (click)="setPeriod('week')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'week'"
               [class.text-white]="period() === 'week'"
@@ -190,7 +194,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
             <button
               type="button"
-              (click)="period.set('month')"
+              (click)="setPeriod('month')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'month'"
               [class.text-white]="period() === 'month'"
@@ -243,7 +247,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             </div>
           } @else {
             <div class="space-y-3">
-              @for (earning of filteredEarnings(); track getEarningKey(earning)) {
+              @for (earning of visibleEarnings(); track getEarningKey(earning)) {
                 <article class="earning-record">
                   <button type="button" class="earning-summary" (click)="toggleEarning(earning)" [attr.aria-expanded]="isSelected(earning)">
                     <span class="font-black">{{ getEarningTitle(earning) }}</span>
@@ -266,6 +270,9 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
           }
         </div>
       </div>
+      <ion-infinite-scroll threshold="120px" [disabled]="visibleEarnings().length >= filteredEarnings().length" (ionInfinite)="loadMoreEarnings($event)">
+        <ion-infinite-scroll-content loadingSpinner="crescent" loadingText="Loading more transactions…"></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
     </ion-content>
   `,
     styles: [`.earning-record{background:white;border:1px solid #e2e8f0;border-radius:1.3rem;padding:1rem;min-width:0;max-width:100%;overflow-wrap:anywhere}.earning-summary{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:.6rem;text-align:left;white-space:normal;min-width:0;line-height:1.4}.earning-summary>*{min-width:0;max-width:100%}.earning-amount{font-weight:800;color:#047857;font-size:1.2rem}.earning-status{background:#f1f5f9;border-radius:.7rem;padding:.45rem .6rem;line-height:1.4}.earning-details{display:grid;gap:.4rem;margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem}.earning-details dt{font-weight:700;color:#64748b}.earning-details dd{margin:0;margin-bottom:.5rem;overflow-wrap:anywhere}.earning-booking{margin-top:1rem;background:#fef3c7;border-radius:.75rem;padding:.75rem 1rem;font-weight:700;width:100%;white-space:normal;text-align:left}.earning-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:.75rem}.earning-record button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
@@ -283,6 +290,14 @@ export class EarningsPage implements OnInit {
     withdrawError = signal<string | null>(null);
     selectedEarningId = signal<string | null>(null);
     period = signal<EarningsPeriod>('all');
+
+    visibleCount = signal(10);
+    visibleEarnings = computed(() => this.filteredEarnings().slice(0, this.visibleCount()));
+    setPeriod(period: EarningsPeriod): void { this.period.set(period); this.visibleCount.set(10); }
+    async loadMoreEarnings(event: Event): Promise<void> {
+        try { this.visibleCount.update(count => Math.min(count + 10, this.filteredEarnings().length)); }
+        finally { await (event.target as HTMLIonInfiniteScrollElement).complete(); }
+    }
 
     filteredEarnings = computed(() => {
         const items = [...this.earnings()];
