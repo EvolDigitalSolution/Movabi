@@ -4,7 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
 import { AppConfigService } from '../config/app-config.service';
 import { AutocompleteResult } from '../../models/maps/route-result.model';
-import { catchError, forkJoin, map, Observable, of, timeout, throwError, defer } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, timeout, throwError, defer, switchMap, finalize, shareReplay } from 'rxjs';
 
 interface ORSFeature {
     properties: {
@@ -44,6 +44,10 @@ export class GeocodingService {
     private mapTilerGeocodeUrl = 'https://api.maptiler.com/geocoding';
     private cache = new Map<string, AutocompleteResult[]>();
 
+    private mapTilerBlockedUntil = 0;
+    private mapTilerPending = new Map<string, Observable<AutocompleteResult[]>>();
+    private mapTilerRecent = new Map<string, {until:number;results:AutocompleteResult[]}>();
+
     autocomplete(query:string,origin?:{lat:number;lng:number},options:LocalSearchOptions={}):Observable<AutocompleteResult[]>{
         return this.searchPlaces(query,origin,options,true);
     }
@@ -60,6 +64,7 @@ export class GeocodingService {
             const rawQuery=plan.query,postcode=this.isPostalSearch(rawQuery);
             const normalized=postcode?this.normalizeUkPostcode(rawQuery):this.normalizeQuery(rawQuery);
             if(!normalized || (autocomplete && normalized.length<3))return of([]);
+            if(this.provider.getMapTilerApiKey())return this.preferredMapTilerSearch(normalized,plan,postcode,options,autocomplete);
             const key=JSON.stringify([this.config.currentCountry().code,normalized,plan.origin,plan.radiusKm,autocomplete]);
             if(autocomplete && this.cache.has(key))return of(this.cache.get(key)!);
             const ors=!!this.provider.getOpenRouteServiceApiKey(),tiler=!!this.provider.getMapTilerApiKey();
@@ -78,6 +83,50 @@ export class GeocodingService {
                 return results;
             }));
         });
+    }
+
+    /** MapTiler is the configured search provider. ORS remains available for routing
+     * and installations without a MapTiler key; it is not called on every keystroke. */
+    private preferredMapTilerSearch(query:string,plan:PlaceSearchPlan,postcode:boolean,options:LocalSearchOptions,autocomplete:boolean):Observable<AutocompleteResult[]>{
+        const key=JSON.stringify([this.config.currentCountry().code,query,plan.origin,plan.radiusKm,autocomplete,!!options.strict]);
+        const cached=this.mapTilerRecent.get(key);
+        if(cached && cached.until>Date.now())return of(cached.results);
+        this.mapTilerRecent.delete(key);
+        if(this.mapTilerBlockedUntil>Date.now())return options.strict?throwError(()=>Object.assign(new Error('Place search is temporarily unavailable. Please retry shortly or select a point on the map.'),{code:'provider_unavailable'})):of([]);
+        const pending=this.mapTilerPending.get(key);
+        if(pending)return pending;
+        // Category words can swamp a name search in MapTiler. Keep the original
+        // query for validation/ranking and use the distinctive terms on one retry.
+        const category=placeCategory(query);
+        const first=category?.qualifier && plan.radiusKm?category.qualifier:query;
+        const distinctive=!postcode && this.isPlaceQuery(query) && !category && plan.radiusKm
+            ?this.placeTokens(query).join(' '):'';
+        let failed=false;
+        const request=(text:string)=>this.mapTilerSearch(text,10,{
+            origin:plan.origin,plan,skipProximity:postcode,onFailure:()=>{failed=true;}
+        });
+        const filter=(results:AutocompleteResult[])=>this.rankResults(
+            results.filter(result=>!plan.radiusKm || !plan.origin || searchDistanceKm(plan.origin,result)<=plan.radiusKm),
+            query,postcode,!query.includes(',')?plan.origin:undefined
+        );
+        const work=request(first).pipe(
+            map(filter),
+            switchMap(results=>!failed && !results.length && distinctive && distinctive.toLowerCase()!==first.toLowerCase()
+                ?request(distinctive).pipe(map(filter)):of(results)),
+            map(results=>{
+                if(failed && !results.length && options.strict)throw Object.assign(new Error('Place search is temporarily unavailable. Please retry.'),{code:'provider_unavailable'});
+                const selected=results.slice(0,autocomplete?8:5).map(result=>({...result,...(plan.origin?{distanceKm:searchDistanceKm(plan.origin,result)}:{})}));
+                if(selected.length){
+                    if(this.mapTilerRecent.size>=100)this.mapTilerRecent.delete(this.mapTilerRecent.keys().next().value!);
+                    this.mapTilerRecent.set(key,{until:Date.now()+60_000,results:selected});
+                }
+                return selected;
+            }),
+            finalize(()=>this.mapTilerPending.delete(key)),
+            shareReplay({bufferSize:1,refCount:true})
+        );
+        this.mapTilerPending.set(key,work);
+        return work;
     }
 
     private isPostalSearch(query:string):boolean {
@@ -161,7 +210,7 @@ export class GeocodingService {
             map(res => this.mapOpenRouteFeaturesToResults(res.features)),
             catchError(error => {
                 options.onFailure?.();
-                console.warn('[GeocodingService] ORS autocomplete failed:', error);
+                console.warn('[GeocodingService] ORS autocomplete unavailable');
                 return of([]);
             })
         );
@@ -189,7 +238,7 @@ export class GeocodingService {
             map(res => this.mapOpenRouteFeaturesToResults(res.features)),
             catchError(error => {
                 options.onFailure?.();
-                console.warn('[GeocodingService] ORS search failed:', error);
+                console.warn('[GeocodingService] ORS search unavailable');
                 return of([]);
             })
         );
@@ -209,6 +258,7 @@ export class GeocodingService {
             language: 'en',
             country: country.code.toLowerCase(),
             types: options.skipProximity?'postal_code,address,place':this.isPlaceQuery(query)?'poi':'poi,address,place',
+            autocomplete: 'true',
             fuzzyMatch: 'true'
         };
 
@@ -222,7 +272,8 @@ export class GeocodingService {
         }).pipe(
             timeout(6000),
             map(res => this.mapMapTilerFeaturesToResults(res.features)),
-            catchError(() => {
+            catchError(error => {
+                if(error?.status===403 || error?.status===429)this.mapTilerBlockedUntil=Date.now()+60_000;
                 options.onFailure?.();
                 return of([]);
             })
