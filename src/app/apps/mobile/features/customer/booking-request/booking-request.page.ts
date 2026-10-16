@@ -341,7 +341,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <p class="address-results__hint">Choose a place to confirm your pickup.</p>
                         </div>
                       } @else if(showPickupResults() && pickupSearchText().trim().length>=3) {
-                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p></div>
+                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!pickupSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p>@if(searchArea('pickup').radiusKm && !searchArea('pickup').needsLocation){<button type="button" (mousedown)="$event.preventDefault()" (click)="searchAdditionalListings('pickup')">Search additional listings</button>}</div>}</div>
                       }
                     </app-input>
                   </div>
@@ -417,7 +417,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <p class="address-results__hint">Choose a place to confirm your destination.</p>
                         </div>
                       } @else if(showDropoffResults() && dropoffSearchText().trim().length>=3) {
-                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p></div>
+                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!dropoffSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p>@if(searchArea('dropoff').radiusKm && !searchArea('dropoff').needsLocation){<button type="button" (mousedown)="$event.preventDefault()" (click)="searchAdditionalListings('dropoff')">Search additional listings</button>}</div>}</div>
                       }
                     </app-input>
                   </div>
@@ -1158,7 +1158,7 @@ type PackageSize = 'small' | 'medium' | 'large';
       position: relative;
       display: grid;
       grid-template-columns: 32px minmax(0, 1fr) auto;
-      align-items: center;
+      align-items: start;
       gap: 8px;
       min-height: 64px;
       padding: 8px;
@@ -1235,7 +1235,7 @@ type PackageSize = 'small' | 'medium' | 'large';
       outline-offset: 2px;
     }
     .address-results {
-      position:absolute;z-index:9999;left:-44px;right:-34px;top:calc(100% + 10px);
+      position:relative;z-index:30;left:-40px;right:auto;top:auto;width:calc(100% + 88px);margin-top:10px;
       background:#fff;border:1px solid #e2e8f0;border-radius:20px;
       box-shadow:0 16px 45px rgba(15,23,42,.16);overflow-y:auto;
       max-height:min(26rem,52dvh);overscroll-behavior:contain;isolation:isolate;
@@ -1264,7 +1264,7 @@ type PackageSize = 'small' | 'medium' | 'large';
     .address-results__state--error{background:#fff1f2;color:#be123c;display:grid;justify-items:center;gap:8px}
     .address-results__state button{border:1px solid #fecdd3;background:white;border-radius:9px;min-height:40px;padding:7px 14px;font-weight:700}
     .address-results__hint{margin:0;padding:10px 14px;background:#f8fafc;font-size:10px;line-height:1.5;color:#94a3b8;text-align:center}
-    @media(max-width:360px){.address-results{left:-40px;right:-30px}.address-results__item{padding:11px 10px;gap:8px}.address-results__icon{flex-basis:32px;width:32px;height:34px}.address-results__name{font-size:13px}}
+    @media(max-width:360px){.address-results{left:-40px;right:auto;width:calc(100% + 88px)}.address-results__item{padding:11px 10px;gap:8px}.address-results__icon{flex-basis:32px;width:32px;height:34px}.address-results__name{font-size:13px}}
     @media (prefers-reduced-motion: reduce) {
       .address-results__item {
         transition: none;
@@ -2572,7 +2572,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.clearRouteAndFare();
     }
 
-    private performSearch(type: 'pickup' | 'dropoff', query: string) {
+    private performSearch(type: 'pickup' | 'dropoff', query: string, additionalListings=false) {
         const version=this.addressSearchVersion[type];
         const loading=type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading;
         if (!query || query.length < 3) {
@@ -2590,7 +2590,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const origin=this.searchOrigin(type),scope=(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)();
         const searchError=type==='pickup'?this.pickupSearchError:this.dropoffSearchError;
         searchError.set('');
-        this.geocoding.autocomplete(this.withLocationContext(type,query),origin,{scope,strict:true}).subscribe({next:results=>{
+        this.geocoding.autocomplete(this.withLocationContext(type,query),origin,{scope,strict:true,...(additionalListings?{additionalListings:true}:{})}).subscribe({next:results=>{
             const current=type==='pickup'?this.pickupLocation.address:this.dropoffLocation.address;
             if(current!==query||version!==this.addressSearchVersion[type])return;
             loading.set(false);
@@ -2626,6 +2626,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
         this.performSearch(type,(type==='pickup'?this.pickupSearchText:this.dropoffSearchText)());
     }
+    searchAdditionalListings(type:'pickup'|'dropoff'):void {
+        if((type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading)())return;
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(true);
+        this.performSearch(type,(type==='pickup'?this.pickupSearchText:this.dropoffSearchText)(),true);
+    }
+
     async locatePlaceSearch(type:'pickup'|'dropoff'):Promise<void> {
         if(this.locatingSearchArea())return;
         this.locatingSearchArea.set(true);

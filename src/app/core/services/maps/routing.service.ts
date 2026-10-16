@@ -20,7 +20,7 @@ interface ORSRoute {
 export class RoutingService {
   private http = inject(HttpClient);
   private provider = inject(MapProviderService);
-  private baseUrl = 'https://api.openrouteservice.org/v2/directions/driving-car';
+  private baseUrl = 'https://api.heigit.org/openrouteservice/v2/directions/driving-car';
   private cache = new Map<string, RouteSummary | null>();
 
   getNavigationRoute(start: {lat:number;lng:number}, end: {lat:number;lng:number}): Observable<NavigationRoute | null> {

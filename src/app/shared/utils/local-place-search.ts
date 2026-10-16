@@ -1,6 +1,6 @@
 export type PlaceSearchScope=10|25|'country';
 export interface SearchPoint{lat:number;lng:number;}
-export interface LocalSearchOptions{scope?:PlaceSearchScope;strict?:boolean;}
+export interface LocalSearchOptions{scope?:PlaceSearchScope;strict?:boolean;additionalListings?:boolean;}
 export interface PlaceSearchPlan{query:string;localPlace:boolean;radiusKm:number|null;origin?:SearchPoint;needsLocation:boolean;}
 export function validSearchPoint(point?:SearchPoint|null):SearchPoint|undefined{return point&&Number.isFinite(point.lat)&&Number.isFinite(point.lng)&&Math.abs(point.lat)<=90&&Math.abs(point.lng)<=180?point:undefined;}
 export function localPlacePlan(query:string,point?:SearchPoint,scope:PlaceSearchScope=10,postcode=false):PlaceSearchPlan{

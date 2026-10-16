@@ -40,7 +40,7 @@ export class GeocodingService {
     private http = inject(HttpClient);
     private provider = inject(MapProviderService);
     private config = inject(AppConfigService);
-    private baseUrl = 'https://api.openrouteservice.org/geocode';
+    private baseUrl = 'https://api.heigit.org/pelias/v1';
     private mapTilerGeocodeUrl = 'https://api.maptiler.com/geocoding';
     private cache = new Map<string, AutocompleteResult[]>();
 
@@ -64,6 +64,7 @@ export class GeocodingService {
             const rawQuery=plan.query,postcode=this.isPostalSearch(rawQuery);
             const normalized=postcode?this.normalizeUkPostcode(rawQuery):this.normalizeQuery(rawQuery);
             if(!normalized || (autocomplete && normalized.length<3))return of([]);
+            if(options.additionalListings)return this.additionalPlaceSearch(normalized,plan,postcode,options);
             if(this.provider.getMapTilerApiKey())return this.preferredMapTilerSearch(normalized,plan,postcode,options,autocomplete);
             const key=JSON.stringify([this.config.currentCountry().code,normalized,plan.origin,plan.radiusKm,autocomplete]);
             if(autocomplete && this.cache.has(key))return of(this.cache.get(key)!);
@@ -127,6 +128,27 @@ export class GeocodingService {
         );
         this.mapTilerPending.set(key,work);
         return work;
+    }
+
+    /** Explicit customer request: never spend the second provider's allowance
+     * on each keystroke, and never widen the selected local search area. */
+    private additionalPlaceSearch(query:string,plan:PlaceSearchPlan,postcode:boolean,options:LocalSearchOptions):Observable<AutocompleteResult[]>{
+        if(postcode || !plan.localPlace || !plan.radiusKm || !plan.origin || !this.provider.getOpenRouteServiceApiKey())return of([]);
+        const key=JSON.stringify(['additional',this.config.currentCountry().code,query,plan.origin,plan.radiusKm,!!options.strict]);
+        const cached=this.mapTilerRecent.get(key);
+        if(cached && cached.until>Date.now())return of(cached.results);
+        this.mapTilerRecent.delete(key);
+        const pending=this.mapTilerPending.get(key);if(pending)return pending;
+        let failed=false;
+        const work=this.openRouteSearch(query,40,{origin:plan.origin,plan,onFailure:()=>{failed=true;}}).pipe(
+            map(results=>{
+                if(failed && options.strict)throw Object.assign(new Error('Additional listings are temporarily unavailable. Try a full address.'),{code:'provider_unavailable'});
+                const selected=this.rankResults(results.filter(result=>searchDistanceKm(plan.origin!,result)<=plan.radiusKm!),query,false,plan.origin).slice(0,8).map(result=>({...result,distanceKm:searchDistanceKm(plan.origin!,result)}));
+                if(selected.length){if(this.mapTilerRecent.size>=100)this.mapTilerRecent.delete(this.mapTilerRecent.keys().next().value!);this.mapTilerRecent.set(key,{until:Date.now()+60_000,results:selected});}
+                return selected;
+            }),finalize(()=>this.mapTilerPending.delete(key)),shareReplay({bufferSize:1,refCount:true})
+        );
+        this.mapTilerPending.set(key,work);return work;
     }
 
     private isPostalSearch(query:string):boolean {
