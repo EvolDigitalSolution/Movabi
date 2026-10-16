@@ -489,7 +489,8 @@ router.post('/create-intent', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[PaymentRoutes] create-intent failed:', error);
     const message = String(error?.message || '');
-    const statusCode = message.includes('service_slug') || message.includes('amount') ? 400 : 500;
+    const statusCode = error?.code === 'PAYMENT_TERMS_RECONCILIATION_REQUIRED' ? 409
+      : message.includes('service_slug') || message.includes('amount') ? 400 : 500;
     return res.status(statusCode).json({ error: message || 'Failed to create payment intent' });
   }
 });
@@ -771,7 +772,8 @@ router.post('/confirm', async (req: Request, res: Response) => {
     return res.json({ success: true, booking: updated });
   } catch (error: any) {
     console.error('[PaymentRoutes] confirm failed:', error);
-    return res.status(500).json({ error: error.message || 'Failed to confirm payment' });
+    return res.status(error?.code === 'PAYMENT_TERMS_RECONCILIATION_REQUIRED' ? 409 : 500)
+      .json({ error: error.message || 'Failed to confirm payment', code: error?.code });
   }
 });
 

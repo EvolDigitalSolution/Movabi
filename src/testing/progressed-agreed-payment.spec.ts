@@ -12,6 +12,6 @@ describe('agreed fare after payment and assignment',()=>{
  it('rejects a different negotiated driver',async()=>{state.session.active_driver_id='other';await expect(PaymentAuthorityService.resolve({...job,status:'accepted'})).rejects.toThrow('reconciliation');});
  it('rejects a different persisted agreement amount',async()=>{state.session.agreed_fare=8;await expect(PaymentAuthorityService.resolve({...job,status:'accepted'})).rejects.toThrow('reconciliation');});
  it('fails closed when agreement lookup fails',async()=>{state.error={message:'offline'};await expect(PaymentAuthorityService.resolve({...job,status:'accepted'})).rejects.toThrow('verified');});
- it('supports a matching accepted legacy offer',async()=>{state.session=null;state.offers=[{driver_id:'driver',amount:9,status:'accepted'}];expect((await PaymentAuthorityService.resolve({...job,status:'accepted'})).totalAuthorisationMajor).toBe(19);});
+ it('supports a matching accepted legacy offer',async()=>{state.session=null;state.offers=[{proposed_by:'driver',proposed_by_role:'driver',amount:9,status:'accepted'}];expect((await PaymentAuthorityService.resolve({...job,status:'accepted'})).totalAuthorisationMajor).toBe(19);});
  it('keeps an unnegotiated original quote',async()=>{expect((await PaymentAuthorityService.resolve({...job,agreed_fare:null,status:'accepted'})).totalAuthorisationMajor).toBe(19.39);});
 });

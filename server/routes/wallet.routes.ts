@@ -173,7 +173,8 @@ router.post('/pay-job', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error paying job from wallet:', error);
-    res.status(500).json({ error: error.message });
+    res.status(error?.code === 'PAYMENT_TERMS_RECONCILIATION_REQUIRED' ? 409 : 500)
+      .json({ error: error.message, code: error?.code });
   }
 });
 

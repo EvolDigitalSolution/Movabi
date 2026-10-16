@@ -1,3 +1,4 @@
+import { FareSplitService } from './fare-split.service';
 import { supabaseAdmin } from './supabase.service';
 
 /**
@@ -67,6 +68,21 @@ export class PaymentAuthorityService {
     return Math.round(major * 100);
   }
 
+  /** Payment and completion must use the same persisted money, across all services. */
+  static assertFrozenServiceFare(job: any, serviceFare: number): void {
+    if (job?.fare_breakdown?.policyVersion !== 'fare-split-v1') return;
+    const split = FareSplitService.fromSnapshot(job.fare_breakdown, job.currency_code);
+    const minor = (value: number) => FareSplitService.toMinor(value, split.currency);
+    if (split.currency !== String(job.currency_code || split.currency).toUpperCase()
+      || ![split.customerCharge, split.driverEntitlement, split.platformFeeAmount, split.driverCommissionAmount].every(value => Number.isFinite(value) && value >= 0)
+      || split.customerCharge <= 0 || split.driverEntitlement <= 0
+      || minor(split.customerCharge) !== minor(serviceFare)
+      || Math.abs(minor(split.customerCharge) - minor(split.driverEntitlement)
+        - minor(split.platformFeeAmount) - minor(split.driverCommissionAmount)) > 0) {
+      throw Object.assign(new Error('Agreed fare snapshot requires reconciliation before payment'), { code: 'PAYMENT_TERMS_RECONCILIATION_REQUIRED' });
+    }
+  }
+
   /** Full authoritative payable (fare + errand item budget) for a job. */
   static async resolve(job: any): Promise<AuthoritativePayable> {
     let serviceFareMajor = this.authoritativeServiceFare(job);
@@ -84,8 +100,9 @@ export class PaymentAuthorityService {
         && session.active_driver_id === job.driver_id && money(session.agreed_fare) === agreed;
       if (!hybridVerified) {
         const { data: offers, error: offerError } = await supabaseAdmin.from('fare_negotiations')
-          .select('driver_id,amount,status').eq('job_id',job.id).eq('status','accepted');
-        if (offerError || !(offers || []).some(offer => offer.driver_id === job.driver_id && money(offer.amount) === agreed))
+          .select('proposed_by,proposed_by_role,amount,status').eq('job_id',job.id).eq('status','accepted');
+        if (offerError || !(offers || []).some(offer => ((offer.proposed_by_role === 'driver' && offer.proposed_by === job.driver_id)
+          || (offer.proposed_by_role === 'customer' && offer.proposed_by === job.customer_id)) && money(offer.amount) === agreed))
           throw new Error('Agreed payment terms require reconciliation');
       }
       serviceFareMajor = agreed;
@@ -104,6 +121,8 @@ export class PaymentAuthorityService {
         || money(details?.estimated_budget)
         || (funding?.status === 'pending' ? money(funding?.amount_reserved) : 0);
     }
+
+    this.assertFrozenServiceFare(job, serviceFareMajor);
 
     return {
       serviceFareMajor,

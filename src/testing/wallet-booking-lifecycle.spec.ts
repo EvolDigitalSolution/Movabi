@@ -1,3 +1,4 @@
+import { FareSplitService } from '../../server/services/fare-split.service';
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -55,7 +56,7 @@ describe('authoritative shopping budget', () => {
         maybeSingle: async () => ({ data: table === 'errand_funding' ? funding : details, error: table === 'errand_funding' ? error : null }) };
       return chain;
     } };
-    return loadModule('server/services/payment-authority.service.ts', { './supabase.service': { supabaseAdmin: db } }).PaymentAuthorityService;
+    return loadModule('server/services/payment-authority.service.ts', { './supabase.service': { supabaseAdmin: db }, './fare-split.service': { FareSplitService } }).PaymentAuthorityService;
   }
   const job = { status: 'requested', total_price: 10, service_type: { slug: 'errand' }, currency_code: 'GBP' };
   it('funded total is not counted as item budget again', async () => {

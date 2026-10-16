@@ -1038,7 +1038,7 @@ export class PricingService {
      * never be emitted from here.
      */
     static applyAgreedFare(job: any, agreedFare: number): Partial<any> {
-        const originalTotal = Number(job?.total_price || job?.price || agreedFare) || agreedFare;
+        const originalTotal = Number(job?.fare_breakdown?.customerCharge || job?.total_price || job?.price || agreedFare) || agreedFare;
         const safeAgreed = Math.max(0, Number(agreedFare) || 0);
         const ratio = originalTotal > 0 ? safeAgreed / originalTotal : 1;
 
@@ -1053,9 +1053,11 @@ export class PricingService {
         );
         const platformFee = round(originalPlatformFee * ratio);
         const serviceFareBeforePlatformFee = round(Math.max(0, safeAgreed - platformFee));
-        const commissionRateUsed = Number.isFinite(Number(job?.commission_rate_used))
-            ? Number(job?.commission_rate_used)
-            : Number(fareBreakdown.commissionPercent ?? 0);
+        const frozenRate = fareBreakdown.commissionPercent ?? job?.commission_rate_used;
+        const commissionRateUsed = Number(frozenRate);
+        if (frozenRate == null || !Number.isFinite(commissionRateUsed) || commissionRateUsed < 0 || commissionRateUsed >= 100) {
+            throw new Error('Frozen commission rate requires reconciliation');
+        }
         const commissionFee = round(serviceFareBeforePlatformFee * (commissionRateUsed / 100));
         const driverPayout = round(Math.max(0, serviceFareBeforePlatformFee - commissionFee));
         if (fareBreakdown.paymentMargin?.policy) {
@@ -1086,6 +1088,9 @@ export class PricingService {
         scaledBreakdown['commissionFee'] = commissionFee;
         scaledBreakdown['serviceFareBeforePlatformFee'] = serviceFareBeforePlatformFee;
         scaledBreakdown['serviceFare'] = safeAgreed;
+        scaledBreakdown['customerServiceTotal'] = safeAgreed;
+        scaledBreakdown['driverPayout'] = driverPayout;
+        scaledBreakdown['commissionAmount'] = commissionFee;
         scaledBreakdown['total'] = safeAgreed;
         scaledBreakdown['shoppingBudget'] = Number(fareBreakdown.shoppingBudget ?? 0);
         scaledBreakdown['totalAuthorisation'] = round(safeAgreed + Number(scaledBreakdown['shoppingBudget'] ?? 0));
@@ -1108,7 +1113,7 @@ export class PricingService {
         scaledBreakdown['driverEntitlement'] = driverPayout;
         scaledBreakdown['grossRevenue'] = round(platformFee + commissionFee);
         scaledBreakdown['currency'] = String(job?.currency_code || fareBreakdown.currency || 'GBP').toUpperCase();
-        scaledBreakdown['isPro'] = String(job?.pricing_plan_used || '').toLowerCase() === 'pro';
+        scaledBreakdown['isPro'] = fareBreakdown.isPro === true;
         scaledBreakdown['platformFeeType'] = (fareBreakdown as any)?.platformFeeType ?? 'percentage';
         scaledBreakdown['platformFeePercent'] = Number((fareBreakdown as any)?.platformFeePercent ?? 0);
         scaledBreakdown['platformFeeFixed'] = Number((fareBreakdown as any)?.platformFeeFixed ?? 0);

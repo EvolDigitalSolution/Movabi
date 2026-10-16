@@ -241,7 +241,9 @@ export class LogisticsService {
     // One authoritative fare split, frozen at quote/agreement time. Never
     // recompute from live config; a missing/ambiguous snapshot fails closed for
     // explicit reconciliation instead of inventing a new entitlement.
+    const payableTerms = await PaymentAuthorityService.resolve(job);
     const split = this.resolveFareSplit(job);
+    PaymentAuthorityService.assertFrozenServiceFare(job, payableTerms.serviceFareMajor);
     const totalPrice = split.customerCharge;
     const platformFee = split.platformFeeAmount;
     const driverPayout = split.driverEntitlement;
@@ -293,14 +295,17 @@ export class LogisticsService {
       }
 
       const intent = await stripe.paymentIntents.retrieve(job.payment_intent_id);
-      const expectedCapture = captureAmountInPence ?? Math.round(totalPrice * 100);
+      const expectedCapture = captureAmountInPence ?? FareSplitService.toMinor(totalPrice, settlementCurrency);
       if (intent.currency.toUpperCase() !== settlementCurrency) throw new Error('Payment currency requires reconciliation');
       if (intent.status === 'succeeded') {
         if (intent.amount_received !== expectedCapture) throw new Error('Captured amount requires reconciliation');
       } else {
         if (intent.status !== 'requires_capture') throw new Error('Customer payment is not ready for capture');
+        if (intent.amount_capturable < expectedCapture) {
+          throw new Error('Authorized payment amount requires reconciliation before completion');
+        }
         const captured = await stripe.paymentIntents.capture(job.payment_intent_id,
-          { amount_to_capture: expectedCapture }, { idempotencyKey: `capture-job-${job.id}` });
+          { amount_to_capture: expectedCapture }, { idempotencyKey: `capture-job-v2-${job.id}-${expectedCapture}` });
         if (captured.status !== 'succeeded') throw new Error('Customer payment capture is pending');
       }
       finalPaymentStatus = 'paid';

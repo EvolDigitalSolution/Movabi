@@ -176,7 +176,9 @@ router.post('/complete', async (req: Request, res: Response) => {
     const message = String(error?.message || 'Failed to complete job');
     const status = /only the assigned driver/i.test(message)
       ? 403
-      : /pin|required|incorrect/i.test(message)
+      : /reconciliation|frozen|authorized payment amount/i.test(message)
+        ? 409
+        : /pin|required|incorrect/i.test(message)
         ? 400
         : 500;
     res.status(status).json({ error: message });
