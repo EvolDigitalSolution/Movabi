@@ -319,6 +319,8 @@ type PackageSize = 'small' | 'medium' | 'large';
                             </button>
                           }
                         </div>
+                      } @else if(showPickupResults() && pickupSearchText().trim().length>=3) {
+                        <div dropdown class="address-results"><p class="px-4 py-3 text-sm text-slate-600" role="status">{{ pickupSearchLoading()?'Searching places…':'No matching places found. Try the business name and town, or its street address.' }}</p></div>
                       }
                     </app-input>
                   </div>
@@ -373,6 +375,8 @@ type PackageSize = 'small' | 'medium' | 'large';
                             </button>
                           }
                         </div>
+                      } @else if(showDropoffResults() && dropoffSearchText().trim().length>=3) {
+                        <div dropdown class="address-results"><p class="px-4 py-3 text-sm text-slate-600" role="status">{{ dropoffSearchLoading()?'Searching places…':'No matching places found. Try the business name and town, or its street address.' }}</p></div>
                       }
                     </app-input>
                   </div>
@@ -1322,15 +1326,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     pickupManuallyChanged = signal(false);
     selectedLocalService = signal<Record<string, unknown> | null>(null);
 
-    displayPickupResults = computed(() => this.pickupResults().length > 0
-        ? this.pickupResults()
-        : this.recentLocationResults('pickup')
-    );
-
-    displayDropoffResults = computed(() => this.dropoffResults().length > 0
-        ? this.dropoffResults()
-        : this.recentLocationResults('dropoff')
-    );
+    pickupSearchText=signal('');dropoffSearchText=signal('');
+    pickupSearchLoading=signal(false);dropoffSearchLoading=signal(false);
+    private addressSearchVersion={pickup:0,dropoff:0};
+    displayPickupResults = computed(() => this.addressSuggestions('pickup'));
+    displayDropoffResults = computed(() => this.addressSuggestions('dropoff'));
+    private addressSuggestions(type:'pickup'|'dropoff'):AutocompleteResult[] {
+        const results=(type==='pickup'?this.pickupResults:this.dropoffResults)();
+        const query=(type==='pickup'?this.pickupSearchText:this.dropoffSearchText)();
+        return results.length?results:query.trim().length<3?this.recentLocationResults(type):[];
+    }
 
     pickupSummaryTitle = computed(() => {
         const source = this.pickupLocation.source;
@@ -1793,9 +1798,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private localSearchGps:{lat:number;lng:number}|null=null;
     private searchOrigin(type:'pickup'|'dropoff'):{lat:number;lng:number}|undefined {
+        const gps=this.localSearchGps;
+        if(type==='pickup' && gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180)return gps;
         const location=type==='pickup'?this.dropoffLocation:this.pickupLocation;
-        if(typeof location.latitude==='number'&&typeof location.longitude==='number'&&Number.isFinite(location.latitude)&&Number.isFinite(location.longitude))return {lat:location.latitude,lng:location.longitude};
-        return this.localSearchGps || undefined;
+        if(typeof location.latitude==='number'&&typeof location.longitude==='number'&&Number.isFinite(location.latitude)&&Number.isFinite(location.longitude)&&Math.abs(location.latitude)<=90&&Math.abs(location.longitude)<=180)return {lat:location.latitude,lng:location.longitude};
+        return gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180?gps:undefined;
     }
 
     popularShopsCollapsed=signal(false);
@@ -2295,10 +2302,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                     if (type === 'pickup') {
                         if (options.auto && this.pickupManuallyChanged()) return;
+                        this.finishAddressSearch('pickup');
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
                     } else {
+                        this.finishAddressSearch('dropoff');
                         this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('dropoff');
@@ -2314,10 +2323,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                     if (type === 'pickup') {
                         if (options.auto && this.pickupManuallyChanged()) return;
+                        this.finishAddressSearch('pickup');
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
                     } else {
+                        this.finishAddressSearch('dropoff');
                         this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('dropoff');
@@ -2501,6 +2512,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchText:this.dropoffSearchText).set(query || '');
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(String(query || '').trim().length>=3);
+        (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
+        (type==='pickup'?this.showPickupResults:this.showDropoffResults).set(true);
         if (type === 'pickup') {
             this.pickupManuallyChanged.set(true);
             this.pickupLocation.address = query;
@@ -2520,7 +2536,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private performSearch(type: 'pickup' | 'dropoff', query: string) {
+        const version=this.addressSearchVersion[type];
+        const loading=type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading;
         if (!query || query.length < 3) {
+            loading.set(false);
             if (type === 'pickup') {
                 this.pickupResults.set([]);
                 this.showPickupResults.set(this.recentLocationResults('pickup').length > 0);
@@ -2533,13 +2552,15 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         const origin=this.searchOrigin(type);
         if(/\bnear\s+me\b/i.test(query)&&!origin){
+            loading.set(false);
             this.pickupResults.set([]);this.dropoffResults.set([]);
             void this.toastCtrl.create({message:'Set your current location or delivery address to find nearby shops.',duration:3500,color:'warning'}).then(toast=>toast.present());
             return;
         }
         this.geocoding.autocomplete(this.withLocationContext(type, query),origin).subscribe(results => {
             const current=type==='pickup'?this.pickupLocation.address:this.dropoffLocation.address;
-            if(current!==query)return;
+            if(current!==query || version!==this.addressSearchVersion[type])return;
+            loading.set(false);
             if (type === 'pickup') {
                 this.pickupResults.set(results);
                 this.showPickupResults.set(true);
@@ -2562,7 +2583,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }, 250);
     }
 
+    private finishAddressSearch(type:'pickup'|'dropoff'):void {
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchText:this.dropoffSearchText).set('');
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(false);
+        (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
+        (type==='pickup'?this.showPickupResults:this.showDropoffResults).set(false);
+    }
+
     selectResult(type: 'pickup' | 'dropoff', result: AutocompleteResult) {
+        this.finishAddressSearch(type);
         if (type === 'pickup') {
             this.pickupManuallyChanged.set(true);
             this.pickupLocation = this.locationService.normalizeLocation(
@@ -2597,9 +2627,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const query = String(this.bookingForm.get(controlName)?.value || loc.address || '').trim();
 
         if (query.length < 3) return;
+        const version=this.addressSearchVersion[type];
 
         try {
             const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query),this.searchOrigin(type)));
+            if(version!==this.addressSearchVersion[type] || String(this.bookingForm.get(controlName)?.value || '').trim()!==query)return;
             const result = results?.[0];
 
             if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
@@ -2624,6 +2656,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm.patchValue({ dropoff_address: normalized.address }, { emitEvent: false });
             }
 
+            this.finishAddressSearch(type);
             this.updateMarker(type);
             this.fitMapToSelectedLocations();
             this.updateRoute();
@@ -2632,32 +2665,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
-    private withLocationContext(type: 'pickup' | 'dropoff', query: string): string {
-        const cleanQuery = String(query || '').replace(/\s+/g, ' ').trim();
-
-        if (!cleanQuery || cleanQuery.includes(',') || this.geocoding.isLikelyUkPostcode(cleanQuery)) return cleanQuery;
-
-        const contextAddress = type === 'dropoff'
-            ? this.pickupLocation.address
-            : this.dropoffLocation.address;
-        const locality = this.extractLocality(contextAddress);
-
-        if (!locality || cleanQuery.toLowerCase().includes(locality.toLowerCase())) {
-            return cleanQuery;
-        }
-
-        return `${cleanQuery}, ${locality}`;
-    }
-
-    private extractLocality(address?: string): string {
-        const parts = String(address || '')
-            .split(',')
-            .map(part => part.trim())
-            .filter(Boolean);
-
-        if (parts.length < 2) return '';
-
-        return parts[1];
+    private withLocationContext(_type: 'pickup' | 'dropoff', query: string): string {
+        // Country and proximity are structured provider parameters. Never append
+        // an inferred street/country as if the customer had typed a locality.
+        return String(query || '').replace(/\s+/g,' ').trim();
     }
 
     private updateMarker(kind: 'pickup' | 'dropoff') {

@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
 import { AppConfigService } from '../config/app-config.service';
 import { AutocompleteResult } from '../../models/maps/route-result.model';
-import { catchError, forkJoin, map, Observable, of } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, timeout } from 'rxjs';
 
 interface ORSFeature {
     properties: {
@@ -37,6 +37,7 @@ export class GeocodingService {
     private cache = new Map<string, AutocompleteResult[]>();
 
     autocomplete(query: string, origin?: {lat:number;lng:number}): Observable<AutocompleteResult[]> {
+        origin=this.validOrigin(origin);
         const rawQuery = String(query || '').trim();
         const isPostcodeIntent = this.isLikelyUkPostcode(rawQuery);
         const normalizedQuery = isPostcodeIntent ? this.normalizeUkPostcode(rawQuery) : this.normalizeQuery(query);
@@ -62,10 +63,10 @@ export class GeocodingService {
             map((groups) => this.rankResults(
                 groups.flat(),
                 normalizedQuery,
-                isPostcodeIntent, /\bnear\s+me\b/i.test(rawQuery)?origin:undefined
+                isPostcodeIntent, !rawQuery.includes(',')?origin:undefined
             ).slice(0, 8)),
             map(results => {
-                this.cache.set(cacheKey, results);
+                if(results.length){if(this.cache.size>=100)this.cache.delete(this.cache.keys().next().value!);this.cache.set(cacheKey,results);}
                 return results;
             }),
             catchError(error => {
@@ -76,6 +77,7 @@ export class GeocodingService {
     }
 
     geocodeAddress(query: string, origin?: {lat:number;lng:number}): Observable<AutocompleteResult[]> {
+        origin=this.validOrigin(origin);
         const rawQuery = String(query || '').trim();
         const isPostcodeIntent = this.isLikelyUkPostcode(rawQuery);
         const normalizedQuery = isPostcodeIntent ? this.normalizeUkPostcode(rawQuery) : this.normalizeQuery(query);
@@ -92,7 +94,7 @@ export class GeocodingService {
             ];
 
         return forkJoin(requests).pipe(
-            map(groups => this.rankResults(groups.flat(), normalizedQuery, isPostcodeIntent, /\bnear\s+me\b/i.test(rawQuery)?origin:undefined).slice(0, 5)),
+            map(groups => this.rankResults(groups.flat(), normalizedQuery, isPostcodeIntent, !rawQuery.includes(',')?origin:undefined).slice(0, 5)),
             catchError(error => {
                 console.warn('[GeocodingService] Geocode failed:', error);
                 return of([]);
@@ -166,6 +168,7 @@ export class GeocodingService {
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/autocomplete`, {
             params
         }).pipe(
+            timeout(6000),
             map(res => this.mapOpenRouteFeaturesToResults(res.features)),
             catchError(error => {
                 console.warn('[GeocodingService] ORS autocomplete failed:', error);
@@ -184,7 +187,7 @@ export class GeocodingService {
             size,
             layers: options.includePostcodeLayer
                 ? 'address,venue,street,locality,neighbourhood,postalcode'
-                : 'address,venue,street,locality,neighbourhood'
+                : this.isPlaceQuery(query)?'venue':'address,venue,street,locality,neighbourhood'
         };
 
         this.addOpenRouteBounds(params, options.skipFocusBias, options.origin);
@@ -192,6 +195,7 @@ export class GeocodingService {
         return this.http.get<{ features: ORSFeature[] }>(`${this.baseUrl}/search`, {
             params
         }).pipe(
+            timeout(6000),
             map(res => this.mapOpenRouteFeaturesToResults(res.features)),
             catchError(error => {
                 console.warn('[GeocodingService] ORS search failed:', error);
@@ -213,7 +217,8 @@ export class GeocodingService {
             limit,
             language: 'en',
             country: country.code.toLowerCase(),
-            types: 'poi,address,place'
+            types: !options.skipProximity && this.isPlaceQuery(query)?'poi':'poi,address,place',
+            fuzzyMatch: 'true'
         };
 
         if (!options.skipProximity) {
@@ -223,6 +228,7 @@ export class GeocodingService {
         return this.http.get<{ features: MapTilerFeature[] }>(`${this.mapTilerGeocodeUrl}/${encodedQuery}.json`, {
             params
         }).pipe(
+            timeout(6000),
             map(res => this.mapMapTilerFeaturesToResults(res.features)),
             catchError(() => {
                 return of([]);
@@ -265,7 +271,6 @@ export class GeocodingService {
     }
 
     private normalizeQuery(query: string): string {
-        const country = this.config.currentCountry();
         const trimmed = this.normalizePlaceIntent(String(query || ''))
             .replace(/\s+/g, ' ')
             .replace(/\s*,\s*/g, ', ')
@@ -273,10 +278,7 @@ export class GeocodingService {
 
         if (!trimmed) return '';
 
-        const lower = trimmed.toLowerCase();
-        const hasCountry = lower.includes(country.name.toLowerCase()) || lower.includes(country.code.toLowerCase());
-
-        return hasCountry ? trimmed : `${trimmed}, ${country.name}`;
+        return trimmed;
     }
 
     private normalizePlaceIntent(query: string): string {
@@ -307,18 +309,21 @@ export class GeocodingService {
         return features
             .filter(f => !!f?.geometry?.coordinates && f.geometry.coordinates.length >= 2)
             .map(f => {
-                const label = f.properties?.label || f.properties?.name || 'Selected Location';
+                const name=f.properties?.name || '';
+                const supplied=f.properties?.label || name || 'Selected Location';
+                const label=name && !this.normaliseForScore(supplied).includes(this.normaliseForScore(name))?`${name}, ${supplied}`:supplied;
                 return {
                     label,
                     lat: Number(f.geometry.coordinates[1]),
                     lng: Number(f.geometry.coordinates[0]),
                     ...this.splitLabelForDisplay(label),
+                    ...(name?{primaryText:name}:{}),
                     postalCode: this.extractPostcodeFromLabel(label) || undefined
                 };
             })
             .filter(result =>
                 Number.isFinite(result.lat) &&
-                Number.isFinite(result.lng)
+                Number.isFinite(result.lng) && Math.abs(result.lat)<=90 && Math.abs(result.lng)<=180
             );
     }
 
@@ -328,20 +333,23 @@ export class GeocodingService {
         return features
             .map(feature => {
                 const coordinates = feature.center || feature.geometry?.coordinates;
-                const label = feature.place_name || feature.text || 'Selected Location';
+                const name=feature.text || '';
+                const supplied=feature.place_name || name || 'Selected Location';
+                const label=name && !this.normaliseForScore(supplied).includes(this.normaliseForScore(name))?`${name}, ${supplied}`:supplied;
 
                 return {
                     label,
                     lat: Number(coordinates?.[1]),
                     lng: Number(coordinates?.[0]),
                     ...this.splitLabelForDisplay(label),
+                    ...(name?{primaryText:name}:{}),
                     postalCode: this.extractPostcodeFromLabel(label) || undefined
                 };
             })
             .filter(result =>
                 !!result.label &&
                 Number.isFinite(result.lat) &&
-                Number.isFinite(result.lng)
+                Number.isFinite(result.lng) && Math.abs(result.lat)<=90 && Math.abs(result.lng)<=180
             );
     }
 
@@ -369,8 +377,45 @@ export class GeocodingService {
             return true;
         });
 
-        if(origin&&!isPostcodeIntent){const distance=(r:AutocompleteResult)=>(r.lat-origin.lat)**2+((r.lng-origin.lng)*Math.cos(origin.lat*Math.PI/180))**2;return deduped.sort((a,b)=>distance(a)-distance(b));}
-        return deduped.sort((a, b) => this.scoreResult(b, query, isPostcodeIntent) - this.scoreResult(a, query, isPostcodeIntent));
+        const placeQuery=!isPostcodeIntent && this.isPlaceQuery(query);
+        const wanted=this.placeTokens(query);
+        const matches=(result:AutocompleteResult)=>{
+            const words=this.normaliseForScore(result.primaryText || result.label.split(',')[0]).split(' ');
+            const labelWords=this.normaliseForScore(result.label).split(' ');
+            return 2*wanted.filter(token=>words.some(word=>this.placeWordMatches(token,word))).length+wanted.filter(token=>labelWords.some(word=>this.placeWordMatches(token,word))).length;
+        };
+        const relevant=placeQuery && wanted.length?deduped.filter(result=>matches(result)>0):deduped;
+        return relevant.sort((a,b)=>{
+            if(placeQuery && wanted.length){const relevance=matches(b)-matches(a);if(relevance)return relevance;}
+            if(!placeQuery){const score=this.scoreResult(b,query,isPostcodeIntent)-this.scoreResult(a,query,isPostcodeIntent);if(score)return score;}
+            if(origin && !isPostcodeIntent){const proximity=this.distanceKm(origin,a)-this.distanceKm(origin,b);if(Math.abs(proximity)>.05)return proximity;}
+            return this.scoreResult(b,query,isPostcodeIntent)-this.scoreResult(a,query,isPostcodeIntent);
+        });
+    }
+
+    private validOrigin(origin?:{lat:number;lng:number}):{lat:number;lng:number}|undefined {
+        return origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng) && Math.abs(origin.lat)<=90 && Math.abs(origin.lng)<=180?origin:undefined;
+    }
+    private isPlaceQuery(query:string):boolean {
+        const value=this.firstAddressLine(query);
+        return !/^\d/.test(value) && !/\b(street|road|avenue|lane|drive|close|way|walk|crescent|postcode|st|rd|ave|blvd)\b/i.test(value);
+    }
+    private placeTokens(query:string):string[] {
+        const words=this.normaliseForScore(this.firstAddressLine(query)).split(' ').filter(Boolean);
+        const generic=new Set(['restaurant','cafe','shop','store','hospital','hotel','school','the','and']);
+        return words.filter(word=>!generic.has(word));
+    }
+    private placeWordMatches(query:string,word:string):boolean {
+        if(word.startsWith(query)||query===word)return true;
+        if(query.length<5||Math.abs(query.length-word.length)>1)return false;
+        let a=0,b=0,differences=0;
+        while(a<query.length && b<word.length){if(query[a]===word[b]){a++;b++;continue;}if(++differences>1)return false;if(query.length>=word.length)a++;if(word.length>=query.length)b++;}
+        return differences+(query.length-a)+(word.length-b)<=1;
+    }
+    private distanceKm(origin:{lat:number;lng:number},point:{lat:number;lng:number}):number {
+        const rad=Math.PI/180,dLat=(point.lat-origin.lat)*rad,dLng=(point.lng-origin.lng)*rad;
+        const a=Math.sin(dLat/2)**2+Math.cos(origin.lat*rad)*Math.cos(point.lat*rad)*Math.sin(dLng/2)**2;
+        return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(Math.max(0,1-a)));
     }
 
     private preserveTypedHouseNumber(result: AutocompleteResult, query: string): AutocompleteResult {
