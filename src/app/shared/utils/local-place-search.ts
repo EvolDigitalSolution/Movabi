@@ -1,16 +1,17 @@
 export type PlaceSearchScope=10|25|'country';
 export interface SearchPoint{lat:number;lng:number;}
 export interface LocalSearchOptions{scope?:PlaceSearchScope;strict?:boolean;additionalListings?:boolean;}
-export interface PlaceSearchPlan{query:string;localPlace:boolean;radiusKm:number|null;origin?:SearchPoint;needsLocation:boolean;}
+export interface PlaceSearchPlan{query:string;localPlace:boolean;radiusKm:number|null;origin?:SearchPoint;needsLocation:boolean;namedLandmark?:boolean;}
 export function validSearchPoint(point?:SearchPoint|null):SearchPoint|undefined{return point&&Number.isFinite(point.lat)&&Number.isFinite(point.lng)&&Math.abs(point.lat)<=90&&Math.abs(point.lng)<=180?point:undefined;}
 export function localPlacePlan(query:string,point?:SearchPoint,scope:PlaceSearchScope=10,postcode=false):PlaceSearchPlan{
  const text=String(query||'').replace(/\bafrica\s+(rest(?:au|ua)rant|restaurant|food|shop|store|grocery)/ig,'African $1').replace(/\brestuarant\b/ig,'restaurant').replace(/\s+/g,' ').trim();
  const near=/\b(?:near|around|close to)\s+(?:me|here)\b|\bnearby\b/i.test(text);
  const explicit=(!near&&text.includes(','))||/\b(?:in|near)\s+(?!me\b|here\b)[\p{L}]/iu.test(text);
  const address=/^\d|\b(street|road|avenue|lane|drive|close|way|walk|crescent|postcode|st|rd|ave|blvd|rue|calle|avenida|strasse|straße)\b/i.test(text);
- const localPlace=near||(!postcode&&!explicit&&!address);
+ const namedLandmark=!postcode&&!address&&isNamedLandmark(text);
+ const localPlace=near||(!postcode&&!explicit&&!address&&!namedLandmark);
  const origin=validSearchPoint(point),radiusKm=localPlace&&scope!=='country'?(scope===25?25:10):null;
- return {query:text,localPlace,radiusKm,origin,needsLocation:radiusKm!==null&&!origin};
+ return {query:text,localPlace,radiusKm,origin,needsLocation:radiusKm!==null&&!origin,...(namedLandmark&&!near?{namedLandmark:true}:{})};
 }
 export function searchDistanceKm(origin:SearchPoint,point:SearchPoint):number{
  const rad=Math.PI/180,lat=(point.lat-origin.lat)*rad,lng=(point.lng-origin.lng)*rad;
@@ -41,4 +42,20 @@ export function categoryMatch(category:PlaceCategory,result:{label:string;primar
  if(!(kinds[category.kind]?.test(text)))return false;
  if(!category.qualifier)return true;
  return category.qualifier==='african'?/africa|nigerian|ghanaian|ethiopian|somali|kenyan|senegalese|cameroonian|congolese|ugandan|zimbabwean|eritrean|moroccan|tunisian|algerian|egyptian/.test(text):text.includes(category.qualifier);
+}
+
+/** A named landmark is an explicit destination, not a request for a nearby category. */
+export function isNamedLandmark(query:string):boolean {
+ const text=String(query||'').trim();
+ const match=text.match(/^(.+?)\s+(?:airport|(?:railway |train |bus )?station|hospital|university|museum|stadium|shopping (?:centre|center)|terminal\s*(?:\d{1,2}[a-z]?|one|two|three|four|five)|t\s*\d{1,2}[a-z]?)\b/i);
+ if(!match)return false;
+ const prefix=match[1].toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/).filter(Boolean);
+ return prefix.some(word=>!['a','an','the','my','our','any','nearest','nearby','local','closest','international','domestic','railway','train','bus','main','central','new','old'].includes(word));
+}
+export function landmarkTerminal(query:string):string|undefined {
+ const match=String(query||'').match(/\bterminal\s*(\d{1,2}[a-z]?|one|two|three|four|five|iii|ii|iv|i|v)\b|\bt\s*(\d{1,2}[a-z]?)\b/i);
+ if(!match)return undefined;
+ const value=(match[1]||match[2]).toLowerCase();
+ const names:Record<string,string>={one:'1',two:'2',three:'3',four:'4',five:'5',i:'1',ii:'2',iii:'3',iv:'4',v:'5'};
+ return names[value]||value.replace(/^0+(?=\d)/,'');
 }

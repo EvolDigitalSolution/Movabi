@@ -342,7 +342,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <p class="address-results__hint">Choose a place to confirm your pickup.</p>
                         </div>
                       } @else if(showPickupResults() && pickupSearchText().trim().length>=3) {
-                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!pickupSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
+                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':searchArea('pickup').namedLandmark?'No matching landmark found. Try the full place name or street address.':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!pickupSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
                       }
                     </app-input>
                   </div>
@@ -418,7 +418,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           <p class="address-results__hint">Choose a place to confirm your destination.</p>
                         </div>
                       } @else if(showDropoffResults() && dropoffSearchText().trim().length>=3) {
-                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!dropoffSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
+                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':searchArea('dropoff').namedLandmark?'No matching landmark found. Try the full place name or street address.':'No matching results in this search area. Try another name, a full address, or widen the area.' }}</p>@if(!dropoffSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
                       }
                     </app-input>
                   </div>
@@ -2752,7 +2752,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const query = String(this.bookingForm.get(controlName)?.value || loc.address || '').trim();
 
         if (query.length < 3) return;
-        if(this.geocoding.searchPlan(query,this.searchOrigin(type),{scope:(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)()}).localPlace)return;
+        const plan=this.geocoding.searchPlan(query,this.searchOrigin(type),{scope:(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)()});
+        if(plan.localPlace || plan.namedLandmark)return;
         const version=this.addressSearchVersion[type];
 
         try {

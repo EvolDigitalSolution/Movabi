@@ -1,4 +1,4 @@
-import { localPlacePlan, LocalSearchOptions, PlaceSearchPlan, placeCategory, categoryMatch, searchBoundingBox, searchDistanceKm } from '../../../shared/utils/local-place-search';
+import { isNamedLandmark, landmarkTerminal, localPlacePlan, LocalSearchOptions, PlaceSearchPlan, placeCategory, categoryMatch, searchBoundingBox, searchDistanceKm } from '../../../shared/utils/local-place-search';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
@@ -440,8 +440,12 @@ export class GeocodingService {
     }
 
     private rankResults(results: AutocompleteResult[], query: string, isPostcodeIntent = false, origin?:{lat:number;lng:number}): AutocompleteResult[] {
+        const namedLandmark=isNamedLandmark(query);
+        const requestedTerminal=namedLandmark?landmarkTerminal(query):undefined;
         const requestedNumber=this.firstAddressLine(query).match(/^(\d+[a-z]?)\s+/i)?.[1]?.toLowerCase();
         const labelledResults=results.filter(result=>{
+            const terminal=landmarkTerminal(result.primaryText || result.label.split(',')[0]);
+            if(requestedTerminal && terminal && terminal!==requestedTerminal)return false;
             if(!requestedNumber)return true;
             const number=result.label.split(',')[0].trim().match(/^(\d+[a-z]?)\s+/i)?.[1]?.toLowerCase();
             return !number || number===requestedNumber;
@@ -456,7 +460,15 @@ export class GeocodingService {
                 if(result.label.length>previous.label.length){previous.label=result.label;previous.secondaryText=result.secondaryText;}
             }else seen.set(key,{...result});
         }
-        const deduped=[...seen.values()];
+        let deduped=[...seen.values()];
+        // A terminal result can omit its airport name. If the provider also
+        // supplies the exact named airport, reject terminals at other airports.
+        const airport=query.match(/^(.+?)\s+airport\b/i)?.[1];
+        if(requestedTerminal && airport){
+            const expected=this.normaliseForScore(airport+' airport');
+            const parent=deduped.find(result=>this.normaliseForScore(result.primaryText || result.label.split(',')[0])===expected);
+            if(parent)deduped=deduped.filter(result=>!landmarkTerminal(result.primaryText || result.label.split(',')[0]) || searchDistanceKm(parent,result)<=15);
+        }
 
         const placeQuery=!isPostcodeIntent && this.isPlaceQuery(query);
         const wanted=this.placeTokens(query);
@@ -468,6 +480,10 @@ export class GeocodingService {
         };
         const relevant=category?deduped.filter(result=>categoryMatch(category,result)):placeQuery && wanted.length?deduped.filter(result=>matches(result)>0):deduped;
         return relevant.sort((a,b)=>{
+            if(requestedTerminal){
+                const exact=(result:AutocompleteResult)=>landmarkTerminal(result.primaryText || result.label.split(',')[0])===requestedTerminal?1:0;
+                const terminalOrder=exact(b)-exact(a);if(terminalOrder)return terminalOrder;
+            }
             if(placeQuery && wanted.length && !category){const relevance=matches(b)-matches(a);if(relevance)return relevance;}
             if(!placeQuery){const score=this.scoreResult(b,query,isPostcodeIntent)-this.scoreResult(a,query,isPostcodeIntent);if(score)return score;}
             if(origin && !isPostcodeIntent){const proximity=this.distanceKm(origin,a)-this.distanceKm(origin,b);if(Math.abs(proximity)>.05)return proximity;}
