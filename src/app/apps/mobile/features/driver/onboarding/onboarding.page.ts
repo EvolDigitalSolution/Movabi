@@ -53,7 +53,7 @@ import {
     vehicleRequiresRegistration
 } from '@shared/verification/driver-requirements.engine';
 
-type DocumentType = 'license' | 'insurance';
+type DocumentType = 'license' | 'insurance' | 'private_hire_vehicle_license' | 'goods_in_transit';
 type StripeMessageType = 'success' | 'warning';
 type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'small_van' | 'large_van';
 type DriverServiceSelection = 'ride' | 'errand' | 'delivery' | 'van';
@@ -501,7 +501,18 @@ type DriverOnboardingDraft = {
                   <input id="year" type="number" formControlName="year" [placeholder]="vehicleYearPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
-                @if (!isBikeVehicle()) {
+                @if (isBikeVehicle()) {
+                  <label class="block p-3">Bike subtype
+                    <select formControlName="vehicle_subtype" class="ml-2 rounded border p-2">
+                      <option value="">Select subtype</option>
+                      <option value="pedal_bicycle">Pedal bicycle</option>
+                      <option value="e_bike">E-bike</option>
+                      <option value="moped">Moped</option>
+                      <option value="motorcycle">Motorcycle</option>
+                    </select>
+                  </label>
+                }
+                @if (!isBikeVehicle() || ['moped','motorcycle'].includes(onboardingForm.get('vehicle_subtype')?.value)) {
                   <div class="p-4">
                     <div class="flex items-center justify-between gap-3 mb-1">
                       <label for="license_plate" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">License Plate</label>
@@ -578,6 +589,41 @@ type DriverOnboardingDraft = {
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Documents</h2>
+              @if (requiresTaxiLicence()) {
+                <button type="button" class="block underline" (click)="handleDocumentClick('private_hire_vehicle_license')">
+                  {{ docs().private_hire_vehicle_license ? 'Private-hire vehicle licence uploaded' : 'Upload private-hire vehicle licence' }}
+                </button>
+              }
+              @if (selectedServiceTypes().includes('van') && inspectionCountry() === 'GB') {
+                <button type="button" class="block underline" (click)="handleDocumentClick('goods_in_transit')">
+                  {{ docs().goods_in_transit ? 'Goods-in-transit cover uploaded' : 'Upload goods-in-transit cover' }}
+                </button>
+              }
+              <section class="my-4 space-y-2">
+                <h3 class="font-bold text-slate-950">Vehicle inspection photos</h3>
+                <p class="text-sm text-slate-600">Save your vehicle, upload each photo and wait for approval before submitting.</p>
+                @if (!isReadOnly()) {
+                  <button type="button" class="underline" [disabled]="inspectionBusy()" (click)="saveInspectionVehicle()">Save vehicle for inspection</button>
+                }
+                @if (inspectionError()) { <p role="alert" class="text-sm text-red-700">{{ inspectionError() }}</p> }
+                @if (applicableInspectionRequirements().length) {
+                  <p class="text-sm font-semibold">Required for this selection</p>
+                  <ul class="list-disc pl-5 text-sm">
+                    @for (item of applicableInspectionRequirements(); track item.key) { <li>{{ item.label }}</li> }
+                  </ul>
+                }
+                @for (slot of draftInspectionSlots(); track slot) {
+                  <div class="rounded-lg border border-slate-200 p-2">
+                    <p class="text-sm">{{ slot.replaceAll('_', ' ') }} · {{ inspectionStatus(slot) }}</p>
+                    @if (inspectionReady() && !isReadOnly()) {
+                      <input type="file" accept="image/jpeg,image/png,image/webp" [attr.aria-label]="'Upload '+slot"
+                        [disabled]="inspectionBusy()" (change)="uploadInspectionPhoto(slot,$event)" />
+                    }
+                  </div>
+                }
+                <button type="button" class="underline" [disabled]="inspectionBusy()" (click)="loadInspectionPhotos()">Refresh photo status</button>
+              </section>
+
             </div>
 
             <div class="grid grid-cols-2 gap-3">
@@ -707,7 +753,7 @@ export class OnboardingPage implements OnInit {
 
     onboardingForm: FormGroup;
 
-    docs = signal<{ license?: string; insurance?: string }>({});
+    docs = signal<Partial<Record<DocumentType,string>>>({});
     stripeMessage = signal<string | null>(null);
     stripeMessageType = signal<StripeMessageType>('success');
     submitting = signal(false);
@@ -860,6 +906,7 @@ export class OnboardingPage implements OnInit {
     });
 
     constructor() {
+        this.destroyRef.onDestroy(() => { ++this.previewGeneration; clearTimeout(this.previewTimer); });
         addIcons({
             personAddOutline,
             optionsOutline,
@@ -895,6 +942,7 @@ export class OnboardingPage implements OnInit {
             ],
             license_plate: ['', [Validators.required, Validators.minLength(2)]],
             vehicle_class: ['standard', Validators.required],
+            vehicle_subtype: [''],
             service_types: [['errand', 'delivery'] as DriverServiceSelection[], Validators.required],
             council_name: ['', [Validators.required, Validators.minLength(2)]],
             council_license_number: ['', [Validators.required, Validators.minLength(2)]],
@@ -918,6 +966,8 @@ export class OnboardingPage implements OnInit {
         this.applyVehicleClassRules(this.selectedVehicleClass());
         this.watchVehicleClassChanges();
         this.watchDraftChanges();
+        if (this.vehicle()) void this.loadInspectionPhotos();
+        this.refreshInspectionPreview();
     }
 
     getStripeBadgeText(): string {
@@ -937,6 +987,7 @@ export class OnboardingPage implements OnInit {
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe(() => {
                 if (!this.isReadOnly()) this.saveDraft();
+                this.refreshInspectionPreview();
             });
     }
 
@@ -973,6 +1024,7 @@ export class OnboardingPage implements OnInit {
                         year: draft.form['year'] ?? new Date().getFullYear(),
                         license_plate: draft.form['license_plate'] ?? '',
                         vehicle_class: draft.form['vehicle_class'] ?? 'standard',
+                        vehicle_subtype: draft.form['vehicle_subtype'] ?? '',
                         service_types: this.normaliseServiceTypes(draft.form['service_types'], draft.form['vehicle_class'] as DriverVehicleClass),
                         council_name: draft.form['council_name'] ?? '',
                         council_license_number: draft.form['council_license_number'] ?? '',
@@ -1011,6 +1063,7 @@ export class OnboardingPage implements OnInit {
                     year: vehicle.year ?? new Date().getFullYear(),
                     license_plate: vehicle.license_plate ?? '',
                     vehicle_class: this.vehicleClassFromVehicle(vehicle),
+                    vehicle_subtype: vehicle.vehicle_subtype ?? '',
                     service_types: this.normaliseServiceTypes((vehicle as any).service_eligibility, this.vehicleClassFromVehicle(vehicle))
                 },
                 { emitEvent: false }
@@ -1041,7 +1094,9 @@ export class OnboardingPage implements OnInit {
 
             this.docs.set({
                 license: profile.driver_license_url ?? this.docs().license,
-                insurance: profile.insurance_url ?? this.docs().insurance
+                insurance: profile.insurance_url ?? this.docs().insurance,
+                private_hire_vehicle_license: (profile as any).private_hire_vehicle_license_url,
+                goods_in_transit: (profile as any).goods_in_transit_url
             });
         }
     }
@@ -1080,6 +1135,7 @@ export class OnboardingPage implements OnInit {
         const next = Array.from(selected).filter(item => allowed.includes(item));
         this.onboardingForm.get('service_types')?.setValue(next.length ? next : this.defaultServicesForClass(this.selectedVehicleClass()), { emitEvent: true });
         this.applyVehicleClassRules(this.selectedVehicleClass());
+        this.refreshInspectionPreview();
     }
 
     isBikeVehicle(): boolean {
@@ -1090,9 +1146,13 @@ export class OnboardingPage implements OnInit {
         return this.selectedServiceTypes().includes('ride') && this.privateHireRequiredInMarket();
     }
 
+    inspectionCountry(): string {
+        const profile = this.profile() as (DriverProfile & {inspection_market_code?: string; country_code?: string; country?: string}) | null;
+        return String(this.inspectionPreview()?.market || profile?.inspection_market_code || profile?.country_code || profile?.country || '').trim().toUpperCase();
+    }
+
     private privateHireRequiredInMarket(): boolean {
-        const profile = this.profile() as (DriverProfile & {country_code?: string; country?: string}) | null;
-        return marketRequiresPrivateHire(profile?.country_code || profile?.country);
+        return marketRequiresPrivateHire(this.inspectionCountry());
     }
 
     private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
@@ -1386,12 +1446,15 @@ export class OnboardingPage implements OnInit {
     private buildVehiclePayload(raw: Record<string, unknown>, vehicle: Vehicle | null): Partial<Vehicle> {
         const vehicleClass = String(raw['vehicle_class'] || this.vehicleClassFromVehicle(vehicle) || 'standard') as DriverVehicleClass;
         const plate = this.getCanonicalPlate(vehicle, raw['license_plate']);
-        const isBike = vehicleClass === 'bike';
+        const subtype = vehicleClass === 'bike' ? String(raw['vehicle_subtype'] || '') : '';
+        if (vehicleClass === 'bike' && !['pedal_bicycle','e_bike','motorcycle','moped'].includes(subtype)) {
+            throw new Error('Select your bike subtype before saving.');
+        }
 
         const registrationRequired = vehicleRequiresRegistration(
             normaliseVehicleClass({ capacity: vehicleClass, type: this.vehicleTypeFromClass(vehicleClass) }),
             this.selectedServiceTypes(),
-            (this.profile() as any)?.country_code || (this.profile() as any)?.country
+            (this.profile() as any)?.country_code || (this.profile() as any)?.country, subtype
         );
 
         if (registrationRequired && (!plate || plate.length === 0)) {
@@ -1405,6 +1468,7 @@ export class OnboardingPage implements OnInit {
             year: Number(raw['year'] || vehicle?.year),
             license_plate: registrationRequired ? plate.toUpperCase() : '',
             type: this.vehicleTypeFromClass(vehicleClass),
+            vehicle_subtype:subtype || null,
             capacity: vehicleClass,
             service_eligibility: this.selectedServiceTypes()
         };
@@ -1469,7 +1533,7 @@ export class OnboardingPage implements OnInit {
             council_license_number: String(raw['council_license_number'] || '').trim(),
             taxi_badge_number: String(raw['taxi_badge_number'] || '').trim(),
             taxi_license_expiry: String(raw['taxi_license_expiry'] || '').trim() || null,
-            private_hire_vehicle_license_url: this.firstProfileValue(profile, [
+            private_hire_vehicle_license_url: this.docs().private_hire_vehicle_license || this.firstProfileValue(profile, [
                 'private_hire_vehicle_license_url',
                 'privateHireVehicleLicenseUrl',
                 'phv_license_url',
@@ -1679,7 +1743,7 @@ export class OnboardingPage implements OnInit {
 
                 await this.persistUploadedDocument(type, path);
 
-                await this.showToast(`${type === 'license' ? 'Driver licence' : 'Insurance'} uploaded.`, 'success');
+                await this.showToast('Document uploaded.', 'success');
             } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : 'Upload failed.';
                 await this.showToast(message, 'danger');
@@ -1697,9 +1761,11 @@ export class OnboardingPage implements OnInit {
 
         if (!user?.id || !path) return;
 
-        await this.updateProfileSafely(user.id, type === 'license'
-            ? { driver_license_url: path }
-            : { insurance_url: path });
+        const fields: Record<DocumentType,string> = {
+            license:'driver_license_url', insurance:'insurance_url',
+            private_hire_vehicle_license:'private_hire_vehicle_license_url', goods_in_transit:'goods_in_transit_url'
+        };
+        await this.updateProfileSafely(user.id, {[fields[type]]:path});
 
         if (typeof (this.profileService as any).fetchProfile === 'function') {
             await (this.profileService as any).fetchProfile(user.id);
@@ -1737,6 +1803,89 @@ export class OnboardingPage implements OnInit {
         }
 
         return [];
+    }
+
+    readonly inspectionBusy = signal(false);
+    readonly inspectionError = signal('');
+    private readonly inspection = signal<Awaited<ReturnType<DriverService['getInspectionPhotos']>> | null>(null);
+
+    readonly inspectionPreview = signal<Awaited<ReturnType<DriverService['previewInspectionRequirements']>> | null>(null);
+    private previewGeneration = 0;
+    private previewTimer?: ReturnType<typeof setTimeout>;
+
+    private refreshInspectionPreview() {
+        const generation = ++this.previewGeneration;
+        clearTimeout(this.previewTimer);
+        this.inspectionPreview.set(null);
+        const category = this.selectedVehicleClass();
+        const services = this.selectedServiceTypes();
+        const subtype = category === 'bike' ? String(this.onboardingForm.get('vehicle_subtype')?.value || '') : '';
+        this.previewTimer = setTimeout(async () => {
+            try {
+                const preview = await this.driverService.previewInspectionRequirements(category,subtype,services);
+                if (generation === this.previewGeneration) this.inspectionPreview.set(preview);
+            } catch { /* Draft controls remain available when preview cannot be fetched. */ }
+        },250);
+    }
+
+    applicableInspectionRequirements() {
+        return (this.inspectionPreview()?.requirements || []).filter(item =>
+            item.required && ['vehicle','document'].includes(item.category));
+    }
+
+    draftInspectionSlots() {
+        return this.inspectionPreview()?.slots ?? (this.isBikeVehicle() ? ['front','rear','side'] : ['front','rear','dashboard','seats_interior','left_side','right_side']);
+    }
+
+    inspectionReady(): boolean {
+        const saved = this.vehicle();
+        const snapshot = this.inspection();
+        if (!saved || !snapshot?.revision || snapshot.vehicleId !== saved.id) return false;
+        try {
+            const draft = this.buildVehiclePayload(this.onboardingForm.getRawValue(),saved);
+            const normal = (value:unknown) => String(value ?? '').trim().toLowerCase();
+            return (['type','capacity','vehicle_subtype','make','model','year','color','license_plate'] as const)
+                .every(key => normal(draft[key]) === normal(saved[key]));
+        } catch { return false; }
+    }
+
+    inspectionStatus(slot:string) {
+        const photo = this.inspectionReady() ? this.inspection()?.slots.find(item => item.slot === slot) : undefined;
+        return photo ? [photo.status,photo.reason].filter(Boolean).join(' — ') : 'Missing';
+    }
+
+    async loadInspectionPhotos() {
+        this.inspectionError.set('');
+        try { this.inspection.set(await this.driverService.getInspectionPhotos()); }
+        catch { this.inspection.set(null); this.inspectionError.set('Could not load photos. Check your driver account and try again.'); }
+    }
+
+    async saveInspectionVehicle() {
+        this.inspectionBusy.set(true);
+        this.inspectionError.set('');
+        try {
+            const draft = this.buildVehiclePayload(this.onboardingForm.getRawValue(),this.vehicle());
+            await this.driverService.updateVehicle(draft);
+            await this.loadInspectionPhotos();
+        } catch (error) {
+            this.inspectionError.set(error instanceof Error ? error.message : 'Could not save vehicle.');
+        } finally { this.inspectionBusy.set(false); }
+    }
+
+    async uploadInspectionPhoto(slot:string,event:Event) {
+        const input = event.target as HTMLInputElement;
+        const photo = input.files?.[0];
+        const revision = this.inspection()?.revision;
+        if (!photo || !revision || !this.inspectionReady()) return;
+        this.inspectionBusy.set(true);
+        this.inspectionError.set('');
+        try {
+            await this.driverService.uploadInspectionPhoto(slot,revision,photo);
+            await this.loadInspectionPhotos();
+        } catch (error) {
+            const response = error as {error?:{error?:string}};
+            this.inspectionError.set(response.error?.error || 'Could not upload photo.');
+        } finally { input.value=''; this.inspectionBusy.set(false); }
     }
 
     async submit() {

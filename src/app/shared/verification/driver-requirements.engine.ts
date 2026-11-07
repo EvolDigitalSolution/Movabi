@@ -132,7 +132,7 @@ const RIDE_COMPLIANCE_KEYS = {
 
 export function normaliseVehicleClass(vehicle?: any): DriverVehicleClass {
     const raw = safeLower(
-        valueFrom(vehicle, ['vehicle_class', 'service_class', 'type', 'capacity', 'vehicle_type'])
+        valueFrom(vehicle, ['vehicle_class', 'service_class', 'capacity', 'type', 'vehicle_type'])
     );
 
     if (raw.includes('bike') || raw.includes('bicycle') || raw.includes('cycle') || raw.includes('scooter') || raw.includes('moped')) {
@@ -177,8 +177,8 @@ export function isRideSelected(driver?: any, vehicle?: any): boolean {
     return normaliseSelectedServices(driver, vehicle).includes('ride');
 }
 
-export function vehicleRequiresRegistration(vehicleClass: DriverVehicleClass, _selectedServices: string[] = [], _countryCode?: string | null): boolean {
-    return vehicleClass !== 'bike';
+export function vehicleRequiresRegistration(vehicleClass: DriverVehicleClass, _selectedServices: string[] = [], _countryCode?: string | null, subtype?: string | null): boolean {
+    return vehicleClass !== 'bike' || ['motorcycle','moped'].includes(safeLower(subtype));
 }
 
 export function marketRequiresPrivateHire(countryCode: unknown): boolean {
@@ -230,7 +230,7 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
     requirements.push(textRequirement(vehicle, ['color', 'colour'], 'vehicle_colour', 'Vehicle colour', 'Vehicle colour is missing.', 'vehicle'));
     requirements.push(textRequirement(vehicle, ['year'], 'vehicle_year', 'Vehicle year', 'Vehicle year is missing.', 'vehicle'));
 
-    if (vehicleRequiresRegistration(vehicleClass, selectedServices, countryCode)) {
+    if (vehicleRequiresRegistration(vehicleClass, selectedServices, countryCode, vehicle.vehicle_subtype)) {
         requirements.push(textRequirement(vehicle, REGISTRATION_KEYS, 'vehicle_registration', 'Vehicle registration', 'Vehicle registration number is missing.', 'vehicle'));
     } else {
         requirements.push(result('vehicle_registration', 'Vehicle registration', 'Vehicle registration is not required for bike or bicycle drivers.', 'not_required', 'warning', 'vehicle', false, selectedServices, [vehicleClass]));

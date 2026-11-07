@@ -45,6 +45,7 @@ export enum ServiceTypeEnum {
 export type PricingPlan = 'starter' | 'pro';
 
 export interface Vehicle {
+    vehicle_subtype?: string | null;
     id: string;
     driver_id: string;
     make: string;

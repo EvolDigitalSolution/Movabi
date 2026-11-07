@@ -43,3 +43,20 @@ describe('server submission blockers', () => {
             driver:{...input.driver, private_hire_vehicle_license_url:'private-hire.pdf'}})).toEqual([]);
     });
 });
+
+import { canReviewInspection, inspectionSlots } from '../../server/shared/driver-inspection';
+
+describe('inspection access and applicable slots', () => {
+    it('allows only an admin in the same assigned tenant', () => {
+        const driver = {tenant_id:'tenant-a'};
+        expect(canReviewInspection({role:'admin',tenant_id:'tenant-a'}, driver)).toBe(true);
+        expect(canReviewInspection({role:'admin',tenant_id:'tenant-b'}, driver)).toBe(false);
+        expect(canReviewInspection({role:'driver',tenant_id:'tenant-a'}, driver)).toBe(false);
+        expect(canReviewInspection({role:'admin'}, {})).toBe(false);
+    });
+    it('switches between Bike and motor photo requirements', () => {
+        expect(inspectionSlots(true)).toEqual(['front','rear','side']);
+        expect(inspectionSlots(false)).toContain('seats_interior');
+        expect(inspectionSlots(false)).not.toContain('side');
+    });
+});

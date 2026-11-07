@@ -446,6 +446,27 @@ type AdminDriver = DriverProfile & {
 
             <div class="detail-card">
               <p class="detail-label">Documents</p>
+              <section class="my-3 space-y-2">
+                <h3 class="font-bold">Vehicle inspection photos</h3>
+                <button type="button" class="underline" (click)="loadInspectionPhotos()">Refresh photos</button>
+                @if (inspectionError()) { <p role="alert">{{ inspectionError() }}</p> }
+                @if (inspection()?.vehicle; as vehicle) {
+                  <p>{{ vehicle.label }} · {{ vehicle.id }}</p>
+                }
+                @for (photo of inspection()?.slots ?? []; track photo.slot) {
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span>{{ photo.slot.replaceAll('_',' ') }} · {{ photo.status }}</span>
+                    @if (photo.reason) { <span>{{ photo.reason }}</span> }
+                    @if (photo.url) { <a [href]="photo.url" target="_blank" rel="noopener noreferrer">Open photo</a> }
+                    @if (photo.status === 'pending' && photo.id) {
+                      <button type="button" (click)="reviewInspection(photo.id,'approved')">Approve</button>
+                      <input #reason aria-label="Rejection reason" placeholder="Reason">
+                      <button type="button" [disabled]="!reason.value.trim()" (click)="reviewInspection(photo.id,'rejected',reason.value)">Reject</button>
+                    }
+                  </div>
+                }
+              </section>
+
 
               <div class="flex flex-col sm:flex-row gap-3 mt-4">
                 <button
@@ -1345,6 +1366,36 @@ export class DriverListComponent implements OnInit {
         ).trim();
     }
 
+    readonly inspection = signal<Awaited<ReturnType<AdminService['getInspectionPhotos']>> | null>(null);
+    readonly inspectionError = signal('');
+    private inspectionRequest = 0;
+
+    async loadInspectionPhotos() {
+        const id = this.selectedDriver()?.id;
+        if (!id) return;
+        const request = ++this.inspectionRequest;
+        this.inspection.set(null);
+        this.inspectionError.set('');
+        try {
+            const result = await this.adminService.getInspectionPhotos(id);
+            if (request === this.inspectionRequest && this.selectedDriver()?.id === id) this.inspection.set(result);
+        } catch (error) {
+            if (request === this.inspectionRequest && this.selectedDriver()?.id === id) {
+                this.inspectionError.set(error instanceof Error ? error.message : 'Could not load inspection photos.');
+            }
+        }
+    }
+
+    async reviewInspection(id:string,status:'approved'|'rejected',reason?:string) {
+        const driverId = this.selectedDriver()?.id;
+        try {
+            await this.adminService.reviewInspectionPhoto(id,status,reason);
+            if (this.selectedDriver()?.id === driverId) await this.loadInspectionPhotos();
+        } catch (error) {
+            if (this.selectedDriver()?.id === driverId) this.inspectionError.set(error instanceof Error ? error.message : 'Could not save review.');
+        }
+    }
+
     viewDriver(driver: AdminDriver) {
         this.reviewFeedbackNotes.set(
             driver.driver_review_notes ||
@@ -1353,9 +1404,12 @@ export class DriverListComponent implements OnInit {
         );
         this.selectedReviewBlockers.set(this.getReviewFeedbackOptions(driver));
         this.selectedDriver.set(driver);
+        void this.loadInspectionPhotos();
     }
 
     closeDriverModal() {
+        ++this.inspectionRequest;
+        this.inspection.set(null);
         this.selectedDriver.set(null);
         this.reviewFeedbackNotes.set('');
         this.selectedReviewBlockers.set([]);

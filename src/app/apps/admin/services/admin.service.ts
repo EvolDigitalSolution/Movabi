@@ -813,6 +813,21 @@ export class AdminService {
     }
   }
 
+  async getInspectionPhotos(driverId:string): Promise<{
+    vehicle:{id:string;label:string}|null; slots:{slot:string;status:string;id?:string;url?:string;reason?:string}[]
+  }> {
+    const response = await fetch(this.apiUrlService.getApiUrl('/api/verification/drivers/'+encodeURIComponent(driverId)+'/inspection-photos'),
+      {headers:await this.getAuthenticatedApiHeaders()});
+    if (!response.ok) throw new Error('Inspection photos are unavailable for this driver.');
+    return response.json();
+  }
+
+  async reviewInspectionPhoto(id:string,status:'approved'|'rejected',reason?:string) {
+    const response = await fetch(this.apiUrlService.getApiUrl('/api/verification/inspection-photos/'+encodeURIComponent(id)+'/review'),
+      {method:'POST',headers:await this.getAuthenticatedApiHeaders(),body:JSON.stringify({status,reason})});
+    if (!response.ok) throw new Error('Could not save inspection review. Refresh and try again.');
+  }
+
   private async getAuthenticatedApiHeaders(): Promise<Record<string, string>> {
     const { data, error } = await this.supabase.auth.getSession();
     const token = data.session?.access_token;

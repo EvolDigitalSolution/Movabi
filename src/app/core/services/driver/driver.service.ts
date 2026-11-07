@@ -711,6 +711,30 @@ export class DriverService {
         return data;
     }
 
+    private async inspectionHeaders() {
+        const {data} = await this.supabase.auth.getSession();
+        if (!data.session?.access_token) throw new Error('Sign in to manage inspection photos.');
+        return { Authorization: `Bearer ${data.session.access_token}` };
+    }
+
+    async previewInspectionRequirements(category:string,subtype:string,services:string[]) {
+        return firstValueFrom(this.http.post<{requirements:{key:string;label:string;category:string;required:boolean}[];slots:string[];market:string}>(
+            this.apiUrlService.getApiUrl('/api/verification/inspection-requirements-preview'), {category,subtype,services},
+            {headers:await this.inspectionHeaders()}));
+    }
+
+    async getInspectionPhotos() {
+        return firstValueFrom(this.http.get<{vehicleId:string|null;revision?:string;slots:{slot:string;status:string;reason?:string}[]}>(
+            this.apiUrlService.getApiUrl('/api/verification/inspection-photos'), {headers:await this.inspectionHeaders()}));
+    }
+
+    async uploadInspectionPhoto(slot:string, revision:string, photo:File) {
+        await firstValueFrom(this.http.put(
+            this.apiUrlService.getApiUrl('/api/verification/inspection-photos/'+encodeURIComponent(slot)), photo, {
+                headers:{...await this.inspectionHeaders(),'Content-Type':'application/octet-stream','X-Inspection-Vehicle':revision}
+            }));
+    }
+
     async submitApplication(): Promise<void> {
         const { data } = await this.supabase.auth.getSession();
         const token = data.session?.access_token;
@@ -731,6 +755,7 @@ export class DriverService {
 
         const payload = {
             user_id: user.id,
+            vehicle_subtype:vehicleData.vehicle_subtype ?? null,
             make: String(vehicleData.make ?? '').trim(),
             model: String(vehicleData.model ?? '').trim(),
             year: Number(vehicleData.year),

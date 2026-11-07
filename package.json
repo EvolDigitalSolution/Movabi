@@ -79,6 +79,7 @@
     "nodemailer": "^9.0.1",
     "onesignal-cordova-plugin": "^5.5.0",
     "rxjs": "~7.8.0",
+    "sharp": "0.34.5",
     "stripe": "^12.18.0",
     "tslib": "^2.3.0"
   },

@@ -1,4 +1,7 @@
-import { NextFunction, Request, Response, Router } from 'express';
+import { randomUUID } from 'node:crypto';
+import sharp from 'sharp';
+import { canReviewInspection, inspectionSlots } from '../shared/driver-inspection';
+import { NextFunction, Request, Response, Router, raw } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
@@ -114,6 +117,155 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
   return next();
 };
 
+const inspectionBucket = 'vehicle-inspection-private';
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function inspectionActor(req: Request) {
+  const token = req.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+  if (!token) return null;
+  const { data:{user}, error } = await supabase.auth.getUser(token);
+  if (error || !user) return null;
+  const { data, error: lookupError } = await supabase.from('profiles')
+    .select('id,role,tenant_id').eq('id',user.id).maybeSingle();
+  if (lookupError) throw lookupError;
+  return data;
+}
+
+async function inspectionVehicle(driverId: string) {
+  const {data,error} = await supabase.from('vehicles').select('*').eq('user_id',driverId).limit(2);
+  if (error) throw error;
+  return data.length === 1 ? data[0] : null;
+}
+
+async function inspectionRows(driverId: string, tenant: string, vehicle: {id:string;inspection_revision:string}) {
+  const {data,error} = await supabase.from('driver_inspection_photos').select('id,slot,status,reason,storage_path')
+    .eq('driver_id',driverId).eq('tenant_id',tenant).eq('vehicle_id',vehicle.id)
+    .eq('vehicle_revision',vehicle.inspection_revision).neq('status','replaced');
+  if (error) throw error;
+  return data;
+}
+
+router.post('/inspection-requirements-preview', async (req,res) => {
+  try {
+    const actor = await inspectionActor(req);
+    if (!actor || actor.role !== 'driver') return res.sendStatus(403);
+    const {category, subtype, services} = req.body || {};
+    if (!['bike','standard','xl','small_van','large_van'].includes(category)
+        || (category === 'bike' && !['','pedal_bicycle','e_bike','motorcycle','moped'].includes(subtype))
+        || !Array.isArray(services) || services.length > 4
+        || services.some(service => !['ride','delivery','errand','van'].includes(service))) return res.sendStatus(400);
+    const {data:profile,error} = await supabase.from('profiles').select('*').eq('id',actor.id).single();
+    if (error) throw error;
+    if (!profile.inspection_market_code) return res.status(422).json({error:'Your driver account has no inspection market assigned.'});
+    const saved = await inspectionVehicle(actor.id);
+    const draftVehicle = {...saved, vehicle_class:category, vehicle_subtype:category === 'bike' ? subtype : null};
+    const requirements = getDriverRequirements({
+      countryCode:profile.inspection_market_code, driver:profile,
+      vehicle:draftVehicle, selectedServices:services
+    });
+    return res.json({requirements,market:profile.inspection_market_code,slots:inspectionSlots(category==='bike')});
+  } catch { return res.status(500).json({error:'Could not preview vehicle requirements.'}); }
+});
+
+router.get('/inspection-photos', async (req,res) => {
+  try {
+    const actor = await inspectionActor(req);
+    if (!actor || actor.role !== 'driver' || !actor.tenant_id) return res.sendStatus(403);
+    const vehicle = await inspectionVehicle(actor.id);
+    if (!vehicle) return res.json({vehicleId:null, slots:[]});
+    const rows = await inspectionRows(actor.id,actor.tenant_id,vehicle);
+    return res.json({vehicleId:vehicle.id, revision:vehicle.inspection_revision, slots:inspectionSlots(normaliseVehicleClass(vehicle)==='bike').map(slot => {
+      const photo = rows.find(row => row.slot === slot);
+      return {slot,status:photo?.status || 'missing',reason:photo?.reason || null};
+    })});
+  } catch { return res.status(500).json({error:'Could not load inspection photos.'}); }
+});
+
+router.put('/inspection-photos/:slot', raw({type:'application/octet-stream',limit:'8mb'}), async (req,res) => {
+  try {
+    const actor = await inspectionActor(req);
+    if (!actor || actor.role !== 'driver' || !actor.tenant_id) return res.sendStatus(403);
+    const vehicle = await inspectionVehicle(actor.id);
+    if (!vehicle || req.get('x-inspection-vehicle') !== vehicle.inspection_revision) {
+      return res.status(409).json({error:'Save or reload your current vehicle before uploading.'});
+    }
+    const slot = String(req.params.slot);
+    if (!inspectionSlots(normaliseVehicleClass(vehicle)==='bike').includes(slot) || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({error:'Choose a valid photo and inspection slot.'});
+    }
+    let image: Buffer;
+    try {
+      const source = sharp(req.body,{limitInputPixels:20_000_000});
+      const meta = await source.metadata();
+      if (!['jpeg','png','webp'].includes(meta.format || '') || !meta.width || !meta.height || Math.min(meta.width,meta.height)<200) {
+        return res.status(422).json({error:'Upload a JPEG, PNG or WebP image at least 200 × 200 pixels.'});
+      }
+      image = await source.rotate().resize({width:2000,height:2000,fit:'inside',withoutEnlargement:true}).jpeg().toBuffer();
+    } catch { return res.status(422).json({error:'The selected file is not a readable inspection image.'}); }
+    const path = `${actor.tenant_id}/${actor.id}/${randomUUID()}.jpg`;
+    const {error: uploadError} = await supabase.storage.from(inspectionBucket).upload(path,image,{contentType:'image/jpeg',upsert:false});
+    if (uploadError) throw uploadError;
+    const {error} = await supabase.rpc('register_driver_inspection_photo',{
+      p_driver:actor.id,p_tenant:actor.tenant_id,p_vehicle:vehicle.id,p_revision:vehicle.inspection_revision,p_slot:slot,p_path:path
+    });
+    if (error) {
+      await supabase.storage.from(inspectionBucket).remove([path]);
+      return res.status(409).json({error:'Could not attach this photo. Reload and try again.'});
+    }
+    return res.sendStatus(204);
+  } catch { return res.status(500).json({error:'Could not upload inspection photo.'}); }
+});
+
+router.get('/drivers/:driverId/inspection-photos', async (req,res) => {
+  try {
+    const actor = await inspectionActor(req);
+    if (!actor || actor.role !== 'admin' || !actor.tenant_id) return res.sendStatus(403);
+    const driverId = String(req.params.driverId);
+    if (!uuidPattern.test(driverId)) return res.sendStatus(404);
+    const {data:driver,error} = await supabase.from('profiles').select('tenant_id').eq('id',driverId).maybeSingle();
+    if (error) throw error;
+    if (!driver || !canReviewInspection(actor,driver)) return res.sendStatus(404);
+    const vehicle = await inspectionVehicle(driverId);
+    if (!vehicle) return res.json({vehicle:null,slots:[]});
+    const rows = await inspectionRows(driverId,actor.tenant_id,vehicle);
+    const slots = await Promise.all(inspectionSlots(normaliseVehicleClass(vehicle)==='bike').map(async slot => {
+      const photo = rows.find(row => row.slot === slot);
+      if (!photo) return {slot,status:'missing'};
+      const {data,error:signError} = await supabase.storage.from(inspectionBucket).createSignedUrl(photo.storage_path,120);
+      if (signError) throw signError;
+      return {id:photo.id,slot,status:photo.status,reason:photo.reason,url:data.signedUrl};
+    }));
+    res.set('Cache-Control','no-store');
+    return res.json({vehicle:{id:vehicle.id,label:[vehicle.make,vehicle.model,vehicle.license_plate].filter(Boolean).join(' ')},slots});
+  } catch { return res.status(500).json({error:'Could not load inspection photos.'}); }
+});
+
+router.post('/inspection-photos/:photoId/review', async (req,res) => {
+  try {
+    const actor = await inspectionActor(req);
+    if (!actor || actor.role !== 'admin' || !actor.tenant_id) return res.sendStatus(403);
+    const id = String(req.params.photoId);
+    if (!uuidPattern.test(id)) return res.sendStatus(404);
+    const {status} = req.body || {};
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0,500) : '';
+    if (!['approved','rejected'].includes(status) || (status === 'rejected' && !reason)) return res.sendStatus(400);
+    const {data:photo,error} = await supabase.from('driver_inspection_photos')
+      .select('driver_id,vehicle_id,vehicle_revision').eq('id',id).eq('tenant_id',actor.tenant_id).maybeSingle();
+    if (error) throw error;
+    if (!photo) return res.sendStatus(404);
+    const {data:driver,error:driverError} = await supabase.from('profiles').select('tenant_id').eq('id',photo.driver_id).maybeSingle();
+    if (driverError) throw driverError;
+    if (!driver || !canReviewInspection(actor,driver)) return res.sendStatus(404);
+    const vehicle = await inspectionVehicle(photo.driver_id);
+    if (vehicle?.id !== photo.vehicle_id || vehicle?.inspection_revision !== photo.vehicle_revision) return res.sendStatus(409);
+    const result = await supabase.from('driver_inspection_photos').update({
+      status,reason:status==='rejected' ? reason : null,reviewed_by:actor.id,reviewed_at:new Date().toISOString()
+    }).eq('id',id).eq('tenant_id',actor.tenant_id).eq('status','pending').select('id').maybeSingle();
+    if (result.error) throw result.error;
+    return res.sendStatus(result.data ? 204 : 409);
+  } catch { return res.status(500).json({error:'Could not save inspection review.'}); }
+});
+
 // The authenticated owner can submit saved details; review state is server owned.
 router.post('/driver-submission', async (req, res) => {
   try {
@@ -123,7 +275,7 @@ router.post('/driver-submission', async (req, res) => {
     if (authError || !user) return res.status(401).json({ error: 'Sign in to submit your application.' });
     const [profileResult, vehicleResult] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
-      supabase.from('vehicles').select('*').eq('driver_id', user.id)
+      supabase.from('vehicles').select('*').eq('user_id', user.id)
         .order('created_at', { ascending:false }).limit(2)
     ]);
     if (profileResult.error || vehicleResult.error || !profileResult.data) {
@@ -139,19 +291,29 @@ router.post('/driver-submission', async (req, res) => {
       return res.status(422).json({ error: 'Save exactly one vehicle before submitting.', missing: ['vehicle'] });
     }
     const vehicle = vehicleResult.data[0];
+    if (normaliseVehicleClass(vehicle)==='bike' && !['pedal_bicycle','e_bike','motorcycle','moped'].includes(vehicle.vehicle_subtype)) {
+      return res.status(422).json({error:'Select and save your bike subtype.',missing:['vehicle_subtype']});
+    }
+    if (!profile.inspection_market_code) return res.status(422).json({error:'Your driver account has no inspection market assigned.'});
     const blockers = getBlockingRequirements({
-      countryCode:profile.country_code || profile.country,
+      countryCode:profile.inspection_market_code,
       driver:{...profile, email:user.email}, vehicle
     });
     if (blockers.length) return res.status(422).json({
       error:blockers.map(item => item.message).join(' '), missing:blockers.map(item => item.key)
     });
-    const { error, data } = await supabase.from('profiles').update({
-      onboarding_completed:true, verification_status:'under_review', driver_review_status:'under_review',
-      verification_notes:null, driver_review_notes:null, verification_blockers:[], driver_review_blockers:[],
-      is_verified:false
-    }).eq('id', user.id).eq('role','driver').select('id').maybeSingle();
-    if (error || !data) return res.status(409).json({ error: 'Could not submit your application. Please reload and try again.' });
+    if (!profile.tenant_id) return res.status(422).json({error:'Your driver account has no inspection tenant assigned.'});
+    const slots = inspectionSlots(normaliseVehicleClass(vehicle) === 'bike');
+    const photos = await inspectionRows(user.id,profile.tenant_id,vehicle);
+    const missing = slots.filter(slot => !photos.some(photo => photo.slot === slot && photo.status === 'approved'));
+    if (missing.length) return res.status(422).json({
+      error:`Inspection photos still need approval: ${missing.map(slot => slot.replace(/_/g,' ')).join(', ')}.`,
+      missing:missing.map(slot => 'inspection.'+slot)
+    });
+    const {error,data} = await supabase.rpc('submit_driver_with_current_inspection',{
+      p_driver:user.id,p_tenant:profile.tenant_id,p_vehicle:vehicle.id,p_revision:vehicle.inspection_revision,p_slots:slots,p_market:profile.inspection_market_code,p_services:vehicle.service_eligibility ?? null
+    });
+    if (error || !data) return res.status(409).json({error:'Vehicle, inspection or review state changed. Reload before submitting.'});
     return res.json({ status:'under_review' });
   } catch {
     return res.status(500).json({ error: 'Could not submit your application.' });
@@ -377,6 +539,11 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
     }
 
     const { driverId } = req.params;
+    const actor = await inspectionActor(req);
+    const {data:driver,error:driverError} = await supabase.from('profiles').select('tenant_id').eq('id',driverId).maybeSingle();
+    if (driverError) throw driverError;
+    if (!actor || !driver || !canReviewInspection(actor,driver)) return res.sendStatus(404);
+
     const { notes, testingOverride } = req.body || {};
 
     if (!testingOverride) {
@@ -385,7 +552,7 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
       });
     }
 
-    const { error } = await supabase
+    const { error, data } = await supabase
       .from('profiles')
       .update({
         is_verified: true,
@@ -397,9 +564,11 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
         verification_blockers: [],
         updated_at: new Date().toISOString()
       })
-      .eq('id', driverId);
+      .eq('id', driverId).eq('tenant_id',actor.tenant_id).eq('driver_review_status','under_review')
+      .select('id').maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(409).json({error:'The driver must submit a current inspection before approval.'});
 
     return res.json({
       success: true,
