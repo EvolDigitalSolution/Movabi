@@ -26,3 +26,20 @@ for (const [surface, engine] of [['API', api], ['Mobile', mobile]] as const) {
         });
     });
 }
+
+describe('server submission blockers', () => {
+    it('names missing private hire documents and accepts the complete applicable set', () => {
+        const input = {
+            countryCode: 'GB',
+            vehicle: {capacity:'standard', service_eligibility:['ride'], make:'Test',
+                model:'Car', color:'Blue', year:2025, license_plate:'TEST01'},
+            driver: {full_name:'Test Driver', email:'test@example.invalid', phone:'0123456789',
+                date_of_birth:'1980-01-01', driver_license_url:'licence.pdf', insurance_url:'insurance.pdf',
+                council_name:'Test Council', council_license_number:'123', taxi_badge_number:'456',
+                taxi_license_expiry:'2099-01-01', stripe_connect_status:'enabled'}
+        };
+        expect(api.getBlockingRequirements(input).map(item => item.key)).toEqual(['private_hire_vehicle_license']);
+        expect(api.getBlockingRequirements({...input,
+            driver:{...input.driver, private_hire_vehicle_license_url:'private-hire.pdf'}})).toEqual([]);
+    });
+});

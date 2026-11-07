@@ -114,6 +114,50 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
   return next();
 };
 
+// The authenticated owner can submit saved details; review state is server owned.
+router.post('/driver-submission', async (req, res) => {
+  try {
+    const token = req.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+    if (!token) return res.status(401).json({ error: 'Sign in to submit your application.' });
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ error: 'Sign in to submit your application.' });
+    const [profileResult, vehicleResult] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('vehicles').select('*').eq('driver_id', user.id)
+        .order('created_at', { ascending:false }).limit(2)
+    ]);
+    if (profileResult.error || vehicleResult.error || !profileResult.data) {
+      return res.status(500).json({ error: 'Could not read your saved application.' });
+    }
+    const profile = profileResult.data;
+    if (profile.role !== 'driver') return res.status(403).json({ error: 'A driver account is required.' });
+    if (profile.is_verified || [profile.driver_review_status, profile.verification_status]
+        .some(status => ['approved','under_review'].includes(status))) {
+      return res.status(409).json({ error: 'This application is already approved or under review.' });
+    }
+    if (vehicleResult.data.length !== 1) {
+      return res.status(422).json({ error: 'Save exactly one vehicle before submitting.', missing: ['vehicle'] });
+    }
+    const vehicle = vehicleResult.data[0];
+    const blockers = getBlockingRequirements({
+      countryCode:profile.country_code || profile.country,
+      driver:{...profile, email:user.email}, vehicle
+    });
+    if (blockers.length) return res.status(422).json({
+      error:blockers.map(item => item.message).join(' '), missing:blockers.map(item => item.key)
+    });
+    const { error, data } = await supabase.from('profiles').update({
+      onboarding_completed:true, verification_status:'under_review', driver_review_status:'under_review',
+      verification_notes:null, driver_review_notes:null, verification_blockers:[], driver_review_blockers:[],
+      is_verified:false
+    }).eq('id', user.id).eq('role','driver').select('id').maybeSingle();
+    if (error || !data) return res.status(409).json({ error: 'Could not submit your application. Please reload and try again.' });
+    return res.json({ status:'under_review' });
+  } catch {
+    return res.status(500).json({ error: 'Could not submit your application.' });
+  }
+});
+
 router.use(requireAdmin);
 
 router.post('/drivers/:driverId/preverify', async (req, res) => {

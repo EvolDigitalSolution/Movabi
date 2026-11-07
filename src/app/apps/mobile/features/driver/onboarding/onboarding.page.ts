@@ -1777,25 +1777,15 @@ export class OnboardingPage implements OnInit {
             await this.driverService.fetchVehicle();
 
             await this.updateProfileSafely(user.id, {
-                onboarding_completed: true,
-                role: 'driver',
-                pricing_plan: 'starter',
-                subscription_status: 'inactive',
                 full_name: String(raw.full_name || '').trim(),
                 phone: String(raw.phone || '').trim(),
                 date_of_birth: String(raw.date_of_birth || '').trim() || null,
                 ...rideCompliancePayload,
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
-                verification_status: 'under_review',
-                driver_review_status: 'under_review',
-                verification_notes: null,
-                driver_review_notes: null,
-                verification_blockers: [],
-                driver_review_blockers: [],
-                verification_items: this.buildVerificationItems(raw),
-                is_verified: false
+                verification_items: this.buildVerificationItems(raw)
             });
+            await this.driverService.submitApplication();
 
             if (typeof (this.profileService as any).fetchProfile === 'function') {
                 await (this.profileService as any).fetchProfile(user.id);

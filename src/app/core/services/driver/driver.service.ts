@@ -711,6 +711,20 @@ export class DriverService {
         return data;
     }
 
+    async submitApplication(): Promise<void> {
+        const { data } = await this.supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) throw new Error('Sign in to submit your application.');
+        try {
+            await firstValueFrom(this.http.post(this.apiUrlService.getApiUrl('/api/verification/driver-submission'), {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
+        } catch (error) {
+            const response = error as { error?: { error?: string } };
+            throw new Error(response.error?.error || 'Could not submit your application.');
+        }
+    }
+
     async updateVehicle(vehicleData: Partial<Vehicle>) {
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
