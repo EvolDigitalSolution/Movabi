@@ -124,8 +124,7 @@ export function normaliseVehicleClass(vehicle?: any): DriverVehicleClass {
 
 export function normaliseSelectedServices(driver?: any, vehicle?: any, selectedServices?: string[] | null): DriverServiceType[] {
   const verificationItems = parseVerificationItems(driver?.verification_items);
-  const rawValues = [
-    selectedServices,
+  const rawValues = selectedServices != null ? [selectedServices] : Array.isArray(vehicle?.service_eligibility) ? [vehicle.service_eligibility] : [
     vehicle?.service_eligibility,
     vehicle?.driver_service_types,
     driver?.service_eligibility,
@@ -170,6 +169,7 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
     .filter((service) => !ALLOWED_SERVICES[vehicleClass].includes(service))
     .forEach((service) => requirements.push(result(`service_${service}_not_allowed`, 'Service eligibility', `${serviceLabel(service)} is not available for ${vehicleClassLabel(vehicleClass)}.`, 'missing', 'blocker', 'service', true, [service], [vehicleClass])));
 
+  const applicableServices = selectedServices.filter(service => ALLOWED_SERVICES[vehicleClass].includes(service));
   requirements.push(textRequirement(driver, ['full_name', 'legal_name'], 'full_legal_name', 'Full legal name', 'Full legal name is missing.', 'profile'));
   requirements.push(emailRequirement(driver));
   requirements.push(textRequirement(driver, ['phone', 'phone_number', 'mobile'], 'phone', 'Phone number', 'Phone number is missing.', 'profile'));
@@ -193,16 +193,16 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
     requirements.push(documentRequirement(documents, ['driver_license_url', 'driving_licence_url'], ['driver_license_status', 'driving_licence_status'], 'driver_license', 'Driving licence', 'Driver licence document is missing.'));
   }
 
-  if (selectedServices.some((service) => service === 'errand' || service === 'delivery')) {
+  if (applicableServices.some((service) => service === 'errand' || service === 'delivery')) {
     const insuranceKeys = vehicleClass === 'bike' || country.requireCourierInsurance
       ? ['courier_insurance_url', 'hire_reward_insurance_url', 'insurance_url']
       : ['insurance_url', 'courier_insurance_url', 'hire_reward_insurance_url'];
     requirements.push(documentRequirement(documents, insuranceKeys, ['courier_insurance_status', 'insurance_status'], 'courier_insurance', 'Courier insurance', 'Upload correct insurance before accepting this job type.'));
-  } else if (selectedServices.includes('ride') || selectedServices.includes('van')) {
+  } else if (applicableServices.includes('ride') || applicableServices.includes('van')) {
     requirements.push(documentRequirement(documents, ['insurance_url'], ['insurance_status'], 'insurance', 'Insurance', 'Insurance document is missing.'));
   }
 
-  if (selectedServices.includes('ride') && country.rideRequiresPrivateHire) {
+  if (applicableServices.includes('ride') && country.rideRequiresPrivateHire) {
     requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.councilName, 'council_name', 'Council / licensing authority', 'Council/private hire authority is missing.', 'profile', ['ride']));
     requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.councilLicenseNumber, 'council_license_number', 'Council licence number', 'Council licence number is missing.', 'profile', ['ride']));
     requirements.push(textRequirement(driver, RIDE_COMPLIANCE_KEYS.taxiBadgeNumber, 'taxi_badge_number', 'Taxi badge number', 'Taxi badge number is missing.', 'profile', ['ride']));
@@ -213,7 +213,7 @@ export function getDriverRequirements(input: DriverRequirementsInput): DriverReq
     requirements.push(result('council_name', 'Council / taxi licence', 'Council/taxi fields are not required unless Ride is selected for a configured country.', 'not_required', 'warning', 'profile', false, selectedServices));
   }
 
-  if (selectedServices.includes('van')) {
+  if (applicableServices.includes('van')) {
     if (country.requireGoodsInTransitForVan) requirements.push(documentRequirement(driver, ['goods_in_transit_url'], ['goods_in_transit_status'], 'goods_in_transit', 'Goods in transit insurance', 'Goods in transit insurance is missing.', ['van']));
     if (country.requirePublicLiabilityForVan) requirements.push(documentRequirement(driver, ['public_liability_url'], ['public_liability_status'], 'public_liability', 'Public liability insurance', 'Public liability insurance is missing.', ['van']));
   }

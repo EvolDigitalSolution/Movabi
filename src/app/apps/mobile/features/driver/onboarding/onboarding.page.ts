@@ -47,7 +47,7 @@ import { ButtonComponent, BadgeComponent } from '@shared/ui';
 import {
     getBlockingRequirements,
     getVehiclePlateValue,
-    isRideSelected as engineRideSelected,
+    marketRequiresPrivateHire,
     normaliseSelectedServices,
     normaliseVehicleClass,
     vehicleRequiresRegistration
@@ -1087,10 +1087,12 @@ export class OnboardingPage implements OnInit {
     }
 
     requiresTaxiLicence(): boolean {
-        return engineRideSelected(
-            { verification_items: { driver_service_types: this.selectedServiceTypes() }, driver_service_types: this.selectedServiceTypes() },
-            { service_eligibility: this.selectedServiceTypes(), capacity: this.selectedVehicleClass() }
-        );
+        return this.selectedServiceTypes().includes('ride') && this.privateHireRequiredInMarket();
+    }
+
+    private privateHireRequiredInMarket(): boolean {
+        const profile = this.profile() as (DriverProfile & {country_code?: string; country?: string}) | null;
+        return marketRequiresPrivateHire(profile?.country_code || profile?.country);
     }
 
     private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
@@ -1216,7 +1218,7 @@ export class OnboardingPage implements OnInit {
         const allowedServices = this.allowedServicesForClass(value);
         const selectedServices = this.normaliseServiceTypes(services?.value, value).filter(service => allowedServices.includes(service));
         const nextServices = selectedServices.length ? selectedServices : this.defaultServicesForClass(value);
-        const needsTaxiLicence = nextServices.includes('ride');
+        const needsTaxiLicence = nextServices.includes('ride') && this.privateHireRequiredInMarket();
 
         services?.setValue(nextServices, { emitEvent: false });
         services?.setValidators([Validators.required]);
