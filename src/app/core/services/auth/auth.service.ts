@@ -1,4 +1,5 @@
 import { Injectable, signal, inject } from '@angular/core';
+import { ApiUrlService } from '../api-url.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { Router, Route } from '@angular/router';
