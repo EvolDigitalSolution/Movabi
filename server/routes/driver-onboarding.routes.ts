@@ -5,6 +5,7 @@ import { Request, Response, Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../services/supabase.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { MarketplaceConfigService } from '../services/marketplace-config.service';
 import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
 import { DriverRequirementService } from '../services/driver-requirement.service';
 import { DriverIdentityEditabilityService } from '../services/driver-identity-editability.service';
@@ -123,11 +124,13 @@ router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(
   if(!residentialAddressPresent&&!dateOfBirthPresent&&!fullNamePresent&&!countryCodePresent&&!phonePresent)throw new Error('Provide a residential address, date of birth, legal name, country, or contact number.');
   let previousDateOfBirth:string|null=null;
   if(dateOfBirthPresent||fullNamePresent||countryCodePresent){const{data:identityProfile,error:identityError}=await supabaseAdmin.from('profiles').select('date_of_birth,full_name,is_verified,onboarding_completed,verification_status,driver_review_status').eq('id',driverId).single();if(identityError||!identityProfile)throw identityError||new Error('Driver profile not found.');const{data:correctionRows,error:correctionError}=await supabaseAdmin.from('driver_onboarding_requests').select('status,request_type,permission_consumed_at').eq('driver_id',driverId).eq('request_type','identity_correction');if(correctionError)throw correctionError;const editability=DriverIdentityEditabilityService.resolve(identityProfile,correctionRows||[]);if(fullNamePresent&&!editability.fullNameEditable)return res.status(403).json({code:'NAME_CHANGE_NOT_ALLOWED',message:editability.fullNameReason||'Your legal name cannot be changed after driver verification.'});if(countryCodePresent&&!editability.countryCodeEditable)return res.status(403).json({code:'COUNTRY_CHANGE_NOT_ALLOWED',message:editability.countryCodeReason||'Your operating country cannot be changed after driver verification.'});if(dateOfBirthPresent&&!editability.dateOfBirthEditable)return res.status(403).json({code:'DOB_CHANGE_NOT_ALLOWED',message:'Date of birth cannot be changed after verification has started.'});previousDateOfBirth=identityProfile.date_of_birth||null;}
-  const profileUpdates:{current_address?:string;date_of_birth?:string;full_name?:string;country_code?:string;phone?:string;updated_at:string}={updated_at:new Date().toISOString()};
+  const profileUpdates:{current_address?:string;date_of_birth?:string;full_name?:string;country_code?:string;currency_code?:string|null;phone?:string;updated_at:string}={updated_at:new Date().toISOString()};
   if(residentialAddressPresent)profileUpdates.current_address=parseResidentialAddress(body);
   if(dateOfBirthPresent){profileUpdates.date_of_birth=parseDriverDateOfBirth(body.dateOfBirth);calculateCalendarAge(profileUpdates.date_of_birth);}
   if(fullNamePresent){const name=String(body.fullName).trim();if(name.length<2)throw new Error('Enter a valid legal name.');profileUpdates.full_name=name;}
-  if(countryCodePresent){const country=String(body.countryCode).trim().toUpperCase();if(!/^[A-Z]{2}$/.test(country))throw new Error('Enter a valid country code.');profileUpdates.country_code=country;}
+  if(countryCodePresent){const country=String(body.countryCode).trim().toUpperCase();if(!/^[A-Z]{2}$/.test(country))throw new Error('Enter a valid country code.');profileUpdates.country_code=country;
+    const market=await MarketplaceConfigService.getEffectivePricingConfig('ride',{countryCode:country,city:String(body.marketCity||body.city||'')});
+    profileUpdates.currency_code=market.currencyCode||null;}
   if(phonePresent){profileUpdates.phone=parseDriverPhone(body.phone);}
   console.info('[DriverOnboarding] profile update payload',{userId:driverId,keys:Object.keys(profileUpdates)});
   const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(error||!data)throw error||new Error('Profile save returned no record.');

@@ -4,6 +4,7 @@ import { rateLimit } from 'express-rate-limit';
 import { EmailService } from '../services/email.service';
 import { supabaseAdmin, getSupabaseAuthRegistrationClient } from '../services/supabase.service';
 import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { MarketplaceConfigService } from '../services/marketplace-config.service';
 import { RegistrationEligibilityService } from '../services/registration-eligibility.service';
 
 const router = express.Router();
@@ -55,7 +56,8 @@ router.post('/register', registrationLimiter, async (req: Request, res: Response
     const market = await MarketAvailabilityService.requireCapability({ countryCode, marketCity, capability: 'customer_registration', endpoint: '/api/auth/register' });
     const redirectTo = String(req.body?.emailRedirectTo || '');
     const safeRedirect = /^(https:\/\/|http:\/\/localhost(?::\d+)?\/|com\.movabi\.app:\/\/)/i.test(redirectTo) ? redirectTo : undefined;
-    const metadata = { ...(req.body?.data || {}), registration_country_code: market.countryCode, registration_market_city: market.marketCity };
+    const currencyMarket=await MarketplaceConfigService.getEffectivePricingConfig('ride',{countryCode:market.countryCode,city:market.marketCity});
+    const metadata = { ...(req.body?.data || {}), registration_country_code: market.countryCode, registration_market_city: market.marketCity, registration_currency_code: currencyMarket.currencyCode };
     const { data, error } = await getSupabaseAuthRegistrationClient().auth.signUp({ email, password, options: { data: metadata, ...(safeRedirect ? { emailRedirectTo: safeRedirect } : {}) } });
     // Privacy-preserving public response: identical status and body for a new
     // and an existing address. Never returns an existing-account flag, a
