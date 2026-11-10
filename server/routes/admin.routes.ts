@@ -354,14 +354,22 @@ router.get('/drivers', requireAdmin, async (_req: Request, res: Response) => {
       }
     }));
 
+    const countryCodes=[...new Set((drivers||[]).map((d:any)=>String(d.country_code||'').toUpperCase()).filter((c:string)=>/^[A-Z]{2}$/.test(c)))];
+    const {data:marketRows}=countryCodes.length?await supabaseAdmin.from('pricing_config').select('country_code,currency_code').in('country_code',countryCodes).eq('is_active',true):{data:[] as any[]};
+    const currencyByCountry=new Map<string,string>();for(const r of marketRows||[]){const c=String(r.country_code||'').toUpperCase();if(!currencyByCountry.has(c))currencyByCountry.set(c,String(r.currency_code||'').toUpperCase());}
     const result = (drivers || []).map((driver: any) => {
       const authEmail = authEmails.get(driver.id) || null;
       const driverWithVerificationItems = {
         ...parseVerificationItems(driver.verification_items),
         ...driver
       };
+      const storedCountry=String(driver.country_code||'').toUpperCase()||'UNKNOWN';
+      const storedCurrency=String(driver.currency_code||'').toUpperCase()||'UNKNOWN';
+      const marketCurrency=currencyByCountry.get(String(driver.country_code||'').toUpperCase())||'UNKNOWN';
+      const marketMismatch=storedCountry!=='UNKNOWN'&&storedCurrency!=='UNKNOWN'&&marketCurrency!=='UNKNOWN'&&storedCurrency!==marketCurrency;
       return {
         ...driver,
+        market_country:storedCountry,market_currency:storedCurrency,market_mismatch:marketMismatch,
         email: driver.email || authEmail,
         auth_email: authEmail,
         date_of_birth: driver.date_of_birth || null,

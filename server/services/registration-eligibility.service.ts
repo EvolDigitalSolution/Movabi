@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase.service';
 import { MarketAvailabilityService } from './market-availability.service';
+import { MarketplaceConfigService } from './marketplace-config.service';
 
 /**
  * Phase 1 — registration market eligibility authority.
@@ -81,13 +82,16 @@ export class RegistrationEligibilityService {
     if (!existing) throw new Error('Profile not found');
     if (existing.activated) return existing;
 
+    const currencyMarket = await MarketplaceConfigService.getEffectivePricingConfig('ride', { countryCode, marketCity });
+    if (!currencyMarket.currencyCode) throw new Error('Market currency could not be resolved for this country. Check the market configuration.');
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
         registration_activated_at: new Date().toISOString(),
         registration_country_code: countryCode,
         registration_market_city: marketCity,
-        country_code: countryCode
+        country_code: countryCode,
+        currency_code: currencyMarket.currencyCode
       })
       .eq('id', userId);
 
