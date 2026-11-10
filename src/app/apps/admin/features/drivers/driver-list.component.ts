@@ -17,6 +17,9 @@ import {
 } from '../../../../shared/verification/driver-requirements.engine';
 
 type AdminDriver = DriverProfile & {
+  market_country?: string | null;
+  market_currency?: string | null;
+  market_mismatch?: boolean;
     vehicles?: Vehicle[];
     vehicle?: Vehicle | null;
     full_name?: string | null;

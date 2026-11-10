@@ -1,0 +1,58 @@
+[33m❯[39m Building...
+[32m✔[39m Building...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m                        [2m | [22m [1mRaw size[22m[2m | [22m[1mEstimated transfer size[22m
+[32mstyles-PYKZRUIN.css[39m[2m | [22m[2mstyles[22m                       [2m | [22m[36m246.55 kB[39m[2m | [22m               [36m27.21 kB[39m
+[32mchunk-BNXJGSRG.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m239.72 kB[39m[2m | [22m               [36m64.05 kB[39m
+[32mchunk-ZVW2TXSF.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m193.47 kB[39m[2m | [22m               [36m43.90 kB[39m
+[32mchunk-LJHKV3QL.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m156.32 kB[39m[2m | [22m               [36m33.52 kB[39m
+[32mchunk-SEWHGX33.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m92.80 kB[39m[2m | [22m               [36m23.43 kB[39m
+[32mchunk-EKYGK6HD.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m43.51 kB[39m[2m | [22m               [36m12.28 kB[39m
+[32mchunk-LYDPPOAD.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m36.10 kB[39m[2m | [22m               [36m12.57 kB[39m
+[32mchunk-7BYXNEYT.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m26.70 kB[39m[2m | [22m                [36m7.15 kB[39m
+[32mchunk-32QIY76B.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m10.16 kB[39m[2m | [22m                [36m2.63 kB[39m
+[32mmain-SWIJUJKO.js[39m   [2m | [22m[2mmain[22m                         [2m | [22m  [36m9.36 kB[39m[2m | [22m                [36m2.77 kB[39m
+[32mchunk-TDDKBJBY.js[39m  [2m | [22m[2m-[22m                            [2m | [22m  [36m7.87 kB[39m[2m | [22m                [36m2.87 kB[39m
+[32mchunk-QQGH7KHC.js[39m  [2m | [22m[2m-[22m                            [2m | [22m  [36m5.78 kB[39m[2m | [22m                [36m2.27 kB[39m
+[32mchunk-Y4GDHYDS.js[39m  [2m | [22m[2m-[22m                            [2m | [22m  [36m5.74 kB[39m[2m | [22m                [36m2.13 kB[39m
+[32mchunk-PVHJNJRT.js[39m  [2m | [22m[2m-[22m                            [2m | [22m  [36m1.84 kB[39m[2m | [22m              [36m694 bytes[39m
+[32mchunk-HU6DUUP4.js[39m  [2m | [22m[2m-[22m                            [2m | [22m  [36m1.23 kB[39m[2m | [22m              [36m530 bytes[39m
+[32mchunk-N4PMC553.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m998 bytes[39m[2m | [22m              [36m998 bytes[39m
+[32mchunk-R7ZCNCBW.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m932 bytes[39m[2m | [22m              [36m932 bytes[39m
+[32mchunk-HANUVCPB.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m911 bytes[39m[2m | [22m              [36m911 bytes[39m
+[32mchunk-PZLW5H7L.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m761 bytes[39m[2m | [22m              [36m761 bytes[39m
+[32mchunk-NDWEG4M7.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m544 bytes[39m[2m | [22m              [36m544 bytes[39m
+[32mchunk-UIGZEDL5.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m199 bytes[39m[2m | [22m              [36m199 bytes[39m
+[32mchunk-YZ23MZC7.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m103 bytes[39m[2m | [22m              [36m103 bytes[39m
+[32mchunk-IVRJWNQH.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m99 bytes[39m[2m | [22m               [36m99 bytes[39m
+
+[1m [22m                  [2m | [22m[1mInitial total[22m                [2m | [22m  [1m1.08 MB[22m[2m | [22m              [1m242.55 kB[22m
+
+[1mLazy chunk files[22m   [2m | [22m[1mNames[22m                        [2m | [22m [1mRaw size[22m[2m | [22m[1mEstimated transfer size[22m
+[32mchunk-E6KWLLHM.js[39m  [2m | [22m[2m-[22m                            [2m | [22m  [36m1.07 MB[39m[2m | [22m              [36m238.03 kB[39m
+[32mchunk-VW5J3ECO.js[39m  [2m | [22m[2m-[22m                            [2m | [22m[36m817.00 kB[39m[2m | [22m              [36m167.58 kB[39m
+[32mchunk-QER52TZO.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m90.97 kB[39m[2m | [22m               [36m12.63 kB[39m
+[32mchunk-TRTZPVBA.js[39m  [2m | [22m[2mion-datetime_3-entry[22m         [2m | [22m [36m74.50 kB[39m[2m | [22m               [36m14.43 kB[39m
+[32mchunk-YIL7CGSW.js[39m  [2m | [22m[2mdriver-list-component[22m        [2m | [22m [36m72.84 kB[39m[2m | [22m               [36m17.19 kB[39m
+[32mchunk-UKTHXEUV.js[39m  [2m | [22m[2mglobal-ai-pricing-component[22m  [2m | [22m [36m63.23 kB[39m[2m | [22m               [36m11.73 kB[39m
+[32mchunk-YORBTPEH.js[39m  [2m | [22m[2msettings-component[22m           [2m | [22m [36m62.10 kB[39m[2m | [22m               [36m12.18 kB[39m
+[32mchunk-2IEHQSL3.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m61.78 kB[39m[2m | [22m               [36m14.79 kB[39m
+[32mchunk-OWDQPLCZ.js[39m  [2m | [22m[2mion-item_8-entry[22m             [2m | [22m [36m55.14 kB[39m[2m | [22m                [36m7.23 kB[39m
+[32mchunk-NOUBB2A7.js[39m  [2m | [22m[2m-[22m                            [2m | [22m [36m47.56 kB[39m[2m | [22m               [36m15.28 kB[39m
+[32mchunk-U6Y5W5A3.js[39m  [2m | [22m[2mmarket-intelligence-component[22m[2m | [22m [36m47.37 kB[39m[2m | [22m                [36m9.15 kB[39m
+[32mchunk-MCPUY7AP.js[39m  [2m | [22m[2mion-textarea-entry[22m           [2m | [22m [36m47.13 kB[39m[2m | [22m                [36m5.74 kB[39m
+[32mchunk-3LBMT6DJ.js[39m  [2m | [22m[2mion-select_3-entry[22m           [2m | [22m [36m43.16 kB[39m[2m | [22m                [36m7.34 kB[39m
+[32mchunk-LCSGZKTD.js[39m  [2m | [22m[2mion-modal-entry[22m              [2m | [22m [36m41.75 kB[39m[2m | [22m                [36m9.90 kB[39m
+[32mchunk-B5RGO4W5.js[39m  [2m | [22m[2mion-input-entry[22m              [2m | [22m [36m41.52 kB[39m[2m | [22m                [36m5.81 kB[39m
+[2m...and 135 more lazy chunks files. Use "--verbose" to show all the files.[22m
+
+Application bundle generation complete. [29.781 seconds] - 2026-11-10T21:17:51.466Z
+
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RouterLink is not used within the template of DriverWalletPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/driver-wallet.page.ts:24:36:
+[37m      24 │ ...:[CommonModule,FormsModule,[32mRouterLink[37m,DriverWalletTopupComponen...
+         ╵                               [32m~~~~~~~~~~[0m
+
+[39m[22m
+Output location: C:\Users\fedri\source\repos\Movabi-vehicle-inspection-test\dist\admin
+
