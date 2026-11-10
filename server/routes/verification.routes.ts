@@ -263,7 +263,7 @@ router.post('/inspection-photos/:photoId/review', async (req,res) => {
     const vehicle = await inspectionVehicle(photo.driver_id);
     if (vehicle?.id !== photo.vehicle_id || vehicle?.inspection_revision !== photo.vehicle_revision) return res.sendStatus(409);
     const result = await supabase.from('driver_vehicle_inspection_photos').update({
-      status,reason:status==='rejected' ? reason : null,reviewed_by:actor.id,reviewed_at:new Date().toISOString()
+      status,rejection_reason:status==='rejected' ? reason : null,reviewed_by:actor.id,reviewed_at:new Date().toISOString()
     }).eq('id',id).eq('tenant_id',actor.tenant_id).eq('status','under_review').select('id').maybeSingle();
     if (result.error) throw result.error;
     return res.sendStatus(result.data ? 204 : 409);
