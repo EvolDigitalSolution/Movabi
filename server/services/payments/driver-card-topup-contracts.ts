@@ -7,5 +7,6 @@ export interface DriverCardTopupAdapter {
   preflight(input:DriverCardInput):Promise<void>;
   createCheckout(input: DriverCardInput): Promise<{providerReference:string;checkoutUrl?:string;clientSecret?:string}>;
   verify(input: DriverCardExpected): Promise<{reference:string;merchantAccountRef:string;currency:string;chargedAmountMinor:number;finalStatus:'succeeded'}>;
+  recover?(input: DriverCardExpected): Promise<{status:string;clientSecret?:string}>;
 }
 export type DriverCardAdapterResolver = (provider:string,merchant:string)=>DriverCardTopupAdapter;

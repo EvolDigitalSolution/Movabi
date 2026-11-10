@@ -196,12 +196,25 @@ export class DriverWalletTopupComponent implements OnInit {
     const attempt = this.saved(); if (this.busy() || !attempt?.quote) return;
     this.busy.set(true);
     try {
-      const result = await this.call('/verify',{attemptId:attempt.quote.attemptId});
-      if (typeof result.creditedEventId !== 'string' || !/^[0-9a-f-]{36}$/i.test(result.creditedEventId)) throw Error();
-      this.clear();
-      this.message.set('Payment verified. Wallet credit added.');
-      try { await this.cash.refresh(true); }
-      catch { this.message.set('Payment verified. Wallet credit added. Refresh the wallet to check its balance.'); }
+      const result = await this.call('/recover',{attemptId:attempt.quote.attemptId});
+      if (result.status === 'confirmed' && typeof result.creditedEventId === 'string' && /^[0-9a-f-]{36}$/i.test(result.creditedEventId)) {
+        this.clear();
+        this.message.set('Payment verified. Wallet credit added.');
+        try { await this.cash.refresh(true); }
+        catch { this.message.set('Payment verified. Wallet credit added. Refresh the wallet to check its balance.'); }
+        return;
+      }
+      if (typeof result.clientSecret === 'string' && result.clientSecret.startsWith('pi_')) {
+        // Confirmable/authentication state — remount the card and let Pay resume.
+        this.pi.set(result.clientSecret);
+        setTimeout(()=>void this.mountCard(),0);
+        if (result.status === 'requires_action') {
+          setTimeout(()=>void this.pay(attempt.quote!),0);
+        } else this.message.set('Payment needs confirmation. Complete it below.');
+        return;
+      }
+      if (result.status === 'processing') this.message.set('Payment is processing. Check again shortly.');
+      else this.message.set('Payment status is not yet confirmed. Keep this attempt and check again later.');
     } catch { this.message.set('Payment has not been confirmed. Keep this attempt and check again later.'); }
     finally { this.busy.set(false); }
   }
