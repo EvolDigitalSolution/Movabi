@@ -428,6 +428,16 @@ router.get('/users', requireAdmin, async (req: Request, res: Response) => {
     if (error) throw error;
 
     const users = data || [];
+    const countryCodes=[...new Set(users.map((u:any)=>String(u.country_code||'').toUpperCase()).filter((c:string)=>/^[A-Z]{2}$/.test(c)))];
+    const {data:marketRows}=countryCodes.length?await supabaseAdmin.from('pricing_config').select('country_code,currency_code').in('country_code',countryCodes).eq('is_active',true):{data:[] as any[]};
+    const currencyByCountry=new Map<string,string>();for(const r of marketRows||[]){const c=String(r.country_code||'').toUpperCase();if(!currencyByCountry.has(c))currencyByCountry.set(c,String(r.currency_code||'').toUpperCase());}
+    for(const u of users){
+      const sc=String(u.country_code||'').toUpperCase()||'UNKNOWN';
+      const scu=String(u.currency_code||'').toUpperCase()||'UNKNOWN';
+      const mc=currencyByCountry.get(String(u.country_code||'').toUpperCase())||'UNKNOWN';
+      u.market_country=sc;u.market_currency=scu;
+      u.market_mismatch=sc!=='UNKNOWN'&&scu!=='UNKNOWN'&&mc!=='UNKNOWN'&&scu!==mc;
+    }
     for (let offset = 0; offset < users.length; offset += 10) {
       await Promise.all(users.slice(offset, offset + 10).map(async (user: any) => {
         if (String(user.email || '').trim()) return;

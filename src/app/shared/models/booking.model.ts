@@ -373,6 +373,9 @@ export interface Profile {
     commission_rate: number;
     currency_code: string;
     country_code: string;
+    market_country?: string | null;
+    market_currency?: string | null;
+    market_mismatch?: boolean;
     stripe_customer_id?: string;
     onboarding_completed: boolean;
     is_verified?: boolean;

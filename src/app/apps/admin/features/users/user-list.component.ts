@@ -166,6 +166,9 @@ import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
                 <div><dt class="text-xs font-semibold text-slate-500">Phone</dt><dd class="mt-1 text-slate-900">{{ user.phone || 'Not provided' }}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Account status</dt><dd class="mt-1 capitalize text-slate-900">{{ (user.account_status || 'active').replaceAll('_', ' ') }}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Joined</dt><dd class="mt-1 text-slate-900">{{ user.created_at ? (user.created_at | date:'medium') : 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Market country</dt><dd class="mt-1 text-slate-900">{{ user.market_country || 'UNKNOWN' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Market currency</dt><dd class="mt-1 text-slate-900">{{ user.market_currency || 'UNKNOWN' }}
+                  @if(user.market_mismatch){<span class="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Country/currency mismatch</span>}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Country</dt><dd class="mt-1 text-slate-900">{{ user.registration_country_code || user.country_code || 'Not provided' }}</dd></div>
                 <div><dt class="text-xs font-semibold text-slate-500">Currency</dt><dd class="mt-1 text-slate-900">{{ user.currency_code || 'Not provided' }}</dd></div>
                 <div class="sm:col-span-2"><dt class="text-xs font-semibold text-slate-500">Home address</dt><dd class="mt-1 whitespace-pre-line break-words text-slate-900">{{ customerHomeAddress(user) || 'Not provided' }}</dd></div>

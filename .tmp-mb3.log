@@ -1,0 +1,32 @@
+[33m❯[39m Building...
+[32m✔[39m Building...
+Application bundle generation failed. [24.473 seconds] - 2026-11-10T22:17:11.804Z
+
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mNG8113: RouterLink is not used within the template of DriverWalletPage[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/mobile/features/driver/driver-wallet.page.ts:24:36:
+[37m      24 │ ...:[CommonModule,FormsModule,[32mRouterLink[37m,DriverWalletTopupComponen...
+         ╵                               [32m~~~~~~~~~~[0m
+
+[39m[22m
+[1m[31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'market_country' does not exist on type 'Profile'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/users/user-list.component.ts:169:129:
+[37m      169 │ ...text-slate-900">{{ user.[32mmarket_country[37m || 'UNKNOWN' }}</dd></div>
+          ╵                            [32m~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'market_currency' does not exist on type 'Profile'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/users/user-list.component.ts:170:130:
+[37m      170 │ ...ass="mt-1 text-slate-900">{{ user.[32mmarket_currency[37m || 'UNKNOWN' }}
+          ╵                                      [32m~~~~~~~~~~~~~~~[0m
+
+
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTS2339: Property 'market_mismatch' does not exist on type 'Profile'.[0m [1m[35m[plugin angular-compiler][0m
+
+    src/app/apps/admin/features/users/user-list.component.ts:171:27:
+[37m      171 │                   @if(user.[32mmarket_mismatch[37m){<span class="ml-1 inl...
+          ╵                            [32m~~~~~~~~~~~~~~~[0m
+
+[39m[22m
