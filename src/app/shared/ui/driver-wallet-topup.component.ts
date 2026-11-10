@@ -161,7 +161,6 @@ export class DriverWalletTopupComponent implements OnInit {
       }
       if (attempt.submitted) throw Error();
       const quote = await this.call('/checkout',{amountMinor:attempt.amountMinor,idempotencyKey:attempt.key});
-      this.persist({...attempt,submitted:true});
       if (quote.kind !== 'quote' || quote.walletAmountMinor !== attempt.amountMinor || quote.totalChargeMinor !== quote.walletAmountMinor + quote.feeMinor) throw Error();
       this.persist({...attempt,quote});
     } catch { this.message.set('Could not obtain a quote. Check your amount and retry the saved attempt.'); }
