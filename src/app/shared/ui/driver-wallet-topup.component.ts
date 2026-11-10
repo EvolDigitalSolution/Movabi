@@ -147,6 +147,18 @@ export class DriverWalletTopupComponent implements OnInit {
     } catch { this.message.set('Payment could not be confirmed. Keep this attempt and check status later.'); }
     finally { this.payBusy.set(false); }
   }
+  private async resumeAuth(){
+    const secret=this.pi(); if(this.payBusy()||!secret)return;
+    this.payBusy.set(true);
+    try {
+      if(!this.stripe||!this.card){this.message.set('Payment needs authentication — complete it below.');return;}
+      const result=await this.stripe.confirmCardPayment(secret,{payment_method:{card:this.card}});
+      if(result.paymentIntent?.status==='succeeded'){this.dropCard();this.pi.set(null);await this.verify();}
+      else if(result.paymentIntent)await this.verify();
+      else this.message.set(result.error?.message||'Authentication could not be completed. Try again.');
+    } catch {this.message.set('Authentication could not be completed. Try again.');}
+    finally {this.payBusy.set(false);}
+  }
   readonly credit = this.cash.status;
   formatMinor(value:string|number,currency:string):string { return formatCashCreditMinor(String(value),currency); }
   ngOnInitCredit(){ void this.cash.refresh(true).catch(()=>{}); }
@@ -208,9 +220,8 @@ export class DriverWalletTopupComponent implements OnInit {
         // Confirmable/authentication state — remount the card and let Pay resume.
         this.pi.set(result.clientSecret);
         setTimeout(()=>void this.mountCard(),0);
-        if (result.status === 'requires_action') {
-          setTimeout(()=>void this.pay(attempt.quote!),0);
-        } else this.message.set('Payment needs confirmation. Complete it below.');
+        if (result.status === 'requires_action') setTimeout(()=>void this.resumeAuth(),0);
+        else this.message.set('Payment needs confirmation. Complete it below.');
         return;
       }
       if (result.status === 'processing') this.message.set('Payment is processing. Check again shortly.');
