@@ -34,7 +34,7 @@ interface Saved { key: string; amountMinor: number; quote?: Quote; submitted?: b
           <div>Total charged: <strong>{{money(q.totalChargeMinor,q)}}</strong></div>
         </dl>
         <p class="text-sm my-3">At checkout, pay only {{money(q.totalChargeMinor,q)}}. If the provider shows a different total, return without paying.</p>
-        @if (!attempt.submitted) {
+        @if (!attempt.submitted || pi()) {
           <label class="block my-3 text-sm"><input type="checkbox" [(ngModel)]="agreed" [disabled]="busy()"> I agree to pay {{money(q.totalChargeMinor,q)}}.</label>
           @if (pi()) {
             <div id="driver-card-element" class="border rounded-xl p-3 my-3 bg-white" aria-label="Card details"></div>
@@ -44,7 +44,7 @@ interface Saved { key: string; amountMinor: number; quote?: Quote; submitted?: b
           }
         }
       }
-      @if (attempt.submitted) {
+      @if (attempt.submitted && !pi()) {
         <p class="text-sm my-3">Payment requires server verification. Returning from checkout does not confirm payment.</p>
         <button type="button" class="rounded-xl border p-3" [disabled]="busy()" (click)="verify()">Check payment status</button>
       } @else {
@@ -103,7 +103,7 @@ export class DriverWalletTopupComponent implements OnInit {
       this.available.set(await this.call('/availability'));
       this.message.set('');
     } catch { this.message.set('Top-up is currently unavailable. Saved payments can still be checked.'); }
-    const resume = () => { if (this.saved()?.submitted) void this.verify(); };
+    const resume = () => { if (this.saved()?.submitted && !this.pi() && !this.busy()) void this.verify(); };
     window.addEventListener('focus', resume);
     const listener = await App.addListener('appStateChange', state => { if (state.isActive) resume(); });
     this.destroy.onDestroy(() => { window.removeEventListener('focus', resume); void listener.remove(); });
@@ -137,7 +137,7 @@ export class DriverWalletTopupComponent implements OnInit {
     this.card.on('ready',()=>{this.cardReady=true;});
   }
   async pay(q:Quote) {
-    const secret=this.pi(); const attempt=this.saved();
+    const secret=this.pi(); const attempt=this.saved(); if(this.agreed!==true||this.busy())return;
     if(this.payBusy()||!secret||!attempt||!this.stripe||!this.card)return;
     this.payBusy.set(true); this.message.set('');
     try {
