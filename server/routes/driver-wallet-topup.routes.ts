@@ -46,6 +46,15 @@ export function createDriverTopupRouter(deps: DriverTopupDeps): Router {
       return res.json(await service.createCheckout(match[1], { amountMinor: body.amountMinor, idempotencyKey: body.idempotencyKey, confirmedTotalMinor: body.confirmedTotalMinor }));
     } catch (error) { return failure(res, error); }
   });
+  router.post('/recover', async (req: Request, res: Response) => {
+    try {
+      if (!req.body||typeof req.body!=='object'||Array.isArray(req.body)||Object.keys(req.body).some(k=>k!=='attemptId')||typeof req.body.attemptId!=='string')
+        throw new PaymentLayerError('INVALID_PAYMENT_INPUT','attemptId is required');
+      const match=/^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization||''));
+      if (!match) throw new PaymentLayerError('AUTHENTICATION_REQUIRED','Authentication required');
+      return res.json(await service.recover(match[1],req.body.attemptId));
+    } catch (error) { return failure(res,error); }
+  });
   router.post('/verify', async (req: Request, res: Response) => {
     try {
       if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).some(k => k !== 'attemptId') || typeof req.body.attemptId !== 'string')

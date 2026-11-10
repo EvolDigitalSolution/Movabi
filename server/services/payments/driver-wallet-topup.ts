@@ -119,6 +119,19 @@ export class DriverWalletTopupService {
       throw error;
     }
   }
+  async recover(token: string, attemptId: string): Promise<{status:'confirmed';creditedEventId:string}|{status:string;clientSecret?:string}> {
+    const user=await this.principal(token);
+    if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
+    const a=await this.attempt(attemptId,user.id,user.tenant);
+    const reference=a.provider_reference || attemptId;
+    if (reference!==attemptId) return {status:'unknown'};
+    const verified=await this.adapter(a.payment_provider,a.merchant_account_ref).verify({reference,merchantAccountRef:a.merchant_account_ref,currency:a.currency_code,amountMinor:a.total,exponent:a.fee_exponent,providerAccountId:a.provider_account_id??undefined});
+    if (verified.reference!==reference||verified.merchantAccountRef!==a.merchant_account_ref||verified.currency!==a.currency_code||verified.chargedAmountMinor!==a.total) return fail('PAYMENT_RESPONSE_UNCONFIRMED');
+    if (verified.finalStatus==='succeeded'){const r=await this.verify(token,attemptId);return {status:'confirmed',...r};}
+    if (verified.finalStatus==='processing') return {status:'processing'};
+    if (['requires_payment_method','requires_confirmation','requires_action'].includes(String(verified.finalStatus))) return {status:verified.finalStatus,clientSecret:(verified as any).clientSecret};
+    return {status:String(verified.finalStatus||'unknown')};
+  }
   async verify(token: string, attemptId: string): Promise<{ creditedEventId: string }> {
     const user=await this.principal(token);
     if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
