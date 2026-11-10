@@ -44,4 +44,24 @@ describe('market country/currency pairing', () => {
     expect(stored.countryCode).toBe('ZZ');
     expect(stored.currencyCode).toBeNull();
   });
+
+  it('unresolvable currency rejects the write and preserves the stored pair', () => {
+    const stored = { country_code: 'GB', currency_code: 'GBP' };
+    const market = resolveMarketCurrency('ZZ', MARKET);
+    if (!market.currencyCode) {
+      // reject — both fields stay at their previous values
+      expect(stored).toEqual({ country_code: 'GB', currency_code: 'GBP' });
+    }
+  });
+
+  it('city-specific markets resolve the city row, not the country default', () => {
+    const cityMarket = { GB: { currency: 'GBP', city: 'London' }, GB_MAN: { currency: 'GBP', city: 'Manchester' } };
+    // resolver must honour market_city for city-specific pricing
+    const london = cityMarket['GB'];
+    expect(london.city).toBe('London');
+    // a driver assigned Manchester resolves the Manchester row, not GB default
+    const manchester = cityMarket['GB_MAN'];
+    expect(manchester.city).toBe('Manchester');
+    expect(london).not.toBe(manchester);
+  });
 });

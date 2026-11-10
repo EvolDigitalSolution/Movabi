@@ -82,7 +82,7 @@ export class RegistrationEligibilityService {
     if (!existing) throw new Error('Profile not found');
     if (existing.activated) return existing;
 
-    const currencyMarket = await MarketplaceConfigService.getEffectivePricingConfig('ride', { countryCode, marketCity });
+    const currencyMarket = await MarketplaceConfigService.getEffectivePricingConfig('ride', { countryCode, market_city: marketCity });
     if (!currencyMarket.currencyCode) throw new Error('Market currency could not be resolved for this country. Check the market configuration.');
     const { error } = await supabaseAdmin
       .from('profiles')

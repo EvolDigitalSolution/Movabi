@@ -95,4 +95,29 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
   if(!stored.providerSessionId)await this.store.finish(input.reference,'submitted',undefined,sessionId);
   return {reference:input.reference,merchantAccountRef:this.merchant,currency:input.currency,chargedAmountMinor:input.amountMinor,finalStatus:'succeeded' as const};
  }
+ async recover(input:DriverCardExpected):Promise<{status:string;clientSecret?:string}>{
+  const account=await this.account(input),stored=await this.store.get(input.reference),req=stored?.request;
+  if(!stored||!['started','submitted','unknown'].includes(stored.state)||!req||req.provider!=='stripe'||req.reference!==input.reference||req.merchantAccountRef!==this.merchant||req.providerAccountId!==account||req.currency!==input.currency||req.amountMinor!==input.amountMinor||req.exponent!==input.exponent||req.credentialFingerprint!==this.fingerprint)return {status:'unknown'};
+  let sessionId=stored.providerSessionId;
+  if(!sessionId){
+   const search=await this.stripe.paymentIntents.search({query:`metadata["vaydu_driver_topup"]:"${input.reference}"`,limit:5});
+   const piMatches=(search.data||[]).filter((p:Stripe.PaymentIntent)=>p.metadata?.vaydu_driver_topup===input.reference);
+   if(piMatches.length!==1)return {status:'unknown'};sessionId=piMatches[0].id;
+  }
+  const total=stripeApiAmountFromLedger(input.amountMinor,input.currency,input.exponent);
+  let pi:Stripe.PaymentIntent;
+  if(sessionId!.startsWith('pi_')){
+   pi=await this.stripe.paymentIntents.retrieve(sessionId!,{expand:['latest_charge.balance_transaction']});
+  }else{
+   const session=await this.stripe.checkout.sessions.retrieve(sessionId!);
+   const piId=typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent?.id;
+   if(!piId)return {status:'unknown'};
+   pi=await this.stripe.paymentIntents.retrieve(piId,{expand:['latest_charge.balance_transaction']});
+  }
+  if(!pi||pi.livemode!==false||pi.amount!==total||pi.currency!==input.currency.toLowerCase()||pi.metadata?.vaydu_driver_topup!==input.reference||pi.metadata?.vaydu_account!==account||pi.metadata?.vaydu_merchant!==this.merchant||pi.metadata?.vaydu_total!==String(total))return {status:'unknown'};
+  if(pi.status==='succeeded')return {status:'succeeded'};
+  if(pi.status==='processing')return {status:'processing'};
+  if(['requires_payment_method','requires_confirmation','requires_action','requires_capture'].includes(pi.status))return {status:pi.status,clientSecret:pi.client_secret||undefined};
+  return {status:pi.status};
+ }
 }

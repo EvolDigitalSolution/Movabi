@@ -129,8 +129,9 @@ router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(
   if(dateOfBirthPresent){profileUpdates.date_of_birth=parseDriverDateOfBirth(body.dateOfBirth);calculateCalendarAge(profileUpdates.date_of_birth);}
   if(fullNamePresent){const name=String(body.fullName).trim();if(name.length<2)throw new Error('Enter a valid legal name.');profileUpdates.full_name=name;}
   if(countryCodePresent){const country=String(body.countryCode).trim().toUpperCase();if(!/^[A-Z]{2}$/.test(country))throw new Error('Enter a valid country code.');profileUpdates.country_code=country;
-    const market=await MarketplaceConfigService.getEffectivePricingConfig('ride',{countryCode:country,city:String(body.marketCity||body.city||'')});
-    profileUpdates.currency_code=market.currencyCode||null;}
+    const market=await MarketplaceConfigService.getEffectivePricingConfig('ride',{countryCode:country,market_city:String(body.marketCity||body.city||'')});
+    if(!market.currencyCode)throw new Error('Market currency could not be resolved for this country. The country/currency pair was not changed.');
+    profileUpdates.currency_code=market.currencyCode;}
   if(phonePresent){profileUpdates.phone=parseDriverPhone(body.phone);}
   console.info('[DriverOnboarding] profile update payload',{userId:driverId,keys:Object.keys(profileUpdates)});
   const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(error||!data)throw error||new Error('Profile save returned no record.');
