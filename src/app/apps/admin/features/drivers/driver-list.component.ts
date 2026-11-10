@@ -315,6 +315,11 @@ type AdminDriver = DriverProfile & {
                     <span class="detail-value whitespace-pre-line">{{ selectedDriver()?.current_address || 'Not provided' }}</span>
                   </div>
                   <div>
+                    <span class="detail-muted">Market:</span>
+                    <span class="detail-value">{{ selectedDriver()?.market_country || 'UNKNOWN' }} / {{ selectedDriver()?.market_currency || 'UNKNOWN' }}</span>
+                    @if(selectedDriver()?.market_mismatch){<span class="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Country/currency mismatch</span>}
+                  </div>
+                  <div>
                     <span class="detail-muted">Driver ID:</span>
                     <span class="detail-value break-all">{{ selectedDriver()?.id }}</span>
                   </div>
