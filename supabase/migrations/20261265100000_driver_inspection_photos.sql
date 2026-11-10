@@ -155,7 +155,7 @@ begin
 end;
 $$;
 create or replace function public.submit_inspection_photo(
-  p_driver uuid, p_tenant uuid, p_slot text, p_path text, p_bytes int, p_ctype text, p_vehicle uuid
+  p_driver uuid, p_tenant uuid, p_slot text, p_path text, p_bytes int, p_ctype text, p_vehicle uuid default null
 ) returns public.driver_vehicle_inspection_photos language plpgsql security definer set search_path=public as $$
 declare v public.vehicles%rowtype; r public.driver_vehicle_inspection_photos;
 begin
