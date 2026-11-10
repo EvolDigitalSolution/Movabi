@@ -46,7 +46,6 @@ for each row execute function public.rotate_vehicle_inspection_revision();
 -- parallel table. Binds approval to the submitted vehicle and its revision.
 alter table public.driver_vehicle_inspection_photos add column if not exists vehicle_id uuid;
 alter table public.driver_vehicle_inspection_photos add column if not exists vehicle_revision uuid;
-alter table public.driver_vehicle_inspection_photos add column if not exists reason text;
 create unique index if not exists driver_inspection_one_current_slot
 on public.driver_vehicle_inspection_photos(vehicle_id,vehicle_revision,slot) where status <> 'replaced' and vehicle_id is not null;
 alter table public.driver_vehicle_inspection_photos enable row level security;

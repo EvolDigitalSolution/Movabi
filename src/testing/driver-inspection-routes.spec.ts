@@ -21,7 +21,7 @@ const mock = vi.hoisted(() => {
     storage:{from:() => ({createSignedUrl:sign,upload})},
     rpc:async (_name:string,args:Record<string,string>) => {
       tables.driver_vehicle_inspection_photos.push({id:photo,driver_id:args.p_driver,tenant_id:args.p_tenant,
-        vehicle_id:args.p_vehicle,vehicle_revision:args.p_revision,slot:args.p_slot,storage_path:args.p_path,status:'pending'});
+        vehicle_id:args.p_vehicle,vehicle_revision:args.p_revision,slot:args.p_slot,storage_path:args.p_path,status:'under_review'});
       return {data:photo,error:null};
     },
     from:(name:string) => {
@@ -82,7 +82,7 @@ describe('inspection upload and tenant review endpoints', () => {
     const allowed = await call(photos,'same-admin');
     expect(allowed.status).toBe(200);
     expect(await allowed.json()).toMatchObject({vehicle:{id:mock.vehicle},slots:[
-      {slot:'front',status:'pending',url:'https://storage.example.invalid/private'},
+      {slot:'front',status:'under_review',url:'https://storage.example.invalid/private'},
       {slot:'rear',status:'missing'},{slot:'side',status:'missing'}
     ]});
     expect((await call(review,'same-admin',approve)).status).toBe(204);
