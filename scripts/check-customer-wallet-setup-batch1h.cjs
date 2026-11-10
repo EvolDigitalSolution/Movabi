@@ -1,0 +1,17 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const root=path.resolve(__dirname,'..'),read=n=>fs.readFileSync(path.join(root,n),'utf8').replace(/\r\n/g,'\n');
+const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
+const baseline=JSON.parse(read('scripts/customer-wallet-setup-batch1h-baseline.json'));
+const route=read('server/routes/wallet.routes.ts'),client=read('src/app/core/services/wallet/wallet.service.ts');
+assert.equal(hash(route.slice(route.indexOf('async function getAuthUserId'))),baseline.routeSuffix,'Existing wallet API behavior changed');
+assert.equal(hash(client.slice(client.indexOf('  async reserveErrandFunds'))),baseline.clientWriters,'Existing wallet payment writers changed');
+const sql=read('supabase/migrations/20261250000000_customer_wallet_setup_batch1h.sql');
+assert.ok(sql.includes('VALUES(p_user_id,v_currency,0,0)'));
+assert.ok(sql.includes('p.registration_country_code'));
+assert.ok(sql.includes('supported_currency'));
+assert.equal(/UPDATE\s+(?:public\.)?wallets\b/i.test(sql),false);
+assert.equal(/ALTER\s+TABLE\s+(?:public\.)?wallets\b/i.test(sql),false);
+assert.equal(/CREATE\s+ROLE/i.test(sql),false);
+assert.equal(/INSERT\s+INTO\s+public\.wallet_collection_config/i.test(sql),false);
+assert.ok(sql.includes('BEFORE TRUNCATE'));
+console.log('BATCH1H_SOURCE_AND_EXISTING_WRITERS=PASS (supplemental; not database runtime proof)');

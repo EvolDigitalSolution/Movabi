@@ -1,0 +1,21 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+const m=vi.hoisted(()=>({user:vi.fn(),rpc:vi.fn(),destroy:vi.fn(),effects:[] as any[]}));
+vi.mock('@angular/core',()=>({Injectable:()=>()=>{},DestroyRef:class{},effect:(fn:any)=>{m.effects.push(fn);fn();},inject:()=>({currentUser:m.user,client:{rpc:m.rpc},onDestroy:m.destroy})}));
+vi.mock('../app/core/services/auth/auth.service',()=>({AuthService:class{}}));
+vi.mock('../app/core/services/supabase/supabase.service',()=>({SupabaseService:class{}}));
+import {AppPresenceService} from '../app/core/services/presence/app-presence.service';
+let visible='visible';let connected=true;
+beforeEach(()=>{
+ vi.useFakeTimers();vi.clearAllMocks();m.effects=[];visible='visible';connected=true;
+ m.user.mockReturnValue({id:'driver'});m.rpc.mockReturnValue({abortSignal:()=>Promise.resolve({data:null})});
+ vi.stubGlobal('document',{get visibilityState(){return visible;},addEventListener:vi.fn(),removeEventListener:vi.fn()});
+ vi.stubGlobal('window',{addEventListener:vi.fn(),removeEventListener:vi.fn()});
+ vi.stubGlobal('navigator',{get onLine(){return connected;}});
+});
+afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();});
+it('starts authenticated presence immediately and renews every 30 seconds',async()=>{new AppPresenceService();await vi.advanceTimersByTimeAsync(30000);expect(m.rpc).toHaveBeenCalledTimes(2);expect(m.rpc).toHaveBeenCalledWith('touch_app_presence',{p_session:expect.any(String)});});
+it('does not send for signed-out users',async()=>{m.user.mockReturnValue(null);new AppPresenceService();await vi.advanceTimersByTimeAsync(60000);expect(m.rpc).not.toHaveBeenCalled();});
+it('lets hidden sessions expire',async()=>{visible='hidden';new AppPresenceService();await vi.advanceTimersByTimeAsync(60000);expect(m.rpc).not.toHaveBeenCalled();});
+it('lets disconnected sessions expire',async()=>{connected=false;new AppPresenceService();await vi.advanceTimersByTimeAsync(60000);expect(m.rpc).not.toHaveBeenCalled();});
+it('does not overlap pending heartbeats',async()=>{m.rpc.mockReturnValue({abortSignal:()=>new Promise(()=>{})});new AppPresenceService();await vi.advanceTimersByTimeAsync(60000);expect(m.rpc).toHaveBeenCalledTimes(1);});
+it('cleans up its timer and listeners',async()=>{new AppPresenceService();await Promise.resolve();m.destroy.mock.calls[0][0]();await vi.advanceTimersByTimeAsync(60000);expect(m.rpc).toHaveBeenCalledTimes(1);expect(document.removeEventListener).toHaveBeenCalled();expect(window.removeEventListener).toHaveBeenCalled();});

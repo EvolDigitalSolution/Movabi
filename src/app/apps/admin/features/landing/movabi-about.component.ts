@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, afterNextRender, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { IonButton, IonContent, IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
@@ -29,7 +29,6 @@ import {
   trendingUpOutline,
   walletOutline
 } from 'ionicons/icons';
-import { AuthService } from '@core/services/auth/auth.service';
 
 @Component({
   selector: 'app-admin-movabi-about',
@@ -39,22 +38,20 @@ import { AuthService } from '@core/services/auth/auth.service';
     <ion-content class="landing-content">
       <main class="landing-shell">
         <header class="top-nav">
-          <a routerLink="/" class="brand-row" aria-label="Movabi home">
-            <span class="brand-mark">
-              <ion-icon name="car"></ion-icon>
-            </span>
+          <a routerLink="/" class="brand-row" aria-label="Vaydu home">
+            <img class="brand-mark" src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="52" height="52" />
             <span>
-              <strong>Movabi</strong>
+              <strong>Vaydu</strong>
               <small>Ride, errand, delivery and moving</small>
             </span>
           </a>
 
           <nav class="desktop-nav" aria-label="Main navigation">
-            <a href="#why">Why Movabi</a>
-            <a href="#services">Services</a>
-            <a href="#drivers">Drivers</a>
-            <a href="#investors">Investors</a>
-            <a href="#download">Download</a>
+            <a href="/#why" (click)="onSectionLink($event, 'why')">Why Vaydu</a>
+            <a href="/#services" (click)="onSectionLink($event, 'services')">Services</a>
+            <a href="/#drivers" (click)="onSectionLink($event, 'drivers')">Drivers</a>
+            <a href="/#investors" (click)="onSectionLink($event, 'investors')">Investors</a>
+            <a href="/#download" (click)="onSectionLink($event, 'download')">Download</a>
             <a routerLink="/auth/login">Sign in</a>
           </nav>
 
@@ -65,44 +62,59 @@ import { AuthService } from '@core/services/auth/auth.service';
 
         @if (menuOpen()) {
           <nav class="mobile-menu" aria-label="Mobile navigation">
-            <a href="#why" (click)="menuOpen.set(false)">Why Movabi</a>
-            <a href="#services" (click)="menuOpen.set(false)">Services</a>
-            <a href="#drivers" (click)="menuOpen.set(false)">Drivers</a>
-            <a href="#investors" (click)="menuOpen.set(false)">Investors</a>
-            <a href="#download" (click)="menuOpen.set(false)">Download</a>
+            <a href="/#why" (click)="onSectionLink($event, 'why', { closeMenu: true })">Why Vaydu</a>
+            <a href="/#services" (click)="onSectionLink($event, 'services', { closeMenu: true })">Services</a>
+            <a href="/#drivers" (click)="onSectionLink($event, 'drivers', { closeMenu: true })">Drivers</a>
+            <a href="/#investors" (click)="onSectionLink($event, 'investors', { closeMenu: true })">Investors</a>
+            <a href="/#download" (click)="onSectionLink($event, 'download', { closeMenu: true })">Download</a>
             <a routerLink="/help" (click)="menuOpen.set(false)">How it works</a>
             <a routerLink="/privacy" (click)="menuOpen.set(false)">Privacy</a>
             <a routerLink="/auth/login" (click)="menuOpen.set(false)">Sign in</a>
           </nav>
         }
 
-        <section class="hero">
-          <div class="hero-content">
-            <p class="eyebrow">Local transport made simpler</p>
-            <h1>Movabi is the everyday app for rides, errands, delivery and moving help.</h1>
-            <p class="hero-text">
-              Customers get clear upfront pricing, live tracking and protected payments. Drivers get local jobs,
-              guided workflows and payout tools. Cities get a practical movement network built for real daily needs.
-            </p>
+        <section class="hero" aria-labelledby="about-hero-title">
+          <div class="hero-inner">
+            <div class="hero-copy">
+              <p class="hero-eyebrow">LOCAL TRANSPORT MADE SIMPLER</p>
+              <h1 id="about-hero-title" class="hero-title">Your everyday move, made simple.</h1>
+              <p class="hero-lede">Rides, errands, deliveries and moving — all in one app.</p>
 
-            <div class="hero-actions">
-              <ion-button routerLink="/auth/signup" class="primary-action">
-                Join Movabi
-                <ion-icon name="arrow-forward-outline" slot="end"></ion-icon>
-              </ion-button>
-              <ion-button href="#download" fill="outline" class="secondary-action">
-                Download app
-                <ion-icon name="download-outline" slot="end"></ion-icon>
-              </ion-button>
+              <div class="hero-actions">
+                <ion-button class="primary-action" (click)="onSectionLink($event, 'services')">
+                  Explore services
+                  <ion-icon name="arrow-forward-outline" slot="end"></ion-icon>
+                </ion-button>
+                <ion-button routerLink="/auth/signup" fill="outline" class="secondary-action">
+                  Become a driver
+                </ion-button>
+              </div>
+
+              <p class="hero-note">
+                <ion-icon name="location-outline" aria-hidden="true"></ion-icon>
+                <span>Available services vary by location.</span>
+              </p>
+
+              <ul class="hero-services" aria-label="Vaydu services">
+                @for (service of heroServices; track service.label) {
+                  <li>
+                    <ion-icon [name]="service.icon" aria-hidden="true"></ion-icon>
+                    <span>{{ service.label }}</span>
+                  </li>
+                }
+              </ul>
             </div>
 
-            <div class="hero-proof" aria-label="Movabi highlights">
-              @for (point of proofPoints; track point.label) {
-                <span>
-                  <strong>{{ point.value }}</strong>
-                  {{ point.label }}
-                </span>
-              }
+            <div class="hero-media">
+              <img
+                src="/assets/images/movabi-about-hero.webp"
+                alt="A Vaydu driver smiling at the wheel while driving through the city"
+                width="517"
+                height="378"
+                decoding="async"
+                (error)="heroImageFailed.set(true)"
+                [class.is-hidden]="heroImageFailed()"
+              >
             </div>
           </div>
         </section>
@@ -122,13 +134,13 @@ import { AuthService } from '@core/services/auth/auth.service';
             <p class="eyebrow">Built to be more affordable</p>
             <h2>Transparent pricing without confusing surge moments.</h2>
             <p>
-              Movabi is designed around fixed or clearly estimated fares, admin-managed local pricing and lower-cost
+              Vaydu is designed around fixed or clearly estimated fares, admin-managed local pricing and lower-cost
               service options such as bike delivery, standard car, XL and van. The goal is simple: make everyday local
               movement cheaper than many traditional ride or delivery choices while still paying drivers fairly.
             </p>
           </div>
 
-          <div class="comparison-grid" aria-label="Movabi pricing advantages">
+          <div class="comparison-grid" aria-label="Vaydu pricing advantages">
             @for (item of priceAdvantages; track item.title) {
               <article>
                 <span>{{ item.stat }}</span>
@@ -142,7 +154,7 @@ import { AuthService } from '@core/services/auth/auth.service';
         <section class="service-section" id="services">
           <div class="section-heading">
             <p class="eyebrow">One app, four high-frequency services</p>
-            <h2>Choose what needs moving and Movabi adapts the booking flow.</h2>
+            <h2>Choose what needs moving and Vaydu adapts the booking flow.</h2>
           </div>
 
           <div class="service-grid">
@@ -164,7 +176,7 @@ import { AuthService } from '@core/services/auth/auth.service';
             <p class="eyebrow">For customers</p>
             <h2>Less waiting, fewer surprises, more control.</h2>
             <p>
-              Movabi explains the job before you pay, keeps your reservation protected, and shows live status in plain
+              Vaydu explains the job before you pay, keeps your reservation protected, and shows live status in plain
               English until the service is finished.
             </p>
             <ul>
@@ -176,13 +188,13 @@ import { AuthService } from '@core/services/auth/auth.service';
           </article>
 
           <div class="image-panel">
-            <img src="/assets/images/movabi-customer.png" alt="Customer using Movabi in a car" loading="lazy">
+            <img src="/assets/images/movabi-customer.png" alt="Customer using Vaydu in a car" loading="lazy">
           </div>
         </section>
 
         <section class="audience-section driver-layout" id="drivers">
           <div class="image-panel">
-            <img src="/assets/images/movabi-driver.png" alt="Movabi driver earning from local jobs" loading="lazy">
+            <img src="/assets/images/movabi-driver.png" alt="Vaydu driver earning from local jobs" loading="lazy">
           </div>
 
           <article class="audience-copy driver-copy">
@@ -204,10 +216,10 @@ import { AuthService } from '@core/services/auth/auth.service';
         <section class="investor-section" id="investors">
           <div class="section-heading">
             <p class="eyebrow">Investor view</p>
-            <h2>Movabi combines local mobility, logistics and errands in one operating system.</h2>
+            <h2>Vaydu combines local mobility, logistics and errands in one operating system.</h2>
             <p>
               The same dispatch, wallet, pricing, driver verification, live tracking and admin controls support
-              multiple revenue lines. That gives Movabi room to grow city by city without building a separate app for
+              multiple revenue lines. That gives Vaydu room to grow city by city without building a separate app for
               every service.
             </p>
           </div>
@@ -225,10 +237,10 @@ import { AuthService } from '@core/services/auth/auth.service';
 
         <section class="download-section" id="download">
           <div>
-            <p class="eyebrow">Download Movabi</p>
+            <p class="eyebrow">Download Vaydu</p>
             <h2>Start as a customer or driver from the same app.</h2>
             <p>
-              Use Movabi on mobile to book, track, chat, pay, earn and manage your account. Web sign-up is available
+              Use Vaydu on mobile to book, track, chat, pay, earn and manage your account. Web sign-up is available
               now while the native store listings are prepared.
             </p>
           </div>
@@ -255,9 +267,9 @@ import { AuthService } from '@core/services/auth/auth.service';
 
         <section class="final-cta">
           <p class="eyebrow">A practical competitor for everyday movement</p>
-          <h2>Movabi makes local transport easier to buy, easier to deliver and easier to scale.</h2>
+          <h2>Vaydu makes local transport easier to buy, easier to deliver and easier to scale.</h2>
           <div class="hero-actions centered">
-            <ion-button routerLink="/auth/signup" class="primary-action">Join Movabi</ion-button>
+            <ion-button routerLink="/auth/signup" class="primary-action">Join Vaydu</ion-button>
             <ion-button routerLink="/help" fill="outline" class="secondary-action light">How it works</ion-button>
           </div>
           <footer>
@@ -265,7 +277,8 @@ import { AuthService } from '@core/services/auth/auth.service';
             <a routerLink="/help">Help</a>
             <a routerLink="/auth/login">Sign in</a>
             <a routerLink="/admin">Admin</a>
-            <span>© 2026 Movabi</span>
+            <span>© 2026 Vaydu</span>
+            <p class="business-identity">Vaydu is a product of Evolution Digital Solution, a sole trader business.</p>
           </footer>
         </section>
       </main>
@@ -384,20 +397,153 @@ import { AuthService } from '@core/services/auth/auth.service';
       font-weight: 900;
     }
 
+    /* ---- Hero: navy canvas, amber accents, photograph on the right ---- */
     .hero {
-      min-height: calc(100vh - 76px);
-      display: flex;
-      align-items: flex-end;
-      padding: 88px 18px 54px;
-      background:
-        linear-gradient(90deg, rgba(17, 24, 39, 0.88), rgba(17, 24, 39, 0.58), rgba(17, 24, 39, 0.12)),
-        url('/assets/images/movabi-hero-main.webp') center / cover no-repeat;
-      color: white;
+      position: relative;
+      isolation: isolate;
+      /* Navy fallback paints first and always, so the hero is complete even if
+         the photograph is missing or fails to load. */
+      background: #0b1b33;
+      color: #f8fafc;
+      overflow: hidden;
     }
 
-    .hero-content {
-      width: min(1120px, 100%);
+    /* Controlled navy gradient: keeps a warm amber glow at the left, holds
+       contrast behind the copy, then eases toward the photograph. */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(120% 95% at 10% 12%, rgba(245, 158, 11, 0.18), transparent 55%),
+        linear-gradient(100deg, #0b1b33 0%, #0f2445 44%, rgba(15, 36, 69, 0.74) 60%, rgba(11, 27, 51, 0.3) 100%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      width: min(1180px, calc(100% - 36px));
       margin: 0 auto;
+      padding: 52px 0;
+      display: grid;
+      gap: 30px;
+      align-items: center;
+    }
+
+    .hero-copy {
+      max-width: 620px;
+    }
+
+    .hero-eyebrow {
+      margin: 0 0 14px;
+      color: #fbbf24;
+      font-weight: 900;
+      font-size: 0.74rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .hero-title {
+      margin: 0;
+      max-width: 20ch;
+      color: #ffffff;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.01em;
+      font-size: clamp(2.5rem, 6.2vw, 4rem);
+    }
+
+    .hero-lede {
+      margin: 16px 0 0;
+      max-width: 46ch;
+      color: #dbe4f0;
+      font-size: clamp(1rem, 2.2vw, 1.18rem);
+      line-height: 1.7;
+      font-weight: 700;
+    }
+
+    .hero-note {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 20px 0 0;
+      color: #b6c5da;
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+
+    .hero-note ion-icon {
+      color: #fbbf24;
+      font-size: 1.05rem;
+      flex-shrink: 0;
+    }
+
+    .hero-services {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .hero-services li {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #f8fafc;
+      font-size: 0.86rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .hero-services li ion-icon {
+      color: #fbbf24;
+      font-size: 1.05rem;
+    }
+
+    .hero-media {
+      position: relative;
+      width: 100%;
+      border-radius: 28px;
+      overflow: hidden;
+      /* Navy fallback for the media panel itself. */
+      background: linear-gradient(150deg, #14305a, #0b1b33);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 30px 60px rgba(2, 8, 20, 0.45);
+      aspect-ratio: 5 / 4;
+    }
+
+    .hero-media img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* Keep the driver's face and the wheel in frame. */
+      object-position: 62% 30%;
+    }
+
+    .hero-media img.is-hidden {
+      display: none;
+    }
+
+    /* Visible keyboard focus for every hero control. */
+    .hero a:focus-visible,
+    .hero ion-button:focus-visible,
+    .hero ion-button::part(native):focus-visible {
+      outline: 3px solid #fbbf24;
+      outline-offset: 3px;
+      border-radius: 8px;
+    }
+
+    .hero ion-button.primary-action::part(native):focus-visible,
+    .hero ion-button.secondary-action::part(native):focus-visible {
+      border-radius: 18px;
     }
 
     .eyebrow {
@@ -409,7 +555,6 @@ import { AuthService } from '@core/services/auth/auth.service';
       text-transform: uppercase;
     }
 
-    .hero .eyebrow,
     .final-cta .eyebrow {
       color: #fbbf24;
     }
@@ -421,21 +566,14 @@ import { AuthService } from '@core/services/auth/auth.service';
       letter-spacing: 0;
     }
 
-    h1 {
-      margin: 0;
-      max-width: 850px;
-      font-size: clamp(2.35rem, 8vw, 5.4rem);
-      line-height: 0.98;
-      font-weight: 900;
-    }
-
-    .hero-text {
-      max-width: 700px;
-      margin: 20px 0 0;
-      color: #e5e7eb;
-      font-size: 1.08rem;
-      line-height: 1.75;
-      font-weight: 700;
+    /* Same-page section targets: clear the sticky top navigation when scrolled
+       into view, so no heading lands underneath it. */
+    #why,
+    #services,
+    #drivers,
+    #investors,
+    #download {
+      scroll-margin-top: 88px;
     }
 
     .hero-actions {
@@ -478,33 +616,6 @@ import { AuthService } from '@core/services/auth/auth.service';
     .secondary-action.light {
       --border-color: rgba(255, 255, 255, 0.72);
       --color: white;
-    }
-
-    .hero-proof {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      max-width: 700px;
-      margin-top: 28px;
-    }
-
-    .hero-proof span {
-      min-height: 86px;
-      padding: 16px;
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.14);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #e5e7eb;
-      font-weight: 800;
-      backdrop-filter: blur(14px);
-    }
-
-    .hero-proof strong {
-      display: block;
-      color: white;
-      font-size: 1.55rem;
-      font-weight: 900;
-      margin-bottom: 4px;
     }
 
     .value-strip,
@@ -801,15 +912,13 @@ import { AuthService } from '@core/services/auth/auth.service';
       font-weight: 800;
     }
 
+    .business-identity { flex-basis: 100%; margin: 0.5rem 0 0; text-align: center; font-size: 0.85rem; line-height: 1.6; font-weight: 500; }
+
     footer a {
       color: white;
     }
 
     @media (max-width: 430px) {
-      .hero-proof {
-        grid-template-columns: 1fr;
-      }
-
       .brand-row strong {
         font-size: 1.25rem;
       }
@@ -844,8 +953,10 @@ import { AuthService } from '@core/services/auth/auth.service';
         display: none;
       }
 
-      .hero {
-        padding-bottom: 76px;
+      .hero-inner {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        gap: 48px;
+        padding: 76px 0;
       }
 
       .service-grid,
@@ -859,15 +970,55 @@ import { AuthService } from '@core/services/auth/auth.service';
     }
   `]
 })
-export class AdminMovabiAboutComponent implements OnInit {
-  private auth = inject(AuthService);
-
+export class AdminMovabiAboutComponent {
   menuOpen = signal(false);
 
-  proofPoints = [
-    { value: '4-in-1', label: 'ride, errand, package and moving services' },
-    { value: 'Clear', label: 'upfront pricing and payment protection' },
-    { value: 'Live', label: 'tracking, chat and customer handover PIN' }
+  /** True once the hero photograph fails to load: the navy panel stays visible. */
+  heroImageFailed = signal(false);
+
+  private route = inject(ActivatedRoute);
+
+  /**
+   * In-page section navigation for the public About page.
+   *
+   * Every section link carries its real destination (`/#section`) so
+   * opening it in a new tab, copying it or sharing it resolves correctly — a
+   * bare `href="#section"` would resolve against Angular's `<base href="/">` to
+   * `/#section`. A plain primary click is intercepted for a smooth in-page
+   * scroll; modified clicks (ctrl/cmd/shift/alt) and non-primary buttons are
+   * left entirely to the browser so open-in-new-tab keeps working.
+   */
+  onSectionLink(event: MouseEvent, id: string, options?: { closeMenu?: boolean }): void {
+    if (options?.closeMenu) this.menuOpen.set(false);
+
+    const isModifiedOrNonPrimary =
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey;
+
+    if (isModifiedOrNonPrimary) return;
+
+    const target = typeof document !== 'undefined' ? document.getElementById(id) : null;
+    if (!target) return;
+
+    event.preventDefault();
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** Scroll to an existing section without changing global router scroll config. */
+  private scrollToSection(id: string): void {
+    if (typeof document === 'undefined') return;
+    document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }
+
+  heroServices = [
+    { label: 'Ride', icon: 'car-outline' },
+    { label: 'Errands', icon: 'basket-outline' },
+    { label: 'Delivery', icon: 'cube-outline' },
+    { label: 'Moving', icon: 'storefront-outline' }
   ];
 
   valuePoints = [
@@ -878,7 +1029,7 @@ export class AdminMovabiAboutComponent implements OnInit {
     },
     {
       title: 'Cheaper by design',
-      copy: 'Local pricing, vehicle choice and no confusing surge messaging help Movabi compete hard on everyday affordability.',
+      copy: 'Local pricing, vehicle choice and no confusing surge messaging help Vaydu compete hard on everyday affordability.',
       icon: 'cash-outline'
     },
     {
@@ -892,7 +1043,7 @@ export class AdminMovabiAboutComponent implements OnInit {
     {
       stat: 'No surge',
       title: 'Simple fare story',
-      copy: 'Movabi prioritises upfront fares and admin-controlled pricing so customers know what they are agreeing to.'
+      copy: 'Vaydu prioritises upfront fares and admin-controlled pricing so customers know what they are agreeing to.'
     },
     {
       stat: 'Right size',
@@ -902,7 +1053,7 @@ export class AdminMovabiAboutComponent implements OnInit {
     {
       stat: 'Local',
       title: 'City-by-city control',
-      copy: 'Pricing can be tuned by service and region, giving Movabi a practical way to stay competitive in each launch market.'
+      copy: 'Pricing can be tuned by service and region, giving Vaydu a practical way to stay competitive in each launch market.'
     }
   ];
 
@@ -943,14 +1094,14 @@ export class AdminMovabiAboutComponent implements OnInit {
   driverBenefits = [
     'Register with bike, car, XL or van profile so requests match your vehicle.',
     'Accept, pass, navigate, chat and complete jobs from one simple driver hub.',
-    'Stripe Connect payouts and Movabi Pay support for approved errand budgets.',
+    'Stripe Connect payouts and Vaydu Pay support for approved errand budgets.',
     'Customer PIN completion reduces disputes and protects genuine work.'
   ];
 
   investorPoints = [
     {
       title: 'Multi-service demand',
-      copy: 'The same customer can use Movabi for rides, errands, delivery and moving, improving repeat usage potential.',
+      copy: 'The same customer can use Vaydu for rides, errands, delivery and moving, improving repeat usage potential.',
       icon: 'people-outline'
     },
     {
@@ -974,13 +1125,13 @@ export class AdminMovabiAboutComponent implements OnInit {
     {
       kicker: 'Download on',
       label: 'App Store',
-      href: 'https://apps.apple.com/gb/search?term=Movabi',
+      href: 'https://apps.apple.com/gb/search?term=Vaydu',
       icon: 'download-outline'
     },
     {
       kicker: 'Get it on',
       label: 'Google Play',
-      href: 'https://play.google.com/store/search?q=Movabi&c=apps',
+      href: 'https://play.google.com/store/search?q=Vaydu&c=apps',
       icon: 'download-outline'
     }
   ];
@@ -1012,13 +1163,13 @@ export class AdminMovabiAboutComponent implements OnInit {
       trendingUpOutline,
       walletOutline
     });
-  }
 
-  async ngOnInit() {
-    const user = this.auth.currentUser();
-
-    if (user) {
-      await this.auth.handlePostAuthRedirect();
-    }
+    // Landing on /#section (direct entry, refresh, or a new tab)
+    // must reach that section once it has rendered — the element does not exist
+    // yet when the browser first resolves the fragment.
+    afterNextRender(() => {
+      const fragment = this.route.snapshot.fragment;
+      if (fragment) this.scrollToSection(fragment);
+    });
   }
 }

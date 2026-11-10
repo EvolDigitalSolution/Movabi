@@ -80,8 +80,8 @@ export class WalletProvisioningService {
     try {
       const result = await NativeWalletProvisioning.provisionCard({
         ...request,
-        displayName: request.displayName || 'Movabi Pay',
-        description: request.description || 'Movabi Pay virtual card'
+        displayName: request.displayName || 'Vaydu Pay',
+        description: request.description || 'Vaydu Pay virtual card'
       });
 
       return {

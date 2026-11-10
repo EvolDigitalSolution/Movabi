@@ -1,0 +1,21 @@
+{
+  "purpose": "develop-driver-card-disabled-schema",
+  "policyVersion": "vaydu-driver-card-5pct-wallet-v1",
+  "firstCandidateMarket": {
+    "provider": "flutterwave",
+    "country": "NG",
+    "currency": "NGN",
+    "driverId": null
+  },
+  "canonicalSqlSha256": "e464e94db05a0842519bcbc8081a0cdfcf56a8ced90ac6a766b4b340f1f7caa4",
+  "sandboxApiImageId": "sha256:b3769493c6271a8914ed231e800ffaf216f44051c3e0b2ea8ebea1f9a15a68cf",
+  "sandboxWebImageId": "sha256:86f0cc0522313172034a90c1b8887ecd26cf18e2dfc237b8b4ad73250d7afee0",
+  "backupSha256": "abf0c32b9287efb2ca13b57521c786fde2930d21103a70343793d6fa1c404f21",
+  "enableCollection": false,
+  "enableLiveCollection": false,
+  "driverSelectionRequired": true,
+  "merchantReviewRequired": true,
+  "connectionSecretInjectionAuthorized": true,
+  "connectionSecretExtractionAllowed": false,
+  "connectionBindingProvided": false
+}

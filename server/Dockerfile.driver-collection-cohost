@@ -1,0 +1,12 @@
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+# Match the existing API runtime/dependencies; this review does not change Stripe.
+RUN npm install --legacy-peer-deps --include=dev
+# Explicit runtime sources only: no deployment files, backups or credential files.
+COPY server ./server
+COPY src/app/shared/models ./src/app/shared/models
+COPY src/app/shared/utils ./src/app/shared/utils
+EXPOSE 3001
+CMD ["npx", "ts-node", "--project", "server/tsconfig.json", "server/index.ts"]

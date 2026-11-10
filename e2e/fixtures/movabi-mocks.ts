@@ -2,6 +2,24 @@ import { expect, Page, Route } from '@playwright/test';
 
 export type E2ERole = 'customer' | 'driver' | 'admin';
 
+/**
+ * Statuses `DriverService.fetchActiveJob()` treats as an in-progress job.
+ * Kept in sync with that query so the mock honours the same filter.
+ */
+export const ACTIVE_JOB_STATUSES = [
+  'assigned',
+  'accepted',
+  'heading_to_pickup',
+  'arrived',
+  'arrived_at_store',
+  'shopping_in_progress',
+  'collected',
+  'en_route_to_customer',
+  'in_progress',
+  'delivered',
+  'over_budget_requested'
+];
+
 export const ids = {
   tenant: '00000000-0000-4000-8000-000000000001',
   city: '00000000-0000-4000-8000-000000000002',
@@ -25,6 +43,13 @@ export const profiles = {
     first_name: 'Test',
     last_name: 'Customer',
     email: 'customer@movabi.test',
+    // ComplianceService.getCustomerMissingRequirements blocks booking unless the
+    // customer has a phone and accepted terms + privacy. These mirror a real
+    // completed customer profile; email_verified is intentionally omitted so the
+    // optional email-verification capability is not asserted.
+    phone: '+447700900456',
+    accepted_terms_at: now,
+    accepted_privacy_at: now,
     onboarding_completed: true,
     account_status: 'active',
     created_at: now,
@@ -36,12 +61,21 @@ export const profiles = {
     role: 'driver',
     first_name: 'Dara',
     last_name: 'Driver',
+    full_name: 'Dara Driver',
     email: 'driver@movabi.test',
     phone: '+447700900123',
+    // Shape the driver onboarding page hydrates from (loadExistingData).
+    date_of_birth: '1990-01-01',
+    current_address: '1 High Street, Bolton, BL1 1AA',
+    driver_service_types: ['delivery'],
     onboarding_completed: true,
     account_status: 'active',
     is_verified: true,
     verification_status: 'approved',
+    // Required by DriverService.getAcceptanceBlockers(): without these the
+    // acceptance gate blocks every accept and the flow never reaches the RPC.
+    insurance_url: 'https://storage.movabi.test/driver/insurance.pdf',
+    driver_license_url: 'https://storage.movabi.test/driver/licence.pdf',
     pricing_plan: 'starter',
     commission_rate: 15,
     stripe_connect_status: 'enabled',
@@ -92,6 +126,44 @@ export const pricingConfig = [
   { service_type: 'van-moving', base_fare: 25, per_km: 1.6, per_min: 0.25, service_fee: 1.5, minimum_fare: 30, currency_code: 'GBP', is_active: true }
 ];
 
+/**
+ * Deterministic LAUNCHED market. Without this the driver resolves to an
+ * unavailable market, stays offline, and never requests available jobs.
+ * Shape matches `PublicMarketStatus` (core/services/market-availability.service).
+ */
+export const marketLive = {
+  code: 'GB-BOLTON',
+  countryCode: 'GB',
+  marketCity: 'Bolton',
+  launchStatus: 'live',
+  customerAppEnabled: true,
+  customerRegistrationEnabled: true,
+  driverRegistrationEnabled: true,
+  driverOnlineEnabled: true,
+  quoteEnabled: true,
+  bookingEnabled: true,
+  paymentEnabled: true,
+  currency: 'GBP',
+  timezone: 'Europe/London',
+  title: 'Movabi UK',
+  message: 'Live',
+  waitingListEnabled: false,
+  resolutionLevel: 'city'
+};
+
+/**
+ * Registration-market eligibility state for the E2E identities: established,
+ * already-activated accounts. Shape matches `RegistrationState`
+ * (core/services/auth/registration.service).
+ */
+export const REGISTRATION_ACTIVATED = {
+  activated: true,
+  pending: false,
+  registrationCountryCode: 'GB',
+  registrationMarketCity: 'Bolton',
+  activatedAt: '2026-01-01T00:00:00.000Z'
+};
+
 export const baseJob = {
   id: ids.rideJob,
   customer_id: ids.customer,
@@ -127,6 +199,25 @@ export const baseJob = {
   updated_at: now
 };
 
+/**
+ * A SECOND independently eligible available request, so the Available Requests
+ * list, per-card selection and the Back control can be certified with >1 job.
+ * It is never the auto-presented (newest/first) job.
+ */
+export const secondAvailableJob = {
+  ...baseJob,
+  id: '50000000-0000-4000-8000-000000000002',
+  pickup_address: 'Deansgate, Manchester',
+  dropoff_address: 'Piccadilly Station, Manchester',
+  pickup_lat: 53.478,
+  pickup_lng: -2.249,
+  dropoff_lat: 53.477,
+  dropoff_lng: -2.23,
+  price: 4.75,
+  total_price: 4.75,
+  estimated_price: 4.75
+};
+
 export function roleFromEmail(email: string): E2ERole {
   if (email.includes('driver')) return 'driver';
   if (email.includes('admin')) return 'admin';
@@ -135,10 +226,24 @@ export function roleFromEmail(email: string): E2ERole {
 
 export async function installMovabiMocks(page: Page, role: E2ERole = 'customer') {
   let activeRole = role;
-  let activeJob = { ...baseJob };
+  // The driver starts with NO active job so the dashboard renders the
+  // AVAILABLE list; accepting via the accept_* RPC below assigns it.
+  let activeJob = (role === 'driver' ? { ...baseJob, driver_id: null, accepted_driver_id: null, status: 'searching' } : { ...baseJob }) as typeof baseJob;
   const wallet = { id: 'wallet-1', user_id: ids.customer, available_balance: 42.5, reserved_balance: 3.5, currency_code: 'GBP' };
-
+  // Stateful country-pricing rows: admin saves must survive page reloads.
+  let currentPricing = pricingConfig.map((row, index) => ({
+    ...row, id: `70000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    country_code: 'GB', market_city: null as string | null, zone_id: null as string | null
+  }));
   await page.addInitScript(() => {
+    // Deterministic launched market for the driver online/availability gate.
+    window.localStorage.setItem('movabi_country_code', 'GB');
+    // Mark the first-run product tours as seen. The tour overlay is a
+    // full-screen layer that intercepts pointer events and would otherwise
+    // block every dashboard interaction in these specs.
+    window.localStorage.setItem('movabi_customer_tour_completed', 'true');
+    window.localStorage.setItem('movabi_driver_tour_completed', 'true');
+    window.localStorage.setItem('movabi_admin_tour_completed', 'true');
     class MockBroadcastChannel {
       name: string;
       onmessage: ((event: MessageEvent) => void) | null = null;
@@ -154,6 +259,78 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
 
   await page.route('**/*', async (route) => {
     const url = route.request().url();
+
+    // E2E_APP_VERSION: the normal up-to-date app-version response.
+    const versionUrl = new URL(url);
+    // Core non-negotiated booking scenario; explicit API contracts only.
+    if (route.request().method() === 'GET' && versionUrl.pathname === '/api/marketplace/effective-status') {
+      return json(route, { enabled: false, reason: 'Negotiation disabled in this core-flow fixture',
+        marketplaceEnabled: false, hybridEnabled: false, serviceMarketplaceEnabled: false,
+        serviceNegotiationEnabled: false, emergencyDisabled: false,
+        canonicalServiceSlug: versionUrl.searchParams.get('service') || 'ride' });
+    }
+    if (route.request().method() === 'GET' && /^\/api\/booking\/[^/]+\/nearby-availability$/.test(versionUrl.pathname)) {
+      return json(route, { observedCount: 0, cars: [], observedAt: new Date().toISOString() });
+    }
+    // Deterministic incomplete-card SDK. No payment confirmation can succeed.
+    if (versionUrl.hostname === 'js.stripe.com' && /^\/(?:v3\/?|[a-z]+\/stripe\.js)$/.test(versionUrl.pathname)) {
+      return route.fulfill({ contentType: 'application/javascript', body: `window.Stripe = function () {
+        return { elements: function () { return { create: function () { return {
+          mount: function () {}, unmount: function () {}, destroy: function () {}, on: function () {}
+        }; } }; }, confirmCardPayment: async function () { return { error: { message: 'Card confirmation is disabled in this browser fixture' } }; } };
+      };` });
+    }
+
+    // E2E_STARTUP_CONTRACTS: explicit current-client fixtures, never a generic API bypass.
+    const mockPath = versionUrl.pathname;
+    const mockMethod = route.request().method();
+    if (mockMethod === 'GET') {
+      if (mockPath === '/api/payment/cards') return json(route, { enabled:false,cards:[] });
+      const errandCardStatus = mockPath.match(/^\/api\/issuing\/errand-card\/([^/]+)\/status$/);
+      if (errandCardStatus) return json(route, { enabled: false, status: 'not_configured',
+        message: 'Receipt upload is active. Vaydu Pay card can be enabled after Stripe Issuing is approved.',
+        jobId: errandCardStatus[1], driverId: activeJob.driver_id, budgetLimit: 0, currency: 'GBP' });
+      if (mockPath === '/api/communication/inbox/counts') return json(route, { messages: 0, updates: 0 });
+      if (mockPath === '/api/communication/inbox') return json(route, []);
+      if (/^\/api\/communication\/messages\/[^/]+\/counts$/.test(mockPath)) return json(route, { total: 0, unread: 0 });
+      if (/^\/api\/communication\/messages\/[^/]+$/.test(mockPath)) return json(route, []);
+      if (mockPath === '/api/booking/driver-declines') return json(route, { jobIds: [] });
+      if (/^\/api\/booking\/[^/]+\/customer$/.test(mockPath)) return json(route, { customer: profiles.customer });
+      if (mockPath === '/api/local-services/categories') return json(route, { categories: [] });
+      if (['/api/local-services/providers', '/api/local-services/nearby', '/api/local-services/recent', '/api/local-services/favourites'].includes(mockPath)) return json(route, { providers: [] });
+      if (mockPath.startsWith('/api/connect/account-status/')) return json(route, { stripe_account_id: 'acct_test_driver', onboarding_complete: true, details_submitted: true, charges_enabled: true, payouts_enabled: true, status: 'enabled', requirements: { currently_due: [], past_due: [] } });
+      if (mockPath === '/api/wallet/transactions') return json(route, [{ id: 'txn-1', user_id: ids.customer, amount: 25, transaction_type: 'topup', description: 'Card top up', created_at: now }]);
+    }
+    if (mockMethod === 'POST') {
+      if (mockPath === '/api/auth/push-logout') return json(route, { success: true });
+      if (mockPath === '/auth/v1/logout') return route.fulfill({ status: 204, body: '' });
+      if (/^\/api\/communication\/messages\/[^/]+\/read$/.test(mockPath)) return json(route, { success: true });
+      if (mockPath === '/api/booking/driver-earnings-preview') {
+        const payload = route.request().postDataJSON() as { amount?: number } | null;
+        const gross = Number(payload?.amount ?? activeJob.total_price);
+        const net = Number((gross * 0.85).toFixed(2));
+        return json(route, { gross, net, deductions: Number((gross - net).toFixed(2)), currency: 'GBP', estimated: !activeJob.driver_id, offerAllowed: true });
+      }
+      if (mockPath === '/api/booking/accept') {
+        const payload = route.request().postDataJSON() as { jobId?: string } | null;
+        if (![activeJob.id, secondAvailableJob.id].includes(String(payload?.jobId))) return json(route, { error: 'Fixture job not found' }, 404);
+        const selected = payload?.jobId === secondAvailableJob.id ? secondAvailableJob : activeJob;
+        activeJob = { ...selected, driver_id: ids.driver, accepted_driver_id: ids.driver, status: 'assigned' } as typeof activeJob;
+        return json(route, { success: true, message: 'Job assigned. Payment remains authorized until completion.' });
+      }
+      if (/^\/api\/journey\/[^/]+\/session$/.test(mockPath)) return json(route, { token: 'e2e-only-journey-token', expires: Date.now() + 7200000 });
+      if (/^\/api\/journey\/[^/]+\/location$/.test(mockPath)) return json(route, { success: true });
+    }
+    if (route.request().method() === 'GET' && versionUrl.pathname === '/api/app/version') {
+      const version = versionUrl.searchParams.get('version') || '1.0.0';
+      return json(route, {
+        ok: true, currentVersion: version, minimumVersion: '0.0.0',
+        updateRequired: false, severity: 'optional', title: 'Vaydu is up to date',
+        message: '', releaseNotes: '', platform: versionUrl.searchParams.get('platform') || 'web',
+        role: versionUrl.searchParams.get('role'), updateUrl: '',
+        webReloadRequired: false, canDismiss: true, belowMinimum: false
+      });
+    }
 
     if (url.includes('api.maptiler.com/maps') && url.includes('style.json')) {
       return route.fulfill({
@@ -177,8 +354,47 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
       return json(route, { features: geocodeFeatures(requestUrl.searchParams.get('text') || '', `${requestUrl.searchParams.get('focus.point.lon')},${requestUrl.searchParams.get('focus.point.lat')}`) });
     }
 
-    if (url.includes('api.maptiler.com') || url.includes('api.openrouteservice.org')) {
-      return json(route, { features: [], routes: [{ summary: { distance: 870, duration: 128 }, geometry: { coordinates: [[-2.43, 53.585], [-2.421, 53.592]] } }] });
+    if (url.includes('api.maptiler.com') || url.includes('api.openrouteservice.org') || url.includes('api.heigit.org/openrouteservice/')) {
+      // ORS directions contract: routes[0] needs summary{distance,duration},
+      // a GeoJSON geometry and bbox[minLon,minLat,maxLon,maxLat] — RoutingService
+      // reads bbox[0..3] and draws geometry as GeoJSON.
+      return json(route, {
+        features: [],
+        routes: [
+          {
+            summary: { distance: 2400, duration: 420 },
+            geometry: {
+              type: 'LineString',
+              coordinates: [[-2.43, 53.585], [-2.422, 53.592], [-2.4155, 53.5985]]
+            },
+            bbox: [-2.43, 53.585, -2.4155, 53.5985]
+          }
+        ]
+      });
+    }
+
+    // ---- Market rollout gate (/api/markets/*) -------------------------------
+    // The driver cannot go online (and therefore cannot see available jobs)
+    // unless the market resolves as live with driverOnlineEnabled.
+    if (url.includes('/api/markets/')) {
+      if (url.includes('/driver-online')) {
+        return json(route, { allowed: true, code: 'OK', title: '', message: '', action: null, blockers: [] });
+      }
+      if (url.includes('/driver-registration/check')) {
+        return json(route, { allowed: true, code: 'OK', title: '', message: '', action: null, blockers: [] });
+      }
+      // Registration-market eligibility. The E2E identities are established,
+      // already-activated accounts; without this the Phase 2 registration guard
+      // fails closed and bounces every authenticated route to /auth/registration.
+      if (url.includes('/registration-status')) {
+        return json(route, REGISTRATION_ACTIVATED);
+      }
+      if (url.includes('/registration-eligibility')) {
+        return json(route, REGISTRATION_ACTIVATED);
+      }
+      if (url.includes('/waitlist')) return json(route, { ok: true });
+      // /resolve and /status
+      return json(route, marketLive);
     }
 
     if (url.includes('/auth/v1/token')) {
@@ -210,17 +426,36 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
         return json(route, { id: 'service-new', ...payload }, 201);
       }
 
-      return json(route, serviceTypes);
+      const serviceQuery = new URL(url).searchParams;
+      const requestedId = serviceQuery.get('id')?.replace(/^eq\./, '');
+      const requestedSlug = serviceQuery.get('slug')?.replace(/^eq\./, '');
+      return json(route, serviceTypes.filter(row => (!requestedId || row.id === requestedId) && (!requestedSlug || row.slug === requestedSlug)));
     }
 
-    if (url.includes('/rest/v1/pricing_config')) {
-      if (['POST', 'PATCH'].includes(route.request().method())) {
-        return json(route, route.request().postDataJSON() || {});
+    if (new URL(url).pathname === '/rest/v1/pricing_config') {
+      const query = new URL(url).searchParams;
+      const idFilter = query.get('id')?.replace(/^eq\./, '');
+      const serviceFilter = query.get('service_type')?.startsWith('eq.') ? query.get('service_type')!.slice(3) : null;
+      const matches = (row: typeof currentPricing[number]) => (!idFilter || row.id === idFilter) && (!serviceFilter || row.service_type === serviceFilter);
+      if (route.request().method() === 'PATCH') {
+        const payload = route.request().postDataJSON() as Record<string, unknown>;
+        if (!idFilter || !currentPricing.some(matches)) return json(route, { error: 'Fixture pricing rule not found' }, 404);
+        currentPricing = currentPricing.map(row => matches(row) ? { ...row, ...payload } as typeof row : row);
+        return json(route, currentPricing.filter(matches));
       }
-
-      return json(route, pricingConfig);
+      if (route.request().method() === 'POST') {
+        const payload = route.request().postDataJSON() as Record<string, unknown>;
+        const created = { ...payload, id: `70000000-0000-4000-8000-${String(currentPricing.length + 1).padStart(12, '0')}` } as typeof currentPricing[number];
+        currentPricing.push(created);
+        return json(route, [created], 201);
+      }
+      return json(route, currentPricing.filter(matches));
     }
-    if (url.includes('/rest/v1/wallets')) return json(route, wallet);
+    if (url.includes('/rest/v1/wallets')) {
+      return json(route, walletBalanceOverride === null
+        ? wallet
+        : { ...wallet, available_balance: walletBalanceOverride });
+    }
     if (url.includes('/rest/v1/wallet_transactions')) return json(route, [
       { id: 'txn-1', user_id: ids.customer, amount: 25, transaction_type: 'topup', description: 'Card top up', created_at: now }
     ]);
@@ -232,6 +467,9 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
     if (url.includes('/rest/v1/ratings')) return json(route, { id: 'rating-1', job_id: activeJob.id, rating: 5 });
 
     if (url.includes('/rest/v1/jobs')) {
+      if (noShowJobOverride) {
+        activeJob = { ...activeJob, ...noShowJobOverride } as typeof activeJob;
+      }
       if (route.request().method() === 'POST') {
         activeJob = {
           ...activeJob,
@@ -249,25 +487,132 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
         return json(route, [activeJob]);
       }
 
-      if (url.includes('driver_id=is.null') || url.includes('status=in')) {
-        return json(route, [{ ...baseJob, driver_id: null, accepted_driver_id: null, status: 'searching' }]);
+      if (url.includes('driver_id.is.null')) {
+        // AVAILABLE list query (or=(and(status.in.(...),...,driver_id.is.null))) -> ARRAY.
+        // `activeJob` is only still available while it is genuinely 'searching',
+        // so an accepted request correctly drops out of the pool.
+        const available: unknown[] = [];
+        if (String(activeJob.status) === 'searching') {
+          available.push({ ...activeJob, driver_id: null, accepted_driver_id: null });
+        }
+        available.push({ ...secondAvailableJob, driver_id: null, accepted_driver_id: null, status: 'searching' });
+        return json(route, available);
       }
 
-      return json(route, activeJob);
+      if (url.includes('select=id') && url.includes('status=in.')) {
+        // ACTIVE job lookup via .maybeSingle() -> single OBJECT (or null).
+        // Must honour the status filter, otherwise a 'searching' job would be
+        // wrongly reported as this driver's active job.
+        return json(route, ACTIVE_JOB_STATUSES.includes(String(activeJob.status)) ? { id: activeJob.id } : null);
+      }
+
+      if (versionUrl.searchParams.has('id')) {
+        // Single job by id via .maybeSingle() -> OBJECT. Each id returns its own
+        // record so selecting a specific available card opens that request.
+        if (url.includes(`id=eq.${secondAvailableJob.id}`)) {
+          return json(route, { ...secondAvailableJob, driver_id: null, accepted_driver_id: null, status: 'searching' });
+        }
+        return json(route, activeJob);
+      }
+
+      return json(route, [activeJob]);
     }
 
     if (url.includes('/rest/v1/rpc/accept_searching_job') || url.includes('/rest/v1/rpc/accept_job') || url.includes('/rest/v1/rpc/accept_job_request')) {
+      // DriverDashboard.accept() requires the RPC to resolve to boolean `true`;
+      // anything else is treated as "no longer available".
       activeJob = { ...activeJob, driver_id: ids.driver, accepted_driver_id: ids.driver, status: 'accepted' };
-      return json(route, activeJob);
+      return json(route, true);
     }
 
+    if (url.includes('/rest/v1/rpc/accept_assigned_job')) {
+      // Current acceptAssignedJob() requires boolean true, then reloads the job.
+      activeJob = { ...activeJob, driver_id: ids.driver, accepted_driver_id: ids.driver, status: 'accepted' };
+      return json(route, true);
+    }
+
+    if (url.includes('/api/pricing/global-ai/quote')) {
+      const body = (route.request().postDataJSON() || {}) as { serviceSlug?: string };
+      const isRide = (body.serviceSlug || 'ride') === 'ride';
+      const resp: Record<string, unknown> = {
+        quoteReference: 'quote-no-show-test',
+        market: { countryCode: 'GB', currency: 'GBP', city: 'Bolton', zoneId: null },
+        price: { base: 2.5 },
+        ai: { livePricingEnabled: false, finalTotalMinor: 350 },
+        guardrails: {},
+        priceLockedUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+        fallback: { used: false, reason: null, source: 'mock' },
+        legacy: {
+          totalPrice: 3.5,
+          currencyCode: 'GBP',
+          source: 'mock',
+          fareBreakdown: { baseFare: 2.5, distanceCost: 0.8, durationCost: 0.2, serviceFee: 0, currencyCode: 'GBP', currencySymbol: '£' }
+        }
+      };
+      if (quoteNoShowEnabled && isRide) {
+        resp.noShow = { policyVersion: 'ride-no-show-v1', fareMinor: 350, feeMinor: 175, driverShareMinor: 140, platformShareMinor: 35, graceSeconds: 300, currency: 'GBP' };
+      }
+      return json(route, resp);
+    }
     if (url.includes('/api/payment/calculate-price')) return json(route, { amount: 3.5, price: 3.5, total: 3.5, totalPrice: 3.5 });
     if (url.includes('/api/payment/create-intent')) return json(route, { clientSecret: 'pi_test_secret_mock', paymentIntentId: 'pi_test' });
-    if (url.includes('/api/wallet/pay-job')) return json(route, { ok: true, payment_status: 'wallet_funded', wallet });
+    if (url.includes('/api/payment/confirm')) {
+      // BookingService.confirmJobPayment contract: POST { jobId } -> { booking }.
+      activeJob = { ...activeJob, payment_status: 'wallet_funded', status: 'searching' };
+      return json(route, { booking: activeJob });
+    }
+    if (url.includes('/api/wallet/pay-job')) {
+      // WalletService.payJobFromWallet contract: { success, paymentMethod, amount }.
+      const body = (route.request().postDataJSON() || {}) as { amount?: number };
+      activeJob = { ...activeJob, payment_status: 'wallet_funded', status: 'searching' };
+      return json(route, { success: true, paymentMethod: 'wallet', amount: Number(body.amount || 3.5) });
+    }
     if (url.includes('/api/wallet/top-up')) return json(route, { clientSecret: 'pi_topup_secret_mock', paymentIntentId: 'pi_topup' });
     if (url.includes('/api/booking/confirm-payment')) {
       activeJob = { ...activeJob, payment_status: 'wallet_funded' };
       return json(route, activeJob);
+    }
+    if (url.includes('/api/booking/arrive')) {
+      if (arrivalFailure) {
+        return json(route, arrivalFailure.body, arrivalFailure.status);
+      }
+      if (noShowArrivalDisabled) {
+        // Feature off: the explicit code is what authorises the legacy arrival flow.
+        return json(route, { error: 'Not found', code: 'NO_SHOW_DISABLED' }, 404);
+      }
+      // Server-authoritative arrival: returns the immutable grace deadline + the
+      // frozen no-show terms the driver UI must display.
+      const arrivedAt = new Date().toISOString();
+      const graceUntil = new Date(Date.now() + arrivalGraceMs).toISOString();
+      activeJob = {
+        ...activeJob,
+        status: 'arrived',
+        no_show_arrived_at: arrivedAt,
+        no_show_grace_until: graceUntil,
+        fare_breakdown: { ...(activeJob as any).fare_breakdown, ...NO_SHOW_FARE_BREAKDOWN }
+      } as typeof activeJob;
+      return json(route, { success: true, arrived_at: arrivedAt, grace_until: graceUntil, no_show: NO_SHOW_TERMS });
+    }
+    if (url.includes('/api/booking/no-show')) {
+      if (noShowFinalizeOutcome) {
+        return json(route, noShowFinalizeOutcome.body, noShowFinalizeOutcome.status);
+      }
+      const body = (route.request().postDataJSON() || {}) as Record<string, unknown>;
+      activeJob = {
+        ...activeJob,
+        status: 'cancelled',
+        no_show_status: 'fee_charged',
+        no_show_reason: body['reason'] || null,
+        fare_breakdown: { ...(activeJob as any).fare_breakdown, ...NO_SHOW_FARE_BREAKDOWN }
+      } as typeof activeJob;
+      return json(route, { success: true, no_show_status: 'fee_charged' });
+    }
+    if (url.includes('/api/booking/create')) {
+      lastBookingCreateBody = (route.request().postDataJSON() || {}) as Record<string, unknown>;
+      const requested = (lastBookingCreateBody['booking'] || {}) as Record<string, unknown>;
+      activeJob = { ...baseJob, ...requested, id: 'booking-test', driver_id: null, accepted_driver_id: null,
+        status: 'searching', payment_status: 'pending' } as typeof activeJob;
+      return json(route, { ...activeJob, negotiation_mode_enabled: false });
     }
     if (url.includes('/api/booking/cancel')) {
       activeJob = { ...activeJob, status: 'cancelled' };
@@ -287,11 +632,126 @@ export async function installMovabiMocks(page: Page, role: E2ERole = 'customer')
     if (url.includes('/api/logistics/enqueue')) return json(route, { job: activeJob, status: 'queued' });
     if (url.includes('/api/connect/status')) return json(route, { onboarding_complete: true, status: 'enabled' });
     if (url.includes('/api/connect/account-link')) return json(route, { url: 'https://connect.stripe.test/onboarding' });
+    if (url.includes('/api/connect/payout-settings')) return json(route, { payouts_enabled: true, requirements: [], currently_due: [] });
+    if (url.includes('/api/connect/refresh-account-status')) {
+      return json(route, { status: 'enabled', onboarding_complete: true, charges_enabled: true, payouts_enabled: true });
+    }
+    if (url.includes('/api/issuing/driver-card/ensure')) return json(route, { card: null, status: 'unavailable', configured: false });
+    // DriverService.fetchVehicle() -> awaited by fetchAvailableJobs() AND by the
+    // acceptance gate. Must use the API shape fromVehicleApi() maps:
+    // { id, userId, make, model, colour, year, registrationNumber, type, capacity, status }.
+    if (url.includes('/api/driver-onboarding/status')) {
+      return json(route, { onboarding_completed: true, account_status: 'active', is_verified: true });
+    }
+    if (url.includes('/api/driver-onboarding/vehicle')) {
+      return json(route, {
+        vehicle: {
+          id: 'vehicle-driver-1',
+          userId: ids.driver,
+          make: 'Toyota',
+          model: 'Prius',
+          colour: 'Silver',
+          year: 2022,
+          registrationNumber: 'MV22 TST',
+          type: 'car',
+          capacity: '4 seats',
+          status: 'approved'
+        }
+      });
+    }
     if (url.includes('/api/admin') || url.includes('/rest/v1/subscription')) return json(route, []);
 
+    // Config/negotiation reads awaited BEFORE the available-jobs query.
+    if (url.includes('/rest/v1/marketplace_settings')) return json(route, []);
+    if (url.includes('/rest/v1/system_configs')) return json(route, []);
+    if (url.includes('/rest/v1/marketplace_negotiation_sessions')) return json(route, []);
+    if (url.includes('/rest/v1/marketplace_negotiation_events')) return json(route, []);
+    if (url.includes('/rest/v1/marketplace_commission_overrides')) return json(route, []);
+    if (url.includes('/rest/v1/notifications')) return json(route, []);
+
+    // No Supabase REST call may ever reach the production project during E2E.
+    if (url.includes('/rest/v1/')) return json(route, []);
+
+    // E2E_UNMOCKED_REQUEST: never let an incomplete fixture call a real API.
+    const requestUrl = new URL(url);
+    const method = route.request().method();
+    const apiPath = /\/(?:api|auth\/v1|rest\/v1|functions\/v1)(?:\/|$)/.test(requestUrl.pathname);
+    if (apiPath || !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      throw new Error(`[E2E_UNMOCKED_REQUEST] ${method} ${requestUrl.origin}${requestUrl.pathname}`);
+    }
     return route.continue();
   });
 }
+
+export let lastBookingCreateBody: Record<string, unknown> | null = null;
+export let quoteNoShowEnabled = false;
+export let walletBalanceOverride: number | null = null;
+
+export function setQuoteNoShowEnabled(value: boolean): void {
+  quoteNoShowEnabled = value;
+}
+
+/** Force the mocked wallet's available balance (e.g. to exercise card fallback). */
+export function setWalletBalance(value: number | null): void {
+  walletBalanceOverride = value;
+}
+
+/** Clear the captured create payload so a test asserts on ITS OWN submission. */
+export function resetBookingCreateBody(): void {
+  lastBookingCreateBody = null;
+}
+
+/**
+ * No-show E2E controls. `noShowJobOverride` merges server-issued no-show fields
+ * into the active job; `arrivalGraceMs` sets the mocked grace deadline relative to
+ * now (positive = still counting down, negative = expired).
+ */
+export let noShowJobOverride: Record<string, unknown> | null = null;
+export let arrivalGraceMs = 120_000;
+export let noShowFinalizeOutcome: { status: number; body: Record<string, unknown> } | null = null;
+
+export function setNoShowJob(fields: Record<string, unknown> | null): void {
+  noShowJobOverride = fields;
+}
+
+export function setArrivalGraceMs(value: number): void {
+  arrivalGraceMs = value;
+}
+
+/** Simulate the no-show feature being OFF: /api/booking/arrive returns the explicit code. */
+export let noShowArrivalDisabled = false;
+export function setNoShowArrivalDisabled(value: boolean): void {
+  noShowArrivalDisabled = value;
+}
+
+/** Force an arbitrary /api/booking/arrive failure (e.g. a generic 404 without the disabled code). */
+export let arrivalFailure: { status: number; body: Record<string, unknown> } | null = null;
+export function setArrivalFailure(value: { status: number; body: Record<string, unknown> } | null): void {
+  arrivalFailure = value;
+}
+
+/** Force the finalise response (e.g. a 409 trip-start conflict). */
+export function setNoShowFinalizeOutcome(value: { status: number; body: Record<string, unknown> } | null): void {
+  noShowFinalizeOutcome = value;
+}
+
+/** The frozen terms persisted on the booking at creation (ride-no-show-v1, £3.50 → £1.75/£1.40). */
+export const NO_SHOW_TERMS = {
+  policyVersion: 'ride-no-show-v1',
+  feeMinor: 175,
+  driverShareMinor: 140,
+  platformShareMinor: 35,
+  currency: 'GBP',
+  graceSeconds: 300
+};
+
+export const NO_SHOW_FARE_BREAKDOWN = {
+  noShowPolicyVersion: 'ride-no-show-v1',
+  noShowFeeMinor: 175,
+  noShowDriverShareMinor: 140,
+  noShowPlatformShareMinor: 35,
+  currency: 'GBP'
+};
 
 export async function loginAs(page: Page, role: E2ERole) {
   await installMovabiMocks(page, role);
@@ -343,6 +803,22 @@ async function json(route: Route, data: unknown, status = 200) {
 function geocodeFeatures(query: string, proximity?: string | null) {
   const normalized = String(query || '').toLowerCase();
   const isBoltonIntent = normalized.includes('bolton') || normalized.includes('bl2') || String(proximity || '').includes('-2.43');
+
+  // Distinct destination so pickup and drop-off resolve to different coordinates
+  // and a real route (nonzero distance/duration) can be computed between them.
+  if (normalized.includes('tonge')) {
+    const label = 'Tonge Moor Primary Academy, Bolton, England, United Kingdom';
+    const coordinates: [number, number] = [-2.4155, 53.5985];
+    return [
+      {
+        place_name: label,
+        text: label,
+        properties: { label, name: label },
+        center: coordinates,
+        geometry: { coordinates }
+      }
+    ];
+  }
 
   if (normalized.includes('mcdonald') || normalized.includes('asda')) {
     const label = normalized.includes('mcdonald')

@@ -1,6 +1,10 @@
-import { Component, DestroyRef, inject, signal, computed, OnInit } from '@angular/core';
+import {DriverPaymentAccountComponent} from '@shared/ui/driver-payment-account.component';
+import {DriverVehicleInspectionComponent, INSPECTION_SLOTS, BIKE_INSPECTION_SLOTS} from '@shared/ui/driver-vehicle-inspection.component';
+import {MarketSafetyService} from '../../../../../core/services/payments/market-safety.service';
+import { Component, DestroyRef, inject, signal, computed, effect, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { userFacingError } from '@shared/utils/http-failure';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
     IonHeader,
@@ -10,6 +14,8 @@ import {
     IonTitle,
     IonContent,
     IonIcon,
+    IonRefresher,
+    IonRefresherContent,
     LoadingController,
     ToastController
 } from '@ionic/angular/standalone';
@@ -42,6 +48,7 @@ import { ProfileService } from '@core/services/profile/profile.service';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { AppConfigService } from '@core/services/config/app-config.service';
+import { DriverOnboardingStatus, DriverOnboardingStatusService } from '@core/services/driver/driver-onboarding-status.service';
 import { DriverProfile, Vehicle } from '@shared/models/booking.model';
 import { ButtonComponent, BadgeComponent } from '@shared/ui';
 import {
@@ -53,7 +60,7 @@ import {
     vehicleRequiresRegistration
 } from '@shared/verification/driver-requirements.engine';
 
-type DocumentType = 'license' | 'insurance' | 'private_hire_vehicle_license' | 'goods_in_transit';
+type DocumentType = 'license' | 'insurance' | 'right_to_work' | 'private_hire_vehicle_license' | 'private_hire_insurance' | 'goods_in_transit';
 type StripeMessageType = 'success' | 'warning';
 type DriverVehicleClass = 'bike' | 'standard' | 'xl' | 'small_van' | 'large_van';
 type DriverServiceSelection = 'ride' | 'errand' | 'delivery' | 'van';
@@ -63,13 +70,17 @@ type DriverOnboardingDraft = {
     docs?: {
         license?: string;
         insurance?: string;
+        goods_in_transit?: string;
     };
 };
+const adultDateValidator=(control:AbstractControl):ValidationErrors|null=>{if(!control.value)return{required:true};const dob=new Date(String(control.value));const now=new Date();if(Number.isNaN(dob.getTime())||dob>now||dob.getUTCFullYear()<1900)return{invalidDate:true};let age=now.getUTCFullYear()-dob.getUTCFullYear();if(now.getUTCMonth()<dob.getUTCMonth()||(now.getUTCMonth()===dob.getUTCMonth()&&now.getUTCDate()<dob.getUTCDate()))age--;return age>=18?null:{minimumAge:true};};
 
 @Component({
     selector: 'app-driver-onboarding',
     standalone: true,
     imports: [
+        DriverPaymentAccountComponent,
+        DriverVehicleInspectionComponent,
         CommonModule,
         FormsModule,
         ReactiveFormsModule,
@@ -80,6 +91,8 @@ type DriverOnboardingDraft = {
         IonTitle,
         IonContent,
         IonIcon,
+        IonRefresher,
+        IonRefresherContent,
         ButtonComponent,
         BadgeComponent
     ],
@@ -91,12 +104,13 @@ type DriverOnboardingDraft = {
         </ion-buttons>
 
         <ion-title class="font-display font-black text-slate-950 tracking-tight">
-          Driver Setup
+          <img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="28" height="28" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px" />Driver Setup
         </ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content class="bg-slate-50">
+      <ion-refresher slot="fixed" (ionRefresh)="pullToRefresh($event)"><ion-refresher-content></ion-refresher-content></ion-refresher>
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24 overflow-x-hidden">
         <div class="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 shadow-2xl shadow-slate-900/20 text-white">
           <div class="absolute -top-12 -right-8 w-32 h-32 bg-blue-400/20 rounded-full blur-3xl"></div>
@@ -122,48 +136,36 @@ type DriverOnboardingDraft = {
           </div>
         </div>
 
-        @if (isActionRequired()) {
-          <div class="rounded-[1.75rem] border border-rose-100 bg-rose-50 p-5 shadow-sm">
-            <div class="flex items-start gap-3">
-              <div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                <ion-icon name="alert-circle-outline" class="text-xl"></ion-icon>
-              </div>
+        <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between"><div><p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Driver Setup</p><h2 class="font-display font-black text-slate-950">{{setupStatusLabel()}}</h2></div><span class="text-sm font-black text-blue-600">{{onboardingStatus.state()?.progress?.completed||0}} / {{onboardingStatus.state()?.progress?.total||0}}</span></div>
+          <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-blue-600 transition-all" [style.width.%]="setupProgressPercent()"></div></div>
 
-              <div class="min-w-0">
-                <h3 class="font-display font-black text-slate-950">Action required</h3>
-                <p class="text-sm text-slate-600 font-medium leading-relaxed mt-1">
-                  Your verification needs more information. Please update the items below and resubmit.
-                </p>
+          <nav class="mt-4 grid grid-cols-5 gap-1" aria-label="Driver setup stages" data-stage-nav>
+            @for(item of stages;track item.id){
+              <button type="button" (click)="goToStage(item.id)"
+                class="rounded-xl px-1 py-2 text-[9px] font-black uppercase tracking-wider transition-colors"
+                [attr.aria-current]="stage()===item.id?'step':null"
+                [class.bg-blue-600]="stage()===item.id" [class.text-white]="stage()===item.id"
+                [class.bg-slate-100]="stage()!==item.id" [class.text-slate-500]="stage()!==item.id">
+                <span class="block text-sm leading-none">{{item.id}}</span>
+                <span class="mt-1 block leading-tight">{{item.short}}</span>
+              </button>
+            }
+          </nav>
+          <p class="mt-3 text-xs font-bold text-slate-500">Stage {{stage()}} of {{stages.length}} — {{stageTitle()}}</p>
+          <div class="mt-3"><button type="button" class="w-full rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" (click)="saveAndContinue()" [disabled]="savingProgress()">{{savingProgress()?'Saving…':'Save and Continue Later'}}</button></div>
+        </section>
 
-                @if (verificationNotes()) {
-                  <div class="mt-3 rounded-xl bg-white border border-rose-100 p-3 text-sm text-slate-700">
-                    {{ verificationNotes() }}
-                  </div>
-                }
-
-                @if (reviewBlockers().length) {
-                  <ul class="mt-3 rounded-xl bg-white border border-rose-100 p-3 space-y-2">
-                    @for (blocker of reviewBlockers(); track blocker) {
-                      <li class="text-sm text-rose-900 font-semibold leading-relaxed">• {{ blocker }}</li>
-                    }
-                  </ul>
-                }
-
-                <div class="grid sm:grid-cols-3 gap-2 mt-4">
-                  <button type="button" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-800 border border-rose-100" (click)="scrollToSetup()">
-                    Update Details
-                  </button>
-                  <button type="button" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-800 border border-rose-100" (click)="scrollToDocuments()">
-                    Upload Documents
-                  </button>
-                  <button type="button" class="rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white" (click)="submit()">
-                    Resubmit for Review
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        }
+        <section class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3"><h2 class="font-display font-black text-slate-950">Information Requests</h2><button type="button" class="text-xs font-bold text-blue-600" (click)="refreshOnboardingStatus()">Refresh</button></div>
+          @if (onboardingStatus.loading()) { <p class="mt-3 text-sm text-slate-500">Loading requests…</p> }
+          @else if (onboardingStatus.error()) { <p class="mt-3 text-sm font-semibold text-rose-600">{{ onboardingStatus.error() }}</p> }
+          @else if (!onboardingStatus.state()?.outstandingRequests?.length) { <p class="mt-3 text-sm text-slate-500">No information requests. You're all caught up.</p> }
+          @else { <div class="mt-3 space-y-3">@for (request of onboardingStatus.state()!.outstandingRequests; track request.id) {
+            <div class="rounded-xl border border-slate-100 p-3"><div class="flex justify-between gap-2"><span class="text-sm font-bold text-slate-900">{{request.item}}</span><app-badge [variant]="request.status === 'approved' ? 'success' : request.status === 'rejected' ? 'warning' : 'secondary'">{{request.status}}</app-badge></div>
+            @if(request.adminMessage){<p class="mt-2 text-xs text-slate-600">{{request.adminMessage}}</p>}<p class="mt-2 text-xs font-semibold text-slate-500">{{request.nextAction}}</p></div>
+          }</div> }
+        </section>
 
         @if (isReadOnly()) {
           <div class="rounded-[1.75rem] border border-amber-100 bg-amber-50 p-5 shadow-sm">
@@ -213,14 +215,16 @@ type DriverOnboardingDraft = {
           </div>
         }
 
+        <app-driver-payment-account (providerChange)="bankPaymentAccount.set($event)" (setupCompleted)="onboardingStatus.refresh()" />
+        @if (!bankPaymentAccount()) {
         <section class="space-y-4">
           <div class="flex items-center gap-3 ml-1">
             <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
-            <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Payouts</h2>
+            <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Payment account</h2>
           </div>
 
           <div class="relative overflow-hidden bg-white rounded-[1.85rem] border border-slate-100 shadow-sm p-5">
-            <div class="relative flex items-start gap-4 mb-5">
+            <div class="relative flex flex-col items-start gap-4 mb-5">
               <div
                 class="w-14 h-14 rounded-2xl flex items-center justify-center border shadow-sm shrink-0"
                 [class.bg-emerald-50]="isStripeReady()"
@@ -234,10 +238,10 @@ type DriverOnboardingDraft = {
               </div>
 
               <div class="flex-1 min-w-0">
-                <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex flex-col items-start gap-3 mb-2">
                   <div>
-                    <h3 class="font-display font-black text-slate-950 text-lg">Stripe Connect</h3>
-                    <p class="text-xs text-slate-500 font-semibold">Required for payouts and wallet-funded requests</p>
+                    <h3 class="font-display font-black text-slate-950 text-lg">Payment account</h3>
+                    <p class="text-xs text-slate-500 font-semibold">{{ paymentAccountStatus() === 'unavailable' ? 'Setup unavailable in this market' : paymentAccountStatus() === 'completed' ? 'Ready to receive earnings' : paymentAccountStatus() === 'in_progress' ? 'Setup in progress' : 'Not set up yet' }}</p>
                   </div>
 
                   <app-badge [variant]="getStripeBadgeVariant()">
@@ -246,18 +250,34 @@ type DriverOnboardingDraft = {
                 </div>
 
                 <p class="text-sm text-slate-600 font-medium leading-relaxed">
-                  @if (isStripeReady()) {
-                    Your Stripe account is connected and ready for payouts.
-                  } @else if (isStripePending()) {
-                    Your Stripe onboarding has started, but payouts are not fully enabled yet.
+                  @if (paymentAccountStatus() === 'completed') {
+                    Your payment account is connected and ready to receive earnings from completed jobs.
+                  } @else if (paymentAccountStatus() === 'in_progress') {
+                    Your payment account setup has started but is not fully enabled yet.
+                  } @else if (paymentAccountStatus() === 'unavailable') {
+                    Payment account setup is not available in your market yet.
                   } @else {
-                    Connect payouts so your completed request earnings can be processed safely.
+                    Set up your payment account so we can send earnings from completed jobs.
                   }
                 </p>
               </div>
             </div>
 
-            @if (!isStripeReady()) {
+            @if (paymentAccountStatus() === 'unavailable') {
+              <!-- No action is offered: setup cannot work in this market. -->
+            } @else if (paymentAccountStatus() === 'completed') {
+              <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                    <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
+                  </div>
+                  <div>
+                    <p class="font-black text-emerald-900">Payment account ready</p>
+                    <p class="text-xs text-emerald-700 font-semibold">Setup is complete.</p>
+                  </div>
+                </div>
+              </div>
+            } @else {
               <app-button
                 variant="outline"
                 size="sm"
@@ -265,23 +285,12 @@ type DriverOnboardingDraft = {
                 [disabled]="isReadOnly() || submitting()"
                 (clicked)="setupPayouts()"
               >
-                {{ isReadOnly() ? 'Locked During Review' : (isStripePending() ? 'Continue Stripe Setup' : 'Start Stripe Setup') }}
+                {{ isReadOnly() ? 'Locked during review' : (paymentAccountStatus() === 'in_progress' ? 'Continue setup' : 'Set up payment account') }}
               </app-button>
-            } @else {
-              <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                    <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
-                  </div>
-                  <div>
-                    <p class="font-black text-emerald-900">Payouts ready</p>
-                    <p class="text-xs text-emerald-700 font-semibold">Stripe setup is complete.</p>
-                  </div>
-                </div>
-              </div>
             }
           </div>
         </section>
+        }
 
         <div class="bg-white rounded-[1.85rem] p-5 border border-slate-100 shadow-sm">
           <div class="flex items-start gap-4">
@@ -295,16 +304,26 @@ type DriverOnboardingDraft = {
                 <div class="h-px flex-1 bg-slate-100"></div>
               </div>
 
-              <h3 class="font-display font-black text-slate-950 text-lg mb-2">Starter by default</h3>
+              <h3 class="font-display font-black text-slate-950 text-lg mb-2">Start on the Starter Plan</h3>
               <p class="text-sm text-slate-600 font-medium leading-relaxed">
-                New drivers start on the <span class="font-black text-slate-950">Starter Plan</span>. Upgrade to
-                <span class="font-black text-slate-950"> Pro</span> later only when you choose to subscribe.
+                New drivers automatically start on the <span class="font-black text-slate-950">Starter Plan</span>. You can upgrade to
+                <span class="font-black text-slate-950"> Pro</span> later if you choose.
               </p>
             </div>
           </div>
         </div>
 
         <form [formGroup]="onboardingForm" (ngSubmit)="submit()" class="space-y-6">
+          @if (stage() === 1) {
+          @if (currentStageAdminRequests().length) {
+            <div class="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-4" data-stage-admin-request>
+              <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">Action required</p>
+              @for(request of currentStageAdminRequests();track request.id){
+                <p class="mt-2 text-sm font-semibold text-amber-900">{{request.publicMessage || request.item}}</p>
+                @if(request.nextAction){<p class="mt-1 text-xs text-amber-800">{{request.nextAction}}</p>}
+              }
+            </div>
+          }
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -375,16 +394,22 @@ type DriverOnboardingDraft = {
 
                 <div>
                   <label for="date_of_birth" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date of Birth</label>
-                  <input id="date_of_birth" type="date" formControlName="date_of_birth" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  @if(dateOfBirthEditable()){<input id="date_of_birth" type="date" formControlName="date_of_birth" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  @if(onboardingForm.get('date_of_birth')?.hasError('minimumAge')){<p class="mt-1 text-xs font-semibold text-rose-600">You must meet the minimum driver age requirement to register.</p>}}
+                  @else{<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4"><p class="text-sm font-bold text-slate-900">{{formattedPersistedDateOfBirth()}}</p><p class="mt-2 text-xs font-bold text-slate-600">Locked identity information</p><p class="mt-1 text-xs text-slate-500">Your date of birth is used for identity and driver eligibility checks.</p></div>}
                 </div>
 
+                <div><label for="current_address" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Residential Address</label><textarea id="current_address" formControlName="current_address" [readonly]="isReadOnly()" [class]="fieldInputClass()" placeholder="Your current home address"></textarea></div>
+
                 <p class="text-xs font-semibold text-slate-500">
-                  These details keep your account review accurate. Stripe may also require them before Movabi Pay activation.
+                  These details keep your account review accurate. Stripe may also require them before Vaydu Pay activation.
                 </p>
               </div>
             </div>
           </section>
+          }
 
+          @if (stage() === 4) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -399,7 +424,7 @@ type DriverOnboardingDraft = {
                   </div>
                   <div>
                     <h3 class="font-display font-black text-slate-950">Your vehicle</h3>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Used for dispatch and manual review</p>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tell us what vehicle you'll use for jobs</p>
                   </div>
                 </div>
               </div>
@@ -407,11 +432,11 @@ type DriverOnboardingDraft = {
               <div class="divide-y divide-slate-50">
                 <div class="p-4 space-y-3">
                   <div>
-                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Class</p>
-                    <p class="text-xs font-semibold text-slate-500">Choose the vehicle you will use.</p>
+                    <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vehicle Type</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose the vehicle you plan to use.</p>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="setup-option-grid">
                     @for (option of vehicleClassOptions; track option.id) {
                       <button
                         type="button"
@@ -434,15 +459,37 @@ type DriverOnboardingDraft = {
                       </button>
                     }
                   </div>
+                  @if(isBikeVehicle()){
+                    <div class="grid gap-3 rounded-2xl bg-blue-50 p-3">
+                      <div>
+                        <p class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Bike type</p>
+                        <select formControlName="vehicle_subtype" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
+                          <option value="">Select bike type</option>
+                          <option value="pedal_bicycle">Pedal bicycle</option>
+                          <option value="e_bike">E-bike</option>
+                          <option value="motorcycle">Motorcycle</option>
+                          <option value="moped">Moped</option>
+                        </select>
+                      </div>
+                      @if(onboardingForm.get('vehicle_subtype')?.value === 'e_bike'){
+                        <div>
+                          <p class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">E-bike specifications</p>
+                          <textarea formControlName="e_bike_specifications" rows="3" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700" placeholder="Motor power, battery voltage, maximum assisted speed — used for market classification"></textarea>
+                        </div>
+                      }
+                      <label class="flex gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" formControlName="bicycle_declaration"> I confirm these are my bicycle operating details.</label>
+                      <label class="flex gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" formControlName="delivery_equipment_confirmed"> I have suitable delivery equipment.</label>
+                    </div>
+                  }
                 </div>
 
                 <div class="p-4 space-y-3">
                   <div>
                     <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Services You Want To Accept</p>
-                    <p class="text-xs font-semibold text-slate-500">Choose the type of work you want to receive.</p>
+                    <p class="text-xs font-semibold text-slate-500">Choose the types of jobs you'd like to receive.</p>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-3">
+                  <div class="setup-option-grid">
                     @for (option of availableServiceOptions(); track option.id) {
                       <button
                         type="button"
@@ -481,24 +528,38 @@ type DriverOnboardingDraft = {
                   </div>
                 </div>
 
-                <div class="p-4">
+                @if (useGbMotLookup()) {
+                  <div class="p-4 col-span-full rounded-2xl border border-blue-100 bg-blue-50">
+                    <label for="gb_vehicle_plate" class="block text-sm font-bold">GB registration number</label>
+                    <input id="gb_vehicle_plate" formControlName="license_plate" placeholder="AB12 CDE" [readonly]="isReadOnly() || motLookupBusy()" [class]="fieldInputClass() + ' uppercase'">
+                    <button type="button" (click)="lookupVehicleByPlate()" [disabled]="isReadOnly() || motLookupBusy()" class="mt-3 rounded-xl bg-amber-500 px-4 py-3 font-bold">{{ motLookupBusy() ? 'Checking vehicle…' : 'Find vehicle & MOT details' }}</button>
+                    @if (motLookupError()) { <p role="alert" class="mt-2 text-sm font-semibold text-red-700">{{ motLookupError() }}</p> }
+                    @if (motLookup(); as result) {
+                      <p class="mt-3 text-sm font-bold">{{result.make}} {{result.model}} · {{result.colour}}</p>
+                      <p class="mt-2 text-sm">MOT status: <strong>{{result.motStatus}}</strong> · Expiry: {{result.motExpiryDate || 'Not available'}}</p>
+                      <p class="mt-2 text-xs">Retrieved from DVSA. Missing MOT history requires review; it does not confirm an exemption. Insurance and licensing checks still apply.</p>
+                    }
+                  </div>
+                }
+
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="make" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleMakeLabel() }}</label>
-                  <input id="make" formControlName="make" [placeholder]="vehicleMakePlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="make" formControlName="make" [placeholder]="vehicleMakePlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.make)" [class]="fieldInputClass()">
                 </div>
 
-                <div class="p-4">
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="model" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleModelLabel() }}</label>
-                  <input id="model" formControlName="model" [placeholder]="vehicleModelPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="model" formControlName="model" [placeholder]="vehicleModelPlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.model)" [class]="fieldInputClass()">
                 </div>
 
-                <div class="p-4">
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="color" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleColorLabel() }}</label>
-                  <input id="color" formControlName="color" [placeholder]="vehicleColorPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="color" formControlName="color" [placeholder]="vehicleColorPlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.colour)" [class]="fieldInputClass()">
                 </div>
 
-                <div class="p-4">
+                <div class="p-4" [class.hidden]="useGbMotLookup() && !motLookup()">
                   <label for="year" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ vehicleYearLabel() }}</label>
-                  <input id="year" type="number" formControlName="year" [placeholder]="vehicleYearPlaceholder()" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <input id="year" type="number" formControlName="year" [placeholder]="vehicleYearPlaceholder()" [readonly]="isReadOnly() || (useGbMotLookup() && !!motLookup()?.year)" [class]="fieldInputClass()">
                 </div>
 
                 @if (isBikeVehicle()) {
@@ -539,8 +600,9 @@ type DriverOnboardingDraft = {
               </div>
             </div>
           </section>
+          }
 
-          @if (requiresTaxiLicence()) {
+          @if (stage() === 3 && requirementVisible('licence.private_hire')) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -555,29 +617,29 @@ type DriverOnboardingDraft = {
                   </div>
                   <div>
                     <h3 class="font-display font-black text-slate-950">Manual approval details</h3>
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Council details are saved for review</p>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Licensing authority details are saved for review</p>
                   </div>
                 </div>
               </div>
 
               <div class="divide-y divide-slate-50">
                 <div class="p-4">
-                  <label for="council_name" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Council Name</label>
-                  <input id="council_name" formControlName="council_name" placeholder="e.g. Oldham Council" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <label for="council_name" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Issuing / licensing authority</label>
+                  <input id="council_name" formControlName="council_name" placeholder="Authority shown on your licence or permit" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
-                  <label for="council_license_number" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Council Licence Number</label>
-                  <input id="council_license_number" formControlName="council_license_number" placeholder="e.g. PHV/123456" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <label for="council_license_number" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Taxi / private-hire permit number</label>
+                  <input id="council_license_number" formControlName="council_license_number" placeholder="Licence or permit reference" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
-                  <label for="taxi_badge_number" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Taxi Badge Number</label>
-                  <input id="taxi_badge_number" formControlName="taxi_badge_number" placeholder="e.g. BADGE-1234" [readonly]="isReadOnly()" [class]="fieldInputClass()">
+                  <label for="taxi_badge_number" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Driver badge / authorisation number</label>
+                  <input id="taxi_badge_number" formControlName="taxi_badge_number" placeholder="Driver authorisation reference" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
 
                 <div class="p-4">
-                  <label for="taxi_license_expiry" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Taxi Licence Expiry Date</label>
+                  <label for="taxi_license_expiry" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Licence / permit expiry date</label>
                   <input id="taxi_license_expiry" type="date" formControlName="taxi_license_expiry" [readonly]="isReadOnly()" [class]="fieldInputClass()">
                 </div>
               </div>
@@ -585,6 +647,7 @@ type DriverOnboardingDraft = {
           </section>
           }
 
+          @if (stage() === 2 || stage() === 3 || stage() === 4) {
           <section class="space-y-4">
             <div class="flex items-center gap-3 ml-1">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
@@ -625,8 +688,10 @@ type DriverOnboardingDraft = {
               </section>
 
             </div>
+            <p class="text-xs text-slate-500">Upload documents issued by the relevant authority in your operating country. Requirements depend on your country and selected services. A saved upload still needs review; contact support if the requested document has no local equivalent.</p>
 
             <div class="grid grid-cols-2 gap-3">
+              @if (stage() === 2) {
               <button type="button" (click)="handleDocumentClick('license')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                 <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm">
                   <ion-icon name="card-outline" class="text-2xl"></ion-icon>
@@ -637,13 +702,11 @@ type DriverOnboardingDraft = {
                 </p>
                 <h4 class="font-display font-black text-slate-950 text-sm mb-3">{{ primaryDocumentLabel() }}</h4>
 
-                @if (docs().license) {
-                  <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge>
-                } @else {
-                  <p class="text-xs text-slate-500 font-semibold">{{ isReadOnly() ? 'Not saved' : 'Tap to select' }}</p>
-                }
+                <app-badge [variant]="documentBadgeVariant('license')">{{ documentBadgeLabel('license') }}</app-badge>
               </button>
+              }
 
+              @if (stage() === 4) {
               <button type="button" (click)="handleDocumentClick('insurance')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
                 <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100 shadow-sm">
                   <ion-icon name="shield-checkmark-outline" class="text-2xl"></ion-icon>
@@ -654,12 +717,75 @@ type DriverOnboardingDraft = {
                 </p>
                 <h4 class="font-display font-black text-slate-950 text-sm mb-3">{{ secondaryDocumentLabel() }}</h4>
 
-                @if (docs().insurance) {
-                  <app-badge variant="success">{{ isReadOnly() ? 'Open File' : 'Uploaded' }}</app-badge>
-                } @else {
-                  <p class="text-xs text-slate-500 font-semibold">{{ secondaryDocumentPendingLabel() }}</p>
-                }
+                <app-badge [variant]="documentBadgeVariant('insurance')">{{ documentBadgeLabel('insurance') }}</app-badge>
               </button>
+              }
+
+              @if (stage() === 3 && requirementVisible('work.right_to_work')) {
+              <button type="button" (click)="handleDocumentClick('right_to_work')" class="col-span-2 bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                <div class="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto mb-4 border border-violet-100 shadow-sm"><ion-icon name="document-text-outline" class="text-2xl"></ion-icon></div>
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                <h4 class="font-display font-black text-slate-950 text-sm mb-3">Work eligibility document</h4>
+                <app-badge [variant]="documentBadgeVariant('right_to_work')">{{ documentBadgeLabel('right_to_work') }}</app-badge>
+              </button>
+              }
+
+              @if (stage() === 4 && requirementVisible('document.private_hire_vehicle_license')) {
+                <button type="button" (click)="handleDocumentClick('private_hire_vehicle_license')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                  <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100 shadow-sm"><ion-icon name="car-sport-outline" class="text-2xl"></ion-icon></div>
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Taxi / private-hire vehicle permit</h4>
+                  <app-badge [variant]="documentBadgeVariant('private_hire_vehicle_license')">{{ documentBadgeLabel('private_hire_vehicle_license') }}</app-badge>
+                </button>
+                }
+
+                @if (stage() === 4 && requirementVisible('document.private_hire_insurance')) {
+                <button type="button" (click)="handleDocumentClick('private_hire_insurance')" class="bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                  <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm"><ion-icon name="shield-checkmark-outline" class="text-2xl"></ion-icon></div>
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Passenger transport insurance</h4>
+                  <app-badge [variant]="documentBadgeVariant('private_hire_insurance')">{{ documentBadgeLabel('private_hire_insurance') }}</app-badge>
+                </button>
+              }
+
+              @if (stage() === 4 && requirementVisible('document.goods_in_transit')) {
+                <button type="button" (click)="handleDocumentClick('goods_in_transit')" class="col-span-2 bg-white rounded-[1.6rem] border border-slate-100 shadow-sm p-4 text-center active:scale-[0.98] transition-all text-slate-950">
+                  <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-4 border border-teal-100 shadow-sm"><ion-icon name="document-attach-outline" class="text-2xl"></ion-icon></div>
+                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{{ isReadOnly() ? 'View' : 'Upload' }}</p>
+                  <h4 class="font-display font-black text-slate-950 text-sm mb-3">Goods-in-transit cover</h4>
+                  <app-badge [variant]="documentBadgeVariant('goods_in_transit')">{{ documentBadgeLabel('goods_in_transit') }}</app-badge>
+                </button>
+              }
+            </div>
+
+            @if (stage() === 4 && !isReadOnly()) {
+              <app-driver-vehicle-inspection class="col-span-2" [slots]="inspectionSlots()"></app-driver-vehicle-inspection>
+            }
+          </section>
+          }
+
+          @if (stage() === 5) {
+          @if (currentStageAdminRequests().length) {
+            <div class="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-4" data-stage-admin-request>
+              <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">Action required before review</p>
+              @for(request of currentStageAdminRequests();track request.id){
+                <p class="mt-2 text-sm font-semibold text-amber-900">{{request.publicMessage || request.item}}</p>
+                @if(request.nextAction){<p class="mt-1 text-xs text-amber-800">{{request.nextAction}}</p>}
+              }
+            </div>
+          }
+          <section class="space-y-4">
+            <div class="flex items-center gap-3 ml-1">
+              <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
+              <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.18em]">Review</h2>
+            </div>
+
+            <div class="grid gap-3">@for(group of setupGroups;track group.section){
+              @if(sectionFor(group.section)?.applicable){
+              <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><div class="flex flex-col items-start gap-2"><h3 class="text-sm font-black text-slate-900">{{group.label}}</h3><span class="text-xs font-bold" [class.text-green-600]="reviewSectionStatus(group.section)==='complete'" [class.text-sky-600]="reviewSectionStatus(group.section)==='under_review'" [class.text-amber-600]="reviewSectionStatus(group.section)!=='complete'&&reviewSectionStatus(group.section)!=='under_review'">{{reviewSectionStatus(group.section)==='complete'?'Complete':reviewSectionStatus(group.section)==='under_review'?'Under review':reviewSectionStatus(group.section)==='action_required'?'Action required':'Missing'}}</span></div>
+                @if(group.category&&!reviewRequirementsFor(group.category).length&&group.empty){<p class="mt-2 text-xs text-slate-500">{{group.empty}}</p>}
+                @else{<div class="mt-2 space-y-2">@for(requirement of reviewRequirementsFor(group.category);track requirement.code){<div class="flex items-start gap-2 text-xs"><span [class.text-green-600]="requirement.completed" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'" [class.text-amber-600]="!requirement.completed&&requirement.status==='under_review'">{{requirement.completed?'✓':'●'}}</span><span class="font-semibold text-slate-700">{{requirement.label}}{{requirement.completed?'':' — '+requirement.reason}}</span><span class="ml-auto shrink-0 font-black" [class.text-green-600]="requirement.completed" [class.text-sky-600]="requirement.status==='under_review'" [class.text-rose-600]="requirement.status==='missing'||requirement.status==='invalid'||requirement.status==='rejected'||requirement.status==='expired'||requirement.status==='under_age'">{{requirementStatusLabel(requirement)}}</span></div>}</div>}
+              </div>}}
             </div>
           </section>
 
@@ -670,7 +796,7 @@ type DriverOnboardingDraft = {
             </div>
 
             <div class="bg-white rounded-[1.85rem] border border-slate-100 shadow-sm p-5 space-y-4">
-              <div class="flex items-center justify-between gap-3">
+              <div class="flex flex-col items-start gap-2">
                 <span class="text-sm font-semibold text-slate-700">{{ vehicleChecklistLabel() }}</span>
                 <app-badge [variant]="activeVehicleDetailsReady() ? 'success' : 'warning'">
                   {{ activeVehicleDetailsReady() ? 'Ready' : 'Pending' }}
@@ -692,9 +818,9 @@ type DriverOnboardingDraft = {
               </div>
 
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-slate-700">Stripe Connect</span>
-                <app-badge [variant]="isStripeReady() ? 'success' : 'warning'">
-                  {{ isStripeReady() ? 'Connected' : 'Pending' }}
+                <span class="text-sm font-semibold text-slate-700">Payment account</span>
+                <app-badge [variant]="getStripeBadgeVariant()">
+                  {{ getStripeBadgeText() }}
                 </app-badge>
               </div>
             </div>
@@ -707,18 +833,16 @@ type DriverOnboardingDraft = {
                 class="w-full shadow-xl shadow-blue-600/15"
                 [disabled]="submitting()"
               >
-                {{ submitting() ? 'Submitting...' : (isActionRequired() ? 'Resubmit for Manual Review' : 'Submit for Manual Review') }}
+                {{ submitting() ? 'Submitting...' : (isActionRequired() ? 'Resubmit for Review' : 'Submit for Review') }}
               </app-button>
 
-              @if (!canSubmit()) {
+              @if (hasAuthoritativeBlockers()) {
                 <p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-2xl p-4 mt-4 font-semibold leading-relaxed">
                   {{ setupBlockingMessage() }}
                 </p>
               }
 
-              <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest text-center mt-6 px-8 leading-relaxed">
-                By submitting, you agree to our terms of service and driver agreement.
-              </p>
+              <label class="mt-5 flex items-start gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-xs font-semibold text-slate-700"><input type="checkbox" formControlName="driver_agreement_accepted" class="mt-0.5"> <span>I have reviewed and accept the terms, privacy notice and Driver Agreement.</span></label>
             } @else {
               <app-button variant="outline" class="w-full" (clicked)="router.navigate(['/driver'])">
                 Back to Driver Hub
@@ -729,15 +853,26 @@ type DriverOnboardingDraft = {
               </p>
             }
           </div>
+          }
+
+          @if (stage() < stages.length) {
+            <div class="mt-2 flex gap-3 rounded-2xl border border-slate-100 bg-white p-3">
+              <button type="button" data-stage-back class="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-40" (click)="backStage()" [disabled]="stage() === 1">Back</button>
+              <button type="button" data-stage-next class="flex-[2] rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50" (click)="advanceStage()" [disabled]="advancing()">{{ advancing() ? 'Saving…' : 'Continue' }}</button>
+            </div>
+          }
         </form>
       </div>
     </ion-content>
-  `
+  `,
+    styles: [`.setup-option-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:.8rem}.setup-option-grid>button{height:auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:normal;word-break:normal;padding:1rem}.setup-option-grid>button>div{display:flex;flex-direction:column;align-items:flex-start;gap:.65rem}.setup-option-grid p{white-space:normal;word-break:normal;overflow-wrap:break-word;line-height:1.5}.setup-option-grid>button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
 })
 export class OnboardingPage implements OnInit {
+    bankPaymentAccount=signal(false);
     private fb = inject(FormBuilder);
     private destroyRef = inject(DestroyRef);
     private driverService = inject(DriverService);
+    readonly payoutContext=inject(MarketSafetyService);
     public authService = inject(AuthService);
     private profileService = inject(ProfileService);
     private supabase = inject(SupabaseService);
@@ -747,16 +882,71 @@ export class OnboardingPage implements OnInit {
     private toastCtrl = inject(ToastController);
     private route = inject(ActivatedRoute);
     public router = inject(Router);
+    readonly onboardingStatus = inject(DriverOnboardingStatusService);
 
     private readonly draftKey = 'driver_onboarding_draft_v2';
     private readonly maxUploadBytes = 8 * 1024 * 1024;
 
     onboardingForm: FormGroup;
 
-    docs = signal<Partial<Record<DocumentType,string>>>({});
+    docs = signal<{ license?: string; insurance?: string; right_to_work?: string; private_hire_vehicle_license?: string; private_hire_insurance?: string; goods_in_transit?: string }>({});
     stripeMessage = signal<string | null>(null);
     stripeMessageType = signal<StripeMessageType>('success');
     submitting = signal(false);
+    savingProgress = signal(false);
+    /** Five-stage progressive journey. PRESENTATION ONLY: the canonical
+     *  requirement resolver stays the single source of truth for what is
+     *  required, what is complete and what may be submitted. */
+    readonly stages = [
+        { id: 1, label: 'About you', short: 'About' },
+        { id: 2, label: 'Identity', short: 'ID' },
+        { id: 3, label: 'Driving & work eligibility', short: 'Work' },
+        { id: 4, label: 'Vehicle & insurance', short: 'Vehicle' },
+        { id: 5, label: 'Review & submit', short: 'Review' }
+    ] as const;
+    stage = signal(1);
+    advancing = signal(false);
+    private formHydrated = false;
+    private draftRestored = false;
+    /**
+     * Fields the driver owns, either because they edited them or because a restored
+     * local draft contains them. Async hydration must never overwrite these.
+     *
+     * This is deliberately ownership-based rather than timing-based: `ngOnInit` awaits
+     * several network calls before hydrating, so a `pristine` check is not enough --
+     * the driver can type (and does) while those awaits are in flight.
+     */
+    private readonly userEditedControls = new Set<string>();
+    private hydrationWriting = false;
+    /**
+     * Hydrate the form when the profile arrives.
+     *
+     * On a direct load or deep link the page can render before ProfileService has
+     * resolved, and `loadExistingData()` would then patch every field blank with no
+     * second chance -- the driver was asked to retype data Movabi already holds.
+     *
+     * A restored draft always wins, and a late profile load must never overwrite
+     * input the driver has already started entering.
+     */
+    private readonly profileHydration = effect(() => {
+        const profile = this.profileService.profile();
+        if (!profile || this.formHydrated || this.draftRestored) return;
+        this.formHydrated = true;
+        if (!this.onboardingForm.pristine) return;
+        this.loadExistingData();
+    });
+    private readonly stageKey = 'driver_onboarding_stage_v1';
+    private stageRestored = false;
+    readonly setupGroups = [
+        {section:'basicDetails' as const,category:'basic' as const,label:'Basic details',empty:'Add your basic account information.'},
+        {section:'services' as const,category:'services' as const,label:'Services',empty:'Select the services you want to provide.'},
+        {section:'operatingMethod' as const,category:'operating' as const,label:'Operating method',empty:'Choose how you will provide the selected services.'},
+        {section:'vehicle' as const,category:'vehicle' as const,label:'Vehicle / Bicycle requirements',empty:'Complete the applicable vehicle requirements.'},
+        {section:'documents' as const,category:'documents' as const,label:'Documents',empty:'Complete the applicable document requirements.'},
+        {section:'serviceLicensing' as const,category:'licensing' as const,label:'Service-specific licensing',empty:''},
+        {section:'agreement' as const,category:'agreement' as const,label:'Agreement',empty:'Review and accept the Driver Agreement.'},
+        {section:'review' as const,category:'review' as const,label:'Review',empty:''}
+    ];
 
     stripeAccount = this.driverService.stripeAccount;
     profile = this.profileService.profile;
@@ -768,29 +958,28 @@ export class OnboardingPage implements OnInit {
     });
 
     vehicleClassOptions: Array<{ id: DriverVehicleClass; label: string; helper: string; icon: string }> = [
-        { id: 'bike', label: 'Bike', helper: 'Your bicycle, e-bike, scooter, or motorcycle', icon: 'bicycle-outline' },
-        { id: 'standard', label: 'Car', helper: 'Standard car for local work', icon: 'car-sport-outline' },
-        { id: 'xl', label: 'XL / 7 Seater', helper: 'Larger car with 5-7 seats', icon: 'people-outline' },
-        { id: 'small_van', label: 'Small Van', helper: 'Small van for parcels and light moves', icon: 'bus-outline' },
-        { id: 'large_van', label: 'Large Van', helper: 'Large van for bulky delivery and moves', icon: 'bus-outline' }
+        { id: 'bike', label: 'Bike', helper: 'Bicycle, e-bike, scooter or motorcycle', icon: 'bicycle-outline' },
+        { id: 'standard', label: 'Car', helper: 'Standard car for local jobs', icon: 'car-sport-outline' },
+        { id: 'xl', label: 'XL / 7 Seater', helper: 'Larger vehicle with 5–7 passenger seats', icon: 'people-outline' },
+        { id: 'small_van', label: 'Small Van', helper: 'For parcels, deliveries and smaller moves', icon: 'bus-outline' },
+        { id: 'large_van', label: 'Large Van', helper: 'For bulky deliveries and larger moves', icon: 'bus-outline' }
     ];
 
     serviceOptions: Array<{ id: DriverServiceSelection; label: string; helper: string; icon: string }> = [
-        { id: 'ride', label: 'Ride / Passenger', helper: 'Passenger trips only after taxi/private hire approval', icon: 'people-outline' },
-        { id: 'errand', label: 'Errands', helper: 'Collect, deliver, or shop for customers', icon: 'options-outline' },
-        { id: 'delivery', label: 'Package Delivery', helper: 'Small parcels and local deliveries', icon: 'document-attach-outline' },
-        { id: 'van', label: 'Van / Moving', helper: 'Moving and bulky transport jobs', icon: 'bus-outline' }
+        { id: 'ride', label: 'Ride / Passenger', helper: 'Passenger trips, subject to private hire or taxi approval', icon: 'people-outline' },
+        { id: 'errand', label: 'Shop', helper: 'Shop for customers, collect orders and make deliveries', icon: 'options-outline' },
+        { id: 'delivery', label: 'Deliver', helper: 'Parcels and local deliveries', icon: 'document-attach-outline' },
+        { id: 'van', label: 'Move', helper: 'Moving and bulky transport jobs', icon: 'bus-outline' }
     ];
 
     verificationStatus = computed<'draft' | 'under_review' | 'action_required' | 'approved'>(() => {
         const profile = this.profile() as DriverProfile | null;
 
         if (!profile) return 'draft';
+        // Current actionable state takes precedence over historical approval.
+        if (profile.driver_review_status === 'action_required' || profile.verification_status === 'action_required') return 'action_required';
         if (profile.is_verified === true || profile.verification_status === 'approved') return 'approved';
-        if (profile.driver_review_status === 'action_required') return 'action_required';
-        if (profile.verification_status === 'action_required') return 'action_required';
-        if (profile.driver_review_status === 'under_review') return 'under_review';
-        if (profile.verification_status === 'under_review') return 'under_review';
+        if (profile.driver_review_status === 'under_review' || profile.verification_status === 'under_review') return 'under_review';
         if (profile.onboarding_completed) return 'under_review';
 
         return 'draft';
@@ -834,15 +1023,34 @@ export class OnboardingPage implements OnInit {
         return !!(account?.stripe_account_id && !this.isStripeReady());
     });
 
+    /**
+     * Real payment-account setup status, driven by the backend capability flag
+     * (never by a provider label). 'unavailable' means the market/payout
+     * capability is not supported, so no setup action may be offered.
+     */
+    paymentAccountStatus = computed<'completed' | 'in_progress' | 'not_started' | 'unavailable'>(() => {
+        if (this.payoutContext.wallet()?.payoutIntegrationAvailable !== true) return 'unavailable';
+        if (this.isStripeReady()) return 'completed';
+        if (this.isStripePending()) return 'in_progress';
+        return 'not_started';
+    });
+
+
     isReadOnly = computed(() => this.verificationStatus() === 'under_review');
     isActionRequired = computed(() => this.verificationStatus() === 'action_required');
 
     canSubmit = computed(() => {
+        const canonical = this.onboardingStatus.state();
+        // Compliance completion is decided by the canonical server requirements. Local
+        // optimistic docs() state may keep the form usable, but it must never claim that
+        // a document requirement is satisfied when the server still blocks it.
+        const documentsReady = canonical
+            ? !canonical.automaticRequirements.some(requirement => requirement.category === 'documents' && requirement.blockingForSubmission)
+            : (this.isBikeVehicle() || (!!this.docs().license && this.secondaryDocumentReady()));
         return (
             this.activeVehicleDetailsReady() &&
-            !!this.docs().license &&
-            this.secondaryDocumentReady() &&
-            this.isStripeReady() &&
+            documentsReady &&
+            ['full_name','phone','date_of_birth','current_address','driver_agreement_accepted'].every(name=>this.onboardingForm.get(name)?.valid===true) &&
             !this.isReadOnly() &&
             !this.submitting()
         );
@@ -850,12 +1058,15 @@ export class OnboardingPage implements OnInit {
 
     activeVehicleDetailsReady = computed(() => {
         const vehicle = this.vehicle() as Vehicle | null;
-        console.log('[DriverOnboarding] Checklist vehicle:', vehicle);
 
         return this.activeVehicleControls().every(controlName => this.isActiveVehicleControlReady(controlName, vehicle));
     });
 
     setupBlockingMessage = computed(() => {
+        const authoritativeBlocker=this.onboardingStatus.state()?.automaticRequirements.find(item=>item.blockingForSubmission);
+        if(!authoritativeBlocker)return 'All authoritative setup requirements are complete.';
+        return authoritativeBlocker.reason;
+        /* Local form validity controls whether Save can run, but never decides the authoritative requirement banner.
         if (!this.activeVehicleDetailsReady()) {
             const invalid = this.activeVehicleControls().filter(controlName => this.onboardingForm.get(controlName)?.invalid);
             const hiddenInvalid = Object.keys(this.onboardingForm.controls).filter(controlName => !this.activeVehicleControls().includes(controlName) && this.onboardingForm.get(controlName)?.invalid);
@@ -873,7 +1084,7 @@ export class OnboardingPage implements OnInit {
             if (invalid.includes('license_plate')) return 'Add the vehicle registration plate before submitting.';
 
             if (invalid.some(controlName => ['council_name', 'council_license_number', 'taxi_badge_number', 'taxi_license_expiry'].includes(controlName))) {
-                return 'Complete the council taxi licence details before submitting.';
+                return 'Complete the licensing authority, permit, driver authorisation and expiry details before submitting.';
             }
 
             return this.isBikeVehicle()
@@ -883,9 +1094,10 @@ export class OnboardingPage implements OnInit {
 
         if (!this.docs().license) return `Upload your ${this.primaryDocumentLabel().toLowerCase()} before submitting.`;
         if (!this.secondaryDocumentReady()) return `Upload your ${this.secondaryDocumentLabel().toLowerCase()} before submitting.`;
-        if (!this.isStripeReady()) return 'Complete Stripe Connect before submitting.';
         return 'Complete the remaining required setup before submitting.';
+        */
     });
+    hasAuthoritativeBlockers=computed(()=>this.onboardingStatus.state()?.automaticRequirements.some(item=>item.blockingForSubmission)===true);
 
     pageTitle = computed(() => {
         if (this.isReadOnly()) return 'Application Under Review';
@@ -902,7 +1114,7 @@ export class OnboardingPage implements OnInit {
             return 'Update the requested details and resubmit your application for manual approval.';
         }
 
-        return 'Add your vehicle, council licence details, documents, and payout setup to start receiving requests.';
+        return 'Add your vehicle, licensing details, documents, and payout setup to start receiving requests.';
     });
 
     constructor() {
@@ -929,10 +1141,16 @@ export class OnboardingPage implements OnInit {
         });
 
         this.onboardingForm = this.fb.group({
-            full_name: [''],
+            full_name: ['', Validators.required],
             email: [''],
-            phone: [''],
-            date_of_birth: [''],
+            phone: ['', Validators.required],
+            date_of_birth: ['', adultDateValidator],
+            current_address: ['', [Validators.required, Validators.minLength(5)]],
+            driver_agreement_accepted: [false, Validators.requiredTrue],
+            bicycle_declaration: [false],
+            delivery_equipment_confirmed: [false],
+            vehicle_subtype: [''],
+            e_bike_specifications: [''],
             make: ['', [Validators.required, Validators.minLength(2)]],
             model: ['', [Validators.required, Validators.minLength(1)]],
             color: ['', [Validators.required, Validators.minLength(2)]],
@@ -942,7 +1160,6 @@ export class OnboardingPage implements OnInit {
             ],
             license_plate: ['', [Validators.required, Validators.minLength(2)]],
             vehicle_class: ['standard', Validators.required],
-            vehicle_subtype: [''],
             service_types: [['errand', 'delivery'] as DriverServiceSelection[], Validators.required],
             council_name: ['', [Validators.required, Validators.minLength(2)]],
             council_license_number: ['', [Validators.required, Validators.minLength(2)]],
@@ -954,11 +1171,28 @@ export class OnboardingPage implements OnInit {
     }
 
     async ngOnInit() {
+        void this.payoutContext.refreshWallet().catch(()=>undefined);
+        // Installed first: the awaits below can take seconds, and any field the driver
+        // edits in the meantime must be recorded as theirs before hydration runs.
+        this.watchFieldOwnership();
+        try {
+            await this.onboardingStatus.refresh();
+            await this.onboardingStatus.recordRegistrationStartOnce();
+        } catch (error) {
+            await this.showToast(userFacingError(error,'Driver onboarding is not available in this area yet.'),'warning');
+            await this.router.navigate(['/driver'],{replaceUrl:true});
+            return;
+        }
         this.restoreDraft();
 
-        await this.driverService.fetchStripeAccount();
+        if (!this.route.snapshot.queryParamMap.get('stripe')) await this.driverService.fetchStripeAccount();
         await this.driverService.fetchVehicle();
         this.loadExistingData();
+        // If the profile was already available this is the authoritative hydration;
+        // otherwise profileHydration completes it as soon as it resolves.
+        this.formHydrated = !!this.profile();
+        // Resume at the right stage once canonical state and the local draft are loaded.
+        this.restoreStage();
 
         await this.handleStripeReturn();
 
@@ -970,16 +1204,339 @@ export class OnboardingPage implements OnInit {
         this.refreshInspectionPreview();
     }
 
+    async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
+    /**
+     * The Driver Agreement is persisted through `PUT /agreement` at stage save / submit,
+     * not on every checkbox toggle. Review therefore has to honour the currently checked
+     * control as well as the persisted column, otherwise Review reports "Missing" while the
+     * box is visibly ticked and `canSubmit` already allows submission -- the display would
+     * contradict both the driver and the submit gate.
+     */
+    private agreementAccepted(): boolean {
+        if (this.onboardingForm.get('driver_agreement_accepted')?.valid === true) return true;
+        return this.documentComplete('agreement.driver_terms');
+    }
+
+    /** Review rows: identical to canonical, except the agreement reflects effective acceptance. */
+    reviewRequirementsFor(category: 'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review') {
+        return this.requirementsFor(category).map(row => row.code === 'agreement.driver_terms' && !row.completed && this.agreementAccepted()
+            ? { ...row, completed: true, status: 'completed', blockingForSubmission: false }
+            : row);
+    }
+
+    /** Review section status: the agreement section reflects effective acceptance. */
+    reviewSectionStatus(section: keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus) {
+        const status = this.sectionFor(section)?.status;
+        if (section === 'agreement' && status !== 'complete' && this.agreementAccepted()) return 'complete' as const;
+        return status;
+    }
+
+    requirementsFor(category:'basic'|'services'|'operating'|'vehicle'|'documents'|'licensing'|'agreement'|'review'){const rows=this.onboardingStatus.state()?.automaticRequirements||[];if(category==='review')return[];if(category==='operating')return rows.filter(item=>item.code==='vehicle.operating_method');if(category==='vehicle')return rows.filter(item=>item.category==='vehicle'&&item.code!=='vehicle.operating_method');return rows.filter(item=>item.category===category);}
+    sectionFor(section:keyof import('../../../../../core/services/driver/driver-onboarding-status.service').DriverSetupSectionStatus){return this.onboardingStatus.state()?.sectionStatus?.[section];}
+    setupProgressPercent(){return this.onboardingStatus.state()?.progress?.percentage||0;}
+    setupStatusLabel(){return String(this.onboardingStatus.state()?.overallStatus||'not_started').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());}
+    dateOfBirthEditable(){return this.onboardingStatus.state()?.identityEditability?.dateOfBirthEditable===true;}
+    formattedPersistedDateOfBirth(){const value=this.onboardingStatus.state()?.canonicalProfile?.dateOfBirth;if(!value)return'Date of birth unavailable';return new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${value}T00:00:00Z`));}
+    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshOnboardingStatus(); await (event.target as HTMLIonRefresherElement).complete(); }
+
+    // ---------------------------------------------------------------------
+    // Five-stage progressive journey (presentation only).
+    // ---------------------------------------------------------------------
+    stageTitle(): string { return this.stages.find(item => item.id === this.stage())?.label || ''; }
+
+    /** Canonical visibility: a control is shown only when the resolver reports
+     *  the requirement as applicable to this driver's country and services. */
+    requirementVisible(code: string): boolean {
+        const item = (this.onboardingStatus.state()?.automaticRequirements || []).find(r => r.code === code);
+        if (!item) return false;
+        // Render-level compatibility: a requirement scoped to services the
+        // current selection does not include stays hidden — runs at render
+        // time, so a stale or delayed server response cannot show Ride cards
+        // on a Bike selection (including while the next refresh fails).
+        const scoped = (item as { services?: string[] }).services || [];
+        if (!scoped.length) return true;
+        const selected = this.selectedServiceTypes();
+        return scoped.some(service => selected.includes(service as never));
+    }
+
+    requirementStatusLabel(requirement: { status: string; completed: boolean }): string {
+        if (requirement.status === 'under_review') return 'Under review';
+        if (requirement.completed) return 'Complete';
+        if (requirement.status === 'missing') return 'Missing';
+        return 'Action required';
+    }
+
+    /** Every applicable canonical requirement, for the Review stage. */
+    reviewRequirements(): Array<{ code: string; label: string; reason: string; status: string; completed: boolean; category: string }> {
+        return this.onboardingStatus.state()?.automaticRequirements || [];
+    }
+
+    goToStage(id: number): void {
+        if (id < 1 || id > this.stages.length || id === this.stage()) return;
+        this.stage.set(id);
+        this.persistStage();
+        void this.scrollToTop();
+    }
+
+    backStage(): void {
+        if (this.stage() <= 1) return;
+        this.stage.set(this.stage() - 1);
+        this.persistStage();
+        void this.scrollToTop();
+    }
+
+    /** Save this stage's own data, then move on. No artificial cross-stage deps. */
+    async advanceStage(): Promise<void> {
+        if (this.advancing()) return;
+        this.advancing.set(true);
+        try {
+            await this.saveStage(this.stage());
+            if (this.stage() < this.stages.length) {
+                this.stage.set(this.stage() + 1);
+                this.persistStage();
+                await this.scrollToTop();
+            }
+        } catch (error) {
+            await this.showToast(userFacingError(error, 'Unable to save this stage.'), 'danger');
+        } finally {
+            this.advancing.set(false);
+        }
+    }
+
+    private persistStage(): void {
+        try { localStorage.setItem(this.stageKey, String(this.stage())); } catch { /* storage unavailable */ }
+    }
+
+    private async scrollToTop(): Promise<void> {
+        try { await (document.querySelector('ion-content') as any)?.scrollToTop?.(0); } catch { /* non-fatal */ }
+    }
+
+    /**
+     * Persist only what a stage owns. Stage 1 must never require vehicle data.
+     */
+    private async saveStage(stage: number): Promise<void> {
+        const raw = this.onboardingForm.getRawValue();
+        if (stage === 1) { await this.saveAboutYouStage(); return; }
+        if (stage === 2) { await this.onboardingStatus.refresh(); return; }
+        if (stage === 3) {
+            await this.persistPassengerLicenceIfSupplied(raw);
+            await this.onboardingStatus.refresh();
+            return;
+        }
+        if (stage === 4) {
+            const existingVehicle = this.vehicle() as Vehicle | null;
+            await this.onboardingStatus.saveVerificationItems({
+                bicycleDeclaration: raw.bicycle_declaration === true,
+                deliveryEquipmentConfirmed: raw.delivery_equipment_confirmed === true,
+                eBikeSpecifications: raw['e_bike_specifications'] ? { description: String(raw['e_bike_specifications']) } : null
+            });
+
+            // Validate the values that WOULD be persisted. buildVehiclePayload() enforces the
+            // registration requirement, so genuinely missing vehicle data still blocks here.
+            const vehiclePayload = this.buildVehiclePayload(raw, existingVehicle);
+
+            if (existingVehicle && this.vehicleMatchesPayload(existingVehicle, vehiclePayload)) {
+                // Already persisted exactly as the form describes: final submission must not
+                // rewrite it, and must not re-judge it on Angular's transient control validity.
+                // The same persisted vehicle produced different `control.valid` results between
+                // two submissions, which blocked a driver whose vehicle was already accepted.
+                await this.onboardingStatus.refresh();
+                return;
+            }
+
+            const vehicleFields = this.isBikeVehicle()
+                ? ['vehicle_class', 'service_types', 'bicycle_declaration', 'delivery_equipment_confirmed']
+                : ['make', 'model', 'color', 'year', 'license_plate', 'vehicle_class', 'service_types'];
+            if (!vehicleFields.every(name => this.onboardingForm.get(name)?.valid === true)) throw new Error('Complete the required vehicle details before saving.');
+            await this.driverService.updateVehicle(vehiclePayload);
+            if (!this.driverService.vehicle()) throw new Error('Vehicle details were not persisted.');
+            const savedStatus = await this.onboardingStatus.refresh();
+            this.mergeLocalProfile(savedStatus.profile);
+            return;
+        }
+        const agreement = await this.onboardingStatus.saveAgreement(raw.driver_agreement_accepted === true);
+        this.mergeLocalProfile({ accepted_driver_agreement_at: agreement.acceptedAt });
+        await this.onboardingStatus.refresh();
+    }
+
+    /**
+     * Stage 1 — About you. Saves profile data only; deliberately independent of
+     * vehicle/insurance/agreement validation.
+     */
+    private async saveAboutYouStage(): Promise<void> {
+        const raw = this.onboardingForm.getRawValue();
+        const address = String(raw.current_address || '').trim();
+        if (address.length < 5) throw new Error('A valid residential address is required.');
+        const phone = String(raw.phone || '').trim();
+        const name = String(raw.full_name || '').trim();
+        // Only send the legal name when it actually differs: PUT /profile rejects a
+        // present-but-uneditable name even when the value is unchanged.
+        const nameChanged = !!name && name !== String(this.onboardingStatus.state()?.canonicalProfile?.fullName || '');
+        const rawDateOfBirth = String(raw.date_of_birth || '').trim();
+        // An empty date of birth must not block saving the rest of Stage 1: the
+        // canonical resolver reports profile.date_of_birth as its own requirement.
+        const dateOfBirth = this.dateOfBirthEditable() && rawDateOfBirth ? this.dateOfBirthForApi(rawDateOfBirth) : undefined;
+        const saved = await this.onboardingStatus.saveCurrentProfile({
+            residentialAddress: address,
+            ...(phone ? { phone } : {}),
+            ...(nameChanged ? { fullName: name } : {}),
+            ...(dateOfBirth ? { dateOfBirth } : {})
+        });
+        if (!saved.residentialAddress) throw new Error('Residential address was not persisted.');
+        if (phone && !saved.phone) throw new Error('Contact number was not persisted.');
+        if (nameChanged && !saved.fullName) throw new Error('Legal name was not persisted.');
+        if (dateOfBirth && !saved.dateOfBirth) throw new Error('Date of birth was not persisted.');
+        this.mergeLocalProfile({ current_address: saved.residentialAddress, phone: saved.phone, full_name: saved.fullName });
+        if (saved.dateOfBirth) this.onboardingForm.patchValue({ date_of_birth: this.formatDateForInput(saved.dateOfBirth) }, { emitEvent: false });
+        await this.onboardingStatus.refresh();
+    }
+
+    /**
+     * Resume at the right stage: the locally drafted stage wins (unsaved edits),
+     * otherwise derive it from canonical server state so an existing driver
+     * resumes rather than restarts.
+     */
+    private restoreStage(): void {
+        if (this.stageRestored) return;
+        this.stageRestored = true;
+        if (this.route.snapshot.queryParamMap.get('edit') === 'vehicle') { this.stage.set(4); return; }
+        const drafted = Number(localStorage.getItem(this.stageKey) || '');
+        if (Number.isFinite(drafted) && drafted >= 1 && drafted <= this.stages.length) { this.stage.set(drafted); return; }
+        this.stage.set(this.deriveStageFromCanonicalState());
+    }
+
+    private deriveStageFromCanonicalState(): number {
+        const state = this.onboardingStatus.state();
+        if (!state) return 1;
+        for (let index = 0; index < OnboardingPage.STAGE_REQUIREMENT_CODES.length; index++) {
+            const outstanding = OnboardingPage.STAGE_REQUIREMENT_CODES[index].some(code => {
+                const requirement = state.automaticRequirements.find(item => item.code === code);
+                return !!requirement && requirement.blockingForSubmission;
+            });
+            if (outstanding) return index + 1;
+        }
+        return this.stages.length;
+    }
+
+    /** Canonical requirement codes owned by each stage (index 0 = Stage 1). */
+    private static readonly STAGE_REQUIREMENT_CODES: string[][] = [
+        ['profile.full_name', 'profile.phone', 'profile.address', 'profile.date_of_birth', 'profile.email_verification'],
+        ['document.driving_licence'],
+        ['work.right_to_work', 'licence.private_hire'],
+        ['service.selection', 'vehicle.operating_method', 'vehicle.subtype', 'vehicle.make', 'vehicle.model', 'vehicle.colour', 'vehicle.year', 'vehicle.registration', 'document.insurance', 'document.private_hire_vehicle_license', 'document.private_hire_insurance', 'document.goods_in_transit', 'vehicle.bicycle_declaration', 'vehicle.delivery_equipment', 'document.bike_inspection', 'document.e_bike_specifications', 'document.e_bike_classification'],
+        ['agreement.driver_terms']
+    ];
+
+    /** The stage an Admin request belongs to, or [] when it is question-wide. */
+    requestStages(request: { requirementCode?: string | null }): number[] {
+        const code = String(request?.requirementCode || '');
+        if (!code) return [];
+        const index = OnboardingPage.STAGE_REQUIREMENT_CODES.findIndex(codes => codes.includes(code));
+        return index >= 0 ? [index + 1] : [];
+    }
+
+    /** Every open Admin request. */
+    openAdminRequests(): Array<{ id: string; item: string; publicMessage?: string | null; requirementCode?: string | null; nextAction?: string | null; status: string }> {
+        return (this.onboardingStatus.state()?.adminRequests || []).filter(request => request.status !== 'approved');
+    }
+
+    /**
+     * Open Admin requests to surface on a stage. Question-wide requests (for example
+     * the generic 'admin.missing_info' bucket) appear on every stage so nothing is
+     * hidden; a request carrying a canonical code appears on the stage that owns it.
+     */
+    adminRequestsForStage(stage: number): Array<{ id: string; item: string; publicMessage?: string | null; requirementCode?: string | null; nextAction?: string | null }> {
+        return this.openAdminRequests().filter(request => {
+            const stages = this.requestStages(request);
+            return stages.length === 0 || stages.includes(stage);
+        });
+    }
+
+    /**
+     * Requests for the visible stage. Review aggregates EVERY open request, so a
+     * problem owned by an earlier stage is still exposed before submission.
+     */
+    currentStageAdminRequests() {
+        if (this.stage() === this.stages.length) return this.openAdminRequests();
+        return this.adminRequestsForStage(this.stage());
+    }
+
+    /** Mark fields as driver-owned so async hydration can never overwrite them. */
+    private claimOwnership(names: string[]): void {
+        for (const name of names) {
+            if (this.onboardingForm.get(name)) this.userEditedControls.add(name);
+        }
+    }
+
+    /**
+     * Record per-field ownership from real user input. Our own hydration writes set
+     * `hydrationWriting` so they are not mistaken for driver edits.
+     */
+    private watchFieldOwnership(): void {
+        for (const name of Object.keys(this.onboardingForm.controls)) {
+            this.onboardingForm.get(name)?.valueChanges
+                .pipe(takeUntilDestroyed(this.destroyRef))
+                .subscribe(() => {
+                    if (!this.hydrationWriting) this.userEditedControls.add(name);
+                });
+        }
+    }
+
+    /** Remove every field the driver owns from a hydration patch. */
+    private withoutOwnedFields<T extends Record<string, unknown>>(patch: T): Partial<T> {
+        const filtered: Record<string, unknown> = { ...patch };
+        for (const name of this.userEditedControls) delete filtered[name];
+        return filtered as Partial<T>;
+    }
+
+    /**
+     * Canonical completion for a compliance document — the SAME authority Review uses.
+     * `docs()` is local/draft state and must never independently claim completion: it is
+     * set right after the storage upload, before profiles.update() has persisted the path.
+     */
+    documentComplete(code: string): boolean {
+        return (this.onboardingStatus.state()?.automaticRequirements || []).some(item => item.code === code && item.completed);
+    }
+
+    /** Canonical requirement code owned by an upload card. */
+    documentRequirementCode(type: DocumentType): string {
+        switch (type) {
+            case 'license': return 'document.driving_licence';
+            case 'insurance': return 'document.insurance';
+            case 'right_to_work': return 'work.right_to_work';
+            case 'private_hire_vehicle_license': return 'document.private_hire_vehicle_license';
+            case 'private_hire_insurance': return 'document.private_hire_insurance';
+            case 'goods_in_transit': return 'document.goods_in_transit';
+        }
+    }
+
+    /** Green ONLY when the canonical requirement is complete. A local-only path is amber. */
+    documentBadgeVariant(type: DocumentType): 'success' | 'warning' | 'secondary' {
+        if (this.documentComplete(this.documentRequirementCode(type))) return 'success';
+        return this.docs()[type] ? 'warning' : 'secondary';
+    }
+
+    documentBadgeLabel(type: DocumentType): string {
+        if (this.documentComplete(this.documentRequirementCode(type))) return this.isReadOnly() ? 'Open File' : 'Uploaded';
+        if (this.docs()[type]) return 'Not confirmed';
+        return this.isReadOnly() ? 'Not saved' : 'Tap to select';
+    }
+
     getStripeBadgeText(): string {
-        if (this.isStripeReady()) return 'Connected';
-        if (this.isStripePending()) return 'Pending';
-        return 'Not Started';
+        switch (this.paymentAccountStatus()) {
+            case 'completed': return 'Connected';
+            case 'in_progress': return 'In progress';
+            case 'unavailable': return 'Unavailable';
+            default: return 'Not started';
+        }
     }
 
     getStripeBadgeVariant(): 'success' | 'warning' | 'secondary' {
-        if (this.isStripeReady()) return 'success';
-        if (this.isStripePending()) return 'warning';
-        return 'secondary';
+        switch (this.paymentAccountStatus()) {
+            case 'completed': return 'success';
+            case 'in_progress': return 'warning';
+            default: return 'secondary';
+        }
     }
 
     private watchDraftChanges() {
@@ -991,13 +1548,27 @@ export class OnboardingPage implements OnInit {
             });
     }
 
+    private reqGen = 0; private reqTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Selection-aware requirement view: ride-scoped cards hide the instant an
+     * incompatible selection is made — no save/reload — and a late server
+     * response for the previous selection can never restore them. */
+    private refreshRequirementsDebounced() {
+        const gen = ++this.reqGen;
+        if (this.reqTimer) clearTimeout(this.reqTimer);
+        this.reqTimer = setTimeout(() => { void (async () => {
+            try { await this.onboardingStatus.refresh(() => gen === this.reqGen); } catch {}
+            // Stale response was discarded pre-publish; if our generation was
+            // superseded, the latest debounced call will publish the correct
+            // state — nothing to do here.
+        })(); }, 300);
+    }
     private watchVehicleClassChanges() {
         this.onboardingForm.get('vehicle_class')?.valueChanges
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe((value) => this.applyVehicleClassRules(String(value || 'standard') as DriverVehicleClass));
+            .subscribe((value) => { this.applyVehicleClassRules(String(value || 'standard') as DriverVehicleClass); this.refreshRequirementsDebounced(); });
     }
 
-    private saveDraft() {
+    saveDraft() {
         if (this.isReadOnly()) return;
 
         const draft: DriverOnboardingDraft = {
@@ -1008,6 +1579,70 @@ export class OnboardingPage implements OnInit {
         localStorage.setItem(this.draftKey, JSON.stringify(draft));
     }
 
+    async saveAndContinue():Promise<void>{
+        if(this.savingProgress()||this.isReadOnly())return;
+        const addressControl=this.onboardingForm.get('current_address');addressControl?.markAsTouched();
+        if(!addressControl?.valid){await this.showToast('Enter a valid current residential address before saving.','warning');return;}
+        this.savingProgress.set(true);
+        try{
+            const everythingSaved = await this.saveAllStagesLenient();
+            this.persistStage();
+            this.saveDraft();
+            await this.showToast(everythingSaved ? 'Your Driver Setup progress was saved.' : 'Progress saved. Some sections still need completing.', everythingSaved ? 'success' : 'warning');
+        }catch{await this.showToast('Unable to save your setup. Your changes were not submitted. Please try again.','danger');}
+        finally{this.savingProgress.set(false);}
+    }
+
+    /**
+     * Full save used by "Save and Continue Later" and by submit. Composed from the
+     * same per-stage saves the progressive flow uses, so both paths persist exactly
+     * the same data and cannot drift apart.
+     */
+    private async persistCurrentSetup():Promise<DriverOnboardingStatus>{
+        await this.saveAboutYouStage();
+        await this.saveStage(4);
+        await this.saveStage(3);
+        await this.saveStage(5);
+        return this.onboardingStatus.refresh();
+    }
+
+    /**
+     * Save every stage that can be saved yet. Used by "Save and Continue Later":
+     * Stage 1 progress must persist even when later stages are still incomplete.
+     */
+    private async saveAllStagesLenient(): Promise<boolean> {
+        await this.saveAboutYouStage();
+        let allSaved = true;
+        for (const stage of [4, 3, 5]) {
+            try { await this.saveStage(stage); } catch { allSaved = false; }
+        }
+        await this.onboardingStatus.refresh();
+        return allSaved;
+    }
+
+    /**
+     * Persist the canonical passenger-licence fields through the canonical endpoint
+     * during setup.
+     *
+     * These four fields used to be written only from inside /submit-review, which the
+     * blocking `licence.private_hire` requirement prevented from ever running -- so a
+     * ride driver could never clear it. Saving them here keeps the canonical status
+     * authoritative and removes the deadlock. A failure is not thrown: the canonical
+     * status reports the real reason (missing fields, or an expired licence).
+     */
+    private async persistPassengerLicenceIfSupplied(raw:Record<string,unknown>):Promise<void>{
+        const rawServices=raw['service_types'];
+        const serviceList=(Array.isArray(rawServices)?rawServices.map(String):String(rawServices??'').split(',')).map(value=>value.trim().toLowerCase());
+        if(!serviceList.includes('ride'))return;
+        const councilName=String(raw['council_name']||'').trim();
+        const licenceNumber=String(raw['council_license_number']||'').trim();
+        const badgeNumber=String(raw['taxi_badge_number']||'').trim();
+        const expiryDate=String(raw['taxi_license_expiry']||'').trim();
+        if(!councilName||!licenceNumber||!badgeNumber||!expiryDate)return;
+        try{await this.onboardingStatus.savePassengerLicence({councilName,licenceNumber,badgeNumber,expiryDate});}
+        catch{/* canonical status surfaces the licence blocker (missing fields or expired) */}
+    }
+
     private restoreDraft() {
         const raw = localStorage.getItem(this.draftKey);
         if (!raw) return;
@@ -1016,8 +1651,14 @@ export class OnboardingPage implements OnInit {
             const draft = JSON.parse(raw) as DriverOnboardingDraft;
 
             if (draft?.form) {
+                this.draftRestored = true;
                 this.onboardingForm.patchValue(
                     {
+                        // Stage 1 fields are part of the draft too: dropping them here
+                        // discarded the address the driver had already typed.
+                        full_name: draft.form['full_name'] ?? '',
+                        date_of_birth: draft.form['date_of_birth'] ?? '',
+                        current_address: draft.form['current_address'] ?? '',
                         make: draft.form['make'] ?? '',
                         model: draft.form['model'] ?? '',
                         color: draft.form['color'] ?? '',
@@ -1034,12 +1675,16 @@ export class OnboardingPage implements OnInit {
                     },
                     { emitEvent: false }
                 );
+                // The restored draft owns these fields: a later server hydration must
+                // not overwrite what the driver had already saved locally.
+                this.claimOwnership(Object.keys(draft.form));
             }
 
             if (draft?.docs) {
                 this.docs.set({
                     license: draft.docs.license,
-                    insurance: draft.docs.insurance
+                    insurance: draft.docs.insurance,
+                    goods_in_transit: draft.docs.goods_in_transit
                 });
             }
         } catch {
@@ -1077,26 +1722,39 @@ export class OnboardingPage implements OnInit {
             const verificationItems = this.parseVerificationItems(profile.verification_items);
             const profileWithVerificationItems = { ...verificationItems, ...profile };
 
-            this.onboardingForm.patchValue(
-                {
-                    full_name: profile.full_name ?? profile.legal_name ?? profile.name ?? user?.user_metadata?.['full_name'] ?? '',
-                    email: profile.email ?? user?.email ?? '',
-                    council_name: this.firstProfileValue(profileWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
-                    council_license_number: this.firstProfileValue(profileWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number']),
-                    taxi_badge_number: this.firstProfileValue(profileWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
-                    taxi_license_expiry: this.firstProfileValue(profileWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry']),
-                    service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
-                    phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? '',
-                    date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob)
-                },
-                { emitEvent: false }
-            );
+            // Hydrate only the fields the driver does not already own. `ngOnInit` awaits
+            // network calls before reaching here, so the driver may have typed already;
+            // an unconditional patch would silently discard their input.
+            const hydrationPatch = this.withoutOwnedFields({
+                full_name: profile.full_name ?? profile.legal_name ?? profile.name ?? user?.user_metadata?.['full_name'] ?? '',
+                email: profile.email ?? user?.email ?? '',
+                council_name: this.firstProfileValue(profileWithVerificationItems, ['council_name', 'councilName', 'licensing_authority', 'private_hire_authority', 'council_license_authority']),
+                council_license_number: this.firstProfileValue(profileWithVerificationItems, ['council_license_number', 'councilLicenceNumber', 'council_licence_number', 'private_hire_license_number', 'private_hire_licence_number']),
+                taxi_badge_number: this.firstProfileValue(profileWithVerificationItems, ['taxi_badge_number', 'taxiBadgeNumber', 'badge_number', 'driver_badge_number']),
+                taxi_license_expiry: this.firstProfileValue(profileWithVerificationItems, ['taxi_license_expiry', 'taxiLicenceExpiry', 'taxi_licence_expiry', 'private_hire_license_expiry', 'private_hire_licence_expiry']),
+                service_types: this.normaliseServiceTypes(verificationItems['driver_service_types'], this.selectedVehicleClass()),
+                phone: profile.phone ?? profile.phone_number ?? profile.mobile ?? profile.contact_phone ?? '',
+                date_of_birth: this.formatDateForInput(profile.date_of_birth ?? profile.dob),
+                current_address: profile.current_address ?? profile.address_line1 ?? profile.home_address ?? '',
+                driver_agreement_accepted: !!profile.accepted_driver_agreement_at,
+                bicycle_declaration: verificationItems['bicycle_declaration'] === 'true' || verificationItems['bicycle_declaration'] === true,
+                delivery_equipment_confirmed: verificationItems['delivery_equipment_confirmed'] === 'true' || verificationItems['delivery_equipment_confirmed'] === true
+            });
+
+            this.hydrationWriting = true;
+            try {
+                this.onboardingForm.patchValue(hydrationPatch, { emitEvent: false });
+            } finally {
+                this.hydrationWriting = false;
+            }
 
             this.docs.set({
                 license: profile.driver_license_url ?? this.docs().license,
                 insurance: profile.insurance_url ?? this.docs().insurance,
-                private_hire_vehicle_license: (profile as any).private_hire_vehicle_license_url,
-                goods_in_transit: (profile as any).goods_in_transit_url
+                right_to_work: profile.right_to_work_url ?? this.docs().right_to_work,
+                private_hire_vehicle_license: profile.private_hire_vehicle_license_url ?? this.docs().private_hire_vehicle_license,
+                private_hire_insurance: profile.private_hire_insurance_url ?? this.docs().private_hire_insurance,
+                goods_in_transit: profile.goods_in_transit_insurance_url ?? this.docs().goods_in_transit
             });
         }
     }
@@ -1135,11 +1793,16 @@ export class OnboardingPage implements OnInit {
         const next = Array.from(selected).filter(item => allowed.includes(item));
         this.onboardingForm.get('service_types')?.setValue(next.length ? next : this.defaultServicesForClass(this.selectedVehicleClass()), { emitEvent: true });
         this.applyVehicleClassRules(this.selectedVehicleClass());
+        this.refreshRequirementsDebounced();
         this.refreshInspectionPreview();
     }
 
     isBikeVehicle(): boolean {
         return this.selectedVehicleClass() === 'bike';
+    }
+
+    inspectionSlots() {
+        return this.isBikeVehicle() ? BIKE_INSPECTION_SLOTS : INSPECTION_SLOTS;
     }
 
     requiresTaxiLicence(): boolean {
@@ -1153,6 +1816,13 @@ export class OnboardingPage implements OnInit {
 
     private privateHireRequiredInMarket(): boolean {
         return marketRequiresPrivateHire(this.inspectionCountry());
+    }
+
+    requiresGoodsInTransit(): boolean {
+        // Mirrors DriverRequirementService.resolve(): document.goods_in_transit is
+        // added whenever van-moving is selected, so the upload control appears
+        // exactly when the canonical evaluation carries that requirement.
+        return this.selectedServiceTypes().includes('van');
     }
 
     private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
@@ -1191,21 +1861,21 @@ export class OnboardingPage implements OnInit {
     vehicleSetupTitle(): string {
         if (this.isBikeVehicle()) return 'Bike courier setup';
         if (this.selectedVehicleClass() === 'small_van' || this.selectedVehicleClass() === 'large_van') return 'Van setup';
-        return 'Car setup';
+        return 'Car requirements';
     }
 
     vehicleSetupMessage(): string {
         const selected = this.selectedServiceTypes();
 
         if (selected.includes('ride')) {
-            return 'Passenger rides require private hire/taxi approval, vehicle licence, insurance, and local licensing details.';
+            return "For passenger trips, you'll need the required private hire or taxi approval, vehicle licence, insurance and any applicable local licensing details.";
         }
 
         if (selected.includes('van')) {
             return 'Moving jobs require vehicle details, registration plate, suitable insurance, goods-in-transit/public-liability documents where required, and payout setup.';
         }
 
-        return 'Errands and delivery require vehicle details, registration plate, suitable insurance, and payout setup. Bike couriers do not need a taxi licence.';
+        return 'Shop and deliver require vehicle details, registration plate, suitable insurance, and payout setup. Bike couriers do not need a taxi licence.';
     }
 
     vehicleMakeLabel(): string {
@@ -1241,11 +1911,11 @@ export class OnboardingPage implements OnInit {
     }
 
     primaryDocumentLabel(): string {
-        return this.isBikeVehicle() ? 'Photo ID' : 'Driver Licence';
+        return this.isBikeVehicle() ? 'Photo ID' : 'Driving licence';
     }
 
     secondaryDocumentLabel(): string {
-        return this.isBikeVehicle() ? 'Courier insurance' : 'Insurance';
+        return this.isBikeVehicle() ? 'Courier insurance' : 'Vehicle insurance';
     }
 
     secondaryDocumentReady(): boolean {
@@ -1274,6 +1944,8 @@ export class OnboardingPage implements OnInit {
         const councilNumber = this.onboardingForm.get('council_license_number');
         const taxiBadge = this.onboardingForm.get('taxi_badge_number');
         const taxiExpiry = this.onboardingForm.get('taxi_license_expiry');
+        const bicycleDeclaration = this.onboardingForm.get('bicycle_declaration');
+        const deliveryEquipment = this.onboardingForm.get('delivery_equipment_confirmed');
         const isBike = value === 'bike';
         const allowedServices = this.allowedServicesForClass(value);
         const selectedServices = this.normaliseServiceTypes(services?.value, value).filter(service => allowedServices.includes(service));
@@ -1287,8 +1959,22 @@ export class OnboardingPage implements OnInit {
             plate?.clearValidators();
             plate?.setErrors(null);
             plate?.setValue('', { emitEvent: false });
+            const subtype = String(this.onboardingForm.get('vehicle_subtype')?.value || '').toLowerCase();
+            if (subtype !== 'pedal_bicycle') plate?.setValidators([Validators.required, Validators.minLength(2)]);
+            const vehicleSubtype = this.onboardingForm.get('vehicle_subtype');
+            const eBikeSpecs = this.onboardingForm.get('e_bike_specifications');
+            vehicleSubtype?.setValidators(Validators.required);
+            bicycleDeclaration?.setValidators(Validators.requiredTrue);
+            deliveryEquipment?.setValidators(Validators.requiredTrue);
+            if (subtype === 'e_bike') eBikeSpecs?.setValidators(Validators.required);
+            else eBikeSpecs?.clearValidators();
+            [vehicleSubtype, eBikeSpecs].forEach(c => c?.updateValueAndValidity({ emitEvent: false }));
         } else {
             plate?.setValidators([Validators.required, Validators.minLength(2)]);
+            bicycleDeclaration?.clearValidators();
+            deliveryEquipment?.clearValidators();
+            this.onboardingForm.get('vehicle_subtype')?.clearValidators();
+            this.onboardingForm.get('e_bike_specifications')?.clearValidators();
         }
 
         if (needsTaxiLicence) {
@@ -1305,13 +1991,12 @@ export class OnboardingPage implements OnInit {
             councilNumber?.setErrors(null);
             taxiBadge?.setErrors(null);
             taxiExpiry?.setErrors(null);
-            councilName?.setValue('', { emitEvent: false });
-            councilNumber?.setValue('', { emitEvent: false });
-            taxiBadge?.setValue('', { emitEvent: false });
-            taxiExpiry?.setValue('', { emitEvent: false });
+            // Release closure: preserve the driver's entered council/taxi values
+            // when Ride is temporarily deselected, so re-selecting Ride does not
+            // silently wipe their licensing data.
         }
 
-        [plate, services, councilName, councilNumber, taxiBadge, taxiExpiry].forEach(control => {
+        [plate, services, councilName, councilNumber, taxiBadge, taxiExpiry, bicycleDeclaration, deliveryEquipment].forEach(control => {
             control?.updateValueAndValidity({ emitEvent: false });
         });
     }
@@ -1362,7 +2047,9 @@ export class OnboardingPage implements OnInit {
     }
 
     private activeVehicleControls(): string[] {
-        const controls = ['make', 'model', 'color', 'year', 'vehicle_class', 'service_types'];
+        const controls = this.isBikeVehicle()
+            ? ['vehicle_class', 'service_types', 'bicycle_declaration', 'delivery_equipment_confirmed']
+            : ['make', 'model', 'color', 'year', 'vehicle_class', 'service_types'];
 
         if (!this.isBikeVehicle()) {
             controls.push('license_plate');
@@ -1416,12 +2103,16 @@ export class OnboardingPage implements OnInit {
     }
 
     private getCanonicalPlate(vehicle: Vehicle | null | undefined, fallback?: unknown): string {
-        return String(vehicle?.license_plate ?? fallback ?? '').trim();
+        // An existing vehicle whose plate column is blank/whitespace must not discard a
+        // plate the driver has typed: `?? fallback` only handles null/undefined, so a
+        // stored '' previously won and blocked the whole re-save.
+        const fromVehicle = String(vehicle?.license_plate ?? '').trim();
+        if (fromVehicle) return fromVehicle;
+        return String(fallback ?? '').trim();
     }
 
     private async refreshVehicleForValidation(): Promise<Vehicle | null> {
         const vehicle = await this.driverService.fetchVehicle();
-        console.log('[DriverOnboarding] Validation vehicle:', vehicle);
 
         if (vehicle) {
             this.onboardingForm.patchValue(
@@ -1446,10 +2137,11 @@ export class OnboardingPage implements OnInit {
     private buildVehiclePayload(raw: Record<string, unknown>, vehicle: Vehicle | null): Partial<Vehicle> {
         const vehicleClass = String(raw['vehicle_class'] || this.vehicleClassFromVehicle(vehicle) || 'standard') as DriverVehicleClass;
         const plate = this.getCanonicalPlate(vehicle, raw['license_plate']);
-        const subtype = vehicleClass === 'bike' ? String(raw['vehicle_subtype'] || '') : '';
+        const subtype = vehicleClass === 'bike' ? String(raw['vehicle_subtype'] || '').toLowerCase() : '';
         if (vehicleClass === 'bike' && !['pedal_bicycle','e_bike','motorcycle','moped'].includes(subtype)) {
             throw new Error('Select your bike subtype before saving.');
         }
+        if(this.useGbMotLookup() && this.motLookup()?.registration !== plate.replace(/\s/g,'').toUpperCase()) throw new Error('Find details for this registration before saving the vehicle.');
 
         const registrationRequired = vehicleRequiresRegistration(
             normaliseVehicleClass({ capacity: vehicleClass, type: this.vehicleTypeFromClass(vehicleClass) }),
@@ -1468,17 +2160,17 @@ export class OnboardingPage implements OnInit {
             year: Number(raw['year'] || vehicle?.year),
             license_plate: registrationRequired ? plate.toUpperCase() : '',
             type: this.vehicleTypeFromClass(vehicleClass),
-            vehicle_subtype:subtype || null,
+            vehicle_subtype: subtype || null,
             capacity: vehicleClass,
             service_eligibility: this.selectedServiceTypes()
         };
     }
 
-    private parseVerificationItems(value: unknown): Record<string, string> {
+    private parseVerificationItems(value: unknown): Record<string, unknown> {
         if (!value) return {};
 
         if (Array.isArray(value)) {
-            return value.reduce<Record<string, string>>((items, entry) => {
+            return value.reduce<Record<string, unknown>>((items, entry) => {
                 if (!entry || typeof entry !== 'object') return items;
 
                 const record = entry as Record<string, unknown>;
@@ -1491,7 +2183,7 @@ export class OnboardingPage implements OnInit {
         }
 
         if (typeof value === 'object') {
-            return value as Record<string, string>;
+            return value as Record<string, unknown>;
         }
 
         if (typeof value === 'string') {
@@ -1510,8 +2202,15 @@ export class OnboardingPage implements OnInit {
         const items: Array<{ key: string; value: string }> = [
             { key: 'vehicle_class', value: String(raw['vehicle_class'] || 'standard').trim() },
             { key: 'vehicle_type', value: this.vehicleTypeFromClass(String(raw['vehicle_class'] || 'standard') as DriverVehicleClass) },
-            { key: 'driver_service_types', value: JSON.stringify(this.selectedServiceTypes()) }
+            { key: 'vehicle_subtype', value: String(raw['vehicle_subtype'] || '').toLowerCase() },
+            { key: 'driver_service_types', value: JSON.stringify(this.selectedServiceTypes()) },
+            { key: 'bicycle_declaration', value: String(raw['bicycle_declaration'] === true) },
+            { key: 'delivery_equipment_confirmed', value: String(raw['delivery_equipment_confirmed'] === true) }
         ];
+
+        if (String(raw['vehicle_subtype'] || '').toLowerCase() === 'e_bike' && raw['e_bike_specifications']) {
+            items.push({ key: 'e_bike_specifications', value: JSON.stringify({ description: String(raw['e_bike_specifications']) }) });
+        }
 
         if (this.requiresTaxiLicence()) {
             items.push(
@@ -1545,6 +2244,22 @@ export class OnboardingPage implements OnInit {
 
         console.log('[driver-compliance] saving ride fields', payload);
         return payload;
+    }
+
+    /**
+     * True when the persisted vehicle already carries exactly what the form describes, so
+     * there is nothing to re-write. Used to keep final submission idempotent.
+     */
+    private vehicleMatchesPayload(vehicle: Vehicle, payload: Partial<Vehicle>): boolean {
+        const same = (left: unknown, right: unknown) =>
+            String(left ?? '').trim().toLowerCase() === String(right ?? '').trim().toLowerCase();
+        return same(vehicle.make, payload.make)
+            && same(vehicle.model, payload.model)
+            && same(vehicle.color, payload.color)
+            && Number(vehicle.year) === Number(payload.year)
+            && same(vehicle.license_plate, payload.license_plate)
+            && same((vehicle as any).type, payload.type)
+            && same((vehicle as any).capacity, payload.capacity);
     }
 
     private vehicleClassFromVehicle(vehicle: Vehicle | null): DriverVehicleClass {
@@ -1583,18 +2298,32 @@ export class OnboardingPage implements OnInit {
         control?.setValue(plate, { emitEvent: true });
     }
 
+    readonly motLookup = signal<any>(null);
+    readonly motLookupBusy = signal(false);
+    readonly motLookupError = signal('');
+    useGbMotLookup():boolean {
+        return this.onboardingStatus.state()?.vehicleLookup?.enabled === true
+            && String((this.profile() as any)?.country_code || '').toUpperCase() === 'GB' && !this.isBikeVehicle();
+    }
     async lookupVehicleByPlate() {
-        if (this.isReadOnly()) return;
-
+        if (this.isReadOnly() || this.motLookupBusy()) return;
         this.normalizePlate();
-        const plate = String(this.onboardingForm.get('license_plate')?.value || '').trim();
-
-        if (!plate) {
-            await this.showToast('Enter the vehicle registration first.', 'warning');
-            return;
-        }
-
-        await this.showToast('Plate lookup is ready for provider connection. Please enter make, model, colour, and year manually for now.', 'warning');
+        const plate = String(this.onboardingForm.get('license_plate')?.value || '').replace(/\s/g,'').toUpperCase();
+        if (!this.useGbMotLookup()) { await this.showToast('Enter vehicle details manually for your country.', 'warning'); return; }
+        if (!plate) { await this.showToast('Enter the vehicle registration first.', 'warning'); return; }
+        this.motLookupBusy.set(true);this.motLookupError.set('');this.motLookup.set(null);
+        try {
+            const response = await this.driverService.lookupGbVehicle(plate);
+            if (!this.useGbMotLookup() || String(this.onboardingForm.get('license_plate')?.value || '').replace(/\s/g,'').toUpperCase() !== plate) return;
+            const vehicle=response.vehicle;
+            this.motLookup.set(vehicle);
+            const values:Record<string,unknown>={license_plate:vehicle.registration};
+            if(vehicle.make)values['make']=vehicle.make;if(vehicle.model)values['model']=vehicle.model;
+            if(vehicle.colour)values['color']=vehicle.colour;if(vehicle.year)values['year']=vehicle.year;
+            this.onboardingForm.patchValue(values);
+            await this.showToast('Vehicle details retrieved. Check the MOT result and complete any missing fields.', 'success');
+        } catch(error) { this.motLookupError.set(error instanceof Error ? error.message : 'Vehicle lookup unavailable. Please retry.'); }
+        finally { this.motLookupBusy.set(false); }
     }
 
     handleDocumentClick(type: DocumentType) {
@@ -1645,7 +2374,7 @@ export class OnboardingPage implements OnInit {
                 await this.showToast('Driver photo uploaded.', 'success');
             } catch (error: any) {
                 console.error('[DriverOnboarding] Driver photo upload failed:', error);
-                await this.showToast(error?.message || 'Driver photo upload failed.', 'danger');
+                await this.showToast(userFacingError(error, 'Driver photo upload failed.'), 'danger');
             } finally {
                 target.value = '';
                 await loading.dismiss();
@@ -1678,14 +2407,7 @@ export class OnboardingPage implements OnInit {
         if (!stripe) return;
 
         try {
-            await this.driverService.fetchStripeAccount();
-
-            const accountId = this.driverService.stripeAccount()?.stripe_account_id;
-
-            if (accountId) {
-                await this.driverService.refreshStripeStatus(accountId, true);
-                await this.driverService.fetchStripeAccount();
-            }
+            await this.driverService.fetchStripeAccount(true);
 
             if (stripe === 'success') {
                 this.stripeMessageType.set(this.isStripeReady() ? 'success' : 'warning');
@@ -1737,15 +2459,22 @@ export class OnboardingPage implements OnInit {
             await loading.present();
 
             try {
+                const replacing = !!this.docs()[type];
                 const path = await this.driverService.uploadDocument(file, type);
                 this.docs.update((current) => ({ ...current, [type]: path }));
                 this.saveDraft();
 
                 await this.persistUploadedDocument(type, path);
+                await this.onboardingStatus.recordEvent(
+                    this.isActionRequired() ? 'driver_document_resubmitted' : replacing ? 'driver_document_replaced' : 'driver_document_uploaded',
+                    type, replacing ? 'uploaded' : 'missing', 'uploaded'
+                );
+                await this.refreshOnboardingStatus();
 
-                await this.showToast('Document uploaded.', 'success');
+                const label = type === 'license' ? 'Driving licence' : type === 'insurance' ? 'Vehicle insurance' : type === 'right_to_work' ? 'Work eligibility document' : type === 'private_hire_vehicle_license' ? 'Taxi / private-hire vehicle permit' : type === 'private_hire_insurance' ? 'Passenger transport insurance' : 'Goods-in-transit cover';
+                await this.showToast(`${label} uploaded.`, 'success');
             } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : 'Upload failed.';
+                const message = userFacingError(error, 'Upload failed.');
                 await this.showToast(message, 'danger');
             } finally {
                 await loading.dismiss();
@@ -1761,17 +2490,27 @@ export class OnboardingPage implements OnInit {
 
         if (!user?.id || !path) return;
 
-        const fields: Record<DocumentType,string> = {
-            license:'driver_license_url', insurance:'insurance_url',
-            private_hire_vehicle_license:'private_hire_vehicle_license_url', goods_in_transit:'goods_in_transit_url'
-        };
-        await this.updateProfileSafely(user.id, {[fields[type]]:path});
+        await this.updateProfileSafely(user.id, type === 'license'
+            ? { driver_license_url: path }
+            : type === 'insurance'
+                ? { insurance_url: path }
+                : type === 'private_hire_vehicle_license'
+                    ? { private_hire_vehicle_license_url: path }
+                    : type === 'private_hire_insurance'
+                        ? { private_hire_insurance_url: path }
+                        : type === 'goods_in_transit'
+                            ? { goods_in_transit_insurance_url: path }
+                            : { right_to_work_url: path, right_to_work_status: 'uploaded' });
 
         if (typeof (this.profileService as any).fetchProfile === 'function') {
             await (this.profileService as any).fetchProfile(user.id);
         }
 
         await this.driverService.fetchVehicle();
+        // The checklist and section statuses come from the canonical onboarding status,
+        // so it must be re-fetched or the upload stays invisible as "Incomplete" until a
+        // reload.
+        try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ }
     }
 
     private isAllowedFile(file: File): boolean {
@@ -1889,18 +2628,13 @@ export class OnboardingPage implements OnInit {
     }
 
     async submit() {
+        if(this.submitting())return;
         if (this.isReadOnly()) {
             await this.showToast('Your application is already under review.', 'warning');
             return;
         }
 
-        await this.refreshVehicleForValidation();
         this.onboardingForm.markAllAsTouched();
-
-        if (!this.canSubmit()) {
-            await this.showToast(this.setupBlockingMessage(), 'warning');
-            return;
-        }
 
         const user = this.authService.currentUser();
 
@@ -1916,11 +2650,12 @@ export class OnboardingPage implements OnInit {
 
         try {
             const raw = this.onboardingForm.getRawValue();
-            const latestVehicle = await this.driverService.fetchVehicle();
-            console.log('[DriverOnboarding] Validation vehicle:', latestVehicle);
-            const vehiclePayload = this.buildVehiclePayload(raw, latestVehicle);
             const rideCompliancePayload = this.buildRideCompliancePayload(raw, this.profile() as any);
+            const latestStatus=await this.persistCurrentSetup();
+            const blockers=latestStatus.automaticRequirements.filter(requirement=>requirement.blockingForSubmission);
+            if(blockers.length){await this.showToast(blockers[0].reason,'warning');return;}
 
+            const vehiclePayload = this.buildVehiclePayload(raw, this.vehicle() as Vehicle | null);
             const savedVehicle = await this.driverService.updateVehicle(vehiclePayload);
             console.log('[DriverOnboarding] Saved vehicle:', savedVehicle);
             await this.driverService.fetchVehicle();
@@ -1929,19 +2664,31 @@ export class OnboardingPage implements OnInit {
                 full_name: String(raw.full_name || '').trim(),
                 phone: String(raw.phone || '').trim(),
                 date_of_birth: String(raw.date_of_birth || '').trim() || null,
-                ...rideCompliancePayload,
+                current_address: String(raw.current_address || '').trim(),
+                accepted_driver_agreement_at: raw.driver_agreement_accepted ? new Date().toISOString() : null,
+                bicycle_declaration: raw.bicycle_declaration === true,
+                delivery_equipment_confirmed: raw.delivery_equipment_confirmed === true,
                 driver_license_url: this.docs().license || null,
                 insurance_url: this.docs().insurance || null,
+                right_to_work_url: this.docs().right_to_work || null,
+                private_hire_vehicle_license_url: this.docs().private_hire_vehicle_license || null,
+                private_hire_insurance_url: this.docs().private_hire_insurance || null,
+                goods_in_transit_insurance_url: this.docs().goods_in_transit || null,
+                ...rideCompliancePayload,
                 verification_items: this.buildVerificationItems(raw)
             });
             await this.driverService.submitApplication();
 
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(user.id);
-            }
-
+            await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'onboarding', this.verificationStatus(), 'under_review');
             this.authService.onboardingCompleted.set(true);
             this.authService.userRole.set('driver');
+
+            // role.guard reads `profileService.profile()?.onboarding_completed ?? authService...`,
+            // so the CACHED profile wins. submitForReview has just set onboarding_completed=true
+            // server-side, but the cache still holds the pre-submission row (false), and the guard
+            // only refetches when that cache is falsy. Without this reload the guard would bounce
+            // the driver straight back to /driver/onboarding.
+            await this.profileService.fetchProfile(user.id);
 
             this.clearDraft();
 
@@ -1953,9 +2700,8 @@ export class OnboardingPage implements OnInit {
             );
 
             await this.router.navigate(['/driver'], { replaceUrl: true });
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'An error occurred.';
-            await this.showToast(message, 'danger');
+        } catch {
+            await this.showToast('Unable to save your setup. Your changes were not submitted. Please try again.', 'danger');
         } finally {
             this.submitting.set(false);
             await loading.dismiss();
@@ -2018,6 +2764,14 @@ export class OnboardingPage implements OnInit {
         return String(value).slice(0, 10);
     }
 
+    private dateOfBirthForApi(value: unknown): string {
+        const raw=String(value||'').trim();
+        if(/^\d{4}-\d{2}-\d{2}$/.test(raw))return raw;
+        const match=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+        if(!match)throw new Error('Enter a valid date of birth.');
+        return `${match[3]}-${match[2]}-${match[1]}`;
+    }
+
     private extractMissingColumn(error: unknown): string | null {
         const maybeError = error as { code?: string; message?: string };
         const message = maybeError?.message || '';
@@ -2051,6 +2805,7 @@ export class OnboardingPage implements OnInit {
     }
 
     async setupPayouts() {
+        try{await this.payoutContext.requireStripePayoutMarket();}catch(error:any){await this.showToast(error?.message || 'Payout setup unavailable.','warning');return;}
         if (this.isReadOnly()) {
             await this.showToast('Payout setup is locked while verification is in progress.', 'warning');
             return;

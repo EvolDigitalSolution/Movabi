@@ -1,0 +1,38 @@
+/* Vaydu map marker presentation: brand tokens and pickup/destination
+   distinction. The movabi-marker selectors are a compatibility contract, so
+   only the visual values change. Each selector carries an extra class so it
+   wins over the legacy ::ng-deep rules bundled inside map.component.ts. */
+
+.movabi-marker.movabi-marker--pickup {
+  --marker-color: var(--primary, #f59e0b);
+}
+
+.movabi-marker.movabi-marker--destination {
+  --marker-color: var(--text-primary, #0f172a);
+}
+
+/* Pickup keeps the teardrop pin; destination is a distinct rounded-square
+   stop so the two are distinguishable by shape, not colour alone. */
+.movabi-marker.movabi-marker--destination .movabi-marker__pin {
+  border-radius: 10px;
+  transform: none;
+}
+
+.movabi-marker.movabi-marker--destination:hover .movabi-marker__pin {
+  transform: none;
+}
+
+.movabi-marker.movabi-marker--destination .movabi-marker__icon {
+  transform: none;
+}
+
+.movabi-marker.movabi-marker--destination .movabi-marker__label {
+  color: var(--text-primary, #0f172a);
+}
+
+/* Focus affordance for keyboard-activatable markers. */
+.movabi-marker:focus-visible {
+  outline: 2px solid var(--primary, #f59e0b);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

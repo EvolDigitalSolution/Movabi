@@ -1,0 +1,34 @@
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE IF NOT EXISTS public.driver_onboarding_requests (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), driver_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ requirement_code varchar(100) NOT NULL, item varchar(160) NOT NULL, public_message text NOT NULL,
+ private_admin_note text, status varchar(20) NOT NULL DEFAULT 'pending' CHECK(status IN('pending','rejected','approved')),
+ sent_at timestamptz NOT NULL DEFAULT now(), resolved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.driver_onboarding_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.driver_onboarding_requests FROM anon,authenticated;
+CREATE TABLE IF NOT EXISTS public.driver_requirement_audit(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),driver_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,event_type varchar(50) NOT NULL,selected_services jsonb NOT NULL DEFAULT '[]'::jsonb,requirement_codes jsonb NOT NULL DEFAULT '[]'::jsonb,created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE public.driver_requirement_audit ENABLE ROW LEVEL SECURITY; REVOKE ALL ON public.driver_requirement_audit FROM anon,authenticated;
+
+-- Repair impossible DOBs without changing the date or approving the driver.
+UPDATE public.profiles SET verification_status='action_required',driver_review_status='action_required',updated_at=now()
+WHERE role='driver' AND date_of_birth IS NOT NULL AND
+ (date_of_birth::date>CURRENT_DATE OR date_of_birth::date<DATE '1900-01-01' OR date_of_birth::date>CURRENT_DATE-INTERVAL '18 years');
+
+-- Resolve safely identifiable duplicate legacy requests, retaining every row.
+WITH ranked AS (SELECT id,row_number() OVER(PARTITION BY driver_id,requirement_code ORDER BY created_at DESC,id DESC) n
+ FROM public.driver_onboarding_requests WHERE status IN('pending','rejected'))
+UPDATE public.driver_onboarding_requests r SET status='approved',resolved_at=now(),updated_at=now(),private_admin_note=COALESCE(private_admin_note,'Resolved by duplicate-request repair')
+FROM ranked x WHERE r.id=x.id AND x.n>1;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_onboarding_requests_one_open
+ ON public.driver_onboarding_requests(driver_id,requirement_code) WHERE status IN('pending','rejected');
+COMMIT;
+
+-- DRY RUN (run before applying):
+-- SELECT id,date_of_birth,verification_status FROM public.profiles WHERE role='driver' AND date_of_birth IS NOT NULL
+--  AND (date_of_birth::date>CURRENT_DATE OR date_of_birth::date<DATE '1900-01-01' OR date_of_birth::date>CURRENT_DATE-INTERVAL '18 years');
+-- SELECT driver_id,requirement_code,count(*) FROM public.driver_onboarding_requests WHERE status IN('pending','rejected') GROUP BY 1,2 HAVING count(*)>1;
+
+-- ROLLBACK (schema only; profile status repair is intentionally not silently reversed):
+-- DROP TABLE IF EXISTS public.driver_requirement_audit; DROP TABLE IF EXISTS public.driver_onboarding_requests;

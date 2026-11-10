@@ -1,0 +1,15 @@
+{
+  "baseApiImage": "sha256:1ef978c931bf390273f4648f6c8bdce04231338d64ae7c6ead7e4e10d723c6aa",
+  "protectedSourceHashes": {
+    "server/routes/connect.routes.ts": "0b6d6d7091be7633b3d8cb6b8fe0f5818fe697d289ee59ad36caf1293624b816",
+    "server/services/stripe.service.ts": "86710152e0b8669f31e4c9617ae7b3f66cf4ed9f163e1dbeb6cdc63df5606517",
+    "server/routes/booking.routes.ts": "4791929cd1dacbcd9b40f8be3c4d922bb075b2bae12dfdbc588164ece64686d7",
+    "server/services/job-payout.service.ts": "6f79b1f158bf7fc788dbc3270c829c6d5cd7a510c2ea3bd23f29ec1e69d41ea1",
+    "server/services/payout-eligibility.service.ts": "eaf36ab039f286d74954e2b4ba575f65a44d288d36cd15576ce95300d4f21cc3",
+    "server/routes/payment.routes.ts": "e70a8c2bbb0835db69a43bc37bd11b2ad069c087faa6c4c35f39257551080d8e"
+  },
+  "protectedAbsentPaths": [
+    "server/services/payments/stripe-payment-adapter.ts",
+    "server/services/payments/stripe-payment-bridge.ts"
+  ]
+}

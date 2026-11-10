@@ -15,7 +15,7 @@ import { Subscription } from 'rxjs';
   standalone: true,
   imports: [CommonModule, IonicModule, ButtonComponent, FormsModule],
   template: `
-    <div class="flex flex-col h-full bg-white rounded-t-3xl shadow-2xl border-t border-gray-100 overflow-hidden">
+    <div [class.expanded-chat]="expanded" class="flex flex-col h-full min-h-0 bg-white rounded-t-3xl shadow-2xl border-t border-gray-100 overflow-hidden">
       <!-- Header -->
       <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
         <div class="flex items-center gap-3">
@@ -37,8 +37,14 @@ import { Subscription } from 'rxjs';
       </div>
 
       <!-- Messages Thread -->
-      <div class="flex-1 overflow-y-auto p-6 space-y-4 min-h-[200px] max-h-[400px] bg-gray-50/50" #scrollContainer>
-        @if (messages().length === 0) {
+      <div class="communication-messages flex-1 overflow-y-auto p-4 space-y-4 min-h-[200px] max-h-[400px] bg-gray-50/50" #scrollContainer>
+        @if (chatError()) {
+          <div role="alert" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p>{{ chatError() }}</p>
+            <button type="button" class="mt-2 font-bold" (click)="refreshChat()">Retry</button>
+          </div>
+        }
+        @if (!chatError() && messages().length === 0) {
           <div class="flex flex-col items-center justify-center py-8 text-center opacity-50">
             <ion-icon name="chatbubble-outline" class="text-3xl mb-2"></ion-icon>
             <p class="text-xs font-medium">No messages yet</p>
@@ -65,6 +71,7 @@ import { Subscription } from 'rxjs';
         <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
           @for (option of quickMessages; track option.label) {
             <button 
+              [disabled]="sendingMessage()"
               (click)="sendQuick(option.message)"
               class="whitespace-nowrap px-4 py-2 rounded-full bg-gray-100 text-text-primary text-xs font-bold hover:bg-primary/10 hover:text-primary transition-colors border border-transparent active:scale-95"
             >
@@ -90,7 +97,7 @@ import { Subscription } from 'rxjs';
           />
           <button 
             (click)="sendText()"
-            [disabled]="!textMessage.trim()"
+            [disabled]="!textMessage.trim() || sendingMessage()"
             class="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center disabled:opacity-50 disabled:grayscale active:scale-90 transition-all"
           >
             <ion-icon name="send" class="text-lg"></ion-icon>
@@ -100,6 +107,8 @@ import { Subscription } from 'rxjs';
     </div>
   `,
   styles: [`
+    :host { display:block;min-height:0; }
+    .expanded-chat .communication-messages { min-height:0;max-height:none; }
     .outgoing-message {
       background-color: #2563eb !important;
       color: #ffffff !important;
@@ -127,6 +136,7 @@ import { Subscription } from 'rxjs';
   `]
 })
 export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDestroy {
+  @Input() expanded = false;
   @ViewChild('messageInput') messageInput?: ElementRef<HTMLInputElement>;
   @ViewChild('scrollContainer') scrollContainer?: ElementRef<HTMLDivElement>;
 
@@ -140,6 +150,11 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
   private notificationManager = inject(NotificationManagerService);
   
   messages = signal<JobMessage[]>([]);
+  readonly chatError = signal('');
+  readonly sendingMessage = signal(false);
+  private refreshInterval?: ReturnType<typeof setInterval>;
+  private chatRefreshRunning = false;
+  private destroyed = false;
   quickMessages = QUICK_MESSAGES;
   textMessage = '';
   currentUserId = signal<string | null>(null);
@@ -149,7 +164,8 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
     const user = this.auth.currentUser();
     if (user) this.currentUserId.set(user.id);
 
-    this.commService.getJobMessages(this.jobId);
+    void this.refreshChat();
+    this.refreshInterval = setInterval(() => { void this.refreshChat(); }, 10000);
     this.commService.subscribeToJobMessages(this.jobId);
     
     // Subscribe to unread counter for this job
@@ -163,7 +179,7 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
       setTimeout(() => this.scrollToBottom(), 100);
       
       // Check for new messages and trigger notifications
-      this.checkForNewMessages(msgs);
+      this.markMessagesAsRead();
     });
   }
 
@@ -175,6 +191,8 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
   }
 
   ngOnDestroy() {
+    this.destroyed = true;
+    if (this.refreshInterval) clearInterval(this.refreshInterval);
     this.commService.unsubscribeFromJobMessages();
     this.unreadCounter.unsubscribeFromJob(this.jobId);
     this.messagesSub?.unsubscribe();
@@ -184,27 +202,51 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
     return senderId === this.currentUserId();
   }
 
+  async refreshChat(): Promise<void> {
+    if (this.destroyed || this.chatRefreshRunning) return;
+    this.chatRefreshRunning = true;
+    try {
+      await this.commService.getJobMessages(this.jobId);
+      if (!this.destroyed) this.chatError.set('');
+    } catch {
+      if (!this.destroyed) this.chatError.set('Messages could not be loaded. Please retry.');
+    } finally {
+      this.chatRefreshRunning = false;
+    }
+  }
+
   async sendQuick(message: string) {
+    if (this.sendingMessage()) return;
+    this.sendingMessage.set(true);
     try {
       await this.commService.sendQuickMessage(this.jobId, this.receiverId, message);
+      this.chatError.set('');
       this.keepComposerVisible();
     } catch (e) {
       console.error('Failed to send quick message', e);
+      this.chatError.set('Message was not sent. Please retry.');
+    } finally {
+      this.sendingMessage.set(false);
     }
   }
 
   async sendText() {
-    if (!this.textMessage.trim()) return;
+    if (!this.textMessage.trim() || this.sendingMessage()) return;
+    this.sendingMessage.set(true);
     const msg = this.textMessage.trim();
     this.textMessage = '';
     
     try {
       await this.commService.sendMessage(this.jobId, this.receiverId, msg);
       setTimeout(() => this.messageInput?.nativeElement.focus(), 50);
+      this.chatError.set('');
       this.keepComposerVisible();
     } catch (e) {
       console.error('Failed to send text message', e);
       this.textMessage = msg;
+      this.chatError.set('Message was not sent. Please retry.');
+    } finally {
+      this.sendingMessage.set(false);
     }
   }
 
@@ -233,14 +275,14 @@ export class CommunicationPanelComponent implements OnInit, AfterViewInit, OnDes
   }
 
   private markMessagesAsRead(): void {
-    this.unreadCounter.markAsRead(this.jobId);
+    void this.unreadCounter.markAsRead(this.jobId, this.messages()[this.messages().length - 1]?.created_at);
   }
 
   private checkForNewMessages(messages: JobMessage[]): void {
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && !this.isMe(lastMessage.sender_id)) {
       // This is a new message from someone else
-      console.log('[CommunicationPanel] New message received:', lastMessage);
+
       
       // Mark as read since user is actively viewing the chat
       this.markMessagesAsRead();

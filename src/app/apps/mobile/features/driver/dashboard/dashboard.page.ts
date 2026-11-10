@@ -1,5 +1,20 @@
-import { AfterViewInit, Component, ViewChild, inject, computed, effect, OnInit, OnDestroy, signal } from '@angular/core';
+import { DriverWalletTopupComponent } from '../../../../../shared/ui/driver-wallet-topup.component';
+import { ReferralPanelComponent } from '../../../../../shared/ui/referral-panel.component';
+import {DriverCashCreditService} from '../../../../../core/services/payments/driver-cash-credit.service';
+import {formatCashCreditMinor,cashCreditStatusMessage,cashCreditNeedsReview} from '../../../../../shared/utils/driver-cash-credit';
+import {MarketSafetyService} from '../../../../../core/services/payments/market-safety.service';
+import { earningsSummary, recordedEarningAmount, recordedPayoutLabel, type EarningsMetric } from '@shared/utils/earnings-currency';
+import { DriverEarningsPreviewComponent } from '@shared/ui/driver-earnings-preview.component';
+import { driverMoneyView } from '@shared/utils/driver-money-view';
+import { DriverInboxComponent } from '../inbox/driver-inbox.component';
+import { DriverInboxService } from '../../../../../core/services/driver/driver-inbox.service';
+import { DriverRequestFeedService } from '@core/services/driver/driver-request-feed.service';
+import { NotificationOrchestratorService } from '../../../../../core/services/notification/notification-orchestrator.service';
+import { DestroyRef, Component, inject, computed, effect, OnInit, OnDestroy, signal, viewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
+import { userFacingError } from '@shared/utils/http-failure';
+import { FormsModule } from '@angular/forms';
 import {
     IonHeader,
     IonToolbar,
@@ -8,8 +23,11 @@ import {
     IonContent,
     IonIcon,
     IonToggle,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
     LoadingController,
     ToastController
+    ,AlertController
 } from '@ionic/angular/standalone';
 import { ActivatedRoute, Router } from '@angular/router';
 import { addIcons } from 'ionicons';
@@ -24,6 +42,7 @@ import {
     searchOutline,
     star,
     statsChart,
+    mailOutline,
     card,
     timeOutline,
     alertCircleOutline,
@@ -35,7 +54,14 @@ import {
     listOutline,
     navigate,
     chevronDownOutline,
-    settingsOutline
+    settingsOutline,
+    timerOutline,
+    personOutline,
+    trendingUpOutline,
+    sendOutline,
+    closeOutline,
+    closeCircleOutline,
+    cardOutline,
 } from 'ionicons/icons';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Haptics, NotificationType } from '@capacitor/haptics';
@@ -52,23 +78,25 @@ import { OneSignalService } from '../../../../../core/services/notification/ones
 import { OnboardingTourService } from '../../../../../core/services/onboarding-tour/onboarding-tour.service';
 import {
     CardComponent,
-    ButtonComponent,
     BadgeComponent,
-    EmptyStateComponent,
     PerformanceBadgeComponent,
-    MovabiCarouselComponent,
     MovabiCarouselSlide
 } from '../../../../../shared/ui';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
-import { Booking, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
+import { Booking, BookingStatus, DriverProfile, ServiceTypeEnum } from '../../../../../shared/models/booking.model';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
+import { MarketAvailabilityClientService } from '../../../../../core/services/market-availability.service';
+import { DriverOnlineEligibility } from '../../../../../core/services/market-availability.service';
 import { MapProviderService } from '../../../../../core/services/maps/map-provider.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
 import { MarkerCoordinates, ServiceTypeSlug } from '../../../../../core/models/maps/map-marker.model';
 import { RouteSummary } from '../../../../../core/models/maps/route-result.model';
 import { NotificationService } from '../../../../../core/services/notification.service';
+import { MarketplaceNegotiationService } from '../../../../../core/services/marketplace/marketplace-negotiation.service';
+import { MarketplaceConfigService } from '../../../../../core/services/marketplace/marketplace-config.service';
+import { DriverOnboardingStatusService } from '../../../../../core/services/driver/driver-onboarding-status.service';
 
 type ToastColor = 'success' | 'danger' | 'warning';
 
@@ -92,32 +120,30 @@ type DriverDashboardStats = {
     completedJobs: number;
 };
 
-type PassedJob = {
+type DismissedJob = {
     id: string;
-    passedAt: number;
+    dismissedAt: number;
 };
 
-type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
+type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
 
 @Component({
     selector: 'app-driver-dashboard',
     standalone: true,
-    imports: [
+    imports: [DriverWalletTopupComponent, DriverEarningsPreviewComponent, ReferralPanelComponent,
         CommonModule,
+        DriverInboxComponent,
+        FormsModule,
         IonHeader,
         IonToolbar,
         IonTitle,
         IonButtons,
-        IonContent,
+        IonContent, IonInfiniteScroll, IonInfiniteScrollContent,
         IonIcon,
-        IonToggle,
         CardComponent,
-        ButtonComponent,
         BadgeComponent,
-        EmptyStateComponent,
         PerformanceBadgeComponent,
-        MovabiCarouselComponent,
-        MapComponent
+            MapComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -125,7 +151,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <ion-title class="font-display font-black text-[1.4rem] tracking-tighter text-slate-950">
-              Driver Hub
+              <img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="28" height="28" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px;flex-shrink:0" />Driver Hub
             </ion-title>
             @if (status() === 'online' && isAvailable()) {
               <div class="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-full">
@@ -177,6 +203,24 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
     </ion-header>
 
     <ion-content class="movabi-page relative">
+      @if (dashboardMessages.unreadAdminMessageCount() > 0) {
+        <button type="button"
+          class="mx-4 mt-4 mb-3 block rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left shadow-sm"
+          style="width: calc(100% - 2rem)"
+          (click)="router.navigateByUrl('/account/messages')">
+          <span class="block text-base font-bold text-blue-900">
+            Messages from Vaydu
+          </span>
+          <span class="mt-1 block text-sm text-blue-800">
+            {{ dashboardMessages.unreadAdminMessageCount() }}
+            unread {{ dashboardMessages.unreadAdminMessageCount() === 1 ? 'message' : 'messages' }}
+          </span>
+          <span class="mt-2 block text-sm font-bold text-blue-700">
+            Read messages ?
+          </span>
+        </button>
+      }
+
       @if (toastVisible()) {
         <div
           class="fixed top-4 left-4 right-4 z-[9999] max-w-xl mx-auto rounded-xl px-4 py-3 shadow-xl border text-sm font-bold"
@@ -195,11 +239,12 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
       }
 
       @if (activeHubTab() === 'requests') {
-        <div class="relative h-[calc(100vh-10.75rem)] min-h-[560px] overflow-hidden bg-slate-100 mb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
+        <div class="relative h-[calc(100dvh-10.75rem)] overflow-hidden bg-slate-100 mb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
           <div class="absolute inset-0">
             <app-map
               #map
               class="w-full h-full"
+              (ready)="onMapReady($event)"
             ></app-map>
           </div>
 
@@ -223,14 +268,24 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
             </div>
           }
 
+          @if (activeJob()) {
+            <button #activeHubJobCard type="button" (click)="resumeActiveJob()"
+              class="absolute bottom-4 left-4 right-4 bg-white rounded-2xl shadow-lg border border-slate-100 p-4 z-20 text-left">
+              <p class="text-xs font-bold text-amber-700">{{ activeJobStatusLabel() }}</p>
+              <p class="text-sm font-bold text-slate-950 mt-1">{{ activeJobCustomerName() }} · {{ activeJobTitle() }}</p>
+              <p class="text-xs text-slate-500 mt-1">Continue job →</p>
+            </button>
+          }
+          @if (!activeJob() && recoverableNegotiations().length > 0) {
           <div 
-            class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 transition-all duration-300 z-20"
+            class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl border-t border-slate-100 flex flex-col overflow-hidden z-20"
             [style.height.%]="sheetHeight()"
-            [style.transform]="isDraggingSheet() ? 'scale(0.99)' : 'scale(1)'"
+            [style.transition]="isDraggingSheet() ? 'none' : 'height 220ms ease'"
           >
             <button
               type="button"
-              class="w-full flex justify-center py-3 cursor-grab active:cursor-grabbing"
+              class="w-full shrink-0 flex justify-center items-center min-h-[44px] py-3 cursor-grab active:cursor-grabbing"
+              style="touch-action: none; user-select: none"
               (click)="toggleSheet()"
               (pointerdown)="startDragSheet($event)"
               aria-label="Resize requests sheet"
@@ -238,11 +293,18 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               <span class="w-12 h-1.5 bg-slate-300 rounded-full"></span>
             </button>
 
-            <div class="px-4 h-[calc(100%-3rem)] overflow-hidden flex flex-col">
+            <div class="px-4 min-h-0 flex-1 overflow-hidden flex flex-col">
               @if (activeJob()) {
                 @let currentJob = activeJob();
                 <div class="min-h-0 flex-1 flex flex-col">
-                  <div class="flex-1 overflow-y-auto overscroll-contain pb-5">
+                  <div
+                    class="flex-1 overflow-y-auto overscroll-contain pb-5 cursor-pointer"
+                    role="button"
+                    tabindex="0"
+                    (click)="resumeActiveJob()"
+                    (keydown.enter)="resumeActiveJob()"
+                    (keydown.space)="onActiveCardSpace($event)"
+                  >
                     <div class="space-y-4">
                       <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0 flex-1">
@@ -254,13 +316,27 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                             {{ activeJobCustomerName(currentJob) }}
                           </p>
                         </div>
-                        <div class="text-right shrink-0">
+                        <div class="text-right shrink-0 whitespace-nowrap">
                           <p class="text-2xl font-display font-black text-slate-950">
-                            {{ formatPrice(getRequestFare(currentJob!)) }}
+                            {{ moneyView(currentJob).net !== null ? formatPrice(moneyView(currentJob).net!) : 'Pending' }}
                           </p>
-                          <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Fare</p>
+                          <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Your earnings</p>
                         </div>
                       </div>
+                      @if (offerMetrics(); as om) {
+                        <div class="grid grid-cols-2 gap-3 mt-3" data-testid="driver-offer-metrics">
+                          <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Acceptance · {{ om.periodDays }}d</p>
+                            <p class="text-sm font-bold text-slate-900">{{ om.insufficientData.offers ? 'Not enough trips yet' : (om.acceptanceRate! * 100 | number:'1.0-0') + '%' }}</p>
+                            <p class="text-[9px] text-slate-400">{{ om.acceptedOffers }} of {{ om.acknowledgedOffers }} offers</p>
+                          </div>
+                          <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                            <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Cancellations · {{ om.periodDays }}d</p>
+                            <p class="text-sm font-bold text-slate-900">{{ om.insufficientData.cancellations ? 'Not enough trips yet' : (om.cancellationRate! * 100 | number:'1.0-0') + '%' }}</p>
+                            <p class="text-[9px] text-slate-400">{{ om.driverCancellations }} of {{ om.acceptedBookings }} bookings</p>
+                          </div>
+                        </div>
+                      }
 
                       <div class="grid grid-cols-2 gap-3">
                         <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
@@ -301,6 +377,9 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                       class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
                     >
                       Chat
+                      @if (activeJobChatUnread() > 0) {
+                        <span class="ml-2 inline-flex min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-bold text-white" aria-label="Unread chat messages">{{ activeJobChatUnread() > 99 ? '99+' : activeJobChatUnread() }}</span>
+                      }
                     </button>
                     @if (activeJobCustomerPhone(currentJob)) {
                       <button
@@ -324,7 +403,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                       (click)="resumeActiveJob()"
                       class="col-span-2 w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all"
                     >
-                      Continue Request
+                      Continue Job
                     </button>
                   </div>
                 </div>
@@ -333,6 +412,15 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                   <div class="min-h-0 flex-1 flex flex-col">
                     <div class="flex-1 overflow-y-auto overscroll-contain pb-5">
                       <div class="space-y-4">
+                      <button
+                        type="button"
+                        (click)="showAvailableRequests()"
+                        aria-label="Back to Available Requests"
+                        class="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-slate-900 active:scale-95 transition-all"
+                      >
+                        <span aria-hidden="true">&larr;</span>
+                        Back to Available Requests
+                      </button>
                       <div class="flex items-start justify-between gap-3">
                         <div class="flex-1">
                           <app-badge variant="primary">{{ getServiceName(selectedJob!) }}</app-badge>
@@ -341,13 +429,8 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                           </h3>
                           <p class="text-sm text-slate-600 mt-1">{{ requestServiceHelper(selectedJob!) }}</p>
                         </div>
-                        <div class="text-right">
-                          <p class="text-2xl font-display font-black text-slate-950">
-                            {{ formatPrice(getRequestFare(selectedJob!)) }}
-                          </p>
-                          <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Fare</p>
-                        </div>
                       </div>
+                      <app-driver-earnings-preview [jobId]="selectedJob!.id"></app-driver-earnings-preview>
 
                       <div class="grid grid-cols-2 gap-3">
                         <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
@@ -381,26 +464,214 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                       </div>
                     </div>
 
-                    <div class="-mx-4 shrink-0 grid grid-cols-2 gap-3 bg-white/95 backdrop-blur border-t border-slate-100 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-                      <button
-                        type="button"
-                        (click)="reject(selectedJob!.id)"
-                        class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
-                      >
-                        Pass
-                      </button>
-                      <button
-                        type="button"
-                        [disabled]="submitting()"
-                        (click)="accept(selectedJob!.id)"
-                        class="w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        {{ submitting() ? 'Accepting...' : 'Accept Request' }}
-                      </button>
+                    <div class="-mx-4 shrink-0 bg-white/95 backdrop-blur border-t border-slate-100 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+                      @if (isNegotiationJob(selectedJob!)) {
+                        @if (showNegotiationCounterInput()) {
+                          <div class="space-y-4 mb-4">
+                            <!-- Enhanced Counter Input -->
+                            <div class="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 p-4">
+                              <div class="flex items-center gap-2 mb-3">
+                                <ion-icon name="cash-outline" class="text-amber-600 text-lg"></ion-icon>
+                                <span class="text-sm font-bold text-amber-800">Your Counter Offer</span>
+                              </div>
+                              <div class="relative mb-3">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-amber-600">£</span>
+                                <input
+                                  type="number"
+                                  [ngModel]="negotiationCounterAmount()"
+                                  (ngModelChange)="negotiationCounterAmount.set($event)"
+                                  class="w-full rounded-xl border-2 border-amber-200 pl-8 pr-4 py-3 text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                                  placeholder="Enter your counter amount"
+                                />
+                              </div>
+                              <!-- Server-authoritative counter earnings preview -->
+                              @if (negotiationCounterAmount() > 0) { <app-driver-earnings-preview [jobId]="selectedJob!.id" [amount]="negotiationCounterAmount()"></app-driver-earnings-preview> }
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                              <button
+                                type="button"
+                                (click)="submitNegotiationCounter(selectedJob!.id)"
+                                [disabled]="negotiationSubmitting()"
+                                class="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold text-sm active:scale-95 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                              >
+                                <ion-icon name="send-outline"></ion-icon>
+                                {{ negotiationSubmitting() ? 'Sending...' : 'Send Counter' }}
+                              </button>
+                              <button
+                                type="button"
+                                (click)="showNegotiationCounterInput.set(false)"
+                                class="w-full py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
+                              >
+                                <ion-icon name="close-outline"></ion-icon>
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        } @else {
+                          <!-- Enhanced Negotiation Display -->
+                          <div class="space-y-4">
+                            <div class="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 p-4">
+                              <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Customer Offer</span>
+                                <div class="flex items-center gap-1">
+                                  <ion-icon name="person-outline" class="text-sm text-slate-400"></ion-icon>
+                                  <span class="text-xs text-slate-500">Customer</span>
+                                </div>
+                              </div>
+                              <p class="text-2xl font-display font-black text-slate-900 mb-3">
+                                {{ formatPrice(selectedJob!.negotiated_fare || selectedJob!.total_price) }}
+                              </p>
+                              
+                              <!-- Suggested Fare Comparison -->
+                              <div class="bg-blue-50 rounded-xl p-3 mb-3">
+                                <div class="flex items-center justify-between text-sm">
+                                  <span class="text-blue-600 font-medium">Suggested fare</span>
+                                  <span class="font-bold text-blue-900">{{ formatPrice(selectedJob!.total_price) }}</span>
+                                </div>
+                                <div class="flex items-center justify-between text-sm mt-1">
+                                  <span class="text-slate-600">Difference</span>
+                                  <span class="font-bold" [class]="{
+                                    'text-emerald-600': (selectedJob!.negotiated_fare || selectedJob!.total_price) >= selectedJob!.total_price,
+                                    'text-red-600': (selectedJob!.negotiated_fare || selectedJob!.total_price) < selectedJob!.total_price
+                                  }">
+                                    {{ formatPrice((selectedJob!.negotiated_fare || selectedJob!.total_price) - selectedJob!.total_price) }}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <app-driver-earnings-preview [jobId]="selectedJob!.id" [amount]="selectedJob!.negotiated_fare || selectedJob!.total_price"></app-driver-earnings-preview>
+                            </div>
+                            
+                            <!-- Large Countdown Timer -->
+                            @if (selectedAvailableJob()?.negotiation_deadline) {
+                              <div class="bg-gradient-to-r from-red-50 to-orange-50 rounded-2xl border border-red-200 p-4 text-center">
+                                <div class="flex items-center justify-center gap-2 mb-2">
+                                  <ion-icon name="timer-outline" class="text-red-600 text-lg animate-pulse"></ion-icon>
+                                  <span class="text-sm font-bold text-red-800 uppercase tracking-wider">Time Remaining</span>
+                                </div>
+                                <p class="text-3xl font-display font-black text-red-900">
+                                  {{ formatDriverCountdown(selectedAvailableJob()?.negotiation_deadline || '') }}
+                                </p>
+                              </div>
+                            }
+                            
+                            <div class="grid grid-cols-3 gap-3">
+                              <button
+                                type="button"
+                                (click)="reject(selectedJob!.id)"
+                                class="w-full py-3 bg-white border-2 border-red-200 text-red-600 rounded-xl font-bold text-sm active:scale-95 transition-all flex flex-col items-center gap-1"
+                              >
+                                <ion-icon name="close-circle-outline"></ion-icon>
+                                Decline
+                              </button>
+                              <button
+                                type="button"
+                                (click)="showNegotiationCounterInput.set(true); negotiationCounterAmount.set(selectedJob!.total_price)"
+                                class="w-full py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all flex flex-col items-center gap-1"
+                              >
+                                <ion-icon name="cash-outline"></ion-icon>
+                                Counter
+                              </button>
+                              <button
+                                type="button"
+                                [disabled]="negotiationSubmitting()"
+                                (click)="acceptNegotiationOffer(selectedJob!.id)"
+                                class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl font-bold text-sm active:scale-95 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex flex-col items-center gap-1"
+                              >
+                                <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                {{ negotiationSubmitting() ? 'Accepting...' : 'Accept' }}
+                              </button>
+                            </div>
+                          </div>
+                        }
+                      } @else {
+                        <div class="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            (click)="reject(selectedJob!.id)"
+                            class="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm active:scale-95 transition-all"
+                          >
+                            Pass
+                          </button>
+                          <button
+                            type="button"
+                            [disabled]="submitting()"
+                            (click)="accept(selectedJob!.id)"
+                            class="w-full py-3 bg-amber-500 text-slate-950 rounded-xl font-bold text-sm active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            {{ submitting() ? 'Accepting...' : 'Accept Request' }}
+                          </button>
+                        </div>
+                      }
                     </div>
                   </div>
               } @else {
                 <div class="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+5rem)]">
+                  @if (recoverableNegotiations().length > 0) {
+                    <div class="mb-4">
+                      <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-display font-bold text-slate-900">
+                          My negotiation in progress
+                        </h3>
+                      </div>
+                      <div class="space-y-3">
+                        @for (item of recoverableNegotiations(); track item.id) {
+                          <button
+                            type="button"
+                            (click)="openRecoveredNegotiation(item.job_id)"
+                            class="w-full bg-white border border-emerald-300 rounded-xl p-4 text-left active:scale-[0.98] transition-all"
+                          >
+                            <p class="text-sm font-bold text-slate-900">Continue negotiation</p>
+                            <p class="text-xs text-slate-600 mt-1">
+                              You have already claimed this request. Tap to continue.
+                            </p>
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  }
+
+                  @if (hybridEnabled && hybridOpportunities().length > 0) {
+                    <div class="mb-4">
+                      <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-display font-bold text-slate-900">
+                          Negotiation Opportunities
+                          <span class="ml-2 px-2 py-1 bg-amber-500 text-slate-950 text-[10px] font-bold rounded-full">
+                            {{ hybridOpportunities().length }}
+                          </span>
+                        </h3>
+                      </div>
+                      <div class="space-y-3">
+                        @for (opportunity of hybridOpportunities(); track opportunity.session_id) {
+                          <button
+                            type="button"
+                            (click)="startHybridNegotiation(opportunity.job_id, opportunity.session_id)"
+                            class="w-full bg-white border border-amber-200 rounded-xl p-4 text-left active:scale-[0.98] transition-all hover:bg-amber-50"
+                          >
+                            <div class="flex items-start justify-between gap-3">
+                              <div class="flex-1 min-w-0">
+                                <p class="text-sm font-bold text-slate-900 truncate">{{ opportunity.service_name }}</p>
+                                <p class="text-xs text-slate-600 mt-1">{{ opportunity.pickup_address || 'Location pending' }}</p>
+                                <div class="flex items-center gap-3 mt-2">
+                                  <span class="text-xs text-slate-500">{{ opportunity.distance_km?.toFixed(1) || '—' }} km</span>
+                                  <span class="text-xs text-slate-500">{{ formatDuration(opportunity.eta_seconds) }}</span>
+                                </div>
+                              </div>
+                              <div class="text-right">
+                                <p class="text-lg font-display font-black text-slate-950">
+                                  View earnings
+                                </p>
+                                @if (opportunity.customer_offer) {
+                                  <p class="text-xs text-emerald-600 font-bold">Customer offer available</p>
+                                }
+                              </div>
+                            </div>
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  }
+
                   <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-display font-bold text-slate-900">
                       Available Requests
@@ -477,7 +748,7 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                             </div>
                             <div class="text-right">
                               <p class="text-lg font-display font-black text-slate-950">
-                                {{ formatPrice(getRequestFare(job)) }}
+                                View earnings
                               </p>
                             </div>
                           </div>
@@ -489,12 +760,135 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               }
             </div>
           </div>
+          }
         </div>
       } @else {
-        <div class="px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+6.75rem)] space-y-4">
-          @if (activeHubTab() === 'earnings') {
-            <app-movabi-carousel [slides]="driverCarouselSlides()"></app-movabi-carousel>
+        <div class="px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+11rem)] space-y-4">
+          @if(activeMarketConflict() || payoutContext.wallet()?.marketReviewRequired){<section class="rounded-xl border border-amber-200 bg-amber-50 p-4" role="alert">A previous request is linked to a different driver market. Contact support to review it before accepting more work.</section>}
+          @if (activeHubTab() === 'inbox') {
+            <app-driver-inbox (requests)="setHubTab('requests')"></app-driver-inbox>
+          } @else if (activeHubTab() === 'trips') {
+            <app-card class="p-4">
+              <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Trips</p>
+              <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ activeJob() ? activeJobTitle() : 'No active request' }}</h2>
+              <p class="mt-1 text-sm font-semibold text-slate-600">{{ activeJob() ? activeJobShortRouteLabel() : 'Accepted requests will appear here so you can continue them.' }}</p>
+              <button type="button" (click)="activeJob() ? resumeActiveJob() : setHubTab('requests')" class="mt-4 w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ activeJob() ? 'Continue Job' : 'Browse Requests' }}</button>
+            </app-card>
+            <app-card class="p-4">
+              <h2 class="text-lg font-black">Booking history</h2>
+              @if (tripHistoryLoading()) { <p role="status">Loading your bookings…</p> }
+              @if (tripHistoryError()) { <p role="alert">{{ tripHistoryError() }}</p><button type="button" (click)="loadTripHistory(tripHistory().length > 0)" class="py-3 font-bold">Try again</button> }
+              @if (!tripHistoryLoading() && !tripHistoryError() && tripHistory().length===0) { <p class="py-3 text-slate-600">Completed and cancelled bookings will appear here.</p> }
+              @for (trip of tripHistory(); track trip.id) {
+                <button type="button" (click)="router.navigate(['/driver/history',trip.id])" class="trip-history-link">
+                  <span class="font-bold">{{ trip.status==='settled'?'Completed':trip.status==='cancelled'?'Cancelled':trip.status==='completed'?'Completed':'Ended booking' }}</span>
+                  <span>{{ trip.created_at | date:'mediumDate' }}</span>
+                  <span>{{ trip.pickup_address || 'Pickup not recorded' }} → {{ trip.dropoff_address || 'Destination not recorded' }}</span>
+                  <span>View booking record</span>
+                </button>
+              }
+              <ion-infinite-scroll threshold="120px" [disabled]="!tripHistoryMore() || !!tripHistoryError()" (ionInfinite)="loadMoreTrips($event)">
+                <ion-infinite-scroll-content loadingSpinner="crescent" loadingText="Loading more bookings…"></ion-infinite-scroll-content>
+              </ion-infinite-scroll>
+            </app-card>
+          } @else if (activeHubTab() === 'wallet') {
+            <div class="space-y-4">
+              <app-card class="p-4">
+                <div class="wallet-summary-header">
+                  <div>
+                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Earnings & Wallet</p>
+                    <h2 class="mt-2 text-2xl font-display font-black text-slate-950">{{ walletSummary('paid') }}</h2>
+                    <p class="wallet-summary-note">Recorded earnings · Not your withdrawable balance</p>
+                  </div>
+                  <span class="wallet-status rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+                    {{ payoutContext.wallet()?.status || (payoutContext.walletError() ? 'Unavailable' : 'Checking payouts') }}
+                  </span>
+                </div>
+                @if(walletLoading()){<p role="status">Loading earnings…</p>}
+                @if(walletError()){<p role="alert" class="text-red-700">{{walletError()}}</p>}
+                <p class="wallet-summary-note">{{compactPayoutMessage()}}</p>
+                <div class="wallet-balances">
+                  <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-emerald-700">Paid</p>
+                    <p class="mt-1 text-sm font-black text-slate-950">{{ walletSummary('paid') }}</p>
+                  </div>
+                  <div class="rounded-xl border border-amber-100 bg-amber-50 p-3">
+                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-amber-700">Pending</p>
+                    <p class="mt-1 text-sm font-black text-slate-950">{{ walletSummary('pending') }}</p>
+                  </div>
+                  <div class="rounded-xl border border-rose-100 bg-rose-50 p-3">
+                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-rose-700">Fees</p>
+                    <p class="mt-1 text-sm font-black text-slate-950">{{ walletSummary('fees') }}</p>
+                  </div>
+                </div>
+                <p class="mt-3 text-sm text-slate-600">Failed payouts: {{ walletSummary('failed') }}</p>
+                <p class="mt-2 text-sm text-amber-800">Needs review: {{walletSummary('review')}}</p>
+                <div class="mt-4 grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
+                  @if (payoutContext.wallet()?.payoutIntegrationAvailable) {
+                    <button type="button" (click)="openPayoutSettings()" class="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ payoutSettingsLabel() }}</button>
+                  }
+                  <button type="button" (click)="router.navigate(['/driver/earnings'])" class="rounded-xl border border-slate-200 bg-white py-3 text-sm font-black text-slate-800">Full History</button>
+                </div>
+              </app-card>
 
+              <!-- Batch 1G: cash-credit belongs inside the Driver Hub Wallet tab. -->
+        <app-card class="p-4" aria-labelledby="cash-credit-title" [attr.aria-busy]="cashCredit.loading()">
+          <div class="flex items-center justify-between gap-3">
+            <h3 id="cash-credit-title" class="text-sm font-black text-slate-950">Cash-ride credit</h3>
+            <div class="flex items-center gap-3">
+              <button type="button" (click)="refreshCashCredit()" [disabled]="cashCredit.loading()"
+                class="text-sm font-bold text-amber-700 disabled:opacity-70" aria-label="Refresh cash-ride credit">Refresh</button>
+              @if(cashCredit.status()) {
+                <button type="button" (click)="topupRef.open.set(true)"
+                  class="text-sm font-bold text-amber-700 disabled:opacity-70">Top up</button>
+              }
+            </div>
+          </div>
+          @if(cashCredit.loading()) {
+            <p role="status" class="mt-3 text-sm text-slate-600">Checking cash credit…</p>
+          } @else if(cashCredit.error()) {
+            <p role="alert" class="mt-3 text-sm text-red-700">{{cashCredit.error()}}</p>
+          } @else if(cashCredit.status(); as credit) {
+            @if(cashMessage(credit)){<p role="status" class="mt-3 text-sm text-slate-600" [class.text-amber-800]="cashNeedsReview(credit)">{{cashMessage(credit)}}</p>}
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex flex-wrap justify-between gap-2"><dt>Unreserved credit</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.availableMinor,credit.currency)}}</dd></div>
+              <div class="flex flex-wrap justify-between gap-2"><dt>Held for cash rides</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.heldMinor,credit.currency)}}</dd></div>
+              @if(credit.balance.deficitMinor !== '0') {
+                <div class="flex flex-wrap justify-between gap-2 text-amber-800"><dt>Amount needing review</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.deficitMinor,credit.currency)}}</dd></div>
+              }
+            </dl>
+            <p class="mt-3 text-xs text-slate-600">For cash-ride fees and commission. Separate from earnings and bank payouts.</p>
+          } @else {
+            <p role="status" class="mt-3 text-sm text-slate-600">Cash credit has not been checked. Select Refresh.</p>
+          }
+          <app-driver-wallet-topup #topupRef [hideTrigger]="true" />
+        </app-card>
+
+              <app-card class="p-4">
+                <div class="mb-3 flex items-center justify-between">
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Transactions</p>
+                  <span class="text-[10px] font-black text-slate-400">{{ walletRecentEarnings().length }} latest</span>
+                </div>
+                @if (walletRecentEarnings().length === 0) {
+                  <p class="rounded-xl bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-600">Completed job earnings will appear here.</p>
+                } @else {
+                  <div class="space-y-2">
+                    @for (earning of walletRecentEarnings(); track earning.id || earning.job_id || $index) {
+                      <button type="button" (click)="openWalletBooking(earning)" class="wallet-history-link">
+                        <div class="min-w-0">
+                          <p class="text-sm font-black text-slate-900">{{ earningLabel(earning) }}</p>
+                          <p class="text-[11px] font-semibold text-slate-500">{{ earningStatusLabel(earning) }}</p>
+                        </div>
+                        <p class="shrink-0 text-sm font-black text-slate-950">{{ formatRecordedEarning(earning) }}</p>
+                      </button>
+                    }
+                  </div>
+                }
+              </app-card>
+            </div>
+          } @else if (activeHubTab() === 'profile') {
+            <div class="space-y-4">
+              <h2 class="text-lg font-black">Performance</h2>
             <div class="grid grid-cols-1 min-[560px]:grid-cols-2 gap-3">
               <app-card class="p-3 rounded-2xl">
                 <div class="space-y-2.5">
@@ -546,76 +940,6 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
                 </div>
               </app-card>
             </div>
-
-            <app-card class="p-4">
-              <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Future analytics</p>
-              <h2 class="mt-2 text-xl font-display font-black text-slate-950">Performance insights</h2>
-              <p class="mt-1 text-sm font-semibold text-slate-600">Acceptance, service quality, and growth features will appear here without duplicating wallet payouts.</p>
-            </app-card>
-          } @else if (activeHubTab() === 'trips') {
-            <app-card class="p-4">
-              <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Trips</p>
-              <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ activeJob() ? activeJobTitle() : 'No active request' }}</h2>
-              <p class="mt-1 text-sm font-semibold text-slate-600">{{ activeJob() ? activeJobShortRouteLabel() : 'Accepted requests will appear here so you can continue them.' }}</p>
-              <button type="button" (click)="activeJob() ? resumeActiveJob() : setHubTab('requests')" class="mt-4 w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">{{ activeJob() ? 'Continue Request' : 'Browse Requests' }}</button>
-            </app-card>
-          } @else if (activeHubTab() === 'wallet') {
-            <div class="space-y-4">
-              <app-card class="p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Earnings & Wallet</p>
-                    <h2 class="mt-2 text-2xl font-display font-black text-slate-950">{{ formatPrice(walletTransferredTotal()) }}</h2>
-                    <p class="mt-1 text-sm font-semibold text-slate-600">Completed payouts transferred to Stripe Express.</p>
-                  </div>
-                  <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
-                    {{ getStripeBadgeText() }}
-                  </span>
-                </div>
-                <div class="mt-4 grid grid-cols-3 gap-2">
-                  <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
-                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-emerald-700">Paid</p>
-                    <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletPaidTotal()) }}</p>
-                  </div>
-                  <div class="rounded-xl border border-amber-100 bg-amber-50 p-3">
-                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-amber-700">Pending</p>
-                    <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletPendingTotal()) }}</p>
-                  </div>
-                  <div class="rounded-xl border border-rose-100 bg-rose-50 p-3">
-                    <p class="text-[9px] font-black uppercase tracking-[0.12em] text-rose-700">Fees</p>
-                    <p class="mt-1 text-sm font-black text-slate-950">{{ formatPrice(walletFeeTotal()) }}</p>
-                  </div>
-                </div>
-                <div class="mt-4 grid grid-cols-2 gap-3">
-                  <button type="button" (click)="openPayoutSettings()" class="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">Stripe Payouts</button>
-                  <button type="button" (click)="router.navigate(['/driver/earnings'])" class="rounded-xl border border-slate-200 bg-white py-3 text-sm font-black text-slate-800">Full History</button>
-                </div>
-              </app-card>
-
-              <app-card class="p-4">
-                <div class="mb-3 flex items-center justify-between">
-                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Transactions</p>
-                  <span class="text-[10px] font-black text-slate-400">{{ walletRecentEarnings().length }} latest</span>
-                </div>
-                @if (walletRecentEarnings().length === 0) {
-                  <p class="rounded-xl bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-600">Completed job earnings will appear here.</p>
-                } @else {
-                  <div class="space-y-2">
-                    @for (earning of walletRecentEarnings(); track earning.id || earning.job_id || $index) {
-                      <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-                        <div class="min-w-0">
-                          <p class="truncate text-sm font-black text-slate-900">{{ earningLabel(earning) }}</p>
-                          <p class="text-[11px] font-semibold text-slate-500">{{ earningStatusLabel(earning) }}</p>
-                        </div>
-                        <p class="shrink-0 text-sm font-black text-slate-950">{{ formatPrice(earningNetAmount(earning)) }}</p>
-                      </div>
-                    }
-                  </div>
-                }
-              </app-card>
-            </div>
-          } @else if (activeHubTab() === 'profile') {
-            <div class="space-y-4">
               <app-card class="p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div>
@@ -657,30 +981,38 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
               </app-card>
 
               <app-card class="p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
+                <div class="flex flex-col items-start gap-3">
+                  <div class="min-w-0">
                     <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Verification</p>
                     <h2 class="mt-2 text-xl font-display font-black text-slate-950">{{ isVerified() ? 'Approved driver' : 'Setup needs attention' }}</h2>
                     <p class="mt-1 text-sm font-semibold text-slate-600">{{ verificationNotes() || 'Manage vehicle, documents, plan and verification status.' }}</p>
                   </div>
                   <app-badge [variant]="isVerified() ? 'success' : isActionRequired() ? 'warning' : 'secondary'">{{ verificationStatus() }}</app-badge>
                 </div>
-                <div class="mt-4 grid grid-cols-2 gap-3">
+                <div class="mt-4 grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
                   <button type="button" (click)="router.navigate(['/driver/settings'])" class="rounded-xl bg-slate-100 py-3 text-sm font-black text-slate-800">Settings</button>
                   <button type="button" (click)="router.navigate(['/driver/onboarding'])" class="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950">Setup</button>
                 </div>
               </app-card>
 
+              <app-card class="p-4"><app-referral-panel /></app-card>
+
               <app-card class="p-4">
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Stripe Connect</p>
-                    <h2 class="mt-2 text-lg font-display font-black text-slate-950">{{ getStripeCompactSummary() }}</h2>
-                    <p class="mt-1 text-sm font-semibold text-slate-600">{{ getStripeDescription() }}</p>
-                  </div>
-                  <app-badge [variant]="getStripeBadgeVariant()">{{ getStripeBadgeText() }}</app-badge>
+                <div class="w-full flex items-center gap-2">
+                  <ion-icon name="card-outline" class="text-xl text-slate-700"></ion-icon>
+                  <h3 class="text-lg font-black text-slate-950">Payment account</h3>
                 </div>
-                <button type="button" (click)="openPayoutSettings()" class="mt-4 w-full rounded-xl bg-slate-950 py-3 text-sm font-black text-white">Payout Setup</button>
+                <div class="mt-3">
+                  <span class="wallet-status" [attr.data-variant]="getStripeBadgeVariant()">{{ payoutBadgeText() }}</span>
+                </div>
+                @if (payoutContext.wallet()?.payoutIntegrationAvailable) {
+                  <p class="wallet-summary-note">Ready to receive earnings.</p>
+                } @else {
+                  <p class="wallet-summary-note">{{compactPayoutMessage()}}</p>
+                }
+                @if (payoutContext.wallet()?.payoutIntegrationAvailable) {
+                  <button type="button" (click)="openPayoutSettings()" class="mt-4 w-full rounded-xl bg-slate-950 py-3 text-sm font-black text-white">Payment account setup</button>
+                }
               </app-card>
             </div>
           }
@@ -694,29 +1026,57 @@ type DriverHubTab = 'requests' | 'earnings' | 'trips' | 'wallet' | 'profile';
           <button
             type="button"
             (click)="setHubTab(tab.key)"
-            class="flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-black transition-all"
+            class="relative flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-black transition-all"
             [class.bg-amber-500]="activeHubTab() === tab.key"
             [class.text-slate-950]="activeHubTab() === tab.key"
             [class.text-slate-500]="activeHubTab() !== tab.key"
           >
             <ion-icon [name]="tab.icon" class="text-base"></ion-icon>
+            @if(tab.key==='inbox' && inbox.unread()>0){<span class="absolute right-1 top-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white" [attr.aria-label]="inbox.unread()+' unread inbox items'">{{inbox.unread()>99?'99+':inbox.unread()}}</span>}
             <span>{{ tab.label }}</span>
           </button>
         }
       </div>
     </nav>
-  `
+  `,
+    styles: [`.wallet-summary-header,.profile-payout-header{display:flex;flex-wrap:wrap;flex-direction:column;align-items:flex-start;gap:.75rem;min-width:0}.wallet-summary-header>div{min-width:0;max-width:100%}.wallet-status{max-width:100%;white-space:normal;overflow-wrap:break-word;font-size:.75rem!important;line-height:1.4!important;letter-spacing:.02em!important;border-radius:999px;border:1px solid #e2e8f0;background:#f8fafc;color:#475569;padding:.35rem .65rem}.wallet-summary-note{font-size:.875rem!important;line-height:1.5!important;font-weight:400!important;letter-spacing:normal;white-space:normal;overflow-wrap:break-word;margin-top:.5rem}.profile-payout-header>p{font-size:.75rem!important;line-height:1.4!important;letter-spacing:.08em!important}.wallet-status[data-variant=success]{background:#ecfdf5;border-color:#a7f3d0;color:#047857}.wallet-status[data-variant=warning]{background:#fffbeb;border-color:#fde68a;color:#92400e}.wallet-status[data-variant=error]{background:#fef2f2;border-color:#fecaca5;color:#b91c1c}@media(min-width:640px){.wallet-summary-header{flex-direction:row;justify-content:space-between;align-items:flex-start}.wallet-summary-header>div{flex:1}.wallet-summary-header .wallet-status{max-width:14rem}.profile-payout-header{flex-direction:row;justify-content:space-between;align-items:center}}.trip-history-link,.wallet-history-link{display:grid;width:100%;min-width:0;text-align:left;gap:.5rem;padding:1rem;border:1px solid #e2e8f0;border-radius:1rem;background:#f8fafc;margin-top:.7rem;overflow-wrap:anywhere;line-height:1.4}.wallet-history-link{grid-template-columns:minmax(0,1fr);}.wallet-history-link p{white-space:normal}.wallet-balances{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.4rem;margin-top:1rem}.wallet-balances>div{min-width:0;padding:.65rem .4rem;text-align:center}.wallet-balances>div>p:first-child{font-size:10px;line-height:1.3;letter-spacing:0;font-weight:700}.wallet-balances>div>p+p{font-size:13px;line-height:1.4;letter-spacing:0;font-weight:800;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.trip-history-link:focus-visible,.wallet-history-link:focus-visible{outline:3px solid #2563eb;outline-offset:2px}`]
 })
 
 
 
-export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
-    @ViewChild('map') private marketplaceMap?: MapComponent;
-
+export class DriverDashboardPage implements OnInit, OnDestroy {
+    readonly requestFeed = inject(DriverRequestFeedService);
     public router = inject(Router);
+    readonly dashboardMessages = inject(NotificationService);
     private route = inject(ActivatedRoute);
     public auth = inject(AuthService);
+    public inbox = inject(DriverInboxService);
+    private inboxSession = effect((onCleanup) => {
+        const id=this.auth.currentUser()?.id;
+        if(id)this.inbox.start(id);else this.inbox.stop();
+        onCleanup(()=>this.inbox.stop());
+    });
     private driverService = inject(DriverService);
+    readonly payoutContext=inject(MarketSafetyService);
+    readonly cashCredit=inject(DriverCashCreditService);
+    readonly cashAmount=formatCashCreditMinor;
+    readonly cashMessage=cashCreditStatusMessage;
+    readonly cashNeedsReview=cashCreditNeedsReview;
+    refreshCashCredit():void {void this.cashCredit.refresh(true).catch(()=>{});}
+
+    compactPayoutMessage():string {
+        const error=this.payoutContext.walletError();
+        if(error)return error;
+        const message=this.payoutContext.wallet()?.message;
+        return message==='Transfers and bank payouts are separate. Your ledger retains each recorded currency.'
+            ? 'Payouts are separate from recorded earnings.'
+            : message || 'Checking payout availability…';
+    }
+    readonly walletLoading=this.driverService.earningsLoading;
+    readonly activeMarketConflict=this.driverService.activeMarketConflict;
+    readonly walletError=this.driverService.earningsError;
+    payoutSettingsLabel(){return 'Payment account setup';}
+    payoutBadgeText():string{const st=String(this.payoutContext.wallet()?.status||'');if(this.payoutContext.walletError())return 'Unavailable';if(!st)return 'Checking payment account';if(/connect|set up|available|ready/i.test(st))return 'Payout account connected';if(/pending|required|review/i.test(st))return 'Payment account setup pending';return st;}
     private locationService = inject(LocationService);
     public profileService = inject(ProfileService);
     private connectService = inject(ConnectService);
@@ -724,40 +1084,98 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private vehicleCompatibility = inject(VehicleCompatibilityService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
+    private alertCtrl = inject(AlertController);
     private config = inject(AppConfigService);
+    private marketAvailability = inject(MarketAvailabilityClientService);
     private oneSignal = inject(OneSignalService);
     private tour = inject(OnboardingTourService);
     private mapProvider = inject(MapProviderService);
     private geocoding = inject(GeocodingService);
     private routing = inject(RoutingService);
     private notificationService = inject(NotificationService);
+    private negotiationService = inject(MarketplaceNegotiationService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
+    private onboardingStatus = inject(DriverOnboardingStatusService);
+    private goOnlineInFlight:Promise<void>|null=null;
+    private onlineDenialAlert:HTMLIonAlertElement|null=null;
 
+    get hybridEnabled(): boolean {
+        return this.hybridOpportunities().length > 0;
+    }
     status = this.driverService.onlineStatus;
     isAvailable = this.driverService.isAvailable;
     activeJob = this.driverService.activeJob;
+    readonly chatAlerts = inject(NotificationOrchestratorService);
+    readonly activeJobChatUnread = computed(() => {
+        const id = this.activeJob()?.id;
+        return id ? this.chatAlerts.getBadgeCount(id) : 0;
+    });
+    private activeJobChatBadgeRefresh = effect((onCleanup) => {
+        const id = this.activeJob()?.id;
+        const user = this.auth.currentUser()?.id;
+        if (!id || !user) return;
+        void this.chatAlerts.markAsRead(id);
+        const timer = setInterval(() => { void this.chatAlerts.markAsRead(id); }, 30000);
+        onCleanup(() => clearInterval(timer));
+    });
     activeHubTab = signal<DriverHubTab>('requests');
     readonly hubTabs: Array<{ key: DriverHubTab; label: string; icon: string }> = [
         { key: 'requests', label: 'Requests', icon: 'location-outline' },
-        { key: 'earnings', label: 'Earnings', icon: 'stats-chart' },
         { key: 'trips', label: 'Trips', icon: 'list-outline' },
         { key: 'wallet', label: 'Wallet', icon: 'wallet-outline' },
+        { key: 'inbox', label: 'Inbox', icon: 'mail-outline' },
         { key: 'profile', label: 'Profile', icon: 'settings-outline' }
     ];
-    private readonly passedJobsStorageKey = 'movabi_driver_passed_jobs';
-    passedJobIds = signal<Set<string>>(new Set());
-    
+    private readonly dismissedJobsStorageKey = 'movabi_driver_dismissed_jobs';
+    dismissedJobIds = signal<Set<string>>(new Set());
+
     // Urgent request notification system
     private requestAlertInterval: any = null;
+    private activeRequestAudio: HTMLAudioElement | null = null;
+    private requestAudioUnlockCleanup: (() => void) | null = null;
     private activeRequestId = signal<string | null>(null);
+
+    private readonly activeRequestStatuses = new Set<string>([
+        'searching',
+        'requested',
+        'broadcasting',
+        'waiting'
+    ]);
+    private readonly terminalRequestStatuses = new Set<string>(['cancelled', 'completed', 'no_driver_found', 'assigned', 'accepted', 'expired']);
+
+    // Tracks jobs that have been auto-opened so we only popup once per job
+    private autoShownJobIds = new Set<string>();
+
     jobs = computed(() => {
-        const passed = this.passedJobIds();
-        return this.driverService.availableJobs().filter(job => !passed.has(job.id));
+        return this.driverService.availableJobs().filter(job => {
+            if (this.driverService.requestState.has(job.id)) return false;
+            return this.isJobRequestActive(job.status);
+        });
     });
     selectedAvailableJob = computed(() => {
         const id = this.selectedJobId();
         if (!id) return null;
         return this.jobs().find(job => job.id === id) || null;
     });
+    hybridOpportunities = computed(() => this.driverService.hybridOpportunities().filter(offer => !this.driverService.requestState.has(offer.job_id)));
+
+    /**
+     * Patch 1A — a successfully claimed negotiation that correctly left the
+     * unclaimed opportunity pool. Sourced from the persisted active_driver_id
+     * lookup so it survives refresh / app restart and does not depend on
+     * fetch_hybrid_opportunities.
+     */
+    recoverableNegotiations = computed(() => this.driverService.recoverableNegotiations());
+
+    /**
+     * Open an ALREADY-CLAIMED negotiation. Deliberately does NOT call
+     * claimHybridSession: the session is already claimed by this driver, so
+     * re-claiming would fail or wrongly re-assert authority instead of recovering.
+     */
+    openRecoveredNegotiation(jobId: string) {
+        void this.router.navigate(['/driver/hybrid-negotiation', jobId]);
+    }
+    selectedHybridOpportunity = signal<any>(null);
     locationError = this.locationService.locationError;
 
     submitting = signal(false);
@@ -781,10 +1199,24 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     // Marketplace UI signals
     selectedJobId = signal<string | null>(null);
     mapComponent = signal<any>(null);
+    private readonly activeHubJobCard = viewChild<ElementRef<HTMLElement>>('activeHubJobCard');
+    private readonly activeHubCardResize = effect((onCleanup) => {
+        const card = this.activeHubJobCard()?.nativeElement;
+        if (!card || typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(() => this.applyMarketplaceCamera(false));
+        observer.observe(card);
+        onCleanup(() => observer.disconnect());
+    });
     driverLocation = signal<{ lat: number; lng: number } | null>(null);
+    readonly mapSheetObstruction = computed(() => this.activeJob() ? 22 : this.recoverableNegotiations().length ? this.sheetHeight() : 0);
     sheetHeight = signal(40); // 40% default height
     isDraggingSheet = signal(false);
     surgeAreas = signal<any[]>([]); // For surge/high-demand areas
+
+    // Negotiation UI signals
+    negotiationCounterAmount = signal<number>(0);
+    showNegotiationCounterInput = signal(false);
+    negotiationSubmitting = signal(false);
 
     private jobsChannel?: RealtimeChannel;
     private messagesChannel?: RealtimeChannel;
@@ -795,9 +1227,15 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     private geocodedJobCoordinates = new Map<string, MarkerCoordinates>();
     private geocodingInFlight = new Set<string>();
     private geocodingAttempted = new Set<string>();
-    private hasCenteredMarketplaceMap = false;
-    private hasFitMarketplaceBounds = false;
     private activeRouteDrawnFor: string | null = null;
+
+    // Camera orchestration state.
+    // These replace the old boolean latches, which could permanently block
+    // reframing (including after a fit that never actually ran).
+    private mapGeneration = 0;
+    private appliedCameraSignature: string | null = null;
+    private driverLocationAnchoredInCamera = false;
+    private autoFollowSuspended = false;
     private notifiedDriverEventIds = new Set<string>();
     private sheetDragStartY = 0;
     private sheetDragStartHeight = 40;
@@ -925,9 +1363,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 accentColor: '#047857'
             },
             {
-                eyebrow: 'Payouts',
-                title: this.isStripeReady() ? 'Payouts ready' : 'Payout setup pending',
-                subtitle: this.isStripeReady() ? 'Completed jobs can be processed safely.' : 'Complete Stripe Connect to avoid payout delays.',
+                eyebrow: 'Payment account',
+                title: this.isStripeReady() ? 'Payment account ready' : 'Payment account setup pending',
+                subtitle: this.isStripeReady() ? 'Completed jobs can be processed safely.' : 'Set up your payment account to avoid payout delays.',
                 icon: 'wallet-outline',
                 cta: this.isStripeReady() ? 'Earnings safe' : 'Finish setup',
                 tone: this.isStripeReady() ? 'blue' : 'rose'
@@ -966,6 +1404,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     });
 
     constructor() {
+        const destroyRef = inject(DestroyRef);
+        const resumeSubscription = this.connectService.returnedToApp.subscribe(() => {
+            if (this.router.url.split('?')[0] === '/driver') void this.refreshStripeUiStateFromDb(true).catch(error => console.warn('[Stripe] Resume refresh failed', error));
+        });
+        destroyRef.onDestroy(() => resumeSubscription.unsubscribe());
+        let initialQuery = true;
+        const callbackSubscription = this.route.queryParamMap.subscribe(params => {
+            if (params.get('topupReturn') === '1') this.activeHubTab.set('wallet');
+            if (initialQuery) { initialQuery = false; return; }
+            if (params.get('stripe')) void this.handleStripeReturn();
+        });
+        destroyRef.onDestroy(() => callbackSubscription.unsubscribe());
         addIcons({
             shieldCheckmark,
             walletOutline,
@@ -977,6 +1427,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             searchOutline,
             star,
             statsChart,
+            mailOutline,
             card,
             timeOutline,
             alertCircleOutline,
@@ -988,11 +1439,18 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             listOutline,
             navigate,
             chevronDownOutline,
-            settingsOutline
+            settingsOutline,
+            timerOutline,
+            personOutline,
+            trendingUpOutline,
+            sendOutline,
+            closeOutline,
+            closeCircleOutline
         });
 
         effect(() => {
             this.jobs();
+            this.requestFeed.mapJobs();
             this.activeJob();
             this.driverLocation();
             this.activeHubTab();
@@ -1003,11 +1461,27 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         });
     }
 
+    offerMetrics = signal<{
+        acceptanceRate:number|null; cancellationRate:number|null;
+        acknowledgedOffers:number; acceptedOffers:number; driverCancellations:number;
+        acceptedBookings:number; periodDays:number;
+        insufficientData:{offers:boolean;cancellations:boolean};
+    }|null>(null);
+
     async ngOnInit() {
+        this.dashboardMessages.initialize();
+        void this.dashboardMessages.fetchNotifications().catch(
+            error => console.warn('Dashboard messages refresh failed', error)
+        );
+        void this.driverService.getOfferMetrics(30)
+            .then(m => this.offerMetrics.set(m))
+            .catch(() => undefined);
+
         if (!this.supabase.isConfigured) return;
 
-        this.loadPassedJobs();
-        await this.refreshStripeUiStateFromDb();
+        this.loadDismissedJobs();
+        await this.marketplaceConfig.loadSettings();
+        if (!this.route.snapshot.queryParamMap.get('stripe')) await this.refreshStripeUiStateFromDb();
         await this.ensureMovabiPayVirtualCard();
         await this.loadAvailability();
         await this.handleStripeReturn();
@@ -1017,7 +1491,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         await this.driverService.fetchAvailableJobs();
         await this.loadWalletEarnings();
         this.syncMarketplaceMapMarkers();
-        this.centerMarketplaceMap(true); // Force refit after initial load
+        this.applyMarketplaceCamera(true); // Force an initial frame once the map reports ready
         this.knownAvailableJobIds = new Set(this.jobs().map(job => job.id));
 
         this.subscribeToAvailableJobsRealtime();
@@ -1037,8 +1511,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     ngOnDestroy() {
+        // Stop location tracking
         this.locationService.stopTracking();
 
+        // Clear all intervals
         if (this.jobsRefreshInterval) {
             clearInterval(this.jobsRefreshInterval);
             this.jobsRefreshInterval = undefined;
@@ -1049,6 +1525,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.locationRefreshInterval = undefined;
         }
 
+        if (this.requestAlertInterval) {
+            clearInterval(this.requestAlertInterval);
+            this.requestAlertInterval = undefined;
+        }
+
+        // Remove all Supabase channels
         if (this.jobsChannel) {
             this.supabase.client.removeChannel(this.jobsChannel);
             this.jobsChannel = undefined;
@@ -1059,16 +1541,28 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             this.messagesChannel = undefined;
         }
 
-        this.stopRequestAlert();
+        // Stop all request sounds
+        this.stopAllRequestSounds();
+
+        // Clear audio element
+        if (this.activeRequestAudio) {
+            this.activeRequestAudio = null;
+        }
+
+        // Clear signals to free memory
+        // Shared jobs belong to DriverService and must survive navigation away from the hub.
+        this.selectedJobId.set(null);
+        this.sheetHeight.set(40);
+        this.activeRequestId.set(null);
+        this.dashboardStats.set({ todayJobs: 0, acceptedJobs: 0, completedJobs: 0 });
+        this.driverLocation.set(null);
+        this.negotiationCounterAmount.set(0);
+        this.showNegotiationCounterInput.set(false);
+        this.negotiationSubmitting.set(false);
+        this.submitting.set(false);
+        this.stripeUiState.set({ accountId: null, status: '', chargesEnabled: false, payoutsEnabled: false });
     }
 
-    ngAfterViewInit(): void {
-        window.setTimeout(() => {
-            if (this.marketplaceMap) {
-                this.onMapReady(this.marketplaceMap);
-            }
-        }, 150);
-    }
 
     formatPrice(amount: number | null | undefined) {
         return this.config.formatCurrency(Number(amount || 0));
@@ -1086,7 +1580,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         try {
             await this.driverService.ensureMovabiPayVirtualCard();
         } catch (error) {
-            console.warn('[driver-dashboard] Movabi Pay virtual card setup deferred', error);
+            console.warn('[driver-dashboard] Vaydu Pay virtual card setup deferred', error);
         }
     }
 
@@ -1178,6 +1672,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         await this.router.navigate(['/driver/job-details', jobId]);
     }
 
+    /** Keyboard Space on the active-job card: suppress page scroll, then resume. */
+    onActiveCardSpace(event: Event): void {
+        event.preventDefault();
+        void this.resumeActiveJob();
+    }
+
     async openActiveJobChat(job: Booking | null | undefined): Promise<void> {
         const jobId = job?.id || this.activeJob()?.id;
 
@@ -1227,8 +1727,19 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!active) return;
 
         const pickup = this.resolveJobCoordinates(active) || await this.ensureJobCoordinates(active);
-        if (pickup) {
-            this.mapComponent()?.setCenter(pickup.lng, pickup.lat, 15);
+        const dropoff = this.resolveJobDestinationCoordinates(active);
+        const points: MapCoordinates[] = [];
+        const driver = this.driverLocation();
+
+        if (driver) points.push(driver);
+        if (pickup) points.push(pickup);
+        if (dropoff) points.push(dropoff);
+
+        if (points.length) {
+            const map = this.mapComponent();
+            if (map) {
+                MapUxHelpers.fitVisibleMapBounds(map, points, this.sheetHeight());
+            }
         }
 
         this.syncMarketplaceMapMarkers();
@@ -1301,6 +1812,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
     getRequestFare(job: Booking): number {
         const raw = job as any;
+
+        // For marketplace negotiation jobs, prefer the live customer offer (negotiated_fare).
+        const isNegotiation = raw?.negotiation_mode_enabled === true &&
+            ['pending_fare_confirmation', 'negotiating'].includes(String(raw?.status || '').toLowerCase());
+        const negotiated = Number(raw?.negotiated_fare);
+        if (isNegotiation && Number.isFinite(negotiated) && negotiated > 0) return negotiated;
 
         const total = Number(raw.total_price);
         if (Number.isFinite(total) && total > 0) return total;
@@ -1378,6 +1895,17 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             'Request'
         );
 
+        const normalized = raw
+            .trim()
+            .replace(/_/g, ' ')
+            .replace(/-/g, ' ')
+            .toLowerCase();
+
+        if (normalized.includes('ride')) return 'Ride';
+        if (normalized.includes('errand')) return 'Shop';
+        if (normalized.includes('delivery') || normalized.includes('package')) return 'Deliver';
+        if (normalized.includes('van') || normalized.includes('moving')) return 'Move';
+
         return raw
             .trim()
             .replace(/_/g, ' ')
@@ -1405,7 +1933,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             case ServiceTypeEnum.ERRAND:
                 return `Shop and deliver for ${customer}`;
             case ServiceTypeEnum.DELIVERY:
-                return `Collect and deliver a package`;
+                return `Deliver a parcel`;
             case ServiceTypeEnum.VAN:
                 return `Help with a move`;
             default:
@@ -1468,11 +1996,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     requestOriginLabel(job: Booking): string {
         switch ((job as any)?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store';
+                return 'Shop';
             case ServiceTypeEnum.DELIVERY:
                 return 'Collect from';
             case ServiceTypeEnum.VAN:
-                return 'Moving from';
+                return 'Move from';
             default:
                 return 'Pickup';
         }
@@ -1485,7 +2013,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             case ServiceTypeEnum.DELIVERY:
                 return 'Recipient';
             case ServiceTypeEnum.VAN:
-                return 'Moving to';
+                return 'Move to';
             default:
                 return 'Dropoff';
         }
@@ -1546,6 +2074,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         return 'Not set';
+    }
+
+    formatDuration(seconds: number | null | undefined): string {
+        if (!seconds || seconds <= 0) return '—';
+        const mins = Math.round(seconds / 60);
+        return `${mins} min`;
     }
 
     formatJobDuration(job: Booking): string {
@@ -1634,28 +2168,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         return (this.driverService.earnings() || []).slice(0, 5);
     }
 
-    walletPaidTotal(): number {
-        return this.sumEarningsByStatus('paid');
+    walletSummary(metric: EarningsMetric): string {
+        return earningsSummary(this.driverService.earnings() || [], metric);
     }
 
-    walletPendingTotal(): number {
-        return this.sumEarningsByStatus('pending');
-    }
-
-    walletTransferredTotal(): number {
-        return this.walletPaidTotal();
-    }
-
-    walletFeeTotal(): number {
-        return (this.driverService.earnings() || []).reduce((total, earning: any) => {
-            const fee = this.firstPositiveNumber(
-                earning?.platform_fee,
-                earning?.platform_commission,
-                earning?.commission_amount,
-                earning?.fee
-            );
-            return total + (fee || 0);
-        }, 0);
+    formatRecordedEarning(earning: any): string {
+        return recordedEarningAmount(earning);
     }
 
     earningNetAmount(earning: any): number {
@@ -1668,8 +2186,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     earningStatusLabel(earning: any): string {
-        const status = this.getWalletEarningStatus(earning);
-        return status === 'paid' ? 'Paid to Stripe' : 'Pending payout';
+        return recordedPayoutLabel(earning);
     }
 
     earningLabel(earning: any): string {
@@ -1680,25 +2197,6 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             earning?.description ||
             'Completed request'
         ).replace(/_/g, ' ');
-    }
-
-    private sumEarningsByStatus(status: 'paid' | 'pending'): number {
-        return (this.driverService.earnings() || [])
-            .filter((earning: any) => this.getWalletEarningStatus(earning) === status)
-            .reduce((total, earning: any) => total + this.earningNetAmount(earning), 0);
-    }
-
-    private getWalletEarningStatus(earning: any): 'paid' | 'pending' {
-        const status = String(
-            earning?.status ||
-            earning?.payout_status ||
-            earning?.transfer_status ||
-            ''
-        ).toLowerCase();
-
-        return ['paid', 'transferred', 'settled', 'completed', 'succeeded'].includes(status)
-            ? 'paid'
-            : 'pending';
     }
 
     private toNullableNumber(value: unknown): number | null {
@@ -1730,14 +2228,51 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
     async refreshAvailableJobs() {
         await this.driverService.fetchAvailableJobs();
+        this.autoFollowSuspended = false;
         this.syncMarketplaceMapMarkers();
-        this.centerMarketplaceMap(true); // Force refit after refresh
+        this.applyMarketplaceCamera(true); // Explicit user action: safe to force
         this.showToast('Requests refreshed.', 'success');
+    }
+
+    async startHybridNegotiation(jobId: string, sessionId?: string) {
+        // The request alarm is an ATTENTION alarm: an intentional engagement
+        // acknowledges it audibly and stops it immediately, BEFORE any claim or
+        // navigation, so it cannot outlive the tap even when Ionic keeps the
+        // Dashboard mounted.
+        this.acknowledgeNegotiationAlert(sessionId, jobId);
+        try {
+            const session = await this.driverService.claimHybridSession(jobId);
+            this.selectedHybridOpportunity.set(session);
+            await this.router.navigate(['/driver/hybrid-negotiation', jobId]);
+        } catch (error: any) {
+            console.error('[DriverDashboard] claim hybrid session failed', error);
+            this.showToast(userFacingError(error, 'Unable to start negotiation. It may be claimed by another driver.'), 'danger');
+        }
+    }
+
+    /**
+     * Acknowledge a negotiation for alert purposes and stop its alarm now.
+     * Prefers the explicit `session_id` and falls back to resolving it from the
+     * current opportunities by `job_id`. Never touches ordinary job alarms.
+     */
+    private acknowledgeNegotiationAlert(sessionId: string | undefined, jobId: string): void {
+        const resolved = String(sessionId || '').trim()
+            || String(this.hybridOpportunities().find((op) => op?.job_id === jobId)?.session_id || '').trim();
+        if (!resolved) return;
+
+        this.driverService.acknowledgeNegotiationAlert(resolved);
+        if (this.activeRequestId() === resolved) {
+            this.stopRequestSound(resolved);
+        }
+    }
+
+    navigateToHybridNegotiation(jobId: string) {
+        void this.router.navigate(['/driver/hybrid-negotiation', jobId]);
     }
 
     private async loadWalletEarnings(): Promise<void> {
         try {
-            await this.driverService.fetchEarnings();
+            await Promise.all([this.driverService.fetchEarnings(),this.payoutContext.refreshWallet(),this.activeHubTab()==='wallet'?this.cashCredit.refresh(true).catch(()=>null):Promise.resolve(null)]);
         } catch (error) {
             console.warn('[driver-dashboard] Failed to load wallet earnings', error);
         }
@@ -1790,10 +2325,28 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                     const user = this.auth.currentUser();
                     const changedDriverId = String((payload.new as any)?.driver_id || (payload.old as any)?.driver_id || '');
                     const isDriverJob = !!user?.id && changedDriverId === user.id;
+
+                    if (this.driverService.requestState.has(changedJobId)) {
+                        // Dismissed locally: ignore realtime updates for this job
+                        return;
+                    }
+
+                    // Stop sound and close popup if this job is no longer an active request
+                    if (!this.isJobRequestActive(newStatus)) {
+                        if (this.activeRequestId() === changedJobId) {
+                            this.stopRequestSound(changedJobId);
+                        }
+                        if (this.selectedJobId() === changedJobId) {
+                            this.selectedJobId.set(null);
+                            this.sheetHeight.set(40);
+                        }
+                    }
+
                     const shouldAlert =
-                        newStatus === 'searching' &&
+                        this.isJobRequestActive(newStatus) &&
                         !!changedJobId &&
                         !this.knownAvailableJobIds.has(changedJobId) &&
+                        !this.driverService.requestState.has(changedJobId) &&
                         this.status() === 'online' &&
                         this.isAvailable();
                     const activeStatuses = [
@@ -1811,7 +2364,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                     ];
 
                     if (
-                        newStatus === 'searching' ||
+                        this.isJobRequestActive(newStatus) ||
                         oldStatus === 'searching' ||
                         activeStatuses.includes(newStatus) ||
                         activeStatuses.includes(oldStatus) ||
@@ -1822,7 +2375,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                         await this.refreshActiveJob();
                         await this.driverService.fetchAvailableJobs();
                         this.syncMarketplaceMapMarkers();
-                        this.centerMarketplaceMap(true); // Force refit after realtime updates
+                        // Signature-guarded: unchanged request geometry never moves the camera.
+                        this.applyMarketplaceCamera(false);
 
                         const visibleJobs = this.jobs();
                         const newVisibleJob = visibleJobs.find(job => job.id === changedJobId);
@@ -1978,10 +2532,10 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 await this.driverService.fetchAvailableJobs();
                 this.syncMarketplaceMapMarkers();
             }
-        }, 5000);
+        }, 30000);
     }
 
-    private async refreshStripeUiStateFromDb() {
+    private async refreshStripeUiStateFromDb(force = false) {
         const user = this.auth.currentUser();
 
         if (!user?.id) {
@@ -1990,7 +2544,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         try {
-            const settings = await this.connectService.getPayoutSettings();
+            const settings = await this.connectService.getPayoutSettings(force);
+            if(user.id!==this.auth.currentUser()?.id)return;
 
             if (!settings.stripeAccountId) {
                 this.resetStripeUiState();
@@ -2011,44 +2566,8 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
 
             return;
         } catch (error) {
-            console.warn('[DriverDashboard] payout settings lookup failed; falling back to profile Stripe fields', error);
-        }
-
-        const { data: profile, error } = await this.supabase.client
-            .from('profiles')
-            .select('id, tenant_id, stripe_account_id, stripe_connect_status')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (error) return;
-
-        this.mergeLocalProfile((profile || {}) as Record<string, unknown>);
-
-        const accountId = (profile as any)?.stripe_account_id || null;
-        const dbStatus = String((profile as any)?.stripe_connect_status || 'not_started');
-
-        if (!accountId) {
-            this.resetStripeUiState();
-            return;
-        }
-
-        try {
-            const status = await this.connectService.refreshAccountStatus(accountId, user.id);
-
-            this.stripeUiState.set({
-                accountId: status.stripe_account_id || accountId,
-                status: status.status || dbStatus,
-                chargesEnabled: status.charges_enabled === true,
-                payoutsEnabled: status.payouts_enabled === true
-            });
-        } catch (error) {
-            console.warn('[DriverDashboard] Stripe status refresh failed', error);
-            this.stripeUiState.set({
-                accountId,
-                status: dbStatus,
-                chargesEnabled: false,
-                payoutsEnabled: false
-            });
+            console.warn('[DriverDashboard] payout status is unverified', error);
+            if(user.id===this.auth.currentUser()?.id)this.resetStripeUiState();
         }
     }
 
@@ -2073,6 +2592,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!stripe) return;
 
         try {
+            await this.driverService.fetchStripeAccount(true);
             await this.refreshStripeUiStateFromDb();
 
             if (stripe === 'success') {
@@ -2087,10 +2607,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             if (stripe === 'refresh') {
                 this.showToast('Please continue completing your Stripe onboarding.', 'warning');
             }
+        } catch (error) {
+            console.warn('[DriverDashboard] Stripe return refresh failed', error);
+            this.showToast('Could not refresh Stripe status. Please try Refresh.', 'warning');
         } finally {
             await this.router.navigate([], {
                 relativeTo: this.route,
-                queryParams: {},
+                queryParams: { stripe: null },
+                queryParamsHandling: 'merge',
                 replaceUrl: true
             });
         }
@@ -2130,28 +2654,41 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     async goOnline() {
-        if (!this.canDriverAcceptTrips()) {
-            this.showToast('Complete Stripe Connect before going online.', 'warning');
-            return;
-        }
+        if(this.goOnlineInFlight)return this.goOnlineInFlight;
+        this.goOnlineInFlight=this.performGoOnline().finally(()=>this.goOnlineInFlight=null);
+        return this.goOnlineInFlight;
+    }
+
+    private async performGoOnline():Promise<void>{
 
         const profile = this.profileService.profile();
 
+        try {
+            await this.marketAvailability.setDriverOnline({ online: true, countryCode: profile?.country_code || this.config.currentCountry()?.code,
+                marketCity: (profile as any)?.market_city || (profile as any)?.city_name || null, zoneId: (profile as any)?.zone_id || null });
+        } catch (error) {
+            if(this.isOnlineEligibility(error)){await this.showOnlineDenial(error);}
+            else this.showToast(userFacingError(error, 'Unable to check online eligibility.'), 'warning');
+            return;
+        }
+
         this.driverService.onlineStatus.set('online');
         this.driverService.isAvailable.set(true);
-
-        if (profile) {
-            await this.safeUpdateProfile(profile.id, {
-                is_online: true,
-                is_available: true,
-                last_active_at: new Date().toISOString()
-            });
-        }
 
         await this.driverService.fetchAvailableJobs();
         this.syncMarketplaceMapMarkers();
         this.checkTracking();
     }
+
+    private isOnlineEligibility(value:unknown):value is DriverOnlineEligibility{return !!value&&typeof value==='object'&&'code' in value&&'title' in value&&'message' in value;}
+    private async showOnlineDenial(denial:DriverOnlineEligibility):Promise<void>{
+        if(this.onlineDenialAlert){await this.onlineDenialAlert.dismiss().catch(()=>undefined);}
+        const buttons:any[]=[{text:'Close',role:'cancel'}];if(denial.action&&!['TRY_AGAIN_LATER','CONTACT_SUPPORT'].includes(denial.action))buttons.push({text:this.onlineActionLabel(denial.action),handler:()=>{void this.openOnlineAction(denial.action!);}});
+        this.onlineDenialAlert=await this.alertCtrl.create({header:denial.title,message:denial.message,buttons});
+        await this.onlineDenialAlert.present();await this.onlineDenialAlert.onDidDismiss();this.onlineDenialAlert=null;
+    }
+    private onlineActionLabel(action:string):string{return({OPEN_DRIVER_SETUP:'Open Driver Setup',VIEW_OUTSTANDING_REQUESTS:'View requests',VIEW_STATUS:'View status',MANAGE_SERVICES:'Manage services',ADD_VEHICLE:'Add vehicle',UPLOAD_DOCUMENTS:'Upload documents',UPDATE_DOCUMENTS:'Update documents',UPLOAD_INSURANCE:'Upload insurance',CONTINUE_STRIPE_SETUP:'Continue Stripe setup',SET_LOCATION:'Set location',CHANGE_OPERATING_AREA:'Change area'} as {[key:string]:string})[action]||'Continue';}
+    private async openOnlineAction(action:string):Promise<void>{if(action==='CONTINUE_STRIPE_SETUP'){await this.router.navigate(['/driver/settings'],{queryParams:{section:'payouts'}});return;}if(['SET_LOCATION','CHANGE_OPERATING_AREA'].includes(action)){await this.router.navigate(['/driver/settings'],{queryParams:{section:'location'}});return;}const section=({VIEW_OUTSTANDING_REQUESTS:'requests',VIEW_STATUS:'status',MANAGE_SERVICES:'services',ADD_VEHICLE:'vehicle',UPLOAD_DOCUMENTS:'documents',UPDATE_DOCUMENTS:'documents',UPLOAD_INSURANCE:'documents'} as {[key:string]:string})[action]||'setup';await this.router.navigate(['/driver/onboarding'],{queryParams:{section}});}
 
     async goOffline() {
         const profile = this.profileService.profile();
@@ -2179,7 +2716,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         const profile = this.profileService.profile();
 
         if (available && !this.canDriverAcceptTrips()) {
-            this.showToast('Complete Stripe Connect before accepting trips.', 'warning');
+            this.showToast('Set up your payment account before accepting trips.', 'warning');
             // Force the toggle back to off
             this.driverService.isAvailable.set(false);
             return;
@@ -2245,35 +2782,43 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 );
             }
 
-            const { error } = await this.supabase.client.rpc('accept_searching_job', {
+            const { data: accepted, error } = await this.supabase.client.rpc('accept_searching_job', {
                 p_driver_id: user.id,
                 p_job_id: jobId
             });
 
             if (error) {
-                throw new Error(error.message || 'Request no longer available');
+                // Batch 2C Phase B: MB001 (busy) and MB002 (compliance) are
+                // distinct, and neither is ever reported as a generic failure.
+                throw new Error(acquisitionErrorMessage(error, 'Request no longer available'));
+            }
+
+            // The RPC returns false (without error) when another driver won the
+            // race or the request is no longer acceptable. Never treat that as success.
+            if (accepted !== true) {
+                throw new Error('This request is no longer available. Another driver may have accepted it.');
             }
 
             this.driverService.availableJobs.update((jobs: Booking[]) =>
                 jobs.filter((job: Booking) => job.id !== jobId)
             );
-            this.stopRequestAlert();
+            this.stopRequestSound(jobId);
             this.playSound('booking-accepted.mp3');
             await this.refreshActiveJob();
             await this.driverService.fetchAvailableJobs();
             this.selectedJobId.set(null);
             this.sheetHeight.set(55);
-            this.hasFitMarketplaceBounds = false;
             this.syncMarketplaceMapMarkers();
 
             await loading.dismiss();
             this.submitting.set(false);
-            this.showToast('Request accepted. Continue when you are ready.', 'success');
+            this.showToast('Request accepted! The customer has been notified. Continue when you are ready to start.', 'success');
         } catch (e: unknown) {
+            this.stopRequestSound(jobId);
             await loading.dismiss();
             this.submitting.set(false);
 
-            const message = e instanceof Error ? e.message : 'Request no longer available';
+            const message = userFacingError(e, 'Request no longer available');
             this.showToast(message, 'danger');
 
             await this.driverService.fetchAvailableJobs();
@@ -2281,42 +2826,190 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     }
 
-    reject(jobId: string) {
-        this.rememberPassedJob(jobId);
-        this.stopRequestAlert();
-        if (this.selectedJobId() === jobId) {
-            this.selectedJobId.set(null);
-            this.sheetHeight.set(40);
+    async reject(jobId: string) {
+        this.stopRequestSound(jobId);
+        this.driverService.requestState.acknowledge(jobId);
+        try {
+            await this.driverService.declineJob(jobId, 'driver_passed');
+            this.rememberDismissedJob(jobId);
+            if (this.selectedJobId() === jobId) {
+                this.selectedJobId.set(null);
+                this.sheetHeight.set(40);
+            }
+            this.syncMarketplaceMapMarkers();
+        } catch (error) {
+            this.showToast(userFacingError(error, 'Could not pass this request. Please retry.'), 'danger');
         }
-        this.driverService.availableJobs.update((jobs: Booking[]) =>
-            jobs.filter((job: Booking) => job.id !== jobId)
-        );
-        this.syncMarketplaceMapMarkers();
     }
 
-    private startRequestAlert(requestId: string): void {
-        if (this.requestAlertInterval) return;
+    isNegotiationJob(job: Booking): boolean {
+        return job.negotiation_mode_enabled === true && ['pending_fare_confirmation', 'negotiating'].includes(String(job.status));
+    }
 
+    async acceptNegotiationOffer(jobId: string) {
+        if (this.negotiationSubmitting()) return;
+
+        this.negotiationSubmitting.set(true);
+        const loading = await this.loadingCtrl.create({ message: 'Accepting offer...' });
+        await loading.present();
+
+        try {
+            await this.negotiationService.driverAcceptOffer(jobId);
+            this.stopRequestSound(jobId);
+            this.playSound('booking-accepted.mp3');
+            this.driverService.availableJobs.update((jobs: Booking[]) =>
+                jobs.filter((job: Booking) => job.id !== jobId)
+            );
+            this.selectedJobId.set(null);
+            this.sheetHeight.set(40);
+            this.showToast('Excellent! You accepted the customer offer. This job is now assigned to you.', 'success');
+        } catch (e: unknown) {
+            const message = userFacingError(e, 'Could not accept offer');
+            this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+            this.negotiationSubmitting.set(false);
+            this.syncMarketplaceMapMarkers();
+        }
+    }
+
+    async submitNegotiationCounter(jobId: string) {
+        const amount = this.negotiationCounterAmount();
+        if (!amount || amount <= 0) {
+            this.showToast('Please enter a valid counter offer amount.', 'warning');
+            return;
+        }
+
+        if (this.negotiationSubmitting()) return;
+        this.negotiationSubmitting.set(true);
+
+        const loading = await this.loadingCtrl.create({ message: 'Sending counter offer...' });
+        await loading.present();
+
+        try {
+            await this.negotiationService.driverCounterOffer(jobId, amount, 'Driver counter offer');
+            this.showNegotiationCounterInput.set(false);
+            this.negotiationCounterAmount.set(0);
+            this.stopRequestSound(jobId);
+            this.driverService.availableJobs.update((jobs: Booking[]) =>
+                jobs.filter((job: Booking) => job.id !== jobId)
+            );
+            this.selectedJobId.set(null);
+            this.sheetHeight.set(40);
+            this.showToast('Your counter offer has been sent to the customer. You\'ll be notified if they accept.', 'success');
+        } catch (e: unknown) {
+            const message = userFacingError(e, 'Could not send counter offer');
+            this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+            this.negotiationSubmitting.set(false);
+            this.syncMarketplaceMapMarkers();
+        }
+    }
+
+    // Enhanced driver earnings and countdown methods
+    moneyView = driverMoneyView;
+
+    calculateDriverEarnings(fareAmount: number, job?: Partial<Booking> | null): number {
+        const backendPayout = Number((job as any)?.driver_payout ?? (job as any)?.driverNetAmount);
+        if (job && Number.isFinite(backendPayout) && backendPayout > 0) {
+            return backendPayout;
+        }
+
+        const marketplacePercent = this.marketplaceConfig.settingsSignal()?.commission.percent;
+        const defaultPercent = this.marketplaceConfig.defaultSettings().commission.percent;
+        const commissionPercent = Number(
+            (job as any)?.commission_rate_used ??
+            (job as any)?.commissionPercent ??
+            ((job as any)?.fare_breakdown as Record<string, unknown> | undefined)?.['commissionPercent'] ??
+            marketplacePercent ??
+            defaultPercent
+        );
+        const safeCommissionPercent = Number.isFinite(commissionPercent)
+            ? Math.max(0, commissionPercent)
+            : defaultPercent;
+        return fareAmount * (1 - safeCommissionPercent / 100);
+    }
+
+    formatDriverCountdown(deadline: string): string {
+        const now = new Date().getTime();
+        const deadlineTime = new Date(deadline).getTime();
+        const remaining = Math.max(0, deadlineTime - now);
+        
+        if (remaining === 0) return 'Expired';
+        
+        const totalSeconds = Math.floor(remaining / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        
+        if (minutes > 0) {
+            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        } else {
+            return `${seconds}s`;
+        }
+    }
+
+    private isJobRequestActive(status?: BookingStatus | string | null): boolean {
+        return !!status && this.activeRequestStatuses.has(String(status));
+    }
+
+    private isJobRequestTerminal(status?: BookingStatus | string | null): boolean {
+        return !!status && this.terminalRequestStatuses.has(String(status));
+    }
+
+    private isRequestAlarmMuted(requestId: string): boolean {
+        const offer = this.driverService.hybridOpportunities().find(item => item.session_id === requestId);
+        return this.driverService.requestState.isMuted(offer?.job_id || requestId);
+    }
+    private requestDispositionEffect = effect(() => {
+        const owner = this.activeRequestId();
+        if (owner && this.isRequestAlarmMuted(owner)) this.stopRequestSound(owner);
+    });
+
+    private startRequestSound(requestId: string): void {
+        if (this.isRequestAlarmMuted(requestId)) return;
+        if (this.activeRequestId() === requestId) return;
+
+        this.stopAllRequestSounds();
         this.activeRequestId.set(requestId);
-        this.playRequestSound();
+        this.playRequestAudio();
         this.vibrateNewRequest();
 
         this.requestAlertInterval = setInterval(() => {
-            if (!this.activeRequestId() || this.activeRequestId() !== requestId) {
-                this.stopRequestAlert();
+            if (!this.activeRequestId() || this.activeRequestId() !== requestId || this.isRequestAlarmMuted(requestId)) {
+                this.stopRequestSound(requestId);
                 return;
             }
 
-            this.playRequestSound();
+            this.playRequestAudio();
         }, 4000);
     }
 
-    private stopRequestAlert(): void {
+    private stopRequestSound(requestId?: string): void {
+        if (requestId && this.activeRequestId() !== requestId) return;
+        this.requestAudioUnlockCleanup?.();
+        this.requestAudioUnlockCleanup = null;
+
         if (this.requestAlertInterval) {
             clearInterval(this.requestAlertInterval);
             this.requestAlertInterval = null;
         }
+
+        if (this.activeRequestAudio) {
+            try {
+                this.activeRequestAudio.pause();
+                this.activeRequestAudio.currentTime = 0;
+            } catch {
+                // ignore
+            }
+            this.activeRequestAudio = null;
+        }
+
         this.activeRequestId.set(null);
+    }
+
+    public stopAllRequestSounds(): void {
+        this.stopRequestSound();
     }
 
     private playSound(file: string): void {
@@ -2325,8 +3018,49 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         audio.play().catch(err => console.warn('[Sound] play failed', err));
     }
 
-    private playRequestSound(): void {
-        this.playSound('request-notification.mp3');
+    private playRequestAudio(): void {
+        if (this.activeRequestAudio) {
+            try {
+                this.activeRequestAudio.pause();
+                this.activeRequestAudio.currentTime = 0;
+            } catch {
+                // ignore
+            }
+        }
+
+        const audio = new Audio('assets/sounds/request-notification.mp3');
+        audio.volume = 0.85;
+        audio.loop = false;
+        this.activeRequestAudio = audio;
+        audio.play().catch(err => {
+            // Only re-arm the currently owned audio; a stale rejection must not
+            // restart a passed request or attach listeners after leaving the page.
+            if (this.activeRequestAudio !== audio || !this.activeRequestId()) return;
+            if (err?.name === 'NotAllowedError') {
+                this.armRequestAudioUnlock();
+                return;
+            }
+            console.warn('[Sound] request notification play failed', err);
+        });
+    }
+
+    private armRequestAudioUnlock(): void {
+        if (this.requestAudioUnlockCleanup || typeof document === 'undefined') return;
+        const unlock = () => {
+            this.requestAudioUnlockCleanup?.();
+            this.requestAudioUnlockCleanup = null;
+            const id = this.activeRequestId();
+            if (id && !this.isRequestAlarmMuted(id) && !this.requestFeed.busy() && !this.activeJob()) {
+                // Called synchronously inside a user gesture, not from a timer.
+                this.playRequestAudio();
+            }
+        };
+        document.addEventListener('pointerdown', unlock, true);
+        document.addEventListener('keydown', unlock, true);
+        this.requestAudioUnlockCleanup = () => {
+            document.removeEventListener('pointerdown', unlock, true);
+            document.removeEventListener('keydown', unlock, true);
+        };
     }
 
     private async vibrateNewRequest(): Promise<void> {
@@ -2339,76 +3073,184 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
     }
 
-    // Monitor available jobs for urgent requests
+    // Monitor available jobs for urgent requests and auto-open the request popup
     private urgentRequestEffect = effect(() => {
-        const availableJobs = this.driverService.availableJobs();
+        const availableJobs = this.jobs().filter(job => !this.driverService.requestState.isMuted(job.id));
         const activeJob = this.activeJob();
-        
-        // Only alert if there's no active job and there are available jobs
-        if (!activeJob && availableJobs.length > 0) {
-            const newestJob = availableJobs[0]; // Assume first is newest
-            if (newestJob?.id && this.activeRequestId() !== newestJob.id) {
-                this.startRequestAlert(newestJob.id);
+        if (this.requestFeed.busy()) { this.stopAllRequestSounds(); return; }
+
+        // An active job silences every incoming alarm unconditionally.
+        if (activeJob) {
+            this.stopAllRequestSounds();
+            return;
+        }
+
+        // No ordinary available requests: stop only a JOB-owned alarm. A
+        // negotiation-owned alarm must survive an empty ordinary-jobs refresh;
+        // ownership is judged against the current actionable negotiations, so a
+        // transient empty jobs array never clobbers a negotiation alarm.
+        if (availableJobs.length === 0) {
+            const owner = this.activeRequestId();
+            const isNegotiationOwner = !!owner && this.hybridOpportunities().some((op) => op.session_id === owner);
+            if (!isNegotiationOwner) {
+                this.stopAllRequestSounds();
             }
-        } else {
-            // Stop alert if there's an active job or no available jobs
-            this.stopRequestAlert();
+            return;
+        }
+
+        const newestJob = availableJobs[0]; // Assume first is newest
+        if (!newestJob?.id) return;
+
+        // Only start sound once per job (startRequestSound guards this)
+        if (this.activeRequestId() !== newestJob.id) {
+            this.startRequestSound(newestJob.id);
+        }
+
+
+    });
+
+    /**
+     * Negotiation opportunity audible alert.
+     *
+     * Reuses the SAME alarm architecture as ordinary requests (startRequestSound,
+     * request-notification.mp3, requestAlertInterval). Deduplicates on the
+     * authoritative negotiation identity `session_id`, never on `job_id`, so a
+     * job's separate negotiation sessions each alert exactly once. Yields to an
+     * active job and to ordinary available requests, preserving the existing
+     * job-alarm priority and exclusivity.
+     */
+    private negotiationAlertEffect = effect(() => {
+        if (this.requestFeed.busy()) { this.stopAllRequestSounds(); return; }
+        const activeJob = this.activeJob();
+        const availableJobs = this.jobs();
+        const opportunities = this.hybridOpportunities();
+
+        // An active job or an ordinary available request owns the alarm.
+        if (activeJob || availableJobs.length > 0) return;
+
+        if (opportunities.length === 0) {
+            // Stop only a NEGOTIATION-owned alarm; an ordinary-request-owned
+            // alarm must survive an empty/unchanged opportunities refresh.
+            const owner = this.activeRequestId();
+            const isJobOwner = !!owner && this.jobs().some((job) => job.id === owner);
+            if (!isJobOwner) {
+                this.stopAllRequestSounds();
+            }
+            return;
+        }
+
+        // Acknowledged sessions never re-alarm for the rest of this app session.
+        const actionable = opportunities.filter((op) => !this.driverService.isNegotiationAlertAcknowledged(op?.session_id));
+        if (actionable.length === 0) {
+            // Every live opportunity is acknowledged: nothing may own the
+            // negotiation alarm. Stop a negotiation-owned alarm, never a job one.
+            const owner = this.activeRequestId();
+            const isJobOwner = !!owner && this.jobs().some((job) => job.id === owner);
+            if (!isJobOwner) {
+                this.stopAllRequestSounds();
+            }
+            return;
+        }
+
+        const newest = actionable[0];
+        if (newest?.session_id && this.activeRequestId() !== newest.session_id) {
+            this.startRequestSound(newest.session_id);
         }
     });
 
-    async resubmitDriverReview() {
-        const profile = this.profileService.profile();
+    private marketplaceOfferEffect = effect(() => {
+        if (this.activeJob()) return;
 
-        if (!profile?.id || this.resubmittingReview()) return;
+        const offerJob = this.jobs().find((job) => {
+            const status = String(job.status || '').toLowerCase();
+            const fare = Number((job as any).negotiated_fare || 0);
+            return status === 'negotiating' && fare > 0;
+        });
+
+        if (!offerJob?.id) return;
+
+        const offerAmount = Number((offerJob as any).negotiated_fare || offerJob.total_price || offerJob.price || 0);
+        const alertKey = [
+            'marketplace-offer',
+            offerJob.id,
+            offerJob.status,
+            offerAmount,
+            (offerJob as any).updated_at || ''
+        ].join(':');
+
+        void this.notifyDriverEventOnce(
+            alertKey,
+            'Customer Offer',
+            `${this.formatPrice(offerAmount)} offer received`,
+            { bookingId: offerJob.id, route: '/driver', type: 'marketplace_customer_offer' }
+        );
+
+        if (this.selectedJobId() !== offerJob.id) {
+            this.selectedJobId.set(offerJob.id);
+        }
+
+        if (this.sheetHeight() < 70) {
+            this.sheetHeight.set(80);
+        }
+    });
+
+    /**
+     * Batch 2C Phase B — resubmission is server-authoritative (N13).
+     *
+     * The direct `profiles` update of driver_review_status / verification_status
+     * / blockers is gone: this now calls the authenticated onboarding endpoint,
+     * which derives the driver from the session and applies the server-defined
+     * review state. The client no longer sends any compliance field.
+     *
+     * NOTE: this method currently has no template binding (the reachable review
+     * resubmission button lives in settings.page.ts). It is hardened anyway so a
+     * future binding cannot reintroduce a client-side approval path.
+     */
+    async resubmitDriverReview() {
+        if (this.resubmittingReview()) return;
 
         this.resubmittingReview.set(true);
 
         try {
-            await this.safeUpdateProfile(profile.id, {
-                driver_review_status: 'under_review',
-                verification_status: 'under_review',
-                verification_notes: null,
-                driver_review_notes: null,
-                verification_blockers: [],
-                driver_review_blockers: [],
-                updated_at: new Date().toISOString()
-            });
-
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(profile.id);
-            }
-
+            await this.onboardingStatus.resubmitForReview();
             this.showToast('Resubmitted for manual review.', 'success');
+        } catch (error: unknown) {
+            const failure = error as { status?: number; error?: { error?: string } } | null;
+            const message = failure?.error?.error
+                || (error instanceof Error && error.message ? error.message : '')
+                || 'Could not resubmit for review. Please try again.';
+            this.showToast(message, failure?.status === 422 ? 'warning' : 'danger');
         } finally {
             this.resubmittingReview.set(false);
         }
     }
 
-    private loadPassedJobs() {
+    private loadDismissedJobs() {
         try {
             const maxAgeMs = 60 * 60 * 1000;
-            const parsed = JSON.parse(localStorage.getItem(this.passedJobsStorageKey) || '[]') as PassedJob[];
+            const parsed = JSON.parse(localStorage.getItem(this.dismissedJobsStorageKey + ':' + (this.auth.currentUser()?.id || 'anonymous')) || '[]') as DismissedJob[];
             const now = Date.now();
-            const fresh = parsed.filter(item => item?.id && now - Number(item.passedAt || 0) < maxAgeMs);
-            this.passedJobIds.set(new Set(fresh.map(item => item.id)));
-            localStorage.setItem(this.passedJobsStorageKey, JSON.stringify(fresh));
+            const fresh = parsed.filter(item => item?.id && now - Number(item.dismissedAt || 0) < maxAgeMs);
+            this.dismissedJobIds.set(new Set(fresh.map(item => item.id)));
+            localStorage.setItem(this.dismissedJobsStorageKey + ':' + (this.auth.currentUser()?.id || 'anonymous'), JSON.stringify(fresh));
         } catch {
-            this.passedJobIds.set(new Set());
+            this.dismissedJobIds.set(new Set());
         }
     }
 
-    private rememberPassedJob(jobId: string) {
+    private rememberDismissedJob(jobId: string) {
+        this.driverService.requestState.suppress(jobId);
         const now = Date.now();
-        const next = new Set(this.passedJobIds());
+        const next = new Set(this.dismissedJobIds());
         next.add(jobId);
-        this.passedJobIds.set(next);
+        this.dismissedJobIds.set(next);
 
         const items = Array.from(next).map(id => ({
             id,
-            passedAt: id === jobId ? now : now
+            dismissedAt: id === jobId ? now : now
         }));
 
-        localStorage.setItem(this.passedJobsStorageKey, JSON.stringify(items));
+        localStorage.setItem(this.dismissedJobsStorageKey + ':' + (this.auth.currentUser()?.id || 'anonymous'), JSON.stringify(items));
     }
 
     getMetricLabel(value: number): string {
@@ -2454,7 +3296,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         const status = String(state.status || '').toLowerCase();
 
         if (!state.accountId) {
-            return 'Connect your payout account so earnings from ride, errand, delivery, and moving requests can be processed safely.';
+            return 'Connect your payout account so earnings from ride, shop, deliver, and move requests can be processed safely.';
         }
 
         if (status === 'restricted' || status === 'requires_action') {
@@ -2479,33 +3321,31 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         return 'Setup required';
     }
 
+    private stripeDashboardOpening=false;
     async openStripeDashboard() {
-        await this.refreshStripeUiStateFromDb();
-
-        const accountId = this.stripeUiState().accountId;
-
-        if (!accountId) {
-            this.showToast('Stripe account not found. Start setup first.', 'warning');
-            return;
-        }
-
-        const loading = await this.loadingCtrl.create({
-            message: 'Opening Stripe dashboard...'
-        });
-
-        await loading.present();
-
+        if(this.stripeDashboardOpening)return;
+        const accountId=this.stripeUiState().accountId;
+        if(!accountId){await this.showToast('Stripe account not found. Start setup first.','warning');return;}
+        this.stripeDashboardOpening=true;
+        let dashboardTab:Window|null=null;
+        let loading:HTMLIonLoadingElement|undefined;
         try {
-            const link = await this.connectService.getDashboardLink(accountId);
-            window.location.href = link.url;
-        } catch {
-            this.showToast('Failed to open Stripe dashboard', 'danger');
-        } finally {
-            await loading.dismiss();
+            dashboardTab=this.connectService.prepareDashboardTab();
+            loading=await this.loadingCtrl.create({message:'Opening Stripe dashboard...'});
+            await loading.present();
+            const link=await this.connectService.getDashboardLink(accountId);
+            await this.connectService.openDashboard(link.url,dashboardTab);
+        }catch(error:any){
+            dashboardTab?.close();
+            await this.showToast(userFacingError({ status: error?.status }, 'Failed to open Stripe dashboard'), 'danger');
+        }finally{
+            this.stripeDashboardOpening=false;
+            await loading?.dismiss();
         }
     }
 
     async setupPayouts() {
+        if (this.isStripeReady()) { await this.openStripeDashboard(); return; }
         const user = this.auth.currentUser();
 
         if (!user) {
@@ -2567,7 +3407,12 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 ? await this.connectService.getDashboardLink(accountId)
                 : await this.connectService.getOnboardingLink(accountId, returnUrl, refreshUrl);
 
-            window.location.href = link.url;
+            if (this.connectService.getConnectPlatform() === 'web') {
+                window.location.href = link.url;
+            } else {
+                const { Browser } = await import('@capacitor/browser');
+                await Browser.open({ url: link.url });
+            }
         } catch (error) {
             console.warn('[DriverDashboard] Failed to load payout settings', error);
             this.showToast('Failed to load payout settings', 'danger');
@@ -2664,44 +3509,125 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     onMapReady(mapComponent: MapComponent) {
         this.mapComponent.set(mapComponent);
 
+        // A recreated map (Hub tab switch) invalidates every previous camera
+        // decision and every previously "rendered" marker id.
+        this.mapGeneration += 1;
+        this.appliedCameraSignature = null;
+        this.driverLocationAnchoredInCamera = false;
+        this.autoFollowSuspended = false;
+        this.renderedJobMarkerIds = new Set<string>();
+        this.activeRouteDrawnFor = null;
+
+        // Genuine user pan/zoom/rotate suspends automatic framing. Programmatic
+        // camera moves never reach this callback (renderer filters originalEvent).
+        mapComponent.onUserMapGesture(() => {
+            this.autoFollowSuspended = true;
+        });
+
         window.setTimeout(() => {
             mapComponent.resize();
-            void this.updateDriverLocation();
-            this.syncMarketplaceMapMarkers();
+
+            void this.updateDriverLocation().then(() => {
+                this.syncMarketplaceMapMarkers();
+                this.applyMarketplaceCamera(true);
+            });
         }, 200);
+    }
+
+    private tripHistoryOwner: string | null = null;
+    tripHistory=signal<any[]>([]);
+    tripHistoryLoading=signal(false);
+    tripHistoryError=signal('');
+    tripHistoryMore=signal(false);
+    async loadTripHistory(append=false): Promise<void> {
+        if(this.tripHistoryLoading())return;
+        const user=this.auth.currentUser();
+        if(!user){this.tripHistory.set([]);this.tripHistoryMore.set(false);return;}
+        if(this.tripHistoryOwner!==user.id){this.tripHistory.set([]);this.tripHistoryMore.set(false);append=false;this.tripHistoryOwner=user.id;}
+        this.tripHistoryLoading.set(true);this.tripHistoryError.set('');
+        try {
+            const last=append?this.tripHistory().at(-1):null;
+            let query=this.supabase.from('jobs').select('id,status,created_at,pickup_address,dropoff_address')
+              .or(last ? `and(or(driver_id.eq.${user.id},and(driver_id.is.null,accepted_driver_id.eq.${user.id})),or(created_at.lt.${last.created_at},and(created_at.eq.${last.created_at},id.lt.${last.id})))` : `driver_id.eq.${user.id},and(driver_id.is.null,accepted_driver_id.eq.${user.id})`)
+              .in('status',['completed','settled','cancelled','canceled','failed','expired','no_driver_found','refunded'])
+              .order('created_at',{ascending:false}).order('id',{ascending:false}).limit(11);
+            // A stable cursor avoids skips when a newer booking arrives between pages.
+            const result=await query;
+            if(this.auth.currentUser()?.id!==user.id){this.tripHistory.set([]);this.tripHistoryMore.set(false);throw new Error('Session changed');}
+            if(result.error)throw result.error;
+            if(!Array.isArray(result.data))throw new Error('History response was not a list');
+            const page=result.data.slice(0,10);
+            const merged=append?[...this.tripHistory(),...page]:page;
+            this.tripHistory.set([...new Map(merged.map(row=>[row.id,row])).values()]);
+            this.tripHistoryMore.set(result.data.length>10);
+        }catch{this.tripHistoryError.set('Could not load your booking history. Please retry.');}
+        finally{this.tripHistoryLoading.set(false);}
+    }
+    async loadMoreTrips(event: Event): Promise<void> {
+        try { if(this.tripHistoryMore()) await this.loadTripHistory(true); }
+        finally { await (event.target as HTMLIonInfiniteScrollElement).complete(); }
+    }
+    openWalletBooking(earning:any): void {
+        if(earning.job_id)void this.router.navigate(['/driver/history',earning.job_id]);
+        else void this.router.navigate(['/driver/earnings']);
     }
 
     setHubTab(tab: DriverHubTab): void {
         this.activeHubTab.set(tab);
+        if(tab==='trips')void this.loadTripHistory();
 
         if (tab === 'requests') {
             window.setTimeout(() => {
                 this.mapComponent()?.resize?.();
                 this.syncMarketplaceMapMarkers();
-                this.centerMarketplaceMap(false);
+                this.applyMarketplaceCamera(false);
             }, 120);
         }
 
-        if (tab === 'wallet' || tab === 'earnings') {
+        if (tab === 'wallet') {
             void this.loadWalletEarnings();
         }
     }
 
+    /**
+     * Return from an auto-presented available request back to the Available
+     * Requests list.
+     *
+     * Clears ONLY the local selection: it does not reject/pass the request, does
+     * not change its status, does not call any acquisition RPC, does not refetch,
+     * and leaves the already-fetched jobs list untouched.
+     */
+    showAvailableRequests(): void {
+        this.selectedJobId.set(null);
+    }
+
     selectJob(jobId: string) {
+        this.requestFeed.show(jobId);
+        // Expand the sheet FIRST, then focus, so padding reflects the new
+        // obstruction instead of the previous sheet height.
         this.selectedJobId.set(jobId);
-
-        const job = this.jobs().find(j => j.id === jobId);
-        if (job) {
-            void this.focusMapOnJob(job);
-        }
-
         this.sheetHeight.set(80);
+
+        window.setTimeout(() => {
+            this.mapComponent()?.resize?.();
+
+            const job = this.requestFeed.mapJobs().find(j => j.id === jobId);
+            if (!job) return;
+
+            void this.focusMapOnJob(job);
+        }, 60);
     }
 
     recenterMap() {
-        this.hasCenteredMarketplaceMap = false;
-        this.hasFitMarketplaceBounds = false;
-        void this.updateDriverLocation().then(() => this.centerMarketplaceMap(true));
+        // Explicit user intent: restore auto-follow and force a fresh frame.
+        this.autoFollowSuspended = false;
+        this.appliedCameraSignature = null;
+        this.mapComponent()?.resize?.();
+
+        void this.updateDriverLocation().then(() => {
+            this.syncMarketplaceMapMarkers();
+            this.applyMarketplaceCamera(true);
+        });
     }
 
     seeJobOnMap(job: Booking) {
@@ -2715,11 +3641,16 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             return;
         }
 
-        this.sheetHeight.set(this.sheetHeight() >= 70 ? 40 : 80);
+        this.sheetHeight.set(this.sheetHeight() >= 70 ? 40 : 95);
+        this.reframeForSheetChange();
     }
 
     startDragSheet(event: PointerEvent) {
+        if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
         event.preventDefault();
+        const handle = event.currentTarget as HTMLElement;
+        const panelHeight = Math.max(handle.parentElement?.parentElement?.getBoundingClientRect().height || window.innerHeight, 1);
+        handle.setPointerCapture?.(event.pointerId);
         this.isDraggingSheet.set(true);
         this.sheetDragMoved = false;
         this.sheetDragStartY = event.clientY;
@@ -2731,9 +3662,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 this.sheetDragMoved = true;
             }
 
-            const viewportHeight = Math.max(window.innerHeight, 1);
+            const viewportHeight = panelHeight;
             const deltaVh = ((this.sheetDragStartY - moveEvent.clientY) / viewportHeight) * 100;
-            const nextHeight = Math.max(40, Math.min(80, this.sheetDragStartHeight + deltaVh));
+            const nextHeight = Math.max(40, Math.min(95, this.sheetDragStartHeight + deltaVh));
             this.sheetHeight.set(nextHeight);
         };
 
@@ -2741,7 +3672,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             document.removeEventListener('pointermove', move);
             document.removeEventListener('pointerup', end);
             document.removeEventListener('pointercancel', end);
-            this.sheetHeight.set(this.sheetHeight() >= 60 ? 80 : 40);
+
+            const settledHeight = this.sheetHeight() >= 67.5 ? 95 : 40;
+            const heightChanged = Math.round(settledHeight / 10) !== Math.round(this.sheetHeight() / 10);
+            this.sheetHeight.set(settledHeight);
+
+            if (heightChanged) {
+                this.reframeForSheetChange();
+            }
 
             window.setTimeout(() => {
                 this.isDraggingSheet.set(false);
@@ -2755,14 +3693,17 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     payoutHelperText(): string {
-        if (this.isStripeReady()) {
-            return 'Stripe Connect is ready for completed job payouts.';
+        if (this.payoutContext.wallet()?.payoutIntegrationAvailable !== true) {
+            return 'Payment account setup is not available in your market yet.';
         }
-
-        return 'Open payout setup to finish Stripe Connect before payout processing.';
+        if (this.isStripeReady()) {
+            return 'Your payment account is ready to receive earnings from completed jobs.';
+        }
+        return 'Set up your payment account to receive earnings from completed jobs.';
     }
 
     async openPayoutSettings(): Promise<void> {
+        try{await this.payoutContext.requireStripePayoutMarket();}catch{return;}
         if (this.isStripeReady()) {
             await this.openStripeDashboard();
             return;
@@ -2777,20 +3718,21 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         void this.updateDriverLocation();
         this.locationRefreshInterval = setInterval(() => {
             void this.updateDriverLocation();
-        }, 10000);
+        }, 30000);
     }
 
     private async updateDriverLocation(): Promise<MarkerCoordinates | null> {
         try {
             const location = await this.locationService.getCurrentPosition();
-            if (location) {
+            if (location && this.isValidCoordinate(location.coords.latitude, location.coords.longitude)) {
                 const coordinates = {
-                    lat: location.coords.latitude,
-                    lng: location.coords.longitude
+                    lat: Number(location.coords.latitude),
+                    lng: Number(location.coords.longitude)
                 };
                 this.driverLocation.set(coordinates);
                 this.syncMarketplaceMapMarkers();
-                this.centerMarketplaceMap(false);
+                // Signature-guarded: only the FIRST valid driver fix changes the camera.
+                this.applyMarketplaceCamera(false);
                 return coordinates;
             }
         } catch (error) {
@@ -2801,14 +3743,14 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (user?.id) {
             try {
                 const lastKnown = await this.locationService.getLatestDriverLocation(user.id);
-                if (lastKnown) {
+                if (lastKnown && this.isValidCoordinate(lastKnown.lat, lastKnown.lng)) {
                     const coordinates = {
-                        lat: lastKnown.lat,
-                        lng: lastKnown.lng
+                        lat: Number(lastKnown.lat),
+                        lng: Number(lastKnown.lng)
                     };
                     this.driverLocation.set(coordinates);
                     this.syncMarketplaceMapMarkers();
-                    this.centerMarketplaceMap(false);
+                    this.applyMarketplaceCamera(false);
                     return coordinates;
                 }
             } catch (error) {
@@ -2816,7 +3758,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
             }
         }
 
-        this.centerMarketplaceMap(false);
+        this.applyMarketplaceCamera(false);
         return null;
     }
 
@@ -2840,7 +3782,23 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         if (!coordinates) return;
 
         this.selectedJobId.set(job.id);
-        this.mapComponent()?.setCenter(coordinates.lng, coordinates.lat, 15);
+
+        const map = this.mapComponent();
+        if (map) {
+            // Single-point focus with sheet-aware padding. No fake coordinate
+            // offsets are used to trick a multi-point fit.
+            MapUxHelpers.fitVisibleMapBounds(
+                map,
+                [{ lat: coordinates.lat, lng: coordinates.lng }],
+                this.mapSheetObstruction(),
+                { duration: 600, maxZoom: 16, singlePointZoom: 16 }
+            );
+
+            this.driverLocationAnchoredInCamera = this.driverLocationAnchoredInCamera
+                || this.hasValidDriverLocation();
+            this.appliedCameraSignature = this.buildMarketplaceCameraSignature();
+        }
+
         this.syncMarketplaceMapMarkers();
     }
 
@@ -2851,7 +3809,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         map.resize();
 
         const driverLocation = this.driverLocation();
-        if (driverLocation) {
+        if (driverLocation && this.isValidCoordinate(driverLocation.lat, driverLocation.lng)) {
             map.addOrUpdateMarker({
                 id: 'driver-current-location',
                 kind: 'driver',
@@ -2864,14 +3822,23 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         const nextMarkerIds = new Set<string>();
-        for (const job of this.jobs()) {
+        const markedCoordinates = new Set<string>();
+        const mapRequests = this.requestFeed.mapJobs();
+        for (const job of mapRequests) {
             const coordinates = this.resolveJobCoordinates(job);
 
-            if (!coordinates) {
+            if (!coordinates || !this.isValidCoordinate(coordinates.lat, coordinates.lng)) {
                 void this.ensureJobCoordinates(job);
                 continue;
             }
 
+            const coordinateKey = `${coordinates.lat.toFixed(6)},${coordinates.lng.toFixed(6)}`;
+            if (markedCoordinates.has(coordinateKey)) continue;
+            markedCoordinates.add(coordinateKey);
+            const colocated = mapRequests.filter(candidate => {
+                const point = this.resolveJobCoordinates(candidate);
+                return point && `${point.lat.toFixed(6)},${point.lng.toFixed(6)}` === coordinateKey;
+            });
             const markerId = `available-job-${job.id}`;
             nextMarkerIds.add(markerId);
             map.addOrUpdateMarker({
@@ -2879,7 +3846,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
                 kind: 'pickup',
                 serviceType: this.getMarkerServiceType(job),
                 coordinates,
-                label: this.formatPrice(this.getRequestFare(job)),
+                label: colocated.length > 1 ? `${colocated.length} requests` : this.formatPrice(this.getRequestFare(job)),
                 onClick: () => this.selectJob(job.id)
             });
         }
@@ -2934,78 +3901,145 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.renderedJobMarkerIds = nextMarkerIds;
-        this.centerMarketplaceMap(false);
+        this.applyMarketplaceCamera(false);
     }
 
-    private centerMarketplaceMap(force: boolean): void {
+    /**
+     * Single camera entry point for the Requests map.
+     *
+     * Automatic reframing only happens when the material marketplace geometry
+     * changes (request ids + resolved pickups, first driver fix, map generation,
+     * sheet snap band), never on GPS ticks, animation frames, identical job
+     * emissions or unforced realtime noise.
+     */
+    private getActiveMarketplaceCameraPoints(): Array<{ id: string; lat: number; lng: number }> {
+        const active = this.activeJob();
+        if (!active) return [];
+        const points: Array<{ id: string; lat: number; lng: number }> = [];
+        const pickup = this.resolveJobCoordinates(active);
+        const dropoff = this.resolveJobDestinationCoordinates(active);
+        if (pickup && this.isValidCoordinate(pickup.lat, pickup.lng)) points.push({ id: `${active.id}:pickup`, ...pickup });
+        if (dropoff && this.isValidCoordinate(dropoff.lat, dropoff.lng)) points.push({ id: `${active.id}:dropoff`, ...dropoff });
+        return points;
+    }
+
+    private getMarketplaceMapObstruction(): number {
+        if (!this.activeJob()) return this.mapSheetObstruction();
+        const map = this.mapComponent() as MapComponent | null;
+        const mapRect = map?.mapContainer?.nativeElement?.getBoundingClientRect();
+        const cardRect = this.activeHubJobCard()?.nativeElement.getBoundingClientRect();
+        if (!mapRect || !cardRect || mapRect.height <= 0) return this.mapSheetObstruction();
+        const covered = Math.max(0, mapRect.bottom - cardRect.top + 12);
+        return Math.min(75, Math.ceil(covered / mapRect.height * 100));
+    }
+
+    private applyMarketplaceCamera(force: boolean): void {
         const map = this.mapComponent() as MapComponent | null;
         if (!map || this.activeHubTab() !== 'requests') return;
+        if (this.autoFollowSuspended && !force) return;
+        if (this.isDraggingSheet() && !force) return;
 
-        const driverCoords = this.driverLocation();
-        const availableRequests = this.jobs();
-        
-        // Collect all visible coordinates as specified in requirements
-        const requestCoords = availableRequests
-            .map(r => this.resolveJobCoordinates(r))
-            .filter((coord): coord is MarkerCoordinates => coord !== null);
-        
-        const points = [
-            ...(driverCoords ? [driverCoords] : []),
-            ...requestCoords
-        ];
+        const points = this.getMarketplaceCameraPoints();
+        if (!points.length) return; // zero valid points: never perform a bogus move
 
-        if (points.length >= 2) {
-            // Always fit bounds when we have multiple points (driver + requests)
-            // Only skip if not forced and already fitted
-            if (this.hasFitMarketplaceBounds && !force) return;
-            
-            // Use shared map helpers for Uber/Bolt-style fitting with bottom sheet consideration
-            const mapPoints: MapCoordinates[] = points.map(p => ({ lat: p.lat, lng: p.lng }));
-            MapUxHelpers.fitVisibleMapBounds(map, mapPoints, 40); // 40% bottom sheet for marketplace
-            this.hasFitMarketplaceBounds = true;
-            this.hasCenteredMarketplaceMap = true;
-            return;
-        }
+        const signature = this.buildMarketplaceCameraSignature();
+        if (!force && signature === this.appliedCameraSignature) return;
 
-        // Only center if we have a single point and haven't centered yet
-        if (this.hasCenteredMarketplaceMap && !force) return;
+        const applied = MapUxHelpers.fitVisibleMapBounds(
+            map,
+            points,
+            this.getMarketplaceMapObstruction(),
+            {
+                duration: force ? 700 : 600,
+                maxZoom: 16,
+                singlePointZoom: 15
+            }
+        );
 
-        const center = points[0] ?? this.locationService.getFallbackCoordinates();
-        if (!center) return;
+        // Unmeasurable viewport / dead map: do not latch, retry on next trigger.
+        if (!applied) return;
 
-        map.setCenter(center.lng, center.lat, this.driverLocation() ? 14 : 12);
-        this.hasCenteredMarketplaceMap = true;
+        this.driverLocationAnchoredInCamera = this.driverLocationAnchoredInCamera
+            || this.hasValidDriverLocation();
+        this.appliedCameraSignature = this.buildMarketplaceCameraSignature();
     }
 
-    private getMarketplaceMapPoints(): MarkerCoordinates[] {
-        const points: MarkerCoordinates[] = [];
-        const driverLocation = this.driverLocation();
+    private buildMarketplaceCameraSignature(): string {
+        const requestPoints = this.getValidMarketplaceRequestPoints()
+            .map(point => `${point.id}:${point.lat.toFixed(5)},${point.lng.toFixed(5)}`)
+            .sort();
 
-        if (driverLocation) {
-            points.push(driverLocation);
+        // Driver GPS is deliberately collapsed to a one-way anchor token so that
+        // movement after the first fix cannot cause repeated refits.
+        const driverState = this.driverLocationAnchoredInCamera
+            ? 'anchored'
+            : this.hasValidDriverLocation() ? 'pending' : 'none';
+
+        return [
+            `map:${this.mapGeneration}`,
+            `driver:${driverState}`,
+            `sheet:${this.getMarketplaceMapObstruction()}`,
+            `viewport:${this.mapComponent()?.getViewportSize?.().width || 0}x${this.mapComponent()?.getViewportSize?.().height || 0}`,
+            `active:${this.getActiveMarketplaceCameraPoints().map(point => `${point.id}:${point.lat.toFixed(5)},${point.lng.toFixed(5)}`).join('|')}`,
+            `requests:${requestPoints.join('|')}`
+        ].join(';');
+    }
+
+    private getMarketplaceCameraPoints(): MapCoordinates[] {
+        const points: MapCoordinates[] = [];
+        const driver = this.driverLocation();
+
+        if (driver && this.isValidCoordinate(driver.lat, driver.lng)) {
+            points.push({ lat: driver.lat, lng: driver.lng });
         }
 
-        for (const job of this.jobs()) {
+        for (const point of this.getValidMarketplaceRequestPoints()) {
+            points.push({ lat: point.lat, lng: point.lng });
+        }
+
+        for (const point of this.getActiveMarketplaceCameraPoints()) {
+            points.push({ lat: point.lat, lng: point.lng });
+        }
+
+        return MapUxHelpers.filterValidCoordinates(points);
+    }
+
+    private getValidMarketplaceRequestPoints(): Array<{ id: string; lat: number; lng: number }> {
+        const points: Array<{ id: string; lat: number; lng: number }> = [];
+
+        for (const job of this.requestFeed.mapJobs()) {
             const coordinates = this.resolveJobCoordinates(job);
-            if (coordinates) {
-                points.push(coordinates);
-            }
-        }
 
-        const active = this.activeJob();
-        if (active) {
-            const pickup = this.resolveJobCoordinates(active);
-            const dropoff = this.resolveJobDestinationCoordinates(active);
-            if (pickup) points.push(pickup);
-            if (dropoff) points.push(dropoff);
-        }
+            if (!coordinates || !this.isValidCoordinate(coordinates.lat, coordinates.lng)) continue;
 
-        const serviceArea = this.resolveServiceAreaCoordinates();
-        if (!points.length && serviceArea) {
-            points.push(serviceArea);
+            points.push({ id: job.id, lat: coordinates.lat, lng: coordinates.lng });
         }
 
         return points;
+    }
+
+    private hasValidDriverLocation(): boolean {
+        const driver = this.driverLocation();
+        return !!driver && this.isValidCoordinate(driver.lat, driver.lng);
+    }
+
+    /**
+     * Sheet snap / expansion changes the visible map area, so re-frame using the
+     * CURRENT sheet height. A selected request stays the focus target.
+     */
+    private reframeForSheetChange(): void {
+        window.setTimeout(() => {
+            this.mapComponent()?.resize?.();
+
+            const selected = this.selectedAvailableJob();
+
+            if (selected) {
+                void this.focusMapOnJob(selected);
+                return;
+            }
+
+            this.applyMarketplaceCamera(false);
+        }, 60);
     }
 
     private uniqueCoordinates(points: MarkerCoordinates[]): MarkerCoordinates[] {
@@ -3233,7 +4267,7 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     private resolveServiceAreaCoordinates(): MarkerCoordinates | null {
-        for (const job of this.jobs()) {
+        for (const job of this.requestFeed.mapJobs()) {
             const coordinates = this.resolveJobCoordinates(job);
             if (coordinates) return coordinates;
 
@@ -3259,14 +4293,22 @@ export class DriverDashboardPage implements OnInit, OnDestroy, AfterViewInit {
     }
 
     private isValidCoordinate(lat: unknown, lng: unknown): boolean {
+        if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
+        if (typeof lat === 'string' && !lat.trim()) return false;
+        if (typeof lng === 'string' && !lng.trim()) return false;
+
         const parsedLat = Number(lat);
         const parsedLng = Number(lng);
-        return Number.isFinite(parsedLat) &&
-            Number.isFinite(parsedLng) &&
-            parsedLat >= -90 &&
-            parsedLat <= 90 &&
-            parsedLng >= -180 &&
-            parsedLng <= 180;
+
+        if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return false;
+        if (parsedLat < -90 || parsedLat > 90) return false;
+        if (parsedLng < -180 || parsedLng > 180) return false;
+
+        // Null Island: both axes at (or effectively at) zero is never a real
+        // marketplace coordinate, it is a missing/placeholder value.
+        if (Math.abs(parsedLat) < 1e-6 && Math.abs(parsedLng) < 1e-6) return false;
+
+        return true;
     }
 
     getVehicleRequired(job: Booking): string {

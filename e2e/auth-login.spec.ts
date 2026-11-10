@@ -15,7 +15,7 @@ test.describe('authentication', () => {
 
       if (role === 'customer') {
         await expect(page).toHaveURL(/\/customer/);
-        await expect(page.getByText(/Movabi/i).first()).toBeVisible();
+        await expect(page.getByText(/Vaydu/i).first()).toBeVisible();
       }
 
       if (role === 'driver') {

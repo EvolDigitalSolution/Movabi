@@ -1,0 +1,6 @@
+﻿ARG BASELINE
+FROM ${BASELINE}
+# Setup-only closure overlay. No payout worker, booking, Stripe or collection change.
+COPY api/ /app/server/payment-account-closure/
+COPY patch-entry.cjs integration-plan.json /tmp/vaydu-payment-account-patch/
+RUN node /tmp/vaydu-payment-account-patch/patch-entry.cjs && rm -r /tmp/vaydu-payment-account-patch

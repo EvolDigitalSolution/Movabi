@@ -1,3 +1,15 @@
+import flutterwaveBookingSplitRoutes from './routes/flutterwave-booking-split.routes';
+import {developDriverPaymentAccountRouter} from './routes/driver-payment-account-develop.routes';
+import './services/payments/wallet-collection-startup';
+import marketSafetyRoutes from './routes/market-safety.routes';
+import mapsV23Routes from './routes/maps-v23.routes';
+import adminMessagingRoutes from './routes/admin-messaging.routes';
+import { AdminMessagingService } from './services/admin-messaging.service';
+import { BookingSupportService } from './services/booking-support.service';
+import { GbMotMonitorService } from './services/gb-mot-monitor.service';
+import { ShoppingBudgetService } from './services/shopping-budget.service';
+import journeyRoutes from './routes/journey.routes';
+import { JobPayoutService } from './services/job-payout.service';
 import express, { Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
@@ -29,17 +41,25 @@ import subscriptionRoutes from './routes/subscription.routes';
 import logisticsRoutes from './routes/logistics.routes';
 import connectRoutes from './routes/connect.routes';
 import paymentRoutes from './routes/payment.routes';
+import koraSandboxRoutes from './routes/kora-sandbox.routes';
+import {driverWalletDevelopRouter} from './routes/driver-wallet-develop.routes';
 import bookingRoutes from './routes/booking.routes';
 import walletRoutes from './routes/wallet.routes';
 import adminRoutes from './routes/admin.routes';
+import marketPricingRoutes from './routes/market-pricing.routes';
 import appRoutes from './routes/app.routes';
-import webhookRoutes from './routes/webhook.routes';
 import stripeWebhookRoutes from './routes/stripe-webhook.routes';
 import communicationRoutes from './routes/communication.routes';
 import issuingRoutes from './routes/issuing.routes';
 import verificationRoutes from './routes/verification.routes';
+import globalAiPricingRoutes from './routes/global-ai-pricing.routes';
+import marketAvailabilityRoutes from './routes/market-availability.routes';
+import driverOnboardingRoutes from './routes/driver-onboarding.routes';
 import authRoutes from './routes/auth.routes';
+import marketplaceRoutes from './routes/marketplace.routes';
+import localServicesRoutes from './routes/local-services.routes';
 import { dispatchService } from './services/dispatch.service';
+import { marketplaceCleanupService } from './services/marketplace-cleanup.service';
 
 import { HealthService } from './services/health.service';
 
@@ -47,6 +67,8 @@ const app = express();
 
 app.use((req: any, res: any, next: any) => {
   const allowedOrigins = [
+    'https://movabi-develop.apps.evolsolution.com',
+    'http://localhost:4200',
     'http://localhost:3000',
     'http://localhost:8100',
     'https://localhost',
@@ -68,7 +90,7 @@ app.use((req: any, res: any, next: any) => {
   res.header('Vary', 'Origin');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept,Origin,X-Requested-With,apikey,x-client-info,X-Inspection-Vehicle');
+  res.header('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept,Origin,X-Requested-With,apikey,x-client-info,X-Movabi-Journey-Token,X-Inspection-Vehicle');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).send();
@@ -116,10 +138,27 @@ const bookingLimiter = rateLimit({
 
 // CORS configuration
 //
-// 🔥 CRITICAL for your error
+// ðŸ”¥ CRITICAL for your error
 // Apply guards
 app.use(failsafeGuard);
-app.use('/api/', globalLimiter);
+// Chat reads are authenticated by the communication routes. Give live readers a
+// separate finite budget so they cannot exhaust booking/availability requests.
+const chatReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 120,
+  message: { error: 'Chat refresh limit reached. Please wait a minute.' } });
+const isChatRead = (req: any) => req.method === 'GET' && /^\/communication\/messages\/[0-9a-f-]+(?:\/counts)?$/.test(req.path);
+// Routine operational GETs use a separate bounded budget. Existing route authentication
+// and participant checks still apply; writes/login/booking creation retain their limits.
+const operationalReadLimiter = rateLimit({windowMs:60000,max:120,
+  message:{error:'Refresh limit reached. Please wait before retrying.'}});
+const isOperationalRead = (req: any) => req.method === 'GET' && (
+  /^\/admin-messages(?:\/[0-9a-f-]{36})?\/?$/i.test(req.path) || req.path === '/communication/inbox/counts' || req.path === '/booking/driver-declines' || req.path === '/app/version' ||
+  /^\/booking\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:customer|nearby-availability)$/i.test(req.path)
+);
+const journeyLimiter = rateLimit({windowMs:60000,max:120,message:{error:'Journey update limit reached'}});
+app.use('/api/', (req,res,next) => req.path.startsWith('/journey/') ? journeyLimiter(req,res,next) : next());
+app.use('/api/', (req, res, next) => req.path.startsWith('/journey/') ? next() : isChatRead(req)
+  ? chatReadLimiter(req, res, next) : isOperationalRead(req)
+  ? operationalReadLimiter(req, res, next) : globalLimiter(req, res, next));
 app.use('/api/booking/create', bookingLimiter);
 
 // Stripe webhook needs raw body for signature verification
@@ -130,26 +169,41 @@ app.use('/api/webhook/stripe', bodyParser.raw({ type: 'application/json' }), str
 app.use(bodyParser.json());
 
 // Routes
+app.use('/api/maps-v23', mapsV23Routes);
 app.use('/api/app', appRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/logistics', logisticsRoutes);
+app.use('/api/journey', journeyRoutes);
+app.use('/api/payment/flutterwave-booking-split', flutterwaveBookingSplitRoutes);
+app.use('/api/driver-payment-account', developDriverPaymentAccountRouter());
 app.use('/api/connect', connectRoutes);
+app.use('/api/market-safety', marketSafetyRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/payment/kora-sandbox', koraSandboxRoutes);
+app.use('/api/payment/driver-topup', driverWalletDevelopRouter());
 app.use('/api/booking', bookingRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/communication', communicationRoutes);
+app.use('/api/admin-messages', adminMessagingRoutes);
 app.use('/api/issuing', issuingRoutes);
-app.use('/api/verification', verificationRoutes);
-app.use('/api/auth', authRoutes);
+  app.use('/api/verification', verificationRoutes);
+  app.use('/api/driver-onboarding', driverOnboardingRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/local-services', localServicesRoutes);
+app.use('/api/pricing/global-ai', globalAiPricingRoutes);
+app.use('/api/markets', marketAvailabilityRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/market-pricing', marketPricingRoutes);
 app.use('/api/stripe/connect', connectRoutes);
 app.use('/api/connect', connectRoutes);
-app.use('/api/webhook', webhookRoutes);
 
 // Start Background Jobs
 setInterval(() => {
   dispatchService.runDispatchEngine();
 }, 10000);
+
+marketplaceCleanupService.start();
 
 setInterval(() => {
   HealthService.checkHealth();
@@ -170,6 +224,17 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 try {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    JobPayoutService.start();
+    BookingSupportService.start();
+    AdminMessagingService.start();
+    GbMotMonitorService.start();
+    let shoppingCleanupRunning = false;
+    setInterval(() => {
+      if (shoppingCleanupRunning) return;
+      shoppingCleanupRunning = true;
+      void ShoppingBudgetService.cleanup().catch(error => console.error('[ShoppingBudget] cleanup failed', error.message))
+        .finally(() => { shoppingCleanupRunning = false; });
+    }, 60000);
     
     // Check for critical missing environment variables
     const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];

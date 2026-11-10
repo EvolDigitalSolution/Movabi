@@ -1,5 +1,12 @@
-﻿import { supabaseAdmin } from './supabase.service';
+import {assertMarketFareConfigured} from './market-fare-guard';
+import { IssuingCapacityService } from './issuing-capacity.service';
+import { PaymentMarginService, PaymentMarginPolicy } from './payment-margin.service';
+import { supabaseAdmin } from './supabase.service';
 import { CityConfig } from './city.service';
+import { MarketplaceConfigService, DynamicPricingSettings, PlatformFeeMode, PlatformFeeSettings, EffectiveDynamicPricingSettings } from './marketplace-config.service';
+import { MarketPricingService, resolveMarketPricingStrategy } from './market-pricing.service';
+import { FareSplitService } from './fare-split.service';
+import { NoShowService } from './no-show.service';
 
 export interface PricingOptions {
     lat: number;
@@ -12,11 +19,35 @@ export interface PricingOptions {
     currencyCode?: string;
     city?: CityConfig | null;
     pricingPlan?: string;
+    tenantId?: string | null;
+    cityZone?: string | null;
+    zoneId?: string | null;
+    driverTier?: string | null;
+    demand?: number;
+    supply?: number;
+    requestedAt?: string;
+    weatherMultiplier?: number;
+    trafficMultiplier?: number;
+    itemCount?: number;
+    taskMinutes?: number;
+    budget?: number;
+    vehicleClass?: string | null;
+    passengerCount?: number;
+    packageSize?: string | null;
+    moveDetails?: {
+        size?: 'small' | 'medium' | 'large' | 'full-house';
+        helperCount?: number;
+        stairsInvolved?: boolean;
+        packingAssistance?: boolean;
+        fragileItems?: boolean;
+    } | null;
+    quoteReference?: string | null;
 }
 
 export interface PricingResult {
     basePrice: number;
     surgeMultiplier: number;
+    dynamicPricingMultiplier: number;
     totalPrice: number;
     source: string;
     city?: string;
@@ -27,23 +58,168 @@ export interface PricingResult {
     regionalPricingRuleId?: string | null;
     taxAmount: number;
     platformFee: number;
+    commissionFee: number;
     driverPayout: number;
     commissionRateUsed: number;
     baseFareUsed: number;
     pricePerKmUsed: number;
+    fareBreakdown: FareBreakdown;
+    marketplaceFlags: {
+        dynamicPricingEnabled: boolean;
+        negotiationEnabled: boolean;
+        biddingEnabled: boolean;
+    };
+    /** Frozen Bike fulfilment snapshot captured at quote time, when available. */
+    fulfilmentSnapshot?: Record<string, unknown> | null;
+}
+
+export interface FareBreakdown {
+    paymentMargin?: { policy: PaymentMarginPolicy; adjustment: number; estimatedPaymentCost: number; contribution: number };
+    baseFare: number;
+    distanceCost: number;
+    durationCost: number;
+    serviceFee: number;
+    taxAmount: number;
+    dynamicPricingAmount: number;
+    commissionAmount: number;
+    platformFee: number;
+    driverPayout: number;
+    total: number;
+    currencyCode: string;
+    currencySymbol: string;
+    multiplier: number;
+    commissionPercent: number;
+    source: string;
+    extras: Record<string, number>;
+    preAdjustmentFare?: number;
+    pricingAdjustmentType?: 'surge' | 'discount' | 'none';
+    pricingMultiplier?: number;
+    pricingAdjustmentAmount?: number;
+    postAdjustmentFare?: number;
+    minimumFareAdjustment?: number;
+    maximumFareAdjustment?: number;
+    negotiationAdjustment?: number;
+    serviceFareBeforePlatformFee?: number;
+    platformFeeType?: PlatformFeeMode;
+    platformFeeFixed?: number;
+    platformFeePercent?: number;
+    platformFeeAmount?: number;
+    platformFeeSource?: string;
+    platformFeeConfigVersion?: string | null;
+    platformFeeMaximum?: number | null;
+    commissionSource?: string;
+    commissionConfigVersion?: string | null;
+    serviceFare?: number;
+    shoppingBudget?: number;
+    itemCharge?: number;
+    taskTimeCharge?: number;
+    largeShoppingSurcharge?: number;
+    packageSizeSurcharge?: number;
+    vehicleClassSurcharge?: number;
+    moveSizeSurcharge?: number;
+    helperSurcharge?: number;
+    stairsSurcharge?: number;
+    packingSurcharge?: number;
+    fragileItemsSurcharge?: number;
+    totalAuthorisation?: number;
+    driverGrossEarnings?: number;
+    calculationVersion?: string;
+    reconciliationValid?: boolean;
+    marketPricingApplied?: boolean;
+    marketStrategyId?: string | null;
+    marketReferenceFare?: number | null;
+    marketAdjustmentAmount?: number;
+    marketPricingVersion?: string | null;
+    marketQuoteSnapshot?: Record<string, unknown> | null;
+    fulfilmentSnapshot?: Record<string, unknown> | null;
 }
 
 export class PricingService {
     static async resolvePrice(options: PricingOptions): Promise<PricingResult> {
+        // No driver is assigned at customer quote time. Do not trust a client plan.
+        const result = await this.resolveUnprotectedPrice({...options,pricingPlan:'starter'});
+        assertMarketFareConfigured(options,result);
+        // The database percentage is a quote fee, not a processor-cost estimate.
+        // Keep the existing GBP cost-protection path; other currencies require an
+        // explicit database percentage configuration and receive no GBP allowance.
+        const databasePercentage = result.currencyCode.toUpperCase() !== 'GBP'
+            && result.fareBreakdown.platformFeeType === 'percentage'
+            && result.fareBreakdown.platformFeeSource === 'marketplace_settings'
+            && Number(result.fareBreakdown.platformFeeFixed || 0) === 0
+            && Number.isFinite(Number(result.fareBreakdown.platformFeePercent))
+            && Number(result.fareBreakdown.platformFeePercent) >= 0
+            && Number(result.fareBreakdown.platformFeePercent) < 100;
+        const policy = databasePercentage ? null : PaymentMarginService.policy(result.currencyCode);
+        const budget = MarketplaceConfigService.canonicalServiceSlug(options.serviceSlug || 'ride') === 'errand'
+            ? this.roundMoney(Number(options.budget ?? result.fareBreakdown.shoppingBudget ?? 0)) : 0;
+        if (budget > 0 && process.env.STRIPE_ISSUING_ENABLED !== 'true') {
+            throw new Error('Shopping funding is temporarily unavailable. Choose a task without a purchase budget or try later.');
+        }
+        if (budget > 0) await IssuingCapacityService.assertAvailable(budget, result.currencyCode);
+        const protectedPrice = policy
+            ? PaymentMarginService.protect(result.totalPrice, this.roundMoney(result.driverPayout + result.commissionFee), budget, policy)
+            : {customerCharge: result.totalPrice, adjustment: 0, paymentCost: null, contribution: null};
+        const fee = this.roundMoney(result.platformFee + protectedPrice.adjustment);
+        const cap = Number(result.fareBreakdown.platformFeeMaximum || 0);
+        if (cap > 0 && fee > cap) throw new Error('A protected quote exceeds the configured platform fee cap');
+        result.totalPrice = protectedPrice.customerCharge;
+        result.platformFee = fee;
+        Object.assign(result.fareBreakdown, {
+            driverCommissionPolicy: {version:'subscription-commission-v1',frozen:false,standardCommissionAmount:result.commissionFee,standardCommissionPercent:result.commissionRateUsed},
+            policyVersion: FareSplitService.POLICY_VERSION,
+            baseServiceFare: this.roundMoney(result.totalPrice - fee), driverBase: this.roundMoney(result.totalPrice - fee),
+            driverCommissionAmount: result.commissionFee, commissionFee: result.commissionFee,
+            driverEntitlement: result.driverPayout, driverNetEarnings: result.driverPayout,
+            currency: result.currencyCode, isPro: result.pricingPlanUsed === 'pro',
+            total: result.totalPrice, serviceFare: result.totalPrice, customerCharge: result.totalPrice,
+            shoppingBudget: budget, totalAuthorisation: this.roundMoney(result.totalPrice + budget), platformFee: fee, platformFeeAmount: fee,
+            platformFeeType: protectedPrice.adjustment > 0 ? 'fixed_plus_percentage' : result.fareBreakdown.platformFeeType, platformFeeFixed: this.roundMoney(Number(result.fareBreakdown.platformFeeFixed || 0) + protectedPrice.adjustment),
+            grossRevenue: this.roundMoney(fee + result.commissionFee),
+            ...(policy ? {paymentMargin: { policy, adjustment: protectedPrice.adjustment, estimatedPaymentCost: protectedPrice.paymentCost, contribution: protectedPrice.contribution }}
+                : {paymentCostStatus: 'not_estimated', quoteFeePolicy: 'database_percentage_v1'})
+        });
+        result.fareBreakdown.reconciliationValid = this.validateFareReconciliation(result.fareBreakdown);
+        if (!result.fareBreakdown.reconciliationValid) throw new Error('Protected quote does not reconcile');
+        // Booking verification must use the final payable quote, including cost protection.
+        if (options.quoteReference) {
+            const { data: audit, error: auditError } = await supabaseAdmin
+                .from('quote_market_adjustments')
+                .update({
+                    protected_fare_snapshot: result.fareBreakdown,
+                    returned_customer_fare: result.totalPrice,
+                    customer_total: result.totalPrice,
+                    platform_fee_amount: result.platformFee,
+                    driver_commission_amount: result.commissionFee,
+                    driver_payout: result.driverPayout,
+                    platform_revenue: this.roundMoney(result.platformFee + result.commissionFee)
+                })
+                .eq('quote_reference', options.quoteReference)
+                .select('quote_reference')
+                .single();
+            if (auditError || !audit) throw new Error('Final protected quote could not be verified. Please try again.');
+        }
+        return result;
+    }
+
+    private static async resolveUnprotectedPrice(options: PricingOptions): Promise<PricingResult> {
         const {
             serviceSlug = 'ride',
             distanceKm = 0,
             durationMinutes = 0,
             basePrice: legacyBasePrice,
             city,
-            pricingPlan = 'starter'
+            pricingPlan = 'starter',
+            tenantId = null,
+            cityZone = null,
+            driverTier = null,
+            demand = 0,
+            supply = 0,
+            requestedAt,
+            weatherMultiplier = 1,
+            trafficMultiplier = 1
         } = options;
 
+        const canonicalServiceSlug = MarketplaceConfigService.canonicalServiceSlug(serviceSlug);
         const countryCode = String(options.countryCode || 'GB').toUpperCase();
         const currencyCode = String(options.currencyCode || '').toUpperCase();
 
@@ -53,43 +229,56 @@ export class PricingService {
         let currencySymbol = this.symbolFromCurrency(currencyCode || 'GBP');
         let resolvedCurrencyCode = currencyCode || 'GBP';
         let regionalPricingRuleId: string | null = null;
+        let pricingConfigId: string | null = null;
         let taxAmount = 0;
         let platformFee = 0;
         let driverPayout = 0;
-        let commissionRateUsed = 15;
+        let commissionRateUsed = 0;
         let baseFareUsed = 0;
         let pricePerKmUsed = 0;
+        let serviceFee = 0;
+        let distanceCost = 0;
+        let durationCost = 0;
+        let itemCharges = 0;
+        let extraItemCharge = 0;
+        let largeShoppingCharge = 0;
+        let taskTimeCharge = 0;
 
         try {
-            // Admin-managed pricing_config is the operational source of truth for
-            // simple per-service pricing. Regional rules remain as fallback.
-            const { data: configRule, error: configError } = await supabaseAdmin
-                .from('pricing_config')
-                .select('*')
-                .eq('service_type', serviceSlug)
-                .eq('is_active', true)
-                .maybeSingle();
+            const pricingConfig = await MarketplaceConfigService.getEffectivePricingConfig(
+                canonicalServiceSlug,
+                { countryCode, currencyCode: currencyCode || undefined, city: city?.name },
+                cityZone
+            );
 
-            if (configError) {
-                console.warn('[PricingService] Pricing config lookup failed:', configError.message);
-            }
+            if (pricingConfig.source === 'pricing_config') {
+                distanceCost = distanceKm * pricingConfig.perKm;
+                durationCost = durationMinutes * pricingConfig.perMin;
+                serviceFee = pricingConfig.serviceFee;
 
-            if (configRule) {
-                const baseFare = Number(configRule.base_fare || 0);
-                const perKm = Number(configRule.per_km || 0);
-                const perMin = Number(configRule.per_min || 0);
-                const serviceFee = Number(configRule.service_fee || 0);
-                const minimumFare = Number(configRule.minimum_fare || 0);
+                extraItemCharge = options.itemCount
+                    ? Math.max(0, (options.itemCount || 0) - pricingConfig.freeIncludedItems) * pricingConfig.extraItemFee
+                    : 0;
+                largeShoppingCharge = (options.budget && options.budget > pricingConfig.largeShoppingThreshold)
+                    ? pricingConfig.largeShoppingSurcharge
+                    : 0;
 
-                resolvedBasePrice = this.roundMoney(Math.max(minimumFare, baseFare + distanceKm * perKm + durationMinutes * perMin + serviceFee));
-                resolvedCurrencyCode = configRule.currency_code || this.currencyFromCountry(countryCode);
+                taskTimeCharge = canonicalServiceSlug === 'errand'
+                    ? Math.max(0, Number(options.taskMinutes || 0) - pricingConfig.includedTaskMinutes) * pricingConfig.perAdditionalTaskMinute
+                    : 0;
+                itemCharges = this.roundMoney(extraItemCharge + largeShoppingCharge + taskTimeCharge);
+                serviceFee += itemCharges;
+
+                resolvedBasePrice = this.roundMoney(Math.max(
+                    pricingConfig.minimumFare,
+                    pricingConfig.baseFare + distanceCost + durationCost + serviceFee
+                ));
+                resolvedCurrencyCode = pricingConfig.currencyCode || this.currencyFromCountry(countryCode);
                 currencySymbol = this.symbolFromCurrency(resolvedCurrencyCode);
-                commissionRateUsed = 15;
-                platformFee = this.roundMoney(resolvedBasePrice * (commissionRateUsed / 100));
-                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
-                baseFareUsed = baseFare;
-                pricePerKmUsed = perKm;
-                source = 'pricing_config';
+                baseFareUsed = pricingConfig.baseFare;
+                pricePerKmUsed = pricingConfig.perKm;
+                pricingConfigId = pricingConfig.pricingConfigId;
+                source = pricingConfig.source;
             }
 
             // 0. New multi-region pricing engine
@@ -98,7 +287,7 @@ export class PricingService {
                     .from('regional_pricing_rules')
                     .select('*')
                     .eq('country_code', countryCode)
-                    .eq('service_slug', serviceSlug)
+                    .eq('service_slug', canonicalServiceSlug)
                     .eq('pricing_plan', pricingPlan)
                     .eq('is_active', true)
                     .maybeSingle()
@@ -113,19 +302,14 @@ export class PricingService {
                 const perKm = Number(regionalRule.price_per_km || 0);
                 const minimumFare = Number(regionalRule.minimum_fare || 0);
                 const taxPercent = Number(regionalRule.tax_percent || 0);
-                const commissionPercent = Number(regionalRule.platform_commission_percent || 15);
 
                 const subtotal = Math.max(minimumFare, baseFare + distanceKm * perKm);
                 taxAmount = this.roundMoney(subtotal * (taxPercent / 100));
                 resolvedBasePrice = this.roundMoney(subtotal + taxAmount);
 
-                platformFee = this.roundMoney(resolvedBasePrice * (commissionPercent / 100));
-                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
-
                 resolvedCurrencyCode = regionalRule.currency_code || this.currencyFromCountry(countryCode);
                 currencySymbol = regionalRule.currency_symbol || this.symbolFromCurrency(resolvedCurrencyCode);
                 regionalPricingRuleId = regionalRule.id;
-                commissionRateUsed = commissionPercent;
                 baseFareUsed = baseFare;
                 pricePerKmUsed = perKm;
                 source = 'regional_pricing_rule';
@@ -230,7 +414,7 @@ export class PricingService {
                             .select('*')
                             .eq('target_country_code', countryCode)
                             .eq('is_active', true)
-                            .or(`service_type_slug.eq.${serviceSlug},service_type_slug.is.null`)
+                                .or(`service_type_slug.eq.${canonicalServiceSlug},service_type_slug.is.null`)
                             .order('service_type_slug', { ascending: false, nullsFirst: false })
                             .limit(1)
                             .maybeSingle();
@@ -270,22 +454,451 @@ export class PricingService {
 
             resolvedBasePrice = this.roundMoney(resolvedBasePrice);
 
-            if (source !== 'regional_pricing_rule') {
-                platformFee = this.roundMoney(resolvedBasePrice * (commissionRateUsed / 100));
-                driverPayout = this.roundMoney(resolvedBasePrice - platformFee);
+            // Fill in component costs for branches that didn't set them explicitly
+            if (source === 'regional_pricing_rule') {
+                distanceCost = distanceKm * pricePerKmUsed;
+                durationCost = 0;
+                serviceFee = 0;
+            } else if (source !== 'pricing_config') {
+                distanceCost = distanceKm * pricePerKmUsed;
+                durationCost = 0;
+                serviceFee = 0;
             }
+
+            // Service-option surcharges (vehicle class, package size, van-moving
+            // add-ons). Computed server-side ONLY so the client never re-derives
+            // fare-affecting amounts - it just displays whatever this service
+            // returns. Kept additive to whatever floor/minimum-fare logic the
+            // branches above already baked into resolvedBasePrice.
+            const vehicleClassInput = options.vehicleClass || null;
+            const passengerCountInput = Number(options.passengerCount) || 0;
+            const packageSizeInput = options.packageSize || null;
+            const moveDetailsInput = options.moveDetails || null;
+
+            let serviceOptionSurcharge = 0;
+            let packageSizeSurcharge = 0;
+            let vehicleClassSurcharge = 0;
+            if (canonicalServiceSlug === 'ride') {
+                if (vehicleClassInput === 'minibus') vehicleClassSurcharge = pricingConfig.optionPricing['rideMinibus'] || 0;
+                else if (vehicleClassInput === 'xl' || passengerCountInput > 4) vehicleClassSurcharge = pricingConfig.optionPricing['rideXl'] || 0;
+                serviceOptionSurcharge = vehicleClassSurcharge;
+            } else if (canonicalServiceSlug === 'delivery') {
+                packageSizeSurcharge = packageSizeInput === 'large' ? pricingConfig.optionPricing['deliveryLargePackage'] || 0 : packageSizeInput === 'medium' ? pricingConfig.optionPricing['deliveryMediumPackage'] || 0 : 0;
+                vehicleClassSurcharge = vehicleClassInput === 'large_van' ? pricingConfig.optionPricing['largeVan'] || 0 : vehicleClassInput === 'small_van' ? pricingConfig.optionPricing['smallVan'] || 0 : vehicleClassInput === 'car' ? pricingConfig.optionPricing['car'] || 0 : 0;
+                serviceOptionSurcharge = this.roundMoney(packageSizeSurcharge + vehicleClassSurcharge);
+            } else if (canonicalServiceSlug === 'errand') {
+                vehicleClassSurcharge = vehicleClassInput === 'small_van' || vehicleClassInput === 'large_van' ? pricingConfig.optionPricing['errandVan'] || 0 : vehicleClassInput === 'car' ? pricingConfig.optionPricing['errandCar'] || 0 : 0;
+                serviceOptionSurcharge = vehicleClassSurcharge;
+            }
+
+            let vanMovingMultiplier = 1;
+            let vanMovingAddons = 0;
+            let moveSizeSurcharge = 0;
+            let helperSurcharge = 0;
+            let stairsSurcharge = 0;
+            let packingSurcharge = 0;
+            let fragileItemsSurcharge = 0;
+            if (canonicalServiceSlug === 'van-moving' && moveDetailsInput) {
+                switch (moveDetailsInput.size) {
+                    case 'medium': vanMovingMultiplier = pricingConfig.optionPricing['moveMediumMultiplier'] || 1; break;
+                    case 'large': vanMovingMultiplier = pricingConfig.optionPricing['moveLargeMultiplier'] || 1; break;
+                    case 'full-house': vanMovingMultiplier = pricingConfig.optionPricing['moveFullHouseMultiplier'] || 1; break;
+                    default: vanMovingMultiplier = 1;
+                }
+                const helperCount = Math.max(0, Number(moveDetailsInput.helperCount) || 0);
+                helperSurcharge = helperCount * (pricingConfig.optionPricing['helper'] || 0);
+                stairsSurcharge = moveDetailsInput.stairsInvolved ? pricingConfig.optionPricing['stairs'] || 0 : 0;
+                packingSurcharge = moveDetailsInput.packingAssistance ? pricingConfig.optionPricing['packing'] || 0 : 0;
+                fragileItemsSurcharge = moveDetailsInput.fragileItems ? pricingConfig.optionPricing['fragile'] || 0 : 0;
+                vanMovingAddons = helperSurcharge + stairsSurcharge + packingSurcharge + fragileItemsSurcharge;
+                vanMovingAddons = this.roundMoney(vanMovingAddons);
+            }
+
+            if (vanMovingMultiplier !== 1) {
+                moveSizeSurcharge = this.roundMoney(resolvedBasePrice * (vanMovingMultiplier - 1));
+                baseFareUsed = this.roundMoney(baseFareUsed * vanMovingMultiplier);
+                distanceCost = this.roundMoney(distanceCost * vanMovingMultiplier);
+                durationCost = this.roundMoney(durationCost * vanMovingMultiplier);
+                resolvedBasePrice = this.roundMoney(resolvedBasePrice * vanMovingMultiplier);
+            }
+
+            serviceFee = this.roundMoney(serviceFee + serviceOptionSurcharge + vanMovingAddons);
+            resolvedBasePrice = this.roundMoney(resolvedBasePrice + serviceOptionSurcharge + vanMovingAddons);
+
+            const scopedMarketStrategy = await resolveMarketPricingStrategy({
+                countryCode,
+                marketCity: city?.name || null,
+                zoneId: options.zoneId || null,
+                serviceType: canonicalServiceSlug,
+                vehicleClass: options.vehicleClass || null,
+                packageSize: options.packageSize || null,
+                currency: resolvedCurrencyCode,
+                distanceKm,
+                durationMinutes,
+                baseServiceFare: resolvedBasePrice,
+                platformFeePercent: 0,
+                driverCommissionPercent: 0
+            });
+
+            // Marketplace dynamic pricing: demand/supply, time-of-day, weather/traffic
+            const dynamicSettings = await MarketplaceConfigService.getEffectiveDynamicPricingConfig(
+                canonicalServiceSlug,
+                { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
+                cityZone,
+                tenantId
+            );
+            const dynamicPricingEnabled = dynamicSettings.enabled === true;
+            const maximumSurgeMultiplier = Math.max(1, Number(
+                scopedMarketStrategy?.maximumSurgeMultiplier ?? dynamicSettings.maxMultiplier ?? dynamicSettings.maxSurge ?? 1
+            ));
+            const demandRatio = supply > 0 ? demand / supply : (demand > 0 ? Number.POSITIVE_INFINITY : 0);
+            const busyDemand = demandRatio > Number(dynamicSettings.minimumDemandRatio || 0);
+            const scopedDemandMultiplier = busyDemand
+                ? scopedMarketStrategy?.busyMultiplier
+                : scopedMarketStrategy?.normalDemandMultiplier;
+            const surgeMultiplier = dynamicPricingEnabled && dynamicSettings.demandSupplyEnabled
+                ? Math.min(
+                    maximumSurgeMultiplier,
+                    scopedDemandMultiplier === null || scopedDemandMultiplier === undefined
+                        ? this.getSurgeMultiplier(demand, supply, { ...dynamicSettings, maxMultiplier: maximumSurgeMultiplier })
+                        : Math.max(1, Number(scopedDemandMultiplier))
+                )
+                : 1.0;
+            const timeMultiplier = dynamicPricingEnabled && dynamicSettings.timeOfDayEnabled
+                ? this.getTimeOfDayMultiplier(dynamicSettings, requestedAt)
+                : 1.0;
+            const configuredWeatherMultiplier = Number(dynamicSettings.weatherMultiplier ?? 1);
+            const configuredTrafficMultiplier = Number(dynamicSettings.trafficMultiplier ?? 1);
+            const configuredDemandMultiplier = Number(dynamicSettings.demandMultiplier ?? 1);
+            const configuredFuelMultiplier = Number(dynamicSettings.fuelMultiplier ?? 1);
+            const effectiveWeatherMultiplier = dynamicPricingEnabled && dynamicSettings.weatherEnabled
+                ? weatherMultiplier * (Number.isFinite(configuredWeatherMultiplier) ? configuredWeatherMultiplier : 1)
+                : 1;
+            const effectiveTrafficMultiplier = dynamicPricingEnabled && dynamicSettings.trafficEnabled
+                ? trafficMultiplier * (Number.isFinite(configuredTrafficMultiplier) ? configuredTrafficMultiplier : 1)
+                : 1;
+            const effectiveDemandMultiplier = dynamicPricingEnabled && dynamicSettings.demandSupplyEnabled
+                && (scopedDemandMultiplier === null || scopedDemandMultiplier === undefined)
+                && Number.isFinite(configuredDemandMultiplier)
+                ? configuredDemandMultiplier
+                : 1;
+            const effectiveFuelMultiplier = dynamicPricingEnabled && Number.isFinite(configuredFuelMultiplier)
+                ? configuredFuelMultiplier
+                : 1;
+            const dynamicPricingMultiplier = dynamicPricingEnabled ? this.roundMoney(
+                Math.min(
+                    maximumSurgeMultiplier,
+                    surgeMultiplier *
+                        timeMultiplier *
+                        effectiveWeatherMultiplier *
+                        effectiveTrafficMultiplier *
+                        effectiveDemandMultiplier *
+                        effectiveFuelMultiplier
+                )
+            ) : 1;
+            const displayedBaseFare = this.roundMoney(baseFareUsed);
+            const displayedDistanceCost = this.roundMoney(distanceCost);
+            const displayedDurationCost = this.roundMoney(durationCost);
+            const displayedServiceFee = this.roundMoney(serviceFee);
+            console.log('[Pricing] resolved components', {
+                pricingConfigId,
+                countryCode,
+                serviceSlug: canonicalServiceSlug,
+                dbBaseFare: displayedBaseFare,
+                dbServiceFee: displayedServiceFee - itemCharges,
+                fixedFareInput: Number(legacyBasePrice || 0),
+                serviceOptionSurcharge: 0,
+                itemCharges,
+                baseFareApplied: displayedBaseFare,
+                serviceExtrasApplied: displayedServiceFee
+            });
+            const rawPreAdjustmentFare = this.roundMoney(
+                displayedBaseFare + displayedDistanceCost + displayedDurationCost + displayedServiceFee + taxAmount
+            );
+            const minimumFareAdjustment = this.roundMoney(Math.max(0, resolvedBasePrice - rawPreAdjustmentFare));
+            const preAdjustmentFare = this.roundMoney(rawPreAdjustmentFare + minimumFareAdjustment);
+            const adjustedFare = this.roundMoney(preAdjustmentFare * dynamicPricingMultiplier);
+            const dynamicPricingAmount = this.roundMoney(adjustedFare - preAdjustmentFare);
+            const preCommissionTotal = adjustedFare;
+
+            const commissionConfig = await MarketplaceConfigService.getEffectiveCommissionConfig(
+                canonicalServiceSlug,
+                cityZone,
+                driverTier,
+                tenantId
+            );
+            commissionRateUsed = scopedMarketStrategy?.commissionPercent !== null && scopedMarketStrategy?.commissionPercent !== undefined
+                ? this.roundMoney(Math.max(0, Number(scopedMarketStrategy.commissionPercent)))
+                : (commissionConfig.enabled === false ? 0 : this.roundMoney(commissionConfig.percent));
+            const platformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(
+                canonicalServiceSlug,
+                { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
+                tenantId
+            );
+
+            // --- Market intelligence pricing layer (additive, opt-in) ---
+            // Runs AFTER the existing service fare + dynamic pricing calculation
+            // above, and BEFORE platform fee / driver commission are applied.
+            // When disabled (default) or when it cannot resolve a valid market
+            // adjustment, marketPricingResult.adjustmentApplied is false and
+            // effectiveServiceFare below is byte-for-byte equal to
+            // preCommissionTotal, so existing pricing behaviour is unchanged.
+            const marketPricingResult = await MarketPricingService.evaluate({
+                countryCode,
+                marketCity: city?.name || null,
+                zoneId: options.zoneId || null,
+                serviceType: canonicalServiceSlug,
+                vehicleClass: options.vehicleClass || null,
+                packageSize: options.packageSize || null,
+                currency: resolvedCurrencyCode,
+                distanceKm,
+                durationMinutes,
+                baseServiceFare: preCommissionTotal,
+                quoteReference: options.quoteReference || null,
+                platformFeePercent: platformFeeConfig.enabled ? Number(platformFeeConfig.percent || 0) : 0,
+                driverCommissionPercent: commissionRateUsed,
+                platformMinimumRevenue: platformFeeConfig.enabled
+                    ? Math.max(0, Number(platformFeeConfig.minFee || 0))
+                    : 0,
+                serviceSurcharges: {
+                    itemCharge: this.roundMoney(extraItemCharge),
+                    taskTimeCharge: this.roundMoney(taskTimeCharge),
+                    largeShoppingSurcharge: this.roundMoney(largeShoppingCharge),
+                    packageSizeSurcharge: this.roundMoney(packageSizeSurcharge),
+                    vehicleClassSurcharge: this.roundMoney(vehicleClassSurcharge),
+                    moveSizeSurcharge,
+                    helperSurcharge: this.roundMoney(helperSurcharge),
+                    stairsSurcharge: this.roundMoney(stairsSurcharge),
+                    packingSurcharge: this.roundMoney(packingSurcharge),
+                    fragileItemsSurcharge: this.roundMoney(fragileItemsSurcharge)
+                }
+            }).catch((err: any) => {
+                console.warn('[PricingService] MarketPricingService.evaluate threw, ignoring market pricing for this quote:', err?.message || err);
+                return null;
+            });
+
+            const effectiveServiceFare = marketPricingResult?.adjustmentApplied
+                ? marketPricingResult.adjustedServiceFare
+                : preCommissionTotal;
+
+            const rawCommissionFee = this.roundMoney(effectiveServiceFare * (commissionRateUsed / 100));
+            const commissionFee = this.applyFeeBounds(rawCommissionFee, commissionConfig.minFee, commissionConfig.maxFee);
+            platformFee = this.calculatePlatformFee(effectiveServiceFare, platformFeeConfig);
+            driverPayout = this.roundMoney(effectiveServiceFare - commissionFee);
+            const totalPrice = this.roundMoney(effectiveServiceFare + platformFee);
+
+            taxAmount = this.roundMoney(taxAmount);
+
+            const fareBreakdown: FareBreakdown = {
+                baseFare: displayedBaseFare,
+                distanceCost: displayedDistanceCost,
+                durationCost: displayedDurationCost,
+                serviceFee: displayedServiceFee,
+                taxAmount,
+                dynamicPricingAmount,
+                commissionAmount: commissionFee,
+                platformFee,
+                driverPayout,
+                total: totalPrice,
+                currencyCode: resolvedCurrencyCode,
+                currencySymbol,
+                multiplier: dynamicPricingMultiplier,
+                commissionPercent: commissionRateUsed,
+                source,
+                extras: {
+                    surgeMultiplier,
+                    timeMultiplier,
+                    weatherMultiplier: effectiveWeatherMultiplier,
+                    trafficMultiplier: effectiveTrafficMultiplier,
+                    demandMultiplier: effectiveDemandMultiplier,
+                    fuelMultiplier: effectiveFuelMultiplier,
+                    itemCharge: this.roundMoney(extraItemCharge),
+                    taskTimeCharge: this.roundMoney(taskTimeCharge),
+                    largeShoppingSurcharge: this.roundMoney(largeShoppingCharge),
+                    packageSizeSurcharge: this.roundMoney(packageSizeSurcharge),
+                    vehicleClassSurcharge: this.roundMoney(vehicleClassSurcharge),
+                    moveSizeSurcharge,
+                    helperSurcharge: this.roundMoney(helperSurcharge),
+                    stairsSurcharge: this.roundMoney(stairsSurcharge),
+                    packingSurcharge: this.roundMoney(packingSurcharge),
+                    fragileItemsSurcharge: this.roundMoney(fragileItemsSurcharge)
+                },
+                preAdjustmentFare,
+                pricingAdjustmentType: dynamicPricingAmount > 0 ? 'surge' : (dynamicPricingAmount < 0 ? 'discount' : 'none'),
+                pricingMultiplier: dynamicPricingMultiplier,
+                pricingAdjustmentAmount: dynamicPricingAmount,
+                postAdjustmentFare: effectiveServiceFare,
+                minimumFareAdjustment,
+                maximumFareAdjustment: 0,
+                negotiationAdjustment: 0,
+                serviceFareBeforePlatformFee: effectiveServiceFare,
+                platformFeeType: platformFeeConfig.type,
+                platformFeeFixed: platformFeeConfig.fixedAmount,
+                platformFeePercent: platformFeeConfig.percent,
+                platformFeeAmount: platformFee,
+                platformFeeSource: platformFeeConfig.source,
+                platformFeeConfigVersion: platformFeeConfig.configVersion,
+                platformFeeMaximum: platformFeeConfig.maxFee,
+                commissionSource: commissionConfig.source,
+                commissionConfigVersion: commissionConfig.configVersion,
+                serviceFare: totalPrice,
+                shoppingBudget: canonicalServiceSlug === 'errand' ? this.roundMoney(Number(options.budget || 0)) : 0,
+                totalAuthorisation: this.roundMoney(totalPrice + (canonicalServiceSlug === 'errand' ? Number(options.budget || 0) : 0)),
+                driverGrossEarnings: effectiveServiceFare,
+                calculationVersion: 'marketplace-v1',
+                marketPricingApplied: !!marketPricingResult?.adjustmentApplied,
+                marketStrategyId: marketPricingResult?.strategyId ?? null,
+                marketReferenceFare: marketPricingResult?.marketReferenceFare ?? null,
+                marketAdjustmentAmount: marketPricingResult?.adjustmentApplied ? marketPricingResult.marketAdjustment : 0,
+                marketPricingVersion: marketPricingResult?.calculationVersion ?? null,
+                marketQuoteSnapshot: marketPricingResult ? {
+                    version: marketPricingResult.calculationVersion,
+                    baseServiceFare: marketPricingResult.baseServiceFare,
+                    marketReferenceFare: marketPricingResult.marketReferenceFare,
+                    targetFare: marketPricingResult.targetFare,
+                    driverProtectionFloor: marketPricingResult.driverProtectionFloor,
+                    platformMarginFloor: marketPricingResult.platformMarginFloor,
+                    adjustedServiceFare: marketPricingResult.adjustedServiceFare,
+                    marketAdjustment: marketPricingResult.marketAdjustment,
+                    adjustmentApplied: marketPricingResult.adjustmentApplied,
+                    shadowMode: marketPricingResult.shadowMode,
+                    fallbackReason: marketPricingResult.fallbackReason ?? null
+                } : null,
+                fulfilmentSnapshot: marketPricingResult?.fulfilmentSnapshot ?? null
+            };
+            fareBreakdown.reconciliationValid = this.validateFareReconciliation(fareBreakdown);
+
+            if (!fareBreakdown.reconciliationValid) {
+                console.error('[PricingService] fare reconciliation error', {
+                    serviceSlug,
+                    source,
+                    fareBreakdown
+                });
+            }
+
+            const jobModes = await MarketplaceConfigService.determineJobModes(serviceSlug, tenantId);
+            const marketplaceFlags = {
+                dynamicPricingEnabled: dynamicSettings.enabled,
+                negotiationEnabled: jobModes.negotiation,
+                biddingEnabled: jobModes.bidding
+            };
+
+            console.log(
+                `[PricingService] Price resolved: ${currencySymbol}${totalPrice} (base ${resolvedBasePrice}, multiplier ${dynamicPricingMultiplier}, commission ${commissionRateUsed}%) via ${source} for ${canonicalServiceSlug} in ${countryCode}`
+            );
+            console.log('[MarketplaceCommissionAudit]', {
+                source,
+                serviceSlug: canonicalServiceSlug,
+                commissionSource: commissionConfig.source,
+                commissionPercent: commissionRateUsed,
+                platformFeeSource: platformFeeConfig.source,
+                platformFee,
+                serviceFare: totalPrice,
+                serviceFareBeforePlatformFee: preCommissionTotal,
+                commissionAmount: commissionFee,
+                driverPayout
+            });
+
+            return {
+                basePrice: resolvedBasePrice,
+                surgeMultiplier,
+                dynamicPricingMultiplier,
+                totalPrice,
+                source,
+                city: city?.name,
+                countryCode,
+                currencyCode: resolvedCurrencyCode,
+                currencySymbol,
+                pricingPlanUsed: pricingPlan,
+                regionalPricingRuleId,
+                taxAmount,
+                platformFee,
+                commissionFee,
+                driverPayout,
+                commissionRateUsed,
+                baseFareUsed,
+                pricePerKmUsed,
+                fareBreakdown,
+                marketplaceFlags
+            };
         } catch (err) {
             console.error('[PricingService] Error resolving price from DB, falling back:', err);
         }
 
-        console.log(
-            `[PricingService] Price resolved: ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
+        // Fallback return when the marketplace path throws. Maintains old contract shape.
+        const fallbackJobModes = await MarketplaceConfigService.determineJobModes(serviceSlug, tenantId);
+        console.warn(
+            `[PricingService] Price resolved (fallback): ${currencySymbol}${resolvedBasePrice} via ${source} for ${serviceSlug} in ${countryCode}`
         );
+
+        const fallbackCommissionSettings = await MarketplaceConfigService.getEffectiveCommissionConfig(
+            canonicalServiceSlug,
+            cityZone,
+            driverTier,
+            tenantId
+        );
+        const fallbackCommission = fallbackCommissionSettings.enabled === false ? 0 : this.roundMoney(fallbackCommissionSettings.percent);
+        const fallbackCommissionFee = this.applyFeeBounds(
+            this.roundMoney(resolvedBasePrice * (fallbackCommission / 100)),
+            fallbackCommissionSettings.minFee,
+            fallbackCommissionSettings.maxFee
+        );
+        const fallbackPlatformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(
+            canonicalServiceSlug,
+            { countryCode, currencyCode: resolvedCurrencyCode, city: city?.name },
+            tenantId
+        );
+        const fallbackPlatformFee = this.calculatePlatformFee(resolvedBasePrice, fallbackPlatformFeeConfig);
+        const fallbackDriverPayout = this.roundMoney(resolvedBasePrice - fallbackCommissionFee);
+        const fallbackTotalPrice = this.roundMoney(resolvedBasePrice + fallbackPlatformFee);
+        const fallbackFareBreakdown: FareBreakdown = {
+            baseFare: this.roundMoney(baseFareUsed),
+            distanceCost: this.roundMoney(distanceKm * pricePerKmUsed),
+            durationCost: 0,
+            serviceFee: 0,
+            taxAmount,
+            dynamicPricingAmount: 0,
+            commissionAmount: fallbackCommissionFee,
+            platformFee: fallbackPlatformFee,
+            driverPayout: fallbackDriverPayout,
+            total: fallbackTotalPrice,
+            currencyCode: resolvedCurrencyCode,
+            currencySymbol,
+            multiplier: 1,
+            commissionPercent: fallbackCommission,
+            source,
+            extras: {},
+            preAdjustmentFare: resolvedBasePrice,
+            pricingAdjustmentType: 'none',
+            pricingMultiplier: 1,
+            pricingAdjustmentAmount: 0,
+            postAdjustmentFare: resolvedBasePrice,
+            minimumFareAdjustment: 0,
+            maximumFareAdjustment: 0,
+            negotiationAdjustment: 0,
+            serviceFareBeforePlatformFee: resolvedBasePrice,
+            platformFeeType: fallbackPlatformFeeConfig.type,
+            platformFeeFixed: fallbackPlatformFeeConfig.fixedAmount,
+            platformFeePercent: fallbackPlatformFeeConfig.percent,
+            platformFeeAmount: fallbackPlatformFee,
+            platformFeeSource: fallbackPlatformFeeConfig.source,
+            platformFeeConfigVersion: fallbackPlatformFeeConfig.configVersion,
+            platformFeeMaximum: fallbackPlatformFeeConfig.maxFee,
+            commissionSource: fallbackCommissionSettings.source,
+            commissionConfigVersion: fallbackCommissionSettings.configVersion,
+            serviceFare: fallbackTotalPrice,
+            shoppingBudget: 0,
+            totalAuthorisation: fallbackTotalPrice,
+            driverGrossEarnings: resolvedBasePrice,
+            calculationVersion: 'marketplace-v1',
+            reconciliationValid: true
+        };
 
         return {
             basePrice: resolvedBasePrice,
             surgeMultiplier: 1.0,
-            totalPrice: resolvedBasePrice,
+            dynamicPricingMultiplier: 1.0,
+            totalPrice: fallbackTotalPrice,
             source,
             city: city?.name,
             countryCode,
@@ -294,23 +907,56 @@ export class PricingService {
             pricingPlanUsed: pricingPlan,
             regionalPricingRuleId,
             taxAmount,
-            platformFee,
-            driverPayout,
-            commissionRateUsed,
+            platformFee: fallbackPlatformFee,
+            commissionFee: fallbackCommissionFee,
+            driverPayout: fallbackDriverPayout,
+            commissionRateUsed: fallbackCommission,
             baseFareUsed,
-            pricePerKmUsed
+            pricePerKmUsed,
+            fareBreakdown: fallbackFareBreakdown,
+            marketplaceFlags: {
+                dynamicPricingEnabled: false,
+                negotiationEnabled: fallbackJobModes.negotiation,
+                biddingEnabled: fallbackJobModes.bidding
+            }
         };
     }
 
-    static getSurgeMultiplier(demand: number, supply: number): number {
-        if (supply === 0) return 2.0;
+    static getSurgeMultiplier(
+        demand: number,
+        supply: number,
+        dynamicSettings?: EffectiveDynamicPricingSettings
+    ): number {
+        const maxMultiplier = Math.max(1, Number(dynamicSettings?.maxMultiplier ?? dynamicSettings?.maxSurge ?? 1));
+        const minimumDemandRatio = Math.max(0, Number(dynamicSettings?.minimumDemandRatio ?? 0));
+        if (maxMultiplier <= 1 || demand <= 0) return 1.0;
+        if (supply <= 0) return maxMultiplier;
 
         const ratio = demand / supply;
+        if (ratio <= minimumDemandRatio) return 1.0;
 
-        if (ratio > 3) return 2.0;
-        if (ratio > 2) return 1.6;
-        if (ratio > 1.5) return 1.3;
-        if (ratio > 1.2) return 1.1;
+        const denominator = Math.max(minimumDemandRatio || 1, 1);
+        const scaled = 1 + ((ratio - minimumDemandRatio) / denominator) * (maxMultiplier - 1);
+        return Math.min(maxMultiplier, Math.max(1, scaled));
+    }
+
+    static getTimeOfDayMultiplier(
+        dynamicSettings?: DynamicPricingSettings,
+        requestedAt?: string
+    ): number {
+        const date = requestedAt ? new Date(requestedAt) : new Date();
+        const hour = date.getHours();
+        const asAny = dynamicSettings as any;
+
+        const peakHours = Array.isArray(asAny?.peakHours) ? asAny.peakHours : [];
+        if (peakHours.includes(hour)) {
+            return Number(dynamicSettings?.peakMultiplier ?? 1);
+        }
+
+        const nightHours = Array.isArray(asAny?.nightHours) ? asAny.nightHours : [];
+        if (nightHours.includes(hour)) {
+            return Number(dynamicSettings?.nightMultiplier ?? 1);
+        }
 
         return 1.0;
     }
@@ -322,6 +968,43 @@ export class PricingService {
 
     private static roundMoney(value: number): number {
         return Number(Number(value || 0).toFixed(2));
+    }
+
+    private static applyFeeBounds(value: number, minFee?: number | null, maxFee?: number | null): number {
+        let bounded = this.roundMoney(value);
+        const min = Number(minFee ?? 0);
+        const max = maxFee === null || maxFee === undefined ? null : Number(maxFee);
+        if (Number.isFinite(min) && min > 0) bounded = Math.max(bounded, min);
+        if (max !== null && Number.isFinite(max) && max > 0) bounded = Math.min(bounded, max);
+        return this.roundMoney(bounded);
+    }
+
+    private static calculatePlatformFee(amount: number, config: PlatformFeeSettings): number {
+        if (!config.enabled) return 0;
+        const percentFee = this.roundMoney(amount * (Number(config.percent || 0) / 100));
+        const fixedFee = this.roundMoney(Number(config.fixedAmount || 0));
+        const raw = config.type === 'fixed'
+            ? fixedFee
+            : config.type === 'fixed_plus_percentage'
+                ? fixedFee + percentFee
+                : percentFee;
+        return this.applyFeeBounds(raw, config.minFee, config.maxFee);
+    }
+
+    static validateFareReconciliation(result: FareBreakdown): boolean {
+        const tolerance = 0.01;
+        const serviceFareBeforePlatformFee = this.roundMoney(
+            Number(result.serviceFareBeforePlatformFee ?? result.postAdjustmentFare ?? 0)
+        );
+        const platformFee = this.roundMoney(Number(result.platformFeeAmount ?? result.platformFee ?? 0));
+        const serviceFare = this.roundMoney(Number(result.serviceFare ?? result.total ?? 0));
+        const shoppingBudget = this.roundMoney(Number(result.shoppingBudget ?? 0));
+        const totalAuthorisation = this.roundMoney(Number(result.totalAuthorisation ?? serviceFare + shoppingBudget));
+
+        const serviceMatches = Math.abs(this.roundMoney(serviceFareBeforePlatformFee + platformFee) - serviceFare) <= tolerance;
+        const totalMatches = Math.abs(this.roundMoney(serviceFare + shoppingBudget) - totalAuthorisation) <= tolerance;
+
+        return serviceMatches && totalMatches;
     }
 
     private static currencyFromCountry(countryCode: string): string {
@@ -357,5 +1040,133 @@ export class PricingService {
         };
 
         return map[String(currencyCode || 'GBP').toUpperCase()] || '£';
+    }
+
+    /**
+     * Re-derive the price-related fields on a job when the fare has been
+     * negotiated/locked to a different amount. The agreed fare is treated as
+     * the customer-visible service fare; any shopping budget remains separate.
+     *
+     * The returned object is a `jobs` PERSISTENCE payload: every key must be a
+     * real column on public.jobs, because callers spread it straight into
+     * `.from('jobs').update({ ... })`. A key that is not an actual column makes
+     * PostgREST reject the ENTIRE update (unknown column), so the refresh would
+     * never apply while the caller may still report success.
+     *
+     * The booking-time pricing concepts `app_confirmed_price`,
+     * `frontend_total_price` and `regional_price` are NOT jobs columns - they
+     * are jobs.metadata keys written by BookingService.createBooking. They must
+     * never be emitted from here.
+     */
+    static applyAgreedFare(job: any, agreedFare: number, options?: { previewOnly?: boolean }): Partial<any> {
+        const originalTotal = Number(job?.fare_breakdown?.customerCharge || job?.total_price || job?.price || agreedFare) || agreedFare;
+        const safeAgreed = Math.max(0, Number(agreedFare) || 0);
+        const ratio = originalTotal > 0 ? safeAgreed / originalTotal : 1;
+
+        const round = this.roundMoney;
+
+        const fareBreakdown = job?.fare_breakdown || {};
+        const originalPlatformFee = Number(
+            fareBreakdown.platformFeeAmount ??
+            fareBreakdown.platformFee ??
+            job?.platform_fee ??
+            0
+        );
+        const platformFee = round(originalPlatformFee * ratio);
+        const serviceFareBeforePlatformFee = round(Math.max(0, safeAgreed - platformFee));
+        const frozenRate = fareBreakdown.commissionPercent ?? job?.commission_rate_used;
+        const commissionRateUsed = Number(frozenRate);
+        if (frozenRate == null || !Number.isFinite(commissionRateUsed) || commissionRateUsed < 0 || commissionRateUsed >= 100) {
+            throw new Error('Frozen commission rate requires reconciliation');
+        }
+        const commissionFee = round(serviceFareBeforePlatformFee * (commissionRateUsed / 100));
+        const driverPayout = round(Math.max(0, serviceFareBeforePlatformFee - commissionFee));
+        let belowProtectedMinimum = false;
+        if (fareBreakdown.paymentMargin?.policy) {
+            const margin = PaymentMarginService.evaluate(safeAgreed, fareBreakdown.driverCommissionPolicy?.version==='subscription-commission-v1'?serviceFareBeforePlatformFee:driverPayout, Number(fareBreakdown.shoppingBudget || 0), fareBreakdown.paymentMargin.policy);
+            belowProtectedMinimum = !margin.passes;
+            // Only the server's read-only earnings preview may display an
+            // inadmissible proposal. Agreement/payment callers retain rejection.
+            if (belowProtectedMinimum && options?.previewOnly !== true) throw new Error('Agreed fare is below the protected booking minimum');
+        }
+        const taxAmount = round(Number(job?.tax_amount || 0) * ratio);
+        const baseFareUsed = round(Number(job?.base_fare_used || job?.base_fare || 0) * ratio);
+        const pricePerKmUsed = Number(job?.price_per_km_used || 0);
+
+        const scaledBreakdown: Record<string, unknown> = {};
+        for (const key of Object.keys(fareBreakdown)) {
+            const value = Number(fareBreakdown[key]);
+            scaledBreakdown[key] = Number.isFinite(value) ? round(value * ratio) : fareBreakdown[key];
+        }
+
+        // Commission percent is a rate, not a monetary amount; preserve the original value.
+        const originalCommissionPercent = Number(
+            (job?.fare_breakdown as Record<string, unknown> | undefined)?.['commissionPercent'] ??
+            job?.commission_rate_used ??
+            0
+        );
+        scaledBreakdown['commissionPercent'] = Number.isFinite(originalCommissionPercent)
+            ? originalCommissionPercent
+            : 0;
+        scaledBreakdown['platformFee'] = platformFee;
+        scaledBreakdown['platformFeeAmount'] = platformFee;
+        scaledBreakdown['commissionFee'] = commissionFee;
+        scaledBreakdown['serviceFareBeforePlatformFee'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['serviceFare'] = safeAgreed;
+        scaledBreakdown['customerServiceTotal'] = safeAgreed;
+        scaledBreakdown['driverPayout'] = driverPayout;
+        scaledBreakdown['commissionAmount'] = commissionFee;
+        scaledBreakdown['total'] = safeAgreed;
+        scaledBreakdown['shoppingBudget'] = Number(fareBreakdown.shoppingBudget ?? 0);
+        scaledBreakdown['totalAuthorisation'] = round(safeAgreed + Number(scaledBreakdown['shoppingBudget'] ?? 0));
+        scaledBreakdown['driverGrossEarnings'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['driverNetEarnings'] = driverPayout;
+        // Frozen fare-split snapshot (versioned + consolidated fields) so quote,
+        // agreement, capture, settlement and earnings share one definition, and a
+        // re-agreement REPLACES this snapshot before the next authorisation.
+        scaledBreakdown['policyVersion'] = FareSplitService.POLICY_VERSION;
+        scaledBreakdown['baseServiceFare'] = serviceFareBeforePlatformFee;
+        scaledBreakdown['customerCharge'] = safeAgreed;
+        scaledBreakdown['driverBase'] = serviceFareBeforePlatformFee;
+        if(fareBreakdown.driverCommissionPolicy?.version==='subscription-commission-v1'){
+            const previousBase=Number(fareBreakdown.driverBase);
+            if(!Number.isFinite(previousBase)||previousBase<=0)throw new Error('Frozen commission basis requires reconciliation');
+            scaledBreakdown['driverCommissionPolicy']={...fareBreakdown.driverCommissionPolicy,
+                standardCommissionAmount:round(Number(fareBreakdown.driverCommissionPolicy.standardCommissionAmount)*serviceFareBeforePlatformFee/previousBase)};
+        }
+        scaledBreakdown['driverCommissionAmount'] = commissionFee;
+        scaledBreakdown['driverEntitlement'] = driverPayout;
+        scaledBreakdown['grossRevenue'] = round(platformFee + commissionFee);
+        scaledBreakdown['currency'] = String(job?.currency_code || fareBreakdown.currency || 'GBP').toUpperCase();
+        scaledBreakdown['isPro'] = fareBreakdown.isPro === true;
+        scaledBreakdown['platformFeeType'] = (fareBreakdown as any)?.platformFeeType ?? 'percentage';
+        scaledBreakdown['platformFeePercent'] = Number((fareBreakdown as any)?.platformFeePercent ?? 0);
+        scaledBreakdown['platformFeeFixed'] = Number((fareBreakdown as any)?.platformFeeFixed ?? 0);
+        // Preserve an already-disclosed policy version when an agreement scales its fare.
+        // Never introduce a new no-show charge on an undisclosed booking.
+        const noShow = fareBreakdown.noShowPolicyVersion === 'ride-no-show-v1'
+          ? NoShowService.computeNoShowSplit(Math.round(safeAgreed * 100), String(job?.currency_code || fareBreakdown.currency || 'GBP'))
+          : NoShowService.computeCurrentNoShowSplit(Math.round(safeAgreed * 100), String(job?.currency_code || fareBreakdown.currency || 'GBP'));
+        if (['ride-no-show-v1','ride-no-show-v2'].includes(String(fareBreakdown.noShowPolicyVersion))) {
+        scaledBreakdown['noShowPolicyVersion'] = noShow.policyVersion;
+        scaledBreakdown['noShowFeeMinor'] = noShow.feeMinor;
+        scaledBreakdown['noShowDriverShareMinor'] = noShow.driverShareMinor;
+        scaledBreakdown['noShowPlatformShareMinor'] = noShow.platformShareMinor;
+        }
+        scaledBreakdown['reconciliationValid'] = this.validateFareReconciliation(scaledBreakdown as unknown as FareBreakdown);
+
+        return {
+            ...(options?.previewOnly === true ? { previewBelowProtectedMinimum: belowProtectedMinimum } : {}),
+            price: safeAgreed,
+            total_price: safeAgreed,
+            estimated_price: safeAgreed,
+            platform_fee: platformFee,
+            driver_payout: driverPayout,
+            tax_amount: taxAmount,
+            base_fare_used: baseFareUsed,
+            price_per_km_used: pricePerKmUsed,
+            commission_rate_used: commissionRateUsed,
+            fare_breakdown: scaledBreakdown
+        };
     }
 }

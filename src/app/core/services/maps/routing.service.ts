@@ -1,8 +1,10 @@
+import {RemoteMapsService} from './remote-maps.service';
+import { NavigationRoute } from '../../../shared/utils/journey-progress';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
 import { RouteSummary } from '../../models/maps/route-result.model';
-import { map, Observable, of } from 'rxjs';
+import { map, Observable, of, switchMap, throwError } from 'rxjs';
 
 interface ORSRoute {
   summary: {
@@ -18,11 +20,31 @@ interface ORSRoute {
 })
 export class RoutingService {
   private http = inject(HttpClient);
+  private remoteMaps=inject(RemoteMapsService);
   private provider = inject(MapProviderService);
-  private baseUrl = 'https://api.openrouteservice.org/v2/directions/driving-car';
+  private baseUrl = 'https://api.heigit.org/openrouteservice/v2/directions/driving-car';
   private cache = new Map<string, RouteSummary | null>();
 
+  getNavigationRoute(start: {lat:number;lng:number}, end: {lat:number;lng:number}): Observable<NavigationRoute | null> {
+    return this.remoteMaps.configuration().pipe(switchMap(config=>config.routing?this.remoteMaps.route(start,end):throwError(()=>new Error('Road routing is unavailable. Please sign in and retry.'))));
+  }
+  private legacyNavigationRoute(start: {lat:number;lng:number}, end: {lat:number;lng:number}): Observable<NavigationRoute | null> {
+    const apiKey=this.provider.getOpenRouteServiceApiKey();if(!apiKey) return of(null);
+    interface Response {features?:Array<{geometry:{coordinates:number[][]};properties:{summary:{distance:number;duration:number};segments?:Array<{steps?:Array<{instruction:string;distance:number;duration:number;way_points:[number,number]}>}>}}>}
+    return this.http.post<Response>(this.baseUrl+'/geojson',{coordinates:[[start.lng,start.lat],[end.lng,end.lat]],instructions:true},
+      {headers:{Authorization:apiKey,'Content-Type':'application/json'}}).pipe(map(response=>{
+        const feature=response.features?.[0];if(!feature?.geometry?.coordinates?.length || !feature.properties?.summary) return null;
+        const coordinates=feature.geometry.coordinates;
+        if(!coordinates.every(p=>p.length>=2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))) return null;
+        return {coordinates,distanceMeters:feature.properties.summary.distance,durationSeconds:feature.properties.summary.duration,
+          steps:(feature.properties.segments||[]).flatMap(s=>(s.steps||[]).map(step=>({instruction:step.instruction,distanceMeters:step.distance,durationSeconds:step.duration,startIndex:step.way_points[0],endIndex:step.way_points[1]})))};
+      }));
+  }
+
   getRoute(start: { lat: number, lng: number }, end: { lat: number, lng: number }): Observable<RouteSummary | null> {
+    return this.remoteMaps.configuration().pipe(switchMap(config=>config.routing?this.remoteMaps.route(start,end):throwError(()=>new Error('Road routing is unavailable. Please sign in and retry.'))));
+  }
+  private legacyRoute(start: { lat: number, lng: number }, end: { lat: number, lng: number }): Observable<RouteSummary | null> {
     const cacheKey = `route:${start.lat},${start.lng}:${end.lat},${end.lng}`;
     if (this.cache.has(cacheKey)) return of(this.cache.get(cacheKey)!);
 

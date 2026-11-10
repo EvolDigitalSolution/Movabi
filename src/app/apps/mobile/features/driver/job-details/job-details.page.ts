@@ -1,4 +1,14 @@
-import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { EarlyStopPanelComponent } from '@shared/ui/early-stop-panel.component';
+import { formatWaitingTime } from '@shared/utils/waiting-time';
+import { driverMoneyView } from '@shared/utils/driver-money-view';
+import { shoppingCardBalance } from '@shared/utils/shopping-card-balance';
+import { customerDisplayName } from '@shared/utils/customer-display';
+import { NetworkService } from '@core/services/network/network.service';
+import { approvedErrandBudget } from '@shared/utils/errand-budget';
+import { ModalController } from '@ionic/angular/standalone';
+import { JourneyNavigationComponent } from '../navigation/journey-navigation.component';
+import { CommunicationService } from '../../../../../core/services/communication/communication.service';
+import { Component, ViewChild, ElementRef, inject, OnInit, OnDestroy, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -81,6 +91,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
     selector: 'app-job-details',
     standalone: true,
     imports: [
+        EarlyStopPanelComponent,
         CommonModule,
         IonHeader,
         IonToolbar,
@@ -96,6 +107,52 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
         MapComponent,
         CommunicationPanelComponent
     ],
+    styles: [`
+      .driver-job-nav{display:flex;align-items:center;gap:6px;padding:6px 8px;background:#fff;border-bottom:1px solid #e2e8f0;min-width:0}
+      .driver-job-primary{display:flex;align-items:center;gap:6px;flex:1;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scroll-padding-inline:4px;padding:2px}
+      .driver-job-nav .driver-job-primary button{flex:0 0 auto;margin-left:0;padding:7px 10px;border-radius:12px;font-size:12px!important;white-space:nowrap;line-height:18px}
+      .driver-job-nav .driver-job-more{flex:0 0 auto;margin-left:0;padding:7px 10px;font-size:12px!important;line-height:18px}
+      .driver-job-nav button:focus-visible,.driver-job-tools button:focus-visible{outline:3px solid #0f172a;outline-offset:-3px}
+      .driver-budget-badge{display:inline-grid;place-items:center;min-width:16px;height:16px;margin-left:2px;border-radius:50%;background:#b45309;color:white;font-size:11px}
+      .driver-job-nav .driver-job-more[aria-pressed=true]{background:#f59e0b;border-color:#f59e0b}
+      .driver-job-nav button,.driver-job-tools button{min-height:44px;padding:8px 16px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fafc;color:#0f172a;font-size:14px!important;font-weight:700}
+      .driver-job-nav button[aria-pressed=true]{background:#f59e0b;border-color:#f59e0b}
+      .driver-job-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px;max-height:26dvh;overflow:auto;background:white}
+
+      /* VAYDU_DRIVER_TABS_NO_SCROLL */
+      .driver-job-nav {
+        display:grid;
+        grid-template-columns:repeat(3,minmax(0,1fr));
+        gap:6px;
+        padding:6px 8px;
+      }
+      .driver-job-nav .driver-job-primary {
+        display:contents;
+      }
+      .driver-job-nav .driver-job-primary button,
+      .driver-job-nav .driver-job-more {
+        width:100%;
+        min-width:0;
+        min-height:44px;
+        margin:0;
+        padding:6px 3px;
+        font-size:12px!important;
+        line-height:18px;
+        letter-spacing:normal;
+        white-space:normal;
+        overflow-wrap:anywhere;
+      }
+      @media(min-width:768px) {
+        .driver-job-nav {
+          grid-template-columns:repeat(6,minmax(0,1fr));
+        }
+      }
+      .driver-summary h2{font-size:18px!important;line-height:1.3;margin-top:8px!important}
+      .driver-summary p{font-size:12px!important;letter-spacing:normal!important}
+      .driver-summary{box-shadow:none!important;border-radius:18px!important}
+      [data-testid=job-action-panel] h3{font-size:18px!important;line-height:1.3}
+      [data-testid=job-action-panel] p{font-size:13px!important;letter-spacing:normal!important}
+    `],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-3 pt-4 bg-slate-50">
@@ -109,47 +166,40 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
       </ion-toolbar>
 
       @if (job()) {
-        <div class="bg-slate-50/95 backdrop-blur border-b border-slate-100">
-          <div class="w-full max-w-xl mx-auto px-3 py-2.5">
-            <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 rounded-2xl border border-slate-100 bg-slate-100/80 p-1.5">
-              @for (tab of requestTabs; track tab.id) {
-                <button
-                  type="button"
-                  (click)="setActiveRequestTab(tab.id)"
-                  class="relative min-w-0 h-12 rounded-xl px-1.5 py-1 text-[11px] font-semibold leading-tight border transition-all inline-flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] hover:shadow-sm"
-                  [class.bg-amber-500]="activeRequestTab() === tab.id"
-                  [class.text-white]="activeRequestTab() === tab.id"
-                  [class.border-amber-500]="activeRequestTab() === tab.id"
-                  [class.shadow-md]="activeRequestTab() === tab.id"
-                  [class.shadow-amber-500/20]="activeRequestTab() === tab.id"
-                  [class.bg-white]="activeRequestTab() !== tab.id"
-                  [class.text-slate-700]="activeRequestTab() !== tab.id"
-                  [class.border-slate-200]="activeRequestTab() !== tab.id"
-                >
-                  <ion-icon
-                    [name]="tab.icon"
-                    class="text-[17px] shrink-0"
-                    [attr.aria-label]="tab.label + ' tab icon'"
-                  ></ion-icon>
-                  <span class="block max-w-full truncate">{{ tab.label }}</span>
-                  @if (tab.id === 'chat' && unreadMessageCount() > 0) {
-                    <span class="absolute right-1 top-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white/70">
-                      {{ unreadMessageCount() }}
-                    </span>
-                  }
-                </button>
-              }
-            </div>
+        <nav class="driver-job-nav" aria-label="Request tools">
+          <div class="driver-job-primary">
+            @for (tab of primaryRequestTabs(); track tab.id) {
+              <button type="button" [attr.aria-pressed]="activeRequestTab() === tab.id" (click)="setActiveRequestTab(tab.id)">
+                {{ tab.id === 'overview' ? 'Trip' : tab.label }}
+                @if (tab.id === 'chat' && unreadMessageCount() > 0) { ({{ unreadMessageCount() }}) }
+                @if (tab.id === 'pay' && notificationOrchestrator.getBudgetBadgeCount(job()?.id || '') > 0) { <span class="driver-budget-badge" aria-label="Unread budget update">!</span> }
+              </button>
+            }
           </div>
-        </div>
+          <button class="driver-job-more" type="button" [attr.aria-expanded]="requestToolsOpen()" [attr.aria-pressed]="secondaryRequestTabActive()" aria-controls="driver-job-tools" (click)="requestToolsOpen.set(!requestToolsOpen())">{{ requestToolsOpen() ? 'Close' : 'More' }}</button>
+        </nav>
+        @if (requestToolsOpen()) {
+          <nav id="driver-job-tools" class="driver-job-tools" aria-label="More request functions">
+            @for (tab of secondaryRequestTabs(); track tab.id) {
+              <button type="button" [attr.aria-pressed]="activeRequestTab() === tab.id" (click)="setActiveRequestTab(tab.id)">{{ tab.id === 'more' ? 'Request details' : tab.label }}</button>
+            }
+          </nav>
+        }
       }
     </ion-header>
 
     <ion-content class="bg-slate-50">
       <div class="w-full max-w-xl mx-auto px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+8rem)] space-y-4 overflow-x-hidden">
         @if (job()) {
+          <app-early-stop-panel [jobId]="job()!.id"></app-early-stop-panel>
+          @if (loadError()) {
+            <div role="alert" class="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+              <p>{{ loadError() }}</p>
+              <app-button variant="secondary" size="sm" (clicked)="loadJob(job()?.id || '')">Retry details</app-button>
+            </div>
+          }
           @if (activeRequestTab() === 'overview') {
-            <div class="relative overflow-hidden bg-white rounded-[1.5rem] p-4 text-slate-950 shadow-lg shadow-slate-900/10 border border-slate-200">
+            <div class="driver-summary relative overflow-hidden bg-white rounded-[1.5rem] p-4 text-slate-950 shadow-lg shadow-slate-900/10 border border-slate-200">
               <div class="absolute inset-x-0 top-0 h-1.5 bg-amber-500"></div>
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
@@ -160,33 +210,181 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   <p class="mt-1 text-xs text-slate-600 font-semibold">ID: {{ shortId(job()?.id) }}</p>
                 </div>
                 <div class="text-right shrink-0">
-                  <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Payout</p>
+                  <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Driver earnings</p>
                   <span class="text-lg font-display font-black text-slate-950">
-                    {{ formatPrice(job()?.total_price || job()?.price || 0) }}
+                    {{ driverMoney().net !== null ? formatPrice(driverMoney().net!) : 'Pending' }}
                   </span>
                 </div>
               </div>
             </div>
 
+            @if (driverMoney().deductions !== null || driverMoney().net !== null) {
+              <div class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" aria-label="Driver earnings breakdown">
+                
+                @if (driverMoney().gross !== null) {
+                  <div class="flex justify-between gap-3"><span>Total</span><strong>{{ formatPrice(driverMoney().gross!) }}</strong></div>
+                }
+                @if (driverMoney().deductions !== null) {
+                  <div class="flex justify-between gap-3"><span>Commission</span><strong>{{ formatPrice(driverMoney().deductions!) }}</strong></div>
+                }
+
+              </div>
+            }
+
+            @if (noShowGraceUntil() && (noShowRemainingSeconds() ?? 0) > 0) {
+              <div class="rounded-2xl bg-slate-100 border border-slate-200 p-3 mt-3" role="timer" [attr.aria-label]="'No-show grace countdown'" data-testid="no-show-countdown">
+                <p class="text-xs font-bold text-slate-700">
+                  Waiting time left: {{ waitingTime(noShowRemainingSeconds()) }}
+                </p>
+              </div>
+            }
+
+            @if (noShowGraceUntil() && noShowGraceExpired() && noShowTerms()) {
+              <div class="rounded-2xl bg-rose-50 border border-rose-200 p-4 mt-3 space-y-3" data-testid="no-show-panel">
+                <p class="text-sm font-black text-rose-900">Customer no-show</p>
+                <p class="text-xs font-bold text-slate-700">
+                  Grace period has ended. Recording a no-show cancels this request and charges
+                  the customer
+                  <span class="text-rose-700 font-black" data-testid="no-show-fee">{{ noShowFeeDisplay() }}</span>.
+                  Your compensation is
+                  <span class="text-emerald-700 font-black" data-testid="no-show-driver-share">{{ noShowDriverShareDisplay() }}</span>.
+                </p>
+
+                <label class="flex items-start gap-2 text-xs font-bold text-slate-700">
+                  <input type="checkbox" data-testid="no-show-contact"
+                         [checked]="noShowContactAttempted()"
+                         (change)="noShowContactAttempted.set($any($event.target).checked)" />
+                  I attempted to contact the customer.
+                </label>
+
+                <textarea data-testid="no-show-reason" rows="2" aria-label="No-show reason"
+                          class="w-full rounded-xl border border-slate-200 p-2 text-xs font-semibold"
+                          placeholder="Reason (e.g. waiting period ended, no answer)"
+                          [value]="noShowReason()"
+                          (input)="noShowReason.set($any($event.target).value)"></textarea>
+
+                <label class="flex items-start gap-2 text-xs font-bold text-slate-700">
+                  <input type="checkbox" data-testid="no-show-confirm"
+                         [checked]="noShowConfirmed()"
+                         (change)="noShowConfirmed.set($any($event.target).checked)" />
+                  I confirm the customer did not show up.
+                </label>
+
+                @if (noShowError()) {
+                  <p class="text-xs font-bold text-rose-700" role="alert" data-testid="no-show-error">{{ noShowError() }}</p>
+                }
+
+                <app-button type="button" [disabled]="!noShowCanSubmit()" (click)="submitNoShow()" data-testid="no-show-submit">
+                  {{ noShowSubmitting() ? 'Recording...' : 'Record no-show' }}
+                </app-button>
+              </div>
+            }
+
+            <!-- Current-action controls: directly below the job header/status summary
+                 (and the arrival/no-show countdown + confirmation, which stay with it)
+                 and above the detailed content. Sticky below the app header. -->
+            @if (showStickyActionForTab()) {
+              <div
+                class="sticky top-0 z-20 -mx-3 px-3 py-2 bg-slate-50 border-b border-slate-200 shadow-sm max-h-[calc(100vh-9rem)] overflow-y-auto space-y-2"
+                data-testid="job-action-panel">
+                @if (job()?.status !== 'completed') {
+                  <div class="bg-white rounded-[1.35rem] border border-slate-100 shadow-sm p-2.5">
+                    <div class="flex flex-col items-start gap-3 mb-2">
+                      <div class="min-w-0">
+                        <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Next step</p>
+                        <h3 class="text-base font-display font-black text-slate-950">{{ actionTitle() }}</h3>
+                      </div>
+                      <app-badge [variant]="actionBadgeVariant()">{{ formatStatus(job()?.status) }}</app-badge>
+                    </div>
+                    <div class="h-2 rounded-full bg-slate-100 overflow-hidden mb-2">
+                      <div class="h-full rounded-full bg-blue-600 transition-all duration-300" [style.width.%]="actionProgress()"></div>
+                    </div>
+                    <p class="text-xs text-slate-500 font-semibold leading-relaxed">{{ actionHint() }}</p>
+                  </div>
+                }
+
+                @switch (job()?.status) {
+                  @case ('accepted') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
+                  }
+                  @case ('arrived') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(startStatus())">Start Request</app-button>
+                  }
+                  @case ('arrived_at_store') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(nextArrivedAtStoreStatus())">{{ arrivedAtStoreActionLabel() }}</app-button>
+                  }
+                  @case ('shopping_in_progress') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('collected')">Items Collected</app-button>
+                  }
+                  @case ('collected') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('en_route_to_customer')">En Route to Customer</app-button>
+                  }
+                  @case ('en_route_to_customer') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
+                  }
+                  @case ('in_progress') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
+                  }
+                  @case ('delivered') {
+                    <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
+                  }
+                  @case ('completed') {
+                    <div class="bg-emerald-50 p-5 rounded-[1.5rem] text-center border border-emerald-100">
+                      <div class="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <ion-icon name="checkmark-circle" class="text-3xl text-emerald-600"></ion-icon>
+                      </div>
+                      <h3 class="text-lg font-display font-black text-slate-950 mb-2">Request Completed</h3>
+                      <p class="text-sm text-slate-600 font-medium mb-4">Earnings will appear once settlement is complete.</p>
+                      @if (loadError()) {
+                <app-button variant="primary" size="lg" (clicked)="loadJob(routeJobId())" class="w-full">Retry details</app-button>
+              }
+              <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">Back to Dashboard</app-button>
+                    </div>
+                  }
+                  @default {
+                    <app-button variant="secondary" size="lg" class="w-full h-14 rounded-2xl" (clicked)="nav.navigateRoot('/driver')">Back to Dashboard</app-button>
+                  }
+                }
+              </div>
+            }
+
+            @if (job()?.status === 'assigned') {
+              <div class="rounded-[1.5rem] bg-amber-50 border border-amber-200 p-4 space-y-3">
+                <div class="flex items-start gap-3">
+                  <div class="w-9 h-9 shrink-0 rounded-xl bg-amber-100 flex items-center justify-center">
+                    <ion-icon name="hand-left" class="text-amber-600 text-lg"></ion-icon>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-display font-black text-slate-950">This request is assigned to you</p>
+                    <p class="mt-0.5 text-xs text-slate-600 font-semibold leading-relaxed">Confirm this dispatch assignment to begin. You can review the route and details after.</p>
+                  </div>
+                </div>
+                <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" [loading]="confirmingAssignment()" (clicked)="confirmAssignedJob()">Confirm assignment</app-button>
+              </div>
+            }
+
             <app-card class="overflow-hidden">
               <div class="p-4 border-b border-slate-100">
                 <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">{{ navigationSectionLabel() }}</p>
-                <h3 class="mt-1 text-base font-display font-black text-slate-950">{{ pickupMapTitle() }}</h3>
-                <p class="mt-1 text-xs text-slate-500 font-semibold">{{ pickupMapSubtitle() }}</p>
+                <p class="mt-1 text-xs text-slate-500 font-semibold break-words">{{ navigationTargetAddress() || 'Address unavailable' }}</p>
               </div>
-              <div class="h-64 bg-slate-50">
-                <app-map #pickupMap></app-map>
-              </div>
-              <div class="p-4">
-                <button
-                  type="button"
-                  (click)="openMap(job()?.pickup_address)"
-                  class="w-full h-11 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
-                >
-                  <ion-icon name="navigate"></ion-icon>
-                  Open navigation
-                </button>
-              </div>
+              @if (!isNavigationTerminal()) {
+                <div class="p-4 border-b border-slate-100">
+                  <button
+                    type="button"
+                    (click)="openMap(navigationTargetAddress())"
+                    class="w-full h-12 rounded-2xl bg-blue-600 text-white font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-blue-600/20"
+                  >
+                    <ion-icon name="navigate"></ion-icon>
+                    {{ navigateButtonLabel() }}
+                  </button>
+                </div>
+              }
+              <button type="button" (click)="toggleMapPreview()" [attr.aria-expanded]="mapPreviewOpen()"
+                class="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-slate-600">
+                <span>{{ mapPreviewOpen() ? 'Hide map preview' : 'Show map preview' }}</span><span aria-hidden="true">{{ mapPreviewOpen() ? '−' : '+' }}</span>
+              </button>
+              @if (mapPreviewOpen()) { <div class="h-52 bg-slate-50"><app-map #pickupMap></app-map></div> }
             </app-card>
 
             <app-card class="p-4 space-y-4">
@@ -226,10 +424,38 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                     <span class="text-sm font-black text-slate-950">{{ serviceVehicleLabel() }}</span>
                   </div>
                 }
+                @if (localServiceSelection()) {
+                  <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 flex gap-3">
+                    <div class="h-12 w-12 shrink-0 rounded-2xl border border-emerald-100 bg-white p-1 flex items-center justify-center overflow-hidden">
+                      @if (localServiceSelection()?.providerLogoUrl) {
+                        <img [src]="localServiceSelection()?.providerLogoUrl" alt="" class="max-h-full max-w-full object-contain">
+                      } @else {
+                        <ion-icon name="storefront-outline" class="text-xl text-emerald-700"></ion-icon>
+                      }
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-[10px] uppercase tracking-widest text-emerald-700 font-black">Selected local service</p>
+                      <p class="mt-1 text-sm font-black text-slate-950 leading-snug">
+                        {{ localServiceSelection()?.providerName || localServiceSelection()?.categoryName }}
+                      </p>
+                      @if (localServiceSelection()?.providerAddress) {
+                        <p class="mt-1 text-xs font-semibold text-slate-600 leading-snug">{{ localServiceSelection()?.providerAddress }}</p>
+                      }
+                      @if (localServiceSelection()?.openStatus || localServiceSelection()?.distanceKm) {
+                        <p class="mt-1 text-[11px] font-black uppercase tracking-wider text-emerald-700">
+                          {{ localServiceSelection()?.openStatus || 'Selected' }}
+                          @if (localServiceSelection()?.distanceKm) {
+                            <span> · {{ localServiceSelection()?.distanceKm }} km away</span>
+                          }
+                        </p>
+                      }
+                    </div>
+                  </div>
+                }
               </div>
             </app-card>
 
-            <!-- Delivery/Errand Contact Details -->
+            <!-- Shop/Deliver Contact Details -->
             @if (recipientName() || recipientPhone()) {
               <app-card class="p-4 space-y-4 bg-blue-50 border-blue-100">
                 <div class="flex items-center gap-3">
@@ -239,7 +465,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   <div class="min-w-0">
                     <h4 class="text-base font-display font-black text-slate-950 leading-tight whitespace-normal">{{ recipientName() }}</h4>
                     <p class="text-xs text-slate-500 font-semibold">
-                      @if (job()?.service_slug === 'errand') { Recipient } @else { Delivery Recipient }
+                      @if (job()?.service_slug === 'errand') { Shop Recipient } @else { Deliver Recipient }
                     </p>
                     @if (recipientPhone()) {
                       <p class="text-xs text-blue-600 font-medium mt-1">{{ recipientPhone() }}</p>
@@ -261,22 +487,22 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </app-card>
             }
 
-            <!-- Delivery Details -->
+            <!-- Deliver Details -->
             @if (job()?.service_slug === 'delivery' || job()?.service_slug === 'package') {
               @if (deliveryPackageSizeLabel() || packageDescription() || deliveryInstructions()) {
                 <app-card class="p-4 space-y-4 bg-amber-50 border-amber-100">
-                  <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Delivery Details</h3>
+                  <h3 class="text-xs font-black text-amber-600 uppercase tracking-[0.18em]">Deliver Details</h3>
                   
                   @if (deliveryPackageSizeLabel()) {
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Package Size</span>
+                      <span class="text-xs font-semibold text-slate-600">Parcel Size</span>
                       <span class="text-xs font-black text-slate-950">{{ deliveryPackageSizeLabel() }}</span>
                     </div>
                   }
 
                   @if (packageDescription()) {
                     <div>
-                      <p class="text-xs font-semibold text-slate-600 mb-2">Package Details</p>
+                      <p class="text-xs font-semibold text-slate-600 mb-2">Parcel Details</p>
                       <p class="text-xs text-slate-700 leading-relaxed">{{ packageDescription() }}</p>
                     </div>
                   }
@@ -291,34 +517,55 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
             }
 
-            <!-- Errand Details -->
+          }
+
+          @if (activeRequestTab() === 'workflow') {
+            <app-card class="p-4 space-y-4">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+                  <ion-icon [name]="serviceIcon()"></ion-icon>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">{{ serviceWorkEyebrow() }}</p>
+                  <h4 class="mt-1 text-base font-display font-black text-slate-950">{{ serviceWorkTitle() }}</h4>
+                  <p class="mt-2 text-xs font-semibold text-slate-600 leading-relaxed">{{ serviceWorkMessage() }}</p>
+                </div>
+              </div>
+
+              <div class="grid gap-2">
+                @for (step of driverServiceSteps(); track step.title) {
+                  <div class="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-100 p-3">
+                    <ion-icon [name]="step.icon" class="text-amber-600 shrink-0"></ion-icon>
+                    <div class="min-w-0">
+                      <p class="text-xs font-black text-slate-950 whitespace-normal">{{ step.title }}</p>
+                      <p class="text-[11px] font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
+                    </div>
+                  </div>
+                }
+              </div>
+            </app-card>
+
+            @if (job()?.service_slug === ServiceTypeEnum.ERRAND && !isShoppingErrand()) {
+              <app-card class="p-4 space-y-3">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Collection task</p>
+                <p class="text-sm font-semibold text-slate-600 leading-relaxed">
+                  Go to the collection location, collect the item or documents, then deliver or return them to the customer. No shopping spend or receipt is needed for this shop job.
+                </p>
+              </app-card>
+            }
+          }
+
+          @if (activeRequestTab() === 'shopping') {
+            <!-- Shop Details -->
             @if (job()?.service_slug === 'errand') {
-              @if (errandModeDisplay() || errandCustomerPhone() || errandItemsList().length || estimatedBudget() || substitutionRule()) {
+              @if (errandModeDisplay() || errandItemsList().length || estimatedBudget() || substitutionRule()) {
                 <app-card class="p-4 space-y-4 bg-purple-50 border-purple-100">
-                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Errand Details</h3>
+                  <h3 class="text-xs font-black text-purple-600 uppercase tracking-[0.18em]">Shop Details</h3>
                   
                   @if (errandModeDisplay()) {
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Errand Mode</span>
+                      <span class="text-xs font-semibold text-slate-600">Shop Mode</span>
                       <span class="text-xs font-black text-slate-950">{{ errandModeDisplay() }}</span>
-                    </div>
-                  }
-
-                  @if (errandCustomerPhone()) {
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold text-slate-600">Customer Phone</span>
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs text-slate-700">{{ errandCustomerPhone() }}</span>
-                        <a [href]="'tel:' + errandCustomerPhone()">
-                          <button
-                            type="button"
-                            class="h-8 px-3 rounded-xl bg-purple-100 border border-purple-200 text-purple-700 font-black text-xs flex items-center justify-center gap-1 active:scale-95 transition-all"
-                          >
-                            <ion-icon name="call" class="text-sm"></ion-icon>
-                            Call
-                          </button>
-                        </a>
-                      </div>
                     </div>
                   }
 
@@ -352,49 +599,14 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                 </app-card>
               }
             }
-          }
 
-          @if (activeRequestTab() === 'workflow') {
-            <app-card class="p-4 space-y-4">
-              <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
-                  <ion-icon [name]="serviceIcon()"></ion-icon>
-                </div>
-                <div class="min-w-0">
-                  <p class="text-[10px] font-black uppercase tracking-widest text-amber-700">{{ serviceWorkEyebrow() }}</p>
-                  <h4 class="mt-1 text-base font-display font-black text-slate-950">{{ serviceWorkTitle() }}</h4>
-                  <p class="mt-2 text-xs font-semibold text-slate-600 leading-relaxed">{{ serviceWorkMessage() }}</p>
-                </div>
-              </div>
-
-              <div class="grid gap-2">
-                @for (step of driverServiceSteps(); track step.title) {
-                  <div class="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-100 p-3">
-                    <ion-icon [name]="step.icon" class="text-amber-600 shrink-0"></ion-icon>
-                    <div class="min-w-0">
-                      <p class="text-xs font-black text-slate-950 whitespace-normal">{{ step.title }}</p>
-                      <p class="text-[11px] font-semibold text-slate-500 leading-snug">{{ step.description }}</p>
-                    </div>
-                  </div>
-                }
-              </div>
-            </app-card>
-
-            @if (job()?.service_slug === ServiceTypeEnum.ERRAND && !isShoppingErrand()) {
-              <app-card class="p-4 space-y-3">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Collection task</p>
-                <p class="text-sm font-semibold text-slate-600 leading-relaxed">
-                  Go to the collection location, collect the item or documents, then deliver or return them to the customer. No shopping spend or receipt is needed for this errand.
-                </p>
-              </app-card>
+            @if (automatedShoppingSpend()) {
+              <div class="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-900">Vaydu card purchases update spending automatically. Receipt upload is optional. Recorded spend: {{ formatPrice(errandDetails()?.actual_spending || 0) }}. Budget remaining: {{ formatPrice(remainingShoppingBudget()) }}. Unused customer funds are released when the job payment settles. Pending card purchases must reconcile before payment completion.</div>
             }
-          }
-
-          @if (activeRequestTab() === 'shopping') {
             @if (job()?.service_slug === ServiceTypeEnum.ERRAND) {
               <app-card class="p-4 space-y-4">
                 <div class="rounded-2xl bg-blue-50 border border-blue-100 p-3 flex justify-between items-center gap-3">
-                  <span class="text-sm font-bold text-blue-700">Errand type</span>
+                  <span class="text-sm font-bold text-blue-700">Shop type</span>
                   <span class="text-sm font-black text-slate-950 text-right">{{ errandModeLabel() }}</span>
                 </div>
 
@@ -447,17 +659,17 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
 
                   @if (showErrandSpendTools()) {
                     <div class="grid grid-cols-2 gap-3 pt-2">
-                      <app-button variant="secondary" size="sm" (clicked)="recordSpending()">
-                        {{ hasRecordedErrandSpend() ? 'Update Spend' : 'Record Spend' }}
-                      </app-button>
-                      <app-button variant="secondary" size="sm" (clicked)="requestOverBudget()">
-                        Extra Budget
-                      </app-button>
+                      @if (!automatedShoppingSpend()) {
+                        <app-button variant="secondary" size="sm" (clicked)="recordSpending()">{{ hasRecordedErrandSpend() ? 'Update Spend' : 'Record Spend' }}</app-button>
+                      }
+                      @if (canRequestExtraBudget()) {
+                        <app-button variant="secondary" size="sm" (clicked)="requestOverBudget()">Extra Budget</app-button>
+                      }
                     </div>
                     <div>
                       <input type="file" #receiptInput class="hidden" (change)="onReceiptSelected($event)" accept="image/*,.pdf">
                       <app-button variant="secondary" size="sm" class="w-full" (clicked)="receiptInput.click()">
-                        {{ errandDetails()?.receipt_url ? 'Update Receipt' : 'Upload Receipt' }}
+                        {{ automatedShoppingSpend() ? 'Add receipt (optional)' : errandDetails()?.receipt_url ? 'Update Receipt' : 'Upload Receipt' }}
                       </app-button>
                     </div>
                   }
@@ -480,40 +692,40 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
             @if (job()?.service_slug === ServiceTypeEnum.ERRAND && isShoppingErrand() && issuingCardStatus()) {
               <app-card class="p-4">
                 <div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 space-y-4">
-                  <div class="relative overflow-hidden rounded-[1.65rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-950/20">
+                  <div data-testid="compact-virtual-card" class="relative overflow-hidden rounded-[1.65rem] bg-slate-950 p-3 text-white shadow-xl shadow-slate-950/20" style="padding:14px">
                     <div class="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-amber-400/20"></div>
                     <div class="absolute -bottom-12 left-20 h-32 w-32 rounded-full bg-emerald-400/10"></div>
-                    <div class="relative z-10 space-y-6">
-                      <div class="flex items-start justify-between gap-3">
+                    <div class="relative z-10" style="display:flex;flex-direction:column;gap:12px">
+                      <div class="flex flex-col items-start gap-3">
                         <div>
-                          <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Movabi Pay</p>
-                          <h4 class="mt-1 text-lg font-display font-black">{{ virtualCardOwnerLabel() }}</h4>
-                          <p class="mt-1 text-[10px] font-black uppercase tracking-widest text-white/45">Driver virtual card</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Vaydu Pay</p>
+                          <h4 style="font-size:15px;line-height:20px;margin-top:4px;margin-bottom:0" class="mt-1 text-lg font-display font-black">{{ virtualCardOwnerLabel() }}</h4>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="mt-1 text-[10px] font-black uppercase tracking-widest text-white/45">Driver virtual card</p>
                         </div>
-                        <div class="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/80">
+                        <div class="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/80" style="font-size:10px;line-height:14px;letter-spacing:0.04em;padding:4px 8px;flex-shrink:0">
                           {{ issuingCardBadgeText() }}
                         </div>
                       </div>
                       <div>
-                        <p class="text-[10px] font-black uppercase tracking-widest text-white/45 mb-2">Card number</p>
-                        <p class="font-mono text-xl font-black tracking-[0.18em] text-white">{{ virtualCardDisplayNumber() }}</p>
+                        <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="text-[10px] font-black uppercase tracking-widest text-white/45 mb-2">Card number</p>
+                        <p style="font-size:14px;line-height:20px;letter-spacing:0.06em;margin-top:4px;margin-bottom:0;overflow-wrap:anywhere" class="font-mono text-xl font-black tracking-[0.18em] text-white">{{ virtualCardDisplayNumber() }}</p>
                       </div>
                       <div>
-                        <p class="text-[10px] font-black uppercase tracking-widest text-white/40">Cardholder</p>
-                        <p class="mt-1 text-base font-display font-black uppercase tracking-[0.06em] text-white whitespace-normal">{{ virtualCardDriverName() }}</p>
+                        <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="text-[10px] font-black uppercase tracking-widest text-white/40">Cardholder</p>
+                        <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="mt-1 text-base font-display font-black uppercase tracking-[0.06em] text-white whitespace-normal">{{ virtualCardDriverName() }}</p>
                       </div>
-                      <div class="grid grid-cols-3 gap-3 text-xs">
+                      <div class="grid grid-cols-3 gap-3 text-xs" style="gap:8px">
                         <div>
-                          <p class="font-black uppercase tracking-widest text-white/40">Limit</p>
-                          <p class="mt-1 font-display text-base font-black">{{ formatPrice(issuingCardBudgetLimit()) }}</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="font-black uppercase tracking-widest text-white/40">Available</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="mt-1 font-display text-base font-black">{{ cardBalance().available === null ? cardBalance().pending ? 'Pending' : 'Checking' : formatPrice(cardBalance().available!) }}</p>
                         </div>
                         <div>
-                          <p class="font-black uppercase tracking-widest text-white/40">Use for</p>
-                          <p class="mt-1 font-black">Errand</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="font-black uppercase tracking-widest text-white/40">Spent</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="mt-1 font-black">{{ cardBalance().spent === null ? 'Checking' : formatPrice(cardBalance().spent!) }}</p>
                         </div>
                         <div>
-                          <p class="font-black uppercase tracking-widest text-white/40">Spend</p>
-                          <p class="mt-1 font-black">Phone wallet</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="font-black uppercase tracking-widest text-white/40">Budget</p>
+                          <p style="font-size:11px;line-height:16px;letter-spacing:0.03em;margin-top:0;margin-bottom:0" class="mt-1 font-black">{{ formatPrice(issuingCardBudgetLimit()) }}</p>
                         </div>
                       </div>
                     </div>
@@ -545,7 +757,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   }
                   @if (canSetupIssuingCard()) {
                     <app-button variant="primary" size="sm" class="w-full mt-4" [loading]="isSettingUpIssuingCard()" [disabled]="isSettingUpIssuingCard()" (clicked)="setupIssuingCard()">
-                      Set up Movabi Pay card
+                      Set up Vaydu Pay card
                     </app-button>
                   }
                   @if (canProvisionIssuingCard()) {
@@ -592,7 +804,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               </app-card>
             } @else {
               <app-card class="p-4">
-                <p class="text-sm font-semibold text-slate-600">Movabi Pay is only shown for shopping errands with an item budget.</p>
+                <p class="text-sm font-semibold text-slate-600">Vaydu Pay is only shown for shopping errands with an item budget.</p>
               </app-card>
             }
           }
@@ -628,8 +840,8 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                 }
                 @if (job()?.service_slug === ServiceTypeEnum.DELIVERY) {
                   <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3">
-                    <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">Package</p>
-                    <p class="mt-1 text-sm font-bold text-slate-950">{{ anyDetails()?.item_description || anyDetails()?.package_description || 'Package details not provided' }}</p>
+                    <p class="text-[10px] uppercase tracking-widest text-slate-400 font-black">Parcel</p>
+                    <p class="mt-1 text-sm font-bold text-slate-950">{{ anyDetails()?.item_description || anyDetails()?.package_description || 'Parcel details not provided' }}</p>
                   </div>
                 }
                 @if (job()?.service_slug === ServiceTypeEnum.VAN) {
@@ -663,66 +875,6 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               }
             </app-card>
           }
-
-          @if (showStickyActionForTab()) {
-            <div class="sticky bottom-3 z-20">
-              @if (job()?.status !== 'completed') {
-                <div class="bg-white/95 backdrop-blur rounded-[1.35rem] border border-slate-100 shadow-xl shadow-slate-200/60 p-3 mb-3">
-                  <div class="flex items-start justify-between gap-4 mb-3">
-                    <div class="min-w-0">
-                      <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Next step</p>
-                      <h3 class="text-base font-display font-black text-slate-950">{{ actionTitle() }}</h3>
-                    </div>
-                    <app-badge [variant]="actionBadgeVariant()">{{ formatStatus(job()?.status) }}</app-badge>
-                  </div>
-                  <div class="h-2 rounded-full bg-slate-100 overflow-hidden mb-3">
-                    <div class="h-full rounded-full bg-blue-600 transition-all duration-300" [style.width.%]="actionProgress()"></div>
-                  </div>
-                  <p class="text-xs text-slate-500 font-semibold leading-relaxed">{{ actionHint() }}</p>
-                </div>
-              }
-
-              @switch (job()?.status) {
-                @case ('accepted') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
-                }
-                @case ('arrived') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(startStatus())">Start Request</app-button>
-                }
-                @case ('arrived_at_store') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus(nextArrivedAtStoreStatus())">{{ arrivedAtStoreActionLabel() }}</app-button>
-                }
-                @case ('shopping_in_progress') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('collected')">Items Collected</app-button>
-                }
-                @case ('collected') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('en_route_to_customer')">En Route to Customer</app-button>
-                }
-                @case ('en_route_to_customer') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
-                }
-                @case ('in_progress') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
-                }
-                @case ('delivered') {
-                  <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-emerald-600/20 bg-emerald-600 border-emerald-600" (clicked)="completeTrip()">Complete Request</app-button>
-                }
-                @case ('completed') {
-                  <div class="bg-emerald-50 p-5 rounded-[1.5rem] text-center border border-emerald-100">
-                    <div class="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <ion-icon name="checkmark-circle" class="text-3xl text-emerald-600"></ion-icon>
-                    </div>
-                    <h3 class="text-lg font-display font-black text-slate-950 mb-2">Request Completed</h3>
-                    <p class="text-sm text-slate-600 font-medium mb-4">Earnings will appear once settlement is complete.</p>
-                    <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">Back to Dashboard</app-button>
-                  </div>
-                }
-                @default {
-                  <app-button variant="secondary" size="lg" class="w-full h-14 rounded-2xl" (clicked)="nav.navigateRoot('/driver')">Back to Dashboard</app-button>
-                }
-              }
-            </div>
-          }
         } @else {
           <div class="min-h-[70vh] flex flex-col items-center justify-center py-20 text-center space-y-8">
             @if (isLoading()) {
@@ -740,7 +892,7 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
               <div class="space-y-3">
                 <h3 class="text-lg font-display font-black text-slate-950">Request Not Found</h3>
                 <p class="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                  This request may have been cancelled, completed, or assigned to another driver.
+                  {{ loadError() || 'This request may have been cancelled, completed, or assigned to another driver.' }}
                 </p>
               </div>
               <app-button variant="secondary" size="lg" (clicked)="nav.navigateRoot('/driver')" class="w-full">
@@ -769,29 +921,77 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     private locationService = inject(LocationService);
     private routing = inject(RoutingService);
     private supabase = inject(SupabaseService);
+    private chatCommunication = inject(CommunicationService);
     private walletProvisioning = inject(WalletProvisioningService);
     private paymentService = inject(PaymentService);
     private profileService = inject(ProfileService);
-    private notificationOrchestrator = inject(NotificationOrchestratorService);
+    readonly notificationOrchestrator = inject(NotificationOrchestratorService);
     public config = inject(AppConfigService);
 
     ServiceTypeEnum = ServiceTypeEnum;
 
     job = this.driverService.activeJob;
+    private journeyNavigationModal = inject(ModalController);
     details = signal<JobDetails | null>(null);
     anyDetails = computed(() => this.details() as any);
     errandDetails = computed(() => this.details() as ErrandDetails | null);
     funding = signal<ErrandFunding | null>(null);
     issuingCardStatus = signal<ErrandIssuingCardStatus | null>(null);
+
+    // No-show countdown (server deadline) + driver confirmation panel.
+    noShowGraceUntil = signal<string | null>(null);
+    noShowRemainingSeconds = signal<number | null>(null);
+    noShowTerms = signal<{ policyVersion: string; feeMinor: number; driverShareMinor: number; platformShareMinor: number; currency: string; graceSeconds: number } | null>(null);
+    noShowReason = signal('');
+    noShowContactAttempted = signal(false);
+    noShowConfirmed = signal(false);
+    noShowSubmitting = signal(false);
+    noShowError = signal<string | null>(null);
+    private noShowCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+    /** Grace expiry: the confirmation controls unlock only after the server deadline. */
+    noShowGraceExpired = computed(() => {
+        const remaining = this.noShowRemainingSeconds();
+        const deadline = this.noShowGraceUntil();
+        if (!deadline || remaining !== 0) return false;
+        const deadlineMs = Date.parse(deadline);
+        return Number.isFinite(deadlineMs) && deadlineMs <= Date.now();
+    });
+    noShowFeeDisplay = computed(() => {
+        const terms = this.noShowTerms();
+        return terms ? this.formatPrice(terms.feeMinor / 100) : '';
+    });
+    noShowDriverShareDisplay = computed(() => {
+        const terms = this.noShowTerms();
+        return terms ? this.formatPrice(terms.driverShareMinor / 100) : '';
+    });
+    noShowCanSubmit = computed(() =>
+        this.noShowGraceExpired()
+        && !this.noShowSubmitting()
+        && this.noShowContactAttempted()
+        && this.noShowConfirmed()
+        && this.noShowReason().trim().length >= 3
+    );
     isSettingUpIssuingCard = signal(false);
     isProvisioningToWallet = signal(false);
     isRevealingCardDetails = signal(false);
     cardDetailsVisible = signal(false);
     cardDetailsError = signal('');
+    private network = inject(NetworkService);
+    loadError = signal('');
+    budgetRequestBusy = signal(false);
     isLoading = signal(true);
+    confirmingAssignment = signal(false);
     driverPickupDistance = signal<number | null>(null);
     driverPickupDuration = signal<number | null>(null);
+    mapPreviewOpen = signal(false);
+    toggleMapPreview(): void { this.mapPreviewOpen.update(open => !open); if (this.mapPreviewOpen()) setTimeout(() => void this.renderPickupRoute(), 120); }
+    cardBalance() { return shoppingCardBalance(this.issuingCardBudgetLimit(), this.funding()?.metadata); }
+    remainingShoppingBudget(): number { return Math.max(0, this.approvedErrandItemBudget() - Number(this.errandDetails()?.actual_spending || 0)); }
+    automatedShoppingSpend(): boolean { return (this.issuingCardStatus()?.status === 'active' && !!this.issuingCardStatus()?.cardId) || this.funding()?.metadata?.['shopping_spend_source'] === 'issuing'; }
     pickupMapReady = signal(false);
+    driverMoney = computed(() => driverMoneyView(this.job()));
+    readonly requestToolsOpen = signal(false);
     activeRequestTab = signal<DriverRequestTab>('overview');
     messageCount = signal(0);
     unreadMessageCount = computed(() => {
@@ -800,8 +1000,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     });
     requestTabs: Array<{ id: DriverRequestTab; label: string; icon: string }> = [
         { id: 'overview', label: 'Overview', icon: 'information-circle-outline' },
-        { id: 'workflow', label: 'Workflow', icon: 'git-branch-outline' },
         { id: 'shopping', label: 'Shopping', icon: 'bag-handle-outline' },
+        { id: 'workflow', label: 'Workflow', icon: 'git-branch-outline' },
         { id: 'pay', label: 'Pay', icon: 'card-outline' },
         { id: 'chat', label: 'Chat', icon: 'chatbubble-ellipses-outline' },
         { id: 'more', label: 'More', icon: 'ellipsis-horizontal-circle-outline' }
@@ -871,6 +1071,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             default:
                 return '';
         }
+    });
+
+    localServiceSelection = computed(() => {
+        const raw = this.jobMetadata()['local_service_selection'];
+        return raw && typeof raw === 'object' ? raw as {
+            categoryName?: string;
+            providerName?: string;
+            providerAddress?: string;
+            providerLogoUrl?: string;
+            openStatus?: string;
+            distanceKm?: number | string;
+        } : null;
     });
 
     packageSizeLabel = computed(() => {
@@ -964,8 +1176,34 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }));
     }
 
+    primaryRequestTabs(): Array<{ id: DriverRequestTab; label: string; icon: string }> {
+        const primary = new Set<DriverRequestTab>(['overview', 'workflow', 'chat']);
+        const shopping = this.job()?.service_slug === ServiceTypeEnum.ERRAND && this.isShoppingErrand();
+        if (shopping) {
+            primary.add('shopping');
+            if (this.approvedErrandItemBudget() > 0 || this.issuingCardStatus()
+                || this.notificationOrchestrator.getBudgetBadgeCount(this.job()?.id || '') > 0) {
+                primary.add('pay');
+            }
+        }
+        // Preserve access to budget notifications even if job details are still loading.
+        if (this.notificationOrchestrator.getBudgetBadgeCount(this.job()?.id || '') > 0) primary.add('pay');
+        return this.requestTabs.filter(tab => primary.has(tab.id));
+    }
+
+    secondaryRequestTabs(): Array<{ id: DriverRequestTab; label: string; icon: string }> {
+        const primary = new Set(this.primaryRequestTabs().map(tab => tab.id));
+        return this.requestTabs.filter(tab => !primary.has(tab.id));
+    }
+
+    secondaryRequestTabActive(): boolean {
+        return this.secondaryRequestTabs().some(tab => tab.id === this.activeRequestTab());
+    }
+
     setActiveRequestTab(tab: DriverRequestTab): void {
+        this.requestToolsOpen.set(false);
         this.activeRequestTab.set(tab);
+        if (tab === 'pay') this.notificationOrchestrator.markBudgetRead(this.job()?.id || '');
 
         if (tab === 'overview') {
             setTimeout(() => void this.renderPickupRoute(), 120);
@@ -1014,8 +1252,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         );
     }
 
+    private completionWorkflowInstruction(): string {
+        return this.requiresCompletionPin()
+            ? ' Ask the customer for their completion PIN and enter it to finish the job and start payment processing.'
+            : ' Confirm completion to finish the job and start payment processing.';
+    }
+
     private requiresCompletionPin(): boolean {
-        return this.completionPin().length >= 4;
+        // Release closure: the flag is driver-visible; the PIN value is NOT (it
+        // lives in the customer-only job_completion_secrets table). The legacy
+        // metadata-PIN check remains for in-flight jobs created before the store.
+        const metadata = this.jobMetadata();
+        return metadata['completion_pin_required'] === true || this.completionPin().length >= 4;
     }
 
     private normalizeCompletionPin(value: unknown): string {
@@ -1023,6 +1271,20 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     constructor() {
+        effect(() => {
+            const job = this.job() as unknown as Record<string,any> | null;
+            const b = job?.['fare_breakdown'];
+            const version = b?.noShowPolicyVersion;
+            if (job && ['arrived','driver_arrived'].includes(String(job['status'])) && job['no_show_grace_until'] && ['ride-no-show-v1','ride-no-show-v2'].includes(version)) {
+                this.noShowGraceUntil.set(String(job['no_show_grace_until']));
+                this.noShowTerms.set({ policyVersion:version,feeMinor:Number(b.noShowFeeMinor || 0),
+                    driverShareMinor:Number(b.noShowDriverShareMinor || 0),platformShareMinor:Number(b.noShowPlatformShareMinor || 0),
+                    currency:String(job['currency_code'] || 'GBP'),graceSeconds:300 });
+                this.startNoShowCountdown();
+            } else {
+                this.clearNoShowCountdown();this.noShowGraceUntil.set(null);this.noShowRemainingSeconds.set(null);this.noShowTerms.set(null);
+            }
+        });
         addIcons({
             addOutline,
             alertCircleOutline,
@@ -1053,6 +1315,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         });
     }
 
+    private budgetBadgeReadEffect = effect(() => {
+        const id = this.job()?.id;
+        if (id && this.activeRequestTab() === 'pay' && this.notificationOrchestrator.getBudgetBadgeCount(id) > 0)
+            this.notificationOrchestrator.markBudgetRead(id);
+    });
+
     ngOnInit() {
         const id = this.route.snapshot.paramMap.get('id');
 
@@ -1073,7 +1341,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     ngOnDestroy() {
+        this.mapPreviewOpen.set(false);
         void this.channel?.unsubscribe();
+        if (this.fundingRecoveryTimer) clearInterval(this.fundingRecoveryTimer);
         void this.errandFundingChannel?.unsubscribe();
         void this.messagesChannel?.unsubscribe();
         
@@ -1085,10 +1355,85 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         
         this.unmountIssuingCardElements();
         this.locationService.stopTracking();
+        this.clearNoShowCountdown();
     }
+
+    waitingTime = formatWaitingTime;
+
+    private clearNoShowCountdown(): void {
+        if (this.noShowCountdownTimer) {
+            clearInterval(this.noShowCountdownTimer);
+            this.noShowCountdownTimer = null;
+        }
+    }
+
+    private startNoShowCountdown(): void {
+        this.clearNoShowCountdown();
+        this.noShowCountdownTimer = setInterval(() => {
+            const deadline = this.noShowGraceUntil();
+            if (!deadline) {
+                this.noShowRemainingSeconds.set(null);
+                return;
+            }
+            const remaining = Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000));
+            this.noShowRemainingSeconds.set(remaining);
+            if (remaining === 0) {
+                this.clearNoShowCountdown();
+            }
+        }, 1000);
+    }
+
+    /**
+     * Driver-confirmed customer no-show. The client only gates the UI (grace expiry,
+     * contact attempt, reason, explicit confirmation); the SERVER re-validates grace
+     * and ownership and owns the money movement. Duplicate submission is blocked by
+     * the in-flight guard and by treating an "already finalised" conflict as done.
+     */
+    async submitNoShow() {
+        const currentJob = this.job();
+        if (!currentJob?.id || this.noShowSubmitting()) return;
+
+        const reason = this.noShowReason().trim();
+        if (!this.noShowContactAttempted()) {
+            this.noShowError.set('Confirm you attempted to contact the customer.');
+            return;
+        }
+        if (reason.length < 3) {
+            this.noShowError.set('Add a short reason (at least 3 characters).');
+            return;
+        }
+        if (!this.noShowConfirmed()) {
+            this.noShowError.set('Tick the confirmation box to record the no-show.');
+            return;
+        }
+
+        this.noShowSubmitting.set(true);
+        this.noShowError.set(null);
+
+        try {
+            await this.driverService.confirmNoShow(currentJob.id, reason, true, true);
+            this.clearNoShowCountdown();
+            await this.loadJob(currentJob.id);
+            await this.showToast('No-show recorded. Your compensation is being processed.', 'success');
+        } catch (error: unknown) {
+            const status = (error as { status?: number })?.status;
+            const raw = error instanceof Error ? error.message : 'No-show failed';
+            // A terminal conflict (already cancelled / trip already started) is not
+            // recoverable by retrying, so surface it plainly and refresh the job.
+            this.noShowError.set(status === 409 || status === 400
+                ? `${raw} Refresh the request to see its current state.`
+                : `Could not record the no-show: ${raw}`);
+            await this.loadJob(currentJob.id);
+        } finally {
+            this.noShowSubmitting.set(false);
+        }
+    }
+
+    routeJobId(): string { return this.job()?.id || this.route.snapshot.paramMap.get('id') || ''; }
 
     async loadJob(id: string) {
         this.isLoading.set(true);
+        this.loadError.set('');
 
         try {
             if (!id) {
@@ -1096,17 +1441,16 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 return;
             }
 
-            let currentJob = this.job();
-
-            if (!currentJob || currentJob.id !== id) {
-                currentJob = await this.bookingService.getBooking(id);
-                this.driverService.activeJob.set(currentJob as Booking);
-            }
+            const currentJob = await this.bookingService.getBooking(id);
+            this.driverService.activeJob.set(currentJob as Booking);
 
             if (!currentJob) {
                 this.driverService.activeJob.set(null);
                 return;
             }
+
+            // Reconciliation can update details and funding: read them afterwards.
+            if (currentJob.service_slug === ServiceTypeEnum.ERRAND) await this.loadIssuingCardStatus(currentJob.id);
 
             const details = await this.bookingService.getBookingDetails(
                 currentJob.id,
@@ -1123,7 +1467,6 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             if (currentJob.service_slug === ServiceTypeEnum.ERRAND && this.isShoppingErrand()) {
                 const funding = await this.bookingService.getErrandFunding(currentJob.id);
                 this.funding.set(funding);
-                await this.loadIssuingCardStatus(currentJob.id);
             } else {
                 this.funding.set(null);
                 this.issuingCardStatus.set(null);
@@ -1137,7 +1480,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             void this.renderPickupRoute();
         } catch (error) {
             console.error('Failed to load request details:', error);
-            this.driverService.activeJob.set(null);
+            this.loadError.set(this.network.normalizeError(error));
         } finally {
             this.isLoading.set(false);
         }
@@ -1164,11 +1507,11 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             const status = await this.driverService.getErrandIssuingCardStatus(jobId);
             this.issuingCardStatus.set(status);
         } catch (error) {
-            console.error('Failed to load Movabi Pay card status:', error);
+            console.error('Failed to load Vaydu Pay card status:', error);
             this.issuingCardStatus.set({
                 enabled: false,
                 status: 'error',
-                message: 'Movabi Pay card status is unavailable. Use receipt upload for this errand.',
+                message: 'Vaydu Pay card status is unavailable. Use receipt upload for this errand.',
                 jobId
             });
         }
@@ -1189,7 +1532,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'error':
                 return 'Card status unavailable';
             default:
-                return 'Movabi Pay protected';
+                return 'Vaydu Pay protected';
         }
     }
 
@@ -1201,10 +1544,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (status.status === 'active') {
-            return 'Use the Movabi virtual card only for this customer shop. The card is capped to the approved item budget.';
+            return 'Use the Vaydu virtual card only for this customer shop. The card is capped to the approved item budget.';
         }
 
-        return status.message || 'Movabi protects the customer budget and records card spend against this errand.';
+        return status.message || 'Vaydu protects the customer budget and records card spend against this errand.';
     }
 
     issuingCardBadgeText(): string {
@@ -1236,7 +1579,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         if (status === 'active') return `Add to ${this.phoneWalletName()}`;
         if (status === 'ready') return 'Tap Activate card now';
-        if (status === 'needs_cardholder' || status === 'needs_driver_profile') return 'Tap Set up Movabi Pay card';
+        if (status === 'needs_cardholder' || status === 'needs_driver_profile') return 'Tap Set up Vaydu Pay card';
         if (status === 'not_configured') return 'Upload receipt after purchase';
         if (status === 'disabled') return 'Use receipt flow';
         if (status === 'error') return 'Refresh or use receipt flow';
@@ -1251,14 +1594,14 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
 
         if (status === 'ready') {
-            return 'Tap Activate card now before shopping. Movabi will unlock this card only for the approved customer item budget.';
+            return 'Tap Activate card now before shopping. Vaydu will unlock this card only for the approved customer item budget.';
         }
 
         if (status === 'needs_cardholder' || status === 'needs_driver_profile') {
-            return 'Tap Set up Movabi Pay card. Movabi will prepare a driver virtual card, then you can activate it for this errand budget.';
+            return 'Tap Set up Vaydu Pay card. Vaydu will prepare a driver virtual card, then you can activate it for this shop budget.';
         }
 
-        return 'Movabi Pay is not available for this errand yet. Use receipt upload so the spend can still be recorded.';
+        return 'Vaydu Pay is not available for this shop yet. Use receipt upload so the spend can still be recorded.';
     }
 
     issuingCardBudgetLimit(): number {
@@ -1277,13 +1620,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     approvedErrandItemBudget(): number {
-        const initialBudget = Math.max(0, this.toNumber(this.errandDetails()?.estimated_budget));
-        const currentFunding = this.funding();
-        const approvedExtra = currentFunding?.over_budget_status === 'approved'
-            ? Math.max(0, this.toNumber(currentFunding.requested_over_budget_amount ?? currentFunding.over_budget_amount))
-            : 0;
-
-        return Number((initialBudget + approvedExtra).toFixed(2));
+        return approvedErrandBudget(this.funding(), this.errandDetails()?.estimated_budget);
     }
 
     virtualCardDisplayNumber(): string {
@@ -1347,15 +1684,15 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        const loading = await this.loadingCtrl.create({ message: 'Activating Movabi Pay virtual card...' });
+        const loading = await this.loadingCtrl.create({ message: 'Activating Vaydu Pay virtual card...' });
         await loading.present();
 
         try {
             const status = await this.driverService.activateErrandIssuingCard(currentJob.id);
             this.issuingCardStatus.set(status);
-            await this.showToast('Movabi Pay virtual card is ready for this shop.', 'success');
+            await this.showToast('Vaydu Pay virtual card is ready for this shop.', 'success');
         } catch (error: unknown) {
-            const message = this.getErrorMessage(error, 'Could not activate Movabi Pay virtual card.');
+            const message = this.getErrorMessage(error, 'Could not activate Vaydu Pay virtual card.');
             await this.showToast(message, 'danger');
         } finally {
             await loading.dismiss();
@@ -1375,9 +1712,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         try {
             await this.driverService.ensureMovabiPayVirtualCard();
             await this.loadIssuingCardStatus(currentJob.id);
-            await this.showToast('Movabi Pay card setup started. You can activate it once it is ready.', 'success');
+            await this.showToast('Vaydu Pay card setup started. You can activate it once it is ready.', 'success');
         } catch (error: unknown) {
-            const message = this.getErrorMessage(error, 'Could not set up Movabi Pay card.');
+            const message = this.getErrorMessage(error, 'Could not set up Vaydu Pay card.');
             await this.showToast(message, 'danger');
         } finally {
             this.isSettingUpIssuingCard.set(false);
@@ -1388,7 +1725,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         const status = this.issuingCardStatus();
 
         if (!status?.cardId) {
-            await this.showToast('Movabi Pay virtual card is not ready yet.', 'warning');
+            await this.showToast('Vaydu Pay virtual card is not ready yet.', 'warning');
             return;
         }
 
@@ -1401,12 +1738,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 last4: status.last4,
                 currency: status.currency || 'GBP',
                 spendLimit: this.issuingCardBudgetLimit(),
-                displayName: 'Movabi Pay',
-                description: 'Movabi Pay errand virtual card'
+                displayName: 'Vaydu Pay',
+                description: 'Vaydu Pay shop virtual card'
             });
 
             if (result.success) {
-                await this.showToast(result.message || `Movabi Pay card added to ${result.walletName || this.phoneWalletName()}.`, 'success');
+                await this.showToast(result.message || `Vaydu Pay card added to ${result.walletName || this.phoneWalletName()}.`, 'success');
                 return;
             }
 
@@ -1420,7 +1757,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         const status = this.issuingCardStatus();
 
         if (!status?.cardId) {
-            await this.showToast('Movabi Pay virtual card is not ready yet.', 'warning');
+            await this.showToast('Vaydu Pay virtual card is not ready yet.', 'warning');
             return;
         }
 
@@ -1489,7 +1826,25 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         this.issuingElements = [];
     }
 
+    private fundingRecoveryTimer?: ReturnType<typeof setInterval>;
+    private fundingRecoveryBusy = false;
+    private async refreshFundingLive(id: string): Promise<void> {
+        if (this.fundingRecoveryBusy || this.job()?.service_slug !== ServiceTypeEnum.ERRAND) return;
+        this.fundingRecoveryBusy = true;
+        try {
+            const next = await this.bookingService.getErrandFunding(id);
+            if (this.job()?.id !== id) return;
+            const previous = this.funding();
+            this.funding.set(next);
+            if (this.activeRequestTab() === 'pay') this.notificationOrchestrator.markBudgetRead(id);
+            if (next?.over_budget_status !== previous?.over_budget_status || next?.amount_reserved !== previous?.amount_reserved)
+                await this.loadIssuingCardStatus(id);
+        } catch (error) { console.warn('[DriverJobDetails] funding recovery failed',error); }
+        finally { this.fundingRecoveryBusy = false; }
+    }
     private subscribeToErrandFunding(id: string): void {
+        if (this.fundingRecoveryTimer) clearInterval(this.fundingRecoveryTimer);
+        this.fundingRecoveryTimer = setInterval(() => { void this.refreshFundingLive(id); },5000);
         void this.errandFundingChannel?.unsubscribe();
 
         this.errandFundingChannel = this.supabase
@@ -1505,12 +1860,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 async (payload) => {
                     const nextFunding = (payload.new || null) as ErrandFunding | null;
 
-                    if (nextFunding?.job_id === id) {
-                        this.funding.set(nextFunding);
-                    }
-
-                    await this.loadIssuingCardStatus(id);
-                    await this.loadJob(id);
+                    await this.refreshFundingLive(id);
                 }
             )
             .subscribe((status) => {
@@ -1541,26 +1891,47 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private async refreshMessageCount(id: string): Promise<void> {
+        try { this.messageCount.set((await this.chatCommunication.getMessageCounts(id)).total); }
+        catch (error) { console.warn('Message count unavailable', error); }
+    }
+
+    /**
+     * Confirm an admin/dispatch assignment. The transition itself is performed by the
+     * atomic accept_assigned_job RPC (which derives the driver from the session), then
+     * the existing accepted -> arrived workflow continues unchanged.
+     */
+    async confirmAssignedJob() {
+        if (this.confirmingAssignment()) return;
+
+        const currentJob = this.job();
+
+        if (!currentJob?.id) {
+            await this.showToast('Request not found.', 'danger');
+            return;
+        }
+
+        this.confirmingAssignment.set(true);
+        const loading = await this.loadingCtrl.create({ message: 'Confirming request...' });
+        await loading.present();
+
         try {
-            const { count, error } = await this.supabase
-                .from('job_messages')
-                .select('id', { count: 'exact', head: true })
-                .eq('job_id', id);
+            const confirmed = await this.driverService.acceptAssignedJob(currentJob.id);
+            this.driverService.activeJob.set(confirmed as Booking);
+            await this.loadJob(currentJob.id);
+            await this.showToast('Request confirmed. Continue when you are ready to start.', 'success');
 
-            if (error) {
-                console.warn('[driver-job-details] message count failed', error);
-                return;
+            // Existing customer notification mechanism, real 'accepted' status.
+            try {
+                await this.bookingService.notifyBookingStatus(currentJob.id, 'accepted');
+            } catch (notifyError) {
+                console.warn('[driver-job-details] assignment confirmation notification failed', notifyError);
             }
-
-            const nextCount = count || 0;
-            const previousCount = this.messageCount();
-            this.messageCount.set(nextCount);
-
-            if (this.activeRequestTab() !== 'chat' && nextCount > previousCount) {
-                // unreadMessageCount is now computed, cannot update directly
-            }
-        } catch (error) {
-            console.warn('[driver-job-details] message count unavailable', error);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Could not confirm this request.';
+            await this.showToast(message, 'danger');
+        } finally {
+            await loading.dismiss();
+            this.confirmingAssignment.set(false);
         }
     }
 
@@ -1576,6 +1947,47 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         await loading.present();
 
         try {
+            // Service scoping: the server-authoritative arrival + customer no-show
+            // flow is a RIDE PICKUP policy only. Errand/delivery/moving keep their
+            // existing arrival transition (the direct status write below), so they
+            // must never call the ride-only /api/booking/arrive endpoint.
+            //
+            // Ride pickup arrival is SERVER-authoritative: obtain a real location
+            // measurement + its timestamp and submit it; never write 'arrived'
+            // directly. The server returns the immutable grace deadline.
+            // When the no-show feature is DISABLED the endpoint answers with the
+            // explicit NO_SHOW_DISABLED code, and only then does the ride flow fall
+            // through to the legacy transition. A generic 404 (an API without the
+            // route), 403, 409 or network failure is a real error and never
+            // degrades into a direct status write.
+            if (status === 'arrived' && currentJob.service_slug === ServiceTypeEnum.RIDE) {
+                const position = await this.locationService.getCurrentPosition(true);
+                if (!position) {
+                    await this.showToast(this.locationService.locationError() || 'Location unavailable. Please retry.', 'danger');
+                    return;
+                }
+                try {
+                    const result = await this.driverService.markArrival(
+                        currentJob.id,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        new Date(position.timestamp).toISOString()
+                    );
+                    this.noShowGraceUntil.set(result.grace_until);
+                    this.noShowTerms.set(result.no_show ?? null);
+                    this.startNoShowCountdown();
+                    await this.loadJob(currentJob.id);
+                    await this.showToast('Arrival recorded.', 'success');
+                    return;
+                } catch (arrivalError: unknown) {
+                    // Legacy arrival is permitted ONLY for the explicit server
+                    // feature-disabled code. Any other 404/403/409/network failure is a
+                    // real error and must never degrade into a direct status write.
+                    const code = (arrivalError as { code?: string | null })?.code;
+                    if (code !== 'NO_SHOW_DISABLED') throw arrivalError;
+                }
+            }
+
             const updated = await this.driverService.updateJobStatus(currentJob.id, status);
             this.driverService.activeJob.set(updated as Booking);
             await this.loadJob(currentJob.id);
@@ -1616,7 +2028,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         const alert = await this.alertCtrl.create({
             header: "Can't continue?",
-            message: 'Use this only if you cannot complete the request. Movabi will protect the customer payment and reassign or review the job.',
+            message: this.noShowTerms() ? 'If the customer is absent, use Record no-show on this page after the verified waiting period ends. Hand off is only for a driver problem; it reassigns or reviews the request without a customer no-show charge.' : 'Use this only if you cannot complete the request. Vaydu will protect the customer payment and reassign or review the job.',
             inputs: [
                 {
                     name: 'reason',
@@ -1653,6 +2065,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
         try {
             const result = await this.driverService.handoffJob(jobId, reason);
+            this.notificationOrchestrator.unsubscribeFromJob(jobId);
             await this.showToast(result.message || 'Request handed off.', result.mode === 'review' ? 'warning' : 'success');
             this.nav.navigateRoot('/driver');
         } catch (error: unknown) {
@@ -1693,13 +2106,13 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             const actualSpending = Number(errandDetails?.actual_spending ?? 0);
 
             // If this errand had an item/shopping budget, the driver must enter actual spend.
-            if (estimatedBudget > 0 && actualSpending <= 0) {
+            if (!this.automatedShoppingSpend() && estimatedBudget > 0 && actualSpending <= 0) {
                 await this.showToast('Please enter the actual amount spent before completing.', 'warning');
                 return;
             }
 
             // If money was spent from the customer budget, a receipt is mandatory.
-            if (estimatedBudget > 0 && actualSpending > 0 && !errandDetails?.receipt_url) {
+            if (!this.automatedShoppingSpend() && estimatedBudget > 0 && actualSpending > 0 && !errandDetails?.receipt_url) {
                 await this.showToast('Please upload a receipt before completing this errand.', 'warning');
                 return;
             }
@@ -1713,7 +2126,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         const alert = await this.alertCtrl.create({
             header: 'Complete Request',
             message: this.requiresCompletionPin()
-                ? 'Ask the customer for their Movabi completion PIN. Payment settlement will only continue after the correct PIN is entered.'
+                ? 'Ask the customer for their Vaydu completion PIN. Payment settlement will only continue after the correct PIN is entered.'
                 : 'Confirm this request is fully completed. Payment settlement will only continue after completion.',
             inputs: this.requiresCompletionPin()
                 ? [
@@ -1769,7 +2182,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 await this.loadJob(currentJob.id);
             }
 
-            await this.showToast('Request completed.', 'success');
+            await this.showToast((completed as Booking)?.metadata?.['driver_payout_pending'] ? 'Request completed. Your earnings are recorded; payout is pending.' : 'Request completed.', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Could not complete request.';
             await this.showToast(message, 'danger');
@@ -1812,7 +2225,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                 { text: 'Cancel', role: 'cancel' },
                 {
                     text: 'Save',
-                    handler: (data) => {
+                    handler: async (data) => {
                         const amount = Number(data?.amount);
 
                         if (!Number.isFinite(amount) || amount <= 0) {
@@ -1855,7 +2268,18 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         }
     }
 
+    canRequestExtraBudget(): boolean {
+        const job = this.job();
+        return !!job && ['wallet_funded', 'authorized'].includes(String(job.payment_status)) &&
+            ['assigned', 'accepted', 'heading_to_pickup', 'arrived', 'arrived_at_store',
+             'shopping_in_progress', 'collected', 'en_route_to_customer', 'in_progress'].includes(String(job.status)) &&
+            this.funding()?.over_budget_status !== 'requested';
+    }
+
     async requestOverBudget() {
+        if (!this.canRequestExtraBudget()) { await this.showToast('Extra budget is unavailable at this stage, or a request is already awaiting customer approval.', 'warning'); return; }
+        if (this.budgetRequestBusy()) return;
+        if (!this.network.isOnline) { await this.showToast('Reconnect before requesting extra budget.', 'warning'); return; }
         const currentJob = this.job();
 
         if (!currentJob?.id) {
@@ -1892,13 +2316,12 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                             return false;
                         }
 
-                        if (!reason) {
-                            void this.showToast('Please enter a reason.', 'warning');
+                        if (reason.length < 3) {
+                            void this.showToast('Please enter a reason of at least 3 characters.', 'warning');
                             return false;
                         }
 
-                        void this.sendOverBudgetRequest(currentJob.id, amount, reason);
-                        return true;
+                        return this.sendOverBudgetRequest(currentJob.id, amount, reason);
                     }
                 }
             ]
@@ -1908,6 +2331,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private async sendOverBudgetRequest(jobId: string, amount: number, reason: string) {
+        if (this.budgetRequestBusy()) return false;
+        this.budgetRequestBusy.set(true);
         const loading = await this.loadingCtrl.create({ message: 'Sending request...' });
         await loading.present();
 
@@ -1916,17 +2341,20 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             this.patchErrandFunding({
                 over_budget_status: 'requested',
                 over_budget_amount: amount,
-                requested_over_budget_amount: amount,
+                requested_over_budget_amount: Number((this.approvedErrandItemBudget() + amount).toFixed(2)),
                 over_budget_reason: reason,
                 status: 'over_budget_requested',
                 updated_at: new Date().toISOString()
             });
             await this.loadJob(jobId);
             await this.showToast('Extra budget request sent.', 'success');
+            return true;
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'Failed to send request.';
+            const message = this.network.normalizeError(error);
             await this.showToast(message, 'danger');
+            return false;
         } finally {
+            this.budgetRequestBusy.set(false);
             await loading.dismiss();
         }
     }
@@ -1982,18 +2410,112 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         window.location.href = `tel:${safePhone}`;
     }
 
-    openMap(address?: string | null) {
+    private navigationJobActionLabel(): string {
+        switch(this.job()?.status) {
+            case 'accepted': return 'I Have Arrived';
+            case 'arrived': return 'Start Request';
+            case 'arrived_at_store': return this.arrivedAtStoreActionLabel();
+            case 'shopping_in_progress': return 'Items Collected';
+            case 'collected': return 'En Route to Customer';
+            case 'en_route_to_customer': case 'in_progress': case 'delivered': return 'Complete Request';
+            default: return '';
+        }
+    }
+
+    private async runNavigationJobAction(): Promise<void> {
+        switch(this.job()?.status) {
+            case 'accepted': await this.updateStatus('arrived'); break;
+            case 'arrived': await this.updateStatus(this.startStatus()); break;
+            case 'arrived_at_store': await this.updateStatus(this.nextArrivedAtStoreStatus()); break;
+            case 'shopping_in_progress': await this.updateStatus('collected'); break;
+            case 'collected': await this.updateStatus('en_route_to_customer'); break;
+            case 'en_route_to_customer': case 'in_progress': case 'delivered': await this.completeTrip(); break;
+        }
+    }
+
+    async openMap(address?: string | null) {
+        const coords = this.navigationDestinationCoordinates();
         const safeAddress = String(address || '').trim();
 
-        if (!safeAddress) {
+        // Prefer validated stored coordinates; fall back to the address. 0,0 (and
+        // near-zero) coordinates are never treated as a legitimate destination.
+        const destination = coords
+            ? `${coords.lat},${coords.lng}`
+            : (safeAddress ? encodeURIComponent(safeAddress) : '');
+
+        if (!destination) {
             void this.showToast('Address is unavailable.', 'warning');
             return;
         }
 
-        window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeAddress)}`, '_blank');
+        if (coords) {
+            const modal = await this.journeyNavigationModal.create({id:`journey-${this.job()?.id}`,component:JourneyNavigationComponent,
+                componentProps:{destination:coords,address:safeAddress,label:this.navigationSectionLabel(),serviceType:this.job()?.service_slug,customerName:this.customerName(),actionLabel:this.navigationJobActionLabel(),onJobAction:()=>this.runNavigationJobAction(),navigationModalId:`journey-${this.job()?.id}`,
+                  getJobState:()=>({status:String(this.job()?.status || ''),actionLabel:this.navigationJobActionLabel(),
+                    destination:this.navigationDestinationCoordinates(),address:this.navigationTargetAddress() || '',label:this.navigationSectionLabel()})}});
+            modal.style.setProperty('--width', '100%');
+            modal.style.setProperty('--height', '100%');
+            modal.style.setProperty('--max-width', '100%');
+            modal.style.setProperty('--max-height', '100%');
+            modal.style.setProperty('--border-radius', '0');
+            modal.style.setProperty('--box-shadow', 'none');
+            await modal.present();
+        } else {
+            window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');
+        }
+    }
+
+    /**
+     * Preferred navigation destination as validated stored coordinates for the
+     * current stage (pickup/origin until heading to the customer, then dropoff),
+     * or null when only the address is usable.
+     */
+    private navigationDestinationCoordinates(): { lat: number; lng: number } | null {
+        const job = this.job();
+        const heading = this.isHeadingToCustomer();
+        const lat = heading ? job?.dropoff_lat : job?.pickup_lat;
+        const lng = heading ? job?.dropoff_lng : job?.pickup_lng;
+        if (typeof lat === 'number' && typeof lng === 'number' && this.isValidCoordinate(lat) && this.isValidCoordinate(lng)) {
+            return { lat, lng };
+        }
+        return null;
+    }
+
+    /** Whether the current stage navigates toward the customer/destination. */
+    private isHeadingToCustomer(): boolean {
+        const status = String(this.job()?.status || '');
+        // Once arrival is recorded, navigation previews the next destination.
+        // This does not advance shopping, collection, or completion status.
+        return ['arrived', 'arrived_at_pickup', 'arrived_at_store',
+            'shopping_in_progress', 'shopping_completed', 'items_collected',
+            'collected', 'en_route_to_customer', 'in_progress', 'on_trip'].includes(status);
+    }
+
+    /** Terminal statuses where operational navigation no longer applies. */
+    isNavigationTerminal(): boolean {
+        const status = String(this.job()?.status || '');
+        return ['delivered', 'completed', 'cancelled', 'canceled', 'failed'].includes(status);
+    }
+
+    /**
+     * Context-sensitive navigation destination for the current lifecycle stage.
+     * Returns undefined for terminal jobs so no operational action is offered.
+     */
+    navigationTargetAddress(): string | undefined {
+        if (this.isNavigationTerminal()) return undefined;
+        return this.isHeadingToCustomer()
+            ? this.job()?.dropoff_address
+            : this.job()?.pickup_address;
+    }
+
+    navigateButtonLabel(): string {
+        return this.isHeadingToCustomer()
+            ? `Navigate to ${this.destinationActionLabel()}`
+            : `Navigate to ${this.originActionLabel()}`;
     }
 
     private async renderPickupRoute(): Promise<void> {
+        if (!this.mapPreviewOpen()) return;
         const currentJob = this.job();
 
         if (!currentJob || !this.pickupMap) {
@@ -2001,8 +2523,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return;
         }
 
-        const pickupLat = Number((currentJob as any).pickup_lat);
-        const pickupLng = Number((currentJob as any).pickup_lng);
+        const destination = this.navigationDestinationCoordinates();
+        const pickupLat = destination?.lat ?? NaN;
+        const pickupLng = destination?.lng ?? NaN;
 
         if (!this.isValidCoordinate(pickupLat) || !this.isValidCoordinate(pickupLng)) {
             this.pickupMapReady.set(false);
@@ -2014,7 +2537,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             coordinates: { lat: pickupLat, lng: pickupLng },
             kind: 'pickup',
             serviceType: currentJob.service_slug as ServiceTypeSlug,
-            label: this.mapOriginMarkerLabel()
+            label: this.isHeadingToCustomer() ? this.destinationActionLabel() : this.mapOriginMarkerLabel()
         });
 
         const position = await this.locationService.getCurrentPosition();
@@ -2083,10 +2606,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     pickupMapTitle(): string {
         if (this.driverPickupDuration() !== null) {
-            return `${this.formatDuration(this.driverPickupDuration())} to ${this.originTargetLabel()}`;
+            return `${this.formatDuration(this.driverPickupDuration())} to ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}`;
         }
 
-        return `Route to ${this.originTargetLabel()}`;
+        return `Route to ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}`;
     }
 
     pickupMapSubtitle(): string {
@@ -2094,19 +2617,20 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             return `${this.formatDistanceMeters(this.driverPickupDistance())} from your current location.`;
         }
 
-        return `Shows the ${this.originTargetLabel()} and route when GPS is available.`;
+        return `Shows the ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())} and route when GPS is available.`;
     }
 
     navigationSectionLabel(): string {
+        const heading = this.isHeadingToCustomer();
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Store navigation';
+                return heading ? 'Customer navigation' : 'Store navigation';
             case ServiceTypeEnum.DELIVERY:
-                return 'Collection navigation';
+                return heading ? 'Recipient navigation' : 'Collection navigation';
             case ServiceTypeEnum.VAN:
-                return 'Move pickup navigation';
+                return heading ? 'Move destination navigation' : 'Move pickup navigation';
             default:
-                return 'Pickup navigation';
+                return heading ? 'Destination navigation' : 'Pickup navigation';
         }
     }
 
@@ -2197,11 +2721,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     customerName(): string {
-        const customer = (this.job() as any)?.customer;
-        const first = String(customer?.first_name || '').trim();
-        const last = String(customer?.last_name || '').trim();
-
-        return first || last || 'Customer';
+        return customerDisplayName((this.job() as any)?.customer);
     }
 
     customerInitial(): string {
@@ -2251,7 +2771,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     serviceWorkEyebrow(): string {
         switch (this.job()?.service_slug) {
             case ServiceTypeEnum.ERRAND:
-                return 'Errand workflow';
+                return 'Shop workflow';
             case ServiceTypeEnum.DELIVERY:
                 return 'Courier workflow';
             case ServiceTypeEnum.VAN:
@@ -2283,7 +2803,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                     ? 'Use the approved budget, keep the receipt, record the spend, and request extra budget before paying more than approved.'
                     : 'Go to the collection location, collect the item or documents, and deliver them to the customer. No item spend is needed.';
             case ServiceTypeEnum.DELIVERY:
-                return 'Confirm the package at collection, keep the customer updated, then complete only after delivery.';
+                return 'Confirm the parcel at collection, keep the customer updated, then complete only after delivery.';
             case ServiceTypeEnum.VAN:
                 return 'Confirm pickup, handle loading carefully, and complete when the customer move is fully done.';
             default:
@@ -2298,32 +2818,32 @@ export class JobDetailsPage implements OnInit, OnDestroy {
                     return [
                         { title: 'Go to collection point', description: 'Use navigation and mark arrived at the pickup location.', icon: 'navigate-outline' },
                         { title: 'Collect item', description: 'Confirm the item or documents with the customer notes.', icon: 'cube-outline' },
-                        { title: 'Deliver to customer', description: 'Return or deliver to the customer, then complete the request.', icon: 'checkmark-circle-outline' }
+                        { title: 'Deliver to customer', description: 'Return or deliver to the customer, then complete the request.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                     ];
                 }
 
                 return [
                     { title: 'Go to store', description: 'Use navigation and mark arrived before shopping.', icon: 'navigate-outline' },
-                    { title: 'Buy items', description: 'Use Movabi Pay or upload a receipt if card setup is not ready.', icon: 'card-outline' },
-                    { title: 'Deliver and complete', description: 'Deliver to the customer, then complete the request.', icon: 'checkmark-circle-outline' }
+                    { title: 'Buy items', description: 'Use Vaydu Pay or upload a receipt if card setup is not ready.', icon: 'card-outline' },
+                    { title: 'Deliver and complete', description: 'Deliver to the customer, then complete the request.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                 ];
             case ServiceTypeEnum.DELIVERY:
                 return [
-                    { title: 'Collect package', description: 'Confirm the right item and recipient details.', icon: 'cube-outline' },
+                    { title: 'Collect parcel', description: 'Confirm the right item and recipient details.', icon: 'cube-outline' },
                     { title: 'Travel to recipient', description: 'Keep the route and live location active.', icon: 'navigate-outline' },
-                    { title: 'Confirm delivery', description: 'Complete after the package is handed over.', icon: 'checkmark-circle-outline' }
+                    { title: 'Confirm delivery', description: 'Complete after the parcel is handed over.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                 ];
             case ServiceTypeEnum.VAN:
                 return [
                     { title: 'Arrive and load', description: 'Confirm the pickup and load items safely.', icon: 'archive-outline' },
                     { title: 'Move to destination', description: 'Follow the route and keep the customer updated.', icon: 'navigate-outline' },
-                    { title: 'Unload and finish', description: 'Complete only when the move is finished.', icon: 'checkmark-circle-outline' }
+                    { title: 'Unload and finish', description: 'Complete only when the move is finished.' + this.completionWorkflowInstruction(), icon: 'checkmark-circle-outline' }
                 ];
             default:
                 return [
                     { title: 'Go to pickup', description: 'Navigate to the customer and mark arrived.', icon: 'navigate-outline' },
                     { title: 'Start ride', description: 'Begin only when the customer is ready.', icon: 'car-sport-outline' },
-                    { title: 'Drop off', description: 'Complete after safe arrival at destination.', icon: 'flag-outline' }
+                    { title: 'Drop off', description: 'Complete after safe arrival at destination.' + this.completionWorkflowInstruction(), icon: 'flag-outline' }
                 ];
         }
     }
@@ -2335,8 +2855,10 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     actionTitle(): string {
         switch (this.job()?.status) {
+            case 'assigned':
+                return 'Confirm this assignment';
             case 'accepted':
-                return `Go to ${this.originTargetLabel()}`;
+                return `Go to ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}`;
             case 'arrived':
                 if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
                     return this.isShoppingErrand() ? 'Confirm store arrival' : 'Confirm collection arrival';
@@ -2355,14 +2877,16 @@ export class JobDetailsPage implements OnInit, OnDestroy {
             case 'delivered':
                 return 'Complete the request';
             default:
-                return 'Review request details';
+                return 'View Details';
         }
     }
 
     actionHint(): string {
         switch (this.job()?.status) {
+            case 'assigned':
+                return 'Vaydu assigned this request to you. Accept it to confirm you will complete it.';
             case 'accepted':
-                return `Open the ${this.originTargetLabel()}, contact the customer if needed, then mark yourself arrived.`;
+                return `Head to the ${(this.isHeadingToCustomer() ? this.destinationActionLabel() : this.originTargetLabel())}. When you arrive, mark yourself as arrived. Contact the customer if needed.`;
             case 'arrived':
                 if (this.job()?.service_slug === ServiceTypeEnum.ERRAND) {
                     return this.isShoppingErrand()
@@ -2397,6 +2921,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
 
     actionProgress(): number {
         switch (this.job()?.status) {
+            case 'assigned':
+                return 10;
             case 'accepted':
                 return 20;
             case 'arrived':
@@ -2420,6 +2946,8 @@ export class JobDetailsPage implements OnInit, OnDestroy {
         switch (this.job()?.status) {
             case 'completed':
                 return 'success';
+            case 'assigned':
+                return 'warning';
             case 'accepted':
             case 'arrived':
                 return 'primary';
@@ -2439,7 +2967,7 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     formatPrice(amount: number | null | undefined) {
-        return this.config.formatCurrency(this.toNumber(amount));
+        return this.config.formatCurrency(this.toNumber(amount),String(this.job()?.currency_code || this.config.currencyCode));
     }
 
     hasRecordedErrandSpend(): boolean {
@@ -2510,8 +3038,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     }
 
     private formatDuration(seconds: number | null): string {
-        if (!seconds || !Number.isFinite(seconds)) return 'ETA unavailable';
-        const minutes = Math.max(1, Math.round(seconds / 60));
+        if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return 'ETA unavailable';
+        if (seconds < 60) return 'Arriving';
+        const minutes = Math.round(seconds / 60);
         return `${minutes} min`;
     }
 

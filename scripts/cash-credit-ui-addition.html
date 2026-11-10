@@ -1,0 +1,25 @@
+              <!-- Batch 1G: cash-credit belongs inside the Driver Hub Wallet tab. -->
+        <app-card class="p-4" aria-labelledby="cash-credit-title" [attr.aria-busy]="cashCredit.loading()">
+          <div class="flex items-center justify-between gap-3">
+            <h3 id="cash-credit-title" class="text-sm font-black text-slate-950">Cash-ride credit</h3>
+            <button type="button" (click)="refreshCashCredit()" [disabled]="cashCredit.loading()"
+              class="text-sm font-bold text-amber-700 disabled:opacity-70" aria-label="Refresh cash-ride credit">Refresh</button>
+          </div>
+          @if(cashCredit.loading()) {
+            <p role="status" class="mt-3 text-sm text-slate-600">Checking cash credit…</p>
+          } @else if(cashCredit.error()) {
+            <p role="alert" class="mt-3 text-sm text-red-700">{{cashCredit.error()}}</p>
+          } @else if(cashCredit.status(); as credit) {
+            <p role="status" class="mt-3 text-sm text-slate-600" [class.text-amber-800]="cashNeedsReview(credit)">{{cashMessage(credit)}}</p>
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex flex-wrap justify-between gap-2"><dt>Unreserved credit</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.availableMinor,credit.currency)}}</dd></div>
+              <div class="flex flex-wrap justify-between gap-2"><dt>Held for cash rides</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.heldMinor,credit.currency)}}</dd></div>
+              @if(credit.balance.deficitMinor !== '0') {
+                <div class="flex flex-wrap justify-between gap-2 text-amber-800"><dt>Amount needing review</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.deficitMinor,credit.currency)}}</dd></div>
+              }
+            </dl>
+            <p class="mt-3 text-xs text-slate-600">For cash-ride fees and commission. Separate from earnings and bank payouts.</p>
+          } @else {
+            <p role="status" class="mt-3 text-sm text-slate-600">Cash credit has not been checked. Select Refresh.</p>
+          }
+        </app-card>

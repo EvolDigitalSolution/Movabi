@@ -1,0 +1,24 @@
+import {beforeEach,describe,it,expect,vi} from 'vitest';
+import {firstValueFrom,of,throwError} from 'rxjs';
+const m=vi.hoisted(()=>({http:vi.fn(),configuration:vi.fn(),search:vi.fn(),reverse:vi.fn(),reverseContext:vi.fn(),route:vi.fn()}));
+vi.mock('@angular/core',()=>({Injectable:()=>()=>{},inject:()=>({get:m.http,post:m.http,configuration:m.configuration,search:m.search,reverse:m.reverse,reverseContext:m.reverseContext,route:m.route,searchAttribution:()=>'',getOpenRouteServiceApiKey:()=> 'unused-legacy',getMapTilerApiKey:()=> 'display-only',currentCountry:()=>({code:'GB'})})}));
+vi.mock('@angular/common/http',()=>({HttpClient:class{}}));
+vi.mock('../app/core/services/maps/map-provider.service',()=>({MapProviderService:class{}}));
+vi.mock('../app/core/services/config/app-config.service',()=>({AppConfigService:class{}}));
+vi.mock('../app/core/services/maps/remote-maps.service',()=>({RemoteMapsService:class{}}));
+import {GeocodingService} from '../app/core/services/maps/geocoding.service';
+import {RoutingService} from '../app/core/services/maps/routing.service';
+const point={lat:7.325884,lng:5.163355},end={lat:7.251028,lng:5.170483};
+beforeEach(()=>{vi.clearAllMocks();m.configuration.mockReturnValue(of({search:true,routing:true}));m.search.mockReturnValue(of([{...point,label:'Obele Estate Road, Akure',countryCode:'NG'}]));m.reverse.mockReturnValue(of('Obele Estate Road, Akure'));m.reverseContext.mockReturnValue(of({label:'Obele Estate Road, Akure',countryCode:'NG'}));m.route.mockReturnValue(of({coordinates:[[point.lng,point.lat],[end.lng,end.lat]],distanceMeters:9400,durationSeconds:822,steps:[]}));});
+describe('server search and road routing; MapTiler is display only',()=>{
+ it('uses the server search once for a Nigerian address without clipping it to the account country',async()=>{const result=await firstValueFrom(new GeocodingService().autocomplete('Obele Estate Road'));expect(result[0].countryCode).toBe('NG');expect(m.search).toHaveBeenCalledTimes(1);expect(m.http).not.toHaveBeenCalled();});
+ it('does not spend quota for short text',async()=>{expect(await firstValueFrom(new GeocodingService().autocomplete('Obe'))).toEqual([]);expect(m.search).not.toHaveBeenCalled();expect(m.http).not.toHaveBeenCalled();});
+ it('does not fall back to browser MapTiler when both server providers fail',async()=>{m.search.mockReturnValue(throwError(()=>Error('providers unavailable')));await expect(firstValueFrom(new GeocodingService().autocomplete('Obele Estate Road'))).rejects.toThrow('providers unavailable');expect(m.http).not.toHaveBeenCalled();});
+ it('does not fall back when provider configuration is unavailable',async()=>{m.configuration.mockReturnValue(of({search:false,routing:false}));await expect(firstValueFrom(new GeocodingService().autocomplete('Obele Estate Road'))).rejects.toThrow('unavailable');expect(m.http).not.toHaveBeenCalled();});
+ it('derives pickup country from the selected coordinates, not account settings',async()=>{expect(await firstValueFrom(new GeocodingService().countryForPoint(point.lat,point.lng))).toBe('NG');expect(m.reverseContext).toHaveBeenCalledWith(point);expect(m.http).not.toHaveBeenCalled();});
+ it('fails closed when pickup country cannot be verified',async()=>{m.configuration.mockReturnValue(of({search:false,routing:false}));await expect(firstValueFrom(new GeocodingService().countryForPoint(point.lat,point.lng))).rejects.toThrow('could not be verified');});
+ it('reverse geocodes using the authenticated server provider',async()=>{expect(await firstValueFrom(new GeocodingService().reverseGeocode(point.lat,point.lng))).toContain('Akure');expect(m.http).not.toHaveBeenCalled();});
+ it('uses the same road endpoint for customer A to B and driver guidance',async()=>{const service=new RoutingService();expect(await firstValueFrom(service.getRoute(point,end))).toMatchObject({distanceMeters:9400});expect(await firstValueFrom(service.getNavigationRoute(point,end))).toMatchObject({distanceMeters:9400});expect(m.route).toHaveBeenCalledTimes(2);expect(m.http).not.toHaveBeenCalled();});
+ it('does not turn route provider errors into a straight-line or legacy route',async()=>{m.route.mockReturnValue(throwError(()=>Error('route unavailable')));await expect(firstValueFrom(new RoutingService().getNavigationRoute(point,end))).rejects.toThrow('route unavailable');expect(m.http).not.toHaveBeenCalled();});
+ it('does not use legacy routing when server routing is disabled',async()=>{m.configuration.mockReturnValue(of({search:false,routing:false}));await expect(firstValueFrom(new RoutingService().getNavigationRoute(point,end))).rejects.toThrow('unavailable');expect(m.http).not.toHaveBeenCalled();});
+});

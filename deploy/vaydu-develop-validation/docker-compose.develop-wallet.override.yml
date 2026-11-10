@@ -1,0 +1,11 @@
+# Persistent develop-only override — API wallet sandbox flags ONLY.
+# Appended to the discovered operational chain by rollout; targets service `api`.
+# NODE_ENV stays production; no live keys, no FLW sandbox envs.
+services:
+  api:
+    environment:
+      VAYDU_DRIVER_WALLET_COHOST_DEVELOP: "true"
+      VAYDU_DEPLOYMENT_ENV: "develop"
+      VAYDU_DRIVER_TOPUP_API: "true"
+      VAYDU_DRIVER_WALLET_EVIDENCE_APPROVED: "true"
+      VAYDU_DRIVER_TOPUP_PROVIDER: "stripe"

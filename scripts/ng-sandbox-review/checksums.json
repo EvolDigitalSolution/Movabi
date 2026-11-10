@@ -1,0 +1,13 @@
+{
+  "audit-develop-readonly.sh": "02b8f0fa6370c744525280eefc7dad3dd572d064a0281f634a6a854b8cb6e5f9",
+  "check-flutterwave-test-merchant.py": "e54d736a11f325845f8b52304dc13b53ae2e3d3f6ef9ffa88a0d1a2e3036337f",
+  "confirmed-scope.json": "5da4f37a26091ddd54fc78d674c5e4f6cca35d510e374369b95a46709df47eb4",
+  "migrations/20261253900000_flutterwave_market_provider_prerequisite.sql": "c30d20683c5583bdea86922acff761c1b5140f86084e81e689bcadf50c2878de",
+  "migrations/20261254600000_driver_payment_accounts_sandbox.sql": "4acd9f0ae386861afbdf1a8653e2501b003d1e44c8570fd2bf896518547116dd",
+  "migrations/20261254700000_flutterwave_payout_outbox.sql": "65afb3cbd809f9591eb95c3b17957b4dd15b0e5ddf4d29ba33dafb19d08a090c",
+  "migrations/20261254800000_flutterwave_collection_subaccounts.sql": "cba2fd7fe3e660ec26d07fb16d6993a7b2a0ead243bb3b73e8d62a6f2e20a28b",
+  "migrations/20261254900000_flutterwave_booking_split_authority.sql": "564799cedd007ce45c774b25a1ccad77924b27fb1d926fdd8ed177bf409bf403",
+  "migrations/migration-manifest.json": "3f0309c867414309170e7d97526370fb0bdd581f01ccfab03efdb2a6972ccf34",
+  "provision_flutterwave_subaccount_test.py": "b4e6b9ee2d560e9716fa0f467c1e96d405e14740ded9c68d5d4b325b37520f46",
+  "verify-develop-wallet-backup.py": "9b15482cd97c855dceac1f11468ddb7d9e0aebb7c3673e0a8856d3458f520f4a"
+}

@@ -1,0 +1,25 @@
+{
+  "purpose": "vaydu-driver-payment-account-setup-v1",
+  "driver": "318e6be9-9164-41fa-bb0c-c5ccd3526585",
+  "tenant": "d0e8e8e8-e8e8-e8e8-e8e8-d0e8e8e8e8e8",
+  "baselineApiImage": "sha256:1ef978c931bf390273f4648f6c8bdce04231338d64ae7c6ead7e4e10d723c6aa",
+  "merchantRef": "vaydu-flutterwave-test-ng",
+  "evidenceRef": "pending-merchant-capability-evidence",
+  "sqlSha256": "986fed074d5c368085f8cfe9bf3bddc3a16393eb3b9058d3afdf0f9db94564f9",
+  "transfersEnabled": false,
+  "migrationLineage": [
+    {
+      "name": "payment_account_setup_canonical.sql",
+      "sha256": "986fed074d5c368085f8cfe9bf3bddc3a16393eb3b9058d3afdf0f9db94564f9"
+    },
+    {
+      "name": "payment_account_recovery_v2.sql",
+      "sha256": "3cc0173227acd5a33f80c6231550773aba1f66f5b340c745c9b992fb190fe39b"
+    }
+  ],
+  "onboardingIntegrationReviewed": true,
+  "setupEvidenceApproved": false,
+  "releaseStatus": "reviewed-api-disabled-staging-only",
+  "bundleId": "vaydu-payment-account-api-20261029-r2",
+  "sourceArchiveSha256": "342c495d392092637376d48da9e3d4376de4b34609deb3588d17bd97872b6c23"
+}

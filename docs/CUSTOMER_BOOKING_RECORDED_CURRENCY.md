@@ -1,0 +1,7 @@
+# Customer booking summary currency
+
+Activity used the app's selected/default currency for Active, Pending and Past prices. The Home upcoming-booking card used the same pattern. This patch passes booking.currency_code explicitly to the existing recorded-money formatter. Existing amount selection/order, status, dates, labels, navigation, layouts, booking/payment records and all provider controls are unchanged. NGN 4116.63 displays NGN 4,116.63; genuine GBP stays GBP. An absent recorded currency is unavailable rather than guessed from profile/GPS/preferences. Incorrect database currencies require a separate record audit; this client patch never converts or rewrites them.
+
+The preceding customer-wallet correction is retained. Installer verifies the exact updated Home source, uploaded Activity source, existing recorded-money helper and six applied migration baselines before writing; backups and guarded rollback are supplied. Only two existing page files and new checks/spec/docs change. No database/API/flags/deployment actions run during installation.
+
+Local available checks execute the actual production formatting methods for NGN/GBP/USD/zero/missing currency/invalid amount (14 cases), assert four explicit template bindings, and verify source changes plus install/reinstall/rollback. Angular compilation and signed-in visual acceptance remain owner-run. A fresh mobile build includes previously installed wallet and driver-card corrections.

@@ -1,0 +1,38 @@
+# PREPARATION ONLY. Connection injection requires the user's explicit approval.
+# No helper extracts secrets from another container or creates a credential file.
+name: movabi-driver-card-sandbox-develop
+services:
+  driver-card-sandbox:
+    image: ${VAYDU_DRIVER_CARD_API_IMAGE:?Pin the reviewed sandbox image ID}
+    pull_policy: never
+    container_name: movabi-develop-driver-card-sandbox
+    env_file:
+      - ${VAYDU_DRIVER_CARD_CONNECTION_ENV:?Approved existing secret-manager connection injection required}
+      - ${VAYDU_DRIVER_CARD_PROVIDER_ENV:?Privately provisioned test-provider env outside repository required}
+    environment:
+      NODE_ENV: test
+      VAYDU_SANDBOX_DEPLOYMENT: develop
+      VAYDU_SANDBOX_WEB_ORIGIN: https://movabi-develop.apps.evolsolution.com
+      VAYDU_DRIVER_TOPUP_API: "false"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 1
+    expose:
+      - "3021"
+    networks:
+      - develop-private
+      - web
+    restart: unless-stopped
+networks:
+  develop-private:
+    external: true
+    name: movabi-develop-private
+  web:
+    external: true
+    name: web

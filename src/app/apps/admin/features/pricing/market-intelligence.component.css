@@ -1,0 +1,256 @@
+.mi-page {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: inherit;
+}
+
+.mi-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.mi-header h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.mi-subtitle {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+}
+
+.mi-toast {
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.mi-toast--danger { background: #fee2e2; color: #991b1b; }
+.mi-toast--warning { background: #fef3c7; color: #92400e; }
+
+.mi-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #f0f9ff;
+  color: #075985;
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+}
+
+.mi-status-bar--live {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.mi-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 20px;
+}
+
+.mi-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.mi-tab--active {
+  color: #1d4ed8;
+  border-bottom-color: #1d4ed8;
+}
+
+.mi-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.mi-panel h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.mi-mt { margin-top: 24px; }
+
+.mi-hint {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: -4px 0 12px;
+}
+
+.mi-banner {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  margin-bottom: 16px;
+}
+
+.mi-banner--warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.mi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mi-span-2 { grid-column: span 2; }
+
+.mi-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mi-grid input,
+.mi-grid select,
+.mi-grid textarea {
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.mi-checkbox {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.mi-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  background: #1d4ed8;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.mi-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.mi-btn--ghost {
+  background: transparent;
+  color: #1d4ed8;
+  border: 1px solid #cbd5e1;
+}
+
+.mi-btn--danger {
+  background: #dc2626;
+}
+
+.mi-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.mi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.mi-table th {
+  text-align: left;
+  padding: 8px;
+  color: #64748b;
+  font-weight: 700;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.mi-table td {
+  padding: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.mi-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 20px;
+}
+
+.mi-toggle {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.mi-toggle--on {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.mi-icon-btn {
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.mi-sim-result {
+  margin-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.mi-sim-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.85rem;
+  border-bottom: 1px dashed #f1f5f9;
+}
+
+.mi-sim-row--highlight {
+  color: #1d4ed8;
+  font-weight: 700;
+}

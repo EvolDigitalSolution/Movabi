@@ -1,6 +1,9 @@
+import {MarketSafetyService} from '../payments/market-safety.service';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { defer, firstValueFrom, Subject, switchMap, timeout } from 'rxjs';
+import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { ApiUrlService } from '../api-url.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -38,13 +41,68 @@ type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
 })
 export class ConnectService {
     private http = inject(HttpClient);
+    private marketSafety=inject(MarketSafetyService);
     private apiUrlService = inject(ApiUrlService);
     private supabase = inject(SupabaseService);
 
     private apiUrl = this.apiUrlService.getApiUrl('/api/connect');
+    readonly returnedToApp = new Subject<void>();
+
+    constructor() {
+        if (Capacitor.isNativePlatform()) {
+            void Browser.addListener('browserFinished',()=>this.returnedToApp.next()).catch(error=>console.warn('[Connect] Browser return listener failed',error));
+            void App.addListener('appStateChange', ({ isActive }) => {
+                if (isActive) this.returnedToApp.next();
+            }).catch(error => console.warn('[Connect] Resume listener failed', error));
+        } else if (typeof window !== 'undefined') {
+            window.addEventListener('focus', () => this.returnedToApp.next());
+        }
+    }
+
+    prepareDashboardTab(): Window | null {
+        if(Capacitor.isNativePlatform())return null;
+        const tab=window.open('about:blank','_blank');
+        if(!tab)throw new Error('Allow popups, then tap Stripe Payouts again.');
+        try {
+            tab.opener=null;
+            tab.document.title='Opening Stripe';
+            tab.document.body.textContent='Opening your Stripe payout dashboard…';
+            return tab;
+        }catch(error){tab.close();throw error;}
+    }
+
+    async openDashboard(url: string, tab: Window | null): Promise<void> {
+        try {
+            const parsed=new URL(url);
+            if(parsed.protocol!=='https:' || parsed.username || parsed.password || !(parsed.hostname==='stripe.com'||parsed.hostname.endsWith('.stripe.com'))){
+                throw new Error('Invalid Stripe dashboard URL');
+            }
+            if(Capacitor.isNativePlatform()){
+                await Browser.open({url,windowName:'_blank'});
+            }else{
+                if(!tab || tab.closed)throw new Error('The Stripe tab was closed or blocked. Tap Stripe Payouts again.');
+                tab.location.href=url;
+                tab.focus();
+            }
+        }catch(error){tab?.close();throw error;}
+    }
+
+    async openOnboarding(url: string): Promise<void> {
+        if (Capacitor.isNativePlatform()) {
+            const { Browser } = await import('@capacitor/browser');
+            await Browser.open({ url });
+        } else {
+            window.location.href = url;
+        }
+    }
+
+    private payoutSettingsInFlightForced = false;
+    private payoutSettingsInFlight: Promise<PayoutSettingsResponse> | null = null;
+    private payoutSettingsCache: { value: PayoutSettingsResponse; expiresAt: number } | null = null;
+    private readonly payoutSettingsCacheMs = 10_000;
 
     async createAccount(userId: string, email: string, tenantId?: string | null) {
-        return firstValueFrom(
+        const result = await firstValueFrom(
             this.http.post<{ stripe_account_id: string; status?: StripeConnectStatusResponse }>(
                 `${this.apiUrl}/create-account`,
                 {
@@ -57,6 +115,8 @@ export class ConnectService {
                 }
             )
         );
+        this.invalidatePayoutSettingsCache();
+        return result;
     }
 
     async getOnboardingLink(accountId: string, returnUrl: string, refreshUrl: string, platform = this.getConnectPlatform()) {
@@ -92,14 +152,11 @@ export class ConnectService {
 
     async getDashboardLink(accountId: string) {
         return firstValueFrom(
-            this.http.post<{ url: string }>(
-                `${this.apiUrl}/dashboard-link`,
-                {
-                    accountId
-                },
-                {
-                    headers: await this.getAuthHeaders()
-                }
+            defer(() => this.getAuthHeaders()).pipe(
+                switchMap(headers => this.http.post<{ url: string }>(
+                    `${this.apiUrl}/dashboard-link`, { accountId }, { headers }
+                )),
+                timeout(15000)
             )
         );
     }
@@ -116,7 +173,7 @@ export class ConnectService {
     }
 
     async refreshAccountStatus(accountId: string, userId?: string) {
-        return firstValueFrom(
+        const result = await firstValueFrom(
             this.http.post<StripeConnectStatusResponse>(
                 `${this.apiUrl}/refresh-account-status`,
                 {
@@ -128,20 +185,58 @@ export class ConnectService {
                 }
             )
         );
+        this.invalidatePayoutSettingsCache();
+        return result;
     }
 
-    async getPayoutSettings() {
-        return firstValueFrom(
+    private payoutSettingsOwner:string|null=null;
+    async getPayoutSettings(force = false): Promise<PayoutSettingsResponse> {
+        const {data:ownerSession}=await this.supabase.auth.getSession();
+        const owner=ownerSession.session?.user?.id || null;
+        if(owner!==this.payoutSettingsOwner){this.payoutSettingsOwner=owner;this.payoutSettingsCache=null;this.payoutSettingsInFlight=null;}
+        await this.marketSafety.requireStripePayoutMarket();
+        if (this.payoutSettingsInFlight) {
+            if (!force || this.payoutSettingsInFlightForced) return this.payoutSettingsInFlight;
+            return this.payoutSettingsInFlight.catch(() => undefined)
+                .then(() => this.getPayoutSettings(true));
+        }
+        if (!force && this.payoutSettingsCache && this.payoutSettingsCache.expiresAt > Date.now()) {
+            return Promise.resolve(this.payoutSettingsCache.value);
+        }
+
+        this.payoutSettingsInFlightForced = force;
+        const request = (async () => firstValueFrom(
             this.http.get<PayoutSettingsResponse>(
                 `${this.apiUrl}/payout-settings`,
-                {
-                    headers: await this.getAuthHeaders()
-                }
+                { headers: await this.getAuthHeaders() }
             )
-        );
+        ))().then(async value => {
+            if (force && value.stripeAccountId) {
+                const status = await this.refreshAccountStatus(value.stripeAccountId);
+                value = {
+                    ...value,
+                    connectStatus: status.status,
+                    chargesEnabled: status.charges_enabled === true,
+                    payoutsEnabled: status.payouts_enabled === true,
+                    detailsSubmitted: status.details_submitted === true,
+                    requirementsCurrentlyDue: status.requirements?.currently_due || []
+                };
+            }
+            const {data:currentSession}=await this.supabase.auth.getSession();
+            if(owner!==this.payoutSettingsOwner || owner!==(currentSession.session?.user?.id||null))throw new Error('Account changed.');
+            this.payoutSettingsCache = { value, expiresAt: Date.now() + this.payoutSettingsCacheMs };
+            return value;
+        }).finally(() => {
+            if(this.payoutSettingsInFlight===request)this.payoutSettingsInFlight = null;
+        });
+        this.payoutSettingsInFlight = request;
+        return request;
     }
 
+    invalidatePayoutSettingsCache(): void { this.payoutSettingsCache = null; }
+
     private async getAuthHeaders(): Promise<HttpHeaders> {
+        await this.marketSafety.requireStripePayoutMarket();
         const token = await this.getAccessToken();
 
         let headers = new HttpHeaders({

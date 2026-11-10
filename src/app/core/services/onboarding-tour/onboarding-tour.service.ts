@@ -22,15 +22,15 @@ const TOUR_STORAGE_KEYS: Record<MovabiTourAudience, string> = {
 
 const TOUR_STEPS: Record<MovabiTourAudience, MovabiTourStep[]> = {
   customer: [
-    { title: 'Welcome to Movabi', body: 'Book rides, errands, package delivery, and moving help from one place.' },
+    { title: 'Welcome to Vaydu', body: 'Book rides, errands, package delivery, and moving help from one place.' },
     { title: 'Choose a service', body: 'Start with Ride, Errand, Delivery, or Van depending on what you need.', target: '[data-tour="customer-services"]' },
     { title: 'Add trip details', body: 'Enter pickup and destination details before checking the fare.' },
-    { title: 'Check fixed price', body: 'Movabi shows the price before you confirm a paid booking.' },
+    { title: 'Check fixed price', body: 'Vaydu shows the price before you confirm a paid booking.' },
     { title: 'Track live', body: 'Follow your assigned driver and status updates from the tracking screen.' },
     { title: 'Wallet and bookings', body: 'Manage wallet balance, payment history, and recent bookings anytime.' }
   ],
   driver: [
-    { title: 'Welcome to Movabi Driver', body: 'Your dashboard is where you manage availability, requests, earnings, and verification.' },
+    { title: 'Welcome to Vaydu Driver', body: 'Your dashboard is where you manage availability, requests, earnings, and verification.' },
     { title: 'Complete onboarding', body: 'Finish country and service-based requirements before accepting paid work.' },
     { title: 'Go online or offline', body: 'Use Online when you are ready to receive nearby requests.', target: '[data-tour="driver-status"]' },
     { title: 'Set Free or Busy', body: 'Stay online but mark yourself Busy when you need a short break.' },
@@ -40,7 +40,7 @@ const TOUR_STEPS: Record<MovabiTourAudience, MovabiTourStep[]> = {
     { title: 'Action required messages', body: 'If admin needs more information, you will see clear blockers in settings.' }
   ],
   admin: [
-    { title: 'Control Center', body: 'Use the admin area to monitor operations and configure Movabi safely.' },
+    { title: 'Control Center', body: 'Use the admin area to monitor operations and configure Vaydu safely.' },
     { title: 'Review drivers', body: 'Driver review shows country, vehicle class, selected services, and relevant blockers.' },
     { title: 'Check documents', body: 'Only country and service-specific document requirements should appear.' },
     { title: 'Request missing information', body: 'Send selected blockers back to the driver without approving too early.' },

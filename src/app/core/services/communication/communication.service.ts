@@ -1,3 +1,4 @@
+import { pollRetryDelay } from '@shared/utils/poll-retry-delay';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -6,7 +7,7 @@ import { ApiUrlService } from '../api-url.service';
 import { NotificationManagerService } from '../notification/notification-manager.service';
 import { JobMessage, JobMessageType } from '@shared/models/communication.model';
 import { BehaviorSubject } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 @Injectable({
@@ -23,22 +24,81 @@ export class CommunicationService {
   public messages$ = this.messagesSubject.asObservable();
   
   private subscription: RealtimeChannel | null = null;
+  private activeJobId: string | null = null;
+  private countRequests = new Map<string, { expires: number; value?: {total:number;unread:number}; pending?: Promise<{total:number;unread:number}>; error?: unknown }>();
 
+  private readAcknowledgements=new Map<string,string>();
+  private readAcknowledgementPending=new Map<string,Promise<void>>();
+  private readAcknowledgementRetry=new Map<string,number>();
   async getJobMessages(jobId: string): Promise<JobMessage[]> {
-    const { data, error } = await this.supabase
-      .from('job_messages')
-      .select('*')
-      .eq('job_id', jobId)
-      .order('created_at', { ascending: true });
-
-    if (error) throw error;
-    
-    const messages = data as JobMessage[];
-    this.messagesSubject.next(messages);
+    const userId = this.auth.currentUser()?.id;
+    const messages = await firstValueFrom(this.http.get<JobMessage[]>(
+      this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId)),
+      { headers: await this.chatHeaders() }));
+    if (!userId || userId !== this.auth.currentUser()?.id) throw new Error('Session changed. Reload messages.');
+    if (this.activeJobId === jobId) this.messagesSubject.next(messages);
     return messages;
   }
 
-  async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text') {
+  private async chatHeaders(): Promise<{ Authorization: string }> {
+    const { data: { session } } = await this.supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Please sign in again.');
+    return { Authorization: `Bearer ${session.access_token}` };
+  }
+  async getMessageCounts(jobId: string, fresh = false): Promise<{total: number; unread: number}> {
+    const userId = this.auth.currentUser()?.id;
+    if (!userId) throw new Error('Please sign in again.');
+    const key = `${userId}:${jobId}`;
+    const cached=this.countRequests.get(key);
+    if (fresh && !cached?.pending && !(cached?.error && cached.expires>Date.now())) this.countRequests.delete(key);
+    const existing = this.countRequests.get(key);
+    if (existing?.pending) return existing.pending;
+    if (existing && existing.expires > Date.now()) {
+      if (existing.error) throw existing.error;
+      if (existing.value) return existing.value;
+    }
+    const entry: {expires:number;value?:{total:number;unread:number};pending?:Promise<{total:number;unread:number}>;error?:unknown} = {expires:0};
+    const request = (async () => {
+      try {
+        const result = await firstValueFrom(this.http.get<{total:number;unread:number}>(
+          this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/counts'),
+          {headers: await this.chatHeaders()}));
+        entry.value = result; entry.expires = Date.now() + 15000;
+        return result;
+      } catch (error: any) {
+        entry.error = error;
+        entry.expires = Date.now() + Math.max(15000,pollRetryDelay(error));
+        throw error;
+      } finally { entry.pending = undefined; }
+    })();
+    entry.pending = request; this.countRequests.set(key, entry);
+    if (this.countRequests.size > 50) this.countRequests.delete(this.countRequests.keys().next().value!);
+    return request;
+  }
+  async markMessagesRead(jobId: string, through: string): Promise<void> {
+    const owner=this.auth.currentUser()?.id,time=Date.parse(String(through || ''));
+    if(!owner || !Number.isFinite(time))return;
+    const key=`${owner}:${jobId}`;
+    while(this.readAcknowledgementPending.get(key))await this.readAcknowledgementPending.get(key);
+    if(owner!==this.auth.currentUser()?.id)return;
+    const acknowledged=this.readAcknowledgements.get(key);
+    if(acknowledged===through || Date.parse(acknowledged || '')>time)return;
+    if(Date.now()<(this.readAcknowledgementRetry.get(key)||0))return;
+    const request=(async()=>{
+      try{
+        const headers=await this.chatHeaders();if(owner!==this.auth.currentUser()?.id)return;
+        await firstValueFrom(this.http.post(this.apiUrlService.getApiUrl('/api/communication/messages/' + encodeURIComponent(jobId) + '/read'),
+          {through},{headers}).pipe(timeout(15000)));
+        if(owner!==this.auth.currentUser()?.id)return;
+        this.readAcknowledgements.set(key,through);this.readAcknowledgementRetry.delete(key);
+        this.countRequests.delete(key);
+        if(this.readAcknowledgements.size>100)this.readAcknowledgements.delete(this.readAcknowledgements.keys().next().value!);
+      }catch(error){if(owner===this.auth.currentUser()?.id)this.readAcknowledgementRetry.set(key,Date.now()+pollRetryDelay(error));throw error;}
+    })();
+    this.readAcknowledgementPending.set(key,request);
+    try{await request;}finally{if(this.readAcknowledgementPending.get(key)===request)this.readAcknowledgementPending.delete(key);}
+  }
+  async sendMessage(jobId: string, receiverId: string, message: string, type: JobMessageType = 'text', purpose?: 'lost_item') {
     const user = this.auth.currentUser();
     if (!user) throw new Error('Not authenticated');
     const { data: { session } } = await this.supabase.auth.getSession();
@@ -54,19 +114,20 @@ export class CommunicationService {
         jobId,
         receiverId,
         message,
-        messageType: type
+        messageType: type,
+        ...(purpose ? { purpose } : {})
       },
       {
         headers: { Authorization: `Bearer ${token}` }
       }
-    ));
+    ).pipe(timeout(20000)));
 
     if (!response?.message) {
       throw new Error('Message was not sent.');
     }
 
     const currentMessages = this.messagesSubject.value;
-    if (!currentMessages.find(m => m.id === response.message.id)) {
+    if (this.activeJobId === jobId && !currentMessages.find(m => m.id === response.message.id)) {
       this.messagesSubject.next([...currentMessages, response.message]);
     }
 
@@ -78,6 +139,8 @@ export class CommunicationService {
   }
 
   subscribeToJobMessages(jobId: string) {
+    if (this.activeJobId !== jobId) this.messagesSubject.next([]);
+    this.activeJobId = jobId;
     if (this.subscription) {
       this.subscription.unsubscribe();
     }
@@ -93,6 +156,7 @@ export class CommunicationService {
           filter: `job_id=eq.${jobId}`
         },
         (payload) => {
+          if (this.activeJobId !== jobId) return;
           const newMessage = payload.new as JobMessage;
           const currentMessages = this.messagesSubject.value;
           
@@ -111,6 +175,7 @@ export class CommunicationService {
   }
 
   unsubscribeFromJobMessages() {
+    this.activeJobId = null;
     if (this.subscription) {
       this.subscription.unsubscribe();
       this.subscription = null;

@@ -1,6 +1,9 @@
 ﻿export type BookingStatus =
     | 'pending'
     | 'requested'
+    | 'pending_fare_confirmation'
+    | 'negotiating'
+    | 'fare_agreed'
     | 'searching'
     | 'assigned'
     | 'accepted'
@@ -55,6 +58,7 @@ export interface Vehicle {
     color: string;
     is_verified: boolean;
     type: 'bike' | 'car' | 'standard' | 'xl' | 'small_van' | 'large_van' | 'minibus' | 'van' | 'motorcycle';
+    vehicleSubtype?: string | null;
     capacity?: string;
     service_eligibility?: string[] | null;
 }
@@ -350,6 +354,8 @@ export type VerificationStatus =
     | 'approved';
 
 export interface Profile {
+    registration_country_code?: string | null;
+    registration_market_city?: string | null;
     id: string;
     first_name: string;
     last_name: string;
@@ -590,6 +596,16 @@ export interface Booking {
 
     errand_details?: ErrandDetails;
     errand_funding?: ErrandFunding;
+
+    // Marketplace negotiation / bidding fields
+    agreed_fare?: number | null;
+    negotiated_fare?: number | null;
+    negotiation_deadline?: string | null;
+    bid_mode_enabled?: boolean;
+    negotiation_mode_enabled?: boolean;
+    marketplace_flags?: Record<string, unknown> | null;
+    fare_breakdown?: Record<string, unknown> | null;
+    dynamic_pricing_multiplier?: number;
 }
 
 export interface RideDetails {

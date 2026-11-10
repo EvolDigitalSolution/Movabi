@@ -1,8 +1,35 @@
 import { Router, Request, Response } from 'express';
 import { stripe } from '../services/stripe.service';
 import { supabaseAdmin } from '../services/supabase.service';
+import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
+import { PayoutEligibilityService, SUPPORTED_PAYOUT_COUNTRIES } from '../services/payout-eligibility.service';
 
 const router = Router();
+// All Connect routes are owner-bound, including status and dashboard reads.
+router.use(async(req:Request,res:Response,next)=>{
+ res.setHeader('Cache-Control','private, no-store');
+ try{
+  const id=await getUserIdFromRequest(req);if(!id)return res.status(401).json({error:'Authentication required'});
+  const {data:profile,error}=await supabaseAdmin.from('profiles').select('*').eq('id',id).maybeSingle();
+  if(error)throw error;
+  const country=String(profile?.registration_country_code||profile?.country_code||'').toUpperCase();
+  if(!profile||profile.role!=='driver'||!profile.registration_activated_at||!PayoutEligibilityService.isSupportedCountry(country))
+   return res.status(403).json({error:'Payout setup is not activated for this driver market.',code:'PAYOUT_MARKET_UNAVAILABLE'});
+  const accountId=String(profile.stripe_account_id||profile.stripe_connect_account_id||profile.stripe_connected_account_id||profile.stripe_connect_id||'');
+  const supplied=String(req.body?.accountId||req.params?.accountId||(req.path.startsWith('/account-status/')?req.path.split('/')[2]:'')).trim();
+  if(supplied&&supplied!==accountId)return res.status(403).json({error:'Payout account unavailable.',code:'PAYOUT_ACCOUNT_MISMATCH'});
+  if(req.body?.userId&&String(req.body.userId)!==id)return res.status(403).json({error:'Driver identity mismatch.'});
+  (req as any).connectOwnerId=id;(req as any).connectOwnerProfile=profile;
+  if(accountId){
+   const account=await stripe.accounts.retrieve(accountId);
+   if(account.metadata?.user_id && String(account.metadata.user_id)!==id)return res.status(403).json({error:'Payout account owner does not match this driver.',code:'PAYOUT_ACCOUNT_OWNER_MISMATCH'});
+   if(!PayoutEligibilityService.isSupportedCountry(account.country)||String(account.country).toUpperCase()!==country)
+    return res.status(403).json({error:'Payout account country does not match your driver market.',code:'PAYOUT_ACCOUNT_COUNTRY_MISMATCH'});
+   (req as any).connectVerifiedAccount=account;
+  }
+  return next();
+ }catch{return res.status(503).json({error:'Payout account could not be verified. Please retry.'});}
+});
 
 type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
 
@@ -30,13 +57,30 @@ function buildConnectReturnUrls(req: Request) {
     };
   }
 
+  const appUrl = new URL(String(process.env.APP_URL || WEB_DRIVER_URL));
+  const allowedOrigins = new Set([appUrl.origin]);
+  const testMode = String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
+
+  if (testMode) {
+    allowedOrigins.add('https://movabi-develop.apps.evolsolution.com');
+    allowedOrigins.add('http://localhost:3000');
+    allowedOrigins.add('http://localhost:4200');
+    allowedOrigins.add('http://localhost:8100');
+  }
+
+  const requestedOrigin = String(req.headers.origin || appUrl.origin);
+  if (!allowedOrigins.has(requestedOrigin)) {
+    throw new Error('Stripe onboarding return origin is not allowed');
+  }
+
   return {
-    refreshUrl: `${WEB_DRIVER_URL}?stripe=refresh`,
-    returnUrl: `${WEB_DRIVER_URL}?stripe=success`
+    refreshUrl: `${requestedOrigin}/driver?stripe=refresh`,
+    returnUrl: `${requestedOrigin}/driver?stripe=success`
   };
 }
 
 async function getUserIdFromRequest(req: Request): Promise<string | null> {
+  if((req as any).connectOwnerId)return (req as any).connectOwnerId;
   const authHeader = req.headers.authorization || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
@@ -50,36 +94,16 @@ async function getUserIdFromRequest(req: Request): Promise<string | null> {
     console.warn('[Connect] bearer auth failed:', error?.message);
   }
 
-  return String(req.body?.userId || '').trim() || null;
+  return null;
 }
 
 async function getStripeAccountId(req: Request, userId: string | null): Promise<string | null> {
-  const bodyAccountId = String(req.body?.accountId || '').trim();
-
-  if (bodyAccountId) {
-    return bodyAccountId;
-  }
-
-  if (!userId) return null;
-
-  const { data: profile, error } = await supabaseAdmin
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error('[Connect] profile lookup failed:', error.message);
-    return null;
-  }
-
-  return (
-    profile?.stripe_account_id ||
-    profile?.stripe_connect_account_id ||
-    profile?.stripe_connected_account_id ||
-    profile?.stripe_connect_id ||
-    null
-  );
+  if(!userId || userId!==(req as any).connectOwnerId)throw new Error('Payout owner could not be verified');
+  const profile=(req as any).connectOwnerProfile;
+  const own=String(profile?.stripe_account_id||profile?.stripe_connect_account_id||profile?.stripe_connected_account_id||profile?.stripe_connect_id||'');
+  const supplied=String(req.body?.accountId||req.params?.accountId||'').trim();
+  if(supplied && supplied!==own)throw new Error('Payout account mismatch');
+  return own||null;
 }
 
 function mapStripeStatus(account: any) {
@@ -126,6 +150,7 @@ function listRequirementsDue(account: any): string[] {
 }
 
 async function updateProfileStripeStatus(userId: string, accountId: string, mapped: ReturnType<typeof mapStripeStatus>) {
+  const { data: previous } = await supabaseAdmin.from('profiles').select('stripe_connect_status').eq('id', userId).maybeSingle();
   const { error } = await supabaseAdmin
     .from('profiles')
     .update({
@@ -139,6 +164,11 @@ async function updateProfileStripeStatus(userId: string, accountId: string, mapp
 
   if (error) {
     console.error('[Connect] profile Stripe status update failed:', error.message);
+  } else if (mapped.status === 'connected' && previous?.stripe_connect_status !== 'connected') {
+    DriverOnboardingNotificationService.enqueue(userId, {
+      eventKey: `stripe:${userId}:${accountId}:connected`, eventType: 'driver_stripe_connected',
+      affectedItem: 'stripe_connect', previousStatus: previous?.stripe_connect_status || 'not_started', newStatus: 'connected'
+    }).catch(notificationError => console.warn('[Connect] Stripe onboarding notification enqueue failed:', notificationError));
   }
 }
 
@@ -169,7 +199,7 @@ router.get('/payout-settings', async (req: Request, res: Response) => {
       });
     }
 
-    const account = await stripe.accounts.retrieve(accountId);
+    const account = (req as any).connectVerifiedAccount || await stripe.accounts.retrieve(accountId);
     const mapped = mapStripeStatus(account);
 
     await updateProfileStripeStatus(userId, accountId, mapped);
@@ -203,17 +233,30 @@ router.get('/payout-settings', async (req: Request, res: Response) => {
 router.post('/create-account', async (req: Request, res: Response) => {
   try {
     const userId = await getUserIdFromRequest(req);
-    const email = String(req.body?.email || '').trim();
-    const tenantId = String(req.body?.tenantId || '').trim() || null;
+    const email = String((req as any).connectOwnerProfile?.email || '').trim();
+    const tenantId = String((req as any).connectOwnerProfile?.tenant_id || '').trim() || null;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    // UK-only payout scope: verify role, registration activation and the driver's
+    // authoritative country BEFORE onboarding. Fails closed. A fresh driver with
+    // no connected account yet (NO_STRIPE_ACCOUNT) is allowed through to create.
+    const eligibility = await PayoutEligibilityService.evaluateDriver(userId, null);
+    if (!eligibility.eligible && !['NO_STRIPE_ACCOUNT','ACCOUNT_NOT_READY'].includes(String(eligibility.code))) {
+      return res.status(403).json({ error: eligibility.reason || 'Driver is not eligible for payouts.', code: eligibility.code });
+    }
+
     const existingAccountId = await getStripeAccountId(req, userId);
 
     if (existingAccountId) {
-      const account = await stripe.accounts.retrieve(existingAccountId);
+      const account = (req as any).connectVerifiedAccount || await stripe.accounts.retrieve(existingAccountId);
+      // Never trust a hard-coded or locally-mirrored country: verify the ACTUAL
+      // connected account country before reusing the account.
+      if (!PayoutEligibilityService.isSupportedCountry(account.country)) {
+        return res.status(403).json({ error: 'Connected account country is not supported in this release.', code: 'PAYOUT_COUNTRY_UNSUPPORTED' });
+      }
       const mapped = mapStripeStatus(account);
       await updateProfileStripeStatus(userId, existingAccountId, mapped);
 
@@ -225,7 +268,7 @@ router.post('/create-account', async (req: Request, res: Response) => {
 
     const account = await stripe.accounts.create({
       type: 'express',
-      country: 'GB',
+      country: String((req as any).connectOwnerProfile.registration_country_code || (req as any).connectOwnerProfile.country_code).toUpperCase(),
       email: email || undefined,
       capabilities: {
         card_payments: { requested: true },
@@ -286,13 +329,13 @@ router.post('/onboarding-link', async (req: Request, res: Response) => {
 router.get('/account-status/:accountId', async (req: Request, res: Response) => {
   try {
     const userId = await getUserIdFromRequest(req);
-    const accountId = String(req.params.accountId || '').trim();
+    const accountId = await getStripeAccountId(req, userId);
 
     if (!accountId) {
       return res.status(400).json({ error: 'Stripe account not found' });
     }
 
-    const account = await stripe.accounts.retrieve(accountId);
+    const account = (req as any).connectVerifiedAccount || await stripe.accounts.retrieve(accountId);
     const mapped = mapStripeStatus(account);
 
     if (userId) {
@@ -319,7 +362,7 @@ router.post('/refresh-account-status', async (req: Request, res: Response) => {
       });
     }
 
-    const account = await stripe.accounts.retrieve(accountId);
+    const account = (req as any).connectVerifiedAccount || await stripe.accounts.retrieve(accountId);
     const mapped = mapStripeStatus(account);
 
     if (userId) {

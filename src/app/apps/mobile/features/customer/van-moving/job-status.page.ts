@@ -58,7 +58,7 @@ import { CardComponent, BadgeComponent, ButtonComponent } from '../../../../../s
 
         <div class="ion-padding -mt-12 relative z-10 max-w-xl mx-auto pb-12">
           <app-card>
-            <div class="flex justify-between items-start mb-8 gap-4">
+            <div class="flex flex-col items-start mb-8 gap-4">
               <div class="min-w-0">
                 <div class="flex items-center gap-2 mb-1">
                   <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Order Details</span>
@@ -425,7 +425,7 @@ export class JobStatusPage implements OnInit, AfterViewInit, OnDestroy {
 
         const alert = await this.alertCtrl.create({
             header: 'Cancel Request',
-            message: 'Are you sure you want to cancel this van moving request?',
+            message: 'Are you sure you want to cancel this move request?',
             buttons: [
                 {
                     text: 'No',

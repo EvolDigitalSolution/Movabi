@@ -1,0 +1,266 @@
+import './services/payments/wallet-collection-startup';
+import marketSafetyRoutes from './routes/market-safety.routes';
+import mapsV23Routes from './routes/maps-v23.routes';
+import marketProviderLookupRoutes from './routes/market-provider-lookup.routes';
+import adminMessagingRoutes from './routes/admin-messaging.routes';
+import { AdminMessagingService } from './services/admin-messaging.service';
+import { BookingSupportService } from './services/booking-support.service';
+import { GbMotMonitorService } from './services/gb-mot-monitor.service';
+import { ShoppingBudgetService } from './services/shopping-budget.service';
+import journeyRoutes from './routes/journey.routes';
+import { JobPayoutService } from './services/job-payout.service';
+import express, { Request, Response, NextFunction } from 'express';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
+import { rateLimit } from 'express-rate-limit';
+
+// Load environment variables first (only for local development)
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
+
+// Check for critical environment variables before loading any modules
+const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error('==========================================');
+  console.error('FATAL: Missing required environment variables');
+  console.error('==========================================');
+  console.error('The following environment variables are required:');
+  missingVars.forEach(varName => {
+    console.error(`  - ${varName}`);
+  });
+  console.error('==========================================');
+  console.error('Please set these environment variables and restart the server.');
+  console.error('==========================================');
+  process.exit(1);
+}
+import subscriptionRoutes from './routes/subscription.routes';
+import logisticsRoutes from './routes/logistics.routes';
+import connectRoutes from './routes/connect.routes';
+import paymentRoutes from './routes/payment.routes';
+import bookingRoutes from './routes/booking.routes';
+import walletRoutes from './routes/wallet.routes';
+import adminRoutes from './routes/admin.routes';
+import marketPricingRoutes from './routes/market-pricing.routes';
+import appRoutes from './routes/app.routes';
+import stripeWebhookRoutes from './routes/stripe-webhook.routes';
+import communicationRoutes from './routes/communication.routes';
+import issuingRoutes from './routes/issuing.routes';
+import verificationRoutes from './routes/verification.routes';
+import globalAiPricingRoutes from './routes/global-ai-pricing.routes';
+import marketAvailabilityRoutes from './routes/market-availability.routes';
+import driverOnboardingRoutes from './routes/driver-onboarding.routes';
+import authRoutes from './routes/auth.routes';
+import marketplaceRoutes from './routes/marketplace.routes';
+import localServicesRoutes from './routes/local-services.routes';
+import { dispatchService } from './services/dispatch.service';
+import { marketplaceCleanupService } from './services/marketplace-cleanup.service';
+
+import { HealthService } from './services/health.service';
+
+const app = express();
+
+app.use((req: any, res: any, next: any) => {
+  const allowedOrigins = [
+    'https://movabi-develop.apps.evolsolution.com',
+    'http://localhost:4200',
+    'http://localhost:3000',
+    'http://localhost:8100',
+    'https://localhost',
+    'capacitor://localhost',
+    'ionic://localhost',
+    'https://movabi.apps.evolsolution.com',
+    'https://admin.movabi.apps.evolsolution.com',
+    'https://movabi-api.apps.evolsolution.com'
+  ];
+
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (origin) {
+    console.warn('[CORS] blocked origin', origin);
+  }
+
+  res.header('Vary', 'Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept,Origin,X-Requested-With,apikey,x-client-info,X-Movabi-Journey-Token');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
+  next();
+});
+
+const PORT = Number(process.env['PORT'] || 3001);
+app.set('trust proxy', 1);
+
+// Failsafe middleware
+const failsafeGuard = (req: Request, res: Response, next: NextFunction) => {
+  if (HealthService.isSystemDegraded() && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    // Allow webhooks and admin actions even if degraded (for recovery)
+    if (req.path.startsWith('/api/webhook') || req.path.startsWith('/api/admin')) {
+      return next();
+    }
+    return res.status(503).json({
+      error: 'System is currently in read-only mode due to service degradation.',
+      status: HealthService.getStatus()
+    });
+  }
+  next();
+};
+
+// Rate limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes' }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts, please try again after an hour' }
+});
+
+const bookingLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 5,
+  message: { error: 'Booking rate limit exceeded. Please wait a minute.' }
+});
+
+// CORS configuration
+//
+// 🔥 CRITICAL for your error
+// Apply guards
+app.use(failsafeGuard);
+// Chat reads are authenticated by the communication routes. Give live readers a
+// separate finite budget so they cannot exhaust booking/availability requests.
+const chatReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 120,
+  message: { error: 'Chat refresh limit reached. Please wait a minute.' } });
+const isChatRead = (req: any) => req.method === 'GET' && /^\/communication\/messages\/[0-9a-f-]+(?:\/counts)?$/.test(req.path);
+// Routine operational GETs use a separate bounded budget. Existing route authentication
+// and participant checks still apply; writes/login/booking creation retain their limits.
+const operationalReadLimiter = rateLimit({windowMs:60000,max:120,
+  message:{error:'Refresh limit reached. Please wait before retrying.'}});
+const isOperationalRead = (req: any) => req.method === 'GET' && (
+  /^\/admin-messages(?:\/[0-9a-f-]{36})?\/?$/i.test(req.path) || req.path === '/communication/inbox/counts' || req.path === '/booking/driver-declines' || req.path === '/app/version' ||
+  /^\/booking\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:customer|nearby-availability)$/i.test(req.path)
+);
+const journeyLimiter = rateLimit({windowMs:60000,max:120,message:{error:'Journey update limit reached'}});
+app.use('/api/', (req,res,next) => req.path.startsWith('/journey/') ? journeyLimiter(req,res,next) : next());
+app.use('/api/', (req, res, next) => req.path.startsWith('/journey/') ? next() : isChatRead(req)
+  ? chatReadLimiter(req, res, next) : isOperationalRead(req)
+  ? operationalReadLimiter(req, res, next) : globalLimiter(req, res, next));
+app.use('/api/booking/create', bookingLimiter);
+
+// Stripe webhook needs raw body for signature verification
+app.use('/api/subscriptions/webhook', bodyParser.raw({ type: 'application/json' }));
+app.use('/api/webhook/stripe', bodyParser.raw({ type: 'application/json' }), stripeWebhookRoutes);
+
+// Other routes use JSON body
+app.use(bodyParser.json());
+
+// Routes
+app.use('/api/maps-v23', mapsV23Routes);
+app.use('/api/app', appRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/logistics', logisticsRoutes);
+app.use('/api/journey', journeyRoutes);
+app.use('/api/connect', connectRoutes);
+app.use('/api/market-safety', marketSafetyRoutes);
+app.use('/api/payment/market-provider', marketProviderLookupRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/booking', bookingRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/communication', communicationRoutes);
+app.use('/api/admin-messages', adminMessagingRoutes);
+app.use('/api/issuing', issuingRoutes);
+  app.use('/api/verification', verificationRoutes);
+  app.use('/api/driver-onboarding', driverOnboardingRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/local-services', localServicesRoutes);
+app.use('/api/pricing/global-ai', globalAiPricingRoutes);
+app.use('/api/markets', marketAvailabilityRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/admin/market-pricing', marketPricingRoutes);
+app.use('/api/stripe/connect', connectRoutes);
+app.use('/api/connect', connectRoutes);
+
+// Start Background Jobs
+setInterval(() => {
+  dispatchService.runDispatchEngine();
+}, 10000);
+
+marketplaceCleanupService.start();
+
+setInterval(() => {
+  HealthService.checkHealth();
+}, 60000); // Check health every minute
+
+// Health check
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+
+// Error handling middleware
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// Graceful startup with error handling
+try {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    JobPayoutService.start();
+    BookingSupportService.start();
+    AdminMessagingService.start();
+    GbMotMonitorService.start();
+    let shoppingCleanupRunning = false;
+    setInterval(() => {
+      if (shoppingCleanupRunning) return;
+      shoppingCleanupRunning = true;
+      void ShoppingBudgetService.cleanup().catch(error => console.error('[ShoppingBudget] cleanup failed', error.message))
+        .finally(() => { shoppingCleanupRunning = false; });
+    }, 60000);
+    
+    // Check for critical missing environment variables
+    const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingVars.length > 0) {
+      console.error(`[CRITICAL] Missing required environment variables: ${missingVars.join(', ')}`);
+      console.error('[CRITICAL] Server started in degraded mode. Some features may not work correctly.');
+      console.error('[CRITICAL] Please set the following environment variables and restart:');
+      missingVars.forEach(varName => {
+        console.error(`[CRITICAL] - ${varName}`);
+      });
+    }
+    
+    // Check for optional but recommended environment variables
+    const optionalEnvVars = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
+    const missingOptional = optionalEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingOptional.length > 0) {
+      console.warn(`[WARNING] Missing optional environment variables: ${missingOptional.join(', ')}`);
+      console.warn('[WARNING] Some payment features may not work correctly.');
+    }
+  });
+} catch (error: any) {
+  console.error('[FATAL] Failed to start server:', error.message);
+  
+  if (error.message.includes('SUPABASE_URL') || error.message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+    console.error('[FATAL] Required Supabase environment variables are missing.');
+    console.error('[FATAL] Please set the following environment variables:');
+    console.error('[FATAL] - SUPABASE_URL');
+    console.error('[FATAL] - SUPABASE_SERVICE_ROLE_KEY');
+  }
+  
+  process.exit(1);
+}

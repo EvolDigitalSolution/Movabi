@@ -1,33 +1,36 @@
 import { Router, Request, Response } from 'express';
 import { LogisticsService } from '../services/logistics.service';
 import { dispatchService } from '../services/dispatch.service';
+import { MarketplaceConfigService } from '../services/marketplace-config.service';
+import { supabaseAdmin } from '../services/supabase.service';
 
 const router = Router();
+
+async function getAuthUserId(req: Request): Promise<string | null> {
+  const existing = (req as any).user?.id || (req as any).auth?.user?.id;
+  if (existing) return String(existing);
+
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user?.id) {
+    console.warn('[LogisticsRoutes] auth token decode failed:', error?.message || 'No user on token');
+    return null;
+  }
+
+  return data.user.id;
+}
 
 /**
  * Calculate distance and price for a potential job
  */
 router.post('/calculate-price', async (req: Request, res: Response) => {
-  try {
-    const { pickup, dropoff } = req.body;
-    if (!pickup || !dropoff || !pickup.lat || !pickup.lng || !dropoff.lat || !dropoff.lng) {
-      return res.status(400).json({ error: 'Pickup and dropoff coordinates required' });
-    }
-
-    const distance = LogisticsService.calculateDistance(
-      pickup.lat, pickup.lng,
-      dropoff.lat, dropoff.lng
-    );
-    const price = LogisticsService.calculatePrice(distance);
-
-    res.json({
-      estimated_distance: distance,
-      estimated_price: price
-    });
-  } catch (error: any) {
-    console.error('Price calculation error:', error);
-    res.status(500).json({ error: error.message });
-  }
+  return res.status(410).json({
+    error: 'Legacy pricing endpoint retired',
+    code: 'AUTHORITATIVE_QUOTE_REQUIRED',
+    quoteEndpoint: '/api/pricing/global-ai/quote'
+  });
 });
 
 /**
@@ -43,10 +46,30 @@ router.post('/payout-breakdown', async (req: Request, res: Response) => {
     const { data: profile, error } = await LogisticsService.findDriverProfile(driverId);
     if (error || !profile) throw new Error('Driver profile not found');
 
+    const effectiveCommission = await MarketplaceConfigService.getEffectiveCommissionPercent(
+      null,
+      null,
+      String(profile.tier || '') || null,
+      null
+    );
+
+    const platformFeeConfig = await MarketplaceConfigService.getEffectivePlatformFeeConfig(null);
+    const platformFeeAmount = platformFeeConfig.enabled
+      ? platformFeeConfig.type === 'fixed'
+        ? Number(platformFeeConfig.fixedAmount || 0)
+        : platformFeeConfig.type === 'fixed_plus_percentage'
+          ? Number(platformFeeConfig.fixedAmount || 0) + (Number(totalPrice) * (Number(platformFeeConfig.percent || 0) / 100))
+          : Number(totalPrice) * (Number(platformFeeConfig.percent || 0) / 100)
+      : 0;
+    const platformFeePercent = Number(totalPrice) > 0
+      ? (platformFeeAmount / Number(totalPrice)) * 100
+      : 0;
+
     const breakdown = LogisticsService.calculatePayout(
-      totalPrice, 
-      profile.pricing_plan || 'starter', 
-      profile.commission_rate || 15.00
+      totalPrice,
+      profile.pricing_plan || 'starter',
+      effectiveCommission,
+      platformFeePercent
     );
 
     res.json(breakdown);
@@ -79,12 +102,41 @@ router.post('/suggest-drivers', async (req: Request, res: Response) => {
  */
 router.post('/enqueue', async (req: Request, res: Response) => {
   try {
-    const { jobId, tenantId, cityId } = req.body;
-    if (!jobId || !tenantId) {
-      return res.status(400).json({ error: 'jobId and tenantId required' });
+    const { jobId } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId required' });
     }
 
-    const { data, error } = await dispatchService.enqueueJob(jobId, tenantId, cityId);
+    // C2: dispatch is a server-owned transition. The actor must be authenticated,
+    // must own the job, and the job must already be paid — otherwise a customer
+    // could broadcast an unpaid job as accept-ready.
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select('id,customer_id,tenant_id,city_id,payment_status,status')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (jobError || !job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.customer_id !== authUserId) {
+      return res.status(403).json({ error: 'Only the customer can enqueue this job' });
+    }
+
+    const paid = ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded']
+      .includes(String(job.payment_status || '').toLowerCase());
+    if (!paid) {
+      return res.status(409).json({ error: 'Job must be paid before dispatch', code: 'PAYMENT_REQUIRED' });
+    }
+
+    const tenantId = job.tenant_id;
+    const { data, error } = await dispatchService.enqueueJob(jobId, tenantId, job.city_id);
     if (error) {
       console.error('[LogisticsRoutes] enqueue dispatch error:', error);
       return res.status(500).json({
@@ -112,12 +164,23 @@ router.post('/complete', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'jobId required' });
     }
 
-    const data = await LogisticsService.completeJob(jobId, completionPin);
+    const authUserId = await getAuthUserId(req);
+    if (!authUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const data = await LogisticsService.completeJob(jobId, completionPin, authUserId);
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Complete job error:', error);
     const message = String(error?.message || 'Failed to complete job');
-    const status = /pin|required|incorrect/i.test(message) ? 400 : 500;
+    const status = /only the assigned driver/i.test(message)
+      ? 403
+      : /reconciliation|frozen|authorized payment amount/i.test(message)
+        ? 409
+        : /pin|required|incorrect/i.test(message)
+        ? 400
+        : 500;
     res.status(status).json({ error: message });
   }
 });

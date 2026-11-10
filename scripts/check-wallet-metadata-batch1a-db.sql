@@ -1,0 +1,13 @@
+-- Superseded.
+--
+-- This single-psql harness has been replaced by a guarded runner that uses
+-- separate psql invocations with exit-status capture and reconnect
+-- verification. Use:
+--
+--   EXPECTED_DB=vaydu_batch1a_test ./scripts/run-wallet-metadata-batch1a-db.sh
+--
+-- Supporting files:
+--   scripts/check-wallet-metadata-batch1a-fixture.sql   (synthetic fixture + snapshot + NOLOGIN roles)
+--   scripts/check-wallet-metadata-batch1a-assert.sql    (hard RAISE assertions)
+--   scripts/check-wallet-metadata-batch1a-diff.sql      (schema diff vs pre-attempt snapshot)
+--   scripts/check-wallet-metadata-batch1a.sql           (rollback-only schema check)

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "operator_dashboard_review",
+  "providerEnvironment": "test",
+  "merchantId": "",
+  "businessName": "",
+  "configuredReference": "vaydu-flutterwave-test-ng",
+  "testBusinessViewed": false,
+  "testCredentialBindingConfirmed": false,
+  "ngnBankDestinationSetupApproved": false
+}

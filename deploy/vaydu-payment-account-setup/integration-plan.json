@@ -1,0 +1,56 @@
+{
+  "purpose": "selected-ng-driver-onboarding-integration-v1",
+  "archiveSha256": "342c495d392092637376d48da9e3d4376de4b34609deb3588d17bd97872b6c23",
+  "baselineApiImage": "sha256:1ef978c931bf390273f4648f6c8bdce04231338d64ae7c6ead7e4e10d723c6aa",
+  "files": [
+    {
+      "path": "server/index.ts",
+      "beforeSha256": "329e1047e0602a0f837c220ebb67b3a024167176100128c9ab4509e576bbd302",
+      "afterSha256": "d0f7773575ae3025d094fe7dcf4afbf24304f6794fb3eda8492b59511008d277",
+      "operations": [
+        {
+          "before": "app.use('/api/payment', paymentRoutes);",
+          "after": "require('/app/server/payment-account-closure/mount.cjs')(app, {db: require('/app/server/services/supabase.service').supabaseAdmin});\napp.use('/api/payment', paymentRoutes);"
+        }
+      ]
+    },
+    {
+      "path": "server/routes/driver-onboarding.routes.ts",
+      "beforeSha256": "3b2daa18d92b0f20f6062b253a89b2a4611c7a21850066b3422cd31870d0cbf1",
+      "afterSha256": "de0c5924a003c4da5ed4cb4e1ba4054ccd1b2ed5f6ece05a48f457a9c71d052f",
+      "operations": [
+        {
+          "before": "    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});",
+          "after": "    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city,paymentAccountRequired:driverId==='318e6be9-9164-41fa-bb0c-c5ccd3526585',paymentAccount:await vayduSetupForOnboarding(driverId,req.app)});"
+        },
+        {
+          "before": "    const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city});",
+          "after": "    const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city,paymentAccountRequired:driverId==='318e6be9-9164-41fa-bb0c-c5ccd3526585',paymentAccount:await vayduSetupForOnboarding(driverId,req.app)});"
+        },
+        {
+          "before": "export default router;",
+          "after": "async function vayduSetupForOnboarding(driverId: string, app: any): Promise<any> {\r\n  if (driverId !== '318e6be9-9164-41fa-bb0c-c5ccd3526585') return undefined;\r\n  try {\r\n    const setup=app.locals.vayduPaymentAccountSetup;\r\n    if(!setup)throw new Error('setup_unavailable');\r\n    return await setup.status(driverId);\r\n  } catch {\r\n    return {provider:'flutterwave',state:'unavailable',available:false};\r\n  }\r\n}\r\n\r\nexport default router;"
+        }
+      ]
+    },
+    {
+      "path": "server/services/driver-requirement.service.ts",
+      "beforeSha256": "5abd560a67e36d4ce9a6ab57d259f3ae7abbb2b4765d3d3cb24782622fed3f47",
+      "afterSha256": "b46388e8b401e4782929c6d31606bc1f5872208be04dc969f2ed0ad49c8f36ec",
+      "operations": [
+        {
+          "before": "now?: Date }): DriverRequirementResolution {",
+          "after": "now?: Date; paymentAccountRequired?: boolean; paymentAccount?: {provider:string|null;state:string;available:boolean} }): DriverRequirementResolution {"
+        },
+        {
+          "before": "    const automaticCodes=new Set(requirements.map(r=>r.code));",
+          "after": "    // Selected develop TEST driver only. Other drivers retain deployed rules.\r\n    if(input.paymentAccountRequired===true){\r\n      const payment=input.paymentAccount;\r\n      const ready=payment?.provider==='flutterwave'&&payment.available===true&&payment.state==='completed';\r\n      const reason=ready?'Payment account destination verified.':payment?.state==='reconciliation_required'\r\n        ?'Payment account setup needs reconciliation before continuing.'\r\n        :'Set up and verify your payment account before submitting onboarding.';\r\n      requirements.push({code:'payout.payment_account',label:'Payment account',category:'documents',status:ready?'completed':'missing',required:true,completed:ready,blockingForSubmission:!ready,blockingForOnline:!ready,needsAdminReview:payment?.state==='reconciliation_required',reason,services:selectedServices});\r\n    }\r\n    const automaticCodes=new Set(requirements.map(r=>r.code));"
+        },
+        {
+          "before": "if(profile.stripe_connect_status!=='connected')warnings.push",
+          "after": "if(input.paymentAccountRequired!==true&&profile.stripe_connect_status!=='connected')warnings.push"
+        }
+      ]
+    }
+  ]
+}

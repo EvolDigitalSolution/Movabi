@@ -457,7 +457,7 @@ export class SubscriptionPlansComponent implements OnInit {
       return 'For active drivers who want priority access to suitable requests, zero platform commission on completed fares, and premium support.';
     }
 
-    return 'Flexible access to Movabi requests with standard matching and support.';
+    return 'Flexible access to Vaydu requests with standard matching and support.';
   }
 
   private isProPlan(plan: SubscriptionPlan): boolean {
@@ -466,7 +466,9 @@ export class SubscriptionPlansComponent implements OnInit {
 
   private hasStarterFeatures(features: string[]): boolean {
     const normalized = features.map(feature => feature.toLowerCase());
-    return normalized.includes('basic job matching') || normalized.some(feature => feature.includes('15% platform fee'));
+    return normalized.includes('basic job matching') || normalized.some(feature =>
+      feature.includes('platform fee') || feature.includes('service commission')
+    );
   }
 
   private defaultProFeatures(): string[] {

@@ -1,0 +1,2 @@
+body{font:17px system-ui;background:#f8fafc;color:#0f172a;margin:0}main{max-width:30rem;margin:3rem auto;padding:1.5rem;border:1px solid #cbd5e1;border-radius:1rem;background:white}button,input{font:inherit;padding:.7rem;margin:.5rem 0}label{display:block}button{display:block;background:#0f172a;color:white;border-radius:.5rem;border:0}button:disabled{opacity:.45}a{display:block;margin-top:1rem}#amount{display:block;max-width:90%}
+[hidden]{display:none!important}

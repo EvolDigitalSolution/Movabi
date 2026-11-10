@@ -1,0 +1,15 @@
+# Automatic country from pickup address
+
+Removes the visible Journey country selector. Ordinary pickup/drop-off address searches use one provider request across the countries saved in Settings, with optional GPS proximity as a ranking hint. An old AU/GB profile or device location no longer excludes Nigerian addresses, and ordinary address suggestions are not clipped by the nearby-shop 10/25km radius. Category queries such as restaurants near me retain their local-radius behaviour and additional listing path.
+
+The authenticated maps search handler accepts global:true, reads configured countries server-side and creates one multi-country search scope. Legacy explicit-country requests remain supported. Both Mapbox and TomTom fallback results are filtered to configured countries and retain their actual country code. Global search does not enable bookings in unlaunched markets; existing quote/booking market authorisation remains required.
+
+Selecting a pickup suggestion with a country sets the internal app country/currency from that country's saved Settings row. There is no customer country dropdown. Saved addresses, manual pins or GPS points missing country context resolve it through the existing reverse endpoint before a quote. Provider lookups and the pickup-country result are cached; country is not inferred from the text label, phone number or IP. Unknown/unconfigured countries stop quoting instead of silently choosing GBP. Changing the pickup during a lookup invalidates the old quote attempt. Ambiguous typed addresses require selecting a suggestion instead of silently accepting the first result on blur.
+
+The new map quote authority switch remains unchanged by this installer. It is currently off in the deployed API. Server-side pickup reverse verification, market currency verification and road-distance authority must be enabled in the reviewed deployment once the UI and country search API are updated. The client supplies context; it never authorises the payment market. A missing Nigerian pricing configuration must fail visibly rather than relabel a GBP fare as NGN.
+
+The background map display remains MapLibre/MapTiler. Its attribution names the base-map provider; address queries use /api/maps-v23. This update adds search-provider attribution to the actual address result trays.
+
+Existing one-minute search/reverse cache, 30-second route/matrix cache, request coalescing, provider cooldowns and fallback are retained. Multi-country search makes one request across the configured list, not one request per country. Matrix and payment flags are not changed. No credentials or database changes are included.
+
+Local standalone validation: 44 actual adapter/pure address-policy tests plus real HTTP auth/configured-country/global-search/input guards with provider/database I/O mocked. Full repository typecheck and both Angular builds must run before deployment. The API and web must both be updated: the currently deployed API does not yet support global:true. Do not deploy only the frontend and expect multi-country search to work.

@@ -1,4 +1,7 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import {DriverPaymentAccountComponent} from '@shared/ui/driver-payment-account.component';
+import {MarketSafetyService} from '../../../../core/services/payments/market-safety.service';
+import { NotificationService } from '../../../../core/services/notification.service';
+import { DestroyRef, Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     IonHeader,
@@ -8,6 +11,8 @@ import {
     IonTitle,
     IonContent,
     IonIcon,
+    IonRefresher,
+    IonRefresherContent,
     IonSelect,
     IonSelectOption,
     LoadingController,
@@ -36,6 +41,7 @@ import { AppConfigService } from '../../../../core/services/config/app-config.se
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { ConnectService } from '../../../../core/services/stripe/connect.service';
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
+import { DriverOnboardingStatusService } from '../../../../core/services/driver/driver-onboarding-status.service';
 
 import { CardComponent, ButtonComponent, BadgeComponent } from '../../../../shared/ui';
 import {
@@ -52,6 +58,7 @@ type DocType = 'license' | 'insurance';
     selector: 'app-driver-settings',
     standalone: true,
     imports: [
+        DriverPaymentAccountComponent,
         CommonModule,
         IonHeader,
         IonToolbar,
@@ -60,6 +67,8 @@ type DocType = 'license' | 'insurance';
         IonTitle,
         IonContent,
         IonIcon,
+        IonRefresher,
+        IonRefresherContent,
         IonSelect,
         IonSelectOption,
         CardComponent,
@@ -80,6 +89,7 @@ type DocType = 'license' | 'insurance';
     </ion-header>
 
     <ion-content class="movabi-page">
+      <ion-refresher slot="fixed" (ionRefresh)="pullToRefresh($event)"><ion-refresher-content></ion-refresher-content></ion-refresher>
       <div class="w-full max-w-xl mx-auto px-3 py-2 space-y-4 pb-16 overflow-x-hidden">
 
         <div class="movabi-hero bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white">
@@ -90,7 +100,7 @@ type DocType = 'license' | 'insurance';
               Account
             </p>
 
-            <h1 class="text-[1.55rem] font-display font-black tracking-tight leading-tight">
+            <h1 class="text-2xl font-display font-black tracking-tight leading-tight">
               Driver Settings
             </h1>
 
@@ -98,21 +108,39 @@ type DocType = 'license' | 'insurance';
               Manage your region, verification documents, vehicle, payouts, and subscription.
             </p>
 
-            <div class="mt-4 flex flex-wrap gap-2">
-              <app-badge [variant]="isVerified() ? 'success' : 'warning'">
+            <div class="mt-4 flex flex-col gap-2 min-[560px]:flex-row min-[560px]:flex-wrap min-[560px]:items-center">
+              <app-badge class="w-fit max-w-full" [variant]="isVerified() ? 'success' : 'warning'">
                 {{ verificationLabel() }}
               </app-badge>
 
-              <app-badge [variant]="isStripeReady() ? 'success' : 'warning'">
-                {{ isStripeReady() ? 'Payouts Ready' : 'Payouts Pending' }}
+              <app-badge class="w-fit max-w-full" [variant]="isStripeReady() ? 'success' : 'warning'">
+                {{ payoutContext.wallet()?.status || 'Payout status unavailable' }}
               </app-badge>
 
-              <app-badge [variant]="isProDriver() ? 'primary' : 'secondary'">
+              <app-badge class="w-fit max-w-full" [variant]="isProDriver() ? 'primary' : 'secondary'">
                 {{ isProDriver() ? 'Pro' : 'Starter' }}
               </app-badge>
             </div>
           </div>
         </div>
+
+        <app-card class="p-4">
+          <h2 class="text-base font-black text-slate-950">Messages from Vaydu</h2>
+          <p class="mt-2 text-xs text-slate-500">Updates and messages from our team.</p>
+          <app-button class="mt-3 w-full" variant="secondary" (clicked)="router.navigate(['/account/messages'])">Open Messages ({{messages.unreadAdminMessageCount()}} unread)</app-button>
+        </app-card>
+        <app-card class="p-4">
+          <h2 class="text-sm font-black text-slate-950">Vehicle & Services</h2>
+          <p class="mt-2 text-xs text-slate-500">Change your vehicle or the services you offer. Changes to approved details require review before you can go online again.</p>
+          <app-button class="mt-3 w-full" variant="secondary" (clicked)="router.navigate(['/driver/onboarding'], {queryParams:{edit:'vehicle'}})">Edit Vehicle & Services</app-button>
+        </app-card>
+
+        <app-card class="p-4"><div class="flex items-center justify-between"><h2 class="text-sm font-black text-slate-950">Information Requests</h2><button class="text-xs font-bold text-blue-600 disabled:opacity-50" [disabled]="onboardingStatus.loading()" (click)="refreshOnboardingStatus()">{{onboardingStatus.error() ? 'Retry' : 'Refresh'}}</button></div>
+          @if(onboardingStatus.loading()){<p class="mt-3 text-xs text-slate-500">Loading requests…</p>}
+          @else if(onboardingStatus.error()){<p class="mt-3 text-xs font-semibold text-rose-600">{{onboardingStatus.error()}}</p>}
+          @else if(!onboardingStatus.state()?.outstandingRequests?.length){<p class="mt-3 text-xs text-slate-500">No information requests. You're all caught up.</p>}
+          @else{@for(request of onboardingStatus.state()!.outstandingRequests;track request.id){<div class="mt-3 rounded-xl border border-slate-100 p-3"><div class="flex flex-col items-start gap-1"><span class="text-xs font-bold">{{request.item}}</span><app-badge [variant]="request.status==='approved'?'success':request.status==='rejected'?'warning':'secondary'">{{request.status}}</app-badge></div><p class="mt-2 text-xs text-slate-500">{{request.adminMessage||request.nextAction}}</p></div>}}
+        </app-card>
 
         @if (isActionRequired()) {
           <app-card class="p-4 border border-rose-100 shadow-rose-100/30">
@@ -125,7 +153,7 @@ type DocType = 'license' | 'insurance';
                 <div>
                   <h2 class="text-sm font-black text-slate-950">Action required</h2>
                   <p class="text-xs text-slate-600 font-semibold leading-relaxed mt-1">
-                    Admin needs more information before your driver account can be approved.
+                    {{ actionRequiredMessage() }}
                   </p>
                 </div>
 
@@ -205,6 +233,10 @@ type DocType = 'license' | 'insurance';
                 </div>
 
                 <label class="block">
+                  <span class="text-[10px] font-black uppercase text-slate-400">Residential address</span>
+                  <textarea class="mt-1 w-full rounded-2xl border border-slate-200 p-3 text-sm" [value]="residentialAddressDraft()" (input)="residentialAddressDraft.set($any($event.target).value)" placeholder="Street, town and postcode"></textarea>
+                </label>
+                @if (dateOfBirthEditable()) {<label class="block">
                   <span class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</span>
                   <input
                     type="date"
@@ -212,7 +244,7 @@ type DocType = 'license' | 'insurance';
                     [value]="dateOfBirthDraft()"
                     (input)="onDateOfBirthInput($event)"
                   >
-                </label>
+                </label>} @else {<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4"><p class="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Date of birth</p><p class="mt-1 text-sm font-bold text-slate-900">{{formattedDateOfBirth()}}</p><p class="mt-2 text-xs font-bold text-slate-600">Locked identity information</p><p class="mt-1 text-xs text-slate-500">Your date of birth is used for identity and driver eligibility checks.</p><button type="button" class="mt-3 text-xs font-bold text-blue-600" (click)="requestDobCorrection()">Request a correction</button></div>}
 
                 <app-button size="sm" class="w-full" [disabled]="savingPersonalDetails()" (clicked)="savePersonalDetails()">
                   {{ savingPersonalDetails() ? 'Saving...' : 'Save Personal Details' }}
@@ -275,6 +307,8 @@ type DocType = 'license' | 'insurance';
             <h2 class="movabi-section-title">Verification</h2>
           </div>
 
+          <p class="text-xs text-slate-500">Document requirements depend on your operating country and selected services. Open your setup form to review licensing details and requested uploads.</p>
+          <app-button class="w-full" variant="secondary" (clicked)="router.navigate(['/driver/onboarding'])">Review documents &amp; licensing details</app-button>
           <div class="space-y-2">
             <app-card class="p-4 cursor-pointer active:scale-[0.98] transition-transform" (click)="handleDocumentClick('license')">
               <div class="flex items-center justify-between gap-3">
@@ -284,7 +318,7 @@ type DocType = 'license' | 'insurance';
                   </div>
 
                   <div class="min-w-0">
-                    <h3 class="text-sm font-black text-slate-950">Driver Licence</h3>
+                    <h3 class="text-sm font-black text-slate-950">Driving licence</h3>
                     <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.1em] mt-0.5 leading-snug">
                       {{ docs().license ? 'Document saved' : 'Required for manual review' }}
                     </p>
@@ -356,6 +390,8 @@ type DocType = 'license' | 'insurance';
           </app-card>
         </section>
 
+        <app-driver-payment-account (providerChange)="bankPaymentAccount.set($event)" />
+        @if (!bankPaymentAccount()) {
         <section class="space-y-2">
           <div class="movabi-section-header">
             <h2 class="movabi-section-title">Payments & Payouts</h2>
@@ -363,46 +399,57 @@ type DocType = 'license' | 'insurance';
 
           <app-card class="p-4">
             <div class="space-y-3">
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-3 min-w-0">
-                  <div class="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shrink-0">
-                    <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
-                  </div>
-
-                  <div class="min-w-0">
-                    <h3 class="text-sm font-black text-slate-950">Stripe Connect</h3>
-                    <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.1em] mt-0.5 leading-snug">
-                      {{ stripeSubtitle() }}
-                    </p>
-                  </div>
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shrink-0">
+                  <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
                 </div>
 
+                <div class="min-w-0">
+                  <h3 class="text-lg font-black text-slate-950">Payment account</h3>
+                  <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.1em] mt-0.5 leading-snug">
+                    {{ stripeSubtitle() }}
+                  </p>
+                </div>
+              </div>
+
+              <div>
                 <app-badge [variant]="getStripeBadgeVariant()">
-                  {{ getStripeBadgeText() }}
+                  {{ payoutBadgeText() }}
                 </app-badge>
               </div>
 
-              @if (!isStripeReady()) {
+              @if (isStripeReady()) {
+                <p class="text-sm text-slate-700">Ready to receive earnings.</p>
+              }
+
+              @if (payoutContext.wallet()?.payoutIntegrationAvailable !== true) {
+                <div class="bg-amber-50 rounded-2xl p-3 border border-amber-100 flex gap-3">
+                  <ion-icon name="alert-circle-outline" class="text-amber-600 text-xl shrink-0 mt-0.5"></ion-icon>
+                  <p class="text-xs text-amber-900 leading-relaxed font-semibold">
+                    Payment account setup is not available in your market yet.
+                  </p>
+                </div>
+              } @else if (!isStripeReady()) {
                 <div class="bg-amber-50 rounded-2xl p-3 border border-amber-100 flex gap-3">
                   <ion-icon name="alert-circle-outline" class="text-amber-600 text-xl shrink-0 mt-0.5"></ion-icon>
 
                   <div class="space-y-2 flex-1">
                     <p class="text-xs text-amber-900 leading-relaxed font-semibold">
-                      Complete Stripe onboarding to receive payouts directly to your bank account.
+                      {{isStripePending() ? 'Your payment account setup has started but is not fully enabled yet.' : 'Set up your payment account to receive earnings from completed jobs.'}}
                     </p>
 
                     <app-button size="sm" class="w-full" [disabled]="loadingStripe()" (clicked)="setupStripe()">
-                      {{ loadingStripe() ? 'Opening...' : (isStripePending() ? 'Continue Setup' : 'Complete Setup') }}
+                      {{ loadingStripe() ? 'Opening...' : (isStripePending() ? 'Continue setup' : 'Set up payment account') }}
                     </app-button>
                   </div>
                 </div>
               } @else {
-                <div class="grid grid-cols-2 gap-2">
-                  <app-button variant="secondary" size="sm" class="w-full" [disabled]="loadingStripe()" (clicked)="openStripeDashboard()">
+                <div class="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2">
+                  <app-button variant="secondary" size="sm" class="w-full" [disabled]="loadingStripe() || !payoutContext.wallet()?.payoutIntegrationAvailable" (clicked)="openStripeDashboard()">
                     Dashboard
                   </app-button>
 
-                  <app-button variant="secondary" size="sm" class="w-full" [disabled]="loadingStripe()" (clicked)="refreshStripe()">
+                  <app-button variant="secondary" size="sm" class="w-full" [disabled]="loadingStripe() || !payoutContext.wallet()?.payoutIntegrationAvailable" (clicked)="refreshStripe()">
                     Refresh
                   </app-button>
                 </div>
@@ -410,19 +457,20 @@ type DocType = 'license' | 'insurance';
             </div>
           </app-card>
         </section>
+        }
 
         <section class="space-y-2">
           <div class="movabi-section-header">
-            <h2 class="movabi-section-title">Movabi Pay Card</h2>
+            <h2 class="movabi-section-title">Vaydu Pay Card</h2>
           </div>
 
           <app-card class="p-4">
             <div class="space-y-3">
               <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
-                  <h3 class="text-sm font-black text-slate-950">Errand item budgets</h3>
+                  <h3 class="text-sm font-black text-slate-950">Shop item budgets</h3>
                   <p class="text-xs text-slate-500 font-semibold leading-relaxed mt-1">
-                    Choose how you want to spend approved customer item budgets. Virtual card is instant. Posted card must be received before budget errands can be accepted.
+                    Choose how you want to spend approved customer item budgets. Virtual card is instant. Posted card must be received before budget shop jobs can be accepted.
                   </p>
                 </div>
                 <app-badge [variant]="cardPreference() === 'posted' && physicalCardStatus() !== 'received' ? 'warning' : 'success'">
@@ -448,14 +496,14 @@ type DocType = 'license' | 'insurance';
                   (click)="setCardPreference('posted')"
                 >
                   <span class="block text-xs font-black">Posted card</span>
-                  <span class="block text-[10px] font-bold mt-1 leading-snug">Wait for the physical Movabi card.</span>
+                  <span class="block text-[10px] font-bold mt-1 leading-snug">Wait for the physical Vaydu card.</span>
                 </button>
               </div>
 
               @if (cardPreference() === 'posted') {
                 <div class="rounded-2xl border border-amber-100 bg-amber-50 p-3">
                   <p class="text-xs font-semibold leading-relaxed text-amber-900">
-                    Posted card drivers cannot accept errand item-budget jobs until the card is marked as received.
+                    Posted card drivers cannot accept shop item-budget jobs until the card is marked as received.
                   </p>
                   <app-button class="mt-3" size="sm" color="success" [disabled]="physicalCardStatus() === 'received'" (clicked)="confirmPhysicalCardReceived()">
                     {{ physicalCardStatus() === 'received' ? 'Card Received' : 'I have received my card' }}
@@ -482,7 +530,7 @@ type DocType = 'license' | 'insurance';
                 <div class="min-w-0">
                   <h3 class="text-sm font-black text-slate-950">{{ isProDriver() ? 'Pro Plan' : 'Starter Plan' }}</h3>
                   <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.1em] mt-0.5 leading-snug">
-                    {{ isProDriver() ? '0% service commission while active' : 'Default plan • 15% commission' }}
+                    {{ isProDriver() ? '0% service commission while active' : 'Default plan - admin-configured commission' }}
                   </p>
                 </div>
               </div>
@@ -500,7 +548,7 @@ type DocType = 'license' | 'insurance';
           </app-button>
 
           <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest text-center mt-4">
-            Movabi Driver v1.0.0
+            Vaydu Driver v1.0.0
           </p>
         </div>
       </div>
@@ -508,6 +556,7 @@ type DocType = 'license' | 'insurance';
   `
 })
 export class DriverSettingsPage implements OnInit {
+    bankPaymentAccount=signal(false);
     public router = inject(Router);
     public driverService = inject(DriverService);
     public config = inject(AppConfigService);
@@ -518,8 +567,10 @@ export class DriverSettingsPage implements OnInit {
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
+    readonly onboardingStatus = inject(DriverOnboardingStatusService);
 
     profile = this.profileService.profile;
+    readonly messages = inject(NotificationService);
     vehicle = this.driverService.vehicle;
     stripeAccount = this.driverService.stripeAccount;
 
@@ -532,12 +583,19 @@ export class DriverSettingsPage implements OnInit {
         };
     });
 
+    readonly payoutContext=inject(MarketSafetyService);
     loadingStripe = signal(false);
     resubmitting = signal(false);
     savingPersonalDetails = signal(false);
+    residentialAddressDraft = signal('');
     dateOfBirthDraft = signal('');
 
     constructor() {
+        const destroyRef = inject(DestroyRef);
+        const resumeSubscription = this.connectService.returnedToApp.subscribe(() => {
+            if (this.router.url.split('?')[0] === '/driver/settings') void this.driverService.fetchStripeAccount(true).catch(error => console.warn('[Stripe] Resume refresh failed', error));
+        });
+        destroyRef.onDestroy(() => resumeSubscription.unsubscribe());
         addIcons({
             alertCircleOutline,
             cardOutline,
@@ -553,13 +611,32 @@ export class DriverSettingsPage implements OnInit {
         });
     }
 
-    async ngOnInit() {
-        await Promise.all([
-            this.driverService.fetchVehicle(),
-            this.driverService.fetchStripeAccount()
-        ]);
+    async ngOnInit(): Promise<void> {
+        this.messages.initialize();
+        void this.messages.fetchNotifications().catch(() => undefined);
         this.syncPersonalDraft();
     }
+
+    async ionViewWillEnter(): Promise<void> {
+        await this.refreshPageData(true);
+    }
+
+    private async refreshPageData(forceStripe: boolean): Promise<void> {
+        await this.payoutContext.refreshWallet().catch(()=>undefined);
+        const results = await Promise.allSettled([
+            this.driverService.fetchVehicle(),
+            this.driverService.fetchStripeAccount(forceStripe),
+            this.onboardingStatus.refresh()
+        ]);
+        const labels = ['vehicle', 'stripe', 'onboarding-status'] as const;
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') console.warn(`[DriverSettings] ${labels[index]} load failed`, result.reason);
+        });
+        this.syncPersonalDraft();
+    }
+
+    async refreshOnboardingStatus(): Promise<void> { try { await this.onboardingStatus.refresh(); } catch { /* state exposes the error */ } }
+    async pullToRefresh(event: CustomEvent): Promise<void> { await this.refreshPageData(true); await (event.target as HTMLIonRefresherElement).complete(); }
 
     isVerified(): boolean {
         const profile = this.profile() as DriverProfile | null;
@@ -572,8 +649,8 @@ export class DriverSettingsPage implements OnInit {
     }
 
     isActionRequired(): boolean {
-        const profile = this.profile() as DriverProfile | null;
-        return profile?.driver_review_status === 'action_required' || profile?.verification_status === 'action_required';
+        // Canonical authority: current eligibility, not a stale persisted flag.
+        return this.onboardingStatus.state()?.overallStatus === 'action_required';
     }
 
     verificationNotes(): string | null {
@@ -582,22 +659,28 @@ export class DriverSettingsPage implements OnInit {
     }
 
     reviewBlockers(): string[] {
-        const profile = this.profile() as DriverProfile | null;
-        const vehicle = this.vehicle() as Vehicle | null;
-        const selectedServices = normaliseSelectedServices(profile, vehicle);
-        const authUser = this.auth.currentUser();
-        const engineBlockers = getBlockingRequirements({
-            countryCode: (profile as any)?.country_code || (profile as any)?.country,
-            driver: { ...(profile || {}), auth_email: authUser?.email, user: authUser },
-            vehicle,
-            documents: { ...(profile || {}), ...(vehicle || {}) },
-            selectedServices
-        }).map(requirement => requirement.message);
+        // Canonical automatic requirement blockers (server-authoritative), not
+        // the shared engine or stale persisted blocker text. This keeps
+        // "automatic requirements" distinct from "explicit Admin requests".
+        const state = this.onboardingStatus.state();
+        const automatic = (state?.automaticRequirements || [])
+            .filter((requirement) => requirement.blockingForSubmission)
+            .map((requirement) => requirement.reason);
+        return Array.from(new Set(automatic));
+    }
 
-        return this.filterResolvedBlockers([
-            ...this.parseStringList(profile?.driver_review_blockers ?? profile?.verification_blockers),
-            ...engineBlockers
-        ], profile, vehicle, selectedServices);
+    hasOutstandingRequests(): boolean {
+        return !!(this.onboardingStatus.state()?.outstandingRequests?.length);
+    }
+
+    actionRequiredMessage(): string {
+        if (this.hasOutstandingRequests()) {
+            return 'Admin needs more information before your driver account can be approved.';
+        }
+        if (this.reviewBlockers().length) {
+            return 'Complete the following requirements before you can continue:';
+        }
+        return 'Your application needs to be resubmitted for review.';
     }
 
     private filterResolvedBlockers(blockers: string[], profile: DriverProfile | null, vehicle: Vehicle | null, selectedServices: string[]): string[] {
@@ -666,15 +749,24 @@ export class DriverSettingsPage implements OnInit {
         );
     }
 
+    payoutBadgeText(): string {
+        if (this.payoutContext.walletError()) return 'Payout status unavailable';
+        const status = String(this.payoutContext.wallet()?.status || '');
+        if (this.isStripeReady()) return 'Payout account connected';
+        if (/pending|required|review|progress/i.test(status)) return 'Payment account setup pending';
+        return status || 'Payout status unavailable';
+    }
+
     isStripePending(): boolean {
         const account = this.stripeAccount();
         return !!(account?.stripe_account_id && !this.isStripeReady());
     }
 
     getStripeBadgeText(): string {
+        if (this.payoutContext.wallet()?.payoutIntegrationAvailable !== true) return 'Unavailable';
         if (this.isStripeReady()) return 'Connected';
-        if (this.isStripePending()) return 'Pending';
-        return 'Not Started';
+        if (this.isStripePending()) return 'In progress';
+        return 'Not started';
     }
 
     getStripeBadgeVariant(): 'success' | 'warning' | 'secondary' {
@@ -684,9 +776,10 @@ export class DriverSettingsPage implements OnInit {
     }
 
     stripeSubtitle(): string {
-        if (this.isStripeReady()) return 'Charges and payouts enabled';
-        if (this.isStripePending()) return 'Stripe needs more information';
-        return 'Setup required for payouts';
+        if (this.payoutContext.wallet()?.payoutIntegrationAvailable !== true) return 'Setup unavailable in this market';
+        if (this.isStripeReady()) return 'Ready to receive earnings';
+        if (this.isStripePending()) return 'Setup in progress';
+        return 'Setup required';
     }
 
     isProDriver(): boolean {
@@ -729,6 +822,10 @@ export class DriverSettingsPage implements OnInit {
         this.dateOfBirthDraft.set((event.target as HTMLInputElement).value || '');
     }
 
+    dateOfBirthEditable(){return this.onboardingStatus.state()?.identityEditability?.dateOfBirthEditable===true;}
+    formattedDateOfBirth(){const value=this.onboardingStatus.state()?.canonicalProfile?.dateOfBirth;if(!value)return'Date of birth unavailable';const date=new Date(`${value}T00:00:00Z`);return new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(date);}
+    async requestDobCorrection(){const reason=window.prompt('Briefly explain why your date of birth needs correcting.','');if(!reason)return;try{await this.onboardingStatus.requestDobCorrection(reason);await this.showToast('Date of birth correction requested. We’ll review your request.','success');}catch(error){await this.showToast(error instanceof Error?error.message:'Could not request a correction.','danger');}}
+
     async savePersonalDetails() {
         const user = this.auth.currentUser();
         if (!user?.id || this.savingPersonalDetails()) return;
@@ -736,18 +833,20 @@ export class DriverSettingsPage implements OnInit {
         this.savingPersonalDetails.set(true);
 
         try {
-            await this.profileService.updateProfile(user.id, {
-                date_of_birth: this.dateOfBirthDraft() || null
-            } as any);
+            const residentialAddress = this.residentialAddressDraft().trim();
+            if (residentialAddress.length < 5) throw new Error('Enter your full residential address.');
+            await this.onboardingStatus.saveCurrentProfile({residentialAddress, ...(this.dateOfBirthEditable() ? {dateOfBirth:this.dateOfBirthDraft()} : {})});
 
             if (typeof (this.profileService as any).fetchProfile === 'function') {
                 await (this.profileService as any).fetchProfile(user.id);
             }
 
             this.syncPersonalDraft();
+            await this.onboardingStatus.recordEvent('driver_profile_updated_for_review', 'personal_details', null, 'updated');
+            await this.refreshOnboardingStatus();
             await this.showToast('Personal details saved.', 'success');
-        } catch {
-            await this.showToast('Could not save personal details.', 'danger');
+        } catch (error) {
+            await this.showToast(error instanceof Error ? error.message : 'Could not save personal details.', 'danger');
         } finally {
             this.savingPersonalDetails.set(false);
         }
@@ -755,6 +854,7 @@ export class DriverSettingsPage implements OnInit {
 
     private syncPersonalDraft() {
         const profile = this.profile() as any;
+        this.residentialAddressDraft.set(String(this.onboardingStatus.state()?.canonicalProfile?.residentialAddress || profile?.current_address || ''));
         this.dateOfBirthDraft.set(this.formatDateForInput(profile?.date_of_birth ?? profile?.dob));
     }
 
@@ -773,7 +873,7 @@ export class DriverSettingsPage implements OnInit {
 
         try {
             const url = await this.driverService.setupStripeConnect();
-            window.location.href = url;
+            await this.connectService.openOnboarding(url);
         } catch {
             await this.showToast('Failed to load Stripe setup.', 'danger');
         } finally {
@@ -783,46 +883,31 @@ export class DriverSettingsPage implements OnInit {
     }
 
     async openStripeDashboard() {
-        const accountId = this.driverService.stripeAccount()?.stripe_account_id;
-
-        if (!accountId) {
-            await this.showToast('Stripe account not found.', 'warning');
-            return;
-        }
-
-        if (this.loadingStripe()) return;
-
+        if(this.loadingStripe())return;
+        const accountId=this.driverService.stripeAccount()?.stripe_account_id;
+        if(!accountId){await this.showToast('Stripe account not found.','warning');return;}
         this.loadingStripe.set(true);
-
-        const loading = await this.loadingCtrl.create({ message: 'Opening Stripe dashboard...' });
-        await loading.present();
-
-        try {
-            const link = await this.connectService.getDashboardLink(accountId);
-            window.location.href = link.url;
-        } catch {
-            await this.showToast('Failed to open Stripe dashboard.', 'danger');
-        } finally {
-            this.loadingStripe.set(false);
-            await loading.dismiss();
-        }
+        let dashboardTab:Window|null=null;
+        let loading:HTMLIonLoadingElement|undefined;
+        try{
+            dashboardTab=this.connectService.prepareDashboardTab();
+            loading=await this.loadingCtrl.create({message:'Opening Stripe dashboard...'});
+            await loading.present();
+            const link=await this.connectService.getDashboardLink(accountId);
+            await this.connectService.openDashboard(link.url,dashboardTab);
+        }catch(error:any){
+            dashboardTab?.close();
+            await this.showToast(error?.message || 'Failed to open Stripe dashboard.','danger');
+        }finally{this.loadingStripe.set(false);await loading?.dismiss();}
     }
 
     async refreshStripe() {
-        const accountId = this.driverService.stripeAccount()?.stripe_account_id;
-
-        if (!accountId) {
-            await this.showToast('Stripe account not found.', 'warning');
-            return;
-        }
-
         if (this.loadingStripe()) return;
 
         this.loadingStripe.set(true);
 
         try {
-            await this.driverService.refreshStripeStatus(accountId, true);
-            await this.driverService.fetchStripeAccount();
+            await this.driverService.fetchStripeAccount(true);
             await this.showToast('Stripe status refreshed.', 'success');
         } catch {
             await this.showToast('Could not refresh Stripe status.', 'danger');
@@ -880,9 +965,9 @@ export class DriverSettingsPage implements OnInit {
                 movabi_pay_card_preference: preference,
                 movabi_pay_physical_card_status: preference === 'posted' ? this.physicalCardStatus() : 'not_requested'
             } as any);
-            await this.showToast(preference === 'virtual' ? 'Virtual Movabi Pay selected.' : 'Posted Movabi card selected.', 'success');
+            await this.showToast(preference === 'virtual' ? 'Virtual Vaydu Pay selected.' : 'Posted Vaydu card selected.', 'success');
         } catch {
-            await this.showToast('Could not update Movabi Pay card choice.', 'danger');
+            await this.showToast('Could not update Vaydu Pay card choice.', 'danger');
         }
     }
 
@@ -896,7 +981,7 @@ export class DriverSettingsPage implements OnInit {
                 movabi_pay_physical_card_status: 'received',
                 movabi_pay_physical_card_received_at: new Date().toISOString()
             } as any);
-            await this.showToast('Physical Movabi card confirmed.', 'success');
+            await this.showToast('Physical Vaydu card confirmed.', 'success');
         } catch {
             await this.showToast('Could not confirm card received.', 'danger');
         }
@@ -911,45 +996,43 @@ export class DriverSettingsPage implements OnInit {
         await this.uploadDoc(type);
     }
 
+    /**
+     * Batch 2C Phase B — resubmission is server-authoritative (N13).
+     *
+     * This method used to write driver_review_status / verification_status /
+     * verification_blockers / driver_review_blockers straight to `profiles` from
+     * the browser, and it CHOSE the review state itself from a client-side
+     * blocker list. Both are gone: the authenticated onboarding endpoint derives
+     * the driver from the session, re-validates the requirements server-side and
+     * applies the server-defined review state. The client submits no status, no
+     * blocker list, no notes and no driver id, so it cannot influence — let alone
+     * approve — its own review outcome.
+     */
     async resubmitDriverReview() {
-        const user = this.auth.currentUser();
-
-        if (!user?.id || this.resubmitting()) return;
+        if (this.resubmitting()) return;
 
         this.resubmitting.set(true);
 
         try {
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(user.id);
-            }
+            await this.onboardingStatus.resubmitForReview();
+            await this.refreshOnboardingStatus();
+            await this.onboardingStatus.recordEvent('driver_onboarding_submitted', 'outstanding_requests', 'action_required', 'under_review');
 
-            await this.driverService.fetchVehicle();
-            const remainingBlockers = this.reviewBlockers();
-            const nextStatus = remainingBlockers.length ? 'action_required' : 'under_review';
-
-            await this.profileService.updateProfile(user.id, {
-                driver_review_status: nextStatus,
-                verification_status: nextStatus,
-                verification_notes: remainingBlockers.length ? this.verificationNotes() : null,
-                driver_review_notes: remainingBlockers.length ? this.verificationNotes() : null,
-                verification_blockers: remainingBlockers,
-                driver_review_blockers: remainingBlockers,
-                updated_at: new Date().toISOString()
-            } as any);
-
-            if (typeof (this.profileService as any).fetchProfile === 'function') {
-                await (this.profileService as any).fetchProfile(user.id);
-            }
-            await this.driverService.fetchVehicle();
+            await this.showToast('Resubmitted for manual review.', 'success');
+        } catch (error: unknown) {
+            // A 422 means the server still sees blocking requirements; surface the
+            // server's own reason rather than a generic failure.
+            const failure = error as { status?: number; error?: { error?: string } } | null;
+            const serverMessage = failure?.error?.error;
+            const message = serverMessage
+                || (error instanceof Error && error.message ? error.message : '')
+                || 'Could not resubmit for review. Please try again.';
+            const stillBlocked = failure?.status === 422 || /requirement|complete|missing|add |upload /i.test(message);
 
             await this.showToast(
-                remainingBlockers.length
-                    ? 'Some requested items still need attention before review.'
-                    : 'Resubmitted for manual review.',
-                remainingBlockers.length ? 'warning' : 'success'
+                stillBlocked ? message : 'Could not resubmit for review. Please try again.',
+                stillBlocked ? 'warning' : 'danger'
             );
-        } catch {
-            await this.showToast('Could not resubmit for review. Please try again.', 'danger');
         } finally {
             this.resubmitting.set(false);
         }
@@ -993,9 +1076,15 @@ export class DriverSettingsPage implements OnInit {
             await loading.present();
 
             try {
+                const replacing = !!this.docs()[type];
                 const path = await this.driverService.uploadDocument(file, type);
                 await this.updateProfileDoc(type, path);
-                await this.showToast(`${type === 'license' ? 'Driver licence' : 'Insurance'} uploaded.`, 'success');
+                await this.onboardingStatus.recordEvent(
+                    this.isActionRequired() ? 'driver_document_resubmitted' : replacing ? 'driver_document_replaced' : 'driver_document_uploaded',
+                    type, replacing ? 'uploaded' : 'missing', 'uploaded'
+                );
+                await this.refreshOnboardingStatus();
+                await this.showToast(`${type === 'license' ? 'Driving licence' : 'Insurance'} uploaded.`, 'success');
             } catch {
                 await this.showToast('Document upload failed.', 'danger');
             } finally {
@@ -1027,7 +1116,7 @@ export class DriverSettingsPage implements OnInit {
     async confirmDeleteAccount() {
         const alert = await this.alertCtrl.create({
             header: 'Request account closure?',
-            message: 'This will disable your Movabi access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
+            message: 'This will disable your Vaydu access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
             inputs: [
                 {
                     name: 'understood',

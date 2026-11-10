@@ -14,7 +14,6 @@ import {
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
-    rocketOutline,
     shieldCheckmarkOutline,
     notificationsOutline,
     chevronForwardOutline
@@ -48,12 +47,12 @@ import { AuthService } from '@core/services/auth/auth.service';
         <div class="onboarding-container">
           <div class="header-section">
             <div class="logo-wrapper">
-              <ion-icon name="rocket-outline" class="main-icon"></ion-icon>
+              <img src="assets/brand/vaydu-icon.png" class="brand-icon" alt="Vaydu" width="88" height="88" />
             </div>
 
-            <h1 class="title">Welcome to Movabi!</h1>
+            <h1 class="title">Welcome to Vaydu!</h1>
             <p class="subtitle">
-              You're ready to book rides, deliveries, errands and van services.
+              You're ready to book rides, shop, deliver and move.
             </p>
           </div>
 
@@ -71,7 +70,7 @@ import { AuthService } from '@core/services/auth/auth.service';
               </label>
 
               <label>
-                <span>Mobile number</span>
+                <span>Phone number</span>
                 <input
                   type="tel"
                   formControlName="phone"
@@ -82,24 +81,42 @@ import { AuthService } from '@core/services/auth/auth.service';
                 />
               </label>
 
-              @if (otpSent()) {
-                <label>
-                  <span>Verification code</span>
-                  <input
-                    type="text"
-                    formControlName="otp"
-                    placeholder="6 digit code"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    maxlength="6"
-                  />
-                </label>
+              <p class="field-hint">
+                Add a phone number so drivers and Vaydu can contact you about your bookings when needed.
+              </p>
 
-                <p class="otp-note">
-                  Enter the code sent to your phone to finish setup.
-                </p>
+              <label>
+                <span>Home address</span>
+                <input type="text" formControlName="addressLine1"
+                  placeholder="House number and street" autocomplete="address-line1"
+                  enterkeyhint="next" aria-describedby="address-help" />
+              </label>
+              <label>
+                <span>Address line 2 (optional)</span>
+                <input type="text" formControlName="addressLine2"
+                  placeholder="Apartment, area or landmark" autocomplete="address-line2"
+                  enterkeyhint="next" />
+              </label>
+              <label>
+                <span>Postcode / postal code (optional)</span>
+                <input type="text" formControlName="postalCode"
+                  autocomplete="postal-code" enterkeyhint="done" />
+              </label>
+              <p id="address-help" class="field-hint">
+                Your country and city are already recorded from registration.
+                You can choose a different pickup address when booking.
+              </p>
+              @if (profileForm.controls.addressLine1.touched && profileForm.controls.addressLine1.invalid) {
+                <p role="alert" class="field-hint">Enter your house number and street, or a descriptive home address.</p>
               }
             </form>
+
+            <div class="feature-item">
+              <div class="feature-text">
+                <h3>Payment details can wait</h3>
+                <p>No card is needed to finish setup. Saving a card is optional where supported.</p>
+              </div>
+            </div>
 
             <div class="feature-item">
               <div class="feature-icon-wrapper">
@@ -130,7 +147,7 @@ import { AuthService } from '@core/services/auth/auth.service';
             [disabled]="isSubmitting()"
             (click)="finishOnboarding()"
           >
-            {{ otpSent() ? 'Verify & Continue' : 'Send Verification Code' }}
+            Finish setup
             <ion-icon name="chevron-forward-outline" slot="end"></ion-icon>
           </ion-button>
         </div>
@@ -161,7 +178,7 @@ import { AuthService } from '@core/services/auth/auth.service';
       min-height: 100%;
       display: flex;
       flex-direction: column;
-      padding: 18px 20px calc(96px + env(safe-area-inset-bottom));
+      padding: 18px 20px calc(24px + env(safe-area-inset-bottom));
       box-sizing: border-box;
     }
 
@@ -180,7 +197,7 @@ import { AuthService } from '@core/services/auth/auth.service';
     .logo-wrapper {
       width: 88px;
       height: 88px;
-      background: linear-gradient(135deg, var(--ion-color-primary), var(--ion-color-primary-shade));
+      background: transparent;
       border-radius: 28px;
       display: flex;
       align-items: center;
@@ -189,9 +206,11 @@ import { AuthService } from '@core/services/auth/auth.service';
       box-shadow: 0 12px 24px rgba(var(--ion-color-primary-rgb), 0.3);
     }
 
-    .main-icon {
-      font-size: 44px;
-      color: #fff;
+    .brand-icon {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
 
     .title {
@@ -260,7 +279,7 @@ import { AuthService } from '@core/services/auth/auth.service';
       background: #fff;
     }
 
-    .otp-note {
+    .field-hint {
       margin: 0;
       color: #64748b;
       font-weight: 700;
@@ -302,12 +321,12 @@ import { AuthService } from '@core/services/auth/auth.service';
     }
 
     .button-safe-area {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 20;
-      padding: 12px 20px calc(18px + env(safe-area-inset-bottom));
+      position: static;
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 500px;
+      margin: 24px auto 0;
+      padding: 12px 0 0;
       background: #f8fafc;
     }
 
@@ -331,29 +350,31 @@ export class CustomerOnboardingPage {
     private fb = inject(FormBuilder);
 
     isSubmitting = signal(false);
-    otpSent = signal(false);
-    private expectedOtp = signal<string | null>(null);
 
     profileForm = this.fb.group({
         fullName: ['', [Validators.required, Validators.minLength(2)]],
         phone: ['', [Validators.required, Validators.minLength(7)]],
-        otp: ['']
+        addressLine1: ['', [Validators.required, Validators.pattern(/\S/), Validators.maxLength(250)]],
+        addressLine2: ['', [Validators.maxLength(250)]],
+        postalCode: ['', [Validators.maxLength(32)]]
     });
 
     constructor() {
         addIcons({
-            rocketOutline,
-            shieldCheckmarkOutline,
+                    shieldCheckmarkOutline,
             notificationsOutline,
             chevronForwardOutline
         });
 
         const user = this.authService.currentUser();
         const profile = this.profileService.profile();
+        const savedAddressLines = String(profile?.home_address || '').split('\n');
         const fallbackName = String(user?.user_metadata?.['full_name'] || user?.user_metadata?.['name'] || profile?.full_name || '').trim();
         this.profileForm.patchValue({
             fullName: fallbackName,
-            phone: String(profile?.phone || user?.phone || '').trim()
+            phone: String(profile?.phone || user?.phone || '').trim(),
+            addressLine1: String(profile?.address_line1 || savedAddressLines[0] || profile?.current_address || '').trim(),
+            addressLine2: savedAddressLines.slice(1).join(', ').trim()
         });
     }
 
@@ -371,25 +392,7 @@ export class CustomerOnboardingPage {
 
         if (this.profileForm.invalid) {
             this.profileForm.markAllAsTouched();
-            await this.showSetupAlert('Details needed', 'Enter your full name and mobile number before continuing.');
-            this.isSubmitting.set(false);
-            return;
-        }
-
-        if (!this.otpSent()) {
-            const code = this.generateOtp();
-            this.expectedOtp.set(code);
-            this.otpSent.set(true);
-            this.profileForm.get('otp')?.setValidators([Validators.required, Validators.pattern(/^\d{6}$/)]);
-            this.profileForm.get('otp')?.updateValueAndValidity();
-            await this.showSetupAlert('Verification code sent', `Use code ${code} to verify this test account. Connect an SMS provider before production.`);
-            this.isSubmitting.set(false);
-            return;
-        }
-
-        const enteredOtp = String(this.profileForm.value.otp || '').trim();
-        if (enteredOtp !== this.expectedOtp()) {
-            await this.showSetupAlert('Code not recognised', 'Check the 6 digit code and try again.');
+            await this.showSetupAlert('Details needed', 'Enter your full name, phone number and home address. Keep address lines within 250 characters and postal code within 32 characters.');
             this.isSubmitting.set(false);
             return;
         }
@@ -401,12 +404,19 @@ export class CustomerOnboardingPage {
         await loading.present();
 
         try {
-            await this.profileService.updateProfile(user.id, {
+            const addressLine1 = String(this.profileForm.value.addressLine1 || '').trim();
+            const homeAddress = [addressLine1, this.profileForm.value.addressLine2, this.profileForm.value.postalCode]
+                .map(value => String(value || '').trim()).filter(Boolean).join('\n');
+            const updated = await this.profileService.updateProfile(user.id, {
                 onboarding_completed: true,
                 role: 'customer',
                 full_name: String(this.profileForm.value.fullName || '').trim(),
-                phone: String(this.profileForm.value.phone || '').trim()
+                phone: String(this.profileForm.value.phone || '').trim(),
+                address_line1: addressLine1,
+                home_address: homeAddress
             });
+
+            if (!updated) throw new Error('Profile update was not confirmed');
 
             this.authService.onboardingCompleted.set(true);
             this.authService.userRole.set('customer');
@@ -428,10 +438,6 @@ export class CustomerOnboardingPage {
         } finally {
             this.isSubmitting.set(false);
         }
-    }
-
-    private generateOtp(): string {
-        return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
     private async showSetupAlert(header: string, message: string): Promise<void> {

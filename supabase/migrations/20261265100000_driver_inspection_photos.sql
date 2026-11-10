@@ -42,25 +42,16 @@ drop trigger if exists rotate_vehicle_inspection_revision on public.vehicles;
 create trigger rotate_vehicle_inspection_revision before update on public.vehicles
 for each row execute function public.rotate_vehicle_inspection_revision();
 
-create table if not exists public.driver_inspection_photos (
-  id uuid primary key default gen_random_uuid(),
-  driver_id uuid not null references public.profiles(id),
-  tenant_id uuid not null,
-  vehicle_id uuid not null,
-  vehicle_revision uuid not null,
-  slot text not null check (slot in ('front','rear','side','dashboard','seats_interior','left_side','right_side')),
-  storage_path text not null unique,
-  status text not null default 'pending' check (status in ('pending','approved','rejected','replaced')),
-  created_at timestamptz not null default now(),
-  reviewed_at timestamptz,
-  reviewed_by uuid references public.profiles(id),
-  reason text
-);
+-- Extend the existing driver_vehicle_inspection_photos store — do NOT create a
+-- parallel table. Binds approval to the submitted vehicle and its revision.
+alter table public.driver_vehicle_inspection_photos add column if not exists vehicle_id uuid;
+alter table public.driver_vehicle_inspection_photos add column if not exists vehicle_revision uuid;
+alter table public.driver_vehicle_inspection_photos add column if not exists reason text;
 create unique index if not exists driver_inspection_one_current_slot
-on public.driver_inspection_photos(vehicle_id,vehicle_revision,slot) where status <> 'replaced';
-alter table public.driver_inspection_photos enable row level security;
-revoke all on public.driver_inspection_photos from anon, authenticated;
-grant select,insert,update on public.driver_inspection_photos to service_role;
+on public.driver_vehicle_inspection_photos(vehicle_id,vehicle_revision,slot) where status <> 'replaced' and vehicle_id is not null;
+alter table public.driver_vehicle_inspection_photos enable row level security;
+revoke all on public.driver_vehicle_inspection_photos from anon, authenticated;
+grant select,insert,update on public.driver_vehicle_inspection_photos to service_role;
 
 insert into storage.buckets (id,name,public)
 values ('vehicle-inspection-private','vehicle-inspection-private',false)
@@ -73,9 +64,9 @@ declare photo uuid;
 begin
   perform 1 from public.vehicles where id=p_vehicle and user_id=p_driver and inspection_revision=p_revision for update;
   if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
-  update public.driver_inspection_photos set status='replaced'
+  update public.driver_vehicle_inspection_photos set status='replaced'
     where vehicle_id=p_vehicle and vehicle_revision=p_revision and slot=p_slot and status<>'replaced';
-  insert into public.driver_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path)
+  insert into public.driver_vehicle_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path)
     values(p_driver,p_tenant,p_vehicle,p_revision,p_slot,p_path) returning id into photo;
   return photo;
 end;
@@ -94,7 +85,7 @@ begin
   if exists (
     select from unnest(p_slots) as required(slot)
     where not exists (
-      select from public.driver_inspection_photos photo
+      select from public.driver_vehicle_inspection_photos photo
       where photo.driver_id=p_driver and photo.tenant_id=p_tenant
         and photo.vehicle_id=p_vehicle and photo.vehicle_revision=p_revision
         and photo.slot=required.slot and photo.status='approved'
@@ -143,6 +134,24 @@ begin
   return new;
 end;
 $$;
-drop trigger if exists reopen_replaced_photo_review on public.driver_inspection_photos;
-create trigger reopen_replaced_photo_review after insert on public.driver_inspection_photos
+drop trigger if exists reopen_replaced_photo_review on public.driver_vehicle_inspection_photos;
+create trigger reopen_replaced_photo_review after insert on public.driver_vehicle_inspection_photos
 for each row execute function public.reopen_replaced_photo_review();
+
+-- Retained upload RPC delegates to the revision-bound path so no caller can
+-- write an unbound approval row. vehicle/revision resolved from the driver's
+-- current vehicle inside the function.
+create or replace function public.submit_inspection_photo(
+  p_driver uuid, p_tenant uuid, p_slot text, p_path text, p_bytes int, p_ctype text, p_vehicle uuid default null
+) returns uuid language plpgsql security definer set search_path=public as $$
+declare v public.vehicles%rowtype;
+begin
+  select * into v from public.vehicles where user_id=p_driver
+    and (p_vehicle is null or id=p_vehicle)
+    order by created_at desc limit 1 for update;
+  if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
+  return public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path);
+end;
+$$;
+revoke all on function public.submit_inspection_photo(uuid,uuid,text,text,int,text,uuid) from public,anon,authenticated;
+grant execute on function public.submit_inspection_photo(uuid,uuid,text,text,int,text,uuid) to service_role;

@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import {savedCustomerAddress} from '@shared/utils/customer-home-address';
+import { Component, inject, OnInit, computed, signal } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
 import { Profile } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
@@ -6,22 +7,24 @@ import { IonicModule } from '@ionic/angular';
 import { BadgeComponent } from '../../../../shared/ui/badge';
 import { ButtonComponent } from '../../../../shared/ui/button';
 import { AuthService } from '../../../../core/services/auth/auth.service';
+import { downloadCsv, toCsv, csvDateStamp } from '../../../../shared/utils/csv';
 
 @Component({
     selector: 'app-user-list',
     template: `
-    <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
-      <div class="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
+      <div class="p-4 sm:p-6 border-b border-slate-50 flex flex-col gap-4">
         <div>
-          <h3 class="text-2xl font-display font-bold text-slate-900">User Management</h3>
-          <p class="text-slate-500 font-medium mt-1">Manage and monitor all customer accounts.</p>
+          <h3 class="text-lg sm:text-xl leading-tight font-display font-bold text-slate-900">User Management</h3>
+          <p class="text-sm text-slate-500 font-medium mt-1">Manage and monitor all customer accounts.</p>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-center gap-4">
+        <div class="flex flex-wrap items-center gap-3">
           <select
+            aria-label="Filter users by account status"
             [value]="statusFilter()"
             (change)="onStatusFilter($event)"
-            class="w-full sm:w-56 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-600 focus:outline-none"
+            class="w-full sm:w-44 shrink-0 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-600 focus:outline-none"
           >
             <option value="all">All accounts</option>
             <option value="closure_requested">Closure Requested</option>
@@ -29,74 +32,92 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
             <option value="reinstated">Reinstated</option>
           </select>
 
-          <div class="relative w-full sm:w-72 group">
+          <div class="relative w-full sm:flex-1 sm:min-w-64 group">
             <ion-icon name="search-outline" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"></ion-icon>
             <input
               type="text"
-              placeholder="Search users..."
+              aria-label="Search users"
+              placeholder="Search name, email, phone or ID..."
               (input)="onSearch($event)"
               class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-3 text-sm font-medium text-slate-600 focus:outline-none"
             >
           </div>
 
-          <app-button variant="secondary" size="md" [fullWidth]="false" class="px-8 h-12 rounded-2xl">
+          <app-button variant="secondary" size="md" [fullWidth]="false" (clicked)="exportCsv()" class="shrink-0">
             <ion-icon name="download-outline" slot="start" class="mr-2"></ion-icon>
             Export CSV
           </app-button>
         </div>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
+      <div class="overflow-x-auto max-h-[65vh]" tabindex="0" role="region" aria-label="Customer accounts table">
+        <table class="w-full min-w-[850px] table-fixed text-left border-collapse">
+          <caption class="sr-only">Customer accounts with contact details, status and management actions</caption>
+          <colgroup><col class="w-[26%]"><col class="w-[29%]"><col class="w-[13%]"><col class="w-[14%]"><col class="w-[18%]"></colgroup>
+          <thead class="sticky top-0 z-10 bg-slate-50">
             <tr class="bg-slate-50/50">
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">User</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Email</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Joined</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
-              <th class="px-10 py-6 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">User</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Joined</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+              <th scope="col" class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
 
           <tbody class="divide-y divide-slate-50">
-            @for (user of filteredUsers(); track user.id) {
+            @for (user of pagedUsers(); track user.id) {
               <tr class="hover:bg-slate-50/80 transition-all group">
-                <td class="px-10 py-6">
-                  <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100 shadow-sm">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 shrink-0 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100 shadow-sm">
                       {{ getInitial(user) }}
                     </div>
 
-                    <div>
-                      <h4 class="text-sm font-bold text-slate-900">{{ getUserName(user) }}</h4>
-                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                    <div class="min-w-0">
+                      <button type="button" class="block w-full whitespace-normal break-words text-left text-xs leading-snug font-semibold text-slate-900 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 rounded"
+                        [attr.aria-label]="'View details for ' + getUserName(user)" (click)="userDetails.set(user)">
+                        {{ getUserName(user) }}
+                      </button>
+                      <p class="text-[10px] text-slate-400 font-medium tracking-wide mt-0.5">
                         ID: {{ shortId(user?.id) }}
                       </p>
                     </div>
                   </div>
                 </td>
 
-                <td class="px-10 py-6 text-sm font-bold text-slate-900">
-                  {{ getUserEmail(user) }}
+                <td class="px-4 py-3 text-sm font-medium text-slate-700">
+                  <span class="block truncate" [title]="getUserEmail(user)">{{ getUserEmail(user) }}</span>
                 </td>
 
-                <td class="px-10 py-6 text-sm font-bold text-slate-900">
+                <td class="px-4 py-3 whitespace-nowrap text-xs font-medium text-slate-700">
                   {{ user?.created_at ? (user.created_at | date:'mediumDate') : 'N/A' }}
                 </td>
 
-                <td class="px-10 py-6">
+                <td class="px-4 py-3">
                   <app-badge [variant]="getStatusVariant(user?.account_status || 'active')">
                     {{ (user?.account_status || 'active') | uppercase }}
                   </app-badge>
                 </td>
 
-                <td class="px-10 py-6 text-right">
+                <td class="px-4 py-3 text-right">
                   <div class="flex items-center justify-end gap-2">
+                    <button type="button" class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700" (click)="openMessageModal(user)">Message</button>
+                    <button
+                      type="button"
+                      (click)="openPurgeModal(user)"
+                      class="w-8 h-8 shrink-0 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center"
+                      title="Permanently delete test account"
+                      [attr.aria-label]="'Delete test account: ' + getUserName(user)"
+                    >
+                      <ion-icon name="trash-outline" class="text-xl"></ion-icon>
+                    </button>
+
                     <button
                       type="button"
                       (click)="openModerationModal(user)"
-                      class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center"
+                      class="w-8 h-8 shrink-0 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center"
                       title="Moderate User"
+                      [attr.aria-label]="'Moderate user: ' + getUserName(user)"
                     >
                       <ion-icon name="shield-outline" class="text-xl"></ion-icon>
                     </button>
@@ -113,7 +134,60 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
           </div>
         }
       </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
+        <p aria-live="polite">{{ rangeStart() }}–{{ rangeEnd() }} of {{ filteredUsers().length }} users</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="flex items-center gap-2">Rows
+            <select aria-label="Users per page" [value]="pageSize()" (change)="onPageSize($event)" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+              <option value="25">25</option><option value="50">50</option><option value="100">100</option>
+            </select>
+          </label>
+          <button type="button" (click)="page.set(page() - 1)" [disabled]="page() <= 1" class="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold disabled:opacity-40">Previous</button>
+          <span>Page {{ page() }} of {{ pageCount() }}</span>
+          <button type="button" (click)="page.set(page() + 1)" [disabled]="page() >= pageCount()" class="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold disabled:opacity-40">Next</button>
+        </div>
+      </div>
     </div>
+
+    <ion-modal [isOpen]="userDetails() !== null" (didDismiss)="userDetails.set(null)" class="user-details-modal" aria-labelledby="user-details-title">
+      <ng-template>
+        <ion-header>
+          <ion-toolbar>
+            <ion-title id="user-details-title">Customer details</ion-title>
+            <ion-buttons slot="end"><ion-button (click)="userDetails.set(null)" aria-label="Close customer details">Close</ion-button></ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content>
+          @if (userDetails(); as user) {
+            <div class="p-5 sm:p-6">
+              <h3 class="text-lg font-bold text-slate-900 break-words">{{ getUserName(user) }}</h3>
+              <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-5 text-sm">
+                <div><dt class="text-xs font-semibold text-slate-500">Email</dt><dd class="mt-1 break-all text-slate-900">{{ getUserEmail(user) }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Phone</dt><dd class="mt-1 text-slate-900">{{ user.phone || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Account status</dt><dd class="mt-1 capitalize text-slate-900">{{ (user.account_status || 'active').replaceAll('_', ' ') }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Joined</dt><dd class="mt-1 text-slate-900">{{ user.created_at ? (user.created_at | date:'medium') : 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Country</dt><dd class="mt-1 text-slate-900">{{ user.registration_country_code || user.country_code || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Currency</dt><dd class="mt-1 text-slate-900">{{ user.currency_code || 'Not provided' }}</dd></div>
+                <div class="sm:col-span-2"><dt class="text-xs font-semibold text-slate-500">Home address</dt><dd class="mt-1 whitespace-pre-line break-words text-slate-900">{{ customerHomeAddress(user) || 'Not provided' }}</dd></div>
+                <div><dt class="text-xs font-semibold text-slate-500">Registration city</dt><dd class="mt-1 text-slate-900">{{ user.registration_market_city || 'Not provided' }}</dd></div>
+                <div class="sm:col-span-2"><dt class="text-xs font-semibold text-slate-500">Customer ID</dt><dd class="mt-1 break-all font-mono text-xs text-slate-700">{{ user.id }}</dd></div>
+              </dl>
+            </div>
+          }
+        </ion-content>
+      </ng-template>
+    </ion-modal>
+
+    @if (messageRecipient(); as recipient) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 flex items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-3xl bg-white p-6">
+          <h3 class="text-xl font-bold">Message {{getUserName(recipient)}}</h3>
+          <p class="mt-2 text-xs text-slate-500">The customer can read this in Messages from Vaydu. No account status changes.</p>
+          <textarea class="mt-4 w-full min-h-32 rounded-xl border border-slate-200 p-3" maxlength="2000" [value]="customerMessageDraft()" (input)="customerMessageDraft.set($any($event.target).value)" placeholder="Write your message..."></textarea>
+          <div class="mt-4 flex gap-3"><app-button variant="secondary" [disabled]="sendingCustomerMessage()" (clicked)="messageRecipient.set(null)">Cancel</app-button><app-button [disabled]="sendingCustomerMessage() || !customerMessageDraft().trim()" (clicked)="sendCustomerMessage()">{{sendingCustomerMessage()?'Sending...':'Send Message'}}</app-button></div>
+        </div>
+      </div>
+    }
 
     @if (moderationModal()) {
       <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -144,6 +218,37 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
       </div>
     }
 
+    @if (purgeModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-xl font-bold text-rose-600">Permanently delete test account</h3>
+          <p class="text-sm font-bold text-slate-800 mt-2">{{ getUserName(purgeModal()) }}</p>
+          <p class="text-xs font-semibold text-slate-500 mt-1">
+            {{ getUserEmail(purgeModal()) }} · {{ purgeModal()?.role || 'unknown' }}
+          </p>
+          <p class="text-sm font-semibold text-rose-600 mt-3">This will permanently delete this test account and its associated test activity. This cannot be undone.</p>
+          <input
+            type="text"
+            [value]="purgeConfirmText()"
+            (input)="setPurgeConfirmText($event)"
+            placeholder="Type DELETE to confirm"
+            class="w-full mt-4 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold focus:outline-none"
+          />
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="purgeModal.set(null); purgeConfirmText.set('')">Cancel</button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+              [disabled]="purgeConfirmText() !== 'DELETE' || purging()"
+              (click)="confirmPurge()"
+            >
+              {{ purging() ? 'Deleting…' : 'Delete Account' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (toastMessage()) {
       <div class="fixed bottom-6 right-6 z-[11000] rounded-2xl px-5 py-4 shadow-2xl text-white font-semibold"
            [class.bg-emerald-600]="toastType() === 'success'"
@@ -154,6 +259,12 @@ import { AuthService } from '../../../../core/services/auth/auth.service';
     }
   `,
     styles: [`
+      ion-modal.user-details-modal {
+        --width: min(92vw, 640px);
+        --height: min(80vh, 500px);
+        --border-radius: 1.25rem;
+      }
+
       .modal-action {
         border-radius: 0.9rem;
         background: rgb(37 99 235);
@@ -178,10 +289,27 @@ export class UserListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
 
+    userDetails = signal<Profile | null>(null);
+    messageRecipient = signal<Profile | null>(null);
+    customerMessageDraft = signal('');
+    sendingCustomerMessage = signal(false);
     users = signal<Profile[]>([]);
     searchTerm = signal('');
     statusFilter = signal('all');
     filteredUsers = signal<Profile[]>([]);
+    page = signal(1);
+    pageSize = signal(25);
+    pageCount = computed(() => Math.max(1, Math.ceil(this.filteredUsers().length / this.pageSize())));
+    pagedUsers = computed(() => this.filteredUsers().slice((this.page() - 1) * this.pageSize(), this.page() * this.pageSize()));
+    rangeStart = computed(() => this.filteredUsers().length ? (this.page() - 1) * this.pageSize() + 1 : 0);
+    rangeEnd = computed(() => Math.min(this.page() * this.pageSize(), this.filteredUsers().length));
+
+    onPageSize(event: Event) {
+        const size = Number((event.target as HTMLSelectElement).value);
+        if (![25, 50, 100].includes(size)) return;
+        this.pageSize.set(size);
+        this.page.set(1);
+    }
 
     toastMessage = signal<string | null>(null);
     toastType = signal<'success' | 'danger' | 'warning'>('success');
@@ -191,9 +319,28 @@ export class UserListComponent implements OnInit {
         status: string;
     } | null>(null);
 
+    purgeModal = signal<Profile | null>(null);
+    purgeConfirmText = signal('');
+    purging = signal(false);
+
     async ngOnInit() {
         await this.loadUsers();
     }
+
+    openMessageModal(user: Profile) { this.customerMessageDraft.set(''); this.messageRecipient.set(user); }
+    async sendCustomerMessage() {
+        const recipient=this.messageRecipient();
+        if(!recipient?.id || this.sendingCustomerMessage()) return;
+        this.sendingCustomerMessage.set(true);
+        try {
+            await this.adminService.sendCustomerMessage(recipient.id,this.customerMessageDraft().trim());
+            this.messageRecipient.set(null);this.customerMessageDraft.set('');
+            await this.showToast('Message saved. Push will be attempted for enabled devices.','success');
+        }catch(error){await this.showToast(error instanceof Error?error.message:'Could not send message.','danger');}
+        finally{this.sendingCustomerMessage.set(false);}
+    }
+
+    customerHomeAddress = savedCustomerAddress;
 
     async loadUsers() {
         const data = await this.adminService.getUsers();
@@ -216,6 +363,7 @@ export class UserListComponent implements OnInit {
     }
 
     applySearchFilter() {
+        this.page.set(1);
         const term = (this.searchTerm() || '').toLowerCase().trim();
         const statusFilter = this.statusFilter();
         const users = this.users() || [];
@@ -240,6 +388,21 @@ export class UserListComponent implements OnInit {
                 return matchesStatus && matchesSearch;
             })
         );
+    }
+
+    exportCsv() {
+        const rows = this.filteredUsers().map((user: any) => [
+            this.getUserName(user),
+            this.getUserEmail(user),
+            user?.phone || '',
+            user?.account_status || 'active',
+            user?.created_at || '',
+            user?.id || ''
+        ]);
+
+        const csv = toCsv(['Name', 'Email', 'Phone', 'Status', 'Joined', 'ID'], rows);
+        downloadCsv(`users-${csvDateStamp()}.csv`, csv);
+        void this.showToast('CSV exported.', 'success');
     }
 
     getUserName(user: any): string {
@@ -327,6 +490,36 @@ export class UserListComponent implements OnInit {
                 error instanceof Error ? error.message : 'Failed to update user status.',
                 'danger'
             );
+        }
+    }
+
+    openPurgeModal(user: Profile) {
+        this.purgeModal.set(user);
+        this.purgeConfirmText.set('');
+    }
+
+    setPurgeConfirmText(event: Event) {
+        this.purgeConfirmText.set((event.target as HTMLInputElement).value || '');
+    }
+
+    async confirmPurge() {
+        const user = this.purgeModal();
+        if (!user || this.purgeConfirmText() !== 'DELETE' || this.purging()) return;
+
+        this.purging.set(true);
+        try {
+            await this.adminService.purgeTestAccount(user.id);
+            await this.showToast('Test account permanently deleted.', 'success');
+            this.purgeModal.set(null);
+            this.purgeConfirmText.set('');
+            await this.loadUsers();
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Failed to purge test account.',
+                'danger'
+            );
+        } finally {
+            this.purging.set(false);
         }
     }
 

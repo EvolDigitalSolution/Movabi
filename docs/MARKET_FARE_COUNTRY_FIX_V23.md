@@ -1,0 +1,11 @@
+# Market-specific pricing guard
+
+The observed development database contains active legacy GBP ride and errand rows with null country_code, and no NG rows in pricing_config. A Nigerian Akure errand quote correctly resolved NG/NGN but failed the existing MAP_QUOTE_CURRENCY_MISMATCH guard. The pricing-config resolver used matchingRows[0] || rows[0], allowing an unrelated country's first active rate to override the correct market currency.
+
+This patch removes the unrelated-row fallback and requires a matching configured currency when one is requested. The existing null-country GBP rows continue to be treated as GB, preserving UK pricing. City/zone specificity and actual NG rows are preserved. When pricing_config has no matching row, the existing country-specific regional rules, fixed bands, pricing rules or configured conversion path can still resolve a fare. This patch does not create, convert, relabel or guess Nigerian rates.
+
+A new guard runs after the unprotected price resolves and before payment-margin/budget work: a non-GB market cannot use the generic legacy_fallback source, and an explicitly requested currency must match the resolved fare. Configured regional and conversion sources remain possible; UK legacy behaviour remains. The API returns a clear 409 pricing-unavailable code and the quote client shows a human-readable message for these pricing codes instead of the raw HTTP URL.
+
+Local checks exercise the actual MarketplaceConfigService.getEffectivePricingConfig with mocked Supabase rows and the actual guard: 10 cases cover legacy GB, NG with only GBP rows, explicit NG rows, wrong currency, foreign-city leakage, city specificity, missing non-GB pricing and configured regional fares. Full API compile and relevant repository tests are still required.
+
+No database changes, provider calls, keys, flags, staging or deployment occur in the installer. Check existing NG regional/pricing/conversion sources before adding pricing_config rows. If no NG rates exist, the owner must supply or approve NGN fares before the market can quote; supported currency and payment provider mapping do not supply commercial prices. Do not disable the mismatch guard to permit a GBP quote in Nigeria.

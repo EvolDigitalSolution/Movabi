@@ -1,4 +1,4 @@
-﻿import { Routes } from '@angular/router';
+import { Routes } from '@angular/router';
 import { authGuard } from '@core/guards/auth.guard';
 import { roleGuard } from '@core/guards/role.guard';
 
@@ -32,6 +32,7 @@ export const ADMIN_WEB_ROUTES: Routes = [
                 .then(m => m.AdminLayoutComponent),
 
         children: [
+            {path:'messages',loadComponent:()=>import('@admin/features/messages/admin-messages.component').then(m=>m.AdminMessagesComponent)},
             {
                 path: 'dashboard',
                 loadComponent: () =>
@@ -46,6 +47,12 @@ export const ADMIN_WEB_ROUTES: Routes = [
             },
             {
                 path: 'drivers',
+                loadComponent: () =>
+                    import('@admin/features/drivers/driver-list.component')
+                        .then(m => m.DriverListComponent)
+            },
+            {
+                path: 'drivers/:driverId/onboarding',
                 loadComponent: () =>
                     import('@admin/features/drivers/driver-list.component')
                         .then(m => m.DriverListComponent)
@@ -85,6 +92,58 @@ export const ADMIN_WEB_ROUTES: Routes = [
                 loadComponent: () =>
                     import('@admin/features/jobs/job-monitoring.component')
                         .then(m => m.JobMonitoringComponent)
+            },
+            {
+                path: 'marketplace/control-center',
+                loadComponent: () =>
+                    import('@admin/features/marketplace/marketplace-control-center.component')
+                        .then(m => m.MarketplaceControlCenterComponent)
+            },
+            {
+                path: 'marketplace/global-ai-pricing',
+                loadComponent: () =>
+                    import('@admin/features/pricing/global-ai-pricing.component')
+                        .then(m => m.GlobalAiPricingComponent)
+            },
+            {
+                path: 'pricing/market-intelligence',
+                loadComponent: () =>
+                    import('@admin/features/pricing/market-intelligence.component')
+                        .then(m => m.MarketIntelligenceComponent)
+            },
+            {
+                path: 'marketplace/market-rollout',
+                loadComponent: () => import('@admin/features/marketplace/market-rollout.component').then(m => m.MarketRolloutComponent)
+            },
+            {
+                path: 'marketplace/local-services',
+                loadComponent: () =>
+                    import('@admin/features/marketplace/local-services.component')
+                        .then(m => m.AdminLocalServicesComponent)
+            },
+            {
+                path: 'marketplace',
+                loadComponent: () =>
+                    import('@admin/features/marketplace/marketplace-control-center.component')
+                        .then(m => m.MarketplaceControlCenterComponent)
+            },
+            {
+                path: 'receivables',
+                loadComponent: () =>
+                    import('@admin/features/finance/admin-receivables.component')
+                        .then(m => m.AdminReceivablesComponent)
+            },
+            {
+                path: 'policies',
+                loadComponent: () =>
+                    import('@admin/features/finance/admin-policy-publish.component')
+                        .then(m => m.AdminPolicyPublishComponent)
+            },
+            {
+                path: 'campaigns',
+                loadComponent: () =>
+                    import('@admin/features/finance/admin-campaigns.component')
+                        .then(m => m.AdminCampaignsComponent)
             },
             {
                 path: 'settings',

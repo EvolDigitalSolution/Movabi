@@ -1,0 +1,8 @@
+{
+  "dashboard": "fa0c30566b79d88398378d85cf56d89a8acfca60077a38d729aacde7d8869fc5",
+  "earnings": "91deea78840f30abeea398669545669fac949d59db366c1f91458e64757fe044",
+  "imports": "import {DriverCashCreditService} from '../../../../../core/services/payments/driver-cash-credit.service';\nimport {formatCashCreditMinor,cashCreditStatusMessage,cashCreditNeedsReview} from '../../../../../shared/utils/driver-cash-credit';\n",
+  "bindings": "\n    readonly cashCredit=inject(DriverCashCreditService);\n    readonly cashAmount=formatCashCreditMinor;\n    readonly cashMessage=cashCreditStatusMessage;\n    readonly cashNeedsReview=cashCreditNeedsReview;\n    refreshCashCredit():void {void this.cashCredit.refresh(true).catch(()=>{});}\n",
+  "oldRefresh": "await Promise.all([this.driverService.fetchEarnings(),this.payoutContext.refreshWallet()]);",
+  "newRefresh": "await Promise.all([this.driverService.fetchEarnings(),this.payoutContext.refreshWallet(),this.activeHubTab()==='wallet'?this.cashCredit.refresh(true).catch(()=>null):Promise.resolve(null)]);"
+}

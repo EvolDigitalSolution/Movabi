@@ -1,7 +1,12 @@
+import {CustomerWalletSandboxComponent} from './wallet-sandbox.component';
+import {CustomerDebtsComponent} from '@shared/ui/customer-debts.component';
+import {ReferralPanelComponent} from '@shared/ui/referral-panel.component';
+import {recordedWalletTransaction} from '@shared/utils/wallet-recorded-money';
 import {
     Component,
     inject,
     signal,
+    computed,
     OnInit,
     ViewChild,
     ElementRef,
@@ -17,18 +22,13 @@ import {
     IonContent,
     IonButtons,
     IonBackButton,
-    IonCard,
-    IonCardContent,
-    IonButton,
     IonIcon,
-    IonInput,
     IonList,
     IonItem,
     IonLabel,
     IonNote,
     IonRefresher,
     IonRefresherContent,
-    IonSpinner,
     ToastController,
     LoadingController
 } from '@ionic/angular/standalone';
@@ -51,6 +51,9 @@ type WalletTransaction = Record<string, unknown>;
     selector: 'app-wallet',
     standalone: true,
     imports: [
+        CustomerWalletSandboxComponent,
+        CustomerDebtsComponent,
+        ReferralPanelComponent,
         CommonModule,
         FormsModule,
         IonHeader,
@@ -59,18 +62,13 @@ type WalletTransaction = Record<string, unknown>;
         IonContent,
         IonButtons,
         IonBackButton,
-        IonCard,
-        IonCardContent,
-        IonButton,
         IonIcon,
-        IonInput,
         IonList,
         IonItem,
         IonLabel,
         IonNote,
         IonRefresher,
         IonRefresherContent,
-        IonSpinner
     ],
     template: `
     <ion-header>
@@ -94,93 +92,23 @@ type WalletTransaction = Record<string, unknown>;
           Available Balance
         </p>
 
-        <h1 class="relative text-slate-950 text-5xl font-display font-black tracking-tight">
-          {{ appConfig.formatCurrency(walletService.wallet()?.available_balance || 0) }}
+        <h1 class="relative text-slate-950 font-display font-black tracking-tight break-words" [class.text-5xl]="!!walletService.wallet()" [class.text-lg]="!walletService.wallet()">
+          {{ walletService.walletBalanceText() }}
         </h1>
+        @if(walletService.walletError()) {<p role="alert" class="mt-3 text-sm text-red-700">{{walletService.walletError()}}</p>}
+        @if(!walletService.walletLoading() && !walletService.walletError() && !walletService.wallet()) {<p class="mt-3 text-sm text-slate-600">No wallet has been set up for this account.</p>}
       </div>
 
       <div class="space-y-6">
-        <div class="flex justify-between items-center px-1">
-          <h2 class="text-xl font-display font-bold text-slate-900">Top Up Wallet</h2>
-        </div>
-
-        <ion-card class="m-0 shadow-xl shadow-slate-200/50 rounded-[2rem] border border-slate-100">
-          <ion-card-content class="p-6">
-            <div class="bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100">
-              <p class="text-xs font-bold text-slate-700 mb-1">
-                Amount to Add
-              </p>
-
-              <ion-input
-                type="number"
-                inputmode="decimal"
-                min="1"
-                [(ngModel)]="topUpAmount"
-                placeholder="0.00"
-                class="text-2xl font-display font-bold text-slate-900"
-              ></ion-input>
-            </div>
-
-            <div class="grid grid-cols-3 gap-3 mb-8">
-              @for (amount of quickAmounts; track amount) {
-                <ion-button
-                  fill="outline"
-                  size="small"
-                  type="button"
-                  (click)="setQuickAmount(amount)"
-                  [color]="toNumber(topUpAmount) === amount ? 'primary' : 'medium'"
-                  class="h-10 rounded-xl"
-                >
-                  +{{ amount }}
-                </ion-button>
-              }
-            </div>
-
-            <div class="mb-8">
-              <p class="text-xs font-bold text-slate-700 mb-3">
-                Card Details
-              </p>
-
-              <div
-                #cardElementContainer
-                class="w-full p-4 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[52px] cursor-text"
-              ></div>
-
-              @if (cardError()) {
-                <p
-                  id="card-errors"
-                  role="alert"
-                  class="mt-3 text-xs font-medium text-rose-500 flex items-center gap-1"
-                >
-                  <ion-icon name="alert-circle-outline"></ion-icon>
-                  {{ cardError() }}
-                </p>
-              }
-            </div>
-
-            <ion-button
-              expand="block"
-              type="button"
-              (click)="handleTopUp()"
-              [disabled]="!canSubmitTopUp"
-              class="h-16 font-black text-lg rounded-2xl shadow-xl shadow-indigo-200"
-            >
-              @if (loading()) {
-                <ion-spinner name="crescent" class="mr-2"></ion-spinner>
-                Processing...
-              } @else {
-                Top Up Now
-              }
-            </ion-button>
-          </ion-card-content>
-        </ion-card>
-
-        <div class="bg-blue-50 p-4 rounded-xl flex gap-3 items-start">
-          <ion-icon name="information-circle-outline" class="text-blue-600 text-xl"></ion-icon>
+        <div class="bg-blue-50 p-4 rounded-xl">
           <p class="text-sm text-blue-800">
-            Wallet balance is credited only after Stripe confirms the top-up, then refreshed from the server.
+            Wallet top-ups are no longer available. You can use your existing balance for bookings.
           </p>
         </div>
+
+        <app-customer-wallet-sandbox />
+        <app-customer-debts class="block mt-4" />
+        <app-referral-panel class="block mt-4" />
 
         <div class="mt-8">
           <h2 class="text-lg font-bold mb-4">Transaction History</h2>
@@ -198,7 +126,7 @@ type WalletTransaction = Record<string, unknown>;
                       class="shrink-0"
                       [class]="isPositiveTransaction(tx) ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'"
                     >
-                      {{ isPositiveTransaction(tx) ? '+' : '-' }}{{ appConfig.formatCurrency(toNumber(tx['amount'])) }}
+                      {{ formatRecordedTransaction(tx) }}
                     </span>
                   </div>
 
@@ -220,7 +148,7 @@ type WalletTransaction = Record<string, unknown>;
                 </div>
                 <div class="min-w-0">
                   <p class="text-sm font-black text-slate-900">No transactions yet</p>
-                  <p class="text-xs font-semibold text-slate-500 truncate">Top-ups and wallet payments will appear here.</p>
+                  <p class="text-xs font-semibold text-slate-500 truncate">Your wallet payments and refunds will appear here.</p>
                 </div>
               </div>
             }
@@ -233,6 +161,7 @@ type WalletTransaction = Record<string, unknown>;
 export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     @ViewChild('cardElementContainer') cardElementContainer?: ElementRef<HTMLElement>;
 
+    formatRecordedTransaction(tx:WalletTransaction):string {return recordedWalletTransaction(tx,this.isPositiveTransaction(tx));}
     walletService = inject(WalletService);
     appConfig = inject(AppConfigService);
     paymentService = inject(PaymentService);
@@ -246,7 +175,10 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     loading = signal(false);
     cardError = signal<string | null>(null);
     cardReady = signal(false);
-    transactions = signal<WalletTransaction[]>([]);
+    private readonly storedTransactions=signal<WalletTransaction[]>([]);
+    private readonly transactionOwner=signal<string|null>(null);
+    private transactionRead=0;
+    readonly transactions=computed(()=>this.transactionOwner()===this.auth.currentUser()?.id?this.storedTransactions():[]);
 
     private stripe: Stripe | null = null;
     private elements: StripeElements | null = null;
@@ -266,7 +198,7 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     ngAfterViewInit(): void {
-        setTimeout(() => void this.initStripeElements(), 100);
+        // No card collection: new wallet funding is retired.
     }
 
     ngOnDestroy(): void {
@@ -279,16 +211,7 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     get canSubmitTopUp(): boolean {
-        const amount = this.toNumber(this.topUpAmount);
-
-        return (
-            amount > 0 &&
-            !this.loading() &&
-            !!this.stripe &&
-            !!this.card &&
-            this.cardReady() &&
-            !this.cardError()
-        );
+        return false;
     }
 
     setQuickAmount(amount: number): void {
@@ -304,18 +227,21 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
 
     async loadTransactions(): Promise<void> {
         const user = this.auth.currentUser();
+        const read=++this.transactionRead;
+        this.transactionOwner.set(user?.id||null);
+        this.storedTransactions.set([]);
 
         if (!user?.id) {
-            this.transactions.set([]);
+            this.storedTransactions.set([]);
             return;
         }
 
         try {
             const txs = await this.paymentService.getTransactions(user.id);
-            this.transactions.set(Array.isArray(txs) ? txs : []);
+            if(read===this.transactionRead&&user.id===this.auth.currentUser()?.id)this.storedTransactions.set(Array.isArray(txs)?txs:[]);
         } catch (error) {
             console.error('Failed to load transactions:', error);
-            this.transactions.set([]);
+            if(read===this.transactionRead&&user.id===this.auth.currentUser()?.id)this.storedTransactions.set([]);
         }
     }
 
@@ -376,83 +302,7 @@ export class WalletPage implements OnInit, AfterViewInit, OnDestroy {
     }
 
     async handleTopUp(): Promise<void> {
-        if (this.loading()) return;
-
-        const amount = this.toNumber(this.topUpAmount);
-        const user = this.auth.currentUser();
-
-        if (!user?.id) {
-            await this.showToast('Please sign in again.', 'warning');
-            return;
-        }
-
-        if (amount <= 0) {
-            await this.showToast('Enter a valid amount.', 'warning');
-            return;
-        }
-
-        if (!this.stripe || !this.card || !this.cardReady()) {
-            await this.showToast('Card details are not ready yet.', 'warning');
-            return;
-        }
-
-        this.loading.set(true);
-
-        const loadingOverlay = await this.loadingCtrl.create({
-            message: 'Initializing payment...'
-        });
-
-        await loadingOverlay.present();
-
-        try {
-            const tenantId = this.auth.tenantId?.() || '';
-
-            const { clientSecret } = await this.paymentService.createWalletTopupIntent(
-                amount,
-                this.appConfig.currencyCode,
-                user.id,
-                tenantId
-            );
-
-            if (!clientSecret) {
-                throw new Error('Payment could not be initialized.');
-            }
-
-            loadingOverlay.message = 'Confirming payment...';
-
-            const paymentIntent = await this.paymentService.confirmCardPayment(clientSecret, this.card);
-
-            if (!paymentIntent?.id) {
-                throw new Error('Payment confirmation failed.');
-            }
-
-            loadingOverlay.message = 'Finalizing top-up...';
-
-            await this.paymentService.confirmWalletTopup({
-                paymentIntentId: paymentIntent.id,
-                userId: user.id,
-                amount
-            });
-
-            await this.refreshWalletData();
-
-            await this.showToast(
-                `Successfully added ${this.appConfig.formatCurrency(amount)} to your wallet.`,
-                'success'
-            );
-
-            this.topUpAmount = null;
-            this.card.clear();
-            this.cardError.set(null);
-        } catch (error: unknown) {
-            console.error('Top up failed:', error);
-
-            const message = error instanceof Error ? error.message : 'Payment failed. Please try again.';
-            await this.showToast(message, 'danger');
-        } finally {
-            await loadingOverlay.dismiss();
-            this.loading.set(false);
-        }
+        await this.showToast('Wallet top-ups are no longer available. Pay directly when booking.', 'warning');
     }
 
     isPositiveTransaction(tx: WalletTransaction): boolean {

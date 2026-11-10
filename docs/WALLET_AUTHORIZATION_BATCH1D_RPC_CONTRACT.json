@@ -1,0 +1,70 @@
+[
+  {
+    "signature": "public.approve_errand_over_budget(uuid)",
+    "service": true
+  },
+  {
+    "signature": "auth.cancel_job_safely(uuid)",
+    "service": true
+  },
+  {
+    "signature": "auth.cancel_job_safely(uuid,text)",
+    "service": true
+  },
+  {
+    "signature": "auth.finalize_wallet_topup(uuid,numeric,text)",
+    "service": true
+  },
+  {
+    "signature": "auth.finalize_wallet_topup(uuid,numeric,text,text)",
+    "service": true
+  },
+  {
+    "signature": "auth.release_job_wallet_reservation(uuid,text)",
+    "service": true
+  },
+  {
+    "signature": "auth.reserve_errand_funds(uuid,uuid,numeric,numeric)",
+    "service": true
+  },
+  {
+    "signature": "public.cancel_job_safely(uuid,text)",
+    "service": true
+  },
+  {
+    "signature": "public.credit_wallet_topup(uuid,numeric,text,text)",
+    "service": false
+  },
+  {
+    "signature": "public.credit_wallet_topup(uuid,numeric,text,text,jsonb)",
+    "service": false
+  },
+  {
+    "signature": "public.finalize_wallet_topup(numeric,text,text,uuid)",
+    "service": true
+  },
+  {
+    "signature": "public.finalize_wallet_topup_legacy_incompatible(uuid,numeric,text,text)",
+    "service": false
+  },
+  {
+    "signature": "public.pay_job_from_wallet(uuid,uuid,numeric,text,uuid)",
+    "service": true
+  },
+  {
+    "signature": "public.release_job_wallet_reservation(uuid,text)",
+    "service": true
+  },
+  {
+    "signature": "public.settle_errand_funds(uuid)",
+    "service": true
+  },
+  {
+    "signature": "public.settle_job_wallet_reservation(uuid,numeric)",
+    "service": true
+  },
+  {
+    "signature": "public.validate_wallet_integrity(uuid)",
+    "service": true
+  }
+]

@@ -22,7 +22,15 @@ export interface GeocodeResult {
 }
 
 export interface AutocompleteResult {
+  countryCode?: string;
   label: string;
   lat: number;
   lng: number;
+  primaryText?: string;
+  secondaryText?: string;
+  postalCode?: string;
+  placeType?: string;
+  categories?: string[];
+  placeTags?: Record<string,string>;
+  distanceKm?: number;
 }

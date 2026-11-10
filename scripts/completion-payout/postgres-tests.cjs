@@ -1,0 +1,46 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+async function database(){
+ if(process.env.MOVABI_PGLITE_MODULE){const {PGlite}=require(process.env.MOVABI_PGLITE_MODULE);return new PGlite();}
+ const {Client}=require(process.env.MOVABI_PG_MODULE||'pg');const client=new Client({connectionString:process.env.MOVABI_TEST_DATABASE_URL});await client.connect();return {exec:s=>client.query(s),query:(s,a)=>client.query(s,a),close:()=>client.end()};
+}
+let db,count=0;const C='11111111-1111-4111-8111-111111111111',D='33333333-3333-4333-8333-333333333333',S='44444444-4444-4444-8444-444444444444';
+const q=(s,a=[])=>db.query(s,a);const row=async(s,a)=>(await q(s,a)).rows[0];
+const terms={total:10,payout:8,platformFee:1,commission:1,commissionRate:10,amountMinor:800,currency:'GBP',destination:'acct_fixture',country:'GB'};
+const meta={completion_pin_verified_at:new Date().toISOString()};
+const complete=(id,driver=D,t=terms,m=meta)=>q('SELECT * FROM complete_job_with_pending_payout($1,$2,$3,$4)',[id,driver,JSON.stringify(t),JSON.stringify(m)]);
+async function reset(){await db.exec('TRUNCATE jobs,wallets,service_types CASCADE');await q("INSERT INTO wallets(user_id,available_balance,reserved_balance,currency_code) VALUES($1,100,0,'GBP')",[C]);await q("INSERT INTO service_types(id,slug,name) VALUES($1,'delivery','Delivery')",[S]);}
+async function job(paid=false){const id='aaaaaaaa-aaaa-4aaa-8aaa-'+String(++count).padStart(12,'0');await q("INSERT INTO jobs(id,customer_id,driver_id,status,payment_status,payment_method,service_type_id,total_price,price,currency_code,metadata) VALUES($1,$2,$3,'requested','pending','wallet',$4,10,10,'GBP',$5)",[id,C,D,S,JSON.stringify({quote_id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',quote_expires_at:new Date(Date.now()+3600000).toISOString()})]);await q("UPDATE jobs SET fare_breakdown='{\"calculationVersion\":\"fixture-v1\"}' WHERE id=$1",[id]);await q('SELECT pay_job_from_wallet($1,$2,10,\'GBP\',NULL)',[id,C]);await q("UPDATE jobs SET status='en_route_to_customer' WHERE id=$1",[id]);if(paid)await q('SELECT settle_job_wallet_reservation($1,10)',[id]);return id;}
+async function rejects(fn){let rejected=false;try{await fn();}catch{rejected=true;}assert(rejected,'Expected rejection');}
+async function test(name,fn){await reset();await fn();console.log('PASS '+name);}
+(async()=>{
+ db=await database();for(const f of ['fixture.sql','wallet-migration.sql','settlement-migration.sql','migration.sql'])await db.exec(fs.readFileSync(__dirname+'/'+f,'utf8'));
+ await test('wallet completion settles once and records pending earnings',async()=>{const id=await job();await complete(id);await complete(id);assert.equal((await row('SELECT status FROM jobs WHERE id=$1',[id])).status,'completed');assert.equal((await row('SELECT count(*)::int n FROM wallet_transactions WHERE job_id=$1 AND transaction_type=\'settlement\'',[id])).n,1);assert.equal((await row('SELECT status FROM driver_earnings WHERE job_id=$1',[id])).status,'pending');});
+ await test('historically settled wallet is not debited again',async()=>{const id=await job(true);await complete(id);assert.equal((await row('SELECT available_balance::float8 a FROM wallets')).a,90);assert.equal((await row("SELECT count(*)::int n FROM wallet_transactions WHERE transaction_type='settlement'")).n,1);});
+ await test('wrong driver and missing PIN evidence leave funds reserved',async()=>{const id=await job();await rejects(()=>complete(id,C));await rejects(()=>complete(id,D,terms,{}));assert.equal((await row('SELECT reserved_balance::float8 r FROM wallets')).r,10);});
+ await test('invalid payout terms roll back settlement',async()=>{const id=await job();await rejects(()=>complete(id,D,{...terms,amountMinor:700}));assert.equal((await row('SELECT reserved_balance::float8 r FROM wallets')).r,10);});
+ await test('earnings conflict rolls back completion and wallet settlement',async()=>{const id=await job();await q("INSERT INTO driver_earnings(driver_id,job_id,amount,status) VALUES($1,$2,8,'paid')",[D,id]);await rejects(()=>complete(id));assert.equal((await row('SELECT reserved_balance::float8 r FROM wallets')).r,10);assert.equal((await row('SELECT count(*)::int n FROM job_payout_queue')).n,0);});
+ await test('only one active lease can submit a payout',async()=>{const id=await job();await complete(id);const a=await q('SELECT * FROM claim_queued_job_payout($1)',[id]);const b=await q('SELECT * FROM claim_queued_job_payout($1)',[id]);assert.equal(a.rows.length,1);assert.equal(b.rows.length,0);});
+ await test('stale lease retains its attempt for reconciliation',async()=>{const id=await job();await complete(id);await q('SELECT * FROM claim_queued_job_payout($1)',[id]);await q("UPDATE job_payout_queue SET lease_until=now()-interval '1 second' WHERE job_id=$1",[id]);const a=(await q('SELECT * FROM claim_queued_job_payout($1)',[id])).rows[0];assert.equal(a.attempt,1);assert.equal(a.status,'reconcile');});
+ await test('definitive rejection gets a new persisted attempt',async()=>{const id=await job();await complete(id);await q('SELECT * FROM claim_queued_job_payout($1)',[id]);await q("UPDATE job_payout_queue SET status='pending',lease_until=NULL WHERE job_id=$1",[id]);assert.equal((await q('SELECT * FROM claim_queued_job_payout($1)',[id])).rows[0].attempt,2);});
+ await test('recording payout marks earnings paid exactly once',async()=>{const id=await job();await complete(id);const a=(await q('SELECT * FROM claim_queued_job_payout($1)',[id])).rows[0];await q("SELECT finish_queued_job_payout($1,$2,'tr_fixture')",[id,a.token]);await q("SELECT finish_queued_job_payout($1,$2,'tr_fixture')",[id,a.token]);assert.equal((await row('SELECT count(*)::int n FROM driver_earnings')).n,1);assert.equal((await row('SELECT status FROM driver_earnings')).status,'paid');});
+ await test('stale token cannot record a transfer',async()=>{const id=await job();await complete(id);assert.equal((await row("SELECT finish_queued_job_payout($1,gen_random_uuid(),'tr_fixture') result",[id])).result,false);});
+ await test('refund cannot race an unfinished payout',async()=>{const id=await job();await complete(id);await rejects(()=>q("INSERT INTO refund_operations(job_id,status) VALUES($1,'reserved')",[id]));});
+ await test('protected negotiations reject loss-making fare before acquisition',async()=>{const id=await job();const policy={paymentPercent:3.25,paymentFixed:.2,operatingAllowance:.1,minimumContribution:.5};await q('UPDATE jobs SET fare_breakdown=$2,platform_fee=1,commission_rate_used=10 WHERE id=$1',[id,JSON.stringify({platformFeeAmount:1,shoppingBudget:0,paymentMargin:{policy}})]);await rejects(()=>q('UPDATE jobs SET agreed_fare=1,driver_id=$2 WHERE id=$1',[id,C]));assert.equal((await row('SELECT driver_id FROM jobs WHERE id=$1',[id])).driver_id,D);await q('UPDATE jobs SET agreed_fare=10 WHERE id=$1',[id]);});
+ await test('shopping budget increases cannot consume the protected margin',async()=>{const id=await job();const policy={paymentPercent:3.25,paymentFixed:.2,operatingAllowance:.1,minimumContribution:.5};await q('UPDATE jobs SET fare_breakdown=$2 WHERE id=$1',[id,JSON.stringify({customerCharge:10,driverEntitlement:8,paymentMargin:{policy}})]);await q("INSERT INTO errand_funding(job_id,item_budget,amount_reserved) VALUES($1,10,20)",[id]);await rejects(()=>q('UPDATE errand_funding SET item_budget=100,amount_reserved=110 WHERE job_id=$1',[id]));assert.equal((await row('SELECT item_budget::float8 budget FROM errand_funding WHERE job_id=$1',[id])).budget,10);});
+ await test('financial outbox RPCs deny browser roles',async()=>{const result=await q("SELECT has_function_privilege('authenticated','complete_job_with_pending_payout(uuid,uuid,jsonb,jsonb)','EXECUTE') allowed");assert.equal(result.rows[0].allowed,false);assert.equal((await row("SELECT has_table_privilege('authenticated','job_payout_queue','SELECT') allowed")).allowed,false);});
+ if (!process.env.MOVABI_PGLITE_MODULE) {
+   await reset();const id=await job();
+   const {Client}=require(process.env.MOVABI_PG_MODULE||'pg');
+   const a=new Client({connectionString:process.env.MOVABI_TEST_DATABASE_URL}),b=new Client({connectionString:process.env.MOVABI_TEST_DATABASE_URL});
+   await Promise.all([a.connect(),b.connect()]);
+   try {
+     await Promise.all([a.query('SELECT * FROM complete_job_with_pending_payout($1,$2,$3,$4)',[id,D,JSON.stringify(terms),JSON.stringify(meta)]),b.query('SELECT * FROM complete_job_with_pending_payout($1,$2,$3,$4)',[id,D,JSON.stringify(terms),JSON.stringify(meta)])]);
+     assert.equal((await row("SELECT count(*)::int n FROM wallet_transactions WHERE transaction_type='settlement'")).n,1);
+     console.log('PASS concurrent completion settles the wallet exactly once');
+     const results=await Promise.all([a.query('SELECT * FROM claim_queued_job_payout($1)',[id]),b.query('SELECT * FROM claim_queued_job_payout($1)',[id])]);
+     assert.equal(results.reduce((n,r)=>n+r.rows.length,0),1);
+     console.log('PASS concurrent PostgreSQL connections acquire exactly one payout lease');
+   } finally { await Promise.all([a.end(),b.end()]); }
+ }
+ console.log('COMPLETION_DATABASE_TESTS=PASS count=14');
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(db)await db.close();});

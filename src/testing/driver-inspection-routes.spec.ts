@@ -12,7 +12,7 @@ const mock = vi.hoisted(() => {
       {id:'same-admin',role:'admin',tenant_id:'tenant-a'},
       {id:'other-admin',role:'admin',tenant_id:'tenant-b'}],
     vehicles:[{id:vehicle,user_id:driver,capacity:'bike',inspection_revision:'revision-a'}],
-    driver_inspection_photos:[]
+    driver_vehicle_inspection_photos:[]
   };
   const sign=vi.fn(async () => ({data:{signedUrl:'https://storage.example.invalid/private'},error:null}));
   const upload=vi.fn(async () => ({error:null}));
@@ -20,7 +20,7 @@ const mock = vi.hoisted(() => {
     auth:{getUser:async (token:string) => ({data:{user:{id:token==='driver' ? driver : token}},error:null})},
     storage:{from:() => ({createSignedUrl:sign,upload})},
     rpc:async (_name:string,args:Record<string,string>) => {
-      tables.driver_inspection_photos.push({id:photo,driver_id:args.p_driver,tenant_id:args.p_tenant,
+      tables.driver_vehicle_inspection_photos.push({id:photo,driver_id:args.p_driver,tenant_id:args.p_tenant,
         vehicle_id:args.p_vehicle,vehicle_revision:args.p_revision,slot:args.p_slot,storage_path:args.p_path,status:'pending'});
       return {data:photo,error:null};
     },
@@ -86,6 +86,6 @@ describe('inspection upload and tenant review endpoints', () => {
       {slot:'rear',status:'missing'},{slot:'side',status:'missing'}
     ]});
     expect((await call(review,'same-admin',approve)).status).toBe(204);
-    expect(mock.tables.driver_inspection_photos[0]).toMatchObject({status:'approved',reviewed_by:'same-admin'});
+    expect(mock.tables.driver_vehicle_inspection_photos[0]).toMatchObject({status:'approved',reviewed_by:'same-admin'});
   });
 });

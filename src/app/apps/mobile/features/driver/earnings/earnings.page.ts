@@ -1,3 +1,6 @@
+import {MarketSafetyService} from '../../../../../core/services/payments/market-safety.service';
+import { earningsSummary, recordedEarningAmount, recordedFeeAmount, recordedGrossAmount, recordedPayoutLabel, type EarningsMetric } from '@shared/utils/earnings-currency';
+import { ConnectService } from '../../../../../core/services/stripe/connect.service';
 import { Component, inject, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
@@ -7,6 +10,8 @@ import {
     IonBackButton,
     IonTitle,
     IonContent,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
     IonIcon,
     IonRefresher,
     IonRefresherContent,
@@ -33,8 +38,7 @@ import {
 import { DriverService } from '../../../../../core/services/driver/driver.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 import {
-    EmptyStateComponent,
-    BadgeComponent
+    EmptyStateComponent
 } from '../../../../../shared/ui';
 
 type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
@@ -50,11 +54,12 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
         IonBackButton,
         IonTitle,
         IonContent,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
         IonIcon,
         IonRefresher,
         IonRefresherContent,
-        EmptyStateComponent,
-        BadgeComponent
+        EmptyStateComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -83,15 +88,15 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="flex items-start justify-between gap-4 mb-8">
               <div>
                 <p class="text-slate-600 text-xs font-black mb-2">
-                  Transferred to Stripe
+                  Paid earnings
                 </p>
 
                 <h2 class="text-xl font-display font-black tracking-tight leading-none text-slate-950">
-                  {{ formatPrice(totalBalance()) }}
+                  {{ currencySummary('paid') }}
                 </h2>
 
                 <p class="text-sm text-slate-600 font-semibold mt-3 leading-relaxed max-w-[16rem]">
-                  Completed request payouts sent to your Stripe Express account.
+                  Amounts retain their recorded currencies. Recorded earnings are not an available bank balance.
                 </p>
               </div>
 
@@ -104,10 +109,10 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               <button
                 type="button"
                 (click)="withdrawFunds()"
-                [disabled]="withdrawLoading()"
+                [disabled]="withdrawLoading() || !payoutContext.wallet()?.payoutIntegrationAvailable"
                 class="h-12 rounded-2xl bg-blue-600 text-white font-black text-sm shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {{ withdrawLoading() ? 'Opening...' : 'Open Stripe' }}
+                {{ withdrawLoading() ? 'Opening...' : (payoutContext.wallet()?.payoutIntegrationAvailable ? 'View payment account' : 'Payment account setup') }}
                 <ion-icon [name]="withdrawLoading() ? 'refresh-outline' : 'arrow-forward'" [class.animate-spin]="withdrawLoading()"></ion-icon>
               </button>
 
@@ -128,13 +133,17 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-3">
+        <p class="text-sm text-slate-600" role="status">{{payoutContext.walletError() || payoutContext.wallet()?.message}}</p>
+        @if(ledgerError()){<p role="alert" class="text-red-700">{{ledgerError()}}</p>}
+        <p class="text-sm text-slate-600">Failed payouts: {{ currencySummary('failed') }}</p>
+        <p class="text-sm text-amber-800">Needs review: {{currencySummary('review')}}</p>
+        <div class="earning-totals">
           <div class="bg-white rounded-[1.5rem] p-4 border border-slate-100 shadow-sm">
             <div class="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
               <ion-icon name="checkmark-circle-outline" class="text-xl"></ion-icon>
             </div>
             <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Paid</p>
-            <p class="text-lg font-display font-black text-slate-950">{{ formatPrice(paidTotal()) }}</p>
+            <p class="text-lg font-display font-black text-slate-950">{{ currencySummary('paid') }}</p>
           </div>
 
           <div class="bg-white rounded-[1.5rem] p-4 border border-slate-100 shadow-sm">
@@ -142,7 +151,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               <ion-icon name="time-outline" class="text-xl"></ion-icon>
             </div>
             <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Pending</p>
-            <p class="text-lg font-display font-black text-slate-950">{{ formatPrice(pendingTotal()) }}</p>
+            <p class="text-lg font-display font-black text-slate-950">{{ currencySummary('pending') }}</p>
           </div>
 
           <div class="bg-white rounded-[1.5rem] p-4 border border-slate-100 shadow-sm">
@@ -150,7 +159,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
               <ion-icon name="card-outline" class="text-xl"></ion-icon>
             </div>
             <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Fees</p>
-            <p class="text-lg font-display font-black text-slate-950">{{ formatPrice(totalCommission()) }}</p>
+            <p class="text-lg font-display font-black text-slate-950">{{ currencySummary('fees') }}</p>
           </div>
         </div>
 
@@ -158,7 +167,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
           <div class="grid grid-cols-4 gap-2">
             <button
               type="button"
-              (click)="period.set('all')"
+              (click)="setPeriod('all')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'all'"
               [class.text-white]="period() === 'all'"
@@ -169,7 +178,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
             <button
               type="button"
-              (click)="period.set('today')"
+              (click)="setPeriod('today')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'today'"
               [class.text-white]="period() === 'today'"
@@ -180,7 +189,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
             <button
               type="button"
-              (click)="period.set('week')"
+              (click)="setPeriod('week')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'week'"
               [class.text-white]="period() === 'week'"
@@ -191,7 +200,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
 
             <button
               type="button"
-              (click)="period.set('month')"
+              (click)="setPeriod('month')"
               class="h-10 rounded-2xl text-xs font-black transition-all"
               [class.bg-slate-950]="period() === 'month'"
               [class.text-white]="period() === 'month'"
@@ -207,7 +216,7 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             <div class="flex items-center gap-3">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <div>
-                <h3 class="text-xs font-black text-slate-500 uppercase tracking-[0.18em]">
+                <h3 class="text-xs font-black text-slate-500">
                   Transactions
                 </h3>
                 <p class="text-[11px] text-slate-400 font-semibold mt-0.5">
@@ -244,168 +253,43 @@ type EarningsPeriod = 'all' | 'today' | 'week' | 'month';
             </div>
           } @else {
             <div class="space-y-3">
-              @for (earning of filteredEarnings(); track getEarningKey(earning)) {
-                <button
-                  type="button"
-                  (click)="toggleEarning(earning)"
-                  class="w-full text-left bg-white rounded-[1.75rem] border border-slate-100 shadow-sm p-4 active:scale-[0.99] transition-all"
-                >
-                  <div class="flex items-start gap-4">
-                    <div
-                      class="w-12 h-12 rounded-2xl flex items-center justify-center border shrink-0"
-                      [class.bg-emerald-50]="getEarningStatus(earning) === 'paid'"
-                      [class.text-emerald-600]="getEarningStatus(earning) === 'paid'"
-                      [class.border-emerald-100]="getEarningStatus(earning) === 'paid'"
-                      [class.bg-amber-50]="getEarningStatus(earning) === 'pending'"
-                      [class.text-amber-600]="getEarningStatus(earning) === 'pending'"
-                      [class.border-amber-100]="getEarningStatus(earning) === 'pending'"
-                    >
-                       <ion-icon [name]="getEarningStatus(earning) === 'paid' ? 'cash' : 'time-outline'" class="text-xl"></ion-icon>
-                    </div>
-
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-start justify-between gap-3 mb-1">
-                        <div class="min-w-0">
-                          <h4 class="font-display font-black text-slate-950 text-base leading-tight whitespace-normal">
-                            {{ getEarningTitle(earning) }}
-                          </h4>
-                         <p class="text-[11px] text-slate-400 font-bold uppercase tracking-[0.08em] mt-1">
-                          {{ earning.created_at | date:'mediumDate' }} - {{ earning.created_at | date:'shortTime' }}
-                     </p>
-                        </div>
-
-                        <div class="text-right shrink-0">
-                          <p class="text-xl font-display font-black text-emerald-600">
-                            +{{ formatPrice(toNumber(earning.amount)) }}
-                          </p>
-
-                          <div class="flex items-center justify-end gap-2 mt-1">
-                            <app-badge [variant]="getEarningStatus(earning) === 'paid' ? 'success' : 'warning'">
-                              {{ getEarningStatus(earning) }}
-                            </app-badge>
-
-                            <ion-icon
-                              [name]="isSelected(earning) ? 'chevron-up-outline' : 'chevron-down-outline'"
-                              class="text-slate-400 text-lg"
-                            ></ion-icon>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="flex flex-wrap items-center gap-2 mt-3">
-                        <app-badge [variant]="formatPlan(earning.pricing_plan_used) === 'Pro' ? 'primary' : 'secondary'">
-                          {{ formatPlan(earning.pricing_plan_used) }}
-                        </app-badge>
-
-                        @if (getCommissionAmount(earning) > 0) {
-                          <app-badge variant="warning">
-                            Fee {{ formatPrice(getCommissionAmount(earning)) }}
-                          </app-badge>
-                        } @else if (formatPlan(earning.pricing_plan_used) === 'Pro') {
-                          <app-badge variant="success">
-                            0% commission
-                          </app-badge>
-                        }
-                      </div>
-
-                      @if (getCommissionAmount(earning) > 0) {
-                        <p class="text-xs text-slate-500 font-semibold mt-3">
-                          Commission deducted:
-                          <span class="font-black text-slate-700">
-                            {{ formatPrice(getCommissionAmount(earning)) }}
-                          </span>
-
-                          @if (earning.commission_rate_used !== null && earning.commission_rate_used !== undefined) {
-                            <span>({{ earning.commission_rate_used }}%)</span>
-                          }
-                        </p>
-                      }
-                    </div>
-                  </div>
-
-                  @if (isSelected(earning)) {
-                    <div class="mt-4 pt-4 border-t border-slate-100 space-y-3">
-                      <div class="grid grid-cols-2 gap-3">
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Stripe status
-                          </p>
-                          <p class="text-sm font-black text-slate-950 uppercase">
-                            {{ getStripePayoutLabel(earning) }}
-                          </p>
-                        </div>
-
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Net payout
-                          </p>
-                          <p class="text-sm font-black text-emerald-600">
-                            {{ formatPrice(toNumber(earning.amount)) }}
-                          </p>
-                        </div>
-
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Fee
-                          </p>
-                          <p class="text-sm font-black text-slate-950">
-                            {{ formatPrice(getCommissionAmount(earning)) }}
-                          </p>
-                        </div>
-
-                        <div class="rounded-2xl bg-slate-50 p-3">
-                          <p class="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1">
-                            Gross
-                          </p>
-                          <p class="text-sm font-black text-slate-950">
-                            {{ formatPrice(getGrossAmount(earning)) }}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div class="rounded-2xl bg-slate-50 p-3 space-y-2">
-                        <div class="flex items-center justify-between gap-3">
-                          <span class="text-xs font-black text-slate-400">Date</span>
-                          <span class="text-xs font-bold text-slate-700">
-                            {{ earning.created_at | date:'medium' }}
-                          </span>
-                        </div>
-
-                        @if (earning.job_id) {
-                          <div class="pt-2 border-t border-slate-200">
-                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                              Job ID
-                            </p>
-                            <p class="text-[10px] font-semibold text-slate-500 break-words">
-                              {{ earning.job_id }}
-                            </p>
-                          </div>
-                        }
-
-                        @if ($any(earning).stripe_transfer_id) {
-                          <div class="pt-2 border-t border-slate-200">
-                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                              Stripe transfer
-                            </p>
-                            <p class="text-[10px] font-semibold text-emerald-700 break-words">
-                              {{ $any(earning).stripe_transfer_id }}
-                            </p>
-                          </div>
-                        }
-                      </div>
-                    </div>
+              @for (earning of visibleEarnings(); track getEarningKey(earning)) {
+                <article class="earning-record">
+                  <button type="button" class="earning-summary" (click)="toggleEarning(earning)" [attr.aria-expanded]="isSelected(earning)">
+                    <span class="font-black">{{ getEarningTitle(earning) }}</span>
+                    <span class="earning-amount">{{ formatRecordedEarning(earning) }}</span>
+                    <span>{{ earning.created_at | date:'medium' }}</span>
+                    <span class="earning-status">{{ getStripePayoutLabel(earning) }}</span>
+                    <span>{{ formatPlan(earning.pricing_plan_used) }} · Commission {{ formatRecordedFee(earning) }}</span>
+                    <span>{{ isSelected(earning)?'Hide transaction details':'View transaction details' }}</span>
+                  </button>
+                  @if(isSelected(earning)) {
+                    <dl class="earning-details"><dt>Net payout</dt><dd>{{ formatRecordedEarning(earning) }}</dd><dt>Commission</dt><dd>{{ formatRecordedFee(earning) }} @if(earning.commission_rate_used!==null && earning.commission_rate_used!==undefined){({{earning.commission_rate_used}}%)}</dd><dt>Gross earnings</dt><dd>{{ formatRecordedGross(earning) }}</dd>
+                    @if($any(earning).stripe_transfer_id){<dt>Stripe transfer</dt><dd>{{ $any(earning).stripe_transfer_id }}</dd>}
+                    @if(earning.job_id){<dt>Booking reference</dt><dd>{{earning.job_id}}</dd>}
+                    </dl>
                   }
-                </button>
+                  @if(earning.job_id){<button type="button" class="earning-booking" (click)="openBooking(earning.job_id)">View booking record</button>}
+                </article>
               }
             </div>
           }
         </div>
       </div>
+      <ion-infinite-scroll threshold="120px" [disabled]="visibleEarnings().length >= filteredEarnings().length" (ionInfinite)="loadMoreEarnings($event)">
+        <ion-infinite-scroll-content loadingSpinner="crescent" loadingText="Loading more transactions…"></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
     </ion-content>
-  `
+  `,
+    styles: [`.earning-record{background:white;border:1px solid #e2e8f0;border-radius:1.3rem;padding:1rem;min-width:0;max-width:100%;overflow-wrap:anywhere}.earning-summary{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:.6rem;text-align:left;white-space:normal;min-width:0;line-height:1.4}.earning-summary>*{min-width:0;max-width:100%}.earning-amount{font-weight:800;color:#047857;font-size:1.2rem}.earning-status{background:#f1f5f9;border-radius:.7rem;padding:.45rem .6rem;line-height:1.4}.earning-details{display:grid;gap:.4rem;margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem}.earning-details dt{font-weight:700;color:#64748b}.earning-details dd{margin:0;margin-bottom:.5rem;overflow-wrap:anywhere}.earning-booking{margin-top:1rem;background:#fef3c7;border-radius:.75rem;padding:.75rem 1rem;font-weight:700;width:100%;white-space:normal;text-align:left}.earning-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;align-items:stretch}.earning-totals>div{min-width:0;padding:.75rem .5rem;border-radius:1rem}.earning-totals>div>div{width:2rem;height:2rem;border-radius:.75rem;margin-bottom:.5rem}.earning-totals>div>div ion-icon{font-size:1.125rem}.earning-totals>div>p:first-of-type{font-size:.6875rem!important;line-height:1.35!important;letter-spacing:.04em!important;margin-bottom:.35rem}.earning-totals>div>p:last-of-type{font-size:.875rem!important;line-height:1.4!important;letter-spacing:normal!important;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere;margin:0}@media(min-width:640px){.earning-totals{gap:.75rem}.earning-totals>div{padding:1rem}.earning-totals>div>p:last-of-type{font-size:1rem!important}}.earning-record button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}`]
 })
 export class EarningsPage implements OnInit {
+    openBooking(id:string){void this.nav.navigateForward('/driver/history/'+encodeURIComponent(id));}
+
     private driverService = inject(DriverService);
+    readonly payoutContext=inject(MarketSafetyService);
+    readonly ledgerError=this.driverService.earningsError;
+    private connectService = inject(ConnectService);
     private config = inject(AppConfigService);
     public nav = inject(NavController);
 
@@ -415,6 +299,14 @@ export class EarningsPage implements OnInit {
     withdrawError = signal<string | null>(null);
     selectedEarningId = signal<string | null>(null);
     period = signal<EarningsPeriod>('all');
+
+    visibleCount = signal(10);
+    visibleEarnings = computed(() => this.filteredEarnings().slice(0, this.visibleCount()));
+    setPeriod(period: EarningsPeriod): void { this.period.set(period); this.visibleCount.set(10); }
+    async loadMoreEarnings(event: Event): Promise<void> {
+        try { this.visibleCount.update(count => Math.min(count + 10, this.filteredEarnings().length)); }
+        finally { await (event.target as HTMLIonInfiniteScrollElement).complete(); }
+    }
 
     filteredEarnings = computed(() => {
         const items = [...this.earnings()];
@@ -429,28 +321,16 @@ export class EarningsPage implements OnInit {
             });
     });
 
-    totalBalance = computed(() => {
-        return this.earnings()
-            .filter((earning) => this.getEarningStatus(earning) === 'paid')
-            .reduce((sum: number, earning) => sum + this.toNumber(earning.amount), 0);
-    });
+    currencySummary(metric: EarningsMetric): string {
+        return earningsSummary(this.earnings(), metric);
+    }
 
-    paidTotal = computed(() => {
-        return this.earnings()
-            .filter((earning) => this.getEarningStatus(earning) === 'paid')
-            .reduce((sum: number, earning) => sum + this.toNumber(earning.amount), 0);
-    });
+    formatRecordedEarning(earning: any, amount: unknown = earning?.amount): string {
+        return recordedEarningAmount(earning, amount);
+    }
 
-    pendingTotal = computed(() => {
-        return this.earnings()
-            .filter((earning) => this.getEarningStatus(earning) === 'pending')
-            .reduce((sum: number, earning) => sum + this.toNumber(earning.amount), 0);
-    });
-
-    totalCommission = computed(() => {
-        return this.earnings()
-            .reduce((sum: number, earning) => sum + this.getCommissionAmount(earning), 0);
-    });
+    formatRecordedFee(earning: any): string { return recordedFeeAmount(earning); }
+    formatRecordedGross(earning: any): string { return recordedGrossAmount(earning); }
 
     constructor() {
         addIcons({
@@ -480,7 +360,7 @@ export class EarningsPage implements OnInit {
         this.loading.set(true);
 
         try {
-            await this.driverService.fetchEarnings();
+            await Promise.all([this.driverService.fetchEarnings(),this.payoutContext.refreshWallet()]);
         } catch (error) {
             console.error('Failed to load earnings:', error);
         } finally {
@@ -490,7 +370,7 @@ export class EarningsPage implements OnInit {
 
     async refresh(event: RefresherCustomEvent) {
         try {
-            await this.driverService.fetchEarnings();
+            await Promise.all([this.driverService.fetchEarnings(),this.payoutContext.refreshWallet()]);
         } catch (error) {
             console.error('Failed to refresh earnings:', error);
         } finally {
@@ -499,72 +379,19 @@ export class EarningsPage implements OnInit {
     }
 
     async withdrawFunds() {
-        if (this.withdrawLoading()) return;
-
-        this.withdrawError.set(null);
-        this.withdrawLoading.set(true);
-
-        try {
-            const apiBase = this.getApiBaseUrl();
-            const token = this.getStoredAccessToken();
-
-            const endpoints = [
-                `${apiBase}/api/stripe/connect/dashboard-link`,
-                `${apiBase}/api/stripe/connect/login-link`,
-                `${apiBase}/api/connect/dashboard-link`,
-                `${apiBase}/api/connect/login-link`
-            ];
-
-            let lastError = '';
-
-            for (const endpoint of endpoints) {
-                try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {})
-                        }
-                    });
-
-                    const text = await response.text();
-                    let body: any = {};
-
-                    try {
-                        body = text ? JSON.parse(text) : {};
-                    } catch {
-                        body = { raw: text };
-                    }
-
-                    if (!response.ok) {
-                        lastError = body?.error || body?.message || `${response.status} ${response.statusText}`;
-                        continue;
-                    }
-
-                    const url =
-                        body?.url ||
-                        body?.login_url ||
-                        body?.dashboard_url ||
-                        body?.account_link?.url;
-
-                    if (url) {
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                        return;
-                    }
-
-                    lastError = 'Dashboard link response did not include a URL.';
-                } catch (error: any) {
-                    lastError = error?.message || 'Unable to open Stripe dashboard.';
-                }
-            }
-
-            this.withdrawError.set(
-                lastError ||
-                'Unable to open Stripe Express. Please make sure the driver Stripe Connect dashboard endpoint exists.'
-            );
-        } finally {
-            this.withdrawLoading.set(false);
-        }
+        try{await this.payoutContext.requireStripePayoutMarket();}catch(error:any){this.withdrawError.set(error?.message || 'Payout settings unavailable.');return;}
+        if(this.withdrawLoading())return;
+        this.withdrawError.set(null);this.withdrawLoading.set(true);
+        let dashboardTab:Window|null=null;
+        try{
+            dashboardTab=this.connectService.prepareDashboardTab();
+            // An empty account argument lets the authenticated server resolve this driver.
+            const link=await this.connectService.getDashboardLink('');
+            await this.connectService.openDashboard(link.url,dashboardTab);
+        }catch(error:any){
+            dashboardTab?.close();
+            this.withdrawError.set(error?.message || 'Unable to open Stripe Express. Please retry.');
+        }finally{this.withdrawLoading.set(false);}
     }
 
     toggleEarning(earning: any) {
@@ -625,16 +452,18 @@ export class EarningsPage implements OnInit {
     }
 
     getStripePayoutLabel(earning: any): string {
-        if (earning?.stripe_transfer_id) {
-            return 'Transferred to Stripe';
-        }
-
-        return this.getEarningStatus(earning) === 'paid'
-            ? 'Paid'
-            : 'Pending transfer';
+        return recordedPayoutLabel(earning);
     }
 
     getCommissionAmount(earning: any): number {
+        // This card shows total deductions, including platform fee and commission.
+        // Persisted gross/net earnings reconcile without fetching live pricing.
+        const gross = Number(earning?.gross_amount);
+        const net = Number(earning?.amount);
+        if (earning?.gross_amount != null && earning?.amount != null &&
+            Number.isFinite(gross) && Number.isFinite(net) && gross >= net && net >= 0) {
+            return Math.round((gross - net + Number.EPSILON) * 100) / 100;
+        }
         return this.toNumber(
             earning?.commission_fee ??
             earning?.platform_fee ??
@@ -654,40 +483,6 @@ export class EarningsPage implements OnInit {
         if (explicitGross > 0) return explicitGross;
 
         return this.toNumber(earning?.amount) + this.getCommissionAmount(earning);
-    }
-
-    private getApiBaseUrl(): string {
-        return 'https://movabi-api.apps.evolsolution.com';
-    }
-
-    private getStoredAccessToken(): string | null {
-        try {
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (!key) continue;
-
-                const value = localStorage.getItem(key);
-                if (!value) continue;
-
-                if (key.includes('auth-token') || key.includes('supabase')) {
-                    try {
-                        const parsed = JSON.parse(value);
-                        const token =
-                            parsed?.access_token ||
-                            parsed?.currentSession?.access_token ||
-                            parsed?.session?.access_token;
-
-                        if (token) return token;
-                    } catch {
-                        // ignore non-json localStorage values
-                    }
-                }
-            }
-        } catch {
-            return null;
-        }
-
-        return null;
     }
 
     private titleCase(value: string): string {

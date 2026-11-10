@@ -22,8 +22,13 @@ import { AppConfigService, CountryConfig } from '../../../../core/services/confi
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
 import { SupabaseService } from '../../../../core/services/supabase/supabase.service';
 import { ApiUrlService } from '../../../../core/services/api-url.service';
+import {
+    MarketplaceConfigService,
+    MarketplaceSettings
+} from '../../../../core/services/marketplace/marketplace-config.service';
+import { AdminService } from '../../services/admin.service';
 
-type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
+type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion' | 'marketplace' | 'development';
 
 @Component({
     selector: 'app-admin-settings',
@@ -85,6 +90,11 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
                 }
               </button>
 
+              <button type="button" (click)="activeTab.set('marketplace')" [class]="activeTab() === 'marketplace' ? 'nav-btn active' : 'nav-btn'">
+                <ion-icon name="settings-outline"></ion-icon>
+                <span>Marketplace Engine</span>
+              </button>
+
               <button type="button" (click)="activeTab.set('appVersion')" [class]="activeTab() === 'appVersion' ? 'nav-btn active' : 'nav-btn'">
                 <ion-icon name="cloud-upload-outline"></ion-icon>
                 <span>App Version & Updates</span>
@@ -93,6 +103,11 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
                     Required
                   </span>
                 }
+              </button>
+
+              <button type="button" (click)="activeTab.set('development')" [class]="activeTab() === 'development' ? 'nav-btn active' : 'nav-btn'">
+                <ion-icon name="trash-outline"></ion-icon>
+                <span>Development / Test Data</span>
               </button>
             </div>
           </div>
@@ -247,6 +262,242 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
                 </div>
               }
 
+              @if (activeTab() === 'marketplace') {
+                <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-hidden">
+                  <div class="p-6 border-b border-slate-100">
+                    <h3 class="text-lg font-bold text-slate-950">Marketplace Engine</h3>
+                    <p class="text-sm text-slate-500 font-medium mt-1">
+                      Configure commission, dynamic pricing, negotiation, bidding and smart matching.
+                    </p>
+                  </div>
+
+                  <div class="p-6 space-y-8">
+                    <div>
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Commission</h4>
+                      <div class="grid md:grid-cols-3 gap-5">
+                        <div>
+                          <label class="field-label">Commission %</label>
+                          <input type="number" step="0.01" min="0" max="100" [(ngModel)]="marketplaceConfig.commission.percent" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Min Fee</label>
+                          <input type="number" step="0.01" min="0" [(ngModel)]="marketplaceConfig.commission.minFee" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Fee (optional)</label>
+                          <input type="number" step="0.01" min="0" [(ngModel)]="marketplaceConfig.commission.maxFee" class="field-control" placeholder="No max">
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100">
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Dynamic Pricing</h4>
+                      <div class="grid md:grid-cols-2 gap-5">
+                        <div>
+                          <label class="field-label">Enabled</label>
+                          <select [(ngModel)]="marketplaceConfig.dynamicPricing.enabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Max Surge Multiplier</label>
+                          <input type="number" step="0.1" min="1" [(ngModel)]="marketplaceConfig.dynamicPricing.maxSurge" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Time-of-Day Pricing</label>
+                          <select [(ngModel)]="marketplaceConfig.dynamicPricing.timeOfDayEnabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Demand/Supply Pricing</label>
+                          <select [(ngModel)]="marketplaceConfig.dynamicPricing.demandSupplyEnabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Traffic Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.trafficMultiplier" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Weather Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.weatherMultiplier" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Demand Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.demandMultiplier" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Fuel Multiplier</label>
+                          <input type="number" step="0.05" min="0" [(ngModel)]="marketplaceConfig.dynamicPricing.fuelMultiplier" class="field-control">
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100">
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Negotiation</h4>
+                      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div>
+                          <label class="field-label">Enabled</label>
+                          <select [(ngModel)]="marketplaceConfig.negotiation.enabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Timeout (seconds)</label>
+                          <input type="number" min="10" [(ngModel)]="marketplaceConfig.negotiation.timeoutSeconds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Rounds</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.negotiation.maxRounds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Services</label>
+                          <input
+                            type="text"
+                            [ngModel]="marketplaceConfig.negotiation.minServices.join(', ')"
+                            (ngModelChange)="updateNegotiationServices($event)"
+                            class="field-control"
+                            placeholder="errand, delivery, van-moving"
+                          >
+                        </div>
+                      </div>
+                      <p class="text-xs text-slate-500 font-medium mt-2">
+                        Default services: errand, delivery, van-moving. Add ride to enable negotiation for rides.
+                      </p>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100">
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Hybrid Negotiation</h4>
+                      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div>
+                          <label class="field-label">Enabled</label>
+                          <select [(ngModel)]="marketplaceConfig.hybridNegotiation.enabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Timeout (seconds)</label>
+                          <input type="number" min="10" [(ngModel)]="marketplaceConfig.hybridNegotiation.timeoutSeconds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Rounds</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.maxRounds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Driver Attempts</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.hybridNegotiation.maxDriverAttempts" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Enabled Services</label>
+                          <input
+                            type="text"
+                            [ngModel]="marketplaceConfig.hybridNegotiation.enabledServices.join(', ')"
+                            (ngModelChange)="updateHybridNegotiationEnabledServices($event)"
+                            class="field-control"
+                            placeholder="shop, errand, delivery, van, ride"
+                          >
+                        </div>
+                        <div>
+                          <label class="field-label">Claim Timeout (seconds)</label>
+                          <input type="number" min="10" [(ngModel)]="marketplaceConfig.hybridNegotiation.claimTimeoutSeconds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Ride Min Distance (km)</label>
+                          <input type="number" min="0" [(ngModel)]="marketplaceConfig.hybridNegotiation.rideMinimumDistanceKm" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Make Offer</label>
+                          <select [(ngModel)]="marketplaceConfig.hybridNegotiation.makeOfferEnabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Accept Fare</label>
+                          <select [(ngModel)]="marketplaceConfig.hybridNegotiation.acceptFareEnabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100">
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Bidding</h4>
+                      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div>
+                          <label class="field-label">Enabled</label>
+                          <select [(ngModel)]="marketplaceConfig.bidding.enabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Timeout (seconds)</label>
+                          <input type="number" min="10" [(ngModel)]="marketplaceConfig.bidding.timeoutSeconds" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Max Bids Per Job</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.bidding.maxBids" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Services</label>
+                          <input
+                            type="text"
+                            [ngModel]="marketplaceConfig.bidding.enabledServices.join(', ')"
+                            (ngModelChange)="updateBiddingServices($event)"
+                            class="field-control"
+                            placeholder="van, van_moving"
+                          >
+                        </div>
+                      </div>
+                      <p class="text-xs text-slate-500 font-medium mt-2">
+                        Default bidding services: van, van_moving.
+                      </p>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100">
+                      <h4 class="text-sm font-bold text-slate-900 mb-4">Smart Matching</h4>
+                      <div class="grid md:grid-cols-2 gap-5">
+                        <div>
+                          <label class="field-label">Enabled</label>
+                          <select [(ngModel)]="marketplaceConfig.smartMatching.enabled" class="field-control">
+                            <option [ngValue]="true">Yes</option>
+                            <option [ngValue]="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="field-label">Max Distance (km)</label>
+                          <input type="number" min="1" [(ngModel)]="marketplaceConfig.smartMatching.maxDistanceKm" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Rating Weight</label>
+                          <input type="number" step="0.05" min="0" max="1" [(ngModel)]="marketplaceConfig.smartMatching.ratingWeight" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Completion Weight</label>
+                          <input type="number" step="0.05" min="0" max="1" [(ngModel)]="marketplaceConfig.smartMatching.completionWeight" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Distance Weight</label>
+                          <input type="number" step="0.05" min="0" max="1" [(ngModel)]="marketplaceConfig.smartMatching.distanceWeight" class="field-control">
+                        </div>
+                        <div>
+                          <label class="field-label">Response Weight</label>
+                          <input type="number" step="0.05" min="0" max="1" [(ngModel)]="marketplaceConfig.smartMatching.responseWeight" class="field-control">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              }
+
               @if (activeTab() === 'appVersion') {
                 <div class="bg-white border border-slate-100 rounded-[1.5rem] shadow-sm overflow-hidden">
                   <div class="p-6 border-b border-slate-100">
@@ -324,12 +575,12 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
 
                       <div class="md:col-span-2">
                         <label class="field-label">Update Title</label>
-                        <input [(ngModel)]="appVersionConfig.updateTitle" class="field-control" placeholder="Important Movabi update">
+                        <input [(ngModel)]="appVersionConfig.updateTitle" class="field-control" placeholder="Important Vaydu update">
                       </div>
 
                       <div class="md:col-span-2">
                         <label class="field-label">Update Message</label>
-                        <textarea [(ngModel)]="appVersionConfig.updateMessage" rows="3" class="field-control min-h-24" placeholder="A new version is required to continue using Movabi."></textarea>
+                        <textarea [(ngModel)]="appVersionConfig.updateMessage" rows="3" class="field-control min-h-24" placeholder="A new version is required to continue using Vaydu."></textarea>
                       </div>
 
                       <div class="md:col-span-2">
@@ -350,6 +601,60 @@ type SettingsTab = 'general' | 'countries' | 'notifications' | 'appVersion';
                         Send notification on save
                       </label>
                     </div>
+                  </div>
+                </div>
+              }
+
+              @if (activeTab() === 'development') {
+                <div class="bg-white border border-rose-100 rounded-[1.5rem] shadow-sm overflow-hidden">
+                  <div class="p-6 border-b border-rose-100">
+                    <h3 class="text-lg font-bold text-rose-600">Reset All Test Data</h3>
+                    <p class="text-sm text-rose-600 font-semibold mt-1">
+                      Reset All Test Data permanently removes all non-admin test accounts and their associated test activity. This cannot be undone.
+                    </p>
+                  </div>
+                  <div class="p-6 space-y-4">
+                    @if (!resetPreviewData()) {
+                      <button type="button" (click)="openResetPreview()" [disabled]="resetting()" class="secondary-btn">
+                        <ion-icon name="trash-outline"></ion-icon>
+                        Preview Reset
+                      </button>
+                    } @else {
+                      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Accounts</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.accounts }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Jobs</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.jobs }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Vehicles</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.vehicles }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Wallets</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.wallets }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Wallet Txs</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.walletTransactions }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-slate-400 text-xs">Notifications</div><div class="font-bold text-slate-800">{{ resetPreviewData()?.notifications }}</div></div>
+                      </div>
+
+                      <input
+                        type="text"
+                        [value]="resetPhrase()"
+                        (input)="setResetPhrase($event)"
+                        placeholder="Type RESET ALL TEST DATA"
+                        class="field-control"
+                      />
+
+                      <button
+                        type="button"
+                        (click)="executeReset()"
+                        [disabled]="resetPhrase() !== 'RESET ALL TEST DATA' || resetting()"
+                        class="w-full whitespace-nowrap px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+                      >
+                        {{ resetting() ? 'Resetting…' : 'Execute Reset' }}
+                      </button>
+                    }
+
+                    @if (resetResult()) {
+                      <div class="rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+                        Reset complete: {{ resetResult()?.accountsRemoved }} accounts, {{ resetResult()?.jobsRemoved }} jobs removed.
+                        @if (resetResult()?.authDeletionFailures) {
+                          <span class="text-amber-700"> ({{ resetResult()?.authDeletionFailures }} Auth deletions failed — retry recommended)</span>
+                        }
+                      </div>
+                    }
                   </div>
                 </div>
               }
@@ -605,12 +910,55 @@ export class AdminSettingsComponent implements OnInit {
     private tour = inject(OnboardingTourService);
     private supabase = inject(SupabaseService);
     private apiUrl = inject(ApiUrlService);
+    private marketplaceService = inject(MarketplaceConfigService);
+    private adminService = inject(AdminService);
 
     activeTab = signal<SettingsTab>('general');
     saving = signal(false);
     loading = signal(true);
     testingNotification = signal(false);
     confirmRemoveIndex = signal<number | null>(null);
+
+    resetPreviewData = signal<any>(null);
+    resetChallengeId = signal('');
+    resetPhrase = signal('');
+    resetting = signal(false);
+    resetResult = signal<any>(null);
+
+    async openResetPreview() {
+        this.resetting.set(true);
+        try {
+            const result = await this.adminService.prepareResetAllTestData();
+            this.resetChallengeId.set(result?.challengeId || '');
+            this.resetPreviewData.set(result?.summary || {});
+            this.resetResult.set(null);
+        } catch (error: any) {
+            this.triggerToast(error?.message || 'Reset preview could not be loaded.', 'danger');
+        } finally {
+            this.resetting.set(false);
+        }
+    }
+
+    setResetPhrase(event: Event) {
+        this.resetPhrase.set((event.target as HTMLInputElement).value || '');
+    }
+
+    async executeReset() {
+        if (this.resetPhrase() !== 'RESET ALL TEST DATA' || this.resetting()) return;
+        this.resetting.set(true);
+        try {
+            const result = await this.adminService.executeResetAllTestData(this.resetChallengeId(), this.resetPhrase());
+            this.resetResult.set(result);
+            this.resetPreviewData.set(null);
+            this.resetPhrase.set('');
+            this.resetChallengeId.set('');
+            this.triggerToast('Reset complete.', 'success');
+        } catch (error: any) {
+            this.triggerToast(error?.message || 'Reset could not be executed.', 'danger');
+        } finally {
+            this.resetting.set(false);
+        }
+    }
 
     toastMessage = signal('');
     toastColor = signal<'success' | 'danger' | 'warning'>('success');
@@ -640,14 +988,64 @@ export class AdminSettingsComponent implements OnInit {
         minimumIosVersion: '1.0.0',
         updateRequired: false,
         updateSeverity: 'optional' as 'optional' | 'recommended' | 'required' | 'critical',
-        updateTitle: 'Movabi update available',
-        updateMessage: 'A new version of Movabi is available.',
+        updateTitle: 'Vaydu update available',
+        updateMessage: 'A new version of Vaydu is available.',
         releaseNotes: '',
         androidUpdateUrl: '',
         iosUpdateUrl: '',
         webReloadRequired: false,
         sendNotification: false
     };
+
+    marketplaceConfig: MarketplaceSettings = {
+        commission: { percent: 5.0, minFee: 0, maxFee: null },
+        dynamicPricing: {
+            enabled: true,
+            maxSurge: 3.0,
+            trafficMultiplier: 1,
+            weatherMultiplier: 1,
+            demandMultiplier: 1,
+            fuelMultiplier: 1,
+            timeOfDayEnabled: true,
+            demandSupplyEnabled: true,
+            weatherEnabled: false,
+            trafficEnabled: false,
+            eventMultiplierEnabled: false
+        },
+        negotiation: {
+            enabled: true,
+            timeoutSeconds: 120,
+            maxRounds: 3,
+            minServices: ['errand', 'delivery', 'van-moving']
+        },
+        hybridNegotiation: {
+            enabled: false,
+            maxRounds: 3,
+            timeoutSeconds: 120,
+            maxDriverAttempts: 5,
+            claimTimeoutSeconds: 60,
+            enabledServices: ['shop', 'errand'],
+            rideMinimumDistanceKm: 30,
+            makeOfferEnabled: true,
+            acceptFareEnabled: true
+        },
+        bidding: {
+            enabled: false,
+            enabledServices: ['van', 'van_moving'],
+            timeoutSeconds: 300,
+            maxBids: 10,
+            defaultServices: ['van', 'van_moving']
+        },
+        smartMatching: {
+            enabled: true,
+            maxDistanceKm: 10,
+            ratingWeight: 0.25,
+            completionWeight: 0.35,
+            distanceWeight: 0.30,
+            responseWeight: 0.10
+        }
+    };
+    private originalMarketplaceConfig: MarketplaceSettings = { ...this.marketplaceConfig };
 
     countries: CountryConfig[] = [];
     private originalCountries: CountryConfig[] = [];
@@ -712,6 +1110,7 @@ export class AdminSettingsComponent implements OnInit {
             this.notificationConfig.enabled = Boolean(this.systemConfig.getConfig('push_notifications_enabled', true));
             await this.loadNotificationSecretStatus();
             await this.loadAppVersionConfig();
+            await this.loadMarketplaceConfig();
 
             this.onDefaultCountryChange();
         } catch (error) {
@@ -732,6 +1131,7 @@ export class AdminSettingsComponent implements OnInit {
         if (!this.validateSettings()) return;
         if (!this.validateNotificationSettings()) return;
         if (!this.validateAppVersionSettings()) return;
+        if (!this.validateMarketplaceSettings()) return;
 
         this.saving.set(true);
 
@@ -750,6 +1150,7 @@ export class AdminSettingsComponent implements OnInit {
 
             await this.saveNotificationSecret();
             await this.saveAppVersionConfig();
+            await this.saveMarketplaceConfig();
 
             await this.appConfig.refreshConfigs();
 
@@ -875,7 +1276,7 @@ export class AdminSettingsComponent implements OnInit {
                     headers,
                     body: JSON.stringify({
                         userId,
-                        title: 'Movabi Test Notification',
+                        title: 'Vaydu Test Notification',
                         body: 'Push notifications are configured correctly.'
                     })
                 }
@@ -911,6 +1312,30 @@ export class AdminSettingsComponent implements OnInit {
         }
     }
 
+    validateMarketplaceSettings(): boolean {
+        const weights = this.marketplaceConfig.smartMatching;
+        const totalWeight = weights.ratingWeight + weights.completionWeight + weights.distanceWeight + weights.responseWeight;
+        if (Math.abs(totalWeight - 1) > 0.01) {
+            this.triggerToast('Smart matching weights must sum to 1.0.', 'warning');
+            this.activeTab.set('marketplace');
+            return false;
+        }
+
+        if (this.marketplaceConfig.commission.percent < 0 || this.marketplaceConfig.commission.percent > 100) {
+            this.triggerToast('Commission percent must be between 0 and 100.', 'warning');
+            this.activeTab.set('marketplace');
+            return false;
+        }
+
+        return true;
+    }
+
+    private async saveMarketplaceConfig(): Promise<void> {
+        const settings = this.deepCloneMarketplaceSettings(this.marketplaceConfig);
+        await this.marketplaceService.saveSettings(settings);
+        this.originalMarketplaceConfig = settings;
+    }
+
     validateNotificationSettings(): boolean {
         if (!this.notificationConfig.appId.trim()) {
             this.triggerToast('OneSignal App ID is required.', 'warning');
@@ -919,7 +1344,7 @@ export class AdminSettingsComponent implements OnInit {
         }
 
         if (!this.notificationConfig.configured && !this.notificationConfig.restApiKey.trim()) {
-            this.triggerToast('No REST API key entered. If the server env is configured, Movabi will keep using it.', 'warning');
+            this.triggerToast('No REST API key entered. If the server env is configured, Vaydu will keep using it.', 'warning');
         }
 
         return true;
@@ -955,6 +1380,44 @@ export class AdminSettingsComponent implements OnInit {
         return ['optional', 'recommended', 'required', 'critical'].includes(severity)
             ? severity as 'optional' | 'recommended' | 'required' | 'critical'
             : 'optional';
+    }
+
+    private async loadMarketplaceConfig(): Promise<void> {
+        try {
+            const settings = await this.marketplaceService.loadSettings();
+            this.marketplaceConfig = this.deepCloneMarketplaceSettings(settings);
+            this.originalMarketplaceConfig = this.deepCloneMarketplaceSettings(settings);
+        } catch (error) {
+            console.error('Failed to load marketplace settings:', error);
+            this.triggerToast('Marketplace settings loaded with defaults.', 'warning');
+        }
+    }
+
+    updateNegotiationServices(value: string): void {
+        this.marketplaceConfig.negotiation.minServices = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+    }
+
+    updateBiddingServices(value: string): void {
+        const services = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+        this.marketplaceConfig.bidding.enabledServices = services;
+        this.marketplaceConfig.bidding.defaultServices = services;
+    }
+
+    updateHybridNegotiationEnabledServices(value: string): void {
+        this.marketplaceConfig.hybridNegotiation.enabledServices = value
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+    }
+
+    private deepCloneMarketplaceSettings(settings: MarketplaceSettings): MarketplaceSettings {
+        return JSON.parse(JSON.stringify(settings)) as MarketplaceSettings;
     }
 
     private async loadAppVersionConfig(): Promise<void> {
@@ -1119,6 +1582,7 @@ export class AdminSettingsComponent implements OnInit {
         this.countries = this.cloneCountries(this.originalCountries);
         this.generalConfig.defaultCountryCode = this.countries[0]?.code || 'GB';
         this.onDefaultCountryChange();
+        this.marketplaceConfig = this.deepCloneMarketplaceSettings(this.originalMarketplaceConfig);
         this.notificationConfig.restApiKey = '';
         this.triggerToast('Changes reset.', 'success');
     }

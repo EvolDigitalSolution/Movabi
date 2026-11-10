@@ -16,14 +16,18 @@ const roundMoney = (value: number): number => Math.round((Number(value) + Number
 export function calculatePayoutBreakdown(
   totalPrice: number,
   pricingPlan: DriverPricingPlan,
-  commissionRate = 15
+  commissionRate: number,
+  serviceFeePercent: number = 0
 ): PayoutBreakdown {
   const total = roundMoney(Math.max(0, Number(totalPrice) || 0));
   const safeCommissionRate = Number.isFinite(Number(commissionRate))
     ? Math.max(0, Number(commissionRate))
-    : 15;
+    : 0;
+  const safeServiceFeePercent = Number.isFinite(Number(serviceFeePercent))
+    ? Math.max(0, Number(serviceFeePercent))
+    : 0;
 
-  const serviceFee = roundMoney(total * 0.1);
+  const serviceFee = roundMoney(total * (safeServiceFeePercent / 100));
   const baseFare = roundMoney(Math.max(0, total - serviceFee));
   const commissionFee = pricingPlan === 'pro'
     ? 0

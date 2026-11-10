@@ -21,7 +21,7 @@ import { AppVersionService } from '../../core/services/app-version.service';
                   <ion-icon name="car-sport" class="text-2xl"></ion-icon>
                 </div>
                 <div>
-                  <p class="text-[11px] uppercase tracking-[0.22em] text-amber-200 font-black">Movabi Update</p>
+                  <p class="text-[11px] uppercase tracking-[0.22em] text-amber-200 font-black">Vaydu Update</p>
                   <h2 class="text-xl font-black leading-tight">{{ version.updateState().title }}</h2>
                 </div>
               </div>

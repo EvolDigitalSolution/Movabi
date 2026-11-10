@@ -139,11 +139,11 @@ export class ComplianceService {
         }
 
         if (!this.hasDate(profile?.accepted_terms_at)) {
-            missing.push(this.blocker('accepted_terms_at', 'Terms accepted', 'Accept the Movabi terms before booking.'));
+            missing.push(this.blocker('accepted_terms_at', 'Terms accepted', 'Accept the Vaydu terms before booking.'));
         }
 
         if (!this.hasDate(profile?.accepted_privacy_at)) {
-            missing.push(this.blocker('accepted_privacy_at', 'Privacy accepted', 'Accept the Movabi privacy notice before booking.'));
+            missing.push(this.blocker('accepted_privacy_at', 'Privacy accepted', 'Accept the Vaydu privacy notice before booking.'));
         }
 
         return missing;
@@ -261,8 +261,7 @@ export class ComplianceService {
 
         const payoutReady =
             profile?.stripe_connect_status === 'enabled' ||
-            profile?.stripe_connect_status === 'connected' ||
-            (profile as Partial<DriverProfile>)?.subscription_status === 'active';
+            profile?.stripe_connect_status === 'connected';
         this.requireText(missing, payoutReady, 'payout_setup', 'Payout setup', 'Complete Stripe Connect payout setup.', relaxedLegacy);
 
         const agreementsAccepted = this.hasDate(profile?.accepted_terms_at) &&

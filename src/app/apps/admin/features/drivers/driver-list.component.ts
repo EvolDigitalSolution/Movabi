@@ -6,9 +6,9 @@ import { IonicModule } from '@ionic/angular';
 import { BadgeComponent, ButtonComponent, EmptyStateComponent } from '../../../../shared/ui';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { OnboardingTourService } from '../../../../core/services/onboarding-tour/onboarding-tour.service';
-import { ComplianceService } from '../../../../core/services/compliance/compliance.service';
+import { DriverRequirementService } from '../../../../../../server/services/driver-requirement.service';
+import { mapDriverVehicleRow } from '../../../../../../server/models/driver-vehicle.model';
 import {
-    getBlockingRequirements,
     getVehiclePlateValue,
     isRideSelected as engineRideSelected,
     normaliseSelectedServices,
@@ -25,6 +25,7 @@ type AdminDriver = DriverProfile & {
     email?: string | null;
     auth_email?: string | null;
     date_of_birth?: string | null;
+    dob_correction_request?:{id:string;status:'pending'|'approved'|'rejected';public_message:string;private_admin_note:string|null;permission_consumed_at:string|null}|null;
     phone?: string | null;
     council_license_number?: string | null;
     council_name?: string | null;
@@ -35,6 +36,9 @@ type AdminDriver = DriverProfile & {
     stripe_account_id?: string | null;
     driver_license_url?: string | null;
     insurance_url?: string | null;
+    current_address?: string | null;
+    private_hire_insurance_url?: string | null;
+    private_hire_insurance_status?: string | null;
     verification_blockers?: string[] | string | null;
     testing_approval_override?: boolean | null;
     manual_verification_notes?: string | null;
@@ -69,14 +73,14 @@ type AdminDriver = DriverProfile & {
           </p>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto">
-          <select (change)="onPlanFilterChange($event)" class="filter-select">
+        <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+          <select (change)="onPlanFilterChange($event)" class="filter-select w-full sm:w-40">
             <option value="all">All Plans</option>
             <option value="starter">Starter</option>
             <option value="pro">Pro</option>
           </select>
 
-          <select (change)="onStatusFilterChange($event)" class="filter-select">
+          <select (change)="onStatusFilterChange($event)" class="filter-select w-full sm:w-44">
             <option value="all">All Statuses</option>
             <option value="approved">Approved</option>
             <option value="under_review">Under Review</option>
@@ -99,7 +103,7 @@ type AdminDriver = DriverProfile & {
             />
           </div>
 
-          <select (change)="onPageSizeChange($event)" class="filter-select sm:w-32">
+          <select (change)="onPageSizeChange($event)" class="filter-select w-full sm:w-32">
             <option value="10">10 / page</option>
             <option value="20">20 / page</option>
             <option value="50">50 / page</option>
@@ -107,12 +111,12 @@ type AdminDriver = DriverProfile & {
         </div>
       </div>
 
-      <div class="overflow-x-auto max-w-full">
-        <table class="w-full text-left border-collapse min-w-[1080px]">
+      <div class="table-scroll">
+        <table class="w-full text-left border-separate border-spacing-0 min-w-[900px]">
           <thead>
             <tr class="bg-slate-50/70">
-              <th class="th-cell">Driver</th>
-              <th class="th-cell">Council</th>
+              <th class="th-cell sticky-col-head">Driver</th>
+              <th class="th-cell">Licensing</th>
               <th class="th-cell">Vehicle</th>
               <th class="th-cell">Docs</th>
               <th class="th-cell">Stripe</th>
@@ -123,120 +127,72 @@ type AdminDriver = DriverProfile & {
 
           <tbody class="divide-y divide-slate-100">
             @for (driver of pagedDrivers(); track driver.id) {
-              <tr class="hover:bg-slate-50/80 transition-all align-top">
-                <td class="px-4 py-4">
-                  <div class="flex items-center gap-3 min-w-[210px]">
+              <tr class="hover:bg-slate-50/80 transition-all align-top cursor-pointer" (click)="viewDriver(driver)">
+                <td class="sticky-col">
+                  <div class="flex items-center gap-2.5 min-w-[180px]">
                     <div class="avatar bg-amber-50 text-amber-600 border-amber-100">
                       {{ getInitial(driver) }}
                     </div>
 
                     <div class="min-w-0">
-                      <h4 class="text-sm font-semibold text-slate-900 leading-tight truncate">
+                      <p class="text-[15px] font-semibold text-slate-900 leading-tight truncate" [title]="getDriverName(driver)">
                         {{ getDriverName(driver) }}
-                      </h4>
-
-                      <div class="mt-1 space-y-0.5">
-                        <p class="text-[11px] text-slate-600 font-semibold leading-tight truncate">
-                          {{ getDriverEmail(driver) }}
-                        </p>
-                        <p class="text-[11px] text-slate-400 font-medium leading-tight truncate">
-                          {{ getDriverPhone(driver) }}
-                        </p>
-                      </div>
-
-                      @if (driver.testing_approval_override) {
-                        <span class="inline-flex mt-2 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">
-                          Manually Approved
-                        </span>
-                      }
+                      </p>
+                      <p class="text-[13px] text-slate-500 font-medium leading-tight truncate mt-0.5" [title]="getDriverEmail(driver)">
+                        {{ getDriverEmail(driver) }}
+                      </p>
                     </div>
                   </div>
                 </td>
 
-                <td class="px-4 py-4">
-                  <div class="space-y-1 min-w-[155px]">
-                    @if (isRideSelected(driver)) {
-                      <p class="text-xs font-bold leading-tight"
-                        [class.text-slate-800]="driver.council_name"
-                        [class.text-rose-600]="!driver.council_name">
-                        {{ getCouncilSummary(driver) }}
+                <td>
+                  @if (isRideSelected(driver)) {
+                    <div class="min-w-[130px]">
+                      <p class="text-[13px] font-semibold leading-tight" [class.text-slate-700]="driver.council_name" [class.text-rose-600]="!driver.council_name">
+                        {{ driver.council_name || 'Council missing' }}
                       </p>
+                      <p class="text-[11px] text-slate-500 leading-tight mt-0.5">
+                        Exp {{ formatDate(driver.taxi_license_expiry) }}
+                      </p>
+                    </div>
+                  } @else {
+                    <span class="text-[11px] text-slate-400 font-semibold">Not required</span>
+                  }
+                </td>
 
-                      <p class="mini-line">Licence: {{ driver.council_license_number || 'Missing' }}</p>
-                      <p class="mini-line">Badge: {{ driver.taxi_badge_number || 'Missing' }}</p>
-                      <p class="mini-line">Expiry: {{ formatDate(driver.taxi_license_expiry) }}</p>
-                    } @else {
-                      <span class="inline-flex rounded-full bg-slate-100 text-slate-500 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em]">
-                        Not required
-                      </span>
-                      <p class="mini-line mt-1">Ride not selected</p>
+                <td>
+                  <div class="min-w-[140px]">
+                    <p class="text-[13px] font-semibold leading-tight" [class.text-slate-900]="!!getVehicle(driver)" [class.text-rose-500]="!getVehicle(driver)">
+                      {{ getVehicleMakeModel(driver) }}
+                    </p>
+                    @if (getVehicle(driver)) {
+                      <div class="flex flex-wrap gap-1 mt-1">
+                        <span class="vehicle-chip">{{ getSelectedServiceLabels(driver) }}</span>
+                      </div>
                     }
                   </div>
                 </td>
 
-                <td class="px-4 py-4">
-                  @if (getVehicle(driver)) {
-                    <div class="text-sm font-semibold text-slate-900 leading-tight min-w-[145px]">
-                      {{ getVehicleMakeModel(driver) }}
-
-                      <div class="flex gap-2 mt-1">
-                        <span class="mini-line">{{ getVehiclePlate(driver) }}</span>
-                        <span class="mini-line">-</span>
-                        <span class="mini-line">{{ getVehicleColor(driver) }}</span>
-                      </div>
-
-                      <div class="flex flex-wrap gap-1.5 mt-2">
-                        <span class="vehicle-chip">{{ getVehicleClassLabel(driver) }}</span>
-                        <span class="vehicle-chip">{{ getSelectedServiceLabels(driver) }}</span>
-                      </div>
-                    </div>
-                  } @else {
-                    <span class="text-xs text-rose-500 font-semibold italic">No vehicle</span>
-                  }
+                <td>
+                  <app-badge [variant]="getDocumentsVariant(driver)">{{ getDocumentsSummary(driver) }}</app-badge>
                 </td>
 
-                <td class="px-4 py-4">
-                  <div class="flex flex-col gap-2 min-w-[125px]">
-                    <button
-                      type="button"
-                      (click)="openDocument(driver.driver_license_url, 'Driver licence')"
-                      class="doc-pill"
-                      [class.doc-ok]="driver.driver_license_url"
-                      [class.doc-missing]="!driver.driver_license_url">
-                      {{ driver.driver_license_url ? 'Licence' : 'No licence' }}
-                    </button>
-
-                    <button
-                      type="button"
-                      (click)="openDocument(driver.insurance_url, 'Insurance')"
-                      class="doc-pill"
-                      [class.doc-ok]="driver.insurance_url"
-                      [class.doc-missing]="!driver.insurance_url">
-                      {{ driver.insurance_url ? 'Insurance' : 'No insurance' }}
-                    </button>
-                  </div>
-                </td>
-
-                <td class="px-4 py-4">
+                <td>
                   <app-badge [variant]="getStripeVariant(driver)">
                     {{ getStripeText(driver) }}
                   </app-badge>
                 </td>
 
-                <td class="px-4 py-4">
-                  <div class="flex flex-col gap-2 min-w-[135px]">
+                <td>
+                  <div class="min-w-[110px]">
                     <app-badge [variant]="getVerificationVariant(driver)">
                       {{ getVerificationText(driver) }}
                     </app-badge>
-
-                    <span class="text-[11px] text-slate-500 font-medium">
-                      {{ getManualReviewSummary(driver) }}
-                    </span>
                   </div>
                 </td>
 
-                <td class="px-4 py-4 text-right">
-                  <div class="flex items-center justify-end gap-2">
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
                     <button type="button" (click)="viewDriver(driver)" class="action-btn hover:bg-blue-600 hover:text-white" title="View Details">
                       <ion-icon name="eye-outline" class="text-lg"></ion-icon>
                     </button>
@@ -245,12 +201,16 @@ type AdminDriver = DriverProfile & {
                       <ion-icon name="checkmark-circle-outline" class="text-lg"></ion-icon>
                     </button>
 
-                    <button type="button" (click)="manualApproveDriver(driver)" class="action-btn hover:bg-green-600 hover:text-white" title="Manual Approval">
+                    <button type="button" (click)="manualApproveDriver(driver)" class="action-btn hover:bg-green-600 hover:text-white" title="Review and Approve">
                       <ion-icon name="checkmark-done-outline" class="text-lg"></ion-icon>
                     </button>
 
                     <button type="button" (click)="moderateDriver(driver)" class="action-btn hover:bg-slate-800 hover:text-white" title="Moderate Driver">
                       <ion-icon name="shield-outline" class="text-lg"></ion-icon>
+                    </button>
+
+                    <button type="button" (click)="openPurgeModal(driver)" class="action-btn hover:bg-rose-600 hover:text-white" title="Permanently delete test account">
+                      <ion-icon name="trash-outline" class="text-lg"></ion-icon>
                     </button>
                   </div>
                 </td>
@@ -326,7 +286,7 @@ type AdminDriver = DriverProfile & {
               </div>
 
               <div class="detail-card">
-                <p class="detail-label">Manual Approval</p>
+                <p class="detail-label">Review outcome</p>
                 <app-badge [variant]="selectedDriver()?.testing_approval_override ? 'success' : 'secondary'">
                   {{ selectedDriver()?.testing_approval_override ? 'USED' : 'NOT USED' }}
                 </app-badge>
@@ -348,6 +308,11 @@ type AdminDriver = DriverProfile & {
                   <div>
                     <span class="detail-muted">Date of Birth:</span>
                     <span class="detail-value">{{ formatDate(selectedDriver()?.date_of_birth) }}</span>
+                  </div>
+                  @if(selectedDriver()?.dob_correction_request;as correction){<div class="rounded-xl border border-amber-200 bg-amber-50 p-3"><p class="text-xs font-black text-amber-900">DOB correction: {{correction.status}}</p><p class="mt-1 text-xs text-amber-800">{{correction.public_message}}</p>@if(correction.status==='pending'){<div class="mt-2 flex gap-2"><button type="button" class="text-xs font-bold text-green-700" (click)="resolveDobCorrection(selectedDriver(),true)">Allow correction</button><button type="button" class="text-xs font-bold text-rose-700" (click)="resolveDobCorrection(selectedDriver(),false)">Reject</button></div>}</div>}
+                  <div class="sm:col-span-2">
+                    <span class="detail-muted">Residential address:</span>
+                    <span class="detail-value whitespace-pre-line">{{ selectedDriver()?.current_address || 'Not provided' }}</span>
                   </div>
                   <div>
                     <span class="detail-muted">Driver ID:</span>
@@ -487,15 +452,77 @@ type AdminDriver = DriverProfile & {
               </div>
             </div>
 
+            @if (isRideSelected(selectedDriver()) || selectedDriver()?.private_hire_insurance_url) {
+<div class="detail-card">
+              <p class="detail-label">Passenger / Private Hire Insurance</p>
+              <p class="detail-muted mt-2">Status: {{ selectedDriver()?.private_hire_insurance_status || 'Not reviewed' }}</p>
+              <button type="button" class="modal-doc-btn mt-3" (click)="openDocument(selectedDriver()?.private_hire_insurance_url, 'Passenger / private hire insurance')">
+                {{ selectedDriver()?.private_hire_insurance_url ? 'Open Passenger Insurance' : 'Passenger Insurance Not Uploaded' }}
+              </button>
+            </div>
+            }
+            <div class="detail-card">
+              <div role="tablist" aria-label="Driver communication" class="flex flex-col sm:flex-row gap-2 mb-4">
+                <button type="button" role="tab" id="driver-message-tab"
+                  aria-controls="driver-message-panel" [attr.aria-selected]="driverCommunicationTab() === 'message'"
+                  [attr.tabindex]="driverCommunicationTab() === 'message' ? 0 : -1"
+                  (click)="driverCommunicationTab.set('message')"
+                  (keydown.arrowright)="driverCommunicationTab.set('requirements'); requirementsTab.focus(); $event.preventDefault()"
+                  (keydown.arrowleft)="driverCommunicationTab.set('requirements'); requirementsTab.focus(); $event.preventDefault()"
+                  #messageTab class="flex-1 rounded-xl px-4 py-3 text-sm font-bold border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                  [class.bg-blue-50]="driverCommunicationTab() === 'message'" [class.text-blue-700]="driverCommunicationTab() === 'message'">
+                  Message Driver
+                </button>
+                <button type="button" role="tab" id="driver-requirements-tab"
+                  aria-controls="driver-requirements-panel" [attr.aria-selected]="driverCommunicationTab() === 'requirements'"
+                  [attr.tabindex]="driverCommunicationTab() === 'requirements' ? 0 : -1"
+                  (click)="driverCommunicationTab.set('requirements')"
+                  (keydown.arrowright)="driverCommunicationTab.set('message'); messageTab.focus(); $event.preventDefault()"
+                  (keydown.arrowleft)="driverCommunicationTab.set('message'); messageTab.focus(); $event.preventDefault()"
+                  #requirementsTab class="flex-1 rounded-xl px-4 py-3 text-sm font-bold border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                  [class.bg-blue-50]="driverCommunicationTab() === 'requirements'" [class.text-blue-700]="driverCommunicationTab() === 'requirements'">
+                  Missing Information Request
+                </button>
+              </div>
+              <div role="tabpanel" id="driver-message-panel" aria-labelledby="driver-message-tab"
+                [hidden]="driverCommunicationTab() !== 'message'">
+            <div class="detail-card">
+              <p class="detail-label">Message Driver</p>
+              <p class="detail-muted mt-1">Send a message to the driver app. This does not change approval or request documents.</p>
+              <textarea class="mt-3 w-full min-h-28 rounded-2xl border border-slate-200 p-3" maxlength="2000"
+                [value]="driverMessageDraft()" (input)="driverMessageDraft.set($any($event.target).value)" placeholder="Write your message..."></textarea>
+              <app-button class="mt-3 w-full" [disabled]="sendingDriverMessage() || !driverMessageDraft().trim()" (clicked)="sendDriverMessage(selectedDriver())">
+                {{ sendingDriverMessage() ? 'Sending...' : 'Send Message' }}
+              </app-button>
+            </div>
+
+              </div>
+              <div role="tabpanel" id="driver-requirements-panel" aria-labelledby="driver-requirements-tab"
+                [hidden]="driverCommunicationTab() !== 'requirements'" class="space-y-4">
             @if (getBlockers(selectedDriver()).length) {
               <div class="rounded-2xl border border-amber-100 bg-amber-50 p-5">
                 <p class="text-xs font-bold text-amber-900 uppercase tracking-widest mb-3">
-                  Review Notes / Blockers
+                  Requirements — Action Required
                 </p>
 
                 <ul class="space-y-2">
                   @for (blocker of getBlockers(selectedDriver()); track blocker) {
                     <li class="text-sm text-amber-800 font-medium">• {{ blocker }}</li>
+                  }
+                </ul>
+              </div>
+            } @else {
+              <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+                <p class="text-sm font-bold text-emerald-700">✓ No outstanding requirements</p>
+              </div>
+            }
+
+            @if (getExpiringSoonReasons(selectedDriver()).length) {
+              <div class="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+                <p class="text-xs font-bold text-amber-800 uppercase tracking-widest mb-2">Expiring Soon</p>
+                <ul class="space-y-1">
+                  @for (reason of getExpiringSoonReasons(selectedDriver()); track reason) {
+                    <li class="text-sm text-amber-700 font-medium">• {{ reason }}</li>
                   }
                 </ul>
               </div>
@@ -543,9 +570,12 @@ type AdminDriver = DriverProfile & {
               </app-button>
             </div>
 
+              </div>
+            </div>
+
             @if (selectedDriver()?.manual_verification_notes) {
               <div class="detail-card">
-                <p class="detail-label">Manual Approval Notes</p>
+                <p class="detail-label">Review notes</p>
                 <p class="text-sm text-slate-700 font-medium mt-2">
                   {{ selectedDriver()?.manual_verification_notes }}
                 </p>
@@ -558,7 +588,7 @@ type AdminDriver = DriverProfile & {
               </app-button>
 
               <app-button class="flex-1" (clicked)="manualApproveDriver(selectedDriver())">
-                Manual Approval
+                Review and Approve
               </app-button>
             </div>
           </div>
@@ -634,6 +664,35 @@ type AdminDriver = DriverProfile & {
       </div>
     }
 
+    @if (purgeModal()) {
+      <div class="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6">
+          <h3 class="text-xl font-bold text-rose-600">Permanently delete test account</h3>
+          <p class="text-sm font-bold text-slate-800 mt-2">{{ getDriverName(purgeModal()) }}</p>
+          <p class="text-xs font-semibold text-slate-500 mt-1">{{ purgeModal()?.email || 'unknown' }} · driver</p>
+          <p class="text-sm font-semibold text-rose-600 mt-3">This will permanently delete this test account and its associated test activity. This cannot be undone.</p>
+          <input
+            type="text"
+            [value]="purgeConfirmText()"
+            (input)="setPurgeConfirmText($event)"
+            placeholder="Type DELETE to confirm"
+            class="w-full mt-4 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold focus:outline-none"
+          />
+          <div class="flex justify-end gap-3 mt-6">
+            <button type="button" class="modal-cancel" (click)="purgeModal.set(null); purgeConfirmText.set('')">Cancel</button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-5 py-3 rounded-2xl bg-rose-600 text-white font-bold disabled:opacity-50"
+              [disabled]="purgeConfirmText() !== 'DELETE' || purging()"
+              (click)="confirmPurge()"
+            >
+              {{ purging() ? 'Deleting…' : 'Delete Account' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (toastMessage()) {
       <div class="fixed bottom-6 right-6 z-[11000] rounded-2xl px-5 py-4 shadow-2xl text-white font-semibold"
            [class.bg-emerald-600]="toastType() === 'success'"
@@ -646,7 +705,7 @@ type AdminDriver = DriverProfile & {
   `,
     styles: [`
     .filter-select {
-      width: 100%;
+      max-width: 100%;
       background: rgb(248 250 252);
       border: 1px solid rgb(226 232 240);
       border-radius: 0.75rem;
@@ -658,13 +717,66 @@ type AdminDriver = DriverProfile & {
     }
 
     .th-cell {
-      padding: 1rem;
-      font-size: 9px;
+      padding: 0.625rem 0.75rem;
+      font-size: 11px;
       font-weight: 800;
       color: rgb(148 163 184);
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
       white-space: nowrap;
+    }
+
+    /* Moderate table row density: tighter cells keep more drivers visible. */
+    .table-scroll td {
+      padding: 0.625rem 0.75rem;
+    }
+
+    /* Horizontal scroll belongs ONLY to the table region, never the page. */
+    .table-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+      max-width: 100%;
+      min-width: 0;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .table-scroll::-webkit-scrollbar {
+      height: 10px;
+    }
+
+    .table-scroll::-webkit-scrollbar-track {
+      background: rgb(241 245 249);
+    }
+
+    .table-scroll::-webkit-scrollbar-thumb {
+      background: rgb(203 213 225);
+      border-radius: 999px;
+    }
+
+    .table-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgb(148 163 184);
+    }
+
+    /* Sticky Driver identity column so it stays readable while the rest of the
+       table scrolls horizontally. Solid backgrounds prevent bleed-through. */
+    .sticky-col-head {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #f8fafc;
+      box-shadow: inset -1px 0 0 #e2e8f0;
+    }
+
+    .sticky-col {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #ffffff;
+      box-shadow: inset -1px 0 0 #f1f5f9;
+    }
+
+    tr:hover .sticky-col {
+      background: #f8fafc;
     }
 
     .avatar {
@@ -687,8 +799,12 @@ type AdminDriver = DriverProfile & {
     }
 
     .vehicle-chip {
-      display: inline-flex;
-      align-items: center;
+      display: inline-block;
+      max-width: 100%;
+      vertical-align: middle;
+      white-space: normal;
+      word-break: break-word;
+      text-align: left;
       border-radius: 999px;
       background: rgb(239 246 255);
       color: rgb(37 99 235);
@@ -696,7 +812,7 @@ type AdminDriver = DriverProfile & {
       padding: 0.2rem 0.5rem;
       font-size: 10px;
       font-weight: 800;
-      line-height: 1;
+      line-height: 1.3;
     }
 
     .doc-pill {
@@ -816,10 +932,13 @@ export class DriverListComponent implements OnInit {
     private adminService = inject(AdminService);
     private authService = inject(AuthService);
     private tour = inject(OnboardingTourService);
-    private complianceService = inject(ComplianceService);
+
 
     drivers = signal<AdminDriver[]>([]);
     selectedDriver = signal<AdminDriver | null>(null);
+    driverCommunicationTab = signal<'message' | 'requirements'>('message');
+    driverMessageDraft = signal('');
+    sendingDriverMessage = signal(false);
     reviewFeedbackNotes = signal('');
     selectedReviewBlockers = signal<string[]>([]);
 
@@ -845,6 +964,10 @@ export class DriverListComponent implements OnInit {
         driver: AdminDriver;
         status: string;
     } | null>(null);
+
+    purgeModal = signal<AdminDriver | null>(null);
+    purgeConfirmText = signal('');
+    purging = signal(false);
 
     searchTerm = signal('');
     statusFilter = signal('all');
@@ -1215,56 +1338,65 @@ export class DriverListComponent implements OnInit {
         return 'Manual review';
     }
 
+    getDocumentsSummary(driver: any): string {
+        const docs = this.getDocumentRequirements(driver);
+        if (!docs.length) return 'Not Required';
+        if (docs.some((requirement) => requirement.status === 'expired')) return 'Expired';
+        if (docs.some((requirement) => ['missing', 'invalid', 'rejected'].includes(requirement.status))) return 'Action Required';
+        if (docs.some((requirement) => requirement.status === 'under_review')) return 'Pending';
+        if (docs.some((requirement) => requirement.expiringSoon)) return 'Expiring Soon';
+        return 'Complete';
+    }
+
+    getDocumentsVariant(driver: any): 'success' | 'warning' | 'error' | 'secondary' {
+        const docs = this.getDocumentRequirements(driver);
+        if (!docs.length) return 'secondary';
+        if (docs.some((requirement) => ['expired', 'missing', 'invalid', 'rejected'].includes(requirement.status))) return 'error';
+        if (docs.some((requirement) => requirement.status === 'under_review' || requirement.expiringSoon)) return 'warning';
+        return 'success';
+    }
+
+    getExpiringSoonReasons(driver: any): string[] {
+        return this.resolveDriver(driver).automaticRequirements
+            .filter((requirement) => requirement.expiringSoon)
+            .map((requirement) => `${requirement.label} expires ${requirement.expiryDate}.`);
+    }
+
     getBlockers(driver: any): string[] {
-        const raw = driver?.verification_blockers ?? driver?.driver_review_blockers;
-        const engineBlockers = this.getEngineBlockers(driver);
-        return this.filterReviewBlockers(driver, [
-            ...this.parseStringList(raw),
-            ...engineBlockers
-        ]);
+        // CURRENT automatic requirements come from the fresh canonical resolver
+        // only. Stale persisted verification_blockers / driver_review_blockers
+        // must not masquerade as current requirements.
+        return this.getEngineBlockers(driver);
     }
 
     getReviewFeedbackOptions(driver: any): string[] {
-        const existing = this.filterReviewBlockers(driver, [
-            ...this.parseStringList(driver?.driver_review_blockers),
-            ...this.parseStringList(driver?.verification_blockers)
-        ]);
+        return this.getEngineBlockers(driver);
+    }
 
-        return this.filterReviewBlockers(driver, Array.from(new Set([
-            ...existing,
-            ...this.getEngineBlockers(driver)
-        ].filter(Boolean) as string[])));
+    private resolveDriver(driver: any) {
+        const vehicle = this.getVehicle(driver);
+        return DriverRequirementService.resolve({
+            profile: driver || {},
+            vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null,
+            authEmailConfirmed: true,
+            adminRequests: [],
+            countryCode: driver?.country_code || driver?.country || null,
+            marketCity: driver?.market_city || driver?.city || null
+        });
     }
 
     private getEngineBlockers(driver: any): string[] {
-        const vehicle = this.getVehicle(driver);
-        const selectedServices = this.getSelectedServices(driver);
-        
-        // Use ComplianceService as source of truth for all service types
-        const allRequirements = selectedServices.map(serviceType => 
-            this.complianceService.getDriverMissingRequirements(
-                driver,
-                vehicle,
-                { ...driver, ...vehicle },
-                serviceType as any
-            )
-        ).flat();
-        
-        // Also check base requirements
-        const baseRequirements = this.complianceService.getDriverMissingRequirements(
-            driver,
-            vehicle,
-            { ...driver, ...vehicle },
-            'base'
-        );
-        
-        // Combine and filter for blockers only
-        const allBlockers = [...allRequirements, ...baseRequirements]
-            .filter(req => req.severity === 'blocker')
-            .map(req => req.message);
-        
-        // Remove duplicates
-        return Array.from(new Set(allBlockers));
+        // Canonical driver-KYC display: use the same authoritative resolver the
+        // Driver Setup status / submit-review / go-online endpoints use, so an
+        // admin never sees a requirement the driver does not (and vice versa).
+        return this.resolveDriver(driver).automaticRequirements
+            .filter(requirement => requirement.blockingForSubmission)
+            .map(requirement => requirement.reason);
+    }
+
+    private getDocumentRequirements(driver: any) {
+        return this.resolveDriver(driver).automaticRequirements
+            .filter(requirement => requirement.category === 'documents' || requirement.category === 'licensing');
     }
 
     private filterReviewBlockers(driver: any, blockers: string[]): string[] {
@@ -1397,6 +1529,8 @@ export class DriverListComponent implements OnInit {
     }
 
     viewDriver(driver: AdminDriver) {
+        this.driverCommunicationTab.set('message');
+        this.driverMessageDraft.set('');
         this.reviewFeedbackNotes.set(
             driver.driver_review_notes ||
             driver.verification_notes ||
@@ -1411,6 +1545,7 @@ export class DriverListComponent implements OnInit {
         ++this.inspectionRequest;
         this.inspection.set(null);
         this.selectedDriver.set(null);
+        this.driverMessageDraft.set('');
         this.reviewFeedbackNotes.set('');
         this.selectedReviewBlockers.set([]);
     }
@@ -1481,7 +1616,7 @@ export class DriverListComponent implements OnInit {
             : 'This approves the driver manually while external verification APIs are disabled.';
 
         this.confirmModal.set({
-            title: 'Manual Approval',
+            title: 'Review and Approve',
             subtitle: this.getDriverName(driver),
             message: blockerMessage,
             notes: 'Approved manually. External verification APIs are not enabled yet.',
@@ -1499,6 +1634,22 @@ export class DriverListComponent implements OnInit {
                 }
             }
         });
+    }
+
+    async resolveDobCorrection(driver:AdminDriver|null,approved:boolean){const request=driver?.dob_correction_request;if(!driver?.id||!request)return;const publicMessage=window.prompt('Public message for the driver',approved?'Correction approved. You may update your date of birth once.':'Correction request was not approved.')||'';const privateNote=window.prompt('Private Admin note (not shown to the driver)','')||'';try{await this.adminService.resolveDobCorrection(driver.id,request.id,approved,publicMessage,privateNote);await this.loadDrivers();}catch(error){console.error('[Admin] DOB correction resolution failed',error);}}
+
+    async sendDriverMessage(driver: AdminDriver | null) {
+        if (!driver?.id || this.sendingDriverMessage()) return;
+        const message = this.driverMessageDraft().trim();
+        if (!message) return;
+        this.sendingDriverMessage.set(true);
+        try {
+            await this.adminService.sendDriverMessage(driver.id, message);
+            this.driverMessageDraft.set('');
+            await this.showToast('Message saved to the driver app.', 'success');
+        } catch (error) {
+            await this.showToast(error instanceof Error ? error.message : 'Could not send message.', 'danger');
+        } finally { this.sendingDriverMessage.set(false); }
     }
 
     async sendMissingInfoRequest(driver: any) {
@@ -1648,6 +1799,36 @@ export class DriverListComponent implements OnInit {
                 error instanceof Error ? error.message : 'Failed to update driver status.',
                 'danger'
             );
+        }
+    }
+
+    openPurgeModal(driver: AdminDriver) {
+        this.purgeModal.set(driver);
+        this.purgeConfirmText.set('');
+    }
+
+    setPurgeConfirmText(event: Event) {
+        this.purgeConfirmText.set((event.target as HTMLInputElement).value || '');
+    }
+
+    async confirmPurge() {
+        const driver = this.purgeModal();
+        if (!driver || this.purgeConfirmText() !== 'DELETE' || this.purging()) return;
+
+        this.purging.set(true);
+        try {
+            await this.adminService.purgeTestAccount(driver.id);
+            await this.showToast('Test account permanently deleted.', 'success');
+            this.purgeModal.set(null);
+            this.purgeConfirmText.set('');
+            await this.loadDrivers();
+        } catch (error: unknown) {
+            await this.showToast(
+                error instanceof Error ? error.message : 'Failed to purge test account.',
+                'danger'
+            );
+        } finally {
+            this.purging.set(false);
         }
     }
 

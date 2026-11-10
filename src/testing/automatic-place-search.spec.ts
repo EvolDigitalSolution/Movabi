@@ -1,0 +1,14 @@
+import {afterEach,describe,it,expect,vi} from 'vitest';
+import {firstValueFrom,of,throwError,Subject} from 'rxjs';
+import {automaticPlaceSearch} from '../app/shared/utils/place-search-fallback';
+afterEach(()=>vi.useRealTimers());
+describe('automatic place source fallback',()=>{
+ it('keeps primary matches without spending second-provider quota',async()=>{const second=vi.fn(()=>of([])),results=[{label:'Spices',lat:53.58,lng:-2.43}];expect(await firstValueFrom(automaticPlaceSearch(of(results),second,true))).toEqual(results);expect(second).not.toHaveBeenCalled();});
+ it('searches the additional source automatically after an empty result and a typing pause',async()=>{vi.useFakeTimers();const second=vi.fn(()=>of([{label:'Additional',lat:53.58,lng:-2.43}]));const result=firstValueFrom(automaticPlaceSearch(of([]),second,true));expect(second).not.toHaveBeenCalled();await vi.advanceTimersByTimeAsync(601);expect((await result)[0].label).toBe('Additional');expect(second).toHaveBeenCalledTimes(1);});
+ it('uses a healthy additional source after primary unavailability',async()=>{vi.useFakeTimers();const second=vi.fn(()=>of([]));const result=firstValueFrom(automaticPlaceSearch(throwError(()=>({code:'provider_unavailable'})),second,true));await vi.advanceTimersByTimeAsync(601);expect(await result).toEqual([]);expect(second).toHaveBeenCalledOnce();});
+ it('does not retry location-required errors',async()=>{const second=vi.fn(()=>of([]));await expect(firstValueFrom(automaticPlaceSearch(throwError(()=>({code:'location_required'})),second,true))).rejects.toMatchObject({code:'location_required'});expect(second).not.toHaveBeenCalled();});
+ it('does not invoke local fallback for postcode/address/country searches',async()=>{const second=vi.fn(()=>of([]));expect(await firstValueFrom(automaticPlaceSearch(of([]),second,false))).toEqual([]);expect(second).not.toHaveBeenCalled();});
+ it('cancels the pending second-provider request when the customer types again',async()=>{vi.useFakeTimers();const second=vi.fn(()=>of([]));const subscription=automaticPlaceSearch(of([]),second,true).subscribe();subscription.unsubscribe();await vi.advanceTimersByTimeAsync(1000);expect(second).not.toHaveBeenCalled();});
+ it('cancels an already active second-provider request',async()=>{vi.useFakeTimers();const stream=new Subject<any[]>(),next=vi.fn();const subscription=automaticPlaceSearch(of([]),()=>stream,true).subscribe(next);await vi.advanceTimersByTimeAsync(601);subscription.unsubscribe();stream.next([{label:'stale'}]);expect(next).not.toHaveBeenCalled();expect(stream.observed).toBe(false);});
+ it('reports additional provider failure instead of claiming a successful empty search',async()=>{vi.useFakeTimers();const promise=firstValueFrom(automaticPlaceSearch(of([]),()=>throwError(()=>({code:'provider_unavailable'})),true)).then(()=>null,error=>error);await vi.advanceTimersByTimeAsync(601);expect(await promise).toMatchObject({code:'provider_unavailable'});});
+});

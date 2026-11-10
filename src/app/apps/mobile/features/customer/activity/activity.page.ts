@@ -1,4 +1,5 @@
-import { Component, inject, OnInit } from '@angular/core';
+import {recordedWalletAmount} from '@shared/utils/wallet-recorded-money';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { addIcons } from 'ionicons';
@@ -9,31 +10,26 @@ import {
     cart,
     bus,
     map,
-    cubeOutline
+    cubeOutline,
+    timeOutline,
+    checkmarkCircle
 } from 'ionicons/icons';
 import { Router } from '@angular/router';
+import { AuthService } from '../../../../../core/services/auth/auth.service';
+import { Booking } from '../../../../../shared/models/booking.model';
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { AppConfigService } from '../../../../../core/services/config/app-config.service';
 
 import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
+import { CustomerBottomNavComponent } from '../../../../../shared/components/customer-shell/customer-bottom-nav.component';
 
 @Component({
     selector: 'app-activity',
     standalone: true,
-    imports: [IonicModule, CommonModule, CardComponent, BadgeComponent],
+    imports: [IonicModule, CommonModule, CardComponent, BadgeComponent, CustomerBottomNavComponent],
     template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-6 bg-slate-50">
-        <ion-buttons slot="start">
-          <button
-            type="button"
-            (click)="router.navigate(['/customer'])"
-            class="w-12 h-12 rounded-2xl bg-white text-slate-900 flex items-center justify-center border border-slate-200 shadow-sm active:scale-95 transition-all"
-          >
-            <ion-icon name="chevron-back-outline" class="text-xl"></ion-icon>
-          </button>
-        </ion-buttons>
-
         <ion-title class="font-display font-black text-2xl tracking-tighter text-slate-900">
           Activity
         </ion-title>
@@ -41,8 +37,9 @@ import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
     </ion-header>
 
     <ion-content class="bg-slate-50" [fullscreen]="true">
-      <div class="max-w-xl mx-auto p-5 space-y-8 pb-safe ion-padding-bottom">
-        @if (history().length === 0) {
+      <div class="max-w-xl mx-auto p-5 space-y-8 native-safe-bottom">
+
+        @if (!isLoadingHistory() && !historyError() && activeBookings().length === 0 && pendingMarketplace().length === 0 && pastBookings().length === 0) {
           <button
             type="button"
             (click)="router.navigate(['/customer/request'])"
@@ -58,99 +55,227 @@ import { CardComponent, BadgeComponent } from '../../../../../shared/ui';
           </button>
         }
 
-        <div class="space-y-5">
-          @for (booking of history(); track booking.id) {
-            <app-card [hoverable]="true" class="group overflow-hidden">
-              <div class="flex justify-between items-start gap-4 mb-7">
-                <div class="flex items-center gap-4 min-w-0">
+        @if (isLoadingHistory() && history().length === 0) {
+          <div class="py-10 text-center" data-testid="activity-loading">
+            <p class="text-sm font-bold text-slate-500">Loading your activity…</p>
+          </div>
+        }
+
+        @if (historyError(); as loadError) {
+          <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 space-y-2" data-testid="activity-error">
+            <p class="text-sm font-bold text-rose-800">{{ loadError }}</p>
+            <button
+              type="button"
+              (click)="loadHistory(history().length > 0 && historyCursor() !== null)"
+              data-testid="activity-retry"
+              class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-black text-rose-700"
+            >
+              Try again
+            </button>
+          </div>
+        }
+
+        @if (activeBookings().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-emerald-500 rounded-full shadow-lg shadow-emerald-500/20"></div>
+              <h3 class="text-sm font-black text-slate-700">Active</h3>
+            </div>
+
+            <div class="space-y-3">
+              @for (booking of activeBookings(); track booking.id) {
+                <button
+                  type="button"
+                  (click)="continueActive(booking)"
+                  class="w-full bg-white rounded-2xl border border-emerald-200 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                >
                   <div
-                    class="w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
+                    class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
                     [class.bg-blue-50]="getServiceSlug(booking) === 'ride'"
                     [class.text-blue-600]="getServiceSlug(booking) === 'ride'"
-                    [class.border-blue-100]="getServiceSlug(booking) === 'ride'"
                     [class.bg-emerald-50]="getServiceSlug(booking) === 'errand'"
                     [class.text-emerald-600]="getServiceSlug(booking) === 'errand'"
-                    [class.border-emerald-100]="getServiceSlug(booking) === 'errand'"
                     [class.bg-amber-50]="getServiceSlug(booking) === 'delivery'"
                     [class.text-amber-600]="getServiceSlug(booking) === 'delivery'"
-                    [class.border-amber-100]="getServiceSlug(booking) === 'delivery'"
                     [class.bg-indigo-50]="getServiceSlug(booking) === 'van-moving'"
                     [class.text-indigo-600]="getServiceSlug(booking) === 'van-moving'"
-                    [class.border-indigo-100]="getServiceSlug(booking) === 'van-moving'"
                   >
-                    <ion-icon [name]="getServiceIcon(booking)" class="text-2xl"></ion-icon>
+                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
                   </div>
-
-                  <div class="min-w-0">
-                    <span class="text-[10px] font-black uppercase text-slate-400 tracking-[0.18em] mb-1 block">
-                      {{ getServiceName(booking) }}
-                    </span>
-                    <p class="text-xs text-slate-500 font-bold">
-                      {{ booking.created_at | date:'mediumDate' }} • {{ booking.created_at | date:'shortTime' }}
-                    </p>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                    <p class="text-xs font-semibold text-emerald-700 truncate">{{ activeStatusLabel(booking) }}</p>
                   </div>
-                </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-sm font-black text-slate-900">{{ formatPrice(booking.total_price || booking.price || 0, booking.currency_code) }}</p>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">Continue</span>
+                  </div>
+                </button>
+              }
+            </div>
+          </div>
+        }
 
-                <app-badge [variant]="getStatusVariant(booking.status)">
-                  {{ formatStatus(booking.status) }}
-                </app-badge>
-              </div>
+        @if (pendingMarketplace().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-amber-500 rounded-full shadow-lg shadow-amber-500/20"></div>
+              <h3 class="text-sm font-black text-slate-700">Pending Marketplace</h3>
+            </div>
 
-              <div class="relative pl-10 space-y-7 mb-8">
-                <div class="absolute left-4 top-2 bottom-2 w-0.5 border-l-2 border-slate-200 border-dashed"></div>
+            <div class="space-y-3">
+              @for (booking of pendingMarketplace(); track booking.id) {
+                <button
+                  type="button"
+                  (click)="continueMarketplace(booking)"
+                  class="w-full bg-white rounded-2xl border border-amber-200 shadow-sm p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                >
+                  <div class="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <ion-icon [name]="getServiceIcon(booking)" class="text-xl"></ion-icon>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                    <p class="text-xs font-semibold text-amber-700 truncate">{{ marketplaceStatusLabel(booking) }}</p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-sm font-black text-slate-900">{{ formatPrice(booking.negotiated_fare || booking.agreed_fare || booking.total_price || 0, booking.currency_code) }}</p>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-amber-600">Review</span>
+                  </div>
+                </button>
+              }
+            </div>
+          </div>
+        }
 
-                <div class="relative">
-                  <div class="absolute -left-8 top-1 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-sm z-10"></div>
-                  <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1.5">Pickup</p>
-                  <p class="font-bold text-slate-900 leading-relaxed text-sm truncate">
-                    {{ booking.pickup_address || 'Pickup unavailable' }}
-                  </p>
-                </div>
+        @if (pastBookings().length > 0) {
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 px-1">
+              <div class="w-1.5 h-6 bg-slate-300 rounded-full"></div>
+              <h3 class="text-sm font-black text-slate-700">Past</h3>
+            </div>
 
-                <div class="relative">
-                  <div class="absolute -left-8 top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-600 shadow-sm z-10"></div>
-                  <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1.5">
-                    {{ getServiceSlug(booking) === 'delivery' ? 'Delivery Address' : 'Destination' }}
-                  </p>
-                  <p class="font-bold text-slate-900 leading-relaxed text-sm truncate">
-                    {{ booking.dropoff_address || 'Destination unavailable' }}
-                  </p>
-                </div>
-              </div>
+            <div class="space-y-3">
+              @for (booking of pastBookings(); track booking.id) {
+                <button type="button" (click)="router.navigate(['/customer/history', booking.id])" class="w-full text-left history-link" [attr.aria-label]="'View ' + getServiceName(booking) + ' booking record'"><app-card [hoverable]="false" class="group overflow-hidden">
+                  <div class="flex justify-between items-start gap-4">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div
+                        class="w-11 h-11 rounded-xl flex items-center justify-center border shrink-0"
+                        [class.bg-blue-50]="getServiceSlug(booking) === 'ride'"
+                        [class.text-blue-600]="getServiceSlug(booking) === 'ride'"
+                        [class.border-blue-100]="getServiceSlug(booking) === 'ride'"
+                        [class.bg-emerald-50]="getServiceSlug(booking) === 'errand'"
+                        [class.text-emerald-600]="getServiceSlug(booking) === 'errand'"
+                        [class.border-emerald-100]="getServiceSlug(booking) === 'errand'"
+                        [class.bg-amber-50]="getServiceSlug(booking) === 'delivery'"
+                        [class.text-amber-600]="getServiceSlug(booking) === 'delivery'"
+                        [class.border-amber-100]="getServiceSlug(booking) === 'delivery'"
+                        [class.bg-indigo-50]="getServiceSlug(booking) === 'van-moving'"
+                        [class.text-indigo-600]="getServiceSlug(booking) === 'van-moving'"
+                        [class.border-indigo-100]="getServiceSlug(booking) === 'van-moving'"
+                      >
+                        <ion-icon [name]="getServiceIcon(booking)" class="text-lg"></ion-icon>
+                      </div>
 
-              <div class="flex justify-between items-center gap-4 pt-5 border-t border-slate-100">
-                <span class="text-2xl font-display font-bold text-slate-900">
-                  {{ formatPrice(booking.total_price || booking.price || 0) }}
-                </span>
-
-                @if (booking.driver) {
-                  <div class="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-2xl border border-slate-100 min-w-0">
-                    <div class="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-xs font-black text-slate-900 border border-slate-200 shadow-sm shrink-0">
-                      {{ getInitial(booking.driver.first_name) }}
+                      <div class="min-w-0">
+                        <p class="text-sm font-black text-slate-900 truncate">{{ getServiceName(booking) }}</p>
+                        <p class="text-[11px] text-slate-400 font-bold">
+                          {{ booking.created_at | date:'mediumDate' }}
+                        </p>
+                      </div>
                     </div>
 
-                    <div class="text-left min-w-0">
-                      <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Driver</p>
-                      <span class="text-xs font-bold text-slate-900 truncate block">
-                        {{ booking.driver.first_name || 'Driver' }}
-                      </span>
+                    <div class="text-right shrink-0">
+                      <app-badge [variant]="getStatusVariant(booking.status)">
+                        {{ formatStatus(booking.status) }}
+                      </app-badge>
+                      <p class="text-sm font-black text-slate-900 mt-1.5">
+                        {{ formatPrice(booking.total_price || booking.price || 0, booking.currency_code) }}
+                      </p>
+                      @if (paymentStateLabel(booking); as payState) {
+                        <p class="text-[10px] font-bold text-slate-500 mt-0.5" data-testid="history-payment-state">{{ payState }}</p>
+                      }
                     </div>
                   </div>
-                }
-              </div>
-            </app-card>
-          }
-        </div>
+                </app-card></button>
+              }
+            </div>
+          </div>
+        }
       </div>
+      <ion-infinite-scroll threshold="120px" [disabled]="!historyCursor() || !!historyError()" (ionInfinite)="loadMoreHistory($event)">
+        <ion-infinite-scroll-content loadingSpinner="crescent" loadingText="Loading more bookings…"></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
     </ion-content>
-  `
+
+    <app-customer-bottom-nav></app-customer-bottom-nav>
+  `,
+    styles: [`.history-link{display:block;width:100%;min-width:0}.history-link:focus-visible{outline:3px solid #2563eb;outline-offset:3px;border-radius:1rem}.history-link app-card{display:block;min-width:0}`]
 })
 export class ActivityPage implements OnInit {
     private bookingService = inject(BookingService);
+    private auth = inject(AuthService);
+    private historyOwner: string | null = null;
     private config = inject(AppConfigService);
     public router = inject(Router);
 
-    history = this.bookingService.bookingHistory;
+    private readonly activeStatuses = new Set([
+        'pending',
+        'requested',
+        'searching',
+        'assigned',
+        'accepted',
+        'heading_to_pickup',
+        'arrived',
+        'in_progress',
+        'arrived_at_store',
+        'shopping_in_progress',
+        'collected',
+        'en_route_to_customer',
+        'delivered'
+    ]);
+
+    private readonly pastStatuses = new Set([
+        'completed',
+        'cancelled',
+        'no_driver_found',
+        'canceled',
+        'failed',
+        'expired',
+        'refunded',
+        'settled'
+    ]);
+
+    private readonly marketplaceStatuses = new Set([
+        'negotiating',
+        'pending_fare_confirmation',
+        'fare_agreed'
+    ]);
+
+    history = signal<Booking[]>([]);
+    historyCursor = signal<{ created_at: string; id: string } | null>(null);
+
+
+    isLoadingHistory = signal(false);
+    historyError = signal<string | null>(null);
+
+    pendingMarketplace = computed(() => this.history().filter(booking => this.bookingService.isPendingMarketplaceBooking(booking)));
+
+    activeBookings = computed(() => {
+        const marketplaceIds = new Set(this.pendingMarketplace().map(b => b.id));
+        return this.history().filter(booking =>
+            !marketplaceIds.has(booking.id) &&
+            this.activeStatuses.has(String(booking.status || '').toLowerCase())
+        );
+    });
+
+    pastBookings = computed(() => {
+        const marketplaceIds = new Set(this.pendingMarketplace().map(b => b.id));
+        return this.history().filter(booking =>
+            !marketplaceIds.has(booking.id) &&
+            this.pastStatuses.has(String(booking.status || '').toLowerCase())
+        );
+    });
 
     constructor() {
         addIcons({
@@ -160,12 +285,85 @@ export class ActivityPage implements OnInit {
             cart,
             bus,
             map,
-            cubeOutline
+            cubeOutline,
+            timeOutline,
+            checkmarkCircle
         });
     }
 
-    ngOnInit() {
-        void this.bookingService.getHistory();
+    ngOnInit() { void this.loadHistory(); }
+    ionViewWillEnter() { void this.loadHistory(); }
+
+    /**
+     * Load the activity list with an explicit loading/error lifecycle. The loading
+     * flag is ALWAYS cleared, on success and on failure, so the screen can never
+     * stay stuck on "Loading…" or hide a failed load behind an empty list.
+     */
+    async loadMoreHistory(event: Event): Promise<void> {
+        try { if (this.historyCursor()) await this.loadHistory(true); }
+        finally { await (event.target as HTMLIonInfiniteScrollElement).complete(); }
+    }
+
+    async loadHistory(append = false): Promise<void> {
+        if (this.isLoadingHistory()) return;
+        const owner=this.auth.currentUser()?.id || null;
+        if(owner!==this.historyOwner){this.history.set([]);this.historyCursor.set(null);append=false;this.historyOwner=owner;}
+        this.isLoadingHistory.set(true);
+        this.historyError.set(null);
+
+        try {
+            const page = await this.bookingService.getActivityHistoryPage(append ? this.historyCursor() || undefined : undefined);
+            if(this.auth.currentUser()?.id!==owner){this.history.set([]);this.historyCursor.set(null);throw new Error('Session changed');}
+            const merged = append ? [...this.history(), ...page.bookings] : page.bookings;
+            this.history.set([...new Map(merged.map(booking => [booking.id, booking])).values()]);
+            this.historyCursor.set(page.cursor);
+        } catch (error) {
+            if(this.auth.currentUser()?.id!==owner){this.history.set([]);this.historyCursor.set(null);}
+            console.error('[ActivityPage] history load failed:', error);
+            this.historyError.set('We could not load your activity. Please try again.');
+        } finally {
+            this.isLoadingHistory.set(false);
+        }
+    }
+
+    continueActive(booking: Booking): void {
+        void this.router.navigate(['/customer/tracking', booking.id]);
+    }
+
+    continueMarketplace(booking: Booking): void {
+        void this.router.navigate(['/customer/marketplace-fare', booking.id]);
+    }
+
+    activeStatusLabel(booking: Booking): string {
+        const status = String(booking?.status || 'requested').toLowerCase();
+        const labels: Record<string, string> = {
+            pending: 'Request received',
+            requested: 'Request received',
+            searching: 'Finding your driver',
+            assigned: 'Driver assigned',
+            accepted: 'Driver confirmed',
+            heading_to_pickup: 'Driver heading to pickup',
+            arrived: 'Driver has arrived',
+            arrived_at_store: 'Driver at the shop',
+            shopping_in_progress: 'Shopping in progress',
+            collected: 'Items collected',
+            en_route_to_customer: 'On the way to you',
+            in_progress: 'Request in progress',
+            delivered: 'Delivery arrived'
+        };
+
+        return labels[status] || this.formatStatus(status);
+    }
+
+    marketplaceStatusLabel(booking: Booking): string {
+        const status = String(booking?.status || '').toLowerCase();
+        const labels: Record<string, string> = {
+            negotiating: 'Negotiating fare',
+            pending_fare_confirmation: 'Fare offer received',
+            fare_agreed: 'Fare agreed — payment needed'
+        };
+
+        return labels[status] || 'Continue negotiation';
     }
 
     getServiceSlug(booking: any): 'ride' | 'errand' | 'delivery' | 'van-moving' | 'other' {
@@ -192,11 +390,11 @@ export class ActivityPage implements OnInit {
             case 'ride':
                 return 'Ride';
             case 'errand':
-                return 'Errand';
+                return 'Shop';
             case 'delivery':
-                return 'Delivery';
+                return 'Deliver';
             case 'van-moving':
-                return 'Van Moving';
+                return 'Move';
             default:
                 return booking?.service_type?.name || 'Booking';
         }
@@ -223,9 +421,11 @@ export class ActivityPage implements OnInit {
         switch (String(status || '').toLowerCase()) {
             case 'completed':
             case 'paid':
+            case 'settled':
                 return 'success';
             case 'cancelled':
             case 'failed':
+            case 'no_driver_found':
                 return 'error';
             case 'pending':
             case 'searching':
@@ -244,17 +444,91 @@ export class ActivityPage implements OnInit {
         }
     }
 
-    formatStatus(status: string): string {
-        return String(status || 'pending')
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, char => char.toUpperCase());
+    /**
+     * History/past badge label.
+     *
+     * A terminal job must never sit on a pending "Updating…" label, so the
+     * authoritative `jobs.status` is mapped explicitly. Both the stored British
+     * spelling (`cancelled` — the only one accepted by `jobs_status_check`) and the
+     * American spelling collapse to "Cancelled".
+     *
+     * An unknown/missing status is reported neutrally: it is never de-underscored
+     * into raw internals, and it is never silently presented as a cancellation.
+     */
+    formatStatus(status?: string): string {
+        const key = String(status || '').trim().toLowerCase();
+        if (!key) return 'Unknown status';
+
+        const labels: Record<string, string> = {
+            // terminal
+            completed: 'Completed',
+            cancelled: 'Cancelled',
+            canceled: 'Cancelled',
+            refunded: 'Refunded',
+            settled: 'Settled',
+            failed: 'Failed',
+            expired: 'Expired',
+            no_driver_found: 'No driver found',
+            requires_review: 'Under review',
+            // still in flight (history can briefly contain these)
+            pending: 'Request received',
+            requested: 'Request received',
+            searching: 'Finding your driver',
+            assigned: 'Driver assigned',
+            accepted: 'Driver confirmed',
+            heading_to_pickup: 'Driver heading to pickup',
+            arrived: 'Driver has arrived',
+            arrived_at_store: 'Driver at the shop',
+            shopping_in_progress: 'Shopping in progress',
+            collected: 'Items collected',
+            en_route_to_customer: 'On the way to you',
+            in_progress: 'In progress',
+            delivered: 'Delivered'
+        };
+
+        return labels[key] || 'Unknown status';
     }
 
-    getInitial(value?: string | null): string {
-        return String(value || 'D').trim().charAt(0).toUpperCase() || 'D';
+    /**
+     * Money outcome, shown SEPARATELY from the status badge so a cancellation is
+     * never conflated with a refund state. Only rendered for terminal rows and
+     * only when the booking actually carries a payment/refund signal.
+     *
+     * The three refund states are derived from the SERVER's own writes, never
+     * re-derived from Stripe:
+     *   - `payment_status = 'requires_refund'` — a refund is required but not yet
+     *     issued (booking.routes.ts)                      -> pending
+     *   - `payment_status = 'refunded'` — the server only writes this when
+     *     requestedMinor >= capturedMinor (payment.routes.ts) -> completed full
+     *   - a refund id / refunded amount while the status is NOT 'refunded' — the
+     *     server keeps the paid status for a partial refund -> partial
+     */
+    paymentStateLabel(booking: Booking): string | null {
+        const status = String(booking?.status || '').toLowerCase();
+        const terminal = ['cancelled', 'canceled', 'failed', 'no_driver_found', 'refunded'];
+        if (!terminal.includes(status)) return null;
+
+        const record = booking as unknown as Record<string, unknown>;
+        const paymentStatus = String(record['payment_status'] || '').toLowerCase();
+        const refundedMinor = Number(record['total_refunded_minor'] || 0);
+        const hasRefundedAmount = Number.isFinite(refundedMinor) && refundedMinor > 0;
+        const hasRefund = !!record['refund_id'] || hasRefundedAmount;
+
+        // A refund that still has to be issued.
+        if (paymentStatus === 'requires_refund') return 'Refund pending';
+
+        // Completed full refund.
+        if (paymentStatus === 'refunded') return 'Refunded';
+
+        // A refund exists but the charge was not fully returned.
+        if (hasRefund) return 'Partially refunded';
+
+        if (paymentStatus === 'failed') return 'Payment failed';
+        if (paymentStatus === 'pending' || !paymentStatus) return 'Payment pending';
+        return null;
     }
 
-    formatPrice(amount: number | null | undefined) {
-        return this.config.formatCurrency(Number(amount || 0));
+    formatPrice(amount: number | null | undefined, currencyCode: unknown):string {
+        return recordedWalletAmount(amount,currencyCode);
     }
 }

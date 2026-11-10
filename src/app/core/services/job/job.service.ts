@@ -1,9 +1,11 @@
 import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
+import { acquisitionErrorMessage } from '../compliance/acquisition-error';
 import {
     Job,
     JobStatus,
-    JobEstimate,
     DispatchCandidate,
     City,
     JobEventType
@@ -19,25 +21,7 @@ export class JobService {
     private supabase = inject(SupabaseService);
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
-
-    async calculatePrice(
-        pickup: { lat: number; lng: number },
-        dropoff: { lat: number; lng: number }
-    ): Promise<JobEstimate> {
-        const url = this.apiUrlService.getApiUrl('/api/logistics/calculate-price');
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pickup, dropoff })
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to calculate price');
-        }
-
-        return await response.json() as JobEstimate;
-    }
+    private http = inject(HttpClient);
 
     async suggestDrivers(
         lat: number,
@@ -59,31 +43,38 @@ export class JobService {
         return await response.json() as DispatchCandidate[];
     }
 
+    /**
+     * Bearer header for the authenticated booking API. The server derives the caller from
+     * this token and there is no global HTTP interceptor, so it must be sent explicitly.
+     * A missing session fails with an intentional, customer-facing message rather than a
+     * mysterious 401 from the API.
+     */
+    private async authHeaders(): Promise<HttpHeaders> {
+        const { data } = await this.supabase.auth.getSession();
+        if (!data.session?.access_token) throw new Error('Please sign in again.');
+        return new HttpHeaders({ Authorization: `Bearer ${data.session.access_token}` });
+    }
+
     async createJob(job: Partial<Job>): Promise<Job> {
         const safeJob = this.toJobsPayload({
             ...job,
             scheduled_time: job.scheduled_time || new Date().toISOString()
         });
 
-        const { data, error } = await this.supabase
-            .from('jobs')
-            .insert(safeJob)
-            .select('*')
-            .single();
-
-        if (error) {
-            console.error('Error creating job:', error);
-            throw error;
-        }
-
-        return data as Job;
+        // /api/booking/create requires an authenticated caller; without this the van-moving
+        // flow failed with 401 for exactly the same reason as the errand/ride flow.
+        return await firstValueFrom(this.http.post<Job>(
+            this.apiUrlService.getApiUrl('/api/booking/create'),
+            { booking: safeJob },
+            { headers: await this.authHeaders() }
+        ));
     }
     async getAvailableJobs(): Promise<Job[]> {
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*')
             .is('driver_id', null)
-            .in('status', ['pending', 'requested', 'searching'])
+            .in('status', ['pending', 'requested', 'fare_agreed', 'searching'])
             .in('payment_status', ['pending', 'authorized', 'wallet_funded', 'paid'])
             .or(`driver_search_expires_at.is.null,driver_search_expires_at.gt.${new Date().toISOString()}`)
             .order('created_at', { ascending: false });
@@ -116,7 +107,9 @@ export class JobService {
 
         if (error || !accepted) {
             console.error('[JobService] acceptJob failed:', error);
-            throw error || new Error('Request no longer available');
+            // Batch 2C Phase B: surface MB002 (compliance ineligible) / MB001
+            // (busy) distinctly; never swallow a failure into a success.
+            throw new Error(acquisitionErrorMessage(error, 'Request no longer available'));
         }
 
         await this.eventService.logEvent(jobId, 'driver_accepted', 'Job accepted by driver');

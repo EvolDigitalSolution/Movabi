@@ -9,6 +9,27 @@ export interface NotificationPayload {
   type: 'booking_update' | 'payment_success' | 'system_alert' | 'chat_message' | 'driver_review_action_required';
 }
 
+/**
+ * Canonical driver opportunity/negotiation push contract.
+ *
+ * Informational ONLY — never job or session authority. Contains no auth tokens,
+ * no customer PII, no precise addresses, no payment data. `job_id` is the
+ * canonical key (camelCase `jobId` is retained only as a transient alias for
+ * legacy in-app consumers). `session_id` is intentionally NOT emitted: driver
+ * opportunities are open marketplace broadcasts, not private 1:1 sessions.
+ */
+export interface DriverPushData {
+  action: 'new_job' | 'negotiation';
+  job_id: string;
+  jobId: string;
+  open: 'driver_marketplace';
+  role: 'driver';
+}
+
+function driverPushData(action: DriverPushData['action'], jobId: string): DriverPushData {
+  return { action, job_id: jobId, jobId, open: 'driver_marketplace', role: 'driver' };
+}
+
 export class NotificationService {
   /**
    * Send a notification to a user
@@ -61,6 +82,12 @@ export class NotificationService {
       console.error('Error sending notification:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // The inbox record is persisted by the caller; this must not create a duplicate.
+  static async pushSavedAdminMessage(userId: string, messageId: string, role: string): Promise<void> {
+    await this.sendOneSignalPush({userId, title:'Message from Vaydu', body:'You have a new message from Vaydu.', type:'system_alert',
+      data:{action:'admin_message', message_id:messageId, role, route:`/account/messages?messageId=${encodeURIComponent(messageId)}`}});
   }
 
   private static async sendOneSignalPush(payload: NotificationPayload): Promise<void> {
@@ -215,7 +242,20 @@ export class NotificationService {
       title: 'New Job Available!',
       body: 'A new booking is available in your area. Open the app to accept.',
       type: 'booking_update',
-      data: { jobId, action: 'new_job' }
+      data: driverPushData('new_job', jobId)
+    });
+  }
+
+  /**
+   * Notify driver of a new fare negotiation/offer (distinct from a new job).
+   */
+  static async notifyDriverNegotiation(driverId: string, jobId: string) {
+    return this.sendNotification({
+      userId: driverId,
+      title: 'New fare offer',
+      body: 'A customer made a new fare offer in your area. Open the app to review it.',
+      type: 'booking_update',
+      data: driverPushData('negotiation', jobId)
     });
   }
 
@@ -223,26 +263,41 @@ export class NotificationService {
    * Notify customer of job status update
    */
   static async notifyJobStatusUpdate(userId: string, jobId: string, status: string) {
-    let title = 'Booking Update';
-    let body = `Your booking status is now: ${status}`;
+    const statusMessages: Record<string, { title: string; body: string }> = {
+      accepted: { title: 'Driver Accepted', body: 'A driver has accepted your booking and is on the way.' },
+      heading_to_pickup: { title: 'Driver En Route', body: 'Your driver is heading to the pickup location.' },
+      arrived: { title: 'Driver Arrived', body: 'Your driver has arrived at the pickup location.' },
+      in_progress: { title: 'Trip Started', body: 'Your trip is now in progress.' },
+      arrived_at_store: { title: 'Driver at Store', body: 'Your driver has arrived at the store.' },
+      shopping_in_progress: { title: 'Shopping Started', body: 'Your driver is shopping for your items.' },
+      collected: { title: 'Items Collected', body: 'Your driver has collected your items.' },
+      en_route_to_customer: { title: 'Delivery Arriving', body: 'Your driver is on the way to your delivery location.' },
+      delivered: { title: 'Items Delivered', body: 'Your driver has delivered your items.' },
+      completed: { title: 'Trip Completed', body: 'Thank you for using Vaydu! Please rate your experience.' },
+      cancelled: { title: 'Booking Cancelled', body: 'Your booking has been cancelled.' }
+    };
 
-    if (status === 'accepted') {
-      title = 'Driver Found!';
-      body = 'A driver has accepted your booking and is on the way.';
-    } else if (status === 'arrived') {
-      title = 'Driver Arrived';
-      body = 'Your driver has arrived at the pickup location.';
-    } else if (status === 'completed') {
-      title = 'Booking Completed';
-      body = 'Thank you for using Movabi! Please rate your experience.';
-    }
+    const msg = statusMessages[status] || {
+      title: 'Booking Update',
+      body: `Your booking status is now: ${status}`
+    };
 
     return this.sendNotification({
       userId,
-      title,
-      body,
+      title: msg.title,
+      body: msg.body,
       type: 'booking_update',
-      data: { jobId, status }
+      data: { jobId, status, action: 'status_update' }
+    });
+  }
+
+  static async notifyNegotiationCounter(userId: string, jobId: string, amount: number) {
+    return this.sendNotification({
+      userId,
+      title: 'Driver Counter Offer',
+      body: `A driver has countered your fare offer. Open the app to review the new amount.`,
+      type: 'booking_update',
+      data: { jobId, action: 'negotiation_counter', amount }
     });
   }
 
@@ -259,7 +314,7 @@ export class NotificationService {
   }
 
   static async notifyDriverReviewActionRequired(userId: string, blockers: string[], message: string) {
-    const body = message?.trim() || 'Your Movabi driver verification needs more information.';
+    const body = message?.trim() || 'Your Vaydu driver verification needs more information.';
 
     return this.sendNotification({
       userId,

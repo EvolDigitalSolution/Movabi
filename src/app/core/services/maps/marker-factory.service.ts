@@ -9,10 +9,14 @@ export class MarkerFactoryService {
   createMarkerElement(kind: MarkerKind, serviceType: ServiceTypeSlug, label?: string): HTMLElement {
     const el = document.createElement('div');
     el.className = `movabi-marker movabi-marker--${kind} movabi-marker--${serviceType}`;
-    
+
+    const resolvedLabel = label?.trim() || (kind === 'pickup' ? 'Pickup' : kind === 'destination' ? 'Drop-off' : '');
     const icon = this.getServiceIcon(serviceType, kind);
-    const labelHtml = label ? `<div class="movabi-marker__label">${label}</div>` : '';
+    const labelHtml = resolvedLabel ? `<div class="movabi-marker__label">${resolvedLabel}</div>` : '';
     const pulseHtml = kind === 'pickup' || kind === 'driver' ? '<div class="movabi-marker__pulse"></div>' : '';
+
+    el.setAttribute('role', 'img');
+    el.setAttribute('aria-label', resolvedLabel || (kind === 'driver' ? 'Driver' : 'Map marker'));
     
     el.innerHTML = `
       <div class="movabi-marker__wrapper">

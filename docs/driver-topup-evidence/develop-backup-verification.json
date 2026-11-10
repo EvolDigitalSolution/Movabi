@@ -1,0 +1,18 @@
+{
+  "evidence": "User-provided authenticated SSH terminal output, 27 October 2026",
+  "backupDirectory": "/home/edsadmin/vaydu-develop-wallet-backups/20261027T134821Z-1eabea4c",
+  "archive": "movabi_develop.dump",
+  "sha256": "abf0c32b9287efb2ca13b57521c786fde2930d21103a70343793d6fa1c404f21",
+  "verificationManifest": "/home/edsadmin/vaydu-develop-wallet-backups/20261027T134821Z-1eabea4c/verification-9168cbbb449f.json",
+  "restoreVerified": true,
+  "walletCounts": {
+    "wallet_accounts": 0,
+    "wallet_business_events": 0,
+    "wallet_movements": 0,
+    "wallet_topup_attempts": 0,
+    "payment_checkout_attempts": 2
+  },
+  "scope": "Full archive with object ownership/ACL restored; wallet table owners/ACLs compared; structural role attributes copied only into isolated clone; copied roles NOLOGIN; no credentials copied",
+  "deploymentPerformed": false,
+  "collectionEnabledByTask": false
+}

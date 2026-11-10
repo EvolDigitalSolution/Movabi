@@ -1,4 +1,4 @@
-# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+﻿# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
 # Env variables
 .env*
@@ -25,6 +25,7 @@ npm-debug.log
 yarn-error.log
 
 # IDEs and editors
+.vs/
 .idea/
 .project
 .classpath
@@ -63,10 +64,14 @@ Thumbs.db
 =
 *.bak
 *.sql
+!scripts/audit-auth-duplicate-app-tables.sql
+!supabase/baseline/*.sql
+!supabase/baseline/**/*.sql
+!supabase/migrations/*.sql
 
 # docker backups
 docker/**/*.bak
 
 # server backups
 server/*.bak.*
-.aider*
+

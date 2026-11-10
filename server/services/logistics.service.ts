@@ -1,8 +1,13 @@
+import {DriverPaymentAccountService,sandboxPayoutProvider} from './driver-payment-account.service';
+import { JobPayoutService } from './job-payout.service';
+import { IssuingSpendService } from './issuing-spend.service';
 import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { AuditService } from './audit.service';
 import { calculatePayoutBreakdown } from './payout-calculator';
 import { IssuingService } from './issuing.service';
+import { PaymentAuthorityService } from './payment-authority.service';
+import { FareSplitService, HistoricalFareReconciliationRequired, FareSplitSnapshot } from './fare-split.service';
 
 export class LogisticsService {
   private static readonly EARTH_RADIUS_KM = 6371;
@@ -38,8 +43,13 @@ export class LogisticsService {
   /**
    * Calculate payout breakdown for a job
    */
-  static calculatePayout(totalPrice: number, pricingPlan: 'starter' | 'pro', commissionRate: number = 15.00) {
-    return calculatePayoutBreakdown(totalPrice, pricingPlan, commissionRate);
+  static calculatePayout(
+    totalPrice: number,
+    pricingPlan: 'starter' | 'pro',
+    commissionRate: number,
+    serviceFeePercent: number = 0
+  ) {
+    return calculatePayoutBreakdown(totalPrice, pricingPlan, commissionRate, serviceFeePercent);
   }
 
   /**
@@ -72,12 +82,50 @@ export class LogisticsService {
   }
 
   /**
+   * Durable completion evidence: the per-job earnings row. driver_earnings has
+   * UNIQUE(job_id), so a row here means the monetary tail already ran for this job.
+   */
+  private static async hasDriverEarnings(jobId: string): Promise<boolean> {
+    // C2: only a SETTLED earnings row proves the money tail already ran. A
+    // trigger-created 'pending' row (e.g. from an admin status write) must NOT
+    // short-circuit the real completion, or capture/transfer would be skipped.
+    const { data, error } = await supabaseAdmin
+      .from('driver_earnings')
+      .select('job_id')
+      .eq('job_id', jobId)
+      .eq('status', 'paid')
+      .maybeSingle();
+
+    if (error) {
+      // Fail closed on an unreadable marker: never re-run money movement when we
+      // cannot prove the completion tail did not already run.
+      console.error('[LogisticsService.hasDriverEarnings] earnings lookup failed:', error);
+      throw new Error('Could not verify whether this request was already settled.');
+    }
+
+    return !!data;
+  }
+
+  /** Resolve the frozen fare split; never recompute from live configuration. */
+  private static resolveFareSplit(job: any): FareSplitSnapshot {
+    try {
+      return FareSplitService.fromSnapshot(job.fare_breakdown, job.currency_code);
+    } catch (error) {
+      if (error instanceof HistoricalFareReconciliationRequired) throw error;
+      throw new HistoricalFareReconciliationRequired('Fare split snapshot is missing or malformed.');
+    }
+  }
+
+  /**
    * Validate booking status transition
    */
   static isValidBookingTransition(current: string, next: string): boolean {
     const transitions: Record<string, string[]> = {
-      'requested': ['searching', 'cancelled'],
-      'searching': ['assigned', 'no_driver_found', 'cancelled'],
+      'requested': ['pending_fare_confirmation', 'negotiating', 'fare_agreed', 'accepted', 'searching', 'cancelled'],
+      'pending_fare_confirmation': ['negotiating', 'fare_agreed', 'cancelled'],
+      'negotiating': ['fare_agreed', 'cancelled'],
+      'fare_agreed': ['searching', 'cancelled'],
+      'searching': ['assigned', 'accepted', 'no_driver_found', 'cancelled'],
       'assigned': ['in_progress', 'cancelled'],
       'in_progress': ['completed'],
       'completed': [],
@@ -106,7 +154,7 @@ export class LogisticsService {
   /**
    * Complete a job and finalize payout
    */
-  static async completeJob(jobId: string, completionPin?: string | null) {
+  static async completeJob(jobId: string, completionPin?: string | null, expectedDriverId?: string | null) {
     const rawJobId = String(jobId || '').trim();
 
     if (!rawJobId) {
@@ -134,13 +182,43 @@ export class LogisticsService {
       throw new Error('Cannot complete job without an assigned driver');
     }
 
-    const completionMetadata = this.assertCompletionPin(job, completionPin);
-
-    const requestedTotalPrice = Number(job.total_price ?? job.price ?? job.estimated_price ?? 0);
-
-    if (!Number.isFinite(requestedTotalPrice) || requestedTotalPrice <= 0) {
-      throw new Error('Invalid job amount');
+    // Ownership guard. Runs before PIN validation, Stripe capture, transfer,
+    // earnings sync or any other side effect. The authenticated caller must be
+    // the driver assigned to this job.
+    if (!expectedDriverId || String(expectedDriverId) !== String(driverId)) {
+      throw new Error('Only the assigned driver can complete this request');
     }
+
+    const { data: existingQueue, error: existingQueueError } = await supabaseAdmin.from('job_payout_queue').select('job_id').eq('job_id', job.id).maybeSingle();
+    if (existingQueueError) throw new Error('Completion payout queue is unavailable');
+    if (existingQueue) {
+      if (job.status !== 'completed') throw new Error('Queued completion requires reconciliation');
+      return job;
+    }
+
+    // Completion readiness. Ownership alone does not stop the SAME driver from
+    // calling complete again (a resend, an impatient second tap, or a retry after a
+    // partial failure). Decide from PERSISTED state what still needs to run instead
+    // of blindly re-running money movement or blindly refusing.
+    const wasAlreadyCompleted = String(job.status || '').toLowerCase() === 'completed';
+
+    // Fully-complete evidence: the job is marked completed AND its earnings row
+    // exists. driver_earnings has UNIQUE(job_id), so that row is the durable marker
+    // that the whole money tail (capture/settlement, transfer, status write,
+    // earnings) finished. Only then is a repeat call a safe no-op.
+    if (wasAlreadyCompleted && await this.hasDriverEarnings(job.id)) {
+      console.log('[LogisticsService.completeJob] Job already fully completed, returning without side effects:', job.id);
+      return job;
+    }
+
+    // Otherwise resume. Every step below is individually skipped when its own
+    // durable marker is already present, so a retry finishes only the missing work
+    // and a repeat can never capture, transfer, settle or earn twice.
+    if (wasAlreadyCompleted) {
+      console.warn('[LogisticsService.completeJob] Resuming completion of a partially completed job:', job.id);
+    }
+
+    const completionMetadata = await this.assertCompletionPin(job, completionPin);
 
     const { data: driverProfile } = await supabaseAdmin
       .from('profiles')
@@ -148,168 +226,119 @@ export class LogisticsService {
       .eq('id', driverId)
       .maybeSingle();
 
+    let payoutScope:any=null;
+    if(String(driverProfile?.registration_country_code||driverProfile?.country_code).toUpperCase()==='NG'){
+      if(job.metadata?.driver_settlement_method!=='transfer')throw new Error('An explicit transfer settlement method is required; collection subaccount setup never selects a transfer.');
+      payoutScope=await new DriverPaymentAccountService(supabaseAdmin,sandboxPayoutProvider).ready(driverId);
+      if(job.country_code!==payoutScope.country||job.tenant_id!==payoutScope.tenant||String(job.currency_code).toUpperCase()!==payoutScope.currency)throw new Error('Payout market mismatch');
+    }
     const stripeAccountId =
       driverProfile?.stripe_account_id ||
       driverProfile?.stripe_connect_account_id ||
       driverProfile?.stripe_connected_account_id ||
       driverProfile?.stripe_connect_id;
 
-    if (!stripeAccountId) {
+    if (!stripeAccountId && !payoutScope) {
       throw new Error('Driver Stripe Connect account is missing');
     }
 
-    const plan = String(driverProfile?.pricing_plan || 'starter').toLowerCase();
-    const commissionRate = plan === 'pro' ? 0 : Number(driverProfile?.commission_rate ?? 15);
-    const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 15;
+    // Reporting must describe the frozen booking, not a later subscription change.
+    const plan = String(job.pricing_plan_used || 'starter').toLowerCase();
 
+    // One authoritative fare split, frozen at quote/agreement time. Never
+    // recompute from live config; a missing/ambiguous snapshot fails closed for
+    // explicit reconciliation instead of inventing a new entitlement.
+    const payableTerms = await PaymentAuthorityService.resolve(job);
+    const split = this.resolveFareSplit(job);
+    PaymentAuthorityService.assertFrozenServiceFare(job, payableTerms.serviceFareMajor);
+    const totalPrice = split.customerCharge;
+    const platformFee = split.platformFeeAmount;
+    const driverPayout = split.driverEntitlement;
+    const safeCommissionRate = split.commissionPercent;
+
+    const settlementCurrency = String(split.currency || job.currency_code || 'gbp').toUpperCase();
+    const payoutAmountInPence = FareSplitService.toMinor(driverPayout, settlementCurrency);
+    if (payoutAmountInPence <= 0) throw new Error('Invalid driver payout amount');
+    if (!['in_progress', 'en_route_to_customer', 'arrived_at_customer', 'on_trip', 'completed'].includes(String(job.status))) {
+      throw new Error('Request is not ready for completion');
+    }
+    if (job.stripe_transfer_id || ['claimed','unknown','transferred','reversed'].includes(String(job.settlement_status))) {
+      throw new Error('Existing transfer requires reconciliation before completion');
+    }
+    const cardSpend = PaymentAuthorityService.isErrand(job) ? await IssuingSpendService.sync(job.id, true) : { automated: false };
+    if (cardSpend.automated && cardSpend.pending) throw new Error('Shopping card purchases are still pending. Completion payment can continue once they reconcile.');
     let finalPaymentStatus = String(job.payment_status || 'pending').toLowerCase();
     const isWalletPayment = finalPaymentStatus === 'wallet_funded' || String(job.payment_method || '').toLowerCase() === 'wallet';
-    const totalPrice = isWalletPayment
-      ? await this.resolveWalletSettlementAmount(job, requestedTotalPrice)
-      : requestedTotalPrice;
-
-    const platformFee = this.roundMoney(totalPrice * (safeCommissionRate / 100));
-    const driverPayout = this.roundMoney(Math.max(0, Math.min(totalPrice, totalPrice - platformFee)));
-
-    const payoutAmountInPence = Math.round(driverPayout * 100);
-
-    if (payoutAmountInPence <= 0) {
-      throw new Error('Invalid driver payout amount');
-    }
 
     if (finalPaymentStatus === 'paid') {
       console.log('[LogisticsService.completeJob] Payment already paid, skipping capture:', job.id);
     } else if (isWalletPayment) {
-      await this.settleWalletJobReservation(job, totalPrice);
+      // Wallet settlement and completion commit together in the outbox RPC.
       finalPaymentStatus = 'paid';
     } else if (finalPaymentStatus === 'authorized') {
       if (!job.payment_intent_id) {
         throw new Error('Payment is authorized but payment_intent_id is missing');
       }
 
-      try {
-        const captured = await stripe.paymentIntents.capture(
-          job.payment_intent_id,
-          {} as any,
-          { idempotencyKey: `capture-job-${job.id}` }
-        );
-
-        if (captured.status !== 'succeeded') {
-          throw new Error(`Stripe capture returned status: ${captured.status}`);
-        }
-
-        finalPaymentStatus = 'paid';
-      } catch (captureError: any) {
-        const message = String(captureError?.message || '');
-
-        if (message.toLowerCase().includes('already been captured')) {
-          finalPaymentStatus = 'paid';
-        } else {
-          console.error('[LogisticsService.completeJob] Stripe capture failed:', captureError);
-          throw new Error(message || 'Failed to capture customer payment');
-        }
+      // Release closure: card errands capture only service fare + actually-spent
+      // purchase budget, converging with the wallet path (which refunds unused
+      // budget). Unused purchasing budget is never captured as driver earnings.
+      let captureAmountInPence: number | undefined;
+      if (PaymentAuthorityService.isErrand(job)) {
+        const payable = await PaymentAuthorityService.resolve(job);
+        const serviceFare = Number(payable.serviceFareMajor || totalPrice || 0);
+        const budget = Math.max(0, Number(payable.totalAuthorisationMajor || 0) - serviceFare);
+        const { data: details, error: detailsError } = await supabaseAdmin
+          .from('errand_details')
+          .select('actual_spending')
+          .eq('job_id', job.id)
+          .maybeSingle();
+        if (detailsError) throw new Error('Shopping spend could not be verified');
+        const actualSpending = this.roundMoney(Number(details?.actual_spending || 0));
+        if (!Number.isFinite(actualSpending) || actualSpending < 0 || actualSpending > budget) throw new Error('Shopping spend requires budget approval before completion');
+        const funding = await supabaseAdmin.from('errand_funding').select('over_budget_status').eq('job_id',job.id).maybeSingle();
+        if (funding.error || funding.data?.over_budget_status === 'requested') throw new Error('Shopping budget approval must finish before completion');
+        captureAmountInPence = FareSplitService.toMinor(serviceFare + actualSpending, String(job.currency_code || 'GBP'));
       }
+
+      const intent = await stripe.paymentIntents.retrieve(job.payment_intent_id);
+      const expectedCapture = captureAmountInPence ?? FareSplitService.toMinor(totalPrice, settlementCurrency);
+      if (intent.currency.toUpperCase() !== settlementCurrency) throw new Error('Payment currency requires reconciliation');
+      if (intent.status === 'succeeded') {
+        if (intent.amount_received !== expectedCapture) throw new Error('Captured amount requires reconciliation');
+      } else {
+        if (intent.status !== 'requires_capture') throw new Error('Customer payment is not ready for capture');
+        if (intent.amount_capturable < expectedCapture) {
+          throw new Error('Authorized payment amount requires reconciliation before completion');
+        }
+        const captured = await stripe.paymentIntents.capture(job.payment_intent_id,
+          { amount_to_capture: expectedCapture }, { idempotencyKey: `capture-job-v2-${job.id}-${expectedCapture}` });
+        if (captured.status !== 'succeeded') throw new Error('Customer payment capture is pending');
+      }
+      finalPaymentStatus = 'paid';
     } else {
       throw new Error(`Payment has not been authorized. Current status: ${finalPaymentStatus}`);
     }
 
-    let stripeTransferId = job.stripe_transfer_id || null;
-
-    if (!stripeTransferId) {
-      try {
-        const transfer = await stripe.transfers.create(
-          {
-            amount: payoutAmountInPence,
-            currency: String(job.currency_code || 'gbp').toLowerCase(),
-            destination: stripeAccountId,
-            description: `Movabi driver payout for job ${job.id}`,
-            metadata: {
-              job_id: String(job.id),
-              driver_id: String(driverId),
-              total_price: String(totalPrice),
-              driver_payout: String(driverPayout),
-              platform_fee: String(platformFee),
-              plan
-            }
-          },
-          {
-            idempotencyKey: `transfer-job-${job.id}`
-          }
-        );
-
-        stripeTransferId = transfer.id;
-      } catch (transferError: any) {
-        console.error('[LogisticsService.completeJob] Stripe transfer failed:', transferError);
-        throw new Error(transferError?.message || 'Failed to transfer driver payout');
-      }
-    } else {
-      console.log('[LogisticsService.completeJob] Transfer already exists, skipping transfer:', stripeTransferId);
-    }
-
     const now = new Date().toISOString();
-    const completedMetadata = this.getCompletionPin(completionMetadata)
-      ? {
-        ...completionMetadata,
-        completion_pin_required: true,
-        completion_pin_verified_at: now
-      }
-      : completionMetadata;
-
-    const { data: updatedJob, error: updateError } = await supabaseAdmin
-      .from('jobs')
-      .update({
-        status: 'completed',
-        payment_status: 'paid',
-        driver_id: driverId,
-        price: totalPrice,
-        total_price: totalPrice,
-        driver_payout: driverPayout,
-        platform_fee: platformFee,
-        stripe_transfer_id: stripeTransferId,
-        stripe_transfer_status: 'paid',
-        transferred_at: job.transferred_at || now,
-        completed_at: job.completed_at || now,
-        metadata: completedMetadata,
-        updated_at: now
-      })
-      .eq('id', job.id)
-      .select('*')
-      .single();
-
-    if (updateError) {
-      console.error('[LogisticsService.completeJob] update failed:', updateError);
-      throw new Error(updateError.message || 'Failed to complete job');
-    }
-
-    const { error: earningError } = await supabaseAdmin
-      .from('driver_earnings')
-      .upsert(
-        {
-          driver_id: driverId,
-          job_id: job.id,
-          amount: driverPayout,
-          platform_fee: platformFee,
-          gross_amount: totalPrice,
-          status: 'paid',
-          currency_code: job.currency_code || 'GBP',
-          country_code: job.country_code || 'GB',
-          stripe_transfer_id: stripeTransferId,
-          created_at: job.created_at || now
-        },
-        { onConflict: 'job_id' }
-      );
-
-    if (earningError) {
-      console.error('[LogisticsService.completeJob] earning upsert failed:', earningError);
-      throw new Error(earningError.message || 'Failed to sync driver earnings');
-    }
-
+    const completedMetadata = { ...completionMetadata, completion_pin_verified_at: now };
+    const { data: settledRows, error: settleError } = await supabaseAdmin.rpc('complete_job_with_pending_payout', {
+      p_job_id: job.id, p_driver_id: driverId, p_metadata: completedMetadata,
+      p_terms: { total: totalPrice, payout: driverPayout, platformFee,
+        commission: split.driverCommissionAmount, commissionRate: safeCommissionRate,
+        amountMinor: payoutAmountInPence, currency: settlementCurrency,
+        destination: payoutScope ? `flw:${payoutScope.account.id}` : stripeAccountId, country: job.country_code || 'GB',
+        ...(payoutScope?{payout_provider:'flutterwave',payout_account_id:payoutScope.account.id,payout_merchant:payoutScope.market.merchant_account_ref,payout_tenant:payoutScope.tenant}:{}) }
+    });
+    if (settleError) throw new Error(settleError.message || 'Failed to record completion');
+    const updatedJob = Array.isArray(settledRows) ? settledRows[0] : settledRows;
+    if (!updatedJob) throw new Error('Completion was not recorded');
     await AuditService.logBooking(job.customer_id, 'job_completed', job.id, {
       total_price: totalPrice,
-      reserved_price: requestedTotalPrice,
+      reserved_price: totalPrice,
       driver_payout: driverPayout,
       platform_fee: platformFee,
-      stripe_transfer_id: stripeTransferId,
+      stripe_transfer_id: null,
       pricing_plan_used: plan,
       commission_rate_used: safeCommissionRate
     });
@@ -330,24 +359,92 @@ export class LogisticsService {
       }
     }
 
+    // The durable queue is already committed. A transfer failure must not undo
+    // completion; the worker will reconcile/retry using its persisted lease/key.
+    // Referral earning: a completed+paid job is the qualifying activity for
+    // the customer's pending referrals. Earning must never break completion.
+    try {
+      if (updatedJob?.customer_id) {
+        const { data: pending } = await supabaseAdmin
+          .from('referrals')
+          .select('id')
+          .eq('referee_id', updatedJob.customer_id)
+          .eq('status', 'pending');
+        for (const r of pending || []) {
+          try {
+            await supabaseAdmin.rpc('earn_referral', { p_referral: r.id, p_job: updatedJob.id });
+          } catch { /* a referral earning failure must not block completion */ }
+        }
+      }
+    } catch (error) {
+      console.warn('[LogisticsService.completeJob] referral earn skipped:', (error as Error)?.message);
+    }
+
+    try {
+      await JobPayoutService.process(job.id);
+      const refreshed = await supabaseAdmin.from('jobs').select('*').eq('id',job.id).maybeSingle();
+      if (!refreshed.error && refreshed.data) return refreshed.data;
+    } catch (error) {
+      console.error('[LogisticsService.completeJob] immediate transfer deferred:', error);
+    }
     return updatedJob;
   }
 
-  private static assertCompletionPin(job: any, submittedPin?: string | null): Record<string, any> {
+  private static async assertCompletionPin(job: any, submittedPin?: string | null): Promise<Record<string, any>> {
     const metadata = this.getMetadata(job);
-    const expectedPin = this.getCompletionPin(metadata);
+
+    // Release closure: the completion secret lives in job_completion_secrets
+    // (customer-only RLS), not in jobs.metadata (which the driver's jobs.*
+    // SELECT returns wholesale). Fall back to metadata ONLY for in-flight jobs
+    // created before the secret store existed.
+    let expectedPin = '';
+    const { data: secretRow, error: secretError } = await supabaseAdmin
+      .from('job_completion_secrets')
+      .select('completion_pin')
+      .eq('job_id', job.id)
+      .maybeSingle();
+    if (secretError) throw new Error('Customer PIN could not be verified. Please retry.');
+    if (secretRow?.completion_pin) {
+      expectedPin = this.normalizeCompletionPin(secretRow.completion_pin);
+    } else {
+      expectedPin = this.getCompletionPin(metadata);
+    }
+
+    // Effective policy: per-driver override beats market setting.
+    let policyRow: unknown = null;
+    try {
+      const { data } = await supabaseAdmin.rpc('effective_completion_pin_policy', {
+        p_driver: job.driver_id, p_tenant: job.tenant_id,
+        p_market_enabled: metadata.completion_pin_required !== false
+      });
+      policyRow = data;
+    } catch { /* fall back to the market setting below */ }
+    const effectivePolicy = String((policyRow as any) || (metadata.completion_pin_required !== false ? 'required' : 'disabled'));
+
+    if (effectivePolicy === 'disabled') return metadata;
 
     if (!expectedPin) {
+      if (effectivePolicy === 'required') throw new Error('Customer PIN is unavailable; please contact support.');
       return metadata;
     }
 
     const providedPin = this.normalizeCompletionPin(submittedPin);
 
     if (!providedPin) {
+      if (effectivePolicy === 'optional') return metadata; // optional: verify only when provided
       throw new Error('Customer PIN is required to complete this request.');
     }
 
-    if (providedPin !== expectedPin) {
+    // Atomic attempt recording: lock after 5 wrong, replay-safe after success.
+    if (secretRow?.completion_pin) {
+      const { data: verdict, error: attErr } = await supabaseAdmin.rpc('record_pin_attempt', {
+        p_job: job.id, p_pin: providedPin, p_expected: expectedPin
+      });
+      if (attErr) throw new Error('Customer PIN could not be verified. Please retry.');
+      if (verdict === 'locked') throw new Error('Too many incorrect PIN attempts. Try again later or contact support.');
+      if (verdict === 'done') throw new Error('This PIN was already used.');
+      if (verdict !== 'ok') throw new Error('The customer PIN is incorrect. Ask the customer for the current 4-digit PIN and try again.');
+    } else if (providedPin !== expectedPin) {
       throw new Error('The customer PIN is incorrect. Ask the customer for the current 4-digit PIN and try again.');
     }
 
@@ -381,213 +478,6 @@ export class LogisticsService {
     return String(value ?? '').replace(/\D/g, '').slice(0, 8);
   }
 
-  private static async resolveWalletSettlementAmount(job: any, fallbackAmount: number): Promise<number> {
-    if (String(job.service_slug || '').toLowerCase() !== 'errand') {
-      return this.roundMoney(fallbackAmount);
-    }
-
-    const [{ data: details }, { data: funding }] = await Promise.all([
-      supabaseAdmin
-        .from('errand_details')
-        .select('actual_spending')
-        .eq('job_id', job.id)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('errand_funding')
-        .select('amount_reserved')
-        .eq('job_id', job.id)
-        .maybeSingle()
-    ]);
-
-    const actualSpending = this.roundMoney(Number(details?.actual_spending || 0));
-    const reservedAmount = this.roundMoney(Number(funding?.amount_reserved || fallbackAmount));
-
-    if (actualSpending <= 0) {
-      return this.roundMoney(fallbackAmount);
-    }
-
-    return this.roundMoney(Math.min(reservedAmount, actualSpending));
-  }
-
-  private static async settleWalletJobReservation(job: any, amount: number): Promise<void> {
-    const wallet = await supabaseAdmin
-      .from('wallets')
-      .select('id, available_balance, reserved_balance')
-      .eq('user_id', job.customer_id)
-      .maybeSingle();
-
-    if (wallet.error || !wallet.data) {
-      throw new Error('Customer wallet reservation could not be found');
-    }
-
-    const reservedBalance = this.roundMoney(Math.max(0, Number(wallet.data.reserved_balance || 0)));
-    const availableBalance = this.roundMoney(Math.max(0, Number(wallet.data.available_balance || 0)));
-    const jobReservedAmount = await this.resolveWalletReservedAmount(job, amount);
-    const reservationAmount = this.roundMoney(Math.min(reservedBalance, jobReservedAmount));
-    const settlementAmount = this.roundMoney(Math.min(reservationAmount, Math.max(0, amount)));
-    const refundAmount = this.roundMoney(Math.max(0, reservationAmount - settlementAmount));
-
-    if (settlementAmount <= 0) {
-      throw new Error('Customer wallet reservation is empty');
-    }
-
-    const updatedWallet = await supabaseAdmin
-      .from('wallets')
-      .update({
-        available_balance: this.roundMoney(availableBalance + refundAmount),
-        reserved_balance: this.roundMoney(Math.max(0, reservedBalance - reservationAmount)),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', wallet.data.id);
-
-    if (updatedWallet.error) {
-      throw new Error(updatedWallet.error.message || 'Failed to settle wallet reservation');
-    }
-
-    await this.insertWalletSettlementTransaction(job, wallet.data.id, settlementAmount);
-
-    if (refundAmount > 0) {
-      await this.insertWalletReleaseTransaction(job, wallet.data.id, refundAmount);
-    }
-
-    if (String(job.service_slug || '').toLowerCase() === 'errand') {
-      const { data: fundingRow } = await supabaseAdmin
-        .from('errand_funding')
-        .select('metadata')
-        .eq('job_id', job.id)
-        .maybeSingle();
-
-      await supabaseAdmin
-        .from('errand_funding')
-        .update({
-          status: 'settled',
-          metadata: {
-            ...((fundingRow?.metadata as Record<string, unknown>) || {}),
-            settlement: {
-              amount_settled: settlementAmount,
-              amount_released: refundAmount,
-              settled_at: new Date().toISOString()
-            }
-          },
-          updated_at: new Date().toISOString()
-        })
-        .eq('job_id', job.id);
-    }
-  }
-
-  private static async resolveWalletReservedAmount(job: any, fallbackAmount: number): Promise<number> {
-    if (String(job.service_slug || '').toLowerCase() !== 'errand') {
-      return this.roundMoney(fallbackAmount);
-    }
-
-    const { data } = await supabaseAdmin
-      .from('errand_funding')
-      .select('amount_reserved')
-      .eq('job_id', job.id)
-      .maybeSingle();
-
-    return this.roundMoney(Number(data?.amount_reserved || fallbackAmount));
-  }
-
-  private static async insertWalletSettlementTransaction(
-    job: any,
-    walletId: string,
-    amount: number
-  ): Promise<void> {
-    const basePayload: Record<string, unknown> = {
-      user_id: job.customer_id,
-      job_id: job.id,
-      amount,
-      description: 'Job payment settled from wallet reservation',
-      metadata: {
-        payment_method: 'wallet',
-        currency_code: job.currency_code || 'GBP',
-        settled_at: new Date().toISOString()
-      }
-    };
-
-    const withWalletId = {
-      ...basePayload,
-      wallet_id: walletId,
-      transaction_type: 'settlement'
-    };
-
-    let insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(withWalletId);
-
-    if (!insert.error) return;
-
-    const message = `${insert.error.code || ''} ${insert.error.message || ''}`.toLowerCase();
-
-    if (!message.includes('transaction_type') && !message.includes('wallet_id')) {
-      throw new Error(insert.error.message || 'Failed to record wallet settlement');
-    }
-
-    const fallbackPayload = {
-      ...basePayload,
-      type: 'settlement'
-    };
-
-    insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(fallbackPayload);
-
-    if (insert.error) {
-      throw new Error(insert.error.message || 'Failed to record wallet settlement');
-    }
-  }
-
-  private static async insertWalletReleaseTransaction(
-    job: any,
-    walletId: string,
-    amount: number
-  ): Promise<void> {
-    const basePayload: Record<string, unknown> = {
-      user_id: job.customer_id,
-      job_id: job.id,
-      amount,
-      description: 'Unused errand wallet reservation returned',
-      metadata: {
-        payment_method: 'wallet',
-        currency_code: job.currency_code || 'GBP',
-        released_at: new Date().toISOString(),
-        reason: 'actual_spending_below_reserved_amount'
-      }
-    };
-
-    const withWalletId = {
-      ...basePayload,
-      wallet_id: walletId,
-      transaction_type: 'release'
-    };
-
-    let insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(withWalletId);
-
-    if (!insert.error) return;
-
-    const message = `${insert.error.code || ''} ${insert.error.message || ''}`.toLowerCase();
-
-    if (!message.includes('transaction_type') && !message.includes('wallet_id')) {
-      throw new Error(insert.error.message || 'Failed to record wallet release');
-    }
-
-    const fallbackPayload = {
-      ...basePayload,
-      type: 'release'
-    };
-
-    insert = await supabaseAdmin
-      .from('wallet_transactions')
-      .insert(fallbackPayload);
-
-    if (insert.error) {
-      throw new Error(insert.error.message || 'Failed to record wallet release');
-    }
-  }
-
   private static roundMoney(value: number): number {
     return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
   }
@@ -597,17 +487,28 @@ export class LogisticsService {
    */
   static async updateDriverReliability(driverId: string) {
     try {
-      const { data: jobs } = await supabaseAdmin
+      // Cancellation reason lives in jobs.metadata (written by cancel_job_safely
+      // as metadata.cancellation_reason), NOT in a cancellation_reason column.
+      // Selecting a nonexistent column made PostgREST reject the query, so the
+      // reliability stats silently never updated.
+      const { data: jobs, error: jobsError } = await supabaseAdmin
         .from('jobs')
-        .select('status, cancellation_reason')
+        .select('status, metadata')
         .eq('driver_id', driverId);
 
+      if (jobsError) {
+        console.error('[LogisticsService] Error fetching jobs for reliability:', jobsError);
+        return;
+      }
       if (!jobs || jobs.length === 0) return;
 
       const total = jobs.length;
       const completed = jobs.filter(j => j.status === 'completed').length;
-      const cancelledByDriver = jobs.filter(j => j.status === 'cancelled' && j.cancellation_reason?.toLowerCase().includes('driver')).length;
-      
+      const cancelledByDriver = jobs.filter(j =>
+        j.status === 'cancelled' &&
+        String((j.metadata as any)?.cancellation_reason ?? '').toLowerCase().includes('driver')
+      ).length;
+
       const completionRate = (completed / total) * 100;
       const cancellationRate = (cancelledByDriver / total) * 100;
 

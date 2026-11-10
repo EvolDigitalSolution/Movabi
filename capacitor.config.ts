@@ -2,7 +2,8 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.movabi.app',
-  appName: 'Movabi',
+  appName: 'Vaydu',
+  android: { useLegacyBridge: true },
   webDir: 'dist/mobile/browser',
   server: {
     androidScheme: 'https'

@@ -26,11 +26,9 @@ import { AuthService } from '@core/services/auth/auth.service';
       <main class="landing-shell">
         <header class="landing-header">
           <div class="brand-lockup">
-            <span class="brand-mark">
-              <ion-icon name="car-sport-outline"></ion-icon>
-            </span>
+            <img class="brand-mark" src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="52" height="52" />
             <div>
-              <strong>Movabi</strong>
+              <strong>Vaydu</strong>
               <small>Ride. Errand. Delivery. Moving.</small>
             </div>
           </div>
@@ -82,7 +80,7 @@ import { AuthService } from '@core/services/auth/auth.service';
           </ion-button>
         </section>
 
-        <section class="service-carousel" aria-label="Movabi services">
+        <section class="service-carousel" aria-label="Vaydu services">
           @for (service of services; track service.title) {
             <article>
               <span [ngClass]="service.tone">
@@ -104,7 +102,8 @@ import { AuthService } from '@core/services/auth/auth.service';
         <footer>
           <a routerLink="/help">How it works</a>
           <a routerLink="/privacy">Privacy</a>
-          <a routerLink="/about-movabi">About Movabi</a>
+          <a routerLink="/about-movabi">About Vaydu</a>
+          <p class="business-identity">Vaydu is a product of Evolution Digital Solution, a sole trader business.</p>
         </footer>
       </main>
     </ion-content>
@@ -414,6 +413,8 @@ import { AuthService } from '@core/services/auth/auth.service';
       padding: 1.25rem 0 0.25rem;
     }
 
+    .business-identity { flex-basis: 100%; margin: 0.5rem 0 0; text-align: center; font-size: 0.85rem; line-height: 1.6; font-weight: 500; }
+
     footer a {
       color: #c2410c;
       font-size: 0.85rem;
@@ -446,7 +447,7 @@ export class LandingPage implements OnDestroy, OnInit {
     {
       eyebrow: 'Cheaper local movement',
       title: 'Move, shop and deliver with clear pricing.',
-      copy: 'Movabi brings rides, errands, package delivery and moving help into one simple app with clear pricing.'
+      copy: 'Vaydu brings rides, shop, deliver and move into one simple app with clear pricing.'
     },
     {
       eyebrow: 'Track every step',

@@ -1,4 +1,6 @@
-import { Injectable, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { adminMessageRoute } from '../../shared/utils/admin-message-route';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -23,6 +25,15 @@ export class NotificationService {
 
   notifications = signal<Notification[]>([]);
   unreadCount = signal(0);
+  private messageRouter = inject(Router);
+  incomingAdminMessageId = signal<string | null>(null);
+  openIncomingAdminMessage(){const route=adminMessageRoute(this.incomingAdminMessageId());this.incomingAdminMessageId.set(null);if(route)void this.messageRouter.navigateByUrl(route);}
+  adminMessages = computed(() => this.notifications().filter(notification => {
+    const action = this.getNotificationRouteData(notification)['action'];
+    return action === 'admin_message' || action === 'admin_driver_message';
+  }));
+  unreadAdminMessageCount = computed(() => this.adminMessages().filter(message => !message.is_read).length);
+
 
   constructor() {
     effect(() => {
@@ -39,6 +50,7 @@ export class NotificationService {
         this.channel = undefined;
         this.notifications.set([]);
         this.unreadCount.set(0);
+        this.incomingAdminMessageId.set(null);
         void this.oneSignal.logout();
       }
     });
@@ -47,7 +59,6 @@ export class NotificationService {
   initialize(): void {
     if (this.initialized()) return;
     this.initialized.set(true);
-    this.nativePlatform.pushToken$.subscribe(token => void this.savePushToken(token));
     void this.oneSignal.init();
   }
 
@@ -67,10 +78,12 @@ export class NotificationService {
   }
 
   async markAsRead(id: string) {
+    const user = this.auth.currentUser();
+    if (!user) throw new Error('Sign in to read this message.');
     const { error } = await this.supabase
       .from('notifications')
       .update({ is_read: true })
-      .eq('id', id);
+      .eq('id', id).eq('user_id', user.id);
 
     if (error) throw error;
     
@@ -119,6 +132,17 @@ export class NotificationService {
         const routeData = this.getNotificationRouteData(newNotif);
         this.notifications.update(list => [newNotif, ...list]);
         this.updateUnreadCount();
+        if (routeData['action'] === 'admin_message' || routeData['action'] === 'admin_driver_message') {
+          this.incomingAdminMessageId.set(newNotif.id);
+        }
+
+        // Driver opportunity/negotiation attention is owned by the certified
+        // in-app realtime Audio alarm. Do not duplicate a local notification or
+        // tone for the same foreground event.
+        if (this.isDriverOpportunity(newNotif)) {
+          return;
+        }
+
         void this.playNotificationToneOnce(newNotif);
         void this.nativePlatform.showForegroundNotification(
           newNotif.title,
@@ -131,26 +155,6 @@ export class NotificationService {
 
   async enableNativeNotifications(): Promise<boolean> {
     return this.oneSignal.requestPermission();
-  }
-
-  private async savePushToken(token: string): Promise<void> {
-    const user = this.auth.currentUser();
-    if (!user || !token) return;
-
-    const { error } = await this.supabase
-      .from('device_push_tokens')
-      .upsert({
-        user_id: user.id,
-        token,
-        provider: 'capacitor',
-        external_id: user.id,
-        platform: Capacitor.getPlatform(),
-        enabled: true,
-        last_seen_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'token' });
-
-    if (error) console.warn('[NotificationService] Could not save push token', error);
   }
 
   private async syncOneSignalIdentity(role?: string | null): Promise<void> {
@@ -175,12 +179,23 @@ export class NotificationService {
 
   private getNotificationRouteData(notification: Notification): Record<string, unknown> {
     const data = ((notification as any).metadata || (notification as any).data || {}) as Record<string, unknown>;
+    const action = String(data['action'] || '');
+    if (action === 'admin_message' || action === 'admin_driver_message') {
+      return {...data,message_id:notification.id,route:adminMessageRoute(notification.id) || '/account/messages'};
+    }
     const route = (notification as any).route || data['route'];
 
     return {
       ...data,
       ...(route ? { route } : {})
     };
+  }
+
+  private isDriverOpportunity(notification: Notification): boolean {
+    const data = this.getNotificationRouteData(notification);
+    const role = String(data['role'] || '').toLowerCase();
+    const action = String(data['action'] || '').toLowerCase();
+    return role === 'driver' && (action === 'new_job' || action === 'negotiation');
   }
 
   private shouldPlayTone(notification: Notification): boolean {
@@ -211,6 +226,9 @@ export class NotificationService {
     if (this.soundedNotificationKeys.has(key)) return;
     this.soundedNotificationKeys.add(key);
 
+    const status = String(data['status'] || '');
+    if (status && this.playStatusSound(status)) return;
+
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
@@ -221,6 +239,40 @@ export class NotificationService {
       window.setTimeout(() => void context.close?.(), 400);
     } catch (error) {
       console.warn('[NotificationService] Could not play notification tone', error);
+    }
+  }
+
+  /**
+   * Play a distinct sound for lifecycle status updates. Returns true when a
+   * specific sound was selected, false when the caller should fall back.
+   */
+  private playStatusSound(status: string): boolean {
+    const soundMap: Record<string, string> = {
+      accepted: 'booking-accepted.mp3',
+      heading_to_pickup: 'driver-arrived.mp3',
+      arrived: 'driver-arrived.mp3',
+      arrived_at_store: 'driver-arrived.mp3',
+      shopping_in_progress: 'request-notification.mp3',
+      collected: 'request-notification.mp3',
+      en_route_to_customer: 'driver-arrived.mp3',
+      delivered: 'trip-completed.mp3',
+      in_progress: 'driver-arrived.mp3',
+      completed: 'trip-completed.mp3',
+      cancelled: 'message-notification.mp3'
+    };
+
+    const filename = soundMap[status];
+    if (!filename) return false;
+
+    try {
+      const audio = new Audio(`/assets/sounds/${filename}`);
+      audio.play().catch(error => {
+        console.warn('[NotificationService] Could not play status sound', status, error);
+      });
+      return true;
+    } catch (error) {
+      console.warn('[NotificationService] Audio creation failed', status, error);
+      return false;
     }
   }
 

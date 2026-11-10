@@ -1,0 +1,7 @@
+BEGIN;
+UPDATE public.market_availability SET launch_status='paused',quote_enabled=false,booking_enabled=false,payment_enabled=false,
+ driver_online_enabled=false,updated_at=now() WHERE country_code='GB' AND enabled=true;
+INSERT INTO public.marketplace_settings(tenant_id,key,value) VALUES
+ (NULL,'market_pricing_enabled','false'::jsonb),(NULL,'market_pricing_shadow_mode','true'::jsonb)
+ON CONFLICT (key) WHERE tenant_id IS NULL DO UPDATE SET value=EXCLUDED.value,updated_at=now();
+COMMIT;

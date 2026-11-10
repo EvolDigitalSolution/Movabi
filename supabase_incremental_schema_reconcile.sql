@@ -5,11 +5,11 @@
 -- DATE: 2026-04-15
 -- ==============================================================================
 
--- PART 1 — Extensions
+-- PART 1 â€” Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- PART 1B — Storage Buckets & Policies
+-- PART 1B â€” Storage Buckets & Policies
 INSERT INTO storage.buckets (id, name, public)
 VALUES
     ('profiles', 'profiles', TRUE),
@@ -20,6 +20,12 @@ SET public = EXCLUDED.public;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN
+        DROP POLICY IF EXISTS profiles_avatar_public_read ON storage.objects;
+        DROP POLICY IF EXISTS profiles_avatar_owner_insert ON storage.objects;
+        DROP POLICY IF EXISTS profiles_avatar_owner_update ON storage.objects;
+        DROP POLICY IF EXISTS profiles_avatar_owner_delete ON storage.objects;
+        DROP POLICY IF EXISTS driver_docs_owner_access ON storage.objects;
+
         IF NOT EXISTS (
             SELECT 1 FROM pg_policies
             WHERE schemaname = 'storage'
@@ -100,9 +106,9 @@ BEGIN
             );
         END IF;
     END IF;
-END $$;
+END; $$;
 
--- PART 2 — Service Types
+-- PART 2 â€” Service Types
 CREATE TABLE IF NOT EXISTS service_types (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug TEXT UNIQUE NOT NULL,
@@ -132,7 +138,7 @@ VALUES
     ('delivery', 'Package Delivery')
 ON CONFLICT (slug) DO NOTHING;
 
--- PART 3 — Cities (Fixing missing is_active error)
+-- PART 3 â€” Cities (Fixing missing is_active error)
 CREATE TABLE IF NOT EXISTS cities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -157,11 +163,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'base_surge_multiplier') THEN
         ALTER TABLE cities ADD COLUMN base_surge_multiplier NUMERIC DEFAULT 1.0;
     END IF;
-END $$;
+END; $$;
 
 
 
--- PART 4 — Pricing Rules & Fixed Fare Bands
+-- PART 4 â€” Pricing Rules & Fixed Fare Bands
 CREATE TABLE IF NOT EXISTS pricing_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     service_type_id UUID REFERENCES service_types(id),
@@ -185,7 +191,7 @@ CREATE TABLE IF NOT EXISTS fixed_fare_bands (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 5 — Profiles Hardening
+-- PART 5 â€” Profiles Hardening
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'profiles') THEN
@@ -351,9 +357,9 @@ BEGIN
               AND NULLIF(TRIM(COALESCE(vehicle_license_url, '')), '') IS NOT NULL;
         END IF;
     END IF;
-END $$;
+END; $$;
 
--- PART 6 — Wallets & Transactions
+-- PART 6 â€” Wallets & Transactions
 -- PART 5B - Driver Vehicle Capability Hardening
 DO $$
 BEGIN
@@ -400,7 +406,7 @@ BEGIN
            OR driver_id IS NULL
            OR created_at IS NULL;
     END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -418,7 +424,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wallets' AND column_name = 'reserved_balance') THEN
         ALTER TABLE wallets ADD COLUMN reserved_balance NUMERIC DEFAULT 0;
     END IF;
-END $$;
+END; $$;
 
 CREATE TABLE IF NOT EXISTS wallet_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -432,7 +438,7 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 7 — Jobs & Service Details
+-- PART 7 â€” Jobs & Service Details
 CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID,
@@ -502,7 +508,27 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'accepted_at') THEN
             ALTER TABLE public.jobs ADD COLUMN accepted_at TIMESTAMPTZ;
         END IF;
-END $$;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'is_draft') THEN
+            ALTER TABLE public.jobs ADD COLUMN is_draft BOOLEAN DEFAULT FALSE;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expires_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN expires_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expired_at') THEN
+            ALTER TABLE public.jobs ADD COLUMN expired_at TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'expiry_reason') THEN
+            ALTER TABLE public.jobs ADD COLUMN expiry_reason TEXT;
+        END IF;
+END; $$;
+
+CREATE INDEX IF NOT EXISTS idx_jobs_marketplace_drafts_expiry
+    ON public.jobs(status, expires_at)
+    WHERE is_draft = TRUE;
 
 -- PART 7B - Errand Detail Hardening
 DO $$
@@ -524,12 +550,14 @@ BEGIN
             ALTER TABLE public.errand_details ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
         END IF;
     END IF;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_details') THEN
         ALTER TABLE public.errand_details ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Job participants can read errand details" ON public.errand_details;
+        DROP POLICY IF EXISTS "Assigned drivers can update errand spend details" ON public.errand_details;
 
         IF NOT EXISTS (
             SELECT 1 FROM pg_policies
@@ -586,6 +614,7 @@ BEGIN
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'errand_funding') THEN
         ALTER TABLE public.errand_funding ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Job participants can read errand funding" ON public.errand_funding;
 
         IF NOT EXISTS (
             SELECT 1 FROM pg_policies
@@ -609,7 +638,47 @@ BEGIN
 
         GRANT SELECT ON public.errand_funding TO authenticated;
     END IF;
-END $$;
+END; $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_status_check;
+
+    ALTER TABLE public.jobs
+        ADD CONSTRAINT jobs_status_check
+        CHECK (status IN (
+            'requested',
+            'pending',
+            'pending_payment',
+            'payment_authorized',
+            'pending_fare_confirmation',
+            'negotiating',
+            'fare_agreed',
+            'searching',
+            'broadcasting',
+            'waiting',
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'driver_en_route',
+            'driver_arrived',
+            'picked_up',
+            'in_progress',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered',
+            'completed',
+            'settled',
+            'cancelled',
+            'expired',
+            'no_driver_found',
+            'requires_review',
+            'failed'
+        ));
+END; $$;
 
 CREATE TABLE IF NOT EXISTS job_service_details (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -625,7 +694,18 @@ CREATE TABLE IF NOT EXISTS job_service_details (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 8 — Driver Earnings & Payouts
+-- PART 8 â€” Driver Earnings & Payouts
+DO $$
+BEGIN
+    IF to_regclass('public.van_details') IS NOT NULL THEN
+        ALTER TABLE public.van_details
+            ADD COLUMN IF NOT EXISTS floor_number INTEGER,
+            ADD COLUMN IF NOT EXISTS stairs_involved BOOLEAN DEFAULT false,
+            ADD COLUMN IF NOT EXISTS fragile_items BOOLEAN DEFAULT false,
+            ADD COLUMN IF NOT EXISTS packing_assistance BOOLEAN DEFAULT false;
+    END IF;
+END; $$;
+
 CREATE TABLE IF NOT EXISTS job_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -656,7 +736,7 @@ BEGIN
     ALTER TABLE public.job_queue
         ADD CONSTRAINT job_queue_status_check
         CHECK (status IN ('waiting', 'broadcasting', 'assigned', 'expired', 'ignored'));
-END $$;
+END; $$;
 
 DELETE FROM job_queue a
 USING job_queue b
@@ -701,7 +781,7 @@ CREATE TABLE IF NOT EXISTS driver_earnings (
     paid_out_at TIMESTAMP WITH TIME ZONE
 );
 
--- PART 9 — Audit & Events
+-- PART 9 â€” Audit & Events
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID,
@@ -753,7 +833,7 @@ CREATE TABLE IF NOT EXISTS stripe_events (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- PART 10 — Errand Funding
+-- PART 10 â€” Errand Funding
 CREATE TABLE IF NOT EXISTS ratings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
@@ -794,7 +874,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ratings' AND column_name = 'created_at') THEN
         ALTER TABLE public.ratings ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     END IF;
-END $$;
+END; $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_job_customer
 ON public.ratings(job_id, customer_id)
@@ -819,7 +899,7 @@ BEGIN
             ALTER TABLE public.profiles ADD COLUMN review_count INTEGER DEFAULT 0;
         END IF;
     END IF;
-END $$;
+END; $$;
 
 UPDATE public.profiles p
 SET rating = r.average_score,
@@ -868,7 +948,7 @@ BEGIN
             END;
         END IF;
     END IF;
-END $$;
+END; $$;
 
 DO $$
 BEGIN
@@ -879,7 +959,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'errand_funding' AND column_name = 'over_budget_reason') THEN
         ALTER TABLE public.errand_funding ADD COLUMN over_budget_reason TEXT;
     END IF;
-END $$;
+END; $$;
 
 CREATE OR REPLACE FUNCTION public.enforce_errand_spending_budget()
 RETURNS TRIGGER AS $$
@@ -948,7 +1028,7 @@ BEGIN
             ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
     END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
 ON public.notifications(user_id, created_at DESC);
@@ -1061,7 +1141,7 @@ BEGIN
             ADD COLUMN IF NOT EXISTS external_id TEXT,
             ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_device_push_tokens_user_enabled
 ON public.device_push_tokens(user_id, enabled);
@@ -1204,7 +1284,7 @@ BEGIN
             WHEN undefined_table THEN NULL;
         END;
     END IF;
-END $$;
+END; $$;
 
 ALTER TABLE public.driver_issuing_cardholders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.driver_issuing_cards ENABLE ROW LEVEL SECURITY;
@@ -1214,6 +1294,12 @@ ALTER TABLE public.job_issuing_transactions ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
+    DROP POLICY IF EXISTS "Drivers can read their issuing cards" ON public.driver_issuing_cards;
+    DROP POLICY IF EXISTS "Drivers can read their issuing cardholder" ON public.driver_issuing_cardholders;
+    DROP POLICY IF EXISTS "Job participants can read issuing spend controls" ON public.job_issuing_spend_controls;
+    DROP POLICY IF EXISTS "Job participants can read issuing authorizations" ON public.job_issuing_authorizations;
+    DROP POLICY IF EXISTS "Job participants can read issuing transactions" ON public.job_issuing_transactions;
+
     IF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'public'
@@ -1293,7 +1379,7 @@ BEGIN
             OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
         );
     END IF;
-END $$;
+END; $$;
 
 GRANT SELECT ON public.driver_issuing_cardholders TO authenticated;
 GRANT SELECT ON public.driver_issuing_cards TO authenticated;
@@ -1301,10 +1387,10 @@ GRANT SELECT ON public.job_issuing_spend_controls TO authenticated;
 GRANT SELECT ON public.job_issuing_authorizations TO authenticated;
 GRANT SELECT ON public.job_issuing_transactions TO authenticated;
 
-CREATE TABLE IF NOT EXISTS job_messages (
+CREATE TABLE IF NOT EXISTS public.job_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID,
-    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
     sender_id UUID NOT NULL,
     receiver_id UUID NOT NULL,
     message TEXT NOT NULL,
@@ -1323,7 +1409,7 @@ BEGIN
             WHEN undefined_table THEN NULL;
         END;
     END IF;
-END $$;
+END; $$;
 
 CREATE INDEX IF NOT EXISTS idx_job_messages_job_created
 ON public.job_messages(job_id, created_at);
@@ -1332,6 +1418,9 @@ ALTER TABLE public.job_messages ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
+    DROP POLICY IF EXISTS "Job participants can read messages" ON public.job_messages;
+    DROP POLICY IF EXISTS "Job participants can insert messages" ON public.job_messages;
+
     IF NOT EXISTS (
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'public'
@@ -1372,9 +1461,9 @@ BEGIN
             )
         );
     END IF;
-END $$;
+END; $$;
 
--- PART 11 — RPC Functions (Idempotent)
+-- PART 11 â€” RPC Functions (Idempotent)
 
 -- Finalize Wallet Top-up
 CREATE OR REPLACE FUNCTION finalize_wallet_topup(
@@ -1702,11 +1791,11 @@ CREATE OR REPLACE FUNCTION public.send_job_message(
   p_message TEXT,
   p_message_type TEXT DEFAULT 'text'
 )
-RETURNS job_messages AS $$
+RETURNS public.job_messages AS $$
 DECLARE
   v_sender_id UUID := auth.uid();
   v_job RECORD;
-  v_message job_messages;
+  v_message public.job_messages;
 BEGIN
   IF v_sender_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
@@ -1718,7 +1807,7 @@ BEGIN
 
   SELECT *
   INTO v_job
-  FROM jobs
+  FROM public.jobs
   WHERE id = p_job_id
     AND v_sender_id IN (customer_id, driver_id)
     AND p_receiver_id IN (customer_id, driver_id);
@@ -1727,7 +1816,7 @@ BEGIN
     RAISE EXCEPTION 'You can only message participants on this job';
   END IF;
 
-  INSERT INTO job_messages (
+  INSERT INTO public.job_messages (
     tenant_id,
     job_id,
     sender_id,
@@ -2059,7 +2148,7 @@ BEGIN
       'Auto release for stale searching wallet request'
     );
   END LOOP;
-END $$;
+END; $$;
 
 -- Driver Vehicle Compatibility
 CREATE OR REPLACE FUNCTION driver_vehicle_can_accept_job(
@@ -2270,7 +2359,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- PART 12 — Indexes
+-- PART 12 â€” Indexes
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_customer ON jobs(customer_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_driver ON jobs(driver_id);
@@ -2281,62 +2370,118 @@ CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active) WHERE is_activ
 
 -- Keep short package delivery competitive. Bike/small package delivery should
 -- not inherit ride or van-style minimums for sub-1km local jobs.
-CREATE TABLE IF NOT EXISTS pricing_config (
+CREATE TABLE IF NOT EXISTS public.pricing_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    service_type TEXT NOT NULL UNIQUE,
+    service_type TEXT NOT NULL,
+    country_code TEXT,
+    market_city TEXT,
+    zone_id TEXT,
     base_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
     per_km NUMERIC(10,2) NOT NULL DEFAULT 0,
     per_min NUMERIC(10,2) NOT NULL DEFAULT 0,
     service_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
     minimum_fare NUMERIC(10,2) NOT NULL DEFAULT 0,
     currency_code TEXT NOT NULL DEFAULT 'GBP',
+    currency_symbol TEXT,
+    locale TEXT,
+    distance_unit TEXT DEFAULT 'km',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE pricing_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_config
+    DROP CONSTRAINT IF EXISTS pricing_config_service_type_key;
+
+ALTER TABLE public.pricing_config
+    ADD COLUMN IF NOT EXISTS country_code TEXT,
+    ADD COLUMN IF NOT EXISTS market_city TEXT,
+    ADD COLUMN IF NOT EXISTS zone_id TEXT,
+    ADD COLUMN IF NOT EXISTS currency_symbol TEXT,
+    ADD COLUMN IF NOT EXISTS locale TEXT,
+    ADD COLUMN IF NOT EXISTS distance_unit TEXT DEFAULT 'km';
+
+UPDATE public.pricing_config
+SET
+    country_code = COALESCE(country_code, 'GB'),
+    currency_symbol = COALESCE(currency_symbol, '£'),
+    locale = COALESCE(locale, 'en-GB'),
+    distance_unit = COALESCE(distance_unit, 'km')
+WHERE
+    country_code IS NULL
+    OR currency_symbol IS NULL
+    OR locale IS NULL
+    OR distance_unit IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pricing_config_market_service
+    ON public.pricing_config (
+        COALESCE(country_code, 'GB'),
+        COALESCE(NULLIF(BTRIM(market_city), ''), ''),
+        COALESCE(NULLIF(BTRIM(zone_id), ''), ''),
+        service_type
+    );
+
+ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
-    ALTER TABLE pricing_config DROP CONSTRAINT IF EXISTS service_type_check;
-    ALTER TABLE pricing_config
+    ALTER TABLE public.pricing_config DROP CONSTRAINT IF EXISTS service_type_check;
+    ALTER TABLE public.pricing_config
         ADD CONSTRAINT service_type_check
         CHECK (service_type IN ('ride', 'errand', 'delivery', 'van-moving'));
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies
-        WHERE schemaname = 'public'
-          AND tablename = 'pricing_config'
-          AND policyname = 'Allow active pricing read'
-    ) THEN
-        CREATE POLICY "Allow active pricing read" ON pricing_config
-            FOR SELECT USING (is_active = TRUE);
-    END IF;
+    DROP POLICY IF EXISTS "Allow active pricing read" ON public.pricing_config;
+    CREATE POLICY "Allow active pricing read" ON public.pricing_config
+        FOR SELECT USING (is_active = TRUE);
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies
-        WHERE schemaname = 'public'
-          AND tablename = 'pricing_config'
-          AND policyname = 'Allow admin pricing management'
-    ) THEN
-        CREATE POLICY "Allow admin pricing management" ON pricing_config
-            FOR ALL
-            USING (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
-            WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
-    END IF;
+    DROP POLICY IF EXISTS "Allow admin pricing management" ON public.pricing_config;
+    CREATE POLICY "Allow admin pricing management" ON public.pricing_config
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
-    INSERT INTO pricing_config (service_type, base_fare, per_km, per_min, service_fee, minimum_fare, currency_code, is_active)
-    VALUES ('delivery', 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', TRUE)
-    ON CONFLICT (service_type) DO UPDATE SET
-        base_fare = EXCLUDED.base_fare,
-        per_km = EXCLUDED.per_km,
-        per_min = EXCLUDED.per_min,
-        service_fee = EXCLUDED.service_fee,
-        minimum_fare = EXCLUDED.minimum_fare,
-        currency_code = EXCLUDED.currency_code,
+    INSERT INTO public.pricing_config (
+        service_type,
+        country_code,
+        market_city,
+        zone_id,
+        base_fare,
+        per_km,
+        per_min,
+        service_fee,
+        minimum_fare,
+        currency_code,
+        currency_symbol,
+        locale,
+        distance_unit,
+        is_active
+    )
+    SELECT 'delivery', 'GB', NULL, NULL, 2.25, 0.55, 0.04, 0.10, 2.99, 'GBP', '£', 'en-GB', 'km', TRUE
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.pricing_config
+        WHERE service_type = 'delivery'
+          AND COALESCE(country_code, 'GB') = 'GB'
+          AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+          AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL
+    );
+
+    UPDATE public.pricing_config
+    SET base_fare = 2.25,
+        per_km = 0.55,
+        per_min = 0.04,
+        service_fee = 0.10,
+        minimum_fare = 2.99,
+        currency_code = 'GBP',
+        currency_symbol = COALESCE(currency_symbol, '£'),
+        locale = COALESCE(locale, 'en-GB'),
+        distance_unit = COALESCE(distance_unit, 'km'),
         is_active = TRUE,
-        updated_at = NOW();
+        updated_at = NOW()
+    WHERE service_type = 'delivery'
+      AND COALESCE(country_code, 'GB') = 'GB'
+      AND NULLIF(BTRIM(COALESCE(market_city, '')), '') IS NULL
+      AND NULLIF(BTRIM(COALESCE(zone_id, '')), '') IS NULL;
 
     INSERT INTO pricing_rules (service_type_id, currency_code, country_code, base_fare, per_km_rate, minimum_fare)
     SELECT id, 'GBP', 'GB', 2.25, 0.55, 2.99
@@ -2358,7 +2503,352 @@ BEGIN
               AND pricing_plan IN ('starter', 'pro')
         $sql$;
     END IF;
-END $$;
+END; $$;
+
+-- Global AI pricing foundation. These tables are admin-managed guardrails for
+-- market, zone, service, waiting, calendar and audit data. Live AI pricing is
+-- disabled unless a market and service rule explicitly enable it.
+CREATE TABLE IF NOT EXISTS public.pricing_markets (
+    country_code TEXT PRIMARY KEY,
+    currency_code TEXT NOT NULL,
+    timezone TEXT NOT NULL,
+    distance_unit TEXT NOT NULL CHECK (distance_unit IN ('km', 'mi')),
+    tax_inclusive_display BOOLEAN NOT NULL DEFAULT TRUE,
+    tax_rate NUMERIC(8,4) NOT NULL DEFAULT 0,
+    default_language TEXT NULL,
+    rounding_rule JSONB NOT NULL DEFAULT '{}'::jsonb,
+    minimum_charge_unit_minor INTEGER NOT NULL DEFAULT 1,
+    pricing_model TEXT NOT NULL DEFAULT 'rules_shadow',
+    market_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ai_pricing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    shadow_mode_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    experimentation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    emergency_pricing_disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    confidence_threshold NUMERIC(5,4) NOT NULL DEFAULT 0.75,
+    model_version TEXT NOT NULL DEFAULT 'global-pricing-v1',
+    configuration_version INTEGER NOT NULL DEFAULT 1,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.pricing_zones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL REFERENCES public.pricing_markets(country_code) ON DELETE CASCADE,
+    city_id UUID NULL,
+    city_name TEXT NULL,
+    zone_id TEXT NOT NULL,
+    polygon JSONB NULL,
+    base_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    congestion_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    purchasing_power_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    driver_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    fuel_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    insurance_cost_index NUMERIC(10,4) NOT NULL DEFAULT 1,
+    regulatory_fee_minor INTEGER NOT NULL DEFAULT 0,
+    airport_fee_minor INTEGER NOT NULL DEFAULT 0,
+    max_surge_multiplier NUMERIC(6,3) NOT NULL DEFAULT 1,
+    minimum_driver_earnings_minor INTEGER NOT NULL DEFAULT 0,
+    enabled_services TEXT[] NULL,
+    priority INTEGER NOT NULL DEFAULT 100,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (country_code, zone_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.service_market_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL REFERENCES public.pricing_markets(country_code) ON DELETE CASCADE,
+    zone_id TEXT NULL,
+    service_slug TEXT NOT NULL,
+    vehicle_class TEXT NULL,
+    base_fare_minor INTEGER NOT NULL DEFAULT 0,
+    per_distance_unit_minor INTEGER NOT NULL DEFAULT 0,
+    per_minute_minor INTEGER NOT NULL DEFAULT 0,
+    minimum_fare_minor INTEGER NOT NULL DEFAULT 0,
+    booking_fee_minor INTEGER NOT NULL DEFAULT 0,
+    cancellation_fee_minor INTEGER NOT NULL DEFAULT 0,
+    waiting_fee_per_minute_minor INTEGER NOT NULL DEFAULT 0,
+    maximum_fare_minor INTEGER NULL,
+    maximum_surge_multiplier NUMERIC(6,3) NOT NULL DEFAULT 1,
+    commission_percent NUMERIC(8,4) NOT NULL DEFAULT 0,
+    tax_treatment TEXT NOT NULL DEFAULT 'market',
+    toll_treatment TEXT NOT NULL DEFAULT 'actual',
+    payment_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ai_pricing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    surge_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (country_code, zone_id, service_slug, vehicle_class)
+);
+
+CREATE TABLE IF NOT EXISTS public.pricing_waiting_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL REFERENCES public.pricing_markets(country_code) ON DELETE CASCADE,
+    zone_id TEXT NULL,
+    service_slug TEXT NOT NULL,
+    free_waiting_minutes INTEGER NOT NULL DEFAULT 0,
+    airport_free_waiting_minutes INTEGER NOT NULL DEFAULT 0,
+    accessibility_free_waiting_minutes INTEGER NOT NULL DEFAULT 0,
+    per_minute_charge_minor INTEGER NOT NULL DEFAULT 0,
+    maximum_charge_minor INTEGER NOT NULL DEFAULT 0,
+    cancellation_threshold_minutes INTEGER NULL,
+    partial_minute_rounding TEXT NOT NULL DEFAULT 'ceil',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (country_code, zone_id, service_slug)
+);
+
+CREATE TABLE IF NOT EXISTS public.pricing_calendar_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    country_code TEXT NOT NULL,
+    region_code TEXT NULL,
+    zone_id TEXT NULL,
+    event_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ NOT NULL,
+    expected_demand_impact NUMERIC(8,4) NOT NULL DEFAULT 0,
+    expected_supply_impact NUMERIC(8,4) NOT NULL DEFAULT 0,
+    source TEXT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.ai_pricing_audits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NULL REFERENCES public.jobs(id) ON DELETE SET NULL,
+    country_code TEXT NOT NULL,
+    currency_code TEXT NOT NULL,
+    service_slug TEXT NOT NULL,
+    zone_id TEXT NULL,
+    input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    rule_price_minor INTEGER NOT NULL DEFAULT 0,
+    recommended_price_minor INTEGER NOT NULL DEFAULT 0,
+    final_price_minor INTEGER NOT NULL DEFAULT 0,
+    guardrails JSONB NOT NULL DEFAULT '{}'::jsonb,
+    confidence NUMERIC(5,4) NOT NULL DEFAULT 0,
+    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    model_version TEXT NOT NULL,
+    configuration_version INTEGER NOT NULL DEFAULT 1,
+    shadow_mode BOOLEAN NOT NULL DEFAULT TRUE,
+    fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
+    fallback_reason TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pricing_zones_country_active
+    ON public.pricing_zones(country_code, is_active, priority);
+CREATE INDEX IF NOT EXISTS idx_service_market_rules_lookup
+    ON public.service_market_rules(country_code, service_slug, zone_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_pricing_calendar_events_lookup
+    ON public.pricing_calendar_events(country_code, region_code, starts_at, ends_at)
+    WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_ai_pricing_audits_market
+    ON public.ai_pricing_audits(country_code, service_slug, created_at DESC);
+
+ALTER TABLE public.pricing_markets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_zones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.service_market_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_waiting_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pricing_calendar_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_pricing_audits ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Allow active pricing markets read" ON public.pricing_markets;
+    CREATE POLICY "Allow active pricing markets read" ON public.pricing_markets
+        FOR SELECT USING (market_enabled = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active pricing zones read" ON public.pricing_zones;
+    CREATE POLICY "Allow active pricing zones read" ON public.pricing_zones
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active service market rules read" ON public.service_market_rules;
+    CREATE POLICY "Allow active service market rules read" ON public.service_market_rules
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active waiting rules read" ON public.pricing_waiting_rules;
+    CREATE POLICY "Allow active waiting rules read" ON public.pricing_waiting_rules
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow active pricing events read" ON public.pricing_calendar_events;
+    CREATE POLICY "Allow active pricing events read" ON public.pricing_calendar_events
+        FOR SELECT USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow admin pricing markets management" ON public.pricing_markets;
+    CREATE POLICY "Allow admin pricing markets management" ON public.pricing_markets
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin pricing zones management" ON public.pricing_zones;
+    CREATE POLICY "Allow admin pricing zones management" ON public.pricing_zones
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin service market rules management" ON public.service_market_rules;
+    CREATE POLICY "Allow admin service market rules management" ON public.service_market_rules
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin waiting rules management" ON public.pricing_waiting_rules;
+    CREATE POLICY "Allow admin waiting rules management" ON public.pricing_waiting_rules
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin pricing events management" ON public.pricing_calendar_events;
+    CREATE POLICY "Allow admin pricing events management" ON public.pricing_calendar_events
+        FOR ALL
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+        WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+    DROP POLICY IF EXISTS "Allow admin pricing audit read" ON public.ai_pricing_audits;
+    CREATE POLICY "Allow admin pricing audit read" ON public.ai_pricing_audits
+        FOR SELECT
+        USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+END; $$;
+
+-- Marketplace engine settings are admin-managed and provide the single source
+-- of truth for commissions, negotiation, bidding and matching defaults.
+CREATE TABLE IF NOT EXISTS public.marketplace_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NULL,
+    key TEXT NOT NULL,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_commission_overrides (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NULL,
+    service_type_slug TEXT NULL,
+    city_zone TEXT NULL,
+    driver_tier TEXT NULL,
+    promotion_period_id TEXT NULL,
+    commission_percent NUMERIC(8,2) NOT NULL DEFAULT 5,
+    platform_fee_percent NUMERIC(8,2) NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    starts_at TIMESTAMPTZ NULL,
+    ends_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_settings_global_key
+    ON public.marketplace_settings (key)
+    WHERE tenant_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_settings_tenant_key
+    ON public.marketplace_settings (tenant_id, key)
+    WHERE tenant_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_commission_overrides_lookup
+    ON public.marketplace_commission_overrides(tenant_id, service_type_slug, city_zone, driver_tier, is_active, starts_at, ends_at);
+
+ALTER TABLE public.marketplace_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_commission_overrides ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS marketplace_settings_admin_read ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_read
+    ON public.marketplace_settings
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_settings_admin_write ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_write
+    ON public.marketplace_settings
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY marketplace_commission_overrides_admin
+    ON public.marketplace_commission_overrides
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DO $$
+DECLARE
+    v_key TEXT;
+    v_value JSONB;
+BEGIN
+    FOR v_key, v_value IN
+        SELECT *
+        FROM (VALUES
+            ('marketplace_enabled', '{"enabled": true}'::jsonb),
+            ('commission', '{"percent": 5, "minFee": 0, "maxFee": null}'::jsonb),
+            ('dynamic_pricing', '{"enabled": true, "maxSurge": 3, "trafficMultiplier": 1, "weatherMultiplier": 1, "demandMultiplier": 1, "fuelMultiplier": 1}'::jsonb),
+            ('hybrid_negotiation', '{"enabled": false, "enabledServices": ["shop", "errand"], "makeOfferEnabled": true, "acceptFareEnabled": true, "maxRounds": 3, "timeoutSeconds": 120, "claimTimeoutSeconds": 60, "maxDriverAttempts": 5, "rideMinimumDistanceKm": 30}'::jsonb),
+            ('bidding', '{"enabled": false, "enabledServices": ["van", "van_moving"]}'::jsonb),
+            ('smart_matching', '{"enabled": true, "maxDistanceKm": 10, "distanceWeight": 0.30, "ratingWeight": 0.25, "completionWeight": 0.35, "responseWeight": 0.10}'::jsonb),
+            ('marketplace_draft_rules', '{"enabled": true, "pendingFareTtlMinutes": 30, "fareAgreedUnpaidTtlMinutes": 30, "negotiationIdleTtlMinutes": 15, "cleanupIntervalMinutes": 10, "deleteExpiredDrafts": false}'::jsonb)
+        ) AS defaults(key, value)
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.marketplace_settings
+            WHERE tenant_id IS NULL
+              AND key = v_key
+        ) THEN
+            INSERT INTO public.marketplace_settings (tenant_id, key, value)
+            VALUES (NULL, v_key, v_value);
+        END IF;
+    END LOOP;
+END; $$;
+
+DO $$
+BEGIN
+    IF to_regclass('public.marketplace_negotiation_sessions') IS NOT NULL THEN
+        UPDATE public.jobs j
+        SET
+            status = 'expired',
+            is_draft = TRUE,
+            expired_at = COALESCE(j.expired_at, NOW()),
+            expiry_reason = COALESCE(j.expiry_reason, 'Stale pending marketplace draft expired by schema reconcile'),
+            updated_at = NOW()
+        WHERE j.status = 'pending_fare_confirmation'
+          AND j.created_at < NOW() - INTERVAL '30 minutes'
+          AND j.payment_intent_id IS NULL
+          AND j.driver_id IS NULL
+          AND j.accepted_driver_id IS NULL
+          AND COALESCE(j.payment_status, 'pending') NOT IN ('paid', 'authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'captured', 'capture_pending')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM public.marketplace_negotiation_sessions s
+              WHERE s.job_id = j.id
+                AND s.status IN ('open', 'driver_claimed', 'negotiating', 'fare_agreed', 'payment_pending')
+                AND s.expires_at > NOW()
+          );
+    ELSE
+        UPDATE public.jobs j
+        SET
+            status = 'expired',
+            is_draft = TRUE,
+            expired_at = COALESCE(j.expired_at, NOW()),
+            expiry_reason = COALESCE(j.expiry_reason, 'Stale pending marketplace draft expired by schema reconcile'),
+            updated_at = NOW()
+        WHERE j.status = 'pending_fare_confirmation'
+          AND j.created_at < NOW() - INTERVAL '30 minutes'
+          AND j.payment_intent_id IS NULL
+          AND j.driver_id IS NULL
+          AND j.accepted_driver_id IS NULL
+          AND COALESCE(j.payment_status, 'pending') NOT IN ('paid', 'authorized', 'requires_capture', 'succeeded', 'wallet_funded', 'captured', 'capture_pending');
+    END IF;
+END; $$;
 
 -- Repair incomplete Pro subscription copy without overwriting admin-customized plans.
 DO $$
@@ -2396,9 +2886,2299 @@ BEGIN
               features IS NULL
               OR features = '[]'::jsonb
               OR features @> '["Basic job matching"]'::jsonb
-              OR features @> '["15% Platform fee"]'::jsonb
+              OR features @> '["5% Platform fee"]'::jsonb
           );
     END IF;
-END $$;
+END; $$;
+
+-- PART 18 - Hybrid marketplace negotiation live schema
+-- Merged from the temporary marketplace migration patch. Safe to rerun; preserves existing data.
+CREATE TABLE IF NOT EXISTS public.fare_negotiations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  proposed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  proposed_by_role TEXT NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  counter_to_negotiation_id UUID REFERENCES public.fare_negotiations(id) ON DELETE SET NULL,
+  round_number INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.fare_negotiations
+  ADD COLUMN IF NOT EXISTS proposed_by_role TEXT NOT NULL DEFAULT 'customer',
+  ADD COLUMN IF NOT EXISTS message TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS counter_to_negotiation_id UUID REFERENCES public.fare_negotiations(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+ALTER TABLE public.fare_negotiations DROP CONSTRAINT IF EXISTS fare_negotiations_proposed_by_role_check;
+ALTER TABLE public.fare_negotiations
+  ADD CONSTRAINT fare_negotiations_proposed_by_role_check
+  CHECK (proposed_by_role IN ('customer', 'driver', 'system'));
+
+ALTER TABLE public.fare_negotiations DROP CONSTRAINT IF EXISTS fare_negotiations_status_check;
+ALTER TABLE public.fare_negotiations
+  ADD CONSTRAINT fare_negotiations_status_check
+  CHECK (status IN ('pending', 'accepted', 'rejected', 'countered', 'expired'));
+
+CREATE INDEX IF NOT EXISTS idx_fare_negotiations_job
+  ON public.fare_negotiations(job_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.driver_bids (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  bid_amount NUMERIC(12,2) NOT NULL,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  is_counter_offer BOOLEAN NOT NULL DEFAULT false,
+  counter_to_bid_id UUID REFERENCES public.driver_bids(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  UNIQUE (job_id, driver_id)
+);
+
+ALTER TABLE public.driver_bids
+  ADD COLUMN IF NOT EXISTS message TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS is_counter_offer BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS counter_to_bid_id UUID REFERENCES public.driver_bids(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+ALTER TABLE public.driver_bids DROP CONSTRAINT IF EXISTS driver_bids_status_check;
+ALTER TABLE public.driver_bids
+  ADD CONSTRAINT driver_bids_status_check
+  CHECK (status IN ('pending', 'accepted', 'rejected', 'expired', 'withdrawn'));
+
+CREATE INDEX IF NOT EXISTS idx_driver_bids_job
+  ON public.driver_bids(job_id, status, bid_amount, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_driver_bids_driver
+  ON public.driver_bids(driver_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS public.driver_job_declines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (driver_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_job_declines_job
+  ON public.driver_job_declines(job_id, driver_id);
+
+CREATE INDEX IF NOT EXISTS idx_driver_job_declines_driver
+  ON public.driver_job_declines(driver_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_negotiation_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL UNIQUE REFERENCES public.jobs(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  active_driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  suggested_fare NUMERIC(12,2) NOT NULL DEFAULT 0,
+  customer_offer NUMERIC(12,2),
+  driver_counter_offer NUMERIC(12,2),
+  agreed_fare NUMERIC(12,2),
+  round_count INTEGER NOT NULL DEFAULT 0,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  claimed_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '120 seconds'),
+  payment_deadline TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.marketplace_negotiation_sessions
+  ADD COLUMN IF NOT EXISTS active_driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open',
+  ADD COLUMN IF NOT EXISTS suggested_fare NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS customer_offer NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS driver_counter_offer NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS agreed_fare NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS round_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '120 seconds'),
+  ADD COLUMN IF NOT EXISTS payment_deadline TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE public.marketplace_negotiation_sessions DROP CONSTRAINT IF EXISTS marketplace_negotiation_sessions_status_check;
+ALTER TABLE public.marketplace_negotiation_sessions
+  ADD CONSTRAINT marketplace_negotiation_sessions_status_check
+  CHECK (status IN ('open', 'driver_claimed', 'negotiating', 'fare_agreed', 'driver_declined', 'customer_declined', 'released', 'expired', 'payment_pending', 'paid'));
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_sessions_job
+  ON public.marketplace_negotiation_sessions(job_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_sessions_driver
+  ON public.marketplace_negotiation_sessions(active_driver_id, status);
+
+CREATE TABLE IF NOT EXISTS public.marketplace_negotiation_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES public.marketplace_negotiation_sessions(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  proposed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  proposed_by_role TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  amount NUMERIC(12,2),
+  message TEXT,
+  round_number INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.marketplace_negotiation_events
+  ADD COLUMN IF NOT EXISTS proposed_by_role TEXT NOT NULL DEFAULT 'system',
+  ADD COLUMN IF NOT EXISTS event_type TEXT NOT NULL DEFAULT 'customer_offer',
+  ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS message TEXT,
+  ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE public.marketplace_negotiation_events DROP CONSTRAINT IF EXISTS marketplace_negotiation_events_proposed_by_role_check;
+ALTER TABLE public.marketplace_negotiation_events
+  ADD CONSTRAINT marketplace_negotiation_events_proposed_by_role_check
+  CHECK (proposed_by_role IN ('customer', 'driver', 'system'));
+
+ALTER TABLE public.marketplace_negotiation_events DROP CONSTRAINT IF EXISTS marketplace_negotiation_events_event_type_check;
+ALTER TABLE public.marketplace_negotiation_events
+  ADD CONSTRAINT marketplace_negotiation_events_event_type_check
+  CHECK (event_type IN ('customer_offer', 'driver_counter', 'customer_accept', 'driver_accept', 'customer_decline', 'driver_decline', 'session_claimed', 'session_released', 'session_expired', 'payment_completed'));
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_negotiation_events_session
+  ON public.marketplace_negotiation_events(session_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_marketplace_settings_updated_at ON public.marketplace_settings;
+CREATE TRIGGER trg_marketplace_settings_updated_at
+  BEFORE UPDATE ON public.marketplace_settings
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_commission_overrides_updated_at ON public.marketplace_commission_overrides;
+CREATE TRIGGER trg_commission_overrides_updated_at
+  BEFORE UPDATE ON public.marketplace_commission_overrides
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_fare_negotiations_updated_at ON public.fare_negotiations;
+CREATE TRIGGER trg_fare_negotiations_updated_at
+  BEFORE UPDATE ON public.fare_negotiations
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_driver_bids_updated_at ON public.driver_bids;
+CREATE TRIGGER trg_driver_bids_updated_at
+  BEFORE UPDATE ON public.driver_bids
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_marketplace_negotiation_sessions_updated_at ON public.marketplace_negotiation_sessions;
+CREATE TRIGGER trg_marketplace_negotiation_sessions_updated_at
+  BEFORE UPDATE ON public.marketplace_negotiation_sessions
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_marketplace_negotiation_events_updated_at ON public.marketplace_negotiation_events;
+CREATE TRIGGER trg_marketplace_negotiation_events_updated_at
+  BEFORE UPDATE ON public.marketplace_negotiation_events
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- Local Service Catalogue: country/service/category/provider foundation.
+CREATE TABLE IF NOT EXISTS public.local_service_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL,
+  service_slug TEXT NOT NULL,
+  category_slug TEXT NOT NULL,
+  category_name TEXT NOT NULL,
+  category_description TEXT,
+  icon TEXT,
+  search_keywords TEXT[] DEFAULT '{}',
+  default_search_radius_km NUMERIC DEFAULT 10,
+  allow_custom_provider BOOLEAN DEFAULT true,
+  display_order INTEGER DEFAULT 0,
+  enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT local_service_categories_unique_slug UNIQUE (country_code, service_slug, category_slug)
+);
+
+CREATE TABLE IF NOT EXISTS public.local_service_providers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL,
+  category_id UUID REFERENCES public.local_service_categories(id) ON DELETE CASCADE,
+  provider_name TEXT NOT NULL,
+  provider_slug TEXT NOT NULL,
+  provider_description TEXT,
+  logo_url TEXT,
+  official_website TEXT,
+  search_keywords TEXT[] DEFAULT '{}',
+  address TEXT,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  external_place_id TEXT,
+  source TEXT DEFAULT 'admin',
+  verified BOOLEAN DEFAULT false,
+  enabled BOOLEAN DEFAULT true,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT local_service_providers_unique_slug UNIQUE (country_code, category_id, provider_slug)
+);
+
+ALTER TABLE public.local_service_categories
+  ADD COLUMN IF NOT EXISTS provider_types TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS fallback_keywords TEXT[] DEFAULT '{}';
+
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_country ON public.local_service_categories(country_code);
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_service ON public.local_service_categories(service_slug);
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_enabled ON public.local_service_categories(enabled);
+CREATE INDEX IF NOT EXISTS idx_local_service_categories_order ON public.local_service_categories(display_order);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_country ON public.local_service_providers(country_code);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_category ON public.local_service_providers(category_id);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_enabled ON public.local_service_providers(enabled);
+CREATE INDEX IF NOT EXISTS idx_local_service_providers_order ON public.local_service_providers(display_order);
+
+CREATE TABLE IF NOT EXISTS public.provider_brand_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_id UUID REFERENCES public.local_service_providers(id) ON DELETE SET NULL,
+  external_place_id TEXT,
+  provider_name TEXT NOT NULL,
+  country_code TEXT NOT NULL DEFAULT 'GB',
+  official_domain TEXT,
+  logo_url TEXT,
+  favicon_url TEXT,
+  source TEXT DEFAULT 'admin',
+  verified BOOLEAN DEFAULT false,
+  confidence NUMERIC DEFAULT 0,
+  last_checked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.local_place_search_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL,
+  service_slug TEXT NOT NULL,
+  category_slug TEXT NOT NULL,
+  search_text TEXT DEFAULT '',
+  latitude_bucket TEXT NOT NULL,
+  longitude_bucket TEXT NOT NULL,
+  radius_km NUMERIC NOT NULL DEFAULT 10,
+  result JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source TEXT DEFAULT 'cache',
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.customer_local_service_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  country_code TEXT NOT NULL DEFAULT 'GB',
+  service_slug TEXT NOT NULL,
+  category_slug TEXT NOT NULL,
+  provider_id UUID REFERENCES public.local_service_providers(id) ON DELETE SET NULL,
+  external_place_id TEXT,
+  provider_name TEXT NOT NULL,
+  provider_address TEXT,
+  provider_logo_url TEXT,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  use_count INTEGER DEFAULT 1,
+  last_used_at TIMESTAMPTZ DEFAULT now(),
+  is_favourite BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_provider ON public.provider_brand_assets(provider_id);
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_external_place ON public.provider_brand_assets(external_place_id);
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_domain ON public.provider_brand_assets(official_domain);
+CREATE INDEX IF NOT EXISTS idx_provider_brand_assets_name_country ON public.provider_brand_assets(lower(provider_name), country_code);
+CREATE INDEX IF NOT EXISTS idx_local_place_search_cache_lookup ON public.local_place_search_cache(country_code, service_slug, category_slug, latitude_bucket, longitude_bucket, radius_km);
+CREATE INDEX IF NOT EXISTS idx_local_place_search_cache_expires ON public.local_place_search_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_customer_local_service_preferences_customer ON public.customer_local_service_preferences(customer_id, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_customer_local_service_preferences_lookup ON public.customer_local_service_preferences(customer_id, country_code, service_slug, category_slug);
+
+ALTER TABLE public.local_service_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.local_service_providers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_brand_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.local_place_search_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_local_service_preferences ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Enabled local service categories are readable" ON public.local_service_categories;
+CREATE POLICY "Enabled local service categories are readable"
+  ON public.local_service_categories FOR SELECT
+  TO authenticated
+  USING (enabled = true);
+
+DROP POLICY IF EXISTS "Enabled local service providers are readable" ON public.local_service_providers;
+CREATE POLICY "Enabled local service providers are readable"
+  ON public.local_service_providers FOR SELECT
+  TO authenticated
+  USING (enabled = true);
+
+DROP POLICY IF EXISTS "Admins manage local service categories" ON public.local_service_categories;
+CREATE POLICY "Admins manage local service categories"
+  ON public.local_service_categories FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+DROP POLICY IF EXISTS "Admins manage local service providers" ON public.local_service_providers;
+CREATE POLICY "Admins manage local service providers"
+  ON public.local_service_providers FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+DROP POLICY IF EXISTS "Verified brand assets are readable" ON public.provider_brand_assets;
+CREATE POLICY "Verified brand assets are readable"
+  ON public.provider_brand_assets FOR SELECT
+  TO authenticated
+  USING (verified = true OR provider_id IS NOT NULL);
+
+DROP POLICY IF EXISTS "Admins manage provider brand assets" ON public.provider_brand_assets;
+CREATE POLICY "Admins manage provider brand assets"
+  ON public.provider_brand_assets FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+DROP POLICY IF EXISTS "Customers manage own local service preferences" ON public.customer_local_service_preferences;
+CREATE POLICY "Customers manage own local service preferences"
+  ON public.customer_local_service_preferences FOR ALL
+  TO authenticated
+  USING (customer_id = auth.uid())
+  WITH CHECK (customer_id = auth.uid());
+
+DROP POLICY IF EXISTS "Admins read local search cache" ON public.local_place_search_cache;
+CREATE POLICY "Admins read local search cache"
+  ON public.local_place_search_cache FOR SELECT
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'admin'));
+
+GRANT SELECT ON public.local_service_categories TO authenticated;
+GRANT SELECT ON public.local_service_providers TO authenticated;
+GRANT ALL ON public.local_service_categories TO service_role;
+GRANT ALL ON public.local_service_providers TO service_role;
+GRANT SELECT ON public.provider_brand_assets TO authenticated;
+GRANT ALL ON public.provider_brand_assets TO service_role;
+GRANT ALL ON public.local_place_search_cache TO service_role;
+GRANT ALL ON public.customer_local_service_preferences TO authenticated;
+GRANT ALL ON public.customer_local_service_preferences TO service_role;
+
+DROP TRIGGER IF EXISTS trg_local_service_categories_updated_at ON public.local_service_categories;
+CREATE TRIGGER trg_local_service_categories_updated_at
+  BEFORE UPDATE ON public.local_service_categories
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_local_service_providers_updated_at ON public.local_service_providers;
+CREATE TRIGGER trg_local_service_providers_updated_at
+  BEFORE UPDATE ON public.local_service_providers
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_provider_brand_assets_updated_at ON public.provider_brand_assets;
+CREATE TRIGGER trg_provider_brand_assets_updated_at
+  BEFORE UPDATE ON public.provider_brand_assets
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_local_place_search_cache_updated_at ON public.local_place_search_cache;
+CREATE TRIGGER trg_local_place_search_cache_updated_at
+  BEFORE UPDATE ON public.local_place_search_cache
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_customer_local_service_preferences_updated_at ON public.customer_local_service_preferences;
+CREATE TRIGGER trg_customer_local_service_preferences_updated_at
+  BEFORE UPDATE ON public.customer_local_service_preferences
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+INSERT INTO public.local_service_categories (
+  country_code,
+  service_slug,
+  category_slug,
+  category_name,
+  category_description,
+  icon,
+  search_keywords,
+  display_order
+)
+VALUES
+  ('GB','errand','grocery-pickup','Grocery pickup','Collect groceries from a local supermarket or shop.','basket-outline',ARRAY['grocery','supermarket','food'],10),
+  ('GB','errand','pharmacy-pickup','Pharmacy pickup','Collect prescriptions or pharmacy essentials.','medkit-outline',ARRAY['pharmacy','chemist','medicine'],20),
+  ('GB','errand','retail-collection','Retail collection','Collect paid retail orders from stores.','bag-handle-outline',ARRAY['retail','shop','collection'],30),
+  ('GB','errand','click-and-collect','Click and collect','Collect click-and-collect orders.','receipt-outline',ARRAY['click and collect','order','collection'],40),
+  ('GB','errand','document-collection','Document collection','Collect documents and paperwork.','document-text-outline',ARRAY['document','paperwork','office'],50),
+  ('GB','errand','post-office','Post Office','Post office collection or drop-off.','mail-outline',ARRAY['post office','parcel','mail'],60),
+  ('GB','errand','laundry-dry-cleaning','Laundry and dry cleaning','Collect or deliver laundry and dry cleaning.','shirt-outline',ARRAY['laundry','dry cleaning','clothes'],70),
+  ('GB','errand','restaurant-pickup','Restaurant pickup','Collect food or restaurant orders.','restaurant-outline',ARRAY['restaurant','food','takeaway'],80),
+  ('GB','errand','parcel-return','Parcel return','Return parcels to shops or drop-off points.','cube-outline',ARRAY['parcel','return','drop off'],90),
+  ('GB','errand','custom-errand','Custom errand','Describe a custom errand manually.','sparkles-outline',ARRAY['custom','other','errand'],100),
+  ('GB','quick-buy','grocery','Grocery','Buy groceries and essentials.','basket-outline',ARRAY['grocery','supermarket','food'],10),
+  ('GB','quick-buy','pharmacy','Pharmacy','Buy pharmacy essentials.','medkit-outline',ARRAY['pharmacy','chemist','medicine'],20),
+  ('GB','quick-buy','convenience','Convenience','Buy convenience-store items.','storefront-outline',ARRAY['convenience','corner shop'],30),
+  ('GB','quick-buy','bakery','Bakery','Buy bakery items.','cafe-outline',ARRAY['bakery','bread','cakes'],40),
+  ('GB','quick-buy','electronics','Electronics','Buy electronics or accessories.','hardware-chip-outline',ARRAY['electronics','charger','phone'],50),
+  ('GB','quick-buy','home-essentials','Home essentials','Buy household essentials.','home-outline',ARRAY['home','household'],60),
+  ('GB','quick-buy','beauty','Beauty','Buy beauty or personal-care items.','rose-outline',ARRAY['beauty','personal care'],70),
+  ('GB','quick-buy','baby-essentials','Baby essentials','Buy baby essentials.','happy-outline',ARRAY['baby','nappies','formula'],80),
+  ('GB','quick-buy','pet-supplies','Pet supplies','Buy pet supplies.','paw-outline',ARRAY['pet','dog','cat'],90),
+  ('GB','quick-buy','gifts','Gifts','Buy gifts or cards.','gift-outline',ARRAY['gift','card','present'],100),
+  ('GB','quick-buy','other','Other','Buy another item manually.','sparkles-outline',ARRAY['other','custom'],110),
+  ('GB','collect-deliver','retail-collection','Retail collection','Collect an order from a retail store.','bag-handle-outline',ARRAY['retail','collection'],10),
+  ('GB','collect-deliver','personal-item','Personal item','Collect a personal item.','person-outline',ARRAY['personal','item'],20),
+  ('GB','collect-deliver','business-documents','Business documents','Collect or deliver business documents.','document-text-outline',ARRAY['business','documents'],30),
+  ('GB','collect-deliver','laundry-dry-cleaning','Laundry and dry cleaning','Collect laundry or dry cleaning.','shirt-outline',ARRAY['laundry','dry cleaning'],40),
+  ('GB','collect-deliver','repair-collection','Repair collection','Collect repair items.','construct-outline',ARRAY['repair','collection'],50),
+  ('GB','collect-deliver','food-collection','Food collection','Collect prepared food.','restaurant-outline',ARRAY['food','collection'],60),
+  ('GB','collect-deliver','custom-collection','Custom collection','Describe a custom collection.','sparkles-outline',ARRAY['custom','collection'],70),
+  ('GB','delivery','parcel','Parcel','Deliver a parcel.','cube-outline',ARRAY['parcel','package'],10),
+  ('GB','delivery','documents','Documents','Deliver documents.','document-text-outline',ARRAY['documents','paperwork'],20),
+  ('GB','delivery','food-perishables','Food and perishables','Deliver food or perishables.','restaurant-outline',ARRAY['food','perishable'],30),
+  ('GB','delivery','business-delivery','Business delivery','Business delivery request.','briefcase-outline',ARRAY['business','delivery'],40),
+  ('GB','delivery','personal-items','Personal items','Deliver personal items.','person-outline',ARRAY['personal','items'],50),
+  ('GB','delivery','fragile-special-handling','Fragile or special handling','Fragile items needing care.','shield-checkmark-outline',ARRAY['fragile','special handling'],60),
+  ('GB','delivery','other','Other','Describe another delivery.','sparkles-outline',ARRAY['other','custom'],70)
+ON CONFLICT (country_code, service_slug, category_slug) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.get_marketplace_commission(
+  p_service_type_slug TEXT,
+  p_city_zone TEXT,
+  p_driver_tier TEXT,
+  p_tenant_id UUID DEFAULT NULL
+)
+RETURNS NUMERIC(8,4)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  base_commission NUMERIC(8,4);
+  override_commission NUMERIC(8,4);
+BEGIN
+  SELECT COALESCE((value->>'percent')::NUMERIC, 10.00)
+  INTO base_commission
+  FROM public.marketplace_settings
+  WHERE (tenant_id IS NULL OR tenant_id = p_tenant_id)
+    AND key = 'commission'
+  ORDER BY tenant_id NULLS LAST
+  LIMIT 1;
+
+  SELECT commission_percent
+  INTO override_commission
+  FROM public.marketplace_commission_overrides
+  WHERE is_active = true
+    AND (tenant_id IS NULL OR tenant_id = p_tenant_id)
+    AND (service_type_slug IS NULL OR service_type_slug = p_service_type_slug)
+    AND (city_zone IS NULL OR city_zone = p_city_zone)
+    AND (driver_tier IS NULL OR driver_tier = p_driver_tier)
+    AND (starts_at IS NULL OR starts_at <= now())
+    AND (ends_at IS NULL OR ends_at >= now())
+  ORDER BY
+    (CASE WHEN service_type_slug IS NOT NULL THEN 1 ELSE 0 END) +
+    (CASE WHEN city_zone IS NOT NULL THEN 1 ELSE 0 END) +
+    (CASE WHEN driver_tier IS NOT NULL THEN 1 ELSE 0 END) DESC
+  LIMIT 1;
+
+  RETURN COALESCE(override_commission, base_commission, 10.00);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_marketplace_setting(
+  p_key TEXT,
+  p_tenant_id UUID DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  result JSONB;
+BEGIN
+  SELECT value
+  INTO result
+  FROM public.marketplace_settings
+  WHERE key = p_key
+    AND (tenant_id IS NULL OR tenant_id = p_tenant_id)
+  ORDER BY tenant_id NULLS LAST
+  LIMIT 1;
+
+  RETURN COALESCE(result, '{}'::jsonb);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.claim_marketplace_negotiation(
+  p_job_id UUID,
+  p_driver_id UUID
+)
+RETURNS public.marketplace_negotiation_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+  v_job public.jobs;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No negotiation session found for this job';
+  END IF;
+
+  IF v_session.status NOT IN ('open', 'released') OR v_session.active_driver_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Session already claimed';
+  END IF;
+
+  SELECT * INTO v_job FROM public.jobs WHERE id = p_job_id;
+
+  IF v_job.status NOT IN ('pending_fare_confirmation', 'negotiating', 'fare_agreed') THEN
+    RAISE EXCEPTION 'Job is not available for negotiation';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET active_driver_id = p_driver_id,
+      status = 'negotiating',
+      claimed_at = now(),
+      expires_at = now() + interval '120 seconds',
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'session_claimed', v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.release_marketplace_negotiation(
+  p_job_id UUID,
+  p_driver_id UUID,
+  p_reason TEXT
+)
+RETURNS public.marketplace_negotiation_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No negotiation session found';
+  END IF;
+
+  IF v_session.active_driver_id IS DISTINCT FROM p_driver_id AND p_reason <> 'system' THEN
+    RAISE EXCEPTION 'Only active driver or system can release session';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET active_driver_id = NULL,
+      status = 'released',
+      attempt_count = attempt_count + 1,
+      driver_counter_offer = NULL,
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  INSERT INTO public.driver_job_declines (driver_id, job_id, reason)
+  VALUES (p_driver_id, p_job_id, p_reason)
+  ON CONFLICT (driver_id, job_id) DO NOTHING;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, message, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'session_released', p_reason, v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.lock_marketplace_fare(
+  p_job_id UUID,
+  p_driver_id UUID,
+  p_amount NUMERIC
+)
+RETURNS public.marketplace_negotiation_sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_session public.marketplace_negotiation_sessions;
+BEGIN
+  SELECT * INTO v_session
+  FROM public.marketplace_negotiation_sessions
+  WHERE job_id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_session.active_driver_id IS DISTINCT FROM p_driver_id THEN
+    RAISE EXCEPTION 'Session not active for this driver';
+  END IF;
+
+  UPDATE public.marketplace_negotiation_sessions
+  SET agreed_fare = p_amount,
+      status = 'fare_agreed',
+      expires_at = now() + interval '300 seconds',
+      updated_at = now()
+  WHERE job_id = p_job_id
+  RETURNING * INTO v_session;
+
+  UPDATE public.jobs
+  SET agreed_fare = p_amount,
+      status = 'fare_agreed',
+      driver_id = p_driver_id,
+      updated_at = now()
+  WHERE id = p_job_id;
+
+  INSERT INTO public.marketplace_negotiation_events
+    (session_id, job_id, proposed_by, proposed_by_role, event_type, amount, round_number, created_at)
+  VALUES
+    (v_session.id, p_job_id, p_driver_id, 'driver', 'driver_accept', p_amount, v_session.round_count, now());
+
+  RETURN v_session;
+END;
+$$;
+
+-- Keep discovery aligned with migration 370. Refuse an incomplete migration
+-- chain rather than silently replacing its eligibility/recovery protections.
+DO $$
+BEGIN
+  IF to_regprocedure('public.driver_vehicle_can_accept_job(uuid,uuid)') IS NULL
+    OR to_regprocedure('public.release_stale_negotiation_lease(uuid)') IS NULL
+    OR to_regprocedure('public.expire_unpaid_fare_agreement(uuid)') IS NULL THEN
+    RAISE EXCEPTION 'Apply negotiation eligibility, lease and payment-deadline migrations through 20261237000000 before reconciliation';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fetch_hybrid_opportunities(
+  p_driver_id UUID
+)
+RETURNS TABLE (
+  session_id UUID,
+  job_id UUID,
+  customer_id UUID,
+  suggested_fare NUMERIC,
+  customer_offer NUMERIC,
+  distance_km NUMERIC,
+  eta_seconds INTEGER,
+  service_name TEXT,
+  service_slug TEXT,
+  pickup_address TEXT,
+  dropoff_address TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND auth.uid() <> p_driver_id THEN
+    RAISE EXCEPTION 'You can only fetch your own opportunities';
+  END IF;
+
+  -- 360: lapsed unpaid agreements release back to the market (or terminalise).
+  PERFORM public.expire_unpaid_fare_agreement(s.id)
+  FROM public.marketplace_negotiation_sessions s
+  WHERE s.status = 'fare_agreed'
+    AND COALESCE(s.payment_deadline, s.expires_at) IS NOT NULL
+    AND COALESCE(s.payment_deadline, s.expires_at) <= now();
+
+  -- 340: lapsed claimed leases release back to the market.
+  PERFORM public.release_stale_negotiation_lease(s.id)
+  FROM public.marketplace_negotiation_sessions s
+  WHERE s.active_driver_id IS NOT NULL
+    AND s.status IN ('open', 'driver_claimed', 'negotiating')
+    AND s.expires_at IS NOT NULL
+    AND s.expires_at <= now();
+
+  RETURN QUERY
+  SELECT
+    s.id AS session_id,
+    s.job_id,
+    s.customer_id,
+    s.suggested_fare,
+    s.customer_offer,
+    CASE
+      WHEN BTRIM(j.metadata->>'distance_km') ~ '^[0-9]+(\.[0-9]+)?$'
+      THEN (BTRIM(j.metadata->>'distance_km'))::NUMERIC
+      ELSE NULL
+    END AS distance_km,
+    CASE
+      WHEN BTRIM(j.metadata->>'duration_seconds') ~ '^[0-9]+(\.[0-9]+)?$'
+      THEN LEAST(2147483647::NUMERIC, ROUND((BTRIM(j.metadata->>'duration_seconds'))::NUMERIC))::INTEGER
+      ELSE NULL
+    END AS eta_seconds,
+    COALESCE(st.name, 'Request') AS service_name,
+    COALESCE(st.slug, '') AS service_slug,
+    j.pickup_address,
+    j.dropoff_address
+  FROM public.marketplace_negotiation_sessions s
+  JOIN public.jobs j ON j.id = s.job_id
+  LEFT JOIN public.service_types st ON st.id = j.service_type_id
+  WHERE s.status IN ('open', 'released')
+    AND s.active_driver_id IS NULL
+    -- THE GUARD (370): the underlying job must still be genuinely negotiable.
+    -- This is the SAME allowlist every negotiation action already enforces, so
+    -- discovery can never surface a card the actions would reject.
+    AND j.status IN ('pending_fare_confirmation', 'negotiating', 'open')
+    AND public.driver_vehicle_can_accept_job(s.job_id, p_driver_id)
+    AND s.expires_at > now()
+    AND NOT EXISTS (
+      SELECT 1 FROM public.driver_job_declines d
+      WHERE d.driver_id = p_driver_id AND d.job_id = s.job_id
+    );
+END;
+$$;
+
+ALTER TABLE public.marketplace_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_commission_overrides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fare_negotiations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.driver_bids ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.driver_job_declines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_negotiation_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketplace_negotiation_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS marketplace_settings_admin_read ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_read
+  ON public.marketplace_settings
+  FOR SELECT
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_settings_admin_write ON public.marketplace_settings;
+CREATE POLICY marketplace_settings_admin_write
+  ON public.marketplace_settings
+  FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS marketplace_commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY marketplace_commission_overrides_admin
+  ON public.marketplace_commission_overrides
+  FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS commission_overrides_admin ON public.marketplace_commission_overrides;
+CREATE POLICY commission_overrides_admin
+  ON public.marketplace_commission_overrides
+  FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+
+DROP POLICY IF EXISTS fare_negotiations_participants_read ON public.fare_negotiations;
+CREATE POLICY fare_negotiations_participants_read
+  ON public.fare_negotiations
+  FOR SELECT
+  TO authenticated
+  USING (
+    proposed_by = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.jobs
+      WHERE jobs.id = fare_negotiations.job_id
+        AND (jobs.customer_id = auth.uid() OR jobs.driver_id = auth.uid() OR jobs.accepted_driver_id = auth.uid())
+    )
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS fare_negotiations_participants_insert ON public.fare_negotiations;
+CREATE POLICY fare_negotiations_participants_insert
+  ON public.fare_negotiations
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    proposed_by = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.jobs
+      WHERE jobs.id = fare_negotiations.job_id
+        AND (jobs.customer_id = auth.uid() OR jobs.driver_id = auth.uid() OR jobs.accepted_driver_id = auth.uid())
+    )
+  );
+
+DROP POLICY IF EXISTS driver_bids_participants_read ON public.driver_bids;
+CREATE POLICY driver_bids_participants_read
+  ON public.driver_bids
+  FOR SELECT
+  TO authenticated
+  USING (
+    driver_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.jobs
+      WHERE jobs.id = driver_bids.job_id
+        AND jobs.customer_id = auth.uid()
+    )
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS driver_bids_driver_insert ON public.driver_bids;
+CREATE POLICY driver_bids_driver_insert
+  ON public.driver_bids
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (driver_id = auth.uid());
+
+DROP POLICY IF EXISTS driver_job_declines_driver_all ON public.driver_job_declines;
+CREATE POLICY driver_job_declines_driver_all
+  ON public.driver_job_declines
+  FOR ALL
+  TO authenticated
+  USING (driver_id = auth.uid())
+  WITH CHECK (driver_id = auth.uid());
+
+DROP POLICY IF EXISTS hybrid_sessions_owner_or_driver ON public.marketplace_negotiation_sessions;
+CREATE POLICY hybrid_sessions_owner_or_driver
+  ON public.marketplace_negotiation_sessions
+  FOR SELECT
+  TO authenticated
+  USING (
+    customer_id = auth.uid()
+    OR active_driver_id = auth.uid()
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+-- Patch 1A (20261231000000_negotiation_lifecycle_authority.sql):
+-- the broad participant UPDATE policy is REMOVED. All lifecycle mutation now flows
+-- through SECURITY DEFINER RPCs, so authenticated clients must not directly rewrite
+-- status / agreed_fare / active_driver_id / round_count / fares. Realtime and history
+-- reconstruction rely only on the SELECT policy above.
+DROP POLICY IF EXISTS hybrid_sessions_owner_write ON public.marketplace_negotiation_sessions;
+
+DROP POLICY IF EXISTS hybrid_events_participants ON public.marketplace_negotiation_events;
+CREATE POLICY hybrid_events_participants
+  ON public.marketplace_negotiation_events
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.marketplace_negotiation_sessions s
+      WHERE s.id = marketplace_negotiation_events.session_id
+        AND (s.customer_id = auth.uid() OR s.active_driver_id = auth.uid())
+    )
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')
+  );
+
+-- Patch 1A: direct client event INSERT is REMOVED — every negotiation event is now
+-- written inside an authoritative SECURITY DEFINER transition. Participant SELECT
+-- above is retained for history reconstruction and Realtime.
+DROP POLICY IF EXISTS hybrid_events_participants_insert ON public.marketplace_negotiation_events;
+
+DO $$
+BEGIN
+  IF to_regclass('public.job_messages') IS NOT NULL THEN
+    ALTER TABLE public.job_messages ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "Job participants can read messages" ON public.job_messages;
+    CREATE POLICY "Job participants can read messages"
+    ON public.job_messages
+    FOR SELECT
+    TO authenticated
+    USING (
+      auth.uid() IN (sender_id, receiver_id)
+      OR EXISTS (
+        SELECT 1
+        FROM public.jobs j
+        WHERE j.id = job_messages.job_id
+          AND auth.uid() IN (j.customer_id, j.driver_id, j.accepted_driver_id)
+      )
+    );
+
+    DROP POLICY IF EXISTS "Job participants can insert messages" ON public.job_messages;
+    CREATE POLICY "Job participants can insert messages"
+    ON public.job_messages
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (
+      auth.uid() = sender_id
+      AND EXISTS (
+        SELECT 1
+        FROM public.jobs j
+        WHERE j.id = job_messages.job_id
+          AND auth.uid() IN (j.customer_id, j.driver_id, j.accepted_driver_id)
+          AND receiver_id IN (j.customer_id, j.driver_id, j.accepted_driver_id)
+      )
+    );
+
+    GRANT SELECT, INSERT, UPDATE ON public.job_messages TO authenticated;
+  END IF;
+END; $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.pricing_config') IS NOT NULL THEN
+    ALTER TABLE public.pricing_config ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS "Allow active pricing read" ON public.pricing_config;
+    CREATE POLICY "Allow active pricing read"
+    ON public.pricing_config
+    FOR SELECT
+    TO authenticated
+    USING (is_active = TRUE);
+
+    DROP POLICY IF EXISTS "Allow admin pricing management" ON public.pricing_config;
+    CREATE POLICY "Allow admin pricing management"
+    ON public.pricing_config
+    FOR ALL
+    TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
+  END IF;
+END; $$;
+
+GRANT SELECT ON public.marketplace_settings TO authenticated;
+GRANT SELECT ON public.marketplace_commission_overrides TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.fare_negotiations TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.driver_bids TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.driver_job_declines TO authenticated;
+GRANT SELECT, UPDATE ON public.marketplace_negotiation_sessions TO authenticated;
+GRANT SELECT, INSERT ON public.marketplace_negotiation_events TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_marketplace_commission(TEXT, TEXT, TEXT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_marketplace_setting(TEXT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_marketplace_negotiation(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.release_marketplace_negotiation(UUID, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lock_marketplace_fare(UUID, UUID, NUMERIC) TO authenticated;
+REVOKE ALL ON FUNCTION public.fetch_hybrid_opportunities(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.fetch_hybrid_opportunities(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.fetch_hybrid_opportunities(UUID) TO authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
+
+
+
+-- VAYDU_MAX_FIVE_WAIT_20261020_BEGIN
+BEGIN;
+DO $max_five$
+DECLARE
+  definition text;
+  updated_definition text;
+  original_expression text := 'make_interval(mins => COALESCE(p_grace_minutes, 5))';
+  capped_expression text := 'interval ''5 minutes''';
+BEGIN
+  definition := pg_get_functiondef('public.mark_job_arrived(uuid,uuid,integer)'::regprocedure);
+  IF position('FOR UPDATE' IN definition) = 0
+    OR position('v_job.driver_id IS DISTINCT FROM p_driver_id' IN definition) = 0
+    OR position('no_show_arrived_at IS NOT NULL THEN RETURN v_job' IN definition) = 0 THEN
+    RAISE EXCEPTION 'Arrival function differs from reviewed version; no change applied';
+  END IF;
+  IF position(original_expression IN definition) > 0 THEN
+    IF (length(definition) - length(replace(definition, original_expression, ''))) / length(original_expression) <> 1 THEN
+      RAISE EXCEPTION 'Unexpected arrival deadline expression count';
+    END IF;
+    updated_definition := replace(definition, original_expression, capped_expression);
+    EXECUTE updated_definition;
+  ELSIF position('no_show_grace_until = now() + interval ''5 minutes''' IN definition) = 0 THEN
+    RAISE EXCEPTION 'Unknown arrival deadline expression; no change applied';
+  END IF;
+END;
+$max_five$;
+
+-- Cap only active pickup-waiting clocks. Keep arrival evidence and any shorter deadline.
+UPDATE public.jobs
+SET no_show_grace_until = no_show_arrived_at + interval '5 minutes',
+    updated_at = now()
+WHERE status IN ('arrived','driver_arrived')
+  AND no_show_arrived_at IS NOT NULL
+  AND no_show_grace_until > no_show_arrived_at + interval '5 minutes';
+COMMIT;
+-- VAYDU_MAX_FIVE_WAIT_20261020_END
+
+
+-- VAYDU_ADMIN_REPLIES_20261021_BEGIN
+BEGIN;
+CREATE TABLE IF NOT EXISTS public.admin_message_threads (
+ id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+ tenant_id uuid, assigned_admin_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL, subject text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.admin_message_entries (
+ id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ thread_id uuid NOT NULL REFERENCES public.admin_message_threads(id) ON DELETE CASCADE,
+ sender_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+ direction text NOT NULL CHECK(direction IN ('admin','user')), body text NOT NULL CHECK(length(body) BETWEEN 1 AND 2000),
+ request_id uuid, notification_id uuid UNIQUE REFERENCES public.notifications(id) ON DELETE SET NULL,
+ created_at timestamptz NOT NULL DEFAULT now(), read_at timestamptz,
+ UNIQUE(thread_id,sender_id,request_id)
+);
+CREATE TABLE IF NOT EXISTS public.admin_message_email_outbox (
+ entry_id bigint PRIMARY KEY REFERENCES public.admin_message_entries(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+ status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent')),
+ attempts integer NOT NULL DEFAULT 0, retry_at timestamptz NOT NULL DEFAULT now(),
+ lease_token uuid, lease_until timestamptz, sent_at timestamptz, last_error text
+);
+CREATE INDEX IF NOT EXISTS admin_message_thread_user ON public.admin_message_threads(user_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS admin_message_entries_thread ON public.admin_message_entries(thread_id,id);
+CREATE INDEX IF NOT EXISTS admin_message_email_due ON public.admin_message_email_outbox(retry_at) WHERE status='pending';
+ALTER TABLE public.admin_message_threads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_message_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_message_email_outbox ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.admin_message_threads,public.admin_message_entries,public.admin_message_email_outbox FROM PUBLIC,anon,authenticated;
+
+-- Service-created notifications and their email queue are saved atomically.
+-- Legacy notifications may be opened as conversations without emailing old messages.
+CREATE OR REPLACE FUNCTION public.seed_admin_message_thread(p_notification uuid,p_queue boolean DEFAULT false)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE n public.notifications; t uuid; e bigint; tenant uuid; admin_id uuid;
+BEGIN
+ SELECT * INTO n FROM public.notifications WHERE id=p_notification FOR UPDATE;
+ IF NOT FOUND OR COALESCE(n.metadata->>'action',n.data->>'action','') NOT IN ('admin_message','admin_driver_message') THEN
+  RAISE EXCEPTION 'Message unavailable';
+ END IF;
+ SELECT thread_id INTO t FROM public.admin_message_entries WHERE notification_id=n.id;
+ IF FOUND THEN RETURN t; END IF;
+ SELECT tenant_id INTO tenant FROM public.profiles WHERE id=n.user_id;
+ SELECT id INTO admin_id FROM public.profiles WHERE id=COALESCE(n.metadata->>'admin_sender_id',n.data->>'admin_sender_id')::uuid AND role='admin';
+ INSERT INTO public.admin_message_threads(id,user_id,tenant_id,assigned_admin_id,subject,created_at,updated_at)
+ VALUES(n.id,n.user_id,tenant,admin_id,left(n.title,200),n.created_at,n.created_at) ON CONFLICT(id) DO NOTHING;
+ INSERT INTO public.admin_message_entries(thread_id,sender_id,direction,body,notification_id,created_at)
+ VALUES(n.id,admin_id,'admin',left(n.body,2000),n.id,n.created_at) RETURNING id INTO e;
+ IF n.is_read THEN UPDATE public.admin_message_entries SET read_at=n.created_at WHERE id=e; END IF;
+ IF p_queue THEN INSERT INTO public.admin_message_email_outbox(entry_id,user_id) VALUES(e,n.user_id) ON CONFLICT DO NOTHING; END IF;
+ RETURN n.id;
+END; $$;
+REVOKE ALL ON FUNCTION public.seed_admin_message_thread(uuid,boolean) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_message_conversation(p_actor uuid,p_action text,p_thread uuid DEFAULT NULL,p_input jsonb DEFAULT '{}')
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE actor public.profiles; t public.admin_message_threads; target uuid; is_admin boolean; msg text; rid uuid; e public.admin_message_entries; n uuid; through_id bigint; result jsonb;
+BEGIN
+ SELECT * INTO actor FROM public.profiles WHERE id=p_actor;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Account unavailable'; END IF;
+ is_admin:=COALESCE(actor.role='admin',false);
+ IF p_action='list' THEN
+  SELECT COALESCE(jsonb_agg(row_to_json(x) ORDER BY x.updated_at DESC),'[]'::jsonb) INTO result FROM (
+   SELECT th.*,p.full_name AS user_name,p.role AS user_role,
+    (SELECT count(*) FROM public.admin_message_entries m WHERE m.thread_id=th.id AND m.direction=CASE WHEN is_admin THEN 'user' ELSE 'admin' END AND m.read_at IS NULL) AS unread
+   FROM public.admin_message_threads th JOIN public.profiles p ON p.id=th.user_id
+   WHERE CASE WHEN is_admin THEN (COALESCE(th.assigned_admin_id=p_actor,false) OR th.tenant_id IS NOT DISTINCT FROM actor.tenant_id) AND p.tenant_id IS NOT DISTINCT FROM th.tenant_id ELSE th.user_id=p_actor END
+   ORDER BY th.updated_at DESC LIMIT 100
+  ) x; RETURN result;
+ END IF;
+ target:=p_thread;
+ SELECT * INTO t FROM public.admin_message_threads WHERE id=target;
+ IF NOT FOUND THEN
+  SELECT thread_id INTO target FROM public.admin_message_entries WHERE notification_id=p_thread;
+  IF NOT FOUND THEN
+   -- Legacy lazy conversion is restricted to the notification's recipient (or same-tenant admin).
+   IF NOT EXISTS(SELECT 1 FROM public.notifications n JOIN public.profiles p ON p.id=n.user_id WHERE n.id=p_thread
+      AND CASE WHEN is_admin THEN (p.tenant_id IS NOT DISTINCT FROM actor.tenant_id OR COALESCE(n.metadata->>'admin_sender_id',n.data->>'admin_sender_id')=p_actor::text) ELSE n.user_id=p_actor END) THEN RAISE EXCEPTION 'Conversation unavailable'; END IF;
+   target:=public.seed_admin_message_thread(p_thread,false);
+  END IF;
+  SELECT * INTO t FROM public.admin_message_threads WHERE id=target;
+ END IF;
+ IF t.id IS NULL OR NOT(CASE WHEN is_admin THEN (COALESCE(t.assigned_admin_id=p_actor,false) OR t.tenant_id IS NOT DISTINCT FROM actor.tenant_id) ELSE t.user_id=p_actor END) THEN RAISE EXCEPTION 'Conversation unavailable'; END IF;
+ -- Recheck current account tenant, so a transferred account cannot leak old messages.
+ IF is_admin AND NOT EXISTS(SELECT 1 FROM public.profiles p WHERE p.id=t.user_id AND p.tenant_id IS NOT DISTINCT FROM t.tenant_id) THEN RAISE EXCEPTION 'Conversation unavailable'; END IF;
+ IF p_action='send' THEN
+  msg:=btrim(COALESCE(p_input->>'message','')); rid:=(p_input->>'requestId')::uuid;
+  IF length(msg)<1 OR length(msg)>2000 OR rid IS NULL THEN RAISE EXCEPTION 'A message of 1–2000 characters and request reference are required'; END IF;
+  PERFORM 1 FROM public.admin_message_threads WHERE id=t.id FOR UPDATE;
+  SELECT * INTO e FROM public.admin_message_entries WHERE thread_id=t.id AND sender_id=p_actor AND request_id=rid;
+  IF FOUND THEN
+   IF e.body<>msg THEN RAISE EXCEPTION 'Request reference reused with another message'; END IF;
+   RETURN jsonb_build_object('id',e.id::text,'threadId',t.id,'saved',true);
+  END IF;
+  INSERT INTO public.admin_message_entries(thread_id,sender_id,direction,body,request_id)
+  VALUES(t.id,p_actor,CASE WHEN is_admin THEN 'admin' ELSE 'user' END,msg,rid) RETURNING * INTO e;
+  IF is_admin THEN
+   n:=gen_random_uuid();
+   -- The notification trigger links this existing entry and queues email in the same transaction.
+   INSERT INTO public.notifications(id,user_id,title,body,type,is_read,route,data,metadata)
+   VALUES(n,t.user_id,'Reply from Vaydu',msg,'system_alert',false,'/account/messages',
+    jsonb_build_object('action','admin_message','thread_id',t.id,'entry_id',e.id),
+    jsonb_build_object('action','admin_message','thread_id',t.id,'entry_id',e.id));
+   UPDATE public.admin_message_entries SET notification_id=n WHERE id=e.id;
+   INSERT INTO public.admin_message_email_outbox(entry_id,user_id) VALUES(e.id,t.user_id) ON CONFLICT DO NOTHING;
+  END IF;
+  UPDATE public.admin_message_threads SET updated_at=now() WHERE id=t.id;
+  RETURN jsonb_build_object('id',e.id::text,'threadId',t.id,'notificationId',n,'userId',t.user_id,'role',(SELECT role FROM public.profiles WHERE id=t.user_id),'saved',true);
+ ELSIF p_action='read' THEN
+  IF jsonb_typeof(p_input->'ids') IS DISTINCT FROM 'array' OR jsonb_array_length(p_input->'ids') NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION 'Displayed messages required'; END IF;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements_text(p_input->'ids') x(id) WHERE NOT EXISTS(SELECT 1 FROM public.admin_message_entries m WHERE m.id=x.id::bigint AND m.thread_id=t.id)) THEN RAISE EXCEPTION 'Displayed messages unavailable'; END IF;
+  UPDATE public.admin_message_entries SET read_at=COALESCE(read_at,now()) WHERE thread_id=t.id AND id IN (SELECT x::bigint FROM jsonb_array_elements_text(p_input->'ids') x)
+   AND direction=CASE WHEN is_admin THEN 'user' ELSE 'admin' END AND read_at IS NULL;
+  IF NOT is_admin THEN UPDATE public.notifications SET is_read=true WHERE id IN
+   (SELECT notification_id FROM public.admin_message_entries WHERE thread_id=t.id AND id IN (SELECT x::bigint FROM jsonb_array_elements_text(p_input->'ids') x) AND direction='admin') AND user_id=p_actor; END IF;
+  RETURN jsonb_build_object('saved',true);
+ ELSIF p_action='thread' THEN
+  SELECT COALESCE(jsonb_agg(row_to_json(x) ORDER BY x.seq),'[]'::jsonb) INTO result FROM (
+   SELECT m.id::text AS id,m.id AS seq,m.direction,m.body,m.created_at,m.read_at,
+    CASE WHEN is_admin THEN o.status ELSE NULL END AS email_status
+   FROM public.admin_message_entries m LEFT JOIN public.admin_message_email_outbox o ON o.entry_id=m.id
+   WHERE m.thread_id=t.id AND ((p_input->>'before') IS NULL OR m.id<(p_input->>'before')::bigint) ORDER BY m.id DESC LIMIT 100
+  ) x;
+  RETURN jsonb_build_object('id',t.id,'subject',t.subject,'userId',t.user_id,'messages',result,'hasMore',EXISTS(SELECT 1 FROM public.admin_message_entries WHERE thread_id=t.id AND id<(SELECT min((v->>'id')::bigint) FROM jsonb_array_elements(result) v)));
+ ELSE RAISE EXCEPTION 'Unsupported conversation action'; END IF;
+END; $$;
+REVOKE ALL ON FUNCTION public.admin_message_conversation(uuid,text,uuid,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_message_conversation(uuid,text,uuid,jsonb) TO service_role;
+
+-- A reply notification belongs to its existing thread, not a second conversation.
+CREATE OR REPLACE FUNCTION public.queue_admin_message_notification()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE e bigint; t uuid;
+BEGIN
+ IF COALESCE(NEW.metadata->>'action',NEW.data->>'action','') IN ('admin_message','admin_driver_message')
+    AND (auth.role()='service_role' OR session_user IN ('postgres','supabase_admin')) THEN
+  IF NEW.metadata ? 'entry_id' THEN
+   SELECT m.id,m.thread_id INTO e,t FROM public.admin_message_entries m JOIN public.admin_message_threads th ON th.id=m.thread_id
+   WHERE m.id=(NEW.metadata->>'entry_id')::bigint AND m.thread_id=(NEW.metadata->>'thread_id')::uuid AND th.user_id=NEW.user_id AND m.direction='admin';
+   IF NOT FOUND THEN RAISE EXCEPTION 'Reply entry unavailable'; END IF;
+   UPDATE public.admin_message_entries SET notification_id=NEW.id WHERE id=e;
+   INSERT INTO public.admin_message_email_outbox(entry_id,user_id) VALUES(e,NEW.user_id) ON CONFLICT DO NOTHING;
+  ELSE PERFORM public.seed_admin_message_thread(NEW.id,true); END IF;
+ END IF;
+ RETURN NEW;
+END; $$;
+
+REVOKE ALL ON FUNCTION public.queue_admin_message_notification() FROM PUBLIC,anon,authenticated;
+DROP TRIGGER IF EXISTS queue_admin_message_email ON public.notifications;
+CREATE TRIGGER queue_admin_message_email AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.queue_admin_message_notification();
+
+CREATE OR REPLACE FUNCTION public.claim_admin_message_email()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE r public.admin_message_email_outbox; result jsonb;
+BEGIN
+ SELECT * INTO r FROM public.admin_message_email_outbox WHERE status='pending' AND retry_at<=now() AND (lease_until IS NULL OR lease_until<now())
+ ORDER BY retry_at,entry_id FOR UPDATE SKIP LOCKED LIMIT 1;
+ IF NOT FOUND THEN RETURN NULL; END IF;
+ UPDATE public.admin_message_email_outbox SET lease_token=gen_random_uuid(),lease_until=now()+interval '5 minutes',attempts=attempts+1 WHERE entry_id=r.entry_id RETURNING * INTO r;
+ SELECT jsonb_build_object('entryId',r.entry_id::text,'userId',r.user_id,'token',r.lease_token,'attempts',r.attempts,
+  'body',m.body,'subject',th.subject,'notificationId',m.notification_id) INTO result
+ FROM public.admin_message_entries m JOIN public.admin_message_threads th ON th.id=m.thread_id WHERE m.id=r.entry_id;
+ RETURN result;
+END; $$;
+CREATE OR REPLACE FUNCTION public.finish_admin_message_email(p_entry bigint,p_token uuid,p_sent boolean,p_error text DEFAULT NULL)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ UPDATE public.admin_message_email_outbox SET status=CASE WHEN p_sent THEN 'sent' ELSE 'pending' END,
+ sent_at=CASE WHEN p_sent THEN now() ELSE sent_at END,lease_token=NULL,lease_until=NULL,
+ retry_at=now()+make_interval(secs=>LEAST(3600,60*power(2,LEAST(attempts,6))::integer)),last_error=CASE WHEN p_sent THEN NULL ELSE left(p_error,100) END
+ WHERE entry_id=p_entry AND lease_token=p_token AND status='pending'; RETURN FOUND;
+END; $$;
+REVOKE ALL ON FUNCTION public.claim_admin_message_email() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.finish_admin_message_email(bigint,uuid,boolean,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_admin_message_email() TO service_role;
+GRANT EXECUTE ON FUNCTION public.finish_admin_message_email(bigint,uuid,boolean,text) TO service_role;
+NOTIFY pgrst, 'reload schema';
+COMMIT;
+-- VAYDU_ADMIN_REPLIES_20261021_END
+
+-- VAYDU_WALLET_OPERATOR_20261028_BEGIN
+-- Independent versioned canonical wallet section. No subaccount/payout migration.
+BEGIN;
+DO $operator$
+DECLARE applied record; prior record; observed_schema_fingerprint text; routes_before text; routes_after text;
+BEGIN
+ IF current_database()<>'movabi_develop' THEN RAISE EXCEPTION 'Develop database required'; END IF;
+ PERFORM pg_advisory_xact_lock(hashtextextended('vaydu-driver-card-schema',0));
+ CREATE TABLE IF NOT EXISTS public.vaydu_driver_card_schema_releases(version text PRIMARY KEY,source_sha256 text NOT NULL,catalog_fingerprint text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now());
+ REVOKE ALL ON public.vaydu_driver_card_schema_releases FROM PUBLIC,anon,authenticated,service_role;
+ SELECT * INTO applied FROM public.vaydu_driver_card_schema_releases WHERE version='wallet-operator-20261028-v2';
+ IF FOUND THEN
+  SELECT md5(jsonb_build_object(
+ 'functions',(SELECT jsonb_agg(jsonb_build_array(p.oid::regprocedure::text,pg_get_functiondef(p.oid),p.proacl::text) ORDER BY p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('claim_wallet_topup_submission','confirm_wallet_topup','initiate_wallet_topup','post_wallet_event','record_wallet_topup_provider_reference','wallet_collection_enabled','wallet_currency_minor_exponent','wallet_topup_attempt_freeze','freeze_wallet_topup_fee','freeze_wallet_topup_fee_v1','freeze_wallet_topup_fee_v2','confirm_wallet_topup_with_total','record_driver_topup_provider_observation','wallet_fee_schedule_freeze','driver_card_scope_freeze','driver_card_attempt_scope_freeze','driver_card_sandbox_enabled','driver_card_sandbox_permit','driver_card_sandbox_attempt_permit')),
+ 'columns',(SELECT jsonb_agg(jsonb_build_array(table_name,column_name,udt_name,is_nullable,column_default) ORDER BY table_name,ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'constraints',(SELECT jsonb_agg(jsonb_build_array(c.relname,x.conname,pg_get_constraintdef(x.oid)) ORDER BY c.relname,x.conname) FROM pg_constraint x JOIN pg_class c ON c.oid=x.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'tables',(SELECT jsonb_agg(jsonb_build_array(c.relname,c.relrowsecurity,c.relacl::text) ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'triggers',(SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY c.relname,t.tgname) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal AND n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations'))
+ )::text) INTO observed_schema_fingerprint;
+  IF applied.source_sha256 IS DISTINCT FROM '2041a7e3b5812efd7a9b3c308dc3b944477b27a69956ae59b55d254805103c88' OR applied.catalog_fingerprint IS DISTINCT FROM observed_schema_fingerprint THEN RAISE EXCEPTION 'Wallet operator release drift'; END IF;
+  RETURN;
+ END IF;
+ LOCK TABLE public.market_payment_routes IN ACCESS EXCLUSIVE MODE;
+ SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]')::text) FROM public.market_payment_routes r INTO routes_before;
+ SELECT * INTO prior FROM public.vaydu_driver_card_schema_releases WHERE version='driver-card-topup-20261027-v1';
+ IF FOUND THEN
+  SELECT md5(jsonb_build_object(
+ 'functions',(SELECT jsonb_agg(jsonb_build_array(p.oid::regprocedure::text,pg_get_functiondef(p.oid),p.proacl::text) ORDER BY p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('claim_wallet_topup_submission','confirm_wallet_topup','initiate_wallet_topup','post_wallet_event','record_wallet_topup_provider_reference','wallet_collection_enabled','wallet_currency_minor_exponent','wallet_topup_attempt_freeze','freeze_wallet_topup_fee','freeze_wallet_topup_fee_v1','freeze_wallet_topup_fee_v2','confirm_wallet_topup_with_total','record_driver_topup_provider_observation','wallet_fee_schedule_freeze','driver_card_scope_freeze','driver_card_attempt_scope_freeze','driver_card_sandbox_enabled','driver_card_sandbox_permit','driver_card_sandbox_attempt_permit')),
+ 'columns',(SELECT jsonb_agg(jsonb_build_array(table_name,column_name,udt_name,is_nullable,column_default) ORDER BY table_name,ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'constraints',(SELECT jsonb_agg(jsonb_build_array(c.relname,x.conname,pg_get_constraintdef(x.oid)) ORDER BY c.relname,x.conname) FROM pg_constraint x JOIN pg_class c ON c.oid=x.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'tables',(SELECT jsonb_agg(jsonb_build_array(c.relname,c.relrowsecurity,c.relacl::text) ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'triggers',(SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY c.relname,t.tgname) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal AND n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations'))
+ )::text) INTO observed_schema_fingerprint;
+  IF prior.source_sha256 IS DISTINCT FROM '746192dd0435bb34724819a1ef94de3b1011fba741c09dd2ba3e9ee6af1a9de8' OR prior.catalog_fingerprint IS DISTINCT FROM observed_schema_fingerprint THEN RAISE EXCEPTION 'Existing v1 card schema differs'; END IF;
+ ELSE
+  EXECUTE $fresh$
+SET LOCAL lock_timeout='5s';
+SET LOCAL statement_timeout='60s';
+LOCK TABLE public.wallet_topup_attempts,public.wallet_collection_config,public.market_payment_routes,public.payment_checkout_attempts IN ACCESS EXCLUSIVE MODE;
+DO $$ BEGIN
+ IF current_database()<>'movabi_develop' THEN RAISE EXCEPTION 'Wrong database'; END IF;
+ IF public.wallet_collection_enabled() IS DISTINCT FROM false THEN RAISE EXCEPTION 'Collection must remain disabled'; END IF;
+ IF EXISTS(SELECT 1 FROM public.wallet_topup_attempts) THEN RAISE EXCEPTION 'Attempt baseline changed'; END IF;
+ IF (SELECT count(*) FROM public.payment_checkout_attempts)<>2 THEN RAISE EXCEPTION 'Provider-store baseline changed'; END IF;
+ IF to_regclass('public.wallet_topup_fee_policies') IS NOT NULL OR to_regclass('public.wallet_topup_fee_schedules') IS NOT NULL THEN RAISE EXCEPTION 'Fee schema baseline changed'; END IF;
+END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='claim_wallet_topup_submission' AND md5(pg_get_functiondef(p.oid))='0ff1197e432107c69f2c591917a80cca')<>1 THEN RAISE EXCEPTION 'Function baseline changed: claim_wallet_topup_submission'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='confirm_wallet_topup' AND md5(pg_get_functiondef(p.oid))='099267ac21fcb291d218dd08717401b0')<>1 THEN RAISE EXCEPTION 'Function baseline changed: confirm_wallet_topup'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='initiate_wallet_topup' AND md5(pg_get_functiondef(p.oid))='24dd1a38a941359349950ebe245c735b')<>1 THEN RAISE EXCEPTION 'Function baseline changed: initiate_wallet_topup'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='post_wallet_event' AND md5(pg_get_functiondef(p.oid))='0fe33c2fbea877b181d637aa0bfe7f10')<>1 THEN RAISE EXCEPTION 'Function baseline changed: post_wallet_event'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='record_wallet_topup_provider_reference' AND md5(pg_get_functiondef(p.oid))='340bd44df3bd557ab5b18eec619239a1')<>1 THEN RAISE EXCEPTION 'Function baseline changed: record_wallet_topup_provider_reference'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='wallet_collection_enabled' AND md5(pg_get_functiondef(p.oid))='cb6d40cff166261a208753822fd3a50f')<>1 THEN RAISE EXCEPTION 'Function baseline changed: wallet_collection_enabled'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='wallet_currency_minor_exponent' AND md5(pg_get_functiondef(p.oid))='bbd1b5c8d1a49c90a302f5efb6f6278e')<>1 THEN RAISE EXCEPTION 'Function baseline changed: wallet_currency_minor_exponent'; END IF; END $$;
+DO $$ BEGIN IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='wallet_topup_attempt_freeze' AND md5(pg_get_functiondef(p.oid))='de86b788446923a78d0ad5f74477a87a')<>1 THEN RAISE EXCEPTION 'Function baseline changed: wallet_topup_attempt_freeze'; END IF; END $$;
+
+-- Source: 20261253900000_flutterwave_market_provider_prerequisite.sql
+-- Additive prerequisite for Batch 2A on the inspected develop schema.
+-- Only widen the provider enum; no route, capability or approval is enabled.
+DO $$ DECLARE definition text; BEGIN
+ SELECT pg_get_constraintdef(c.oid) INTO definition FROM pg_constraint c
+ WHERE c.conrelid='public.market_payment_routes'::regclass AND c.conname='market_payment_routes_provider_check' AND c.contype='c';
+ IF definition IS NULL THEN
+   RAISE EXCEPTION 'Expected market provider constraint missing; inspect schema before deployment';
+ END IF;
+ IF definition NOT IN (
+   'CHECK ((provider = ANY (ARRAY[''stripe''::text, ''kora''::text, ''fincra''::text])))',
+   'CHECK ((provider = ANY (ARRAY[''stripe''::text, ''kora''::text, ''fincra''::text, ''flutterwave''::text])))'
+ ) THEN RAISE EXCEPTION 'Unexpected market provider constraint; refusing replacement'; END IF;
+END $$;
+ALTER TABLE public.market_payment_routes DROP CONSTRAINT market_payment_routes_provider_check;
+ALTER TABLE public.market_payment_routes ADD CONSTRAINT market_payment_routes_provider_check
+ CHECK(provider IN ('stripe','kora','fincra','flutterwave'));
+
+-- Source: 20261254000000_flutterwave_provider_batch2a.sql
+-- =============================================================================
+-- Batch 2A — Flutterwave provider (additive, disabled by default).
+-- Adds Flutterwave as a configurable provider (routed by country/currency/
+-- capability/merchant approval, never by continent) and an explicit fee-policy
+-- table so wallet credit, provider fee and total charge are frozen before
+-- payment. No route is enabled and no live key is configured.
+-- =============================================================================
+
+DO $$
+BEGIN
+  IF to_regclass('public.wallet_topup_attempts') IS NULL OR to_regclass('public.market_payment_routes') IS NULL THEN
+    RAISE EXCEPTION 'Batch 2A precondition: Batch 1C top-ups and market_payment_routes are required';
+  END IF;
+END
+$$;
+
+-- 1. Fee policy table (explicit approved provider/market/method configuration).
+CREATE TABLE IF NOT EXISTS public.wallet_topup_fee_policies (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  version text NOT NULL,
+  provider text NOT NULL,
+  country_code text NOT NULL,
+  currency_code text NOT NULL,
+  method text NOT NULL,
+  fee_basis_points integer NOT NULL DEFAULT 0 CHECK (fee_basis_points BETWEEN 0 AND 10000),
+  fee_fixed_minor bigint NOT NULL DEFAULT 0 CHECK (fee_fixed_minor >= 0),
+  exponent integer NOT NULL CHECK (exponent BETWEEN 0 AND 3),
+  active boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (fee_basis_points = 0 OR fee_fixed_minor = 0),
+  CHECK (fee_basis_points <> 0 OR fee_fixed_minor <> 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS wallet_topup_fee_policies_active_unique
+  ON public.wallet_topup_fee_policies (provider, country_code, currency_code, method) WHERE active;
+-- Flutterwave + Stripe/Kora/Fincra must also have explicit fee rows; none is active here.
+
+-- 2. Freeze fee amounts + policy version on the attempt.
+ALTER TABLE public.wallet_topup_attempts
+  ADD COLUMN IF NOT EXISTS provider_fee_minor bigint NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_charge_minor bigint NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS fee_policy_version text,
+  ADD COLUMN IF NOT EXISTS fee_exponent smallint CHECK (fee_exponent BETWEEN 0 AND 3);
+-- Ensure new attempts carry the total charge (amount + fee); existing rows keep 0 default.
+COMMENT ON COLUMN public.wallet_topup_attempts.provider_fee_minor IS 'Frozen provider fee in currency minor units';
+COMMENT ON COLUMN public.wallet_topup_attempts.total_charge_minor IS 'Frozen total charge (wallet amount + provider fee) in minor units';
+COMMENT ON COLUMN public.wallet_topup_attempts.fee_policy_version IS 'Approved fee-policy version applied to this attempt';
+
+-- 3. A disabled Flutterwave route (routed by config; never enabled here).
+-- Wallet sandbox selection never inserts/updates a global collection route.
+
+-- 4. Privileges: server-owned configuration; no client write.
+REVOKE ALL ON public.wallet_topup_fee_policies FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON public.wallet_topup_fee_policies TO service_role;
+
+
+-- Source: 20261254100000_wallet_fee_freeze_batch2b.sql
+-- =============================================================================
+-- Batch 2B — integrate fee policy into the top-up lifecycle (additive).
+-- Freezes wallet credit, provider fee, total charge and fee-policy version
+-- BEFORE provider contact; the confirm path credits only the wallet amount.
+-- Does NOT replace previously applied migrations.
+-- =============================================================================
+
+DO $$
+BEGIN
+  IF to_regclass('public.wallet_topup_attempts') IS NULL OR to_regclass('public.wallet_topup_fee_policies') IS NULL THEN
+    RAISE EXCEPTION 'Batch 2B precondition: Batch 1C and Batch 2A are required';
+  END IF;
+END
+$$;
+
+-- Validate + freeze the three amounts and policy version (before provider contact).
+CREATE OR REPLACE FUNCTION public.freeze_wallet_topup_fee(p_attempt_id uuid, p_fee_policy_version text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE
+  a public.wallet_topup_attempts%ROWTYPE;
+  pol public.wallet_topup_fee_policies%ROWTYPE;
+  v_fee bigint; v_total bigint;
+BEGIN
+  SELECT * INTO a FROM public.wallet_topup_attempts WHERE id = p_attempt_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Batch 2B: attempt not found' USING ERRCODE = 'BP003'; END IF;
+  IF a.status <> 'initiated' AND a.fee_policy_version IS NULL THEN
+    RAISE EXCEPTION 'Batch 2B: fee must be frozen before submission' USING ERRCODE = 'BP008';
+  END IF;
+  IF p_fee_policy_version IS NULL OR btrim(p_fee_policy_version) = '' THEN
+    RAISE EXCEPTION 'Batch 2B: fee policy version is required' USING ERRCODE = 'BP004';
+  END IF;
+  -- Conflicting retry: reject a different policy version after freezing.
+  IF a.fee_policy_version IS NOT NULL THEN
+    IF a.fee_policy_version <> p_fee_policy_version THEN
+      RAISE EXCEPTION 'Batch 2B: attempt already frozen with policy %', a.fee_policy_version USING ERRCODE = 'BP002';
+    END IF;
+    RETURN;
+  END IF;
+  -- Fee is CALCULATED from the approved server-owned policy (never caller-supplied).
+  SELECT * INTO pol FROM public.wallet_topup_fee_policies
+  WHERE active AND provider = a.payment_provider AND country_code = a.country_code
+    AND currency_code = a.currency_code AND method = 'card' AND version = p_fee_policy_version;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Batch 2B: no active fee policy % for %/%/%', p_fee_policy_version, a.payment_provider, a.country_code, a.currency_code USING ERRCODE = 'BP008';
+  END IF;
+  IF pol.exponent IS DISTINCT FROM public.wallet_currency_minor_exponent(a.currency_code) THEN
+    RAISE EXCEPTION 'Batch 2B: configured currency exponent does not match ledger authority' USING ERRCODE = 'BP008';
+  END IF;
+  IF pol.fee_basis_points > 0 THEN
+    v_fee := round((a.amount_minor::numeric * pol.fee_basis_points::numeric) / 10000.0)::bigint;
+  ELSE
+    v_fee := pol.fee_fixed_minor;
+  END IF;
+  v_total := a.amount_minor + v_fee;
+  UPDATE public.wallet_topup_attempts
+  SET provider_fee_minor = v_fee, total_charge_minor = v_total, fee_policy_version = p_fee_policy_version, fee_exponent = pol.exponent
+  WHERE id = p_attempt_id;
+END
+$$;
+
+-- Server-side charge verification: the provider's actual total must equal the
+-- frozen total charge before crediting; credit only the wallet amount (amount_minor).
+CREATE OR REPLACE FUNCTION public.verify_wallet_topup_charge(p_attempt_id uuid, p_verified_total_minor bigint)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE a public.wallet_topup_attempts%ROWTYPE;
+BEGIN
+  SELECT * INTO a FROM public.wallet_topup_attempts WHERE id = p_attempt_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Batch 2B: attempt not found' USING ERRCODE = 'BP003'; END IF;
+  IF p_verified_total_minor IS NULL OR p_verified_total_minor <= 0 THEN
+    RAISE EXCEPTION 'Batch 2B: verified total is required' USING ERRCODE = 'BP004';
+  END IF;
+  IF p_verified_total_minor IS DISTINCT FROM a.total_charge_minor THEN
+    RAISE EXCEPTION 'Batch 2B: verified total % does not match frozen total %', p_verified_total_minor, a.total_charge_minor USING ERRCODE = 'BP008';
+  END IF;
+  RETURN true;
+END
+$$;
+
+REVOKE ALL ON FUNCTION public.freeze_wallet_topup_fee(uuid,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.verify_wallet_topup_charge(uuid,bigint) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.freeze_wallet_topup_fee(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.verify_wallet_topup_charge(uuid,bigint) TO service_role;
+
+
+-- Source: 20261254200000_flutterwave_provider_accept_batch2c.sql
+-- =============================================================================
+-- Batch 2C — accept Flutterwave in the top-up/ledger lifecycle (additive).
+-- Batch 1B and Batch 1C reject 'flutterwave' in their provider CHECKs and
+-- functions. This migration widens the accepted provider set WITHOUT replacing
+-- the applied migrations (CREATE OR REPLACE + precise CHECK swaps).
+-- =============================================================================
+
+-- 1. wallet_business_events.payment_provider CHECK (Batch 1B).
+ALTER TABLE public.wallet_business_events
+  DROP CONSTRAINT IF EXISTS wallet_business_events_payment_provider_check;
+ALTER TABLE public.wallet_business_events
+  ADD CONSTRAINT wallet_business_events_payment_provider_check
+  CHECK (payment_provider IS NULL OR payment_provider IN ('stripe','kora','fincra','flutterwave'));
+
+-- 2. wallet_topup_attempts.payment_provider CHECK (Batch 1C).
+ALTER TABLE public.wallet_topup_attempts
+  DROP CONSTRAINT IF EXISTS wallet_topup_attempts_payment_provider_check;
+ALTER TABLE public.wallet_topup_attempts
+  ADD CONSTRAINT wallet_topup_attempts_payment_provider_check
+  CHECK (payment_provider IN ('stripe','kora','flutterwave'));
+
+-- 3. post_wallet_event: widen the accepted provider set (everything else unchanged).
+CREATE OR REPLACE FUNCTION public.post_wallet_event(
+  p_event_key text,
+  p_operation text,
+  p_tenant_id uuid,
+  p_owner_id uuid,
+  p_currency_code text,
+  p_entries jsonb,
+  p_payment_provider text DEFAULT NULL,
+  p_merchant_account_ref text DEFAULT NULL,
+  p_provider_reference text DEFAULT NULL,
+  p_reverses_event_id uuid DEFAULT NULL
+)
+RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_event_id uuid;
+  v_account_id uuid;
+  v_sum numeric := 0;
+  v_entries jsonb;
+  v_expected jsonb;
+  v_original public.wallet_business_events%ROWTYPE;
+  v_constraint_name text;
+  entry record;
+  leg jsonb;
+BEGIN
+  -- Input validation (BP003).
+  IF p_event_key IS NULL OR btrim(p_event_key) = '' OR length(p_event_key) > 200 THEN
+    RAISE EXCEPTION 'Batch 1B: invalid event_key' USING ERRCODE = 'BP003';
+  END IF;
+  IF p_operation IS NULL OR btrim(p_operation) = '' OR length(p_operation) > 64 THEN
+    RAISE EXCEPTION 'Batch 1B: invalid operation' USING ERRCODE = 'BP003';
+  END IF;
+  IF p_tenant_id IS NULL OR p_owner_id IS NULL THEN
+    RAISE EXCEPTION 'Batch 1B: tenant_id and owner_id are required' USING ERRCODE = 'BP003';
+  END IF;
+  IF public.wallet_currency_minor_exponent(p_currency_code) IS NULL THEN
+    RAISE EXCEPTION 'Batch 1B: invalid currency format %', p_currency_code USING ERRCODE = 'BP003';
+  END IF;
+  -- Canonical supported-currency authority (no divergent list).
+  IF NOT EXISTS (SELECT 1 FROM public.market_availability WHERE upper(supported_currency) = p_currency_code) THEN
+    RAISE EXCEPTION 'Batch 1B: unsupported currency %', p_currency_code USING ERRCODE = 'BP003';
+  END IF;
+  IF p_entries IS NULL OR jsonb_typeof(p_entries) <> 'array'
+     OR jsonb_array_length(p_entries) < 2 OR jsonb_array_length(p_entries) > 20 THEN
+    RAISE EXCEPTION 'Batch 1B: entries must be an array of 2..20 legs' USING ERRCODE = 'BP003';
+  END IF;
+
+  -- Provider identity (BP004).
+  IF p_payment_provider IS NOT NULL THEN
+    IF p_payment_provider NOT IN ('stripe','kora','fincra','flutterwave') THEN
+      RAISE EXCEPTION 'Batch 1B: unknown payment_provider %', p_payment_provider USING ERRCODE = 'BP004';
+    END IF;
+    IF p_merchant_account_ref IS NULL OR btrim(p_merchant_account_ref) = ''
+       OR p_provider_reference IS NULL OR btrim(p_provider_reference) = '' THEN
+      RAISE EXCEPTION 'Batch 1B: external event requires merchant_account_ref and provider_reference' USING ERRCODE = 'BP004';
+    END IF;
+  ELSIF p_merchant_account_ref IS NOT NULL OR p_provider_reference IS NOT NULL THEN
+    RAISE EXCEPTION 'Batch 1B: internal event must not carry merchant/provider identity' USING ERRCODE = 'BP004';
+  END IF;
+
+  -- Per-leg validation (BP003): exact keys, valid purpose, whole-number, reversible range, nonzero.
+  FOR entry IN SELECT e.value AS leg FROM jsonb_array_elements(p_entries) WITH ORDINALITY AS e(value, ord) LOOP
+    leg := entry.leg;
+    IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(leg) AS k)
+       IS DISTINCT FROM ARRAY['accountPurpose','amountMinor'] THEN
+      RAISE EXCEPTION 'Batch 1B: leg has unexpected fields' USING ERRCODE = 'BP003';
+    END IF;
+    IF leg->>'accountPurpose' IS NULL OR btrim(leg->>'accountPurpose') = ''
+       OR length(leg->>'accountPurpose') > 64 THEN
+      RAISE EXCEPTION 'Batch 1B: invalid accountPurpose' USING ERRCODE = 'BP003';
+    END IF;
+    IF jsonb_typeof(leg->'amountMinor') <> 'number' THEN
+      RAISE EXCEPTION 'Batch 1B: amountMinor must be a number' USING ERRCODE = 'BP003';
+    END IF;
+    IF (leg->>'amountMinor')::numeric <> round((leg->>'amountMinor')::numeric) THEN
+      RAISE EXCEPTION 'Batch 1B: amountMinor must be a whole number' USING ERRCODE = 'BP003';
+    END IF;
+    IF (leg->>'amountMinor')::numeric NOT BETWEEN -9223372036854775807::numeric AND 9223372036854775807::numeric THEN
+      RAISE EXCEPTION 'Batch 1B: amountMinor out of reversible bigint range' USING ERRCODE = 'BP003';
+    END IF;
+    IF (leg->>'amountMinor')::bigint = 0 THEN
+      RAISE EXCEPTION 'Batch 1B: amountMinor must be non-zero' USING ERRCODE = 'BP003';
+    END IF;
+  END LOOP;
+
+  -- Server-side canonicalization: merge duplicate account purposes (sum), sort
+  -- by purpose, drop zero nets. Deterministic for storage, comparison, locking.
+  SELECT jsonb_agg(jsonb_build_object('accountPurpose', purpose, 'amountMinor', total) ORDER BY purpose)
+  INTO v_entries
+  FROM (
+    SELECT e.value->>'accountPurpose' AS purpose, sum((e.value->>'amountMinor')::bigint) AS total
+    FROM jsonb_array_elements(p_entries) AS e(value)
+    GROUP BY e.value->>'accountPurpose'
+    HAVING sum((e.value->>'amountMinor')::bigint) <> 0
+  ) g;
+
+  IF v_entries IS NULL OR jsonb_array_length(v_entries) < 2 THEN
+    RAISE EXCEPTION 'Batch 1B: canonicalized entries require at least 2 non-zero legs' USING ERRCODE = 'BP003';
+  END IF;
+
+  -- Post-canonicalization range validation: a merged total can overflow the
+  -- reversible bigint range even when each individual leg is valid.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(v_entries) e
+    WHERE (e.value->>'amountMinor')::numeric NOT BETWEEN -9223372036854775807::numeric AND 9223372036854775807::numeric
+  ) THEN
+    RAISE EXCEPTION 'Batch 1B: merged amountMinor out of reversible bigint range' USING ERRCODE = 'BP003';
+  END IF;
+
+  SELECT COALESCE(sum((e->>'amountMinor')::numeric), 0) INTO v_sum FROM jsonb_array_elements(v_entries) e;
+  IF v_sum <> 0 THEN
+    RAISE EXCEPTION 'Batch 1B: unbalanced event % (net=%)', p_event_key, v_sum USING ERRCODE = 'BP001';
+  END IF;
+
+  -- Replay (BP002) BEFORE reversal check so a same-key reversal retry is idempotent.
+  SELECT id INTO v_event_id FROM public.wallet_business_events WHERE event_key = p_event_key;
+  IF FOUND THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.wallet_business_events
+      WHERE id = v_event_id
+        AND operation = p_operation
+        AND tenant_id = p_tenant_id AND owner_id = p_owner_id
+        AND currency_code = p_currency_code
+        AND payment_provider IS NOT DISTINCT FROM p_payment_provider
+        AND merchant_account_ref IS NOT DISTINCT FROM p_merchant_account_ref
+        AND provider_reference IS NOT DISTINCT FROM p_provider_reference
+        AND entries = v_entries
+        AND reverses_event_id IS NOT DISTINCT FROM p_reverses_event_id
+    ) THEN
+      RAISE EXCEPTION 'Batch 1B: event_key % reused with different terms', p_event_key USING ERRCODE = 'BP002';
+    END IF;
+    RETURN v_event_id;
+  END IF;
+
+  -- Controlled reversal (BP005).
+  IF p_reverses_event_id IS NOT NULL THEN
+    SELECT * INTO v_original FROM public.wallet_business_events WHERE id = p_reverses_event_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Batch 1B: reversal original event not found' USING ERRCODE = 'BP005';
+    END IF;
+    IF v_original.tenant_id <> p_tenant_id OR v_original.owner_id <> p_owner_id
+       OR v_original.currency_code <> p_currency_code THEN
+      RAISE EXCEPTION 'Batch 1B: reversal scope mismatch' USING ERRCODE = 'BP005';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.wallet_business_events WHERE reverses_event_id = p_reverses_event_id) THEN
+      RAISE EXCEPTION 'Batch 1B: event already reversed' USING ERRCODE = 'BP005';
+    END IF;
+    SELECT jsonb_agg(jsonb_build_object('accountPurpose', a.balance_purpose, 'amountMinor', -m.amount_minor)
+                     ORDER BY a.balance_purpose)
+    INTO v_expected
+    FROM public.wallet_movements m
+    JOIN public.wallet_accounts a ON a.id = m.account_id
+    WHERE m.event_id = p_reverses_event_id;
+    IF v_entries IS DISTINCT FROM v_expected THEN
+      RAISE EXCEPTION 'Batch 1B: reversal legs do not exactly negate the original' USING ERRCODE = 'BP005';
+    END IF;
+  END IF;
+
+  -- Insert the event; distinguish event-key vs reversal-uniqueness conflicts.
+  BEGIN
+    INSERT INTO public.wallet_business_events
+      (event_key, operation, payment_provider, merchant_account_ref, provider_reference,
+       tenant_id, owner_id, currency_code, entries, reverses_event_id)
+    VALUES
+      (p_event_key, p_operation, p_payment_provider, p_merchant_account_ref, p_provider_reference,
+       p_tenant_id, p_owner_id, p_currency_code, v_entries, p_reverses_event_id)
+    RETURNING id INTO v_event_id;
+  EXCEPTION WHEN unique_violation THEN
+    GET STACKED DIAGNOSTICS v_constraint_name = CONSTRAINT_NAME;
+    IF v_constraint_name = 'wallet_business_events_event_key_key' THEN
+      SELECT id INTO v_event_id FROM public.wallet_business_events WHERE event_key = p_event_key;
+      IF NOT EXISTS (
+        SELECT 1 FROM public.wallet_business_events
+        WHERE id = v_event_id
+          AND operation = p_operation
+          AND tenant_id = p_tenant_id AND owner_id = p_owner_id
+          AND currency_code = p_currency_code
+          AND payment_provider IS NOT DISTINCT FROM p_payment_provider
+          AND merchant_account_ref IS NOT DISTINCT FROM p_merchant_account_ref
+          AND provider_reference IS NOT DISTINCT FROM p_provider_reference
+          AND entries = v_entries
+          AND reverses_event_id IS NOT DISTINCT FROM p_reverses_event_id
+      ) THEN
+        RAISE EXCEPTION 'Batch 1B: event_key % reused with different terms', p_event_key USING ERRCODE = 'BP002';
+      END IF;
+      RETURN v_event_id;
+    ELSIF v_constraint_name = 'wallet_business_events_reversal_unique' THEN
+      RAISE EXCEPTION 'Batch 1B: event already reversed' USING ERRCODE = 'BP005';
+    ELSE
+      RAISE;
+    END IF;
+  END;
+
+  -- Post the canonical legs (sorted; accounts locked in deterministic order).
+  FOR entry IN SELECT e.value AS leg, e.ord AS seq FROM jsonb_array_elements(v_entries) WITH ORDINALITY AS e(value, ord) LOOP
+    INSERT INTO public.wallet_accounts (tenant_id, owner_id, currency_code, balance_purpose)
+    VALUES (p_tenant_id, p_owner_id, p_currency_code, entry.leg->>'accountPurpose')
+    ON CONFLICT (tenant_id, owner_id, currency_code, balance_purpose) DO NOTHING;
+    SELECT id INTO v_account_id FROM public.wallet_accounts
+    WHERE tenant_id = p_tenant_id AND owner_id = p_owner_id
+      AND currency_code = p_currency_code AND balance_purpose = entry.leg->>'accountPurpose'
+    FOR UPDATE;
+
+    INSERT INTO public.wallet_movements (event_id, account_id, amount_minor, entry_seq)
+    VALUES (v_event_id, v_account_id, (entry.leg->>'amountMinor')::bigint, entry.seq::smallint);
+  END LOOP;
+
+  RETURN v_event_id;
+END
+$$;
+
+-- 4. initiate_wallet_topup: widen the accepted provider set (everything else unchanged).
+CREATE OR REPLACE FUNCTION public.initiate_wallet_topup(
+  p_attempt_key text, p_tenant_id uuid, p_owner_id uuid, p_country_code text,
+  p_currency_code text, p_amount_minor bigint, p_destination_account_purpose text,
+  p_payment_provider text, p_merchant_account_ref text, p_provider_idempotency_identity text
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_id uuid; v_route public.market_payment_routes%ROWTYPE; v_n integer; v_max bigint;
+BEGIN
+  IF p_attempt_key IS NULL OR btrim(p_attempt_key) = '' OR length(p_attempt_key) > 200 THEN
+    RAISE EXCEPTION 'Batch 1C: invalid attempt_key' USING ERRCODE = 'BP003';
+  END IF;
+  IF p_tenant_id IS NULL OR p_owner_id IS NULL THEN
+    RAISE EXCEPTION 'Batch 1C: tenant_id and owner_id are required' USING ERRCODE = 'BP003';
+  END IF;
+  IF p_country_code IS NULL OR p_country_code !~ '^[A-Z]{2}$' OR p_currency_code IS NULL OR p_currency_code !~ '^[A-Z]{3}$' THEN
+    RAISE EXCEPTION 'Batch 1C: invalid country/currency' USING ERRCODE = 'BP003';
+  END IF;
+  IF p_amount_minor IS NULL OR p_amount_minor <= 0 OR p_amount_minor > 9223372036854775807 THEN
+    RAISE EXCEPTION 'Batch 1C: invalid amount' USING ERRCODE = 'BP003';
+  END IF;
+  IF p_destination_account_purpose IS NULL OR p_destination_account_purpose NOT IN ('customer_credit','driver_cash_credit') THEN
+    RAISE EXCEPTION 'Batch 1C: destination account % is not an approved collectible destination', p_destination_account_purpose USING ERRCODE = 'BP008';
+  END IF;
+  IF p_payment_provider IS NULL OR p_payment_provider NOT IN ('stripe','kora','flutterwave') THEN
+    RAISE EXCEPTION 'Batch 1C: unknown payment_provider %', p_payment_provider USING ERRCODE = 'BP004';
+  END IF;
+  IF p_merchant_account_ref IS NULL OR btrim(p_merchant_account_ref) = '' THEN
+    RAISE EXCEPTION 'Batch 1C: merchant_account_ref is required' USING ERRCODE = 'BP004';
+  END IF;
+  IF p_provider_idempotency_identity IS NULL OR btrim(p_provider_idempotency_identity) = '' THEN
+    RAISE EXCEPTION 'Batch 1C: provider_idempotency_identity is required' USING ERRCODE = 'BP004';
+  END IF;
+  IF NOT public.wallet_collection_enabled() THEN
+    RAISE EXCEPTION 'Batch 1C: wallet collection is disabled (no approved usable destination)' USING ERRCODE = 'BP008';
+  END IF;
+
+  -- Market-specific limit is REQUIRED for each collectible currency.
+  SELECT NULLIF((SELECT value FROM public.wallet_collection_config WHERE key='max_amount_minor_' || p_currency_code), '')::bigint INTO v_max;
+  IF v_max IS NULL OR v_max <= 0 THEN
+    RAISE EXCEPTION 'Batch 1C: no configured collection limit for %', p_currency_code USING ERRCODE = 'BP008';
+  END IF;
+  IF p_amount_minor > v_max THEN
+    RAISE EXCEPTION 'Batch 1C: amount exceeds market limit for %', p_currency_code USING ERRCODE = 'BP008';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.market_availability WHERE country_code=p_country_code AND upper(supported_currency)=p_currency_code) THEN
+    RAISE EXCEPTION 'Batch 1C: unsupported country/currency pair' USING ERRCODE='BP008';
+  END IF;
+
+  -- Resolve exactly one eligible route.
+  SELECT count(*) INTO v_n FROM public.market_payment_routes
+  WHERE country_code = p_country_code AND currency_code = p_currency_code
+    AND method = 'card' AND preferred AND enabled AND merchant_approved AND adapter_ready
+    AND capabilities @> ARRAY['collect']::text[];
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'Batch 1C: expected exactly one eligible collection route for %/%, found %', p_country_code, p_currency_code, v_n USING ERRCODE = 'BP008';
+  END IF;
+  SELECT * INTO v_route FROM public.market_payment_routes
+  WHERE country_code = p_country_code AND currency_code = p_currency_code
+    AND method = 'card' AND preferred AND enabled AND merchant_approved AND adapter_ready
+    AND capabilities @> ARRAY['collect']::text[];
+  IF v_route.provider IS DISTINCT FROM p_payment_provider OR v_route.merchant_account_ref IS DISTINCT FROM p_merchant_account_ref THEN
+    RAISE EXCEPTION 'Batch 1C: requested provider/account does not match the eligible route' USING ERRCODE = 'BP008';
+  END IF;
+
+  -- Concurrent-safe replay: identical terms return the same attempt; a conflicting
+  -- attempt_key reuse raises BP002 (never silently returns a mismatched row).
+  INSERT INTO public.wallet_topup_attempts
+    (attempt_key, tenant_id, owner_id, country_code, currency_code, amount_minor,
+     destination_account_purpose, payment_provider, merchant_account_ref, provider_idempotency_identity)
+  VALUES
+    (p_attempt_key, p_tenant_id, p_owner_id, p_country_code, p_currency_code, p_amount_minor,
+     p_destination_account_purpose, p_payment_provider, p_merchant_account_ref, p_provider_idempotency_identity)
+  ON CONFLICT (attempt_key) DO NOTHING
+  RETURNING id INTO v_id;
+
+  IF v_id IS NULL THEN
+    IF EXISTS (SELECT 1 FROM public.wallet_topup_attempts WHERE attempt_key = p_attempt_key
+               AND tenant_id = p_tenant_id AND owner_id = p_owner_id
+               AND country_code = p_country_code AND currency_code = p_currency_code
+               AND amount_minor = p_amount_minor AND destination_account_purpose = p_destination_account_purpose
+               AND payment_provider = p_payment_provider AND merchant_account_ref = p_merchant_account_ref
+               AND provider_idempotency_identity = p_provider_idempotency_identity) THEN
+      SELECT id INTO v_id FROM public.wallet_topup_attempts WHERE attempt_key = p_attempt_key;
+    ELSE
+      RAISE EXCEPTION 'Batch 1C: attempt_key % reused with different terms', p_attempt_key USING ERRCODE = 'BP002';
+    END IF;
+  END IF;
+  RETURN v_id;
+END
+$$;
+
+-- Regrant the replaced functions (privileges survive CREATE OR REPLACE, but be explicit).
+REVOKE ALL ON FUNCTION public.post_wallet_event(text,text,uuid,uuid,text,jsonb,text,text,text,uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.post_wallet_event(text,text,uuid,uuid,text,jsonb,text,text,text,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.initiate_wallet_topup(text,uuid,uuid,text,text,bigint,text,text,text,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.initiate_wallet_topup(text,uuid,uuid,text,text,bigint,text,text,text,text) TO service_role;
+
+
+-- Source: 20261254300000_wallet_atomic_confirm_batch2d.sql
+-- =============================================================================
+-- Batch 2D — atomic total-check-and-credit (additive).
+-- One transactional confirmation: locks the attempt, validates the immutable
+-- wallet amount/fee/total/policy version + provider/account/reference/currency
+-- and trusted successful evidence, then credits ONLY the wallet amount exactly
+-- once. Identical retries return the original event; conflicting retries raise
+-- BP002. The legacy 6-arg confirm is restricted once a fee is frozen.
+-- =============================================================================
+
+-- 0. Durable legacy-attempt classification: new attempts are non-legacy by
+--    default and MUST freeze a fee; genuine pre-existing attempts must be
+--    backfilled legacy_attempt = true before applying this migration.
+ALTER TABLE public.wallet_topup_attempts
+  ADD COLUMN IF NOT EXISTS legacy_attempt boolean NOT NULL DEFAULT false;
+-- One-time locked backfill: classify only the attempts that existed before this
+-- migration. A rerun (with new attempts present) must NOT reclassify them.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.wallet_collection_config WHERE key = 'legacy_backfill_done') THEN
+    UPDATE public.wallet_topup_attempts SET legacy_attempt = true;
+    INSERT INTO public.wallet_collection_config(key, value) VALUES ('legacy_backfill_done', 'true');
+  END IF;
+END
+$$;
+
+-- Freeze legacy classification: it can never change after this migration.
+CREATE OR REPLACE FUNCTION public.wallet_topup_attempt_freeze()
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+BEGIN
+  IF NEW.attempt_key IS DISTINCT FROM OLD.attempt_key
+     OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+     OR NEW.owner_id IS DISTINCT FROM OLD.owner_id
+     OR NEW.country_code IS DISTINCT FROM OLD.country_code
+     OR NEW.currency_code IS DISTINCT FROM OLD.currency_code
+     OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
+     OR NEW.destination_account_purpose IS DISTINCT FROM OLD.destination_account_purpose
+     OR NEW.payment_provider IS DISTINCT FROM OLD.payment_provider
+     OR NEW.merchant_account_ref IS DISTINCT FROM OLD.merchant_account_ref
+     OR NEW.provider_idempotency_identity IS DISTINCT FROM OLD.provider_idempotency_identity
+     OR NEW.legacy_attempt IS DISTINCT FROM OLD.legacy_attempt THEN
+    RAISE EXCEPTION 'Batch 1C: top-up attempt terms are frozen' USING ERRCODE = 'BP007';
+  END IF;
+  -- Fee snapshot: immutable once fee_policy_version is set (including a zero fee).
+  IF OLD.fee_policy_version IS NOT NULL AND (
+    NEW.fee_policy_version IS DISTINCT FROM OLD.fee_policy_version
+    OR NEW.provider_fee_minor IS DISTINCT FROM OLD.provider_fee_minor
+    OR NEW.total_charge_minor IS DISTINCT FROM OLD.total_charge_minor
+    OR NEW.fee_exponent IS DISTINCT FROM OLD.fee_exponent
+  ) THEN
+    RAISE EXCEPTION 'Batch 1C: top-up fee snapshot is immutable' USING ERRCODE = 'BP007';
+  END IF;
+  NEW.updated_at := now();
+  RETURN NEW;
+END
+$$;
+DROP TRIGGER IF EXISTS wallet_topup_attempt_freeze ON public.wallet_topup_attempts;
+CREATE TRIGGER wallet_topup_attempt_freeze BEFORE UPDATE ON public.wallet_topup_attempts
+  FOR EACH ROW EXECUTE FUNCTION public.wallet_topup_attempt_freeze();
+
+-- 1. Atomic confirmation (replaces the two-call verify+confirm gap).
+
+-- Fee-before-claim: a new (non-legacy) attempt must freeze an approved fee
+-- before its submission can be claimed.
+CREATE OR REPLACE FUNCTION public.claim_wallet_topup_submission(p_attempt_id uuid)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+BEGIN
+  IF NOT public.wallet_collection_enabled() THEN RAISE EXCEPTION 'Batch 1C: collection disabled at submission' USING ERRCODE='BP008'; END IF;
+  UPDATE public.wallet_topup_attempts SET status = 'submitting'
+  WHERE id = p_attempt_id AND status = 'initiated'
+    AND (legacy_attempt OR fee_policy_version IS NOT NULL);
+  RETURN FOUND;
+END
+$$;
+REVOKE ALL ON FUNCTION public.claim_wallet_topup_submission(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_wallet_topup_submission(uuid) TO service_role;
+CREATE OR REPLACE FUNCTION public.confirm_wallet_topup_with_total(
+  p_attempt_id uuid,
+  p_verified_provider_reference text,
+  p_verified_merchant_account_ref text,
+  p_verified_currency text,
+  p_verified_total_minor bigint,
+  p_final_status text
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE
+  a public.wallet_topup_attempts%ROWTYPE; v_event_id uuid; v_legs jsonb;
+BEGIN
+  SELECT * INTO a FROM public.wallet_topup_attempts WHERE id = p_attempt_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Batch 2D: attempt not found' USING ERRCODE = 'BP003'; END IF;
+  IF p_final_status IS NULL OR p_final_status NOT IN ('succeeded','completed') THEN
+    RAISE EXCEPTION 'Batch 2D: final status % is not a confirmed success', p_final_status USING ERRCODE = 'BP008';
+  END IF;
+
+  -- Idempotent replay: validate ALL immutable terms before returning the credit.
+  IF a.status = 'credited' AND a.credited_event_id IS NOT NULL THEN
+    IF p_verified_provider_reference IS DISTINCT FROM a.provider_reference
+       OR p_verified_merchant_account_ref IS DISTINCT FROM a.merchant_account_ref
+       OR p_verified_currency IS DISTINCT FROM a.currency_code
+       OR p_verified_total_minor IS DISTINCT FROM a.total_charge_minor THEN
+      RAISE EXCEPTION 'Batch 2D: replay terms do not match the credited attempt' USING ERRCODE = 'BP002';
+    END IF;
+    RETURN a.credited_event_id;
+  END IF;
+  IF a.status IN ('failed','refunded') THEN
+    RAISE EXCEPTION 'Batch 2D: attempt is terminal (%)', a.status USING ERRCODE = 'BP008';
+  END IF;
+  IF a.provider_reference IS NULL THEN
+    RAISE EXCEPTION 'Batch 2D: no provider reference bound yet' USING ERRCODE = 'BP008';
+  END IF;
+  -- Fee must be frozen from an approved policy before a total-checked credit.
+  IF a.fee_policy_version IS NULL OR a.total_charge_minor IS NULL OR a.total_charge_minor <= 0 THEN
+    RAISE EXCEPTION 'Batch 2D: fee and total charge must be frozen before confirmation' USING ERRCODE = 'BP008';
+  END IF;
+  -- Verify all immutable terms + the provider's actual total.
+  IF p_verified_provider_reference IS DISTINCT FROM a.provider_reference
+     OR p_verified_merchant_account_ref IS DISTINCT FROM a.merchant_account_ref
+     OR p_verified_currency IS DISTINCT FROM a.currency_code
+     OR p_verified_total_minor IS DISTINCT FROM a.total_charge_minor THEN
+    RAISE EXCEPTION 'Batch 2D: verified terms/total do not match the frozen attempt' USING ERRCODE = 'BP008';
+  END IF;
+
+  -- Credit ONLY the wallet amount (amount_minor), never the fee or total.
+  v_legs := jsonb_build_array(
+    jsonb_build_object('accountPurpose', a.destination_account_purpose, 'amountMinor', a.amount_minor),
+    jsonb_build_object('accountPurpose', 'platform_funding', 'amountMinor', -a.amount_minor));
+  v_event_id := public.post_wallet_event(
+    'wallet-topup:' || a.id, 'topup', a.tenant_id, a.owner_id, a.currency_code,
+    v_legs, a.payment_provider, a.merchant_account_ref, a.provider_reference);
+
+  UPDATE public.wallet_topup_attempts SET status = 'credited', credited_event_id = v_event_id WHERE id = p_attempt_id;
+  RETURN v_event_id;
+END
+$$;
+
+-- 2. Restrict the legacy 6-arg confirm so it cannot bypass the total check once
+--    a fee has been frozen (reconciliation of in-flight legacy attempts without
+--    a fee policy still works).
+CREATE OR REPLACE FUNCTION public.confirm_wallet_topup(
+  p_attempt_id uuid, p_verified_provider_reference text, p_verified_merchant_account_ref text,
+  p_verified_currency text, p_verified_amount_minor bigint, p_final_status text
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE
+  a public.wallet_topup_attempts%ROWTYPE; v_event_id uuid; v_legs jsonb;
+BEGIN
+  SELECT * INTO a FROM public.wallet_topup_attempts WHERE id = p_attempt_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Batch 1C: attempt not found' USING ERRCODE = 'BP003'; END IF;
+  -- New attempts must use the total-checked path, independent of policy status;
+  -- only genuine legacy attempts may reconcile here.
+  IF NOT a.legacy_attempt THEN
+    RAISE EXCEPTION 'Batch 2D: use confirm_wallet_topup_with_total (new attempts require a frozen fee)' USING ERRCODE = 'BP008';
+  END IF;
+  IF p_final_status IS NULL OR p_final_status NOT IN ('succeeded','completed') THEN
+    RAISE EXCEPTION 'Batch 1C: final status % is not a confirmed success', p_final_status USING ERRCODE = 'BP008';
+  END IF;
+  IF a.status = 'credited' AND a.credited_event_id IS NOT NULL THEN
+    IF p_verified_provider_reference IS DISTINCT FROM a.provider_reference
+       OR p_verified_merchant_account_ref IS DISTINCT FROM a.merchant_account_ref
+       OR p_verified_currency IS DISTINCT FROM a.currency_code
+       OR p_verified_amount_minor IS DISTINCT FROM a.amount_minor THEN
+      RAISE EXCEPTION 'Batch 1C: replay terms do not match the credited attempt' USING ERRCODE = 'BP002';
+    END IF;
+    RETURN a.credited_event_id;
+  END IF;
+  IF a.status IN ('failed','refunded') THEN
+    RAISE EXCEPTION 'Batch 1C: attempt is terminal (%)', a.status USING ERRCODE = 'BP008';
+  END IF;
+  IF a.provider_reference IS NULL THEN
+    RAISE EXCEPTION 'Batch 1C: no provider reference bound yet (webhook-before-reference race)' USING ERRCODE = 'BP008';
+  END IF;
+  IF p_verified_provider_reference IS DISTINCT FROM a.provider_reference
+     OR p_verified_merchant_account_ref IS DISTINCT FROM a.merchant_account_ref
+     OR p_verified_currency IS DISTINCT FROM a.currency_code
+     OR p_verified_amount_minor IS DISTINCT FROM a.amount_minor THEN
+    RAISE EXCEPTION 'Batch 1C: verified terms do not match the frozen attempt' USING ERRCODE = 'BP008';
+  END IF;
+  v_legs := jsonb_build_array(
+    jsonb_build_object('accountPurpose', a.destination_account_purpose, 'amountMinor', a.amount_minor),
+    jsonb_build_object('accountPurpose', 'platform_funding', 'amountMinor', -a.amount_minor));
+  v_event_id := public.post_wallet_event(
+    'wallet-topup:' || a.id, 'topup', a.tenant_id, a.owner_id, a.currency_code,
+    v_legs, a.payment_provider, a.merchant_account_ref, a.provider_reference);
+  UPDATE public.wallet_topup_attempts SET status = 'credited', credited_event_id = v_event_id WHERE id = p_attempt_id;
+  RETURN v_event_id;
+END
+$$;
+
+-- Full refunds verify the original total; only the wallet ledger credit reverses.
+CREATE OR REPLACE FUNCTION public.mark_wallet_topup_refunded(
+  p_attempt_id uuid, p_evidence_reference text, p_verified_provider_reference text,
+  p_verified_merchant_account_ref text, p_verified_currency text, p_verified_amount_minor bigint,
+  p_final_status text, p_reason text
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE
+  a public.wallet_topup_attempts%ROWTYPE; v_reversal uuid;
+BEGIN
+  SELECT * INTO a FROM public.wallet_topup_attempts WHERE id = p_attempt_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Batch 1C: attempt not found' USING ERRCODE = 'BP003'; END IF;
+  IF p_evidence_reference IS NULL OR btrim(p_evidence_reference) = '' THEN
+    RAISE EXCEPTION 'Batch 1C: refund/chargeback evidence reference is required' USING ERRCODE = 'BP004';
+  END IF;
+  IF p_final_status IS NULL OR p_final_status NOT IN ('refunded','reversed') THEN
+    RAISE EXCEPTION 'Batch 1C: refund final status % is not confirmed', p_final_status USING ERRCODE = 'BP008';
+  END IF;
+  IF a.status = 'refunded' THEN
+    -- Replay: validate ALL evidence terms before returning the existing reversal.
+    IF a.refund_evidence_reference IS DISTINCT FROM p_evidence_reference
+       OR a.provider_reference IS DISTINCT FROM p_verified_provider_reference
+       OR a.merchant_account_ref IS DISTINCT FROM p_verified_merchant_account_ref
+       OR a.currency_code IS DISTINCT FROM p_verified_currency
+       OR (CASE WHEN a.fee_policy_version IS NULL THEN a.amount_minor ELSE a.total_charge_minor END) IS DISTINCT FROM p_verified_amount_minor THEN
+      RAISE EXCEPTION 'Batch 1C: replay refund terms do not match' USING ERRCODE = 'BP002';
+    END IF;
+    SELECT e.id INTO v_reversal FROM public.wallet_business_events e
+    WHERE e.event_key = 'wallet-topup:' || a.id::text || ':refund';
+    RETURN v_reversal;
+  END IF;
+  IF a.status <> 'credited' OR a.credited_event_id IS NULL THEN
+    RAISE EXCEPTION 'Batch 1C: only a credited attempt can be refunded' USING ERRCODE = 'BP008';
+  END IF;
+  -- Evidence must match provider, merchant, original payment, currency, full amount.
+  IF a.provider_reference IS DISTINCT FROM p_verified_provider_reference
+     OR a.merchant_account_ref IS DISTINCT FROM p_verified_merchant_account_ref
+     OR a.currency_code IS DISTINCT FROM p_verified_currency THEN
+    RAISE EXCEPTION 'Batch 1C: refund evidence does not match the original payment' USING ERRCODE = 'BP008';
+  END IF;
+  IF p_verified_amount_minor IS DISTINCT FROM (CASE WHEN a.fee_policy_version IS NULL THEN a.amount_minor ELSE a.total_charge_minor END) THEN
+    RAISE EXCEPTION 'Batch 1C: partial refunds are unsupported (evidence %, attempt %)', p_verified_amount_minor, CASE WHEN a.fee_policy_version IS NULL THEN a.amount_minor ELSE a.total_charge_minor END USING ERRCODE = 'BP008';
+  END IF;
+  v_reversal := public.post_wallet_reversal('wallet-topup:' || a.id::text, 'wallet-topup:' || a.id::text || ':refund');
+  UPDATE public.wallet_topup_attempts SET status='refunded', refund_evidence_reference=p_evidence_reference, failure_reason=COALESCE(p_reason,failure_reason) WHERE id=p_attempt_id;
+  RETURN v_reversal;
+END $$;
+
+REVOKE ALL ON FUNCTION public.confirm_wallet_topup_with_total(uuid,text,text,text,bigint,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.confirm_wallet_topup(uuid,text,text,text,bigint,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.confirm_wallet_topup_with_total(uuid,text,text,text,bigint,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.confirm_wallet_topup(uuid,text,text,text,bigint,text) TO service_role;
+
+
+-- Source: 20261254400000_wallet_fee_policy_v2.sql
+-- Additive approved fee schedules. No merchant, fee or collection enablement.
+DO $$ BEGIN
+ IF to_regprocedure('public.confirm_wallet_topup_with_total(uuid,text,text,text,bigint,text)') IS NULL
+ OR to_regprocedure('public.freeze_wallet_topup_fee(uuid,text)') IS NULL
+ OR to_regclass('public.wallet_topup_fee_policies') IS NULL THEN
+ RAISE EXCEPTION 'Fee v2 requires the verified Batch 2A-2D schema'; END IF;
+END $$;
+-- Durable provider submission store was previously referenced only by source.
+CREATE TABLE IF NOT EXISTS public.payment_checkout_attempts (
+ reference text PRIMARY KEY,
+ request jsonb NOT NULL,
+ state text NOT NULL CHECK(state IN ('started','submitted','unknown')),
+ checkout_url text,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+DO $$ DECLARE c record; BEGIN
+ FOR c IN SELECT * FROM (VALUES ('reference','text'),('request','jsonb'),('state','text'),('checkout_url','text'),('created_at','timestamptz')) AS required(name,kind) LOOP
+  IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='payment_checkout_attempts' AND column_name=c.name AND udt_name=c.kind) THEN
+   RAISE EXCEPTION 'Incompatible payment_checkout_attempts column %',c.name;
+  END IF;
+ END LOOP;
+END $$;
+ALTER TABLE public.payment_checkout_attempts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.payment_checkout_attempts FROM PUBLIC,anon,authenticated;
+GRANT SELECT,INSERT,UPDATE ON public.payment_checkout_attempts TO service_role;
+CREATE TABLE public.wallet_topup_fee_schedules (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ version text NOT NULL CHECK (btrim(version) <> ''),
+ provider text NOT NULL, country_code text NOT NULL, currency_code text NOT NULL,
+ method text NOT NULL CHECK (method = 'card'),
+ exponent integer NOT NULL CHECK (exponent BETWEEN 0 AND 3),
+ fee_basis text NOT NULL CHECK (fee_basis IN ('wallet','total')),
+ fee_basis_points integer NOT NULL CHECK (fee_basis_points BETWEEN 0 AND 9999),
+ fee_fixed_minor bigint NOT NULL CHECK (fee_fixed_minor BETWEEN 0 AND 9007199254740991),
+ fee_cap_minor bigint CHECK (fee_cap_minor BETWEEN 0 AND 9007199254740991),
+ rounding text NOT NULL CHECK (rounding IN ('half_up','ceil')),
+ approved_by text NOT NULL CHECK (btrim(approved_by) <> ''),
+ approved_at timestamptz NOT NULL,
+ active boolean NOT NULL DEFAULT false,
+ UNIQUE(provider,country_code,currency_code,method,version)
+);
+CREATE UNIQUE INDEX wallet_topup_fee_schedules_active ON public.wallet_topup_fee_schedules(provider,country_code,currency_code,method) WHERE active;
+CREATE FUNCTION public.wallet_fee_schedule_terms_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF (to_jsonb(NEW)-'active') IS DISTINCT FROM (to_jsonb(OLD)-'active') THEN
+ RAISE EXCEPTION 'Create a new approved fee schedule version instead of editing terms' USING ERRCODE='BP007'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER wallet_fee_schedule_terms_immutable BEFORE UPDATE ON public.wallet_topup_fee_schedules FOR EACH ROW EXECUTE FUNCTION public.wallet_fee_schedule_terms_immutable();
+REVOKE ALL ON public.wallet_topup_fee_schedules FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON public.wallet_topup_fee_schedules TO service_role;
+ALTER TABLE public.wallet_topup_attempts ADD COLUMN fee_schedule_id uuid REFERENCES public.wallet_topup_fee_schedules(id);
+
+CREATE FUNCTION public.wallet_scheduled_fee(p_amount numeric, p_rate integer, p_fixed bigint, p_cap bigint, p_rounding text)
+RETURNS numeric LANGUAGE sql IMMUTABLE SET search_path=pg_catalog AS $$
+ SELECT least(CASE WHEN p_rounding='ceil' THEN ceil(p_amount*p_rate/10000+p_fixed)
+ ELSE round(p_amount*p_rate/10000+p_fixed) END, coalesce(p_cap::numeric, 9007199254740992::numeric))
+$$;
+-- Keep the old freeze for historical callers; new driver attempts require v2.
+ALTER FUNCTION public.freeze_wallet_topup_fee(uuid,text) RENAME TO freeze_wallet_topup_fee_v1;
+CREATE FUNCTION public.freeze_wallet_topup_fee(p_attempt_id uuid,p_fee_policy_version text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+DECLARE a public.wallet_topup_attempts%ROWTYPE; p public.wallet_topup_fee_schedules%ROWTYPE;
+ lo numeric; hi numeric; mid numeric; total numeric; fee numeric;
+BEGIN
+ SELECT * INTO a FROM public.wallet_topup_attempts WHERE id=p_attempt_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'attempt missing' USING ERRCODE='BP003'; END IF;
+ IF a.fee_policy_version IS NOT NULL THEN
+   IF a.fee_policy_version IS DISTINCT FROM p_fee_policy_version THEN RAISE EXCEPTION 'conflicting policy' USING ERRCODE='BP002'; END IF;
+   RETURN;
+ END IF;
+ SELECT * INTO p FROM public.wallet_topup_fee_schedules WHERE active AND provider=a.payment_provider
+ AND country_code=a.country_code AND currency_code=a.currency_code AND method='card' AND version=p_fee_policy_version FOR SHARE;
+ IF NOT FOUND THEN
+   IF a.attempt_key LIKE 'driver-topup:%' THEN RAISE EXCEPTION 'approved schedule missing' USING ERRCODE='BP008'; END IF;
+   PERFORM public.freeze_wallet_topup_fee_v1(p_attempt_id,p_fee_policy_version); RETURN;
+ END IF;
+ IF a.status <> 'initiated' OR p.exponent IS DISTINCT FROM public.wallet_currency_minor_exponent(a.currency_code)
+ OR a.amount_minor > 9007199254740991 THEN RAISE EXCEPTION 'invalid fee terms' USING ERRCODE='BP008'; END IF;
+ IF p.fee_basis='wallet' THEN
+   total := a.amount_minor + public.wallet_scheduled_fee(a.amount_minor,p.fee_basis_points,p.fee_fixed_minor,p.fee_cap_minor,p.rounding);
+ ELSE
+   lo:=a.amount_minor; hi:=9007199254740991;
+   IF hi-public.wallet_scheduled_fee(hi,p.fee_basis_points,p.fee_fixed_minor,p.fee_cap_minor,p.rounding)<lo THEN
+     RAISE EXCEPTION 'total overflow' USING ERRCODE='BP008';
+   END IF;
+   WHILE lo<hi LOOP
+     mid:=floor((lo+hi)/2);
+     IF mid-public.wallet_scheduled_fee(mid,p.fee_basis_points,p.fee_fixed_minor,p.fee_cap_minor,p.rounding)>=a.amount_minor THEN hi:=mid; ELSE lo:=mid+1; END IF;
+   END LOOP;
+   total:=lo;
+ END IF;
+ IF total>9007199254740991 THEN RAISE EXCEPTION 'total overflow' USING ERRCODE='BP008'; END IF;
+ UPDATE public.wallet_topup_attempts SET provider_fee_minor=total-a.amount_minor,total_charge_minor=total,
+ fee_policy_version=p.version,fee_exponent=p.exponent,fee_schedule_id=p.id WHERE id=a.id;
+END $$;
+REVOKE ALL ON FUNCTION public.freeze_wallet_topup_fee(uuid,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.freeze_wallet_topup_fee(uuid,text) TO service_role;
+-- The legacy helper cannot bypass the driver schedule requirement.
+REVOKE ALL ON FUNCTION public.freeze_wallet_topup_fee_v1(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+CREATE FUNCTION public.wallet_fee_schedule_freeze() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+BEGIN
+ IF NEW.fee_schedule_id IS DISTINCT FROM OLD.fee_schedule_id AND OLD.fee_policy_version IS NOT NULL THEN
+ RAISE EXCEPTION 'immutable fee identity' USING ERRCODE='BP007'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER wallet_fee_schedule_freeze BEFORE UPDATE ON public.wallet_topup_attempts FOR EACH ROW EXECUTE FUNCTION public.wallet_fee_schedule_freeze();
+
+-- Source: 20261254500000_driver_card_five_percent_policy.sql
+-- Shared CARD fee approval, 2026-10-27. No market/provider/driver is activated.
+CREATE TABLE public.driver_card_fee_policy_versions (
+ version text PRIMARY KEY, basis text NOT NULL CHECK(basis='wallet'),
+ basis_points integer NOT NULL CHECK(basis_points=500),
+ fixed_minor bigint NOT NULL CHECK(fixed_minor=0),
+ rounding text NOT NULL CHECK(rounding='half_up'),
+ method text NOT NULL CHECK(method='card'), approval_reference text NOT NULL
+);
+INSERT INTO public.driver_card_fee_policy_versions VALUES
+ ('vaydu-driver-card-5pct-wallet-v1','wallet',500,0,'half_up','card','user approval 2026-10-27; sandbox checks required per provider/market');
+REVOKE ALL ON public.driver_card_fee_policy_versions FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.driver_card_fee_policy_versions TO service_role;
+
+CREATE TABLE public.driver_card_topup_sandbox_scopes (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ provider text NOT NULL, method text NOT NULL CHECK(method='card'),
+ country_code text NOT NULL CHECK(country_code ~ '^[A-Z]{2}$'),
+ currency_code text NOT NULL CHECK(currency_code ~ '^[A-Z]{3}$'),
+ merchant_account_ref text NOT NULL CHECK(btrim(merchant_account_ref)<>''),
+ provider_account_id text NOT NULL CHECK(btrim(provider_account_id)<>''),
+ tenant_id uuid NOT NULL, driver_id uuid NOT NULL,
+ fee_passing_mode text NOT NULL CHECK(fee_passing_mode='merchant'),
+ reviewed_by text NOT NULL CHECK(btrim(reviewed_by)<>''),
+ reviewed_at timestamptz NOT NULL,
+ evidence_reference text NOT NULL CHECK(btrim(evidence_reference)<>''),
+ policy_version text NOT NULL REFERENCES public.driver_card_fee_policy_versions(version),
+ enabled boolean NOT NULL DEFAULT false
+);
+CREATE UNIQUE INDEX driver_card_topup_scope_active ON public.driver_card_topup_sandbox_scopes(provider,country_code,currency_code,tenant_id,driver_id) WHERE enabled;
+CREATE FUNCTION public.driver_card_scope_freeze() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF (to_jsonb(NEW)-'enabled') IS DISTINCT FROM (to_jsonb(OLD)-'enabled') THEN RAISE EXCEPTION 'Create a new sandbox review' USING ERRCODE='BP007'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER driver_card_scope_immutable BEFORE UPDATE ON public.driver_card_topup_sandbox_scopes FOR EACH ROW EXECUTE FUNCTION public.driver_card_scope_freeze();
+ALTER TABLE public.driver_card_topup_sandbox_scopes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.driver_card_topup_sandbox_scopes FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.driver_card_topup_sandbox_scopes TO service_role;
+-- A separate gate prevents the driver sandbox from enabling existing customer
+-- wallet collection. No gate row is inserted here; absent means disabled.
+CREATE FUNCTION public.driver_card_sandbox_enabled() RETURNS boolean LANGUAGE sql STABLE SET search_path=pg_catalog,public AS $$
+ SELECT (current_database()='movabi_develop' OR current_database() LIKE '%\_batch2a\_test' ESCAPE '\')
+ AND coalesce((SELECT value='true' FROM public.wallet_collection_config WHERE key='driver_card_sandbox_enabled'),false)
+$$;
+CREATE FUNCTION public.driver_card_sandbox_permit(p_tenant uuid,p_owner uuid,p_country text,p_currency text,p_purpose text,p_provider text,p_merchant text)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+ SELECT public.driver_card_sandbox_enabled() AND p_purpose='driver_cash_credit' AND EXISTS(
+ SELECT 1 FROM public.driver_card_topup_sandbox_scopes s WHERE s.enabled AND s.method='card' AND s.provider=p_provider
+ AND s.tenant_id=p_tenant AND s.driver_id=p_owner AND s.country_code=p_country AND s.currency_code=p_currency AND s.merchant_account_ref=p_merchant
+ AND s.policy_version='vaydu-driver-card-5pct-wallet-v1')
+$$;
+CREATE FUNCTION public.driver_card_sandbox_attempt_permit(p_attempt uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+ SELECT coalesce((SELECT public.driver_card_sandbox_permit(a.tenant_id,a.owner_id,a.country_code,a.currency_code,a.destination_account_purpose,a.payment_provider,a.merchant_account_ref)
+ FROM public.wallet_topup_attempts a WHERE a.id=p_attempt),false)
+$$;
+REVOKE ALL ON FUNCTION public.driver_card_sandbox_enabled(),public.driver_card_sandbox_permit(uuid,uuid,text,text,text,text,text),public.driver_card_sandbox_attempt_permit(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.driver_card_sandbox_enabled() TO service_role;
+-- Narrowly extend the existing, inspected functions; preserve their remaining
+-- validation, provider routing, limits, idempotency and legacy behavior exactly.
+DO $patch$
+DECLARE definition text; old_gate text:='IF NOT public.wallet_collection_enabled() THEN';
+BEGIN
+ definition:=pg_get_functiondef('public.initiate_wallet_topup(text,uuid,uuid,text,text,bigint,text,text,text,text)'::regprocedure);
+ IF (length(definition)-length(replace(definition,old_gate,'')))/length(old_gate)<>1 THEN RAISE EXCEPTION 'Unexpected initiation gate definition'; END IF;
+ EXECUTE replace(definition,old_gate,'IF NOT public.wallet_collection_enabled() AND NOT public.driver_card_sandbox_permit(p_tenant_id,p_owner_id,p_country_code,p_currency_code,p_destination_account_purpose,p_payment_provider,p_merchant_account_ref) THEN');
+ definition:=pg_get_functiondef('public.claim_wallet_topup_submission(uuid)'::regprocedure);
+ IF (length(definition)-length(replace(definition,old_gate,'')))/length(old_gate)<>1 THEN RAISE EXCEPTION 'Unexpected submission gate definition'; END IF;
+ EXECUTE replace(definition,old_gate,'IF NOT public.wallet_collection_enabled() AND NOT public.driver_card_sandbox_attempt_permit(p_attempt_id) THEN');
+END $patch$;
+ALTER TABLE public.wallet_topup_attempts
+ ADD COLUMN card_sandbox_scope_id uuid REFERENCES public.driver_card_topup_sandbox_scopes(id),
+ ADD COLUMN provider_account_id text;
+ALTER TABLE public.payment_checkout_attempts ADD COLUMN provider_session_id text;
+COMMENT ON COLUMN public.wallet_topup_attempts.provider_fee_minor IS 'Historical fee field; for vaydu-driver-card-5pct-wallet-v1 this is the Vaydu fee, not the provider settlement cost';
+
+ALTER FUNCTION public.freeze_wallet_topup_fee(uuid,text) RENAME TO freeze_wallet_topup_fee_v2;
+CREATE FUNCTION public.freeze_wallet_topup_fee(p_attempt_id uuid,p_fee_policy_version text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+DECLARE a public.wallet_topup_attempts%ROWTYPE; s public.driver_card_topup_sandbox_scopes%ROWTYPE; p public.wallet_topup_fee_schedules%ROWTYPE;
+BEGIN
+ SELECT * INTO a FROM public.wallet_topup_attempts WHERE id=p_attempt_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Attempt missing' USING ERRCODE='BP003'; END IF;
+ IF a.destination_account_purpose='driver_cash_credit' AND a.fee_policy_version IS NULL THEN
+  IF NOT public.driver_card_sandbox_enabled() THEN RAISE EXCEPTION 'Driver sandbox disabled' USING ERRCODE='BP008'; END IF;
+  IF p_fee_policy_version IS DISTINCT FROM 'vaydu-driver-card-5pct-wallet-v1' THEN RAISE EXCEPTION 'Approved card policy required' USING ERRCODE='BP008'; END IF;
+  SELECT * INTO STRICT s FROM public.driver_card_topup_sandbox_scopes WHERE enabled AND method='card'
+   AND provider=a.payment_provider AND country_code=a.country_code AND currency_code=a.currency_code
+   AND merchant_account_ref=a.merchant_account_ref AND tenant_id=a.tenant_id AND driver_id=a.owner_id
+   AND policy_version=p_fee_policy_version FOR SHARE;
+  SELECT * INTO STRICT p FROM public.wallet_topup_fee_schedules WHERE active AND provider=a.payment_provider AND country_code=a.country_code AND currency_code=a.currency_code AND method='card' AND version=p_fee_policy_version FOR SHARE;
+  IF p.fee_basis<>'wallet' OR p.fee_basis_points<>500 OR p.fee_fixed_minor<>0 OR p.fee_cap_minor IS NOT NULL OR p.rounding<>'half_up' THEN RAISE EXCEPTION 'Unapproved fee terms' USING ERRCODE='BP008'; END IF;
+  PERFORM public.freeze_wallet_topup_fee_v2(p_attempt_id,p_fee_policy_version);
+  UPDATE public.wallet_topup_attempts SET card_sandbox_scope_id=s.id,provider_account_id=s.provider_account_id WHERE id=a.id;
+ ELSE
+  PERFORM public.freeze_wallet_topup_fee_v2(p_attempt_id,p_fee_policy_version);
+ END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.freeze_wallet_topup_fee_v2(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.freeze_wallet_topup_fee(uuid,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.freeze_wallet_topup_fee(uuid,text) TO service_role;
+CREATE FUNCTION public.driver_card_attempt_scope_freeze() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF OLD.provider_account_id IS NOT NULL AND (NEW.provider_account_id IS DISTINCT FROM OLD.provider_account_id OR NEW.card_sandbox_scope_id IS DISTINCT FROM OLD.card_sandbox_scope_id) THEN
+ RAISE EXCEPTION 'Provider review identity is frozen' USING ERRCODE='BP007'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER driver_card_attempt_scope_freeze BEFORE UPDATE ON public.wallet_topup_attempts FOR EACH ROW EXECUTE FUNCTION public.driver_card_attempt_scope_freeze();
+
+CREATE TABLE public.wallet_topup_provider_observations (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),attempt_id uuid NOT NULL REFERENCES public.wallet_topup_attempts(id),
+ evidence jsonb NOT NULL, evidence_hash text NOT NULL,observed_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(attempt_id,evidence_hash)
+);
+ALTER TABLE public.wallet_topup_provider_observations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.wallet_topup_provider_observations FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.wallet_topup_provider_observations TO service_role;
+CREATE FUNCTION public.record_driver_topup_provider_observation(p_attempt_id uuid,p_evidence jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+DECLARE a public.wallet_topup_attempts%ROWTYPE; k text;
+BEGIN
+ SELECT * INTO STRICT a FROM public.wallet_topup_attempts WHERE id=p_attempt_id;
+ IF jsonb_typeof(p_evidence)<>'object' OR octet_length(p_evidence::text)>4096 OR coalesce(p_evidence->>'source','') NOT IN ('server-query','server-fee-query') OR p_evidence->>'provider' IS DISTINCT FROM a.payment_provider THEN RAISE EXCEPTION 'Invalid observation' USING ERRCODE='BP004'; END IF;
+ FOR k IN SELECT jsonb_object_keys(p_evidence) LOOP
+  IF k<>ALL(ARRAY['source','provider','reference','currency','status','paymentMethod','providerAccountId','amountMajor','chargedAmountMajor','appFeeMajor','merchantFeeMajor','stampDutyFeeMajor','amountSettledMajor','chargedAmountApiMinor','providerFeeApiMinor','settlementNetApiMinor','settlementCurrency','providerBalanceReference']) THEN RAISE EXCEPTION 'Unexpected observation field' USING ERRCODE='BP004'; END IF;
+  IF jsonb_typeof(p_evidence->k) NOT IN ('string','null') OR length(p_evidence->>k)>200 THEN RAISE EXCEPTION 'Invalid observation value' USING ERRCODE='BP004'; END IF;
+ END LOOP;
+ INSERT INTO public.wallet_topup_provider_observations(attempt_id,evidence,evidence_hash)
+ VALUES(a.id,p_evidence,encode(sha256(convert_to(p_evidence::text,'UTF8')),'hex')) ON CONFLICT DO NOTHING;
+END $$;
+REVOKE ALL ON FUNCTION public.record_driver_topup_provider_observation(uuid,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.record_driver_topup_provider_observation(uuid,jsonb) TO service_role;
+
+DO $$ BEGIN
+ IF public.wallet_collection_enabled() IS DISTINCT FROM false THEN RAISE EXCEPTION 'Collection unexpectedly enabled'; END IF;
+ IF (SELECT count(*) FROM public.payment_checkout_attempts)<>2 THEN RAISE EXCEPTION 'Provider records changed'; END IF;
+ IF EXISTS(SELECT 1 FROM public.wallet_topup_fee_schedules) THEN RAISE EXCEPTION 'Unapproved fee schedule created'; END IF;
+ IF public.driver_card_sandbox_enabled() IS DISTINCT FROM false THEN RAISE EXCEPTION 'Driver sandbox unexpectedly enabled'; END IF;
+END $$;
+$fresh$;
+ END IF;
+ EXECUTE $delta$
+DO $patch$
+DECLARE definition text;old_route text;new_route text;
+BEGIN
+ IF current_database()<>'movabi_develop' THEN RAISE EXCEPTION 'Develop database required'; END IF;
+ IF to_regclass('public.driver_card_topup_sandbox_scopes') IS NULL THEN RAISE EXCEPTION 'Approved card scope schema required'; END IF;
+ definition:=pg_get_functiondef('public.initiate_wallet_topup(text,uuid,uuid,text,text,bigint,text,text,text,text)'::regprocedure);
+ old_route:=$old$  -- Resolve exactly one eligible route.
+  SELECT count(*) INTO v_n FROM public.market_payment_routes
+  WHERE country_code = p_country_code AND currency_code = p_currency_code
+    AND method = 'card' AND preferred AND enabled AND merchant_approved AND adapter_ready
+    AND capabilities @> ARRAY['collect']::text[];
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'Batch 1C: expected exactly one eligible collection route for %/%, found %', p_country_code, p_currency_code, v_n USING ERRCODE = 'BP008';
+  END IF;
+  SELECT * INTO v_route FROM public.market_payment_routes
+  WHERE country_code = p_country_code AND currency_code = p_currency_code
+    AND method = 'card' AND preferred AND enabled AND merchant_approved AND adapter_ready
+    AND capabilities @> ARRAY['collect']::text[];
+  IF v_route.provider IS DISTINCT FROM p_payment_provider OR v_route.merchant_account_ref IS DISTINCT FROM p_merchant_account_ref THEN
+    RAISE EXCEPTION 'Batch 1C: requested provider/account does not match the eligible route' USING ERRCODE = 'BP008';
+  END IF;$old$;
+ new_route:=$new$  -- Wallet-specific sandbox scope does not change booking/provider preferences.
+  IF public.driver_card_sandbox_permit(p_tenant_id,p_owner_id,p_country_code,p_currency_code,p_destination_account_purpose,p_payment_provider,p_merchant_account_ref) THEN
+    v_route.provider:=p_payment_provider;
+    v_route.merchant_account_ref:=p_merchant_account_ref;
+  ELSE
+$new$||old_route||E'\n  END IF;';
+ IF position(old_route IN definition)=0 THEN RAISE EXCEPTION 'Wallet route authority differs; review required'; END IF;
+ EXECUTE replace(definition,old_route,new_route);
+END $patch$;
+NOTIFY pgrst,'reload schema';
+$delta$;
+ SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]')::text) FROM public.market_payment_routes r INTO routes_after;
+ IF routes_before IS DISTINCT FROM routes_after THEN RAISE EXCEPTION 'Global collection routes changed'; END IF;
+ IF public.wallet_collection_enabled() OR public.driver_card_sandbox_enabled() THEN RAISE EXCEPTION 'Collection must remain disabled'; END IF;
+ SELECT md5(jsonb_build_object(
+ 'functions',(SELECT jsonb_agg(jsonb_build_array(p.oid::regprocedure::text,pg_get_functiondef(p.oid),p.proacl::text) ORDER BY p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('claim_wallet_topup_submission','confirm_wallet_topup','initiate_wallet_topup','post_wallet_event','record_wallet_topup_provider_reference','wallet_collection_enabled','wallet_currency_minor_exponent','wallet_topup_attempt_freeze','freeze_wallet_topup_fee','freeze_wallet_topup_fee_v1','freeze_wallet_topup_fee_v2','confirm_wallet_topup_with_total','record_driver_topup_provider_observation','wallet_fee_schedule_freeze','driver_card_scope_freeze','driver_card_attempt_scope_freeze','driver_card_sandbox_enabled','driver_card_sandbox_permit','driver_card_sandbox_attempt_permit')),
+ 'columns',(SELECT jsonb_agg(jsonb_build_array(table_name,column_name,udt_name,is_nullable,column_default) ORDER BY table_name,ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'constraints',(SELECT jsonb_agg(jsonb_build_array(c.relname,x.conname,pg_get_constraintdef(x.oid)) ORDER BY c.relname,x.conname) FROM pg_constraint x JOIN pg_class c ON c.oid=x.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'tables',(SELECT jsonb_agg(jsonb_build_array(c.relname,c.relrowsecurity,c.relacl::text) ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations')),
+ 'triggers',(SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY c.relname,t.tgname) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal AND n.nspname='public' AND c.relname IN ('wallet_topup_attempts','payment_checkout_attempts','wallet_topup_fee_policies','wallet_topup_fee_schedules','driver_card_fee_policy_versions','driver_card_topup_sandbox_scopes','wallet_topup_provider_observations'))
+ )::text) INTO observed_schema_fingerprint;
+ INSERT INTO public.vaydu_driver_card_schema_releases(version,source_sha256,catalog_fingerprint) VALUES('wallet-operator-20261028-v2','2041a7e3b5812efd7a9b3c308dc3b944477b27a69956ae59b55d254805103c88',observed_schema_fingerprint);
+ NOTIFY pgrst,'reload schema';
+END $operator$;
+COMMIT;
+-- VAYDU_WALLET_OPERATOR_20261028_END

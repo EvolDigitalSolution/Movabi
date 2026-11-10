@@ -1,3 +1,5 @@
+import { IssuingCapacityService } from '../services/issuing-capacity.service';
+import { ShoppingBudgetService } from '../services/shopping-budget.service';
 import { Router, Request, Response } from 'express';
 import { IssuingService } from '../services/issuing.service';
 import { supabaseAdmin } from '../services/supabase.service';
@@ -52,6 +54,30 @@ const getProfileTenant = async (userId: string): Promise<string | null> => {
   return (data as any)?.tenant_id || null;
 };
 
+router.get('/shopping-capacity', async (req: Request, res: Response) => {
+  try { await requireUser(req); }
+  catch { return res.status(401).json({ error: 'Authentication required' }); }
+  const currency = String(req.query.currency || '').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return res.status(400).json({ error: 'Invalid currency' });
+  res.set('Cache-Control', 'no-store');
+  try {
+    const maximumBudget = await IssuingCapacityService.maximumAvailable(currency);
+    return res.json({ currency, maximumBudget });
+  } catch {
+    return res.status(503).json({ error: 'Shopping funding could not be verified. Please try again later.' });
+  }
+});
+
+router.post('/budget/:jobId/prepare', async (req: Request,res: Response) => {
+  try { const user=await requireUser(req); const result=await ShoppingBudgetService.prepare(String(req.params.jobId),user.id); if(result.approved) await IssuingService.activateErrandCard(String(req.params.jobId)).catch(error => console.error('[ShoppingBudget] card activation pending',error.message)); return res.json(result); }
+  catch(error: unknown) { return res.status(400).json({error:error instanceof Error ? error.message : 'Budget approval failed'}); }
+});
+router.post('/budget/:jobId/approve', async (req: Request,res: Response) => {
+  try { const user=await requireUser(req); await ShoppingBudgetService.approve(String(req.params.jobId),user.id,String(req.body?.requestId || ''));
+    const card=await IssuingService.activateErrandCard(String(req.params.jobId)).catch(error => {console.error('[ShoppingBudget] card activation pending',error.message);return null;}); return res.json({approved:true,card,cardReady:!!card}); }
+  catch(error: unknown) { return res.status(400).json({error:error instanceof Error ? error.message : 'Budget approval failed'}); }
+});
+
 router.post('/driver-card/ensure', async (req: Request, res: Response) => {
   try {
     const user = await requireUser(req);
@@ -69,7 +95,7 @@ router.post('/driver-card/ensure', async (req: Request, res: Response) => {
     });
 
     const status = /auth|session/i.test(error.message) ? 401 : 400;
-    return res.status(status).json({ error: error.message || 'Failed to prepare Movabi Pay virtual card' });
+    return res.status(status).json({ error: error.message || 'Failed to prepare Vaydu Pay virtual card' });
   }
 });
 
@@ -106,7 +132,7 @@ router.get('/errand-card/:jobId/status', async (req: Request, res: Response) => 
     return res.json(status);
   } catch (error: any) {
     const status = /auth|session/i.test(error.message) ? 401 : 400;
-    return res.status(status).json({ error: error.message || 'Failed to load Movabi Pay card status' });
+    return res.status(status).json({ error: error.message || 'Failed to load Vaydu Pay card status' });
   }
 });
 
@@ -133,7 +159,7 @@ router.post('/errand-card/activate', async (req: Request, res: Response) => {
     });
 
     const status = /auth|session/i.test(error.message) ? 401 : 400;
-    return res.status(status).json({ error: error.message || 'Failed to activate Movabi Pay card' });
+    return res.status(status).json({ error: error.message || 'Failed to activate Vaydu Pay card' });
   }
 });
 

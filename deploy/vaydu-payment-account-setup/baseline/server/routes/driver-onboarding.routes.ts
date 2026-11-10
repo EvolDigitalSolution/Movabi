@@ -1,0 +1,378 @@
+import { GbMotMonitorService } from '../services/gb-mot-monitor.service';
+import { rateLimit } from 'express-rate-limit';
+import { GbMotService } from '../services/gb-mot.service';
+import { Request, Response, Router } from 'express';
+import { randomUUID } from 'node:crypto';
+import { supabaseAdmin } from '../services/supabase.service';
+import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { DriverOnboardingNotificationService } from '../services/driver-onboarding-notification.service';
+import { DriverRequirementService } from '../services/driver-requirement.service';
+import { DriverIdentityEditabilityService } from '../services/driver-identity-editability.service';
+import { DriverVehicleRow, mapDriverVehicleRow, parseDriverVehicleInput } from '../models/driver-vehicle.model';
+import { CANONICAL_DRIVER_PROFILE_SELECT, calculateCalendarAge, mapDriverProfile, parseDriverDateOfBirth, parseDriverPhone, parseResidentialAddress } from '../models/driver-profile.model';
+import { parseDriverPassengerLicenceInput, passengerLicenceColumns, readPassengerLicence } from '../models/driver-passenger-licence.model';
+import { evaluateDriverServiceEligibility } from '../services/driver-eligibility.service';
+
+const router = Router();
+
+function parseOnboardingItems(input:unknown):Record<string,unknown>{
+  if(!input)return{};
+  if(typeof input==='string'){try{return parseOnboardingItems(JSON.parse(input));}catch{return{};}}
+  if(Array.isArray(input))return input.reduce<Record<string,unknown>>((items,entry)=>{if(!entry||typeof entry!=='object')return items;const row=entry as Record<string,unknown>;const key=String(row.key||row.name||'').trim();if(key)items[key]=row.value;return items;},{});
+  return typeof input==='object'?input as Record<string,unknown>:{};
+}
+
+function serializeOnboardingItems(items:Record<string,unknown>):Array<{key:string;value:string}>{
+  return Object.entries(items).filter(([key])=>key.trim().length>0).map(([key,value])=>({key,value:typeof value==='string'?value:JSON.stringify(value)}));
+}
+
+async function currentVehicle(driverId:string):Promise<DriverVehicleRow|null>{
+  const{data,error}=await supabaseAdmin.from('vehicles').select('*').eq('user_id',driverId).order('created_at',{ascending:false});
+  if(error)throw error;
+  if((data||[]).length>1)throw Object.assign(new Error('Multiple vehicle records require Admin repair before setup can continue.'),{code:'DUPLICATE_DRIVER_VEHICLES',httpStatus:409});
+  return ((data||[])[0] as DriverVehicleRow|undefined)||null;
+}
+
+async function authenticatedDriver(req: Request, res: Response): Promise<string | null> {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) { res.status(401).json({ error: 'Authentication required.' }); return null; }
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data.user?.id) { res.status(401).json({ error: 'Invalid or expired session.' }); return null; }
+  return data.user.id;
+}
+
+router.get('/status', async (req, res) => {
+  const requestId = String(req.headers['x-request-id'] || randomUUID());
+  let userId: string | null = null;
+  try {
+    const driverId = await authenticatedDriver(req, res);
+    if (!driverId) {
+      console.warn('[DriverOnboarding] status failed', { userId, requestId, code: 'UNAUTHENTICATED', message: 'Authentication failed' });
+      return;
+    }
+    userId = driverId;
+    console.info('[DriverOnboarding] status request', { userId, requestId });
+    const { data: profile, error } = await supabaseAdmin.from('profiles').select('*').eq('id', driverId).single();
+    if (error) throw Object.assign(new Error('Driver profile lookup failed.'), { code: error.code });
+    if (!profile) throw Object.assign(new Error('Driver profile not found.'), { code: 'PROFILE_NOT_FOUND', httpStatus: 404 });
+    const vehicle = await currentVehicle(driverId);
+    const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(driverId);
+    if (authUserError) throw Object.assign(new Error('Driver authentication lookup failed.'), { code: authUserError.code });
+    const { data: requestRows, error: requestError } = await supabaseAdmin.from('driver_onboarding_requests').select('id,requirement_code,request_type,item,public_message,status,sent_at,resolved_at,updated_at,permission_consumed_at').eq('driver_id',driverId).order('created_at',{ascending:false});
+    if (requestError) throw Object.assign(new Error('Driver Admin-request lookup failed.'), { code: requestError.code });
+    const registrationAllowed = true;
+    if (!(profile.role === 'driver' && profile.onboarding_completed)) {
+      await MarketAvailabilityService.requireCapability({ countryCode: profile.country_code, marketCity: profile.market_city || profile.city, zoneId: profile.zone_id, capability: 'driver_registration', endpoint: '/api/driver-onboarding/status' });
+    }
+    const adminRequests=(requestRows||[]).map(row=>({id:row.id,requirementCode:row.requirement_code,requestType:row.request_type,item:row.item,status:row.status,publicMessage:row.public_message,submittedAt:row.sent_at,updatedAt:row.updated_at,resolvedAt:row.resolved_at,nextAction:row.request_type==='identity_correction'&&row.status==='pending'?'We’ll review your correction request before allowing this identity detail to be changed.':row.status==='approved'?'No action required.':'Correct this item and resubmit it for review.'}));
+    const canonicalVehicle=vehicle?mapDriverVehicleRow(vehicle):null;
+    const canonicalProfile=mapDriverProfile(profile,!!authUser.user?.email_confirmed_at);
+    const passengerLicence=readPassengerLicence(profile);
+    const identityEditability=DriverIdentityEditabilityService.resolve(profile,requestRows||[]);
+    const resolution=DriverRequirementService.resolve({profile,canonicalProfile,vehicle:canonicalVehicle,authEmailConfirmed:canonicalProfile.emailConfirmed,adminRequests,countryCode:profile.country_code,marketCity:profile.market_city||profile.city});
+    const motRestriction=await supabaseAdmin.rpc('gb_driver_mot_blocked',{p_driver:driverId});
+    if(motRestriction.error)throw Error('Unable to verify MOT compliance. Please retry.');
+    if(motRestriction.data)resolution.onlineEligibility={allowed:false,reasons:[...resolution.onlineEligibility.reasons,'Vehicle MOT expired or unverified. Renew your MOT and recheck your registration.']};
+    const visibleRequests=[...resolution.adminRequests,...adminRequests.filter(request=>request.requestType==='identity_correction'&&!resolution.adminRequests.some(item=>item.id===request.id))];
+    const outstandingRequests=visibleRequests.filter(request=>request.status!=='approved').map(request=>({id:request.id,item:request.item,status:request.status,adminMessage:request.publicMessage,submittedAt:request.submittedAt,updatedAt:request.updatedAt,nextAction:request.nextAction}));
+    const { data: adminMessages, error: messagesError } = await supabaseAdmin.from('notifications')
+      .select('id,title,body,created_at').eq('user_id',driverId)
+      .contains('data',{action:'admin_driver_message'}).order('created_at',{ascending:false}).limit(20);
+    if (messagesError) throw Object.assign(new Error('Unable to load Admin messages.'), { code: messagesError.code });
+    const stripeStatus = profile.stripe_connect_status || 'not_started';
+    console.info('[DriverOnboarding] status success', { userId, requestId, overallStatus:resolution.overallStatus, outstandingRequestCount: outstandingRequests.length, stripeStatus });
+    return res.json({ vehicleLookup:{provider:'DVSA_MOT',enabled:GbMotService.enabled(profile.country_code)}, driverId, registrationAllowed, overallStatus:resolution.overallStatus, profile, canonicalProfile, passengerLicence, vehicle: canonicalVehicle, outstandingRequests, adminMessages:adminMessages||[],
+      automaticRequirements:resolution.automaticRequirements,adminRequests:visibleRequests,warnings:resolution.warnings,identityEditability,sectionStatus:resolution.sectionStatus,progress:resolution.progress,onlineEligibility:resolution.onlineEligibility,selectedServices:resolution.selectedServices,vehicleType:resolution.vehicleType,age:resolution.age,
+      submissionHistory: Array.isArray(profile.driver_review_history) ? profile.driver_review_history : [],
+      stripeStatus, updatedAt: profile.updated_at || null });
+  } catch (error: unknown) {
+    const details: Error & { code?: string; httpStatus?: number } = error instanceof Error
+      ? error as Error & { code?: string; httpStatus?: number }
+      : new Error('Unknown onboarding status error');
+    const code = details.code || 'ONBOARDING_STATUS_FAILED';
+    console.error('[DriverOnboarding] status failed', { userId, requestId, code, message: details.message });
+    if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
+    return res.status(details.httpStatus || 500).json({ error: details.message || 'Unable to load driver onboarding status.', code });
+  }
+});
+
+router.post('/events', async (req, res) => {
+  const driverId = await authenticatedDriver(req, res); if (!driverId) return;
+  const eventType = String(req.body?.eventType || '');
+  if (!DriverOnboardingNotificationService.isSupported(eventType)) return res.status(400).json({ error: 'Unsupported onboarding event.' });
+  const eventKey = String(req.body?.eventKey || randomUUID()).trim();
+  if (!/^[a-zA-Z0-9:_-]{8,180}$/.test(eventKey)) return res.status(400).json({ error: 'Invalid event correlation key.' });
+  try {
+    const result = await DriverOnboardingNotificationService.enqueue(driverId, {
+      eventKey, eventType, affectedItem: String(req.body?.affectedItem || 'onboarding').slice(0, 120),
+      previousStatus: req.body?.previousStatus == null ? null : String(req.body.previousStatus).slice(0, 80),
+      newStatus: req.body?.newStatus == null ? null : String(req.body.newStatus).slice(0, 80)
+    });
+    return res.status(result.duplicate ? 200 : 202).json({ accepted: true, duplicate: result.duplicate, eventId: result.id });
+  } catch (error) {
+    console.warn('[driver-onboarding] notification enqueue failed after persisted mutation:', error);
+    return res.status(202).json({ accepted: true, notificationQueued: false });
+  }
+});
+
+router.put('/profile',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const body=req.body&&typeof req.body==='object'?req.body:{};const residentialAddressPresent=typeof body.residentialAddress==='string';const dateOfBirthPresent=typeof body.dateOfBirth==='string';const fullNamePresent=typeof body.fullName==='string';const countryCodePresent=typeof body.countryCode==='string';const phonePresent=typeof body.phone==='string';
+  console.info('[DriverOnboarding] profile update request',{userId:driverId,residentialAddressPresent,dateOfBirthPresent,fullNamePresent,countryCodePresent,phonePresent});
+  if(!residentialAddressPresent&&!dateOfBirthPresent&&!fullNamePresent&&!countryCodePresent&&!phonePresent)throw new Error('Provide a residential address, date of birth, legal name, country, or contact number.');
+  let previousDateOfBirth:string|null=null;
+  if(dateOfBirthPresent||fullNamePresent||countryCodePresent){const{data:identityProfile,error:identityError}=await supabaseAdmin.from('profiles').select('date_of_birth,full_name,is_verified,onboarding_completed,verification_status,driver_review_status').eq('id',driverId).single();if(identityError||!identityProfile)throw identityError||new Error('Driver profile not found.');const{data:correctionRows,error:correctionError}=await supabaseAdmin.from('driver_onboarding_requests').select('status,request_type,permission_consumed_at').eq('driver_id',driverId).eq('request_type','identity_correction');if(correctionError)throw correctionError;const editability=DriverIdentityEditabilityService.resolve(identityProfile,correctionRows||[]);if(fullNamePresent&&!editability.fullNameEditable)return res.status(403).json({code:'NAME_CHANGE_NOT_ALLOWED',message:editability.fullNameReason||'Your legal name cannot be changed after driver verification.'});if(countryCodePresent&&!editability.countryCodeEditable)return res.status(403).json({code:'COUNTRY_CHANGE_NOT_ALLOWED',message:editability.countryCodeReason||'Your operating country cannot be changed after driver verification.'});if(dateOfBirthPresent&&!editability.dateOfBirthEditable)return res.status(403).json({code:'DOB_CHANGE_NOT_ALLOWED',message:'Date of birth cannot be changed after verification has started.'});previousDateOfBirth=identityProfile.date_of_birth||null;}
+  const profileUpdates:{current_address?:string;date_of_birth?:string;full_name?:string;country_code?:string;phone?:string;updated_at:string}={updated_at:new Date().toISOString()};
+  if(residentialAddressPresent)profileUpdates.current_address=parseResidentialAddress(body);
+  if(dateOfBirthPresent){profileUpdates.date_of_birth=parseDriverDateOfBirth(body.dateOfBirth);calculateCalendarAge(profileUpdates.date_of_birth);}
+  if(fullNamePresent){const name=String(body.fullName).trim();if(name.length<2)throw new Error('Enter a valid legal name.');profileUpdates.full_name=name;}
+  if(countryCodePresent){const country=String(body.countryCode).trim().toUpperCase();if(!/^[A-Z]{2}$/.test(country))throw new Error('Enter a valid country code.');profileUpdates.country_code=country;}
+  if(phonePresent){profileUpdates.phone=parseDriverPhone(body.phone);}
+  console.info('[DriverOnboarding] profile update payload',{userId:driverId,keys:Object.keys(profileUpdates)});
+  const{data,error}=await supabaseAdmin.from('profiles').update(profileUpdates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(error||!data)throw error||new Error('Profile save returned no record.');
+  if(dateOfBirthPresent&&previousDateOfBirth!==data.date_of_birth){const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'dob_changed',actor_id:driverId,selected_services:[],requirement_codes:['profile.date_of_birth'],metadata:{previousDateOfBirth,newDateOfBirth:data.date_of_birth}});if(auditError)throw auditError;}
+  const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;const profile=mapDriverProfile(data,!!auth.user?.email_confirmed_at);if(residentialAddressPresent&&!profile.residentialAddress)throw new Error('Residential address was not persisted.');if(dateOfBirthPresent&&!profile.dateOfBirth)throw new Error('Date of birth was not persisted.');if(fullNamePresent&&!profile.fullName)throw new Error('Legal name was not persisted.');if(phonePresent&&!profile.phone)throw new Error('Contact number was not persisted.');
+  console.info('[DriverOnboarding] profile update success',{userId:driverId,residentialAddressPresent,dateOfBirthPresent,fullNamePresent,countryCodePresent,phonePresent});return res.json({profile});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const message=details.message||'Unable to save driver profile.';console.error('[DriverOnboarding] profile update failed',{userId:driverId,code:details.code||'PROFILE_SAVE_FAILED',message,details:details.details||null,hint:details.hint||null});return res.status(/date of birth|valid current residential|legal name|country code|contact number/i.test(message)?422:500).json({error:message,code:details.code||'PROFILE_SAVE_FAILED'});}});
+
+router.post('/dob-correction-request',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const reason=String(req.body?.reason||'').trim();if(reason.length<10)return res.status(422).json({error:'Explain why your date of birth needs correcting.',code:'INVALID_CORRECTION_REASON'});const{data:existing,error:readError}=await supabaseAdmin.from('driver_onboarding_requests').select('id,status').eq('driver_id',driverId).eq('request_type','identity_correction').in('status',['pending','approved','rejected']).maybeSingle();if(readError)throw readError;if(existing)return res.json({requested:true,status:existing.status});const{data,error}=await supabaseAdmin.from('driver_onboarding_requests').insert({driver_id:driverId,requirement_code:'profile.date_of_birth',request_type:'identity_correction',item:'Date of birth correction',public_message:reason,status:'pending'}).select('id,status').single();if(error||!data)throw error||new Error('Correction request was not created.');const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:'dob_correction_requested',actor_id:driverId,selected_services:[],requirement_codes:['profile.date_of_birth'],metadata:{requestId:data.id}});if(auditError)throw auditError;return res.status(201).json({requested:true,status:data.status});}catch(error:unknown){const details=error as Error&{code?:string};return res.status(500).json({error:details.message||'Unable to request a date of birth correction.',code:details.code||'DOB_CORRECTION_REQUEST_FAILED'});}});
+
+router.put('/verification-items',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const{data:existing,error:readError}=await supabaseAdmin.from('profiles').select('id,verification_items').eq('id',driverId).single();if(readError||!existing)throw readError||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND'});
+  const items={...parseOnboardingItems(existing.verification_items),bicycle_declaration:req.body?.bicycleDeclaration===true,delivery_equipment_confirmed:req.body?.deliveryEquipmentConfirmed===true};
+  const{data,error}=await supabaseAdmin.from('profiles').update({verification_items:serializeOnboardingItems(items),updated_at:new Date().toISOString()}).eq('id',driverId).select('id').single();if(error||!data)throw error||new Error('Onboarding declarations save returned no record.');
+  return res.json({saved:true});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] verification items update failed',{userId:driverId,code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save onboarding declarations.',code:details.code||'VERIFICATION_ITEMS_SAVE_FAILED'});}});
+
+// Batch 2C Phase B — the canonical typed columns are the source of truth; the
+// verification_items array is maintained unchanged as the compatibility mirror.
+const PASSENGER_LICENCE_SELECT='id,verification_items,council_name,council_license_number,taxi_badge_number,taxi_license_expiry';
+
+router.put('/passenger-licence',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const licence=parseDriverPassengerLicenceInput(req.body);
+  const{data:existing,error:readError}=await supabaseAdmin.from('profiles').select(PASSENGER_LICENCE_SELECT).eq('id',driverId).single();if(readError||!existing)throw readError||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND'});
+  const mirror={...parseOnboardingItems(existing.verification_items),council_name:licence.councilName,council_license_number:licence.licenceNumber,taxi_badge_number:licence.badgeNumber,taxi_license_expiry:licence.expiryDate};
+  const values={...passengerLicenceColumns(licence),verification_items:serializeOnboardingItems(mirror),updated_at:new Date().toISOString()};
+  const{data,error}=await supabaseAdmin.from('profiles').update(values).eq('id',driverId).select(PASSENGER_LICENCE_SELECT).single();if(error||!data)throw error||new Error('Passenger licence save returned no record.');
+  return res.json({passengerLicence:readPassengerLicence(data)});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};const validation=/licen[cs]|badge|authority|expired/i.test(details.message);console.error('[DriverOnboarding] passenger licence update failed',{userId:driverId,code:details.code||'PASSENGER_LICENCE_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(validation?422:500).json({error:details.message||'Unable to save passenger licence.',code:details.code||(validation?'INVALID_PASSENGER_LICENCE':'PASSENGER_LICENCE_SAVE_FAILED')});}});
+
+/**
+ * Batch 2C Phase B — authoritative application-facing eligibility contract.
+ *
+ * Identity comes ONLY from the authenticated session: the request can supply the
+ * service name and nothing else. There is no path by which a caller can submit,
+ * influence or override a verdict.
+ *
+ * AUTHORITY: `public.driver_service_eligibility(uuid, text, timestamptz)` is the
+ * authority for ACQUISITION and is enforced by the Phase A trigger, which is
+ * still DISABLED. Its EXECUTE privilege is intentionally revoked from every API
+ * role (Phase A), so this endpoint evaluates with the parity-proven TypeScript
+ * mirror and reports which engine produced the verdict. The response therefore
+ * states `evaluatedBy` and `enforced` explicitly rather than implying that
+ * database enforcement is active.
+ */
+router.get('/eligibility',async(req,res)=>{
+  const driverId=await authenticatedDriver(req,res);if(!driverId)return;
+  try{
+    const requested=typeof req.query.service==='string'?req.query.service.trim():'';
+    if(!requested)return res.status(400).json({error:'A service is required.',code:'SERVICE_REQUIRED'});
+    const{data:profile,error}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();
+    if(error||!profile)throw error||Object.assign(new Error('Driver profile not found.'),{code:'PROFILE_NOT_FOUND',httpStatus:404});
+    const vehicleRow=await currentVehicle(driverId);
+    const verdict=evaluateDriverServiceEligibility({profile:profile as Record<string,unknown>,vehicle:vehicleRow?{...vehicleRow}:null,service:requested});
+    return res.json({
+      driverId,
+      service:verdict.service,
+      resolved:verdict.service!==null,
+      eligible:verdict.eligible,
+      blockingCodes:verdict.blockingCodes,
+      advisoryCodes:verdict.advisoryCodes,
+      authority:{evaluatedBy:'ts-mirror',sqlAuthority:'public.driver_service_eligibility',enforced:false}
+    });
+  }catch(error:unknown){const details=error as Error&{code?:string;httpStatus?:number};console.error('[DriverOnboarding] eligibility evaluation failed',{userId:driverId,code:details.code||'ELIGIBILITY_EVALUATION_FAILED',message:details.message});return res.status(details.httpStatus||500).json({error:details.message||'Unable to evaluate driver eligibility.',code:details.code||'ELIGIBILITY_EVALUATION_FAILED'});}
+});
+
+router.put('/agreement',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  if(typeof req.body?.accepted!=='boolean')return res.status(422).json({error:'Agreement acceptance must be true or false.',code:'INVALID_AGREEMENT_STATE'});
+  const acceptedAt=req.body.accepted?new Date().toISOString():null;
+  const{data,error}=await supabaseAdmin.from('profiles').update({accepted_driver_agreement_at:acceptedAt,updated_at:new Date().toISOString()}).eq('id',driverId).select('id,accepted_driver_agreement_at').single();
+  if(error||!data)throw error||new Error('Agreement save returned no record.');
+  return res.json({agreement:{accepted:!!data.accepted_driver_agreement_at,acceptedAt:data.accepted_driver_agreement_at||null}});
+ }catch(error:unknown){const details=error as Error&{code?:string;details?:string;hint?:string};console.error('[DriverOnboarding] agreement update failed',{userId:driverId,code:details.code||'AGREEMENT_SAVE_FAILED',message:details.message,details:details.details||null,hint:details.hint||null});return res.status(500).json({error:details.message||'Unable to save Driver Agreement.',code:details.code||'AGREEMENT_SAVE_FAILED'});}});
+
+router.post('/vehicle-lookup',rateLimit({windowMs:60000,limit:10,standardHeaders:true,legacyHeaders:false}),async(req,res)=>{
+ const driverId=await authenticatedDriver(req,res);if(!driverId)return;
+ try {
+  const {data:profile,error}=await supabaseAdmin.from('profiles').select('country_code').eq('id',driverId).single();
+  if(error||!profile)throw Error('Driver country could not be verified.');
+  if(!GbMotService.enabled(profile.country_code))return res.status(409).json({error:'Vehicle lookup is not enabled for your onboarding country.'});
+  const check=await GbMotService.lookup(req.body?.registrationNumber);
+  const vehicle=await currentVehicle(driverId);
+  if(vehicle)await GbMotMonitorService.record(vehicle.id,check);
+  return res.json({vehicle:check});
+ }catch(error:unknown){const e=error as Error&{httpStatus?:number};return res.status(e.httpStatus||503).json({error:e.message||'Vehicle lookup unavailable.'});}
+});
+
+router.get('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{const row=await currentVehicle(driverId);return res.json({vehicle:row?mapDriverVehicleRow(row):null});}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};return res.status(details.httpStatus||500).json({error:details.message,code:details.code||'VEHICLE_READ_FAILED'});}});
+
+router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(req,res);if(!driverId)return;try{
+  const {data:lookupProfile,error:lookupProfileError}=await supabaseAdmin.from('profiles').select('country_code').eq('id',driverId).single();
+  if(lookupProfileError||!lookupProfile)throw Error('Driver country could not be verified.');
+  let mot=null;
+  const body={...req.body};
+  if(GbMotService.enabled(lookupProfile.country_code) && body.vehicleType!=='motorcycle') {
+    mot=await GbMotService.lookup(body.registrationNumber);
+    if(['expired','dangerous_failure'].includes(mot.motStatus))return res.status(422).json({error:'Vehicle MOT is expired or has a dangerous failure. Update the MOT before continuing.'});
+    body.registrationNumber=mot.registration;
+    if(mot.make)body.make=mot.make;if(mot.model)body.model=mot.model;if(mot.colour)body.colour=mot.colour;if(mot.year)body.year=mot.year;
+  }
+  const input=parseDriverVehicleInput(body);const existing=await currentVehicle(driverId);
+  const values={user_id:driverId,type:input.vehicleType,make:input.make,model:input.model,color:input.colour,year:input.year,license_plate:input.registrationNumber,capacity:input.capacity,service_eligibility:input.serviceEligibility,updated_at:new Date().toISOString()};
+  // Re-review before changing an approved vehicle or its selected services.
+  const fields = ['type','make','model','color','year','license_plate','capacity'] as const;
+  const vehicleChanged = !existing || fields.some(field => String(existing[field] ?? '').trim().toLowerCase() !== String(values[field] ?? '').trim().toLowerCase()) ||
+    JSON.stringify([...(existing.service_eligibility || [])].sort()) !== JSON.stringify([...values.service_eligibility].sort());
+  if (vehicleChanged) {
+    const { data: profile, error: profileError } = await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();
+    if (profileError || !profile) throw profileError || new Error('Driver profile not found.');
+    const serviceItems = serializeOnboardingItems({...parseOnboardingItems(profile.verification_items), driver_service_types:input.serviceEligibility});
+    const needsReview = profile.is_verified || profile.verification_status === 'approved' || profile.driver_review_status === 'approved';
+    const { error: reviewError } = await supabaseAdmin.from('profiles').update({
+      verification_items:serviceItems,
+      ...(Object.prototype.hasOwnProperty.call(profile,'driver_service_types') ? {driver_service_types:input.serviceEligibility} : {}),
+      ...(needsReview ? {is_verified:false, is_online:false, is_available:false, verification_status:'action_required', driver_review_status:'action_required',
+        verification_notes:'Vehicle or services changed. Complete the required details and submit for review.', driver_review_notes:'Vehicle or services changed. Complete the required details and submit for review.'} : {}),
+      updated_at:new Date().toISOString()
+    }).eq('id',driverId);
+    if (reviewError) throw reviewError;
+  }
+  const query=existing?supabaseAdmin.from('vehicles').update(values).eq('id',existing.id):supabaseAdmin.from('vehicles').insert(values);
+  const{data,error}=await query.select('*').single();if(error||!data)throw error||new Error('Vehicle save returned no record.');
+  if(mot)await GbMotMonitorService.record(data.id,mot);
+  if(mot){const audit=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,actor_id:driverId,event_type:'vehicle_mot_checked',selected_services:input.serviceEligibility,requirement_codes:['vehicle.registration','vehicle.mot'],metadata:{vehicleId:data.id,provider:'DVSA_MOT',check:mot}});if(audit.error)throw Error('Vehicle saved, but MOT evidence could not be recorded. Please retry before submitting.');}
+  return res.json({vehicle:mapDriverVehicleRow(data as DriverVehicleRow)});
+}catch(error:unknown){const details=error as Error&{httpStatus?:number;code?:string};const validation=/required|valid vehicle year/i.test(details.message);return res.status(details.httpStatus||(validation?422:500)).json({error:details.message,code:details.code||(validation?'INVALID_VEHICLE':'VEHICLE_SAVE_FAILED')});}});
+
+/**
+ * Batch 2C Phase B — the ONE trusted review-submission endpoint.
+ *
+ * Identity is the authenticated session; the body can never choose a driver, a
+ * service approval, or a review verdict.
+ *
+ *   initial submission (default)  — validates requirements, then writes the
+ *                                   onboarding payload exactly as before.
+ *   resubmission (resubmission:true) — the SAME validation and the same blocker
+ *                                   gate, but only the SERVER-DEFINED review
+ *                                   state is reset. Identity, documents,
+ *                                   agreement, plan and subscription are left
+ *                                   exactly as stored, so a resubmission can
+ *                                   never wipe or re-price a driver's account.
+ *
+ * The previous client-side resubmission wrote `verification_status` /
+ * `driver_review_status` straight from the browser and let the browser decide
+ * between 'action_required' and 'under_review'. Neither is possible here: the
+ * server validates first and then applies one fixed review state, and a driver
+ * who still has blockers is refused with the blocker list rather than being
+ * written into a client-chosen state.
+ */
+router.post('/submit-review', async (req,res)=>{
+  const driverId=await authenticatedDriver(req,res);if(!driverId)return;
+  try{
+    const{data:profile,error:profileError}=await supabaseAdmin.from('profiles').select('*').eq('id',driverId).single();if(profileError||!profile){logSubmitReviewDbError('profile-read',profileError);throw profileError||new Error('Driver profile not found.');}
+    const vehicle=await currentVehicle(driverId);
+    if(vehicle && vehicle.type!=='motorcycle' && GbMotService.enabled(profile.country_code)) {
+      const mot=await GbMotService.lookup(vehicle.license_plate);
+      await GbMotMonitorService.record(vehicle.id,mot);
+      if(['expired','dangerous_failure'].includes(mot.motStatus))return res.status(422).json({error:'Vehicle MOT is expired or has a dangerous failure. Update the MOT before submission.'});
+      if((mot.make && mot.make.toLowerCase()!==String(vehicle.make||'').toLowerCase()) || (mot.model && mot.model.toLowerCase()!==String(vehicle.model||'').toLowerCase()))
+        return res.status(422).json({error:'Vehicle registration details changed. Look up and save the vehicle again.'});
+    }
+    const{data:auth,error:authError}=await supabaseAdmin.auth.admin.getUserById(driverId);if(authError)throw authError;
+    const profileInput=profile;const vehicleInput=vehicle?mapDriverVehicleRow(vehicle):null;
+    const resubmission=req.body?.resubmission===true;
+    const submitted=resubmission?null:(req.body?.profile||{});
+    // Release closure: evaluate the blocker gate against the data being SUBMITTED
+    // (current profile merged with the submitted canonical passenger-licence +
+    // ride-document fields), so a first-time submission is not blocked by stale
+    // DB state. Resubmission re-uses the stored profile unchanged.
+    // Only a VALID submitted passenger-licence payload may touch the canonical licence
+    // columns. An absent or invalid payload must never null out existing valid stored
+    // values, so it is skipped entirely rather than merged as a set of nulls.
+    let passengerLicenceUpdate: Record<string, unknown> | null = null;
+    if (submitted) {
+      try { passengerLicenceUpdate = passengerLicenceColumns(parseDriverPassengerLicenceInput(submitted, new Date())); } catch { passengerLicenceUpdate = null; }
+    }
+    const effectiveProfile = submitted
+      ? {
+          ...profileInput,
+          full_name: String(submitted.full_name||'').trim() || profileInput.full_name,
+          phone: String(submitted.phone||'').trim() || profileInput.phone,
+          driver_license_url: submitted.driver_license_url ?? profileInput.driver_license_url,
+          insurance_url: submitted.insurance_url ?? profileInput.insurance_url,
+          right_to_work_url: submitted.right_to_work_url ?? profileInput.right_to_work_url,
+          private_hire_vehicle_license_url: submitted.private_hire_vehicle_license_url ?? profileInput.private_hire_vehicle_license_url,
+          private_hire_insurance_url: submitted.private_hire_insurance_url ?? profileInput.private_hire_insurance_url,
+          goods_in_transit_insurance_url: submitted.goods_in_transit_insurance_url ?? profileInput.goods_in_transit_insurance_url,
+          ...(passengerLicenceUpdate||{})
+        }
+      : profileInput;
+    const canonicalProfile=mapDriverProfile(effectiveProfile,!!auth.user?.email_confirmed_at);
+    const resolution=DriverRequirementService.resolve({profile:effectiveProfile,canonicalProfile,vehicle:vehicleInput,authEmailConfirmed:canonicalProfile.emailConfirmed,countryCode:effectiveProfile.country_code,marketCity:effectiveProfile.market_city||effectiveProfile.city});
+    const blockers=resolution.automaticRequirements.filter(item=>item.blockingForSubmission);
+    const{error:auditError}=await supabaseAdmin.from('driver_requirement_audit').insert({driver_id:driverId,event_type:resubmission?'resubmission_validated':'submission_validated',selected_services:resolution.selectedServices,requirement_codes:resolution.automaticRequirements.map(item=>item.code)});
+    if(auditError){logSubmitReviewDbError('requirement-audit-insert',auditError);throw auditError;}
+    if(blockers.length){console.warn('[DriverOnboarding] review resubmission blocked',{userId:driverId,resubmission,blockerCodes:blockers.map(item=>item.code)});return res.status(422).json({error:blockers[0].reason,code:'DRIVER_REQUIREMENTS_INCOMPLETE',requirements:blockers,progress:resolution.progress});}
+    const submittedAt=new Date().toISOString();
+    let updates:Record<string,unknown>;
+    let auditEvent:string;
+    if(resubmission){
+      // Server-defined review state only. is_verified, plan, subscription,
+      // identity, documents and agreement are deliberately untouched.
+      updates={verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],updated_at:submittedAt};
+      auditEvent='resubmitted';
+    }else{
+      const existingItems=parseOnboardingItems(profile.verification_items);
+      const submittedItems=parseOnboardingItems(submitted?.verification_items);
+      // Non-destructive write: every persisted value comes from the merged
+      // `effectiveProfile`, which already falls back to the stored row whenever the
+      // request omitted or blanked a field. Canonical licence columns are written
+      // only when a valid passenger-licence payload was supplied.
+      updates={onboarding_completed:true,role:'driver',pricing_plan:'starter',subscription_status:'inactive',full_name:String(effectiveProfile.full_name||'').trim()||null,phone:String(effectiveProfile.phone||'').trim()||null,accepted_driver_agreement_at:profile.accepted_driver_agreement_at||null,driver_license_url:effectiveProfile.driver_license_url||null,insurance_url:effectiveProfile.insurance_url||null,right_to_work_url:effectiveProfile.right_to_work_url||null,private_hire_vehicle_license_url:effectiveProfile.private_hire_vehicle_license_url||null,private_hire_insurance_url:effectiveProfile.private_hire_insurance_url||null,goods_in_transit_insurance_url:effectiveProfile.goods_in_transit_insurance_url||null,...(passengerLicenceUpdate||{}),verification_items:serializeOnboardingItems({...existingItems,...submittedItems}),verification_status:'under_review',driver_review_status:'under_review',verification_notes:null,driver_review_notes:null,verification_blockers:[],driver_review_blockers:[],is_verified:false,updated_at:submittedAt};
+      auditEvent='submitted';
+    }
+    const{data:updated,error:updateError}=await supabaseAdmin.from('profiles').update(updates).eq('id',driverId).select(CANONICAL_DRIVER_PROFILE_SELECT).single();if(updateError||!updated){logSubmitReviewDbError('profile-submit-update',updateError);throw updateError||new Error('Review submission did not update the driver profile.');}
+    const{error:consumeError}=await supabaseAdmin.from('driver_onboarding_requests').update({permission_consumed_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','identity_correction').eq('status','approved').is('permission_consumed_at',null);if(consumeError){logSubmitReviewDbError('identity-permission-consume',consumeError);throw consumeError;}
+    const{error:resolveError}=await supabaseAdmin.from('driver_onboarding_requests').update({status:'approved',resolved_at:submittedAt,updated_at:submittedAt}).eq('driver_id',driverId).eq('request_type','missing_info').in('status',['pending','rejected']);if(resolveError){logSubmitReviewDbError('missing-info-resolve',resolveError);throw resolveError;}
+    return res.json({submitted:true,resubmission,event:auditEvent,reviewState:'under_review',profile:mapDriverProfile(updated,!!auth.user?.email_confirmed_at)});
+  }catch(error:unknown){
+    // Supabase/PostgREST errors are plain objects, so `error instanceof Error` reduced the
+    // real cause to an anonymous message. Log the structured failure and surface its message.
+    logSubmitReviewDbError('unhandled',error);
+    const caught=(error&&typeof error==='object')?error as Record<string,unknown>:{};
+    const message=typeof caught['message']==='string'?caught['message']:error instanceof Error?error.message:'Unable to validate driver submission.';
+    return res.status(500).json({error:message,code:'DRIVER_REQUIREMENT_VALIDATION_FAILED'});
+  }
+});
+
+/**
+ * Log the structured Supabase/PostgREST error for a submit-review database boundary.
+ *
+ * Supabase errors are plain objects rather than `Error` instances, so `instanceof Error`
+ * collapsed the real cause into an anonymous message. Only non-sensitive diagnostic fields
+ * are logged: never tokens, headers, document URLs/contents, or profile values.
+ */
+function logSubmitReviewDbError(boundary: string, error: unknown): void {
+  if (!error) return;
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  console.error('[DriverOnboarding] submit-review database failure', {
+    boundary,
+    code: typeof value['code'] === 'string' ? value['code'] : undefined,
+    message: typeof value['message'] === 'string'
+      ? value['message']
+      : error instanceof Error ? error.message : undefined,
+    details: typeof value['details'] === 'string' ? value['details'] : undefined,
+    hint: typeof value['hint'] === 'string' ? value['hint'] : undefined
+  });
+}
+
+export default router;

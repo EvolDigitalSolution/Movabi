@@ -1,3 +1,4 @@
+import { matchesVehicleCapacity } from '../../../shared/utils/goods-vehicle-compatibility';
 import { Injectable } from '@angular/core';
 import { Booking, ServiceTypeEnum, Vehicle } from '@shared/models/booking.model';
 
@@ -14,20 +15,23 @@ export class VehicleCompatibilityService {
         const serviceSlug = String((job as any)?.service_slug || (job as any)?.service_type?.slug || '').toLowerCase();
         const capabilities = this.getDriverCapabilities(vehicle);
 
-        if (serviceSlug === ServiceTypeEnum.ERRAND || serviceSlug.includes('errand')) {
-            return capabilities.some(capability => ['bike', 'standard', 'xl', 'car'].includes(capability));
-        }
-
-        if (serviceSlug === ServiceTypeEnum.DELIVERY || serviceSlug.includes('delivery')) {
-            return capabilities.some(capability => ['bike', 'standard', 'xl', 'car', 'small_van', 'large_van'].includes(capability));
-        }
-
         const required = this.getRequiredVehicleClass(job);
 
-        return capabilities.includes(required);
+        return matchesVehicleCapacity(serviceSlug, required, capabilities);
     }
 
     getRequiredVehicleClass(job: Booking | null | undefined): RequiredVehicleClass {
+        const persisted = String((job as any)?.fulfilment_category || '').trim().toLowerCase();
+        if (['bike', 'car', 'small_van', 'large_van', 'minibus', 'standard', 'xl'].includes(persisted)) {
+            if (persisted === 'bike') return 'bike';
+            if (persisted === 'car') return 'car';
+            if (persisted === 'small_van') return 'small_van';
+            if (persisted === 'large_van') return 'large_van';
+            if (persisted === 'minibus') return 'minibus';
+            if (persisted === 'standard') return 'standard';
+            if (persisted === 'xl') return 'xl';
+        }
+
         const metadata = this.parseMetadata((job as any)?.metadata);
         const serviceSlug = String((job as any)?.service_slug || (job as any)?.service_type?.slug || '').toLowerCase();
         const raw = String(

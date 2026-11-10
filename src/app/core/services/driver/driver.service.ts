@@ -1,8 +1,13 @@
-import { Injectable, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import {driverMatchesJobMarket} from '@shared/utils/driver-market-scope';
+import { pollRetryDelay } from '@shared/utils/poll-retry-delay';
+import { DriverRequestStateService } from './driver-request-state.service';
+import { approvedErrandBudget } from '@shared/utils/errand-budget';
+import { Injectable, inject, signal, effect } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { SupabaseService } from '../supabase/supabase.service';
+import { acquisitionErrorMessage } from '../compliance/acquisition-error';
 import {
     Booking,
     DriverStatus,
@@ -25,6 +30,9 @@ import { NotificationService } from '../notification.service';
 import { ApiUrlService } from '../api-url.service';
 import { VehicleCompatibilityService } from './vehicle-compatibility.service';
 import { ComplianceService, ComplianceServiceType } from '../compliance/compliance.service';
+import { MarketplaceHybridService, HybridOpportunity } from '../marketplace/marketplace-hybrid.service';
+import { MarketSafetyService } from '../payments/market-safety.service';
+import { DriverVehicle } from './driver-onboarding-status.service';
 
 @Injectable({
     providedIn: 'root'
@@ -41,18 +49,32 @@ export class DriverService {
     private apiUrlService = inject(ApiUrlService);
     private vehicleCompatibility = inject(VehicleCompatibilityService);
     private compliance = inject(ComplianceService);
+    private hybridService = inject(MarketplaceHybridService);
+    private marketSafety = inject(MarketSafetyService);
+
+    readonly requestState = inject(DriverRequestStateService);
+    private declinedLoadedAt = new Map<string, number>();
+    private declinedRetryAfter = new Map<string, number>();
+    private declinedPending = new Map<string,Promise<void>>();
 
     onlineStatus = signal<DriverStatus>('offline');
     isAvailable = signal<boolean>(true);
     availableJobs = signal<Booking[]>([]);
+    hybridOpportunities = signal<HybridOpportunity[]>([]);
+    activeHybridSession = signal<any>(null);
     activeJob = signal<Booking | null>(null);
+    readonly activeMarketConflict=signal(false);
     earnings = signal<Earning[]>([]);
     vehicle = signal<Vehicle | null>(null);
     stripeAccount = signal<DriverAccount | null>(null);
 
     private stripeStatusInFlight = new Map<string, Promise<void>>();
     private lastStripeRefreshAt = new Map<string, number>();
+    /** Monotonic token: a stale opportunity fetch must not overwrite a newer one. */
+    private hybridFetchToken = 0;
 
+    private ledgerOwner:string|null=null;
+    constructor(){effect(()=>{const owner=this.auth.currentUser()?.id||null;if(owner!==this.ledgerOwner){this.ledgerOwner=owner;this.earningsRequest++;this.earnings.set([]);this.earningsError.set('');this.earningsLoading.set(false);this.stripeAccount.set(null);this.availableJobs.set([]);this.hybridOpportunities.set([]);this.activeMarketConflict.set(false);}});}
     async toggleOnline(status: DriverStatus) {
         const user = this.auth.currentUser();
         if (!user) return;
@@ -72,9 +94,7 @@ export class DriverService {
                 throw new Error(this.compliance.formatMissingRequirements(complianceBlockers, 'Complete driver requirements before going online.'));
             }
 
-            if (profile.pricing_plan === 'pro' && profile.subscription_status !== 'active') {
-                throw new Error('Active subscription required for Pro Plan to go online');
-            }
+            // Subscription controls commission, not driver availability.
         }
 
         const { error } = await this.supabase
@@ -91,11 +111,13 @@ export class DriverService {
 
         if (status === 'online') {
             this.subscribeToJobs();
+            this.subscribeToNegotiationSessions();
             await this.fetchStripeAccount();
             await this.fetchAvailableJobs();
         } else {
             this.availableJobs.set([]);
             this.supabase.channel('available-jobs').unsubscribe();
+            this.supabase.channel('negotiation-sessions').unsubscribe();
         }
     }
 
@@ -134,6 +156,22 @@ export class DriverService {
         return data as DriverProfile;
     }
 
+    private readonly availableRequestStatuses = ['searching', 'requested', 'broadcasting', 'waiting'];
+    private readonly paidRequestPaymentStatuses = ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded'];
+
+    private isAvailableRequest(job: any): boolean {
+        if (!driverMatchesJobMarket(this.auth.profileService.profile(),job)) return false;
+        const status = String(job?.status || '');
+        const paymentStatus = String(job?.payment_status || '');
+        const hasDriver = !!String(job?.driver_id || '').trim();
+
+        if (hasDriver) return false;
+
+        if (!this.availableRequestStatuses.includes(status)) return false;
+
+        return this.paidRequestPaymentStatuses.includes(paymentStatus);
+    }
+
     private subscribeToJobs() {
         this.supabase.channel('available-jobs').unsubscribe();
 
@@ -144,22 +182,17 @@ export class DriverService {
                 {
                     event: 'INSERT',
                     schema: 'public',
-                    table: 'jobs',
-                    filter: 'status=eq.searching'
+                    table: 'jobs'
                 },
                 async (payload) => {
                     const rawJob = payload.new;
 
-                    if (
-                        rawJob['payment_status'] === 'paid' ||
-                        rawJob['payment_status'] === 'wallet_funded' ||
-                        rawJob['payment_status'] === 'authorized'
-                    ) {
+                    if (this.isAvailableRequest(rawJob)) {
                         try {
                             const newJob = await this.bookingService.getBooking(rawJob['id']);
 
                             const vehicle = this.vehicle() || await this.fetchVehicle();
-                            if (!this.vehicleCompatibility.isCompatible(newJob, vehicle)) return;
+                            if (!driverMatchesJobMarket(this.auth.profileService.profile(),newJob) || !this.vehicleCompatibility.isCompatible(newJob, vehicle)) return;
 
                             this.availableJobs.update((jobs) => {
                                 const exists = jobs.find((job) => job.id === newJob.id);
@@ -192,15 +225,34 @@ export class DriverService {
                 },
                 (payload) => {
                     const updatedJob = payload.new;
-                    const status = updatedJob['status'];
-                    const paymentStatus = updatedJob['payment_status'];
+                    const updatedId = updatedJob['id'];
 
-                    if (
-                        status !== 'searching' ||
-                        !['paid', 'wallet_funded', 'authorized'].includes(paymentStatus)
-                    ) {
-                        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== updatedJob['id']));
+                    if (!this.isAvailableRequest(updatedJob)) {
+                        this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== updatedId));
+                        return;
                     }
+
+                    // Job transitioned into, or was updated within, an available state.
+                    // Refresh existing rows too so negotiated fares/customer offers are visible immediately.
+                    void (async () => {
+                        try {
+                            const newJob = await this.bookingService.getBooking(updatedId);
+                            const vehicle = this.vehicle() || await this.fetchVehicle();
+                            if (!driverMatchesJobMarket(this.auth.profileService.profile(),newJob) || !this.vehicleCompatibility.isCompatible(newJob, vehicle)) return;
+
+                            this.availableJobs.update((jobs) => {
+                                const exists = jobs.some((job) => job.id === updatedId);
+                                const shouldPromote = ['pending_fare_confirmation', 'negotiating']
+                                    .includes(String(newJob.status || '').toLowerCase());
+
+                                if (!exists) return [newJob, ...jobs];
+                                if (shouldPromote) return [newJob, ...jobs.filter((job) => job.id !== updatedId)];
+                                return jobs.map((job) => job.id === updatedId ? newJob : job);
+                            });
+                        } catch (error) {
+                            console.error('[DriverService] Failed to fetch updated available job', error);
+                        }
+                    })();
                 }
             )
             .on(
@@ -219,32 +271,88 @@ export class DriverService {
         void this.fetchAvailableJobs();
     }
 
+    private subscribeToNegotiationSessions() {
+        // One dashboard-scope channel (not per-card). Session-only transitions
+        // (customer cancellation, voluntary release, expiry) may NOT touch `jobs`,
+        // so the jobs subscription never fires for them. Realtime here is a TRIGGER
+        // only: re-fetch the authoritative lists rather than mutating arrays from
+        // the raw payload. fetchHybridOpportunities is a full replace, so terminal
+        // or released-away jobs are pruned; fetchRecoverableNegotiations clears a
+        // session this driver no longer owns.
+        this.supabase.channel('negotiation-sessions').unsubscribe();
+
+        this.supabase
+            .channel('negotiation-sessions')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'marketplace_negotiation_sessions' },
+                () => {
+                    void this.fetchHybridOpportunities();
+                    void this.fetchRecoverableNegotiations();
+                }
+            )
+            .subscribe();
+    }
+
     async fetchVehicle() {
         const user = this.auth.currentUser();
         if (!user) return null;
+        const response = await firstValueFrom(this.http.get<{vehicle:DriverVehicle|null}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{headers:await this.authHeaders()}));
+        const vehicle=response.vehicle?this.fromVehicleApi(response.vehicle):null;
+        this.vehicle.set(vehicle);
+        return vehicle;
+    }
 
-        const { data, error } = await this.supabase
-            .from('vehicles')
-            .select('*')
-            .eq('user_id', user.id)
-            .maybeSingle();
+    async getOfferMetrics(periodDays = 30) {
+        const result = await firstValueFrom(this.http.get<{
+            acknowledgedOffers:number; deliveredAttempts:number; acceptedOffers:number; declinedOffers:number; expiredOffers:number;
+            acceptanceRate:number|null; acceptedBookings:number; driverCancellations:number;
+            cancellationRate:number|null; periodDays:number; insufficientData:{offers:boolean;cancellations:boolean};
+        }>(this.apiUrlService.getApiUrl(`/api/booking/offer-metrics?days=${periodDays}`), {headers:await this.authHeaders()}));
+        return result;
+    }
 
-        if (error) {
-            console.error('Error fetching vehicle:', error);
-            return null;
-        }
+    async previewEarnings(jobId: string, amount?: number): Promise<{gross:number;net:number;deductions:number;currency:string;estimated:boolean}> {
+        const owner = this.auth.currentUser()?.id;
+        if (!owner) throw new Error('Authentication required');
+        const result = await firstValueFrom(this.http.post<{gross:number;net:number;deductions:number;currency:string;estimated:boolean}>(
+            this.apiUrlService.getApiUrl('/api/booking/driver-earnings-preview'),
+            { jobId, ...(amount === undefined ? {} : {amount}) }, { headers: await this.authHeaders() }));
+        if (owner !== this.auth.currentUser()?.id) throw new Error('Session changed');
+        return result;
+    }
 
-        console.log('[DriverService] Checklist vehicle:', data);
-        this.vehicle.set((data as Vehicle) ?? null);
-        return (data as Vehicle) ?? null;
+    private async refreshDeclinedJobs(owner: string): Promise<void> {
+        if (Date.now() - (this.declinedLoadedAt.get(owner) || 0) < 30000) return;
+        const pending=this.declinedPending.get(owner);if(pending)return pending;
+        if(Date.now()<(this.declinedRetryAfter.get(owner)||0))throw Error('Request history is temporarily rate limited. Please wait.');
+        const request=(async()=>{
+            try{
+                const result = await firstValueFrom(this.http.get<{ jobIds: string[] }>(
+                    this.apiUrlService.getApiUrl('/api/booking/driver-declines'),
+                    { headers: await this.authHeaders() }));
+                if (owner !== this.auth.currentUser()?.id) return;
+                this.requestState.merge(result.jobIds || [], owner);
+                this.declinedLoadedAt.set(owner, Date.now());this.declinedRetryAfter.delete(owner);
+            }catch(error){if(owner===this.auth.currentUser()?.id)this.declinedRetryAfter.set(owner,Date.now()+pollRetryDelay(error));throw error;}
+        })();
+        this.declinedPending.set(owner,request);
+        try{await request;}finally{if(this.declinedPending.get(owner)===request)this.declinedPending.delete(owner);}
     }
 
     async fetchAvailableJobs() {
+        this.availableJobs.set([]);
+        const user = this.auth.currentUser();
+        if (!user?.id) { this.availableJobs.set([]); this.hybridOpportunities.set([]); return; }
+        await this.refreshDeclinedJobs(user.id);
+        if (user.id !== this.auth.currentUser()?.id) return;
+        await this.hybridService.loadSettings();
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*, service_type:service_types(*)')
-            .eq('status', 'searching')
-            .in('payment_status', ['paid', 'wallet_funded', 'authorized'])
+            .eq('country_code', String((this.auth.profileService.profile() as any)?.registration_country_code || (this.auth.profileService.profile() as any)?.country_code || '').toUpperCase())
+            .eq('tenant_id', this.auth.tenantId() || '00000000-0000-0000-0000-000000000000')
+            .or(`and(status.in.(searching,requested,broadcasting,waiting),payment_status.in.(paid,wallet_funded,authorized,requires_capture,succeeded),driver_id.is.null)`)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -252,8 +360,137 @@ export class DriverService {
         const vehicle = this.vehicle() || await this.fetchVehicle();
         const bookings = (data || [])
             .map((job) => this.bookingService.mapJobToBooking(job))
-            .filter((job) => this.vehicleCompatibility.isCompatible(job, vehicle));
+            .filter((job) => driverMatchesJobMarket(this.auth.profileService.profile(),job) && !this.requestState.has(job.id) && this.vehicleCompatibility.isCompatible(job, vehicle));
+        if (user.id !== this.auth.currentUser()?.id) return;
         this.availableJobs.set(bookings);
+
+        if (user?.id) {
+            await this.fetchHybridOpportunities();
+            await this.fetchRecoverableNegotiations();
+        } else {
+            this.hybridOpportunities.set([]);
+            this.recoverableNegotiations.set([]);
+        }
+    }
+
+    /**
+     * Patch 1A — persisted RECOVERABLE negotiations for this driver.
+     *
+     * A successful claim sets active_driver_id, which (correctly) removes the
+     * session from fetch_hybrid_opportunities. If navigation or rendering then
+     * failed, the driver previously had NO way back. This is populated on every
+     * opportunity refresh so a claimed negotiation survives refresh/restart.
+     * Recovery is a READ: it must never re-claim.
+     */
+    recoverableNegotiations = signal<any[]>([]);
+
+    async fetchRecoverableNegotiations(): Promise<any[]> {
+        const user = this.auth.currentUser();
+        if (!user?.id) {
+            this.recoverableNegotiations.set([]);
+            return [];
+        }
+
+        try {
+            const sessions = await this.hybridService.getActiveDriverSessions();
+            const checked=await Promise.all(sessions.map(async(session)=>{
+                try{return driverMatchesJobMarket(this.auth.profileService.profile(),await this.bookingService.getBooking(session.job_id))?session:null;}catch{return null;}
+            }));
+            if(user.id!==this.auth.currentUser()?.id)return [];
+            const allowed=checked.filter(Boolean);
+            if(allowed.length!==sessions.length)this.activeMarketConflict.set(true);
+            this.recoverableNegotiations.set(allowed);
+            return allowed;
+        } catch (error) {
+            console.warn('[DriverService] recoverable negotiations not available', error);
+            if(user.id===this.auth.currentUser()?.id)this.recoverableNegotiations.set([]);
+            return [];
+        }
+    }
+
+    /**
+     * Audible-alert acknowledgement for negotiation opportunities.
+     *
+     * The request alarm is an ATTENTION alarm: once the driver intentionally
+     * engages with a negotiation session it is acknowledged for alert purposes
+     * and must not ring again for that same session. Keyed on `session_id`
+     * (never `job_id`) and kept in memory for the application session, so it
+     * survives Dashboard re-creation but resets on app restart / logout.
+     */
+    private acknowledgedNegotiationAlerts = new Set<string>();
+
+    acknowledgeNegotiationAlert(sessionId: string | null | undefined): void {
+        const key = String(sessionId || '').trim();
+        if (key) this.acknowledgedNegotiationAlerts.add(key);
+    }
+
+    isNegotiationAlertAcknowledged(sessionId: string | null | undefined): boolean {
+        const key = String(sessionId || '').trim();
+        return !!key && this.acknowledgedNegotiationAlerts.has(key);
+    }
+
+    async fetchHybridOpportunities(): Promise<HybridOpportunity[]> {
+        const user = this.auth.currentUser();
+        if (!user?.id) {
+            this.hybridOpportunities.set([]);
+            return [];
+        }
+
+        const token = ++this.hybridFetchToken;
+        try {
+            const opportunities = await this.hybridService.fetchHybridOpportunities(user.id);
+            if (token !== this.hybridFetchToken) return this.hybridOpportunities();
+
+            const checks = await Promise.all(opportunities.map(async (op) => ({
+                opportunity: op,
+                enabled: driverMatchesJobMarket(this.auth.profileService.profile(),await this.bookingService.getBooking(op.job_id)) && (await this.hybridService.getEffectiveHybridStatus(op.service_slug)).enabled
+            })));
+            if (token !== this.hybridFetchToken) return this.hybridOpportunities();
+
+            const allowed = checks
+                .filter((entry) => entry.enabled && !this.requestState.has(entry.opportunity.job_id))
+                .map((entry) => entry.opportunity);
+            this.hybridOpportunities.set(allowed);
+            // A session that terminated frees its acknowledgement, so a genuinely
+            // new negotiation (even for the same job) can alert again.
+            const liveSessionIds = new Set(allowed.map((op) => String(op?.session_id || '')));
+            for (const acknowledged of [...this.acknowledgedNegotiationAlerts]) {
+                if (!liveSessionIds.has(acknowledged)) this.acknowledgedNegotiationAlerts.delete(acknowledged);
+            }
+            return allowed;
+        } catch (error) {
+            if (token !== this.hybridFetchToken) return this.hybridOpportunities();
+            console.warn('[DriverService] hybrid opportunities not available', error);
+            this.hybridOpportunities.set([]);
+            return [];
+        }
+    }
+
+    async claimHybridSession(jobId: string): Promise<any> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Not authenticated');
+
+        const session = await this.hybridService.claimSession(jobId, user.id);
+        this.activeHybridSession.set(session);
+        return session;
+    }
+
+    async releaseHybridSession(jobId: string, reason: 'pass' | 'decline' | 'timeout' | 'offline' | 'incompatible'): Promise<any> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Not authenticated');
+
+        const session = await this.hybridService.releaseSession(jobId, user.id, reason);
+        this.activeHybridSession.set(session);
+        return session;
+    }
+
+    async lockHybridFare(jobId: string, amount: number): Promise<any> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Not authenticated');
+
+        const session = await this.hybridService.lockFare(jobId, user.id, amount);
+        this.activeHybridSession.set(session);
+        return session;
     }
 
     async fetchActiveJob(): Promise<Booking | null> {
@@ -299,6 +536,8 @@ export class DriverService {
         }
 
         const booking = await this.bookingService.getBooking(data.id);
+        if(user.id!==this.auth.currentUser()?.id)return null;
+        if(!driverMatchesJobMarket(this.auth.profileService.profile(),booking)){this.activeMarketConflict.set(true);this.activeJob.set(null);return null;}
         this.activeJob.set(booking);
         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== booking.id));
 
@@ -364,6 +603,7 @@ export class DriverService {
     }
 
     async acceptJob(bookingId: string) {
+        this.requestState.acknowledge(bookingId);
         const user = this.auth.currentUser();
         if (!user) throw new Error('Not authenticated');
 
@@ -379,9 +619,7 @@ export class DriverService {
             throw new Error(this.formatAcceptanceBlockers(blockers));
         }
 
-        if (profile.subscription_status !== 'active') {
-            throw new Error('Active subscription required to accept requests');
-        }
+        // Subscription controls commission, not acquisition eligibility.
 
         const job = await this.bookingService.getBooking(bookingId);
         const compliance = this.compliance.canDriverAcceptService(
@@ -406,7 +644,7 @@ export class DriverService {
                 profile.movabi_pay_card_preference === 'posted' &&
                 profile.movabi_pay_physical_card_status !== 'received'
             ) {
-                throw new Error('Your posted Movabi Pay card must be marked as received before accepting errand item-budget jobs. Switch to virtual card or confirm the card in Driver Settings.');
+                throw new Error('Your posted Vaydu Pay card must be marked as received before accepting errand item-budget jobs. Switch to virtual card or confirm the card in Driver Settings.');
             }
 
             const account = await this.fetchStripeAccount();
@@ -422,26 +660,61 @@ export class DriverService {
         }
 
         try {
+            // Batch 2C Phase B: the server derives the driver from this session
+            // token and refuses a body that names a different driver. `driverId`
+            // is deliberately NOT sent — ownership is never client-declared.
+            const headers = await this.authHeaders();
+            if (user.id !== this.auth.currentUser()?.id) throw new Error('Session changed. Please retry.');
             await firstValueFrom(
-                this.http.post(`${environment.apiUrl}/booking/accept`, {
-                    jobId: bookingId,
-                    driverId: user.id
-                })
+                this.http.post(`${environment.apiUrl}/api/booking/accept`, { jobId: bookingId }, { headers })
             );
         } catch (error: unknown) {
-            const err = error as { error?: { message?: string } };
+            const err = error as { error?: { message?: string; code?: string } };
             console.error('Failed to accept job via API', error);
-            throw new Error(err.error?.message || 'Failed to accept request. It may have been taken.');
+            throw new Error(acquisitionErrorMessage(err.error, err.error?.message || 'Failed to accept request. It may have been taken.'));
         }
 
-        await this.eventService.logEvent(bookingId, 'driver_accepted', 'Request accepted by driver');
-
-        const fullBooking = await this.bookingService.getBooking(bookingId);
-
+        let fullBooking = await this.bookingService.getBooking(bookingId);
+        if (user.id !== this.auth.currentUser()?.id || fullBooking.driver_id !== user.id)
+            throw new Error('Session or job ownership changed. Reload this request.');
+        // A successful claim may leave an intermediate dispatch assignment.
+        // Complete the existing authenticated confirmation in the same user action.
+        this.activeJob.set(fullBooking);
+        if (String(fullBooking.status) === 'assigned') {
+            fullBooking = await this.acceptAssignedJob(bookingId);
+        } else {
+            await this.eventService.logEvent(bookingId, 'driver_accepted', 'Request accepted by driver');
+        }
         this.activeJob.set(fullBooking);
         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== bookingId));
 
         return fullBooking;
+    }
+
+    async declineJob(bookingId: string, reason = 'driver_declined') {
+        this.requestState.acknowledge(bookingId);
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+
+        try {
+            const headers = await this.authHeaders();
+            if (user.id !== this.auth.currentUser()?.id) throw new Error('Session changed. Please retry.');
+            await firstValueFrom(
+                this.http.post(this.apiUrlService.getApiUrl('/api/booking/decline-job'), {
+                    jobId: bookingId,
+                    reason
+                }, { headers })
+            );
+        } catch (error: unknown) {
+            const err = error as { error?: { message?: string } };
+            console.error('[DriverService] Failed to persist job decline:', error);
+            throw new Error(err.error?.message || 'Failed to decline request.');
+        }
+        this.requestState.suppress(bookingId, user.id);
+        if (user.id === this.auth.currentUser()?.id) {
+            this.availableJobs.update(jobs => jobs.filter(job => job.id !== bookingId));
+            this.hybridOpportunities.update(offers => offers.filter(offer => offer.job_id !== bookingId));
+        }
     }
 
     private normaliseVehicleClass(vehicle: Vehicle | null): string {
@@ -543,19 +816,63 @@ export class DriverService {
         return updatedBooking;
     }
 
+    readonly earningsLoading=signal(false);
+    readonly earningsError=signal('');
+    private earningsRequest=0;
     async fetchEarnings() {
+        const request=++this.earningsRequest;
+        const user=this.auth.currentUser();
+        this.earnings.set([]);this.earningsError.set('');
+        if(!user){this.earningsLoading.set(false);return;}
+        this.earningsLoading.set(true);
+        try {
+            const {data,error}=await this.supabase.from('driver_earnings').select('*')
+                .eq('driver_id',user.id).order('created_at',{ascending:false});
+            if(request!==this.earningsRequest||user.id!==this.auth.currentUser()?.id)return;
+            if(error)throw error;
+            this.earnings.set(data||[]);
+        } catch(error) {
+            if(request===this.earningsRequest&&user.id===this.auth.currentUser()?.id)this.earningsError.set('Earnings could not be loaded. Please refresh.');
+            throw error;
+        } finally {if(request===this.earningsRequest)this.earningsLoading.set(false);}
+    }
+
+    /**
+     * Confirm an admin/dispatch assignment. The RPC derives the driver from the
+     * authenticated session and only accepts the job when the caller is already
+     * stored in jobs.driver_id, so this can never claim another driver's job.
+     */
+    async acceptAssignedJob(bookingId: string): Promise<Booking> {
         const user = this.auth.currentUser();
-        if (!user) return;
 
-        const { data, error } = await this.supabase
-            .from('driver_earnings')
-            .select('*')
-            .eq('driver_id', user.id)
-            .order('created_at', { ascending: false });
+        if (!user?.id) {
+            throw new Error('Please sign in again to confirm this request.');
+        }
 
-        if (error) throw error;
+        const { data: accepted, error } = await this.supabase.client.rpc('accept_assigned_job', {
+            p_job_id: bookingId,
+            p_driver_id: user.id
+        });
 
-        this.earnings.set(data || []);
+        if (error) {
+            console.error('[DriverService] acceptAssignedJob failed:', error);
+            // Batch 2C Phase B: MB001 busy and MB002 compliance stay distinct.
+            throw new Error(acquisitionErrorMessage(error, 'Could not confirm this request.'));
+        }
+
+        // FALSE (without error) means the job was not assigned to this driver, was
+        // already confirmed, or is no longer in 'assigned'. Never report success.
+        if (accepted !== true) {
+            throw new Error('This request is no longer awaiting your confirmation.');
+        }
+
+        await this.eventService.logEvent(bookingId, 'driver_accepted', 'Assigned request confirmed by driver');
+
+        const fullBooking = await this.bookingService.getBooking(bookingId);
+        if (user.id !== this.auth.currentUser()?.id || fullBooking.driver_id !== user.id)
+            throw new Error('Session or job ownership changed. Reload this request.');
+        this.activeJob.set(fullBooking);
+        return fullBooking;
     }
 
     async completeJob(jobId: string, completionPin?: string | null) {
@@ -586,7 +903,8 @@ export class DriverService {
             const actualSpending = details?.actual_spending;
 
             // Shopping budget exists
-            if (estimatedBudget > 0) {
+            const card = await this.getErrandIssuingCardStatus(jobId);
+            if (estimatedBudget > 0 && !(card?.status === 'active' && card?.cardId) && funding?.metadata?.['shopping_spend_source'] !== 'issuing') {
                 // Driver must record what was actually spent
                 if (actualSpending == null || actualSpending <= 0) {
                     throw new Error(
@@ -605,10 +923,18 @@ export class DriverService {
         }
 
         const url = this.apiUrlService.getApiUrl('/api/logistics/complete');
+        const token = await this.getAccessToken();
+
+        if (!token) {
+            throw new Error('Please sign in again to complete this request.');
+        }
 
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
             body: JSON.stringify({ jobId, completionPin: completionPin || undefined })
         });
 
@@ -632,17 +958,95 @@ export class DriverService {
                 this.apiUrlService.getApiUrl('/api/booking/driver-unable'),
                 {
                     jobId,
-                    driverId: user.id,
                     reason
-                }
+                },
+                { headers: await this.authHeaders() }
             )
         );
 
+        if (user.id !== this.auth.currentUser()?.id)
+            throw new Error('Session changed. Reload your dashboard.');
+        this.requestState.suppress(jobId, user.id);
+        this.requestState.acknowledge(jobId);
         this.activeJob.set(null);
         this.availableJobs.update((jobs) => jobs.filter((job) => job.id !== jobId));
         await this.eventService.logEvent(jobId, 'driver_handoff_requested' as JobEventType, reason);
 
         return response;
+    }
+
+    /**
+     * Server-authoritative arrival: sends the driver's location measurement with
+     * its client timestamp. The server validates ownership, proximity, freshness
+     * and returns the immutable grace deadline.
+     */
+    async markArrival(jobId: string, lat: number, lng: number, measuredAt: string): Promise<{
+        success: boolean;
+        arrived_at: string;
+        grace_until: string;
+        no_show: { policyVersion: string; feeMinor: number; driverShareMinor: number; platformShareMinor: number; currency: string; graceSeconds: number } | null;
+    }> {
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+        try {
+            const response = await firstValueFrom(
+                this.http.post<{
+                    success: boolean;
+                    arrived_at: string;
+                    grace_until: string;
+                    no_show: { policyVersion: string; feeMinor: number; driverShareMinor: number; platformShareMinor: number; currency: string; graceSeconds: number } | null;
+                }>(
+                    this.apiUrlService.getApiUrl('/api/booking/arrive'),
+                    { jobId, lat, lng, measuredAt },
+                    { headers: await this.authHeaders() }
+                )
+            );
+            return response;
+        } catch (error: any) {
+            // Preserve the status AND machine code so callers can require an explicit
+            // feature-disabled signal instead of treating any 404 as "disabled".
+            const status = Number(error?.status ?? error?.error?.status ?? 0);
+            const code = error?.error?.code || error?.code || null;
+            const message = error?.error?.error
+                || error?.error?.message
+                || error?.message
+                || 'Arrival could not be recorded.';
+            const normalized = new Error(String(message)) as Error & { status?: number; code?: string | null };
+            if (Number.isFinite(status) && status > 0) normalized.status = status;
+            normalized.code = code ? String(code) : null;
+            throw normalized;
+        }
+    }
+
+    /**
+     * Driver-confirmed customer no-show (after grace expiry). The server returns
+     * the financial status; the driver sees the fee and their compensation before
+     * confirming (caller must pass `confirmed: true`).
+     */
+    async confirmNoShow(jobId: string, reason: string, contactAttempted: boolean, confirmed: boolean): Promise<{ success: boolean; no_show_status: string }> {
+        const user = this.auth.currentUser();
+        if (!user) throw new Error('Not authenticated');
+        try {
+            return await firstValueFrom(
+                this.http.post<{ success: boolean; no_show_status: string }>(
+                    this.apiUrlService.getApiUrl('/api/booking/no-show'),
+                    { jobId, reason, contactAttempted, confirmed },
+                    { headers: await this.authHeaders() }
+                )
+            );
+        } catch (error: any) {
+            // Preserve the server's reason and status so the UI can distinguish a
+            // terminal conflict (trip already started / already cancelled) from a
+            // transient failure the driver can retry.
+            const status = Number(error?.status ?? error?.error?.status ?? 0);
+            const message = error?.error?.error
+                || error?.error?.message
+                || error?.message
+                || 'No-show could not be recorded.';
+            const normalized = new Error(String(message)) as Error & { status?: number };
+            if (Number.isFinite(status) && status > 0) normalized.status = status;
+            throw normalized;
+        }
     }
 
     async recordErrandSpending(jobId: string, amount: number, notes?: string) {
@@ -652,11 +1056,7 @@ export class DriverService {
             this.bookingService.getErrandFunding(jobId)
         ]);
         const user = this.auth.currentUser();
-        const initialBudget = Math.max(0, Number(details?.estimated_budget || 0));
-        const approvedExtra = funding?.over_budget_status === 'approved'
-            ? Math.max(0, Number(funding.requested_over_budget_amount ?? funding.over_budget_amount ?? 0))
-            : 0;
-        const approvedBudget = Number((initialBudget + approvedExtra).toFixed(2));
+        const approvedBudget = approvedErrandBudget(funding, details?.estimated_budget);
         const normalizedAmount = Number(Number(amount).toFixed(2));
 
         if (!user || job.driver_id !== user.id) {
@@ -709,6 +1109,12 @@ export class DriverService {
         );
 
         return data;
+    }
+
+    async lookupGbVehicle(registrationNumber:string):Promise<any> {
+        try { return await firstValueFrom(this.http.post<any>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle-lookup'),
+          {registrationNumber},{headers:await this.authHeaders()})); }
+        catch(error:unknown){if(error instanceof HttpErrorResponse)throw new Error(String(error.error?.error || 'Vehicle lookup unavailable.'));throw error;}
     }
 
     private async inspectionHeaders() {
@@ -776,47 +1182,22 @@ export class DriverService {
             throw new Error('Invalid vehicle year');
         }
 
-        let { data, error } = await this.supabase
-            .from('vehicles')
-            .upsert(payload, { onConflict: 'user_id' })
-            .select()
-            .single();
-
-        if (error && this.isMissingColumnError(error, 'color')) {
-            const legacyPayload = { ...payload } as Partial<typeof payload>;
-            delete legacyPayload.color;
-            const retry = await this.supabase
-                .from('vehicles')
-                .upsert(legacyPayload, { onConflict: 'user_id' })
-                .select()
-                .single();
-
-            data = retry.data;
-            error = retry.error;
-        }
-
-        if (error && this.isMissingColumnError(error, 'service_eligibility')) {
-            const legacyPayload = { ...payload } as Partial<typeof payload>;
-            delete legacyPayload.service_eligibility;
-            const retry = await this.supabase
-                .from('vehicles')
-                .upsert(legacyPayload, { onConflict: 'user_id' })
-                .select()
-                .single();
-
-            data = retry.data;
-            error = retry.error;
-        }
-
-        if (error) {
-            console.error('[DriverService] updateVehicle failed:', error);
+        let response:{vehicle:DriverVehicle};
+        try { response=await firstValueFrom(this.http.put<{vehicle:DriverVehicle}>(this.apiUrlService.getApiUrl('/api/driver-onboarding/vehicle'),{
+                vehicleType:payload.type,make:payload.make,model:payload.model,colour:payload.color,year:payload.year,
+                registrationNumber:payload.license_plate,capacity:payload.capacity,serviceEligibility:payload.service_eligibility
+            },{headers:await this.authHeaders()}));
+        } catch(error:unknown) {
+            if(error instanceof HttpErrorResponse){const backend=error.error as {error?:unknown}|null;throw new Error(String(backend?.error||'Vehicle details could not be saved. Please retry.'));}
             throw error;
         }
-
-        console.log('[DriverService] Saved vehicle:', data);
-        this.vehicle.set(data as Vehicle);
-        return data as Vehicle;
+        const saved=this.fromVehicleApi(response.vehicle);
+        this.vehicle.set(saved);
+        return saved;
     }
+
+    private async authHeaders():Promise<HttpHeaders>{const{data}=await this.supabase.auth.getSession();if(!data.session?.access_token)throw new Error('Please sign in again.');return new HttpHeaders({Authorization:`Bearer ${data.session.access_token}`});}
+    private fromVehicleApi(value:DriverVehicle):Vehicle{return{id:value.id,driver_id:value.userId,make:value.make||'',model:value.model||'',color:value.colour||'',year:value.year||0,license_plate:value.registrationNumber||'',type:value.type as Vehicle['type'],capacity:value.capacity||undefined,service_eligibility:value.serviceEligibility,is_verified:value.status==='approved'};}
 
     private isMissingColumnError(error: unknown, column: string): boolean {
         const maybeError = error as { code?: string; message?: string };
@@ -968,12 +1349,14 @@ export class DriverService {
         return data.session?.access_token || null;
     }
 
-    async fetchStripeAccount() {
+    async fetchStripeAccount(force = false) {
         const user = this.auth.currentUser();
         if (!user) return null;
+        const wallet = await this.marketSafety.refreshWallet().catch(() => null);
+        if (wallet && wallet.provider !== 'stripe') { this.stripeAccount.set(null); return null; }
 
         try {
-            const settings = await this.connectService.getPayoutSettings();
+            const settings = await this.connectService.getPayoutSettings(force);
 
             if (!settings.stripeAccountId) {
                 this.stripeAccount.set(null);
@@ -989,59 +1372,14 @@ export class DriverService {
                 onboarding_status: settings.connectStatus || 'pending'
             } as any;
 
+            if(user.id!==this.auth.currentUser()?.id)return null;
             this.stripeAccount.set(account);
             return account;
         } catch (error) {
-            console.warn('[DriverService] payout settings lookup failed; falling back to profile Stripe fields', error);
+            console.warn('[DriverService] payout settings lookup failed; account is unverified', error);
+            this.stripeAccount.set(null);return null;
         }
 
-        const { data: profile, error: profileError } = await this.supabase
-            .from('profiles')
-            .select('id, stripe_account_id, stripe_connect_status')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (profileError) {
-            console.error('Error fetching profile Stripe account:', profileError);
-            return null;
-        }
-
-        const profileAccountId = (profile as any)?.stripe_account_id;
-
-        if (!profileAccountId) {
-            this.stripeAccount.set(null);
-            return null;
-        }
-
-        try {
-            const status = await this.connectService.refreshAccountStatus(profileAccountId, user.id);
-
-            const account = {
-                user_id: user.id,
-                stripe_account_id: status.stripe_account_id || profileAccountId,
-                onboarding_complete: status.onboarding_complete,
-                payouts_enabled: status.payouts_enabled === true,
-                charges_enabled: status.charges_enabled === true,
-                onboarding_status: status.status
-            } as any;
-
-            this.stripeAccount.set(account);
-            return account;
-        } catch (error) {
-            console.error('Error fetching Stripe account status:', error);
-
-            const fallback = {
-                user_id: user.id,
-                stripe_account_id: profileAccountId,
-                onboarding_complete: false,
-                payouts_enabled: false,
-                charges_enabled: false,
-                onboarding_status: (profile as any)?.stripe_connect_status || 'pending'
-            } as any;
-
-            this.stripeAccount.set(fallback);
-            return fallback;
-        }
     }
 
     async refreshStripeStatus(accountId: string, force = false) {

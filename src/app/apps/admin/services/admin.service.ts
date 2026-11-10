@@ -1,11 +1,14 @@
+import type { FinanceReport } from '@shared/models/admin-finance.model';
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { SupabaseService } from '@core/services/supabase/supabase.service';
 import { Profile, DriverProfile, Vehicle, ServiceType, DriverSubscription, BookingStatus } from '@shared/models/booking.model';
 import { BookingService } from '@core/services/booking/booking.service';
 import { ApiUrlService } from '@core/services/api-url.service';
+import { acquisitionErrorMessage } from '@core/services/compliance/acquisition-error';
 import { cleanServiceTypePayload } from './admin-pricing-payload';
+import { chunkInClauseIds } from '@shared/utils/chunk-ids';
 
 export interface FailedBooking {
   id: string;
@@ -31,12 +34,25 @@ export interface WalletTransaction {
 
 export interface AdminPricingRule extends ServiceType {
   pricing_config_id?: string | null;
+  country_code?: string | null;
   currency_code?: string | null;
   currency_symbol?: string | null;
+  locale?: string | null;
+  distance_unit?: string | null;
+  market_city?: string | null;
+  zone_id?: string | null;
   is_active: boolean;
   per_min?: number | string | null;
   service_fee?: number | string | null;
   minimum_fare?: number | string | null;
+
+  // Shop / errand pricing
+  free_included_items?: number | string | null;
+  extra_item_fee?: number | string | null;
+  large_shopping_surcharge?: number | string | null;
+  large_shopping_threshold?: number | string | null;
+  peak_multiplier?: number | string | null;
+  weather_multiplier?: number | string | null;
 }
 
 @Injectable({
@@ -84,6 +100,12 @@ export class AdminService {
       totalRevenue,
       activeJobs
     });
+  }
+
+  async getLivePresence(){
+    const {data,error}=await this.supabase.rpc('admin_live_presence').abortSignal(AbortSignal.timeout(8000));
+    if(error)throw error;
+    return data as {online_drivers_count:number;online_customers_count:number};
   }
 
   async getOperationalMetrics() {
@@ -171,18 +193,34 @@ export class AdminService {
     }));
   }
 
+  async issuingTestTerminal(path = '', body?: unknown): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/issuing-test-terminal${path}`, {
+      method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30000)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Test checkout unavailable');
+    return result;
+  }
+
+  async getDailyFinance(date: string, timezone: string): Promise<FinanceReport> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const query = new URLSearchParams({ date, timezone });
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/finance/daily?${query}`, { headers });
+    if (!response.ok) throw new Error('Financial report unavailable. Refresh to try again.');
+    return await response.json() as FinanceReport;
+  }
+
   async getUsers() {
-    const { data, error } = await this.supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'customer')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('getUsers error:', error);
-      return [];
-    }
-
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(
+      `${this.apiUrlService.getBaseUrl()}/api/admin/users`,
+      { method: 'GET', headers }
+    );
+    if (!response.ok) throw new Error('Failed to load customer accounts');
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('Invalid customer account response');
     return data as Profile[];
   }
 
@@ -296,30 +334,25 @@ export class AdminService {
     return null;
   }
 
+    /**
+     * Batch 2C Phase B — admin approval must go through the requireAdmin-guarded
+     * server routes and never through a browser-side profile UPDATE.
+     *
+     * `public.profiles` still has no RLS and no column-level UPDATE revoke (that
+     * is the Phase C boundary), so a client-side write here would be an approval
+     * path that no server check can observe or refuse. The routes below derive
+     * the actor from the authenticated admin session and own the mutation.
+     */
     async verifyDriver(driverId: string, approved: boolean) {
-
-        const now = new Date().toISOString();
-
-        const update: any = approved
-            ? {
-                verification_status: 'approved',
-                driver_review_status: 'approved',
-                verified_at: now,
-                verification_blockers: [],
-                driver_review_blockers: [],
-                driver_review_notes: null
-            }
-            : {
-                verification_status: 'action_required',
-                driver_review_status: 'action_required'
-            };
-
-        const { error } = await this.supabase
-            .from('profiles')
-            .update(update)
-            .eq('id', driverId);
-
-        if (error) throw error;
+        if (approved) {
+            await this.manualApproveDriver(driverId, 'Approved from the driver review queue');
+            return;
+        }
+        await this.sendDriverMissingInfoRequest(
+            driverId,
+            'Verification was not approved. Please review and resubmit the outstanding requirements.',
+            []
+        );
     }
 
   async getJobs(filters?: { status?: string; payment_status?: string; service_type_id?: string }) {
@@ -370,26 +403,22 @@ export class AdminService {
       jobs.map(job => job.service_type_id).filter(Boolean)
     ));
 
-    const jobIds = jobs.map(job => job.id).filter(Boolean);
+    // Bounded, deduplicated IN-list fetches (no oversized PostgREST URLs).
+    const profiles = await this.fetchByIds('profiles', 'id', profileIds);
+    const serviceTypes = await this.fetchByIds('service_types', 'id', serviceTypeIds);
 
-    const { data: profiles } = profileIds.length
-      ? await this.supabase.from('profiles').select('*').in('id', profileIds)
-      : { data: [] };
+    const serviceTypesById = new Map((serviceTypes || []).map((s: any) => [s.id, s]));
 
-    const { data: serviceTypes } = serviceTypeIds.length
-      ? await this.supabase.from('service_types').select('*').in('id', serviceTypeIds)
-      : { data: [] };
+    // Only Errand jobs need Errand detail/funding enrichment.
+    const errandJobs = jobs.filter(job =>
+      job.service_slug === 'errand' || serviceTypesById.get(job.service_type_id)?.slug === 'errand'
+    );
+    const errandJobIds = Array.from(new Set(errandJobs.map((job: any) => job.id).filter(Boolean)));
 
-    const { data: errandDetails } = jobIds.length
-      ? await this.supabase.from('errand_details').select('*').in('job_id', jobIds)
-      : { data: [] };
-
-    const { data: errandFunding } = jobIds.length
-      ? await this.supabase.from('errand_funding').select('*').in('job_id', jobIds)
-      : { data: [] };
+    const errandDetails = await this.fetchByIds('errand_details', 'job_id', errandJobIds);
+    const errandFunding = await this.fetchByIds('errand_funding', 'job_id', errandJobIds);
 
     const profilesById = new Map((profiles || []).map((p: any) => [p.id, p]));
-    const serviceTypesById = new Map((serviceTypes || []).map((s: any) => [s.id, s]));
     const errandDetailsByJobId = new Map((errandDetails || []).map((d: any) => [d.job_id, d]));
     const errandFundingByJobId = new Map((errandFunding || []).map((f: any) => [f.job_id, f]));
 
@@ -411,41 +440,76 @@ export class AdminService {
     });
   }
 
-  async updateAccountStatus(userId: string, status: string, reason: string, adminId: string) {
-    const now = new Date().toISOString();
-    const normalisedStatus = String(status || 'active').trim();
-    const update: any = {
-      account_status: normalisedStatus,
-      moderation_reason: reason,
-      moderated_at: now,
-      moderated_by: adminId
-    };
-
-    if (normalisedStatus === 'closure_requested') {
-      update.closure_requested_at = now;
-      update.account_closure_requested_at = now;
-      update.closure_notes = reason;
+  /**
+   * Fetch rows by a column IN-list in bounded, deduplicated chunks. Keeps
+   * PostgREST URLs small — the giant job_id=in.(...) lists previously overflowed
+   * Kong/nginx upstream headers (502 "upstream sent too big header"). Chunks run
+   * sequentially so a very large list cannot create an unbounded burst of
+   * parallel requests.
+   */
+  private async fetchByIds(table: string, column: string, ids: any[], batchSize = 25): Promise<any[]> {
+    const results: any[] = [];
+    for (const chunk of chunkInClauseIds(ids, batchSize)) {
+      const { data, error } = await this.supabase.from(table).select('*').in(column, chunk);
+      if (error) {
+        console.error(`[AdminService] ${table} ${column} batch fetch failed:`, error);
+        continue;
+      }
+      if (data) results.push(...data);
     }
+    return results;
+  }
 
-    if (normalisedStatus === 'closed') {
-      update.closed_at = now;
-      update.closure_notes = reason;
-      update.is_online = false;
-      update.is_available = false;
-    }
+  async updateAccountStatus(userId: string, status: string, reason: string, _adminId: string) {
+    // Admin moderation runs through the trusted server boundary (service_role),
+    // never a direct authenticated cross-row profile write. The acting admin is
+    // derived server-side from the verified admin session.
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/account-status`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId, status, reason })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Account status could not be updated.');
+    return result;
+  }
 
-    if (normalisedStatus === 'active') {
-      update.reinstated_at = now;
-      update.reinstated_by = adminId || null;
-      update.reinstatement_notes = reason;
-    }
+  async purgeTestAccount(userId: string) {
+    // Destructive purge runs through the trusted server boundary only.
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/test-account/purge`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Test account could not be purged.');
+    return result;
+  }
 
-    const { error } = await this.supabase
-      .from('profiles')
-      .update(update)
-      .eq('id', userId);
+  async prepareResetAllTestData() {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/test-data/reset/prepare`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({})
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Reset preview could not be prepared.');
+    return result;
+  }
 
-    if (error) throw error;
+  async executeResetAllTestData(challengeId: string, confirmation: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/test-data/reset/execute`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ challengeId, confirmation })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Reset could not be executed.');
+    return result;
   }
 
   async getServiceTypes(): Promise<AdminPricingRule[]> {
@@ -465,24 +529,63 @@ export class AdminService {
         .in('service_type', slugs)
       : { data: [] as any[] };
 
-    const configsByService = new Map<string, any>();
-    (configs || []).forEach((config: any) => configsByService.set(String(config.service_type), config));
+    const pricingRows = (configs || [])
+      .map((config: any) => {
+        const service = services.find((candidate: any) => String(candidate.slug) === String(config.service_type)) as any;
+        if (!service) return null;
 
-    return services.map((service: any) => {
-      const config = configsByService.get(String(service.slug));
+        return {
+          ...service,
+          pricing_config_id: config?.id || null,
+          base_price: config?.base_fare ?? service.base_price,
+          price_per_km: config?.per_km ?? service.price_per_km,
+          per_min: config?.per_min ?? 0,
+          service_fee: config?.service_fee ?? 0,
+          minimum_fare: config?.minimum_fare ?? service.base_price,
+          country_code: config?.country_code ?? 'GB',
+          currency_code: config?.currency_code ?? service.currency_code ?? 'GBP',
+          currency_symbol: config?.currency_symbol ?? service.currency_symbol ?? this.symbolFromCode(config?.currency_code || service.currency_code || 'GBP'),
+          locale: config?.locale ?? null,
+          distance_unit: config?.distance_unit ?? null,
+          market_city: config?.market_city ?? null,
+          zone_id: config?.zone_id ?? null,
+          is_active: config?.is_active ?? service.is_active ?? true,
+          free_included_items: config?.free_included_items ?? 1,
+          extra_item_fee: config?.extra_item_fee ?? 0.75,
+          large_shopping_surcharge: config?.large_shopping_surcharge ?? 0,
+          large_shopping_threshold: config?.large_shopping_threshold ?? 50,
+          peak_multiplier: config?.peak_multiplier ?? 1,
+          weather_multiplier: config?.weather_multiplier ?? 1
+        } as AdminPricingRule;
+      })
+      .filter(Boolean) as AdminPricingRule[];
 
-      return {
+    const hasDefaultRow = (service: any) => pricingRows.some(row =>
+      String(row.slug) === String(service.slug) &&
+      String(row.country_code || 'GB').toUpperCase() === 'GB' &&
+      !String(row.market_city || '').trim() &&
+      !String(row.zone_id || '').trim()
+    );
+
+    const serviceDefaults = services
+      .filter((service: any) => !hasDefaultRow(service))
+      .map((service: any) => ({
         ...service,
-        pricing_config_id: config?.id || null,
-        base_price: config?.base_fare ?? service.base_price,
-        price_per_km: config?.per_km ?? service.price_per_km,
-        per_min: config?.per_min ?? 0,
-        service_fee: config?.service_fee ?? 0,
-        minimum_fare: config?.minimum_fare ?? service.base_price,
-        currency_code: config?.currency_code ?? service.currency_code ?? 'GBP',
-        currency_symbol: service.currency_symbol ?? this.symbolFromCode(config?.currency_code || service.currency_code || 'GBP'),
-        is_active: config?.is_active ?? service.is_active ?? true
-      } as AdminPricingRule;
+        pricing_config_id: null,
+        country_code: 'GB',
+        currency_code: service.currency_code ?? 'GBP',
+        currency_symbol: service.currency_symbol ?? this.symbolFromCode(service.currency_code || 'GBP'),
+        locale: 'en-GB',
+        distance_unit: 'km',
+        market_city: null,
+        zone_id: null,
+        is_active: service.is_active ?? true
+      } as AdminPricingRule));
+
+    return [...pricingRows, ...serviceDefaults].sort((a, b) => {
+      const aKey = `${a.country_code || 'GB'}-${a.market_city || ''}-${a.zone_id || ''}-${a.slug}`;
+      const bKey = `${b.country_code || 'GB'}-${b.market_city || ''}-${b.zone_id || ''}-${b.slug}`;
+      return aKey.localeCompare(bKey);
     });
   }
 
@@ -497,7 +600,9 @@ export class AdminService {
     });
 
     if (error || data !== true) {
-      throw new Error(error?.message || 'Driver could not be assigned to this booking.');
+      // Batch 2C Phase B: an assignment refused for compliance must not read as
+      // a generic failure, and a false return is never a success.
+      throw new Error(acquisitionErrorMessage(error, 'Driver could not be assigned to this booking.'));
     }
 
     return this.bookingService.getBooking(bookingId);
@@ -579,27 +684,24 @@ export class AdminService {
   }
 
   async getHeatmapData() {
-    try {
-      return await firstValueFrom(
-        this.http.get<{ zones: { lat: number; lng: number; demand: number; drivers: number }[] }>(
-          this.apiUrlService.getApiUrl('/api/admin/heatmap')
-        )
-      );
-    } catch {
-      return { zones: [] };
-    }
+    const headers=await this.getAuthenticatedApiHeaders();
+    return firstValueFrom(this.http.get<{zones:{lat:number;lng:number;demand:number;drivers:number;busyDrivers:number}[];checkedAt:string}>(
+      this.apiUrlService.getApiUrl('/api/admin/heatmap'),{headers}
+    ).pipe(timeout(10000)));
   }
 
   async getPlatformMetrics() {
+    const headers = await this.getAuthenticatedApiHeaders();
     return firstValueFrom(
-      this.http.get<Record<string, number>>(this.apiUrlService.getApiUrl('/api/admin/metrics'))
+      this.http.get<Record<string, number>>(this.apiUrlService.getApiUrl('/api/admin/metrics'), { headers })
     );
   }
 
   async getFailedBookings() {
     try {
+      const headers = await this.getAuthenticatedApiHeaders();
       return await firstValueFrom(
-        this.http.get<FailedBooking[]>(this.apiUrlService.getApiUrl('/api/admin/failures'))
+        this.http.get<FailedBooking[]>(this.apiUrlService.getApiUrl('/api/admin/failures'), { headers })
       );
     } catch {
       return [];
@@ -608,8 +710,9 @@ export class AdminService {
 
   async getRecentPayments() {
     try {
+      const headers = await this.getAuthenticatedApiHeaders();
       return await firstValueFrom(
-        this.http.get<WalletTransaction[]>(this.apiUrlService.getApiUrl('/api/admin/payments'))
+        this.http.get<WalletTransaction[]>(this.apiUrlService.getApiUrl('/api/admin/payments'), { headers })
       );
     } catch {
       return [];
@@ -662,13 +765,32 @@ export class AdminService {
     const result = await this.readApiResponse(response);
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return this.manualApproveDriverViaSupabase(driverId, notes);
-      }
-
+      // Batch 2C Phase B: there is deliberately NO client-side fallback. A browser
+      // profile UPDATE here would approve a driver without the server's
+      // requireAdmin check, and profiles has no RLS until Phase C.
       throw new Error(result?.error || 'Manual driver approval failed');
     }
 
+    return result;
+  }
+
+  async sendCustomerMessage(userId: string, message: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/users/${userId}/message`, {
+      method:'POST', headers, body:JSON.stringify({message})
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Could not send customer message');
+    return result;
+  }
+
+  async sendDriverMessage(driverId: string, message: string) {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/message`, {
+      method: 'POST', headers, body: JSON.stringify({ message })
+    });
+    const result = await this.readApiResponse(response);
+    if (!response.ok) throw new Error(result?.error || 'Could not send driver message');
     return result;
   }
 
@@ -684,12 +806,7 @@ export class AdminService {
     const result = await this.readApiResponse(response);
 
     if (!response.ok) {
-      if (response.status === 404) {
-        const fallbackResult = await this.sendDriverMissingInfoViaSupabase(driverId, notes, blockers);
-        console.log('[admin-driver-review] saved', fallbackResult);
-        return fallbackResult;
-      }
-
+      // Batch 2C Phase B: no client-side fallback — see manualApproveDriver.
       console.warn('[admin-driver-review] failed', result);
       throw new Error(result?.error || 'Could not send missing information request');
     }
@@ -698,104 +815,11 @@ export class AdminService {
     return result;
   }
 
-  private async manualApproveDriverViaSupabase(driverId: string, notes: string) {
-    const { data, error } = await this.supabase
-      .from('profiles')
-      .update({
-        is_verified: true,
-        verification_status: 'approved',
-        account_status: 'active',
-        manual_verification_notes: notes || 'Approved manually. External verification APIs are not enabled yet.',
-        testing_approval_override: true,
-        driver_review_status: 'approved',
-        verification_blockers: [],
-        verified_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', driverId)
-      .select('*')
-      .single();
-
-    if (error) {
-      throw new Error(`Verification API is not deployed and the secure database fallback failed: ${error.message}`);
-    }
-
-    return {
-      success: true,
-      message: 'Driver manually approved',
-      driver: data
-    };
-  }
-
-    private async sendDriverMissingInfoViaSupabase(
-        driverId: string,
-        notes: string,
-        blockers: string[]
-    ) {
-        const sentAt = new Date().toISOString();
-
-        const cleanBlockers = (blockers || [])
-            .map(x => String(x || '').trim())
-            .filter(Boolean);
-
-        // Update driver profile
-        const { error } = await this.supabase
-            .from('profiles')
-            .update({
-                driver_review_status: 'action_required',
-                driver_review_notes: notes,
-                driver_review_blockers: cleanBlockers,
-                driver_review_sent_at: sentAt,
-
-                verification_status: 'action_required',
-                verification_notes: notes,
-                verification_blockers: cleanBlockers,
-
-                updated_at: sentAt
-            })
-            .eq('id', driverId);
-
-        if (error) {
-            throw new Error(error.message);
-        }
-
-        //
-        // Create in-app notification
-        //
-        try {
-            await this.supabase
-                .from('notifications')
-                .insert({
-                    user_id: driverId,
-                    title: 'Verification action required',
-                    body: notes,
-                    type: 'driver_review_action_required',
-                    route: '/driver/settings',
-                    data: {
-                        route: '/driver/settings',
-                        blockers: cleanBlockers,
-                        message: notes,
-                        action: 'driver_review_action_required'
-                    },
-                    metadata: {
-                        route: '/driver/settings',
-                        blockers: cleanBlockers,
-                        message: notes,
-                        action: 'driver_review_action_required'
-                    },
-                    is_read: false,
-                    created_at: sentAt
-                });
-        } catch (e) {
-            console.warn('Notification table not available.', e);
-        }
-
-        return {
-            success: true,
-            message: 'Driver notified successfully.',
-            blockers: cleanBlockers
-        };
-    }
+  // Batch 2C Phase B removed manualApproveDriverViaSupabase() and
+  // sendDriverMissingInfoViaSupabase(). Both wrote approval/review state straight
+  // from the browser and were only reached when the verification API returned 404.
+  // Admin review mutations now go exclusively through the requireAdmin-guarded
+  // /api/verification routes; the browser has no approval path.
 
   private async readApiResponse(response: Response): Promise<any> {
     const text = await response.text();
@@ -843,28 +867,31 @@ export class AdminService {
   }
 
   async createServiceType(payload: any) {
-    const servicePayload = this.cleanServiceTypePayload(payload);
     const { data, error } = await this.supabase
       .from('service_types')
-      .insert(servicePayload)
       .select()
-      .single();
+      .eq('slug', String(payload?.slug || '').trim())
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) throw new Error('Select a valid service before saving pricing.');
+
     await this.upsertPricingConfig(data.slug, payload);
     return data;
   }
 
+  async resolveDobCorrection(driverId:string,requestId:string,approved:boolean,publicMessage:string,privateNote:string){const headers=await this.getAuthenticatedApiHeaders();const response=await fetch(`${this.apiUrlService.getBaseUrl()}/api/verification/drivers/${driverId}/dob-correction/${requestId}`,{method:'POST',headers,body:JSON.stringify({approved,publicMessage,privateNote})});const result=await this.readApiResponse(response);if(!response.ok)throw new Error(result?.error||'DOB correction request could not be resolved.');return result;}
+
   async updateServiceType(id: string, payload: any) {
-    const servicePayload = this.cleanServiceTypePayload(payload);
     const { data, error } = await this.supabase
       .from('service_types')
-      .update(servicePayload)
-      .eq('id', id)
       .select()
-      .single();
+      .eq('id', id)
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) throw new Error('Service type was not found.');
+
     await this.upsertPricingConfig(data.slug, payload);
     return data;
   }
@@ -878,26 +905,85 @@ export class AdminService {
     if (error) throw error;
   }
 
+  async deletePricingRule(rule: AdminPricingRule) {
+    if (!rule.pricing_config_id) {
+      throw new Error('This default rule has not been saved as a country pricing rule yet.');
+    }
+
+    const { error } = await this.supabase
+      .from('pricing_config')
+      .delete()
+      .eq('id', rule.pricing_config_id);
+
+    if (error) throw error;
+  }
+
   private cleanServiceTypePayload(payload: any) {
     return cleanServiceTypePayload(payload);
   }
 
   private async upsertPricingConfig(serviceType: string, payload: any) {
+    const countryCode = String(payload?.country_code || 'GB').trim().toUpperCase();
+    const marketCity = String(payload?.market_city || '').trim();
+    const zoneId = String(payload?.zone_id || '').trim();
     const cleanPayload = {
       service_type: String(serviceType || payload?.slug || '').trim(),
+      country_code: countryCode,
+      market_city: marketCity || null,
+      zone_id: zoneId || null,
       base_fare: Number(payload?.base_price || 0),
       per_km: Number(payload?.price_per_km || 0),
       per_min: Number(payload?.per_min || 0),
       service_fee: Number(payload?.service_fee || 0),
       minimum_fare: Number(payload?.minimum_fare || payload?.base_price || 0),
       currency_code: String(payload?.currency_code || 'GBP').trim().toUpperCase(),
+      currency_symbol: String(payload?.currency_symbol || this.symbolFromCode(payload?.currency_code || 'GBP')).trim(),
+      locale: String(payload?.locale || '').trim() || null,
+      distance_unit: String(payload?.distance_unit || 'km').trim().toLowerCase(),
       is_active: payload?.is_active === true,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+
+      free_included_items: Math.max(0, Math.round(Number(payload?.free_included_items ?? 1))),
+      extra_item_fee: Number(payload?.extra_item_fee ?? 0.75),
+      large_shopping_surcharge: Number(payload?.large_shopping_surcharge ?? 0),
+      large_shopping_threshold: Number(payload?.large_shopping_threshold ?? 50),
+      peak_multiplier: Number(payload?.peak_multiplier ?? 1),
+      weather_multiplier: Number(payload?.weather_multiplier ?? 1)
     };
+
+    const query = this.supabase
+      .from('pricing_config')
+      .select('id')
+      .eq('service_type', cleanPayload.service_type)
+      .eq('country_code', cleanPayload.country_code);
+
+    const scopedQuery = cleanPayload.market_city
+      ? query.eq('market_city', cleanPayload.market_city)
+      : query.is('market_city', null);
+
+    const finalQuery = cleanPayload.zone_id
+      ? scopedQuery.eq('zone_id', cleanPayload.zone_id)
+      : scopedQuery.is('zone_id', null);
+
+    const { data: existing, error: lookupError } = await finalQuery.maybeSingle();
+    if (lookupError) throw lookupError;
+
+    if (existing?.id) {
+      const { error } = await this.supabase
+        .from('pricing_config')
+        .update(cleanPayload)
+        .eq('id', existing.id);
+
+      if (error) throw error;
+      return;
+    }
 
     const { error } = await this.supabase
       .from('pricing_config')
-      .upsert(cleanPayload, { onConflict: 'service_type' });
+      .insert({
+        ...cleanPayload,
+        created_at: new Date().toISOString()
+      });
 
     if (error) throw error;
   }
@@ -1008,6 +1094,115 @@ export class AdminService {
     });
 
     return cleanPayload;
+  }
+
+  async listReceivables(status = 'open'): Promise<any[]> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/receivables?status=${encodeURIComponent(status)}`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error('Could not load receivables.');
+    return (await response.json()).receivables || [];
+  }
+
+  async resolveReceivable(id: string, status: 'paid' | 'waived' | 'written_off', reason?: string, paymentReference?: string): Promise<void> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/receivables/${id}/resolve`, {
+      method: 'POST', headers, body: JSON.stringify({ status, reason, paymentReference }), signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || 'Could not resolve the receivable.');
+    }
+  }
+
+  async listCancellationPolicies(tenantId: string, market: string): Promise<any[]> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/policies/cancellation?tenantId=${encodeURIComponent(tenantId)}&market=${encodeURIComponent(market)}`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return [];
+    return (await response.json()).policies || [];
+  }
+
+  async policyAudit(): Promise<any[]> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/policies/audit`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return [];
+    return (await response.json()).audit || [];
+  }
+
+  async publishCancellationPolicy(input: {
+    tenantId: string; market: string; referenceFareMinor: number; debtThresholdBps: number;
+    graceSeconds?: number; feeMinor?: number; feeCapMinor?: number | null; compensationPercent?: number;
+  }): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/policies/cancellation/publish`, {
+      method: 'POST', headers, body: JSON.stringify(input), signal: AbortSignal.timeout(15000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not publish the policy.');
+    return body.policy;
+  }
+
+  async previewVayduMargin(input: {
+    fareSnapshot: Record<string, unknown>; discountMinor?: number;
+    referralLiabilityMinor?: number; processingMinor?: number;
+  }): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/policies/margin-preview`, {
+      method: 'POST', headers, body: JSON.stringify(input), signal: AbortSignal.timeout(15000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not compute the margin preview.');
+    return body.preview;
+  }
+
+  async receivableAudit(id: string): Promise<any[]> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/receivables/${id}/audit`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return [];
+    return (await response.json()).audit || [];
+  }
+
+  async listCampaigns(tenantId: string): Promise<any[]> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/campaigns?tenantId=${encodeURIComponent(tenantId)}`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return [];
+    return (await response.json()).campaigns || [];
+  }
+
+  async createCampaign(input: Record<string, unknown>): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/campaigns`, {
+      method: 'POST', headers, body: JSON.stringify(input), signal: AbortSignal.timeout(15000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not create the campaign.');
+    return body.campaign;
+  }
+
+  async editCampaign(id: string, input: Record<string, unknown>): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/campaigns/${id}`, {
+      method: 'POST', headers, body: JSON.stringify(input), signal: AbortSignal.timeout(15000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not update the campaign.');
+    return body.campaign;
+  }
+
+  async setCampaignStatus(id: string, state: 'enabled' | 'paused' | 'disabled'): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/campaigns/${id}/status`, {
+      method: 'POST', headers, body: JSON.stringify({ state }), signal: AbortSignal.timeout(15000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not update the campaign status.');
+    return body.campaign;
+  }
+
+  async campaignAudit(): Promise<any[]> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/campaigns/audit`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return [];
+    return (await response.json()).audit || [];
   }
 
   private symbolFromCode(code?: string | null): string {

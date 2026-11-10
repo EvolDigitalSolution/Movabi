@@ -1,4 +1,7 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { AppPresenceService } from './core/services/presence/app-presence.service';
+import { DriverRequestSheetComponent } from './shared/components/driver-request-sheet/driver-request-sheet.component';
+import { JourneyTrackingService } from './core/services/logistics/journey-tracking.service';
+import { ChangeDetectionStrategy, Component, effect, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { IonApp, IonRouterOutlet, IonIcon } from '@ionic/angular/standalone';
@@ -13,6 +16,7 @@ import { NotificationService } from './core/services/notification.service';
 import { MovabiTourOverlayComponent } from './shared/ui/movabi-tour-overlay.component';
 import { MovabiUpdateRequiredComponent } from './shared/ui/movabi-update-required.component';
 import { AppVersionService } from './core/services/app-version.service';
+import { MarketAvailabilityClientService, PublicMarketStatus } from './core/services/market-availability.service';
 
 import { addIcons } from 'ionicons';
 import {
@@ -105,7 +109,7 @@ import {
     changeDetection: ChangeDetectionStrategy.OnPush,
     selector: 'app-root',
     standalone: true,
-    imports: [IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent, MovabiUpdateRequiredComponent],
+    imports: [DriverRequestSheetComponent, IonApp, IonRouterOutlet, IonIcon, CommonModule, MovabiTourOverlayComponent, MovabiUpdateRequiredComponent],
     template: `
     <ion-app>
       @if (!isConfigured) {
@@ -135,7 +139,31 @@ import {
         </div>
       }
 
+      @if (startupMarket() && !startupMarket()!.customerAppEnabled) {
+        <section class="fixed inset-0 z-[1200] bg-slate-50 text-slate-900 flex items-center justify-center p-6" aria-live="polite">
+          <div class="max-w-lg w-full rounded-3xl border border-slate-200 bg-white p-6 shadow-xl text-center space-y-5">
+            <ion-icon name="globe-outline" class="text-6xl text-amber-500"></ion-icon>
+            <h1 class="text-3xl font-black">{{ startupMarket()!.title }}</h1><p class="text-slate-600">{{ startupMarket()!.message }}</p>
+            <label class="block text-left text-sm font-bold">Change location<select class="mt-2 w-full p-3 rounded-xl bg-white border border-slate-200 text-slate-900" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code" [selected]="country.code === appConfig.currentCountry().code">{{country.name}}</option>}</select></label>
+            @if (startupMarket()!.waitingListEnabled) {<div class="flex gap-2"><input class="flex-1 min-w-0 p-3 rounded-xl bg-white border border-slate-200 text-slate-900" type="email" placeholder="Email for launch updates" [value]="waitingEmail()" (input)="waitingEmail.set($any($event.target).value)"><button type="button" class="shrink-0 whitespace-nowrap px-4 py-3 rounded-xl bg-amber-500 text-slate-950 font-bold" (click)="joinWaitingList()">Join</button></div>}
+            @if (startupMessage()) {<p class="text-sm text-slate-600">{{startupMessage()}}</p>}
+            <div class="flex flex-col sm:flex-row gap-3 justify-center"><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl bg-amber-500 text-slate-950 font-bold" (click)="checkStartupMarket()">Retry</button><button type="button" class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-3 rounded-xl border border-slate-300 text-slate-700 font-bold" (click)="router.navigateByUrl('/auth/login')">Sign in</button></div>
+          </div>
+        </section>
+      } @else if (startupMarket() && startupMarket()!.customerAppEnabled && !startupMarket()!.bookingEnabled) {
+        <aside class="fixed top-0 left-0 right-0 z-[1100] bg-blue-700 text-white p-3 text-center"><strong>{{startupMarket()!.title}}</strong> — {{startupMarket()!.message}} <button class="underline ml-2" (click)="changeLocationVisible.set(!changeLocationVisible())">Change location</button>
+          @if(changeLocationVisible()){<select class="ml-2 text-slate-900 p-1 rounded" (change)="changeStartupCountry($any($event.target).value)">@for(country of appConfig.countries();track country.code){<option [value]="country.code" [selected]="country.code === appConfig.currentCountry().code">{{country.name}}</option>}</select>}
+        </aside>
+      }
+
+      @if(notifications.incomingAdminMessageId()){
+        <aside class="fixed top-4 left-4 right-4 z-[10000] mx-auto max-w-xl rounded-2xl border border-blue-200 bg-white p-4 shadow-xl" aria-live="polite">
+          <p class="text-sm font-bold text-slate-900">New message from Vaydu</p>
+          <div class="mt-2 flex gap-4"><button type="button" class="text-sm font-bold text-blue-600" (click)="notifications.openIncomingAdminMessage()">Read Message</button><button type="button" class="text-sm text-slate-500" (click)="notifications.incomingAdminMessageId.set(null)">Dismiss</button></div>
+        </aside>
+      }
       <ion-router-outlet></ion-router-outlet>
+      <app-driver-request-sheet></app-driver-request-sheet>
       <app-movabi-tour-overlay></app-movabi-tour-overlay>
       <app-movabi-update-required></app-movabi-update-required>
     </ion-app>
@@ -144,15 +172,28 @@ import {
 })
 export class App implements OnInit {
     private supabase = inject(SupabaseService);
-    private appConfig = inject(AppConfigService);
+    public appConfig = inject(AppConfigService);
     private network = inject(NetworkService);
     private nativePlatform = inject(NativePlatformService);
-    private notifications = inject(NotificationService);
+    readonly notifications = inject(NotificationService);
     private appVersion = inject(AppVersionService);
-    private router = inject(Router);
+    public router = inject(Router);
+    private marketAvailability = inject(MarketAvailabilityClientService);
+    private journeyTracking = inject(JourneyTrackingService);
+    private presence = inject(AppPresenceService);
 
     isConfigured = this.supabase.isConfigured;
     isOnline = signal(this.network.isOnline);
+    startupMarket = signal<PublicMarketStatus|null>(null);
+    startupMessage = signal<string|null>(null);
+    waitingEmail = signal('');
+    changeLocationVisible = signal(false);
+    /** Country whose market availability is currently resolved / being resolved. */
+    private resolvedCountryCode: string | null = null;
+    /** Monotonic token so an older market response can never overwrite a newer country. */
+    private marketRequestSeq = 0;
+    /** false until the bootstrap resolve finishes, so the reactive effect does not duplicate it. */
+    private startupResolved = signal(false);
 
     constructor() {
         addIcons({
@@ -240,9 +281,19 @@ export class App implements OnInit {
             layersOutline,
             cloudOfflineOutline,
         });
+
+        // Any country change (signup dropdown, banner change-location, future entry
+        // points) must re-resolve market availability immediately -- without a reload.
+        effect(() => {
+            const countryCode = this.appConfig.currentCountry().code;
+            if (!this.startupResolved()) return;
+            if (countryCode === this.resolvedCountryCode) return;
+            void this.checkStartupMarket();
+        });
     }
 
     async ngOnInit() {
+        this.installFocusTransitionSafety();
         this.setupDeepLinkListener();
 
         await this.nativePlatform.initialize();
@@ -254,9 +305,61 @@ export class App implements OnInit {
             await this.appConfig.refreshConfigs();
         }
 
-        void this.appConfig.detectRuntimeCountry();
+        await this.appConfig.detectRuntimeCountry();
+        await this.checkStartupMarket();
+        this.startupResolved.set(true);
         this.notifications.initialize();
     }
+
+    private installFocusTransitionSafety() {
+        const releaseFocus = (event: Event) => {
+            const active = document.activeElement;
+            const leavingSurface = event.target;
+            if (active instanceof HTMLElement && leavingSurface instanceof HTMLElement && leavingSurface.contains(active)) active.blur();
+        };
+        document.addEventListener('ionViewWillLeave', releaseFocus, true);
+        document.addEventListener('ionModalWillDismiss', releaseFocus, true);
+        document.addEventListener('ionPopoverWillDismiss', releaseFocus, true);
+    }
+
+    async checkStartupMarket() {
+        const countryCode = this.appConfig.currentCountry().code;
+        // Claim this request. Any response carrying an older token is discarded, so a
+        // slow answer for a previous country can never overwrite the newest one.
+        const seq = ++this.marketRequestSeq;
+        this.resolvedCountryCode = countryCode;
+        // Drop the previous country's availability immediately: nothing stale may stay
+        // on screen while the new country is still resolving.
+        this.startupMarket.set(null);
+        this.startupMessage.set(null);
+        try {
+            const status = await this.marketAvailability.getStatus({ countryCode });
+            if (seq !== this.marketRequestSeq) return;
+            this.startupMarket.set(status);
+        } catch {
+            if (seq !== this.marketRequestSeq) return;
+            // Never keep a previous country's availability on screen after a failed check.
+            // Replace it with a deterministic, country-agnostic status so the retry and
+            // change-location controls keep working.
+            this.marketAvailability.current.set(null);
+            this.startupMarket.set(this.unavailableStartupStatus(countryCode));
+            this.startupMessage.set('We could not check availability. Please retry.');
+        }
+    }
+
+    private unavailableStartupStatus(countryCode: string): PublicMarketStatus {
+        return {
+            code: 'MARKET_STATUS_UNAVAILABLE', countryCode, marketCity: null, launchStatus: 'coming_soon',
+            customerAppEnabled: false, customerRegistrationEnabled: false, driverRegistrationEnabled: false,
+            driverOnlineEnabled: false, quoteEnabled: false, bookingEnabled: false, paymentEnabled: false,
+            currency: null, timezone: null,
+            title: 'Availability check failed', message: 'We could not check availability. Please retry.',
+            waitingListEnabled: false, resolutionLevel: 'unavailable'
+        };
+    }
+
+    async changeStartupCountry(code:string) { this.appConfig.setCountry(code); this.changeLocationVisible.set(false); await this.checkStartupMarket(); }
+    async joinWaitingList() { const status=this.startupMarket();if(!status)return;try{await this.marketAvailability.joinWaitingList(this.waitingEmail(),status);this.startupMessage.set('You are on the waiting list.');}catch(error:any){this.startupMessage.set(error?.error?.error||'Could not join the waiting list.');} }
 
     private setupDeepLinkListener() {
         CapacitorApp.addListener('appUrlOpen', async (event) => {

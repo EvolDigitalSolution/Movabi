@@ -1,0 +1,158 @@
+Prepared disabled schema candidate: C:\Users\fedri\source\repos\Movabi-mobile-develop\scripts\driver-wallet-develop-disabled-candidate.sql
+Integrated canonical section and extracted development-only release section
+feb383c799bd06dee25c6810c2eee2c69c8b598126b109323f35ed349d7da141
+CREATE SCHEMA
+CREATE FUNCTION
+DO
+GRANT
+ALTER ROLE
+DROP TABLE
+psql:/tmp/check.sql:21: NOTICE:  table "market_availability" does not exist, skipping
+CREATE TABLE
+INSERT 0 6
+psql:/tmp/check.sql:28: NOTICE:  table "market_payment_routes" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+INSERT 0 2
+psql:/tmp/check.sql:47: NOTICE:  table "wallet_transactions" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+Batch 1C fixture ready
+BEGIN
+DO
+DO
+ALTER TABLE
+CREATE INDEX
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMIT
+BEGIN
+DO
+CREATE FUNCTION
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE FUNCTION
+psql:/tmp/check.sql:158: NOTICE:  trigger "wallet_accounts_append_only" for relation "public.wallet_accounts" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+psql:/tmp/check.sql:161: NOTICE:  trigger "wallet_business_events_append_only" for relation "public.wallet_business_events" does not exist, skipping
+psql:/tmp/check.sql:164: NOTICE:  trigger "wallet_movements_append_only" for relation "public.wallet_movements" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE VIEW
+COMMENT
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+DROP POLICY
+psql:/tmp/check.sql:438: NOTICE:  policy "wallet_accounts_select_own" for relation "public.wallet_accounts" does not exist, skipping
+CREATE POLICY
+DROP POLICY
+psql:/tmp/check.sql:441: NOTICE:  policy "wallet_business_events_select_own" for relation "public.wallet_business_events" does not exist, skipping
+CREATE POLICY
+DROP POLICY
+psql:/tmp/check.sql:444: NOTICE:  policy "wallet_movements_select_own" for relation "public.wallet_movements" does not exist, skipping
+CREATE POLICY
+REVOKE
+GRANT
+REVOKE
+GRANT
+REVOKE
+REVOKE
+GRANT
+GRANT
+GRANT
+COMMIT
+BEGIN
+SET
+DO
+CREATE TABLE
+DO
+CREATE TABLE
+CREATE FUNCTION
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE FUNCTION
+CREATE FUNCTION
+DO
+CREATE FUNCTION
+psql:/tmp/check.sql:251: NOTICE:  trigger "wallet_topup_attempt_freeze" for relation "public.wallet_topup_attempts" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+CREATE FUNCTION
+psql:/tmp/check.sql:567: NOTICE:  policy "wallet_topup_attempts_select_own" for relation "public.wallet_topup_attempts" does not exist, skipping
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+DO
+ALTER TABLE
+DROP POLICY
+CREATE POLICY
+REVOKE
+GRANT
+GRANT
+GRANT
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+COMMIT
+ALTER TABLE
+CREATE TABLE
+INSERT 0 2
+BEGIN
+psql:/tmp/check.sql:1045: NOTICE:  relation "payment_checkout_attempts" already exists, skipping
+DO
+COMMIT
+BEGIN
+psql:/tmp/check.sql:1045: NOTICE:  relation "vaydu_driver_card_schema_releases" already exists, skipping
+DO
+COMMIT
+ALTER TABLE
+PASS: canonical first apply, idempotent rerun, disabled flags, provider-store preservation and catalog-drift refusal

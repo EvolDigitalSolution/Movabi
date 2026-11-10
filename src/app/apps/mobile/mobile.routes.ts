@@ -1,11 +1,21 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@core/guards/auth.guard';
 import { roleGuard } from '@core/guards/role.guard';
+import { registrationGuard } from '@core/guards/registration.guard';
 
 export const MOBILE_ROUTES: Routes = [
+    {path:'driver-wallet-sandbox',canActivate:[authGuard,registrationGuard,roleGuard],data:{role:'driver'},loadComponent:()=>import('@mobile/features/driver/driver-wallet.page').then(m=>m.DriverWalletPage)},
+    {path:'booking-payment-return',loadComponent:()=>import('@mobile/features/customer/booking-payment-return.page').then(m=>m.BookingPaymentReturnPage)},
+    { path:'driver-topup-return', loadComponent:()=>import('@mobile/features/driver/driver-topup-return.page').then(m=>m.DriverTopupReturnPage) },
+    { path:'account/messages', canActivate:[authGuard], loadComponent:()=>import('@mobile/features/account/messages.page').then(m=>m.MessagesPage) },
     {
         path: '',
-        loadComponent: () => import('@mobile/features/landing.page').then((m) => m.LandingPage)
+        pathMatch: 'full',
+        loadComponent: () => import('@capacitor/core').then(({ Capacitor }) =>
+            Capacitor.isNativePlatform()
+                ? import('@mobile/features/landing.page').then(m => m.LandingPage)
+                : import('@admin/features/landing/movabi-about.component').then(m => m.AdminMovabiAboutComponent))
+
     },
     {
         path: 'landing',
@@ -21,8 +31,8 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'about-movabi',
-        loadComponent: () =>
-            import('@admin/features/landing/movabi-about.component').then((m) => m.AdminMovabiAboutComponent)
+        redirectTo: '',
+        pathMatch: 'full'
     },
     {
         path: 'how-to-use',
@@ -63,8 +73,13 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/auth/callback.page').then((m) => m.AuthCallbackPage)
             },
             {
-                path: 'role-selection',
+                path: 'registration',
                 canActivate: [authGuard],
+                loadComponent: () => import('@mobile/features/auth/registration.page').then((m) => m.RegistrationPage)
+            },
+            {
+                path: 'role-selection',
+                canActivate: [authGuard, registrationGuard],
                 loadComponent: () => import('@mobile/features/auth/role-selection.page').then((m) => m.RoleSelectionPage)
             },
             {
@@ -75,7 +90,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'customer/onboarding',
-        canActivate: [authGuard],
+        canActivate: [authGuard, registrationGuard],
         loadComponent: () => import('@mobile/features/customer/onboarding/onboarding.page').then((m) => m.CustomerOnboardingPage)
     },
     {
@@ -85,7 +100,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'driver/onboarding',
-        canActivate: [authGuard],
+        canActivate: [authGuard, registrationGuard],
         loadComponent: () => import('@mobile/features/driver/onboarding/onboarding.page').then((m) => m.OnboardingPage)
     },
     {
@@ -105,7 +120,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'customer',
-        canActivate: [authGuard, roleGuard],
+        canActivate: [authGuard, registrationGuard, roleGuard],
         data: { role: 'customer' },
         loadComponent: () => import('@shared/ui/router-outlet.component').then((m) => m.RouterOutletComponent),
         children: [
@@ -118,12 +133,32 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/customer/booking-request/booking-request.page').then((m) => m.BookingRequestPage)
             },
             {
+                path: 'history/:id',
+                loadComponent: () => import('@shared/pages/booking-history/booking-history.page').then(m => m.BookingHistoryPage)
+            },
+            {
                 path: 'tracking/:id',
                 loadComponent: () => import('@mobile/features/customer/booking-tracking/booking-tracking.page').then((m) => m.BookingTrackingPage)
             },
             {
+                path: 'marketplace-fare/:id',
+                loadComponent: () => import('@mobile/features/customer/marketplace-fare/marketplace-fare.page').then((m) => m.MarketplaceFarePage)
+            },
+            {
+                path: 'marketplace-payment/:id',
+                loadComponent: () => import('@mobile/features/customer/marketplace-payment/marketplace-payment.page').then((m) => m.MarketplacePaymentPage)
+            },
+            {
+                path: 'services',
+                loadComponent: () => import('@mobile/features/customer/services/services.page').then((m) => m.ServicesPage)
+            },
+            {
                 path: 'activity',
                 loadComponent: () => import('@mobile/features/customer/activity/activity.page').then((m) => m.ActivityPage)
+            },
+            {
+                path: 'payment-methods',
+                loadComponent: () => import('@mobile/features/customer/payment-methods/payment-methods.page').then(m => m.PaymentMethodsPage)
             },
             {
                 path: 'wallet',
@@ -146,7 +181,7 @@ export const MOBILE_ROUTES: Routes = [
     },
     {
         path: 'driver',
-        canActivate: [authGuard, roleGuard],
+        canActivate: [authGuard, registrationGuard, roleGuard],
         data: { role: 'driver' },
         loadComponent: () => import('@shared/ui/router-outlet.component').then((m) => m.RouterOutletComponent),
         children: [
@@ -159,12 +194,20 @@ export const MOBILE_ROUTES: Routes = [
                 loadComponent: () => import('@mobile/features/driver/van-moving/van-jobs.page').then((m) => m.VanJobsPage)
             },
             {
+                path: 'history/:id',
+                loadComponent: () => import('@shared/pages/booking-history/booking-history.page').then(m => m.BookingHistoryPage)
+            },
+            {
                 path: 'job-details/:id',
                 loadComponent: () => import('@mobile/features/driver/job-details/job-details.page').then((m) => m.JobDetailsPage)
             },
             {
                 path: 'earnings',
                 loadComponent: () => import('@mobile/features/driver/earnings/earnings.page').then((m) => m.EarningsPage)
+            },
+            {
+                path: 'hybrid-negotiation/:id',
+                loadComponent: () => import('@mobile/features/driver/hybrid-negotiation/hybrid-negotiation.page').then((m) => m.DriverHybridNegotiationPage)
             },
             {
                 path: 'subscription',

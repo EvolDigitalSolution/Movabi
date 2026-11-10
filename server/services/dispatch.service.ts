@@ -1,8 +1,17 @@
+import {driverMatchesJobMarket} from './driver-market-scope';
+import {orderDriversByRoadEta} from './driver-road-eta';
+import { rankEligibleDrivers, readDriverReviewScores, DriverReliability } from './driver-ranking';
+import { goodsVehicleMatches, isGoodsService } from '../../src/app/shared/utils/goods-vehicle-compatibility';
 import { getSupabaseAdmin } from './supabase.service';
+import { MarketAvailabilityService } from './market-availability.service';
+import { MarketplaceConfigService } from './marketplace-config.service';
+import { reportDriverOfferMetrics } from './driver-offer-metrics.service';
 import { Job, DispatchResult } from '../../src/app/shared/models/booking.model';
 import { EventService } from './event.service';
 import { NotificationService } from './notification.service';
 import { stripe } from './stripe.service';
+import { isDriverEligibleForService, toCanonicalDriverService } from './driver-service-eligibility';
+import { SUPPORTED_PAYOUT_COUNTRIES } from './payout-eligibility.service';
 
 type NearbyDriver = {
     id: string;
@@ -54,9 +63,58 @@ export class DispatchService {
         try {
             await this.cleanupExpiredSearchingJobs();
             await this.cleanupStaleOpenSearchingJobs();
+            await this.activateDueScheduledJobs();
             await this.refreshWaitingQueueItems();
         } catch (error) {
             console.error('[DispatchService] Engine error:', error);
+        }
+    }
+
+    /**
+     * Release closure: activate due scheduled bookings exactly once. A paid
+     * scheduled job in 'requested' becomes 'searching' only at/after
+     * scheduled_time, via an atomic status-guarded UPDATE, so duplicate worker
+     * executions cannot double-dispatch and cancelled/completed jobs are never
+     * re-activated.
+     */
+    private async activateDueScheduledJobs() {
+        const { data: jobs, error } = await this.supabase
+            .from('jobs')
+            .select('id')
+            .eq('status', 'requested')
+            .is('driver_id', null)
+            .in('payment_status', ['paid', 'wallet_funded', 'authorized', 'requires_capture', 'succeeded', 'captured'])
+            .not('scheduled_time', 'is', null)
+            .lte('scheduled_time', nowIso())
+            .limit(100);
+
+        if (error) {
+            console.error('[DispatchService] Failed to fetch due scheduled jobs:', error);
+            return;
+        }
+
+        for (const job of jobs || []) {
+            const { data: activated, error: updateError } = await this.supabase
+                .from('jobs')
+                .update({
+                    status: 'searching',
+                    dispatch_started_at: nowIso(),
+                    driver_search_expires_at: expiresAt(),
+                    dispatch_attempts: 1,
+                    no_driver_reason: null,
+                    updated_at: nowIso()
+                })
+                .eq('id', job.id)
+                .eq('status', 'requested')
+                .is('driver_id', null)
+                .select('*').maybeSingle();
+
+            if (activated) {
+                await this.notifyNearbyDrivers(activated as Job, activated.tenant_id, activated.city_id);
+            }
+            if (updateError) {
+                console.warn('[DispatchService] scheduled activation skipped (already moved):', job.id, updateError.message);
+            }
         }
     }
 
@@ -154,6 +212,29 @@ export class DispatchService {
                 { jobId: item.job_id },
                 item.tenant_id
             );
+
+            // Distinguish offer timeout from other no-driver causes for the UI.
+            try {
+                await this.supabase
+                    .from('jobs')
+                    .update({ no_driver_reason: 'The booking offer timed out before a driver accepted.' })
+                    .eq('id', item.job_id)
+                    .is('driver_id', null);
+            } catch { /* reason marking must not break the sweep */ }
+
+            // Close every open offer for the expired job (idempotent).
+            try {
+                const { data: open } = await this.supabase
+                    .from('driver_offer_events')
+                    .select('driver_id')
+                    .eq('job_id', item.job_id)
+                    .eq('event', 'created');
+                for (const o of open || []) {
+                    await this.supabase.rpc('close_driver_offer', {
+                        p_job: item.job_id, p_driver: o.driver_id, p_event: 'expired'
+                    });
+                }
+            } catch { /* expiry marking must not break the sweep */ }
         }
     }
 
@@ -178,6 +259,8 @@ export class DispatchService {
             })
             .eq('id', jobId)
             .eq('status', 'searching')
+            .eq('dispatch_attempts', nextAttempt - 1)
+            .lt('driver_search_expires_at', nowIso())
             .is('driver_id', null)
             .select('*')
             .maybeSingle();
@@ -199,28 +282,17 @@ export class DispatchService {
     }
 
     private async markNoDriverFound(jobId: string, tenantId?: string | null) {
-        const { data: job, error } = await this.supabase
-            .from('jobs')
-            .update({
-                status: 'no_driver_found',
-                no_driver_reason: 'No available driver after dispatch attempts',
-                last_dispatch_check_at: nowIso(),
-                updated_at: nowIso()
-            })
-            .eq('id', jobId)
-            .eq('status', 'searching')
-            .is('driver_id', null)
-            .select('id, customer_id, tenant_id, payment_method, payment_status, payment_intent_id')
-            .maybeSingle();
-
+        const { data: job, error } = await this.supabase.rpc('end_job_driver_search', { p_job_id: jobId });
         if (error) {
-            console.error(`[DispatchService] Failed setting no_driver_found for ${jobId}:`, error);
+            console.error(`[DispatchService] Search closure failed for ${jobId}; will retry:`, error);
             return;
         }
-
         if (!job) return;
-
-        await this.releaseNoDriverPayment(job as Job);
+        // Wallet closure + release already committed atomically. Card release
+        // retains the external Stripe compensation/review path.
+        if (job.payment_method !== 'wallet' && job.payment_status !== 'wallet_funded') {
+            await this.releaseNoDriverPayment(job as Job);
+        }
 
         await EventService.logEvent(
             'no_driver_found',
@@ -262,6 +334,13 @@ export class DispatchService {
                     await stripe.paymentIntents.cancel(paymentIntentId);
                 }
 
+                // A captured payment cannot be released by cancelling an
+                // authorisation. Preserve it for financial review.
+                if (pi.status !== 'canceled' && !['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'].includes(pi.status)) {
+                    await this.markPaymentRequiresReview(job.id);
+                    return;
+                }
+
                 await this.supabase
                     .from('jobs')
                     .update({ payment_status: 'cancelled', updated_at: nowIso() })
@@ -291,6 +370,14 @@ export class DispatchService {
         }
 
         try {
+            const metadata = (job as any).metadata && typeof (job as any).metadata === 'object' ? (job as any).metadata : {};
+            const availability = await MarketAvailabilityService.checkCapability({ countryCode: (job as any).country_code || metadata.country_code,
+                marketCity: (job as any).market_city || metadata.market_city || metadata.pickup_city, zoneId: (job as any).zone_id || metadata.zone_id,
+                capability: 'driver_online', endpoint: 'dispatch-engine' });
+            if (!availability.allowed) {
+                await this.supabase.from('job_queue').update({ status: 'blocked', updated_at: nowIso() }).eq('id', item.id);
+                return { success: false, job_id: job.id, message: availability.code || 'Market dispatch disabled' };
+            }
             if (job.status === 'accepted' || job.status === 'assigned' || job.driver_id) {
                 await this.supabase
                     .from('job_queue')
@@ -307,7 +394,7 @@ export class DispatchService {
                 };
             }
 
-            if (!['pending', 'requested', 'searching', 'no_driver_found'].includes(String(job.status))) {
+            if (!['pending', 'requested', 'searching'].includes(String(job.status))) {
                 await this.supabase
                     .from('job_queue')
                     .update({
@@ -339,7 +426,7 @@ export class DispatchService {
                     updated_at: nowIso()
                 })
                 .eq('id', job.id)
-                .in('status', ['pending', 'requested', 'searching', 'no_driver_found'])
+                .in('status', ['pending', 'requested', 'searching'])
                 .select('*')
                 .maybeSingle();
 
@@ -405,7 +492,7 @@ export class DispatchService {
                 updated_at: nowIso()
             })
             .eq('id', jobId)
-            .in('status', ['pending', 'requested', 'searching', 'no_driver_found'])
+            .in('status', ['pending', 'requested', 'searching'])
             .select('*')
             .maybeSingle();
 
@@ -497,7 +584,7 @@ export class DispatchService {
         return result;
     }
 
-    private async notifyNearbyDrivers(job: Job, tenantId?: string | null, cityId?: string | null) {
+    async notifyNearbyDrivers(job: Job, tenantId?: string | null, cityId?: string | null) {
         const drivers = await this.findNearbyDrivers(job, tenantId, cityId);
 
         if (!drivers.length) {
@@ -506,13 +593,74 @@ export class DispatchService {
                 { jobId: job.id },
                 tenantId || (job as any).tenant_id
             );
+            try {
+                await this.supabase
+                    .from('jobs')
+                    .update({ no_driver_reason: 'No eligible drivers are nearby right now.' })
+                    .eq('id', job.id)
+                    .is('driver_id', null);
+            } catch { /* reason marking must not break dispatch */ }
             return;
         }
 
-        for (const driver of drivers.slice(0, MAX_NOTIFY_DRIVERS)) {
-            try {
-                await NotificationService.notifyNewJob(driver.id, job.id);
+        const { data: declined } = await this.supabase
+            .from('driver_job_declines')
+            .select('driver_id')
+            .eq('job_id', job.id);
 
+        const declinedIds = new Set((declined || []).map((d: any) => d.driver_id));
+        const eligibleDrivers = drivers.filter(d => !declinedIds.has(d.id));
+
+        if (!eligibleDrivers.length) {
+            await EventService.logEvent(
+                'dispatch_all_drivers_declined',
+                { jobId: job.id },
+                tenantId || (job as any).tenant_id
+            );
+            try {
+                await this.supabase
+                    .from('jobs')
+                    .update({ no_driver_reason: 'Drivers nearby are currently busy — retrying shortly.' })
+                    .eq('id', job.id)
+                    .is('driver_id', null);
+            } catch { /* reason marking must not break dispatch */ }
+            return;
+        }
+
+        const isNegotiating = String((job as any).status || '').toLowerCase() === 'negotiating';
+
+        for (const driver of eligibleDrivers.slice(0, MAX_NOTIFY_DRIVERS)) {
+            try {
+                // Immutable offer identity: stable per dispatch attempt so a
+                // retry reuses the same offer rather than minting a new one.
+                // Push/send success is NOT delivery receipt — acknowledgement is
+                // recorded separately by the authenticated driver client.
+                const offerKey = `${job.id}:${driver.id}:a${Number((job as any).dispatch_attempts || 1)}`;
+                try {
+                    await this.supabase.rpc('record_driver_offer_event', {
+                        p_tenant: tenantId || (job as any).tenant_id,
+                        p_job: job.id,
+                        p_driver: driver.id,
+                        p_offer_key: offerKey,
+                        p_event: 'created',
+                        p_evidence: { expires_at: (job as any).driver_search_expires_at }
+                    });
+                } catch { /* event recording must not break dispatch */ }
+                if (isNegotiating) {
+                    await NotificationService.notifyDriverNegotiation(driver.id, job.id);
+                } else {
+                    await NotificationService.notifyNewJob(driver.id, job.id);
+                }
+
+                try {
+                    await this.supabase.rpc('record_driver_offer_event', {
+                        p_tenant: tenantId || (job as any).tenant_id,
+                        p_job: job.id,
+                        p_driver: driver.id,
+                        p_offer_key: offerKey,
+                        p_event: 'delivery_attempted'
+                    });
+                } catch { /* event recording must not break dispatch */ }
                 await this.supabase
                     .from('dispatch_logs')
                     .insert({
@@ -527,56 +675,177 @@ export class DispatchService {
         }
     }
 
-    private async findNearbyDrivers(job: Job, tenantId?: string | null, cityId?: string | null): Promise<NearbyDriver[]> {
+    async customerAvailability(job: Job): Promise<{ observedCount: number; approximate: true; countIsLowerBound: true; cars: Array<{lat:number;lng:number}>; observedAt: string }> {
+        const lat = Number((job as any).pickup_lat), lng = Number((job as any).pickup_lng);
+        if ((job as any).pickup_lat==null || (job as any).pickup_lng==null || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180 || !(job as any).tenant_id) throw new Error('Search area unavailable');
+        const candidates = await this.findNearbyDrivers(job, (job as any).tenant_id, (job as any).city_id, true);
+        const ids = candidates.map(d => d.id);
+        const observedAt = new Date().toISOString();
+        if (!ids.length) return {observedCount:0,approximate:true,countIsLowerBound:true,cars:[],observedAt};
+        const declined = await this.supabase.from('driver_job_declines').select('driver_id').eq('job_id',job.id);
+        if (declined.error) throw declined.error;
+        const excluded = new Set((declined.data || []).map((row:any)=>row.driver_id));
+        const locations = await this.supabase.from('driver_locations').select('driver_id,lat,lng,updated_at').in('driver_id',ids)
+            .gte('updated_at',new Date(Date.now()-60000).toISOString());
+        if (locations.error) throw locations.error;
+        const radius = BASE_RADIUS_DEGREES + (Math.max(1,Number((job as any).dispatch_attempts || 1))-1)*RADIUS_STEP_DEGREES;
+        const unique = new Map<string,{lat:number;lng:number}>();
+        for (const row of locations.data || []) {
+            const x=Number(row.lat),y=Number(row.lng),time=Date.parse(String(row.updated_at || ''));
+            if (row.lat==null || row.lng==null || !Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x)>90 || Math.abs(y)>180
+                || !Number.isFinite(time) || time>Date.now()+30000 || Date.now()-time>60000 || excluded.has(row.driver_id)
+                || Math.abs(x-lat)>radius || Math.abs(y-lng)>radius) continue;
+            unique.set(row.driver_id,{lat:Math.round(x*100)/100,lng:Math.round(y*100)/100});
+        }
+        return {observedCount:unique.size,approximate:true,countIsLowerBound:true,cars:[...unique.values()].slice(0,30),observedAt};
+    }
+
+    private async findNearbyDrivers(job: Job, tenantId?: string | null, cityId?: string | null, strictRead = false): Promise<NearbyDriver[]> {
         const pickupLat = Number((job as any).pickup_lat);
         const pickupLng = Number((job as any).pickup_lng);
         const attempts = Math.max(1, Number((job as any).dispatch_attempts || 1));
         const radius = BASE_RADIUS_DEGREES + (attempts - 1) * RADIUS_STEP_DEGREES;
 
-        let query = this.supabase
+        let profileQuery = this.supabase
             .from('profiles')
-            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled, vehicles!inner(vehicle_class)')
+            .select('id, lat, lng, is_available, is_online, last_active_at, stripe_connect_status, charges_enabled, payouts_enabled')
             .eq('role', 'driver')
             .eq('is_available', true)
             .eq('is_online', true)
             .eq('charges_enabled', true)
             .eq('payouts_enabled', true)
-            .limit(MAX_NOTIFY_DRIVERS);
+            // UK-only payout scope: only offer work to drivers in a supported payout country.
+            .in('registration_country_code', SUPPORTED_PAYOUT_COUNTRIES)
+            .eq('registration_country_code', String((job as any).country_code || (job as any).metadata?.country_code || '').toUpperCase())
+            .limit(MAX_NOTIFY_DRIVERS * 2);
 
         if (tenantId) {
-            query = query.eq('tenant_id', tenantId);
+            profileQuery = profileQuery.eq('tenant_id', tenantId);
         }
 
         if (cityId) {
-            query = query.or(`city_id.eq.${cityId},city_id.is.null`);
+            profileQuery = profileQuery.or(`city_id.eq.${cityId},city_id.is.null`);
         }
 
         if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-            query = query
+            profileQuery = profileQuery
                 .gte('lat', pickupLat - radius)
                 .lte('lat', pickupLat + radius)
                 .gte('lng', pickupLng - radius)
                 .lte('lng', pickupLng + radius);
         }
 
-        const { data, error } = await query;
+        const { data: profiles, error: profilesError } = await profileQuery;
 
-        if (error) {
-            console.error('[DispatchService] Failed finding nearby drivers:', error);
+        if (profilesError) {
+            console.error('[DispatchService] Failed finding nearby drivers:', profilesError);
+            if (strictRead) throw profilesError;
             return [];
         }
 
-        // Filter drivers by vehicle compatibility
-        const compatibleDrivers = ((data || []) as any[]).filter(driver => {
-            const vehicleClass = driver.vehicles?.vehicle_class;
-            const serviceType = job.service_slug;
-            
-            return this.isVehicleCompatible(vehicleClass, serviceType);
+        const drivers = (profiles || []) as any[];
+        if (drivers.length === 0) {
+            return [];
+        }
+
+        const driverIds = drivers.map(d => d.id).filter(Boolean);
+
+        // Batch-fetch the canonical eligibility inputs (full profiles + full
+        // vehicles) so the eligibility gate does not issue N+1 queries.
+        const { data: fullProfiles, error: fullProfilesError } = driverIds.length
+            ? await this.supabase.from('profiles').select('*').in('id', driverIds)
+            : { data: [] as any[], error: null };
+        if (fullProfilesError) {
+            console.error('[DispatchService] Failed fetching driver profiles:', fullProfilesError);
+            if (strictRead) throw fullProfilesError;
+            return [];
+        }
+
+        const { data: vehicles, error: vehiclesError } = driverIds.length
+            ? await this.supabase.from('vehicles').select('*').in('user_id', driverIds)
+            : { data: [] as any[], error: null };
+        if (vehiclesError) {
+            console.error('[DispatchService] Failed fetching driver vehicles:', vehiclesError);
+            if (strictRead) throw vehiclesError;
+            return [];
+        }
+
+        const marketProfiles = (fullProfiles || []).filter((profile:any) => driverMatchesJobMarket(profile,job));
+        const profilesById = new Map<string, any>();
+        marketProfiles.forEach((profile: any) => {
+            if (profile?.id) profilesById.set(profile.id, profile);
         });
 
-        console.log(`[DispatchService] Vehicle compatibility filter: ${data?.length || 0} total drivers -> ${compatibleDrivers.length} compatible drivers for service ${job.service_slug}`);
+        const vehiclesByUser = new Map<string, string[]>();
+        const vehicleRowsByUser = new Map<string, any>();
+        (vehicles || []).forEach((vehicle: any) => {
+            const userId = vehicle.user_id as string;
+            if (!userId) return;
+            if (!vehicleRowsByUser.has(userId)) vehicleRowsByUser.set(userId, vehicle);
+            const vehicleClass = vehicle.vehicle_class as string;
+            if (vehicleClass) {
+                const classes = vehiclesByUser.get(userId) || [];
+                classes.push(vehicleClass);
+                vehiclesByUser.set(userId, classes);
+            }
+        });
 
-        return (compatibleDrivers as NearbyDriver[]).sort((a, b) => {
+        // Filter drivers by vehicle compatibility (frozen MB001 rule).
+        const compatibleDrivers = drivers.filter(driver => {
+            const vehicleClasses = vehiclesByUser.get(driver.id) || [];
+            const serviceType = job.service_slug;
+
+            if (isGoodsService(serviceType)) {
+                return goodsVehicleMatches(job, vehicleRowsByUser.get(driver.id));
+            }
+
+            return vehicleClasses.some(vehicleClass => this.isVehicleCompatible(vehicleClass, serviceType));
+        });
+
+        console.log(`[DispatchService] Vehicle compatibility filter: ${drivers.length} total drivers -> ${compatibleDrivers.length} compatible drivers for service ${job.service_slug}`);
+
+        // ADDITIONAL canonical eligibility gate (does NOT replace MB001). A
+        // driver who became ineligible while still online must not receive NEW
+        // work for the requested service. Unknown service slugs fall through to
+        // preserve existing compatibility-only behaviour.
+        const canonicalService = toCanonicalDriverService(job.service_slug);
+        const eligibleDrivers = canonicalService
+            ? compatibleDrivers.filter(driver => {
+                const profile = profilesById.get(driver.id);
+                if (!profile) return false;
+                const vehicle = vehicleRowsByUser.get(driver.id) || null;
+                return isDriverEligibleForService(profile, vehicle, canonicalService);
+            })
+            : compatibleDrivers.filter(driver => profilesById.has(driver.id));
+
+        console.log(`[DispatchService] Eligibility filter: ${compatibleDrivers.length} compatible -> ${eligibleDrivers.length} eligible for service ${canonicalService || job.service_slug}`);
+
+        // Only rank drivers after all existing compatibility and eligibility gates.
+        // Preserve the legacy ordering if disabled, the schema is absent, or its read fails.
+        if (process.env.VAYDU_DRIVER_RANKING_V23 === 'true' && !strictRead) {
+            const scores = await readDriverReviewScores(this.supabase, eligibleDrivers.map(driver => driver.id));
+            if (scores !== null) {
+                const pickup = { lat: (job as any).pickup_lat, lng: (job as any).pickup_lng };
+                const settings = await MarketplaceConfigService.getSmartMatchingSettings((job as any).tenant_id ?? null).catch(() => null);
+                const weights = {
+                    acceptanceRateWeight: settings?.acceptanceRateWeight ?? 0,
+                    cancellationRateWeight: settings?.cancellationRateWeight ?? 0,
+                    newDriverExposureKm: settings?.newDriverExposureKm ?? 0
+                };
+                // Reuse the canonical offer metrics only when a reliability weight
+                // is configured; zero weights preserve the existing behaviour (and
+                // skip the extra reads entirely).
+                let reliability: Map<string, DriverReliability> | undefined;
+                if (weights.acceptanceRateWeight > 0 || weights.cancellationRateWeight > 0) {
+                    reliability = await this.readReliability(eligibleDrivers.map(driver => driver.id)).catch(() => undefined);
+                }
+                return orderDriversByRoadEta(
+                    rankEligibleDrivers(eligibleDrivers as NearbyDriver[], pickup, scores, Date.now(), reliability, weights),
+                    pickup);
+            }
+        }
+
+        const ordered = (eligibleDrivers as NearbyDriver[]).sort((a, b) => {
             const scoreA = distanceScore(job, a);
             const scoreB = distanceScore(job, b);
 
@@ -587,6 +856,17 @@ export class DispatchService {
 
             return activeB - activeA;
         });
+        return strictRead?ordered:orderDriversByRoadEta(ordered,{lat:(job as any).pickup_lat,lng:(job as any).pickup_lng});
+    }
+
+    /** Reuse the canonical offer metrics; a failure preserves the previous ordering. */
+    private async readReliability(driverIds: readonly string[]): Promise<Map<string, DriverReliability>> {
+        const map = new Map<string, DriverReliability>();
+        for (const id of driverIds) {
+            const m = await reportDriverOfferMetrics(id);
+            map.set(id, { acceptanceRate: m.acceptanceRate, cancellationRate: m.cancellationRate });
+        }
+        return map;
     }
 
     async getAreaStats(lat: number, lng: number, radius = 0.05) {
@@ -618,19 +898,25 @@ export class DispatchService {
     private isVehicleCompatible(vehicleClass: string | null | undefined, serviceType: string | null | undefined): boolean {
         if (!vehicleClass || !serviceType) return false;
 
+        const normalizedService = String(serviceType).toLowerCase().replace(/[-_]/g, '');
+        const isVanService = normalizedService.includes('van') || normalizedService.includes('moving');
+        const isDelivery = normalizedService.includes('delivery');
+        const isErrand = normalizedService.includes('errand');
+        const isRide = normalizedService.includes('ride');
+
         // Bike drivers can receive bike and small delivery/errand jobs
         if (vehicleClass === 'bike') {
-            return ['delivery', 'errand'].includes(serviceType);
+            return isDelivery || isErrand;
         }
 
         // Car drivers can receive rides and car-compatible delivery/errand jobs
         if (vehicleClass === 'car' || vehicleClass === 'standard') {
-            return ['ride', 'delivery', 'errand'].includes(serviceType);
+            return isRide || isDelivery || isErrand;
         }
 
         // Van drivers can receive moving and large delivery jobs
         if (vehicleClass === 'van' || vehicleClass === 'large_van') {
-            return ['van_moving', 'delivery'].includes(serviceType);
+            return isVanService || isDelivery;
         }
 
         // Default to compatible for unknown vehicle classes

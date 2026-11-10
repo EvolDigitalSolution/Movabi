@@ -26,10 +26,10 @@ import {
 
     <ion-content class="legal-content">
       <article class="legal-page">
-        <p class="eyebrow">Movabi privacy notice</p>
-        <h1>How Movabi uses your data</h1>
+        <p class="eyebrow">Vaydu privacy notice</p>
+        <h1>How Vaydu uses your data</h1>
         <p class="intro">
-          This notice explains what information Movabi collects, why we use it, how it supports bookings,
+          This notice explains what information Vaydu collects, why we use it, how it supports bookings,
           payments, safety, and support, and the choices available to customers and drivers.
         </p>
 
@@ -53,7 +53,7 @@ import {
             where processing depends on consent, such as optional marketing or some device permissions.
           </p>
           <ul>
-            <li>To use the service, Movabi still needs the data required to create, dispatch, pay for, and support a booking.</li>
+            <li>To use the service, Vaydu still needs the data required to create, dispatch, pay for, and support a booking.</li>
             <li>Location permission can be changed in your device settings, but live tracking and accurate pickup may be limited.</li>
             <li>Payment records may need to be retained for accounting, fraud prevention, disputes, and legal obligations.</li>
           </ul>
@@ -62,9 +62,9 @@ import {
         <section>
           <h2>Contact and updates</h2>
           <p>
-            Contact Movabi support from inside the app for privacy questions, account requests, or safety concerns.
+            Contact Vaydu support from inside the app for privacy questions, account requests, or safety concerns.
             We may update this notice when the app, law, providers, or services change. The latest version will be
-            shown in the app or on the Movabi website.
+            shown in the app or on the Vaydu website.
           </p>
         </section>
 
@@ -162,18 +162,18 @@ export class PrivacyPage {
   sections = [
     {
       title: 'What we collect',
-      copy: 'Movabi collects the information needed to create an account, match a request, process payment, protect users, and provide support.',
+      copy: 'Vaydu collects the information needed to create an account, match a request, process payment, protect users, and provide support.',
       items: [
         'Account details such as name, email, phone, role, country, and profile settings.',
         'Booking details such as pickup, dropoff, service type, items, budgets, vehicle needs, messages, ratings, and job status.',
-        'Driver details such as vehicle profile, verification status, location while online or assigned, Stripe Connect, and Movabi Pay setup.',
+        'Driver details such as vehicle profile, verification status, location while online or assigned, Stripe Connect, and Vaydu Pay setup.',
         'Payment and wallet records such as authorisations, reservations, refunds, payouts, and transaction references handled with payment providers.',
         'Device and technical data such as app version, logs, IP address, diagnostics, fraud signals, and notification tokens.'
       ]
     },
     {
       title: 'How we use it',
-      copy: 'We use data to operate Movabi, make the app understandable, and keep bookings moving safely.',
+      copy: 'We use data to operate Vaydu, make the app understandable, and keep bookings moving safely.',
       items: [
         'Create and manage customer, driver, and admin accounts.',
         'Estimate prices, dispatch drivers, show live tracking, enable chat, and complete requests.',
@@ -184,7 +184,7 @@ export class PrivacyPage {
     },
     {
       title: 'Lawful basis',
-      copy: 'For UK and EU users, Movabi relies on recognised lawful bases depending on the activity.',
+      copy: 'For UK and EU users, Vaydu relies on recognised lawful bases depending on the activity.',
       items: [
         'Contract: to provide bookings, driver services, payments, tracking, and support.',
         'Legitimate interests: to keep the platform secure, prevent fraud, improve service quality, and manage operations.',
@@ -194,17 +194,17 @@ export class PrivacyPage {
     },
     {
       title: 'Who we share data with',
-      copy: 'Movabi shares data only where needed to run the service, protect people, or meet obligations.',
+      copy: 'Vaydu shares data only where needed to run the service, protect people, or meet obligations.',
       items: [
         'Customers and drivers see the details needed to complete the job, such as names, vehicle details, trip status, chat, and location.',
-        'Payment providers such as Stripe process card authorisations, wallet top-ups, driver payouts, and Movabi Pay issuing where enabled.',
+        'Payment providers such as Stripe process card authorisations, wallet top-ups, driver payouts, and Vaydu Pay issuing where enabled.',
         'Infrastructure providers such as Supabase, hosting, map, notification, analytics, and support tools help operate the app.',
         'Authorities, insurers, or professional advisers may receive information where required by law, disputes, safety, or fraud prevention.'
       ]
     },
     {
       title: 'Location, tracking, and messages',
-      copy: 'Location and communication data are sensitive in a transport app, so Movabi uses them for clear service purposes.',
+      copy: 'Location and communication data are sensitive in a transport app, so Vaydu uses them for clear service purposes.',
       items: [
         'Customer location helps set pickup, delivery, and route details when permission is granted.',
         'Driver location is used while online or assigned so customers can see progress and drivers can navigate.',
@@ -214,12 +214,12 @@ export class PrivacyPage {
     },
     {
       title: 'Retention and security',
-      copy: 'Movabi keeps data only for as long as needed for service, legal, accounting, safety, and dispute purposes.',
+      copy: 'Vaydu keeps data only for as long as needed for service, legal, accounting, safety, and dispute purposes.',
       items: [
         'Active booking data is kept while the job is open and for a reasonable period afterwards for receipts, support, and disputes.',
         'Payment, wallet, payout, and tax records may be retained longer where law or providers require it.',
         'Security controls include access controls, provider security tools, encrypted transport, audit logs, and restricted admin access.',
-        'No system is risk-free, but Movabi works to reduce unnecessary data collection and limit access to people and systems that need it.'
+        'No system is risk-free, but Vaydu works to reduce unnecessary data collection and limit access to people and systems that need it.'
       ]
     }
   ];

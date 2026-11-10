@@ -1,3 +1,4 @@
+import { formatCurrencyValue } from '../../../shared/utils/currency-money';
 import { Injectable, inject, computed, signal } from '@angular/core';
 import { environment } from '@env/environment';
 import { SystemConfigService } from './system-config.service';
@@ -46,9 +47,11 @@ interface RuntimeCountryHint {
 export class AppConfigService {
   private systemConfig = inject(SystemConfigService);
   private readonly countryStorageKey = 'movabi_country_code';
+  private readonly geoHintStorageKey = 'movabi_geo_hint';
   private readonly runtimeCountryCode = signal<string | null>(this.readStoredCountryCode());
-  private readonly runtimeCountryHint = signal<RuntimeCountryHint | null>(null);
+  private readonly runtimeCountryHint = signal<RuntimeCountryHint | null>(this.readCachedGeoHint());
   private detectionStarted = false;
+  private geoLookupAttempted = false;
 
   public readonly env = environment;
 
@@ -56,8 +59,9 @@ export class AppConfigService {
   // These defaults give every market a safe startup experience before admin customisation.
   public readonly defaultCountries: CountryConfig[] = [
     this.country('GB', 'United Kingdom', 'GBP', '£', 'en-GB', '+44', 51.5074, -0.1278, [
-      ['Asda', 'A', '#2f8f2f'], ['Aldi', 'A', '#0b4ea2'], ['Tesco', 'T', '#00539f'],
-      ["Sainsbury's", 'S', '#f06c00'], ['Morrisons', 'M', '#006548'], ['Co-op', 'C', '#00a3e0']
+      ['Tesco', 'T', '#00539f'], ['Asda', 'A', '#2f8f2f'], ["Sainsbury's", 'S', '#f06c00'],
+      ['Morrisons', 'M', '#006548'], ['Co-op', 'C', '#00a3e0'], ['Aldi', 'A', '#0b4ea2'],
+      ['Lidl', 'L', '#0050aa'], ['Boots', 'B', '#00539f'], ['Other', 'O', '#64748b']
     ], this.pricing(3.5, 4.5, 3.25, 14, 1.05, 0.18, 12)),
     this.country('US', 'United States', 'USD', '$', 'en-US', '+1', 38.9072, -77.0369, [
       ['Walmart', 'W', '#0071ce'], ['Target', 'T', '#cc0000'], ['Costco', 'C', '#005daa'],
@@ -224,13 +228,39 @@ export class AppConfigService {
     if (this.detectionStarted) return;
     this.detectionStarted = true;
 
-    if (!this.runtimeCountryCode()) {
-      const localeCountry = this.countryFromLocale(this.getBrowserLocale());
-      if (localeCountry) this.setRuntimeCountry(localeCountry, false);
+    // A persisted selection is the user's explicit service-market preference.
+    if (this.readStoredCountryCode()) return;
+
+    // Use a cached geo hint if we have one. This avoids repeated calls to the
+    // external geo service and keeps the app working when the service is rate
+    // limited or blocked by CORS.
+    const cachedHint = this.readCachedGeoHint();
+    if (cachedHint?.code) {
+      this.setRuntimeCountry(cachedHint.code, false, cachedHint);
+      return;
     }
 
-    const ipCountry = await this.detectCountryFromIp();
-    if (ipCountry) this.setRuntimeCountry(ipCountry.code, false, ipCountry);
+    // If a user-selected country is already set, don't override it with geo.
+    if (this.runtimeCountryCode()) return;
+
+    // Only attempt the external lookup once per session. On failure we fall back
+    // to the UK defaults, which already power pricing/booking/dashbord.
+    if (this.geoLookupAttempted) return;
+    this.geoLookupAttempted = true;
+
+    try {
+      const ipCountry = await this.detectCountryFromIp();
+      if (ipCountry) {
+        this.writeCachedGeoHint(ipCountry);
+        this.setRuntimeCountry(ipCountry.code, false, ipCountry);
+      }
+    } catch {
+      // Continue to locale only as a display hint when geographic detection fails.
+    }
+    if (!this.runtimeCountryCode()) {
+      const localeCountry=this.countryFromLocale(this.getBrowserLocale());
+      if (localeCountry) this.setRuntimeCountry(localeCountry,false);
+    }
   }
 
   get currencySymbol() {
@@ -249,21 +279,9 @@ export class AppConfigService {
     return this.currentCountry().locale;
   }
 
-  formatCurrency(amount: number | string | null | undefined): string {
-    const numericAmount = typeof amount === 'string' ? parseFloat(amount) : (amount || 0);
-    if (isNaN(numericAmount)) return `${this.currencySymbol}0.00`;
-    const displayAmount = this.convertAmount(numericAmount, 'GBP', this.currencyCode);
-
-    try {
-      return new Intl.NumberFormat(this.locale, {
-        style: 'currency',
-        currency: this.currencyCode,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(displayAmount);
-    } catch {
-      return `${this.currencySymbol}${displayAmount.toFixed(2)}`;
-    }
+  formatCurrency(amount: number | string | null | undefined, currencyCode=this.currencyCode): string {
+    const value=typeof amount==='string'?Number(amount):Number(amount ?? 0);
+    return formatCurrencyValue(Number.isFinite(value)?value:0,currencyCode,this.locale);
   }
 
   convertAmount(amount: number, fromCurrency = 'GBP', toCurrency = this.currencyCode): number {
@@ -273,7 +291,7 @@ export class AppConfigService {
   }
 
   formatConvertedFromGbp(amount: number): string {
-    return this.formatCurrency(amount);
+    return this.formatCurrency(this.convertAmount(amount,'GBP',this.currencyCode));
   }
 
   t(key: string): string {
@@ -305,7 +323,7 @@ export class AppConfigService {
         name: shopName,
         logo,
         color,
-        query: `${shopName} near me`
+        query: shopName === 'Other' ? '' : `${shopName} near me`
       })),
       pricingDefaults
     };
@@ -361,21 +379,44 @@ export class AppConfigService {
 
   private countryFromHint(hint: RuntimeCountryHint): CountryConfig {
     const locale = `en-${hint.code}`;
-    const currency = hint.currency || 'USD';
+    // Prefer known defaults for this country; otherwise fall back to the hint
+    // values and finally to the UK default so pricing/booking never break.
+    const defaultCountry = this.defaultCountries.find(c => c.code === hint.code);
+    const currency = hint.currency || defaultCountry?.currency || 'GBP';
+    const phoneCode = hint.phoneCode || defaultCountry?.phoneCode || '+44';
     return {
       code: hint.code,
       name: hint.name || this.countryNameFromCode(hint.code),
       currency,
       currencySymbol: this.symbolFromCurrency(currency, locale),
       locale,
-      phoneCode: hint.phoneCode || '',
+      phoneCode,
       defaultCenter: {
-        lat: typeof hint.lat === 'number' ? hint.lat : this.defaultCountries[0].defaultCenter.lat,
-        lng: typeof hint.lng === 'number' ? hint.lng : this.defaultCountries[0].defaultCenter.lng
+        lat: typeof hint.lat === 'number' ? hint.lat : defaultCountry?.defaultCenter.lat ?? this.defaultCountries[0].defaultCenter.lat,
+        lng: typeof hint.lng === 'number' ? hint.lng : defaultCountry?.defaultCenter.lng ?? this.defaultCountries[0].defaultCenter.lng
       },
-      popularShops: this.defaultCountries[0].popularShops,
-      pricingDefaults: this.defaultCountries[0].pricingDefaults
+      popularShops: defaultCountry?.popularShops ?? this.defaultCountries[0].popularShops,
+      pricingDefaults: defaultCountry?.pricingDefaults ?? this.defaultCountries[0].pricingDefaults
     };
+  }
+
+  private readCachedGeoHint(): RuntimeCountryHint | null {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(this.geoHintStorageKey);
+      return raw ? (JSON.parse(raw) as RuntimeCountryHint) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedGeoHint(hint: RuntimeCountryHint): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(this.geoHintStorageKey, JSON.stringify(hint));
+    } catch {
+      // ignore storage errors
+    }
   }
 
   private isBrokenSymbol(symbol: string | null | undefined): boolean {

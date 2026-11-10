@@ -21,17 +21,17 @@ import {
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/"></ion-back-button>
         </ion-buttons>
-        <ion-title>How to use Movabi</ion-title>
+        <ion-title>How to use Vaydu</ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content class="help-content">
       <article class="help-page">
         <p class="eyebrow">Simple app guide</p>
-        <h1>Get around Movabi without guessing.</h1>
+        <h1>Get around Vaydu without guessing.</h1>
         <p class="intro">
-          This guide explains the main controls customers and drivers use across rides, errands,
-          package delivery, van moving, wallet, tracking, chat, and payments.
+          This guide explains the main controls customers and drivers use across rides, shop,
+          deliver, move, wallet, tracking, chat, and payments.
         </p>
 
         <section>
@@ -86,7 +86,7 @@ import {
           <h2>Still stuck?</h2>
           <p>
             Use in-app support with the booking ID shown on the tracking screen. Include what happened,
-            the service type, and any payment or driver issue so Movabi can check the job faster.
+            the service type, and any payment or driver issue so Vaydu can check the job faster.
           </p>
           <div class="tour-actions" aria-label="Restart onboarding tours">
             <button type="button" (click)="restartTour('customer')">Restart customer tour</button>
@@ -231,7 +231,7 @@ export class HelpPage {
   customerGuide = [
     {
       title: 'Service cards',
-      copy: 'Tap Ride, Errand, Package Delivery, or Van Moving. Each service asks for the correct details, vehicle type, budget, and route.'
+      copy: 'Tap Ride, Shop, Deliver, or Move. Each service asks for the correct details, vehicle type, budget, and route.'
     },
     {
       title: 'Pickup and dropoff',
@@ -239,11 +239,11 @@ export class HelpPage {
     },
     {
       title: 'Price and budget',
-      copy: 'Confirm only after pickup and dropoff are set. Errands may include an item budget; rides and delivery focus on route and service fee.'
+      copy: 'Confirm only after pickup and dropoff are set. Shop jobs may include an item budget; rides and deliver focus on route and service fee.'
     },
     {
       title: 'Wallet or card',
-      copy: 'Movabi checks wallet first where supported. If wallet is not enough, card authorisation can be used before the job is sent.'
+      copy: 'Vaydu checks wallet first where supported. If wallet is not enough, card authorisation can be used before the job is sent.'
     }
   ];
 
@@ -262,7 +262,7 @@ export class HelpPage {
     },
     {
       title: 'No driver or cancelled',
-      copy: 'The tracking page explains whether wallet funds return to Movabi wallet or card authorisation returns to the original payment card.'
+      copy: 'The tracking page explains whether wallet funds return to Vaydu wallet or card authorisation returns to the original payment card.'
     }
   ];
 
@@ -280,8 +280,8 @@ export class HelpPage {
       copy: 'If you leave the app or navigate away, return to Driver Hub and use the active job card to continue the request.'
     },
     {
-      title: 'Movabi Pay',
-      copy: 'For errand item budgets, eligible drivers can use a Movabi Pay virtual card limited to the approved customer budget.'
+      title: 'Vaydu Pay',
+      copy: 'For errand item budgets, eligible drivers can use a Vaydu Pay virtual card limited to the approved customer budget.'
     },
     {
       title: 'Complete request',
@@ -300,7 +300,7 @@ export class HelpPage {
     },
     {
       title: 'Card authorisation',
-      copy: 'A card authorisation is not the same as a completed charge. If no driver is found or the job is cancelled before charge, Movabi releases it to the original card.'
+      copy: 'A card authorisation is not the same as a completed charge. If no driver is found or the job is cancelled before charge, Vaydu releases it to the original card.'
     },
     {
       title: 'Errand item spend',

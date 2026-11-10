@@ -1,0 +1,524 @@
+-- MOVABI MARKET INTELLIGENCE PRICING — MIGRATION
+-- Safe, idempotent migration. Uses public schema explicitly for every table.
+-- Does NOT replace public.pricing_config.
+-- Does NOT enable live market pricing. All feature flags default to safe/off values.
+--
+-- Apply this file manually against the Supabase project (same convention as
+-- marketplace-engine-migration.txt). Re-running this file is safe: every
+-- statement is idempotent (CREATE ... IF NOT EXISTS, defensive UPDATE-then-INSERT
+-- for settings, ON CONFLICT DO NOTHING only where a real unique index is created
+-- by this same file).
+
+-- =========================================================
+-- 1. MARKET PRICING STRATEGIES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.market_pricing_strategies (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    country_code varchar(2) NOT NULL,
+    market_city varchar(120),
+    zone_id uuid,
+
+    service_type varchar(80) NOT NULL,
+    vehicle_class varchar(80),
+
+    strategy varchar(30) NOT NULL DEFAULT 'manual'
+        CHECK (
+            strategy IN (
+                'manual',
+                'match_market',
+                'beat_market',
+                'premium',
+                'lowest_sustainable'
+            )
+        ),
+
+    target_difference_percent numeric(8,4) NOT NULL DEFAULT 0,
+
+    minimum_driver_hourly_rate numeric(12,2),
+    minimum_driver_per_km numeric(12,4),
+    minimum_driver_payout numeric(12,2),
+
+    minimum_platform_margin_percent numeric(8,4) NOT NULL DEFAULT 0,
+    minimum_platform_revenue numeric(12,2) NOT NULL DEFAULT 0,
+
+    maximum_customer_discount_percent numeric(8,4) NOT NULL DEFAULT 15,
+    maximum_market_adjustment_percent numeric(8,4) NOT NULL DEFAULT 20,
+
+    currency varchar(3) NOT NULL,
+
+    enabled boolean NOT NULL DEFAULT false,
+
+    valid_from timestamptz,
+    valid_until timestamptz,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_pricing_strategies_country
+    ON public.market_pricing_strategies (country_code);
+CREATE INDEX IF NOT EXISTS idx_market_pricing_strategies_city
+    ON public.market_pricing_strategies (market_city);
+CREATE INDEX IF NOT EXISTS idx_market_pricing_strategies_service
+    ON public.market_pricing_strategies (service_type);
+CREATE INDEX IF NOT EXISTS idx_market_pricing_strategies_vehicle
+    ON public.market_pricing_strategies (vehicle_class);
+CREATE INDEX IF NOT EXISTS idx_market_pricing_strategies_enabled
+    ON public.market_pricing_strategies (enabled);
+
+-- Prevent accidental duplicate strategies at the same specificity.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_market_pricing_strategies_unique_specificity
+    ON public.market_pricing_strategies (
+        country_code,
+        COALESCE(market_city, ''),
+        COALESCE(zone_id::text, ''),
+        service_type,
+        COALESCE(vehicle_class, '')
+    );
+
+-- =========================================================
+-- 2. COMPETITOR PROFILES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.competitor_profiles (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    country_code varchar(2) NOT NULL,
+    market_city varchar(120),
+
+    competitor_name varchar(120) NOT NULL,
+    competitor_slug varchar(120) NOT NULL,
+
+    service_type varchar(80) NOT NULL DEFAULT 'ride',
+    vehicle_class varchar(80),
+
+    enabled boolean NOT NULL DEFAULT true,
+    display_order integer NOT NULL DEFAULT 0,
+
+    source_type varchar(30) NOT NULL DEFAULT 'manual'
+        CHECK (
+            source_type IN (
+                'manual',
+                'partner',
+                'research',
+                'api'
+            )
+        ),
+
+    notes text,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_competitor_profiles_country
+    ON public.competitor_profiles (country_code);
+CREATE INDEX IF NOT EXISTS idx_competitor_profiles_city
+    ON public.competitor_profiles (market_city);
+CREATE INDEX IF NOT EXISTS idx_competitor_profiles_enabled
+    ON public.competitor_profiles (enabled);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_competitor_profiles_unique_specificity
+    ON public.competitor_profiles (
+        country_code,
+        COALESCE(market_city, ''),
+        competitor_slug,
+        service_type,
+        COALESCE(vehicle_class, '')
+    );
+
+-- =========================================================
+-- 3. COMPETITOR FARE BENCHMARKS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.competitor_fare_benchmarks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    competitor_profile_id uuid NOT NULL
+        REFERENCES public.competitor_profiles(id)
+        ON DELETE CASCADE,
+
+    distance_km numeric(12,3),
+    duration_minutes numeric(12,3),
+
+    route_origin_label varchar(255),
+    route_destination_label varchar(255),
+
+    observed_fare numeric(12,2) NOT NULL,
+    currency varchar(3) NOT NULL,
+
+    fare_type varchar(40) NOT NULL DEFAULT 'typical'
+        CHECK (
+            fare_type IN (
+                'minimum',
+                'typical',
+                'peak',
+                'off_peak',
+                'airport',
+                'manual_index'
+            )
+        ),
+
+    observed_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz,
+
+    confidence_score numeric(5,2) NOT NULL DEFAULT 100
+        CHECK (confidence_score >= 0 AND confidence_score <= 100),
+
+    source_reference text,
+    notes text,
+
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_competitor_fare_benchmarks_profile
+    ON public.competitor_fare_benchmarks (competitor_profile_id);
+CREATE INDEX IF NOT EXISTS idx_competitor_fare_benchmarks_observed_at
+    ON public.competitor_fare_benchmarks (observed_at);
+CREATE INDEX IF NOT EXISTS idx_competitor_fare_benchmarks_expires_at
+    ON public.competitor_fare_benchmarks (expires_at);
+CREATE INDEX IF NOT EXISTS idx_competitor_fare_benchmarks_distance_km
+    ON public.competitor_fare_benchmarks (distance_km);
+CREATE INDEX IF NOT EXISTS idx_competitor_fare_benchmarks_duration_minutes
+    ON public.competitor_fare_benchmarks (duration_minutes);
+
+-- No scraping or competitor API calls in this phase. All benchmark data is
+-- manual / admin-managed via the Admin API.
+
+-- =========================================================
+-- 4. MARKET PRICE SNAPSHOTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.market_price_snapshots (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    country_code varchar(2) NOT NULL,
+    market_city varchar(120),
+    service_type varchar(80) NOT NULL,
+    vehicle_class varchar(80),
+
+    distance_km numeric(12,3),
+    duration_minutes numeric(12,3),
+
+    competitor_count integer NOT NULL DEFAULT 0,
+    lowest_competitor_fare numeric(12,2),
+    average_competitor_fare numeric(12,2),
+    median_competitor_fare numeric(12,2),
+    highest_competitor_fare numeric(12,2),
+
+    currency varchar(3) NOT NULL,
+
+    calculated_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz,
+
+    benchmark_ids uuid[],
+
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_price_snapshots_country
+    ON public.market_price_snapshots (country_code);
+CREATE INDEX IF NOT EXISTS idx_market_price_snapshots_service
+    ON public.market_price_snapshots (service_type);
+CREATE INDEX IF NOT EXISTS idx_market_price_snapshots_calculated_at
+    ON public.market_price_snapshots (calculated_at);
+
+-- =========================================================
+-- 5. QUOTE MARKET ADJUSTMENTS (audit trail)
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.quote_market_adjustments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    job_id uuid,
+    booking_id uuid,
+    quote_reference varchar(150),
+
+    strategy_id uuid
+        REFERENCES public.market_pricing_strategies(id)
+        ON DELETE SET NULL,
+
+    market_snapshot_id uuid
+        REFERENCES public.market_price_snapshots(id)
+        ON DELETE SET NULL,
+
+    base_service_fare numeric(12,2) NOT NULL,
+    market_reference_fare numeric(12,2),
+
+    requested_difference_percent numeric(8,4),
+    requested_target_fare numeric(12,2),
+
+    driver_protection_floor numeric(12,2),
+    platform_margin_floor numeric(12,2),
+
+    applied_market_adjustment numeric(12,2) NOT NULL DEFAULT 0,
+    adjusted_service_fare numeric(12,2) NOT NULL,
+
+    platform_fee_amount numeric(12,2) NOT NULL DEFAULT 0,
+    customer_total numeric(12,2) NOT NULL,
+
+    driver_commission_amount numeric(12,2) NOT NULL DEFAULT 0,
+    driver_payout numeric(12,2) NOT NULL,
+
+    currency varchar(3) NOT NULL,
+
+    feature_enabled boolean NOT NULL DEFAULT false,
+    adjustment_applied boolean NOT NULL DEFAULT false,
+
+    fallback_reason varchar(255),
+
+    calculation_version varchar(40) NOT NULL DEFAULT 'market-v1',
+
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_market_adjustments_job
+    ON public.quote_market_adjustments (job_id);
+CREATE INDEX IF NOT EXISTS idx_quote_market_adjustments_booking
+    ON public.quote_market_adjustments (booking_id);
+CREATE INDEX IF NOT EXISTS idx_quote_market_adjustments_strategy
+    ON public.quote_market_adjustments (strategy_id);
+CREATE INDEX IF NOT EXISTS idx_quote_market_adjustments_created_at
+    ON public.quote_market_adjustments (created_at);
+
+-- This table is NOT required for current pricing to work. If audit insertion
+-- fails at runtime, MarketPricingService logs the failure and continues
+-- without failing the booking quote (see server/services/market-pricing.service.ts).
+
+-- =========================================================
+-- 6. ROW LEVEL SECURITY
+-- =========================================================
+-- Direct client access is intentionally denied.
+-- Protected backend routes use the Supabase service-role client after requireAdmin authorization.
+--
+-- The service-role key used by supabaseAdmin (server/services/supabase.service.ts)
+-- bypasses RLS entirely, so enabling RLS here with NO anon/authenticated policies
+-- blocks all direct client (customer/driver/browser) access while leaving every
+-- backend code path (admin routes behind requireAdmin, and quote-time evaluation
+-- inside MarketPricingService) fully functional, since both always use supabaseAdmin.
+--
+-- No policies are created for anon or authenticated roles on purpose: with RLS
+-- enabled and zero policies, all access from those roles is denied by default.
+
+ALTER TABLE public.market_pricing_strategies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.competitor_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.competitor_fare_benchmarks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.market_price_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quote_market_adjustments ENABLE ROW LEVEL SECURITY;
+
+-- Defensive: also revoke any implicit table privileges from anon/authenticated.
+-- Service role is never revoked.
+REVOKE ALL ON TABLE public.market_pricing_strategies FROM anon, authenticated;
+REVOKE ALL ON TABLE public.competitor_profiles FROM anon, authenticated;
+REVOKE ALL ON TABLE public.competitor_fare_benchmarks FROM anon, authenticated;
+REVOKE ALL ON TABLE public.market_price_snapshots FROM anon, authenticated;
+REVOKE ALL ON TABLE public.quote_market_adjustments FROM anon, authenticated;
+
+-- =========================================================
+-- 7. SETTINGS (public.marketplace_settings)
+-- =========================================================
+-- marketplace_settings columns (confirmed from server/marketplace-engine-migration.txt
+-- and server/services/marketplace-config.service.ts): id, tenant_id, key, value (jsonb),
+-- created_at, updated_at. Global rows use tenant_id IS NULL and are looked up by key.
+--
+-- A real partial unique index (idx_marketplace_settings_global_key) already exists
+-- for (key) WHERE tenant_id IS NULL. Per explicit instruction, this migration does
+-- NOT rely on ON CONFLICT and instead uses a defensive UPDATE-then-INSERT pattern
+-- for every setting so it is correct even if that constraint is ever changed.
+--
+-- IMPORTANT: market_pricing_enabled defaults to false and
+-- market_pricing_shadow_mode defaults to true. No migration activates market pricing.
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = 'false'::jsonb, updated_at = now()
+  WHERE key = 'market_pricing_enabled' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_pricing_enabled', 'false'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = 'false'::jsonb, updated_at = now()
+  WHERE key = 'market_competitor_benchmarks_enabled' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_competitor_benchmarks_enabled', 'false'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = 'true'::jsonb, updated_at = now()
+  WHERE key = 'market_driver_protection_enabled' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_driver_protection_enabled', 'true'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = 'true'::jsonb, updated_at = now()
+  WHERE key = 'market_platform_margin_protection_enabled' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_platform_margin_protection_enabled', 'true'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = 'true'::jsonb, updated_at = now()
+  WHERE key = 'market_pricing_shadow_mode' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_pricing_shadow_mode', 'true'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = 'true'::jsonb, updated_at = now()
+  WHERE key = 'market_pricing_audit_enabled' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_pricing_audit_enabled', 'true'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = '7'::jsonb, updated_at = now()
+  WHERE key = 'market_pricing_default_target_percent' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_pricing_default_target_percent', '7'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = '15'::jsonb, updated_at = now()
+  WHERE key = 'market_pricing_max_discount_percent' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_pricing_max_discount_percent', '15'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = '168'::jsonb, updated_at = now()
+  WHERE key = 'market_benchmark_max_age_hours' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_benchmark_max_age_hours', '168'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  UPDATE public.marketplace_settings
+  SET value = '"market-v1"'::jsonb, updated_at = now()
+  WHERE key = 'market_pricing_version' AND tenant_id IS NULL;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.marketplace_settings (id, key, value, tenant_id, created_at, updated_at)
+    VALUES (gen_random_uuid(), 'market_pricing_version', '"market-v1"'::jsonb, NULL, now(), now());
+  END IF;
+END $$;
+
+-- =========================================================
+-- 8. PREFLIGHT / POST-RUN DUPLICATE AUDIT (read-only, informational)
+-- =========================================================
+-- Run this manually before and after applying the settings block above.
+-- It intentionally does NOT delete anything. If it returns any rows, resolve
+-- duplicates manually before trusting getRawSetting() lookups for these keys.
+--
+-- SELECT
+--   key,
+--   tenant_id,
+--   COUNT(*) AS row_count
+-- FROM public.marketplace_settings
+-- WHERE key IN (
+--   'market_pricing_enabled',
+--   'market_competitor_benchmarks_enabled',
+--   'market_driver_protection_enabled',
+--   'market_platform_margin_protection_enabled',
+--   'market_pricing_shadow_mode',
+--   'market_pricing_audit_enabled',
+--   'market_pricing_default_target_percent',
+--   'market_pricing_max_discount_percent',
+--   'market_benchmark_max_age_hours',
+--   'market_pricing_version'
+-- )
+-- GROUP BY key, tenant_id
+-- HAVING COUNT(*) > 1;
+
+-- =========================================================
+-- 9. OPTIONAL DISABLED SEED DATA (UK reference example)
+-- =========================================================
+-- Disabled by default. Admin must review and enable explicitly.
+
+INSERT INTO public.market_pricing_strategies (
+    country_code, market_city, service_type, vehicle_class,
+    strategy, target_difference_percent,
+    minimum_platform_margin_percent, minimum_platform_revenue,
+    maximum_customer_discount_percent, maximum_market_adjustment_percent,
+    currency, enabled
+)
+SELECT 'GB', NULL, 'ride', NULL,
+       'beat_market', 8,
+       0, 0,
+       15, 15,
+       'GBP', false
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.market_pricing_strategies
+    WHERE country_code = 'GB'
+      AND COALESCE(market_city, '') = ''
+      AND COALESCE(zone_id::text, '') = ''
+      AND service_type = 'ride'
+      AND COALESCE(vehicle_class, '') = ''
+);
+
+INSERT INTO public.competitor_profiles (country_code, market_city, competitor_name, competitor_slug, service_type, enabled, display_order)
+SELECT * FROM (VALUES
+    ('GB', NULL::varchar, 'Uber', 'uber', 'ride', false, 1),
+    ('GB', NULL::varchar, 'Bolt', 'bolt', 'ride', false, 2),
+    ('GB', NULL::varchar, 'Free Now', 'free-now', 'ride', false, 3),
+    ('GB', NULL::varchar, 'Local Taxi Benchmark', 'local-taxi-benchmark', 'ride', false, 4)
+) AS seed(country_code, market_city, competitor_name, competitor_slug, service_type, enabled, display_order)
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.competitor_profiles cp
+    WHERE cp.country_code = seed.country_code
+      AND COALESCE(cp.market_city, '') = COALESCE(seed.market_city, '')
+      AND cp.competitor_slug = seed.competitor_slug
+      AND cp.service_type = seed.service_type
+      AND COALESCE(cp.vehicle_class, '') = ''
+);
+
+-- No benchmark rows are seeded. Admin must enter verified competitor fare data
+-- before enabling market_competitor_benchmarks_enabled or any strategy.

@@ -1,3 +1,4 @@
+import { createStripePaymentBridge } from './payments/stripe-payment-bridge';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
 
@@ -14,9 +15,12 @@ if (!stripeWebhookSecret) {
   console.warn('[StripeService] STRIPE_WEBHOOK_SECRET is missing.');
 }
 
-export const stripe = new Stripe(stripeSecretKey, {
+const stripeClient = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16' as any
 });
+
+// v2.3 is opt-in. Missing/false flag returns the identical legacy SDK instance.
+export const stripe = createStripePaymentBridge(stripeClient, process.env.VAYDU_SHARED_PAYMENTS_V23 === 'true');
 
 type ConnectPlatform = 'web' | 'android' | 'ios' | 'native';
 
@@ -28,14 +32,15 @@ const isNativeConnectPlatform = (platform?: ConnectPlatform) =>
 
 export const verifyWebhookSignature = (
   payload: string | Buffer,
-  signature: string
+  signature: string,
+  webhookSecret: string
 ) => {
-  if (!stripeWebhookSecret) {
+  if (!webhookSecret) {
     throw new Error('Stripe webhook secret is not configured.');
   }
 
   try {
-    return stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret);
+    return stripe.webhooks.constructEvent(payload, signature, webhookSecret);
   } catch (err: any) {
     throw new Error(`Webhook Error: ${err.message}`);
   }

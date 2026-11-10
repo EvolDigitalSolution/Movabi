@@ -1,0 +1,85 @@
+
+> movabi@0.0.0 build:mobile:develop
+> ng build mobile --configuration develop
+
+> Building...
+√ Building...
+Initial chunk files | Names                         |  Raw size | Estimated transfer size
+chunk-FZOMSJZX.js   | -                             | 817.75 kB |               167.73 kB
+chunk-7FXTJFPR.js   | -                             | 497.57 kB |                74.40 kB
+styles-KANVTDOG.css | styles                        | 244.89 kB |                26.94 kB
+chunk-Z57XWSEI.js   | -                             | 203.97 kB |                58.53 kB
+chunk-CCFPZ7P3.js   | -                             | 192.78 kB |                43.76 kB
+main-5O2DU5FH.js    | main                          | 177.82 kB |                22.78 kB
+chunk-AEMSNKVE.js   | -                             |  92.81 kB |                23.48 kB
+chunk-ZAYA6D7V.js   | -                             |  47.26 kB |                 9.48 kB
+chunk-MUT4H7CW.js   | -                             |  45.74 kB |                13.00 kB
+chunk-ZFZRCEZ2.js   | -                             |  36.80 kB |                 8.90 kB
+chunk-VMRO73AI.js   | -                             |  36.22 kB |                12.61 kB
+chunk-FVDINECO.js   | -                             |  27.18 kB |                 7.49 kB
+chunk-3SRUMRKT.js   | -                             |  27.06 kB |                 7.25 kB
+chunk-GBQAFUNC.js   | -                             |  18.96 kB |                 4.10 kB
+chunk-PJ5SOEHJ.js   | -                             |  12.80 kB |                 4.24 kB
+chunk-FMXNFWSZ.js   | -                             |  11.59 kB |                 2.99 kB
+chunk-EEHYC46O.js   | -                             |  10.73 kB |                 2.82 kB
+chunk-F27GYBS2.js   | -                             |  10.16 kB |                 2.62 kB
+chunk-MRTVB6UI.js   | -                             |   8.85 kB |                 3.31 kB
+chunk-T7PXISBH.js   | -                             |   8.12 kB |                 2.97 kB
+chunk-WNRPV5LC.js   | -                             |   6.85 kB |                 2.14 kB
+chunk-VIJTRXN2.js   | -                             |   6.79 kB |                 2.25 kB
+chunk-TGISJGXH.js   | -                             |   5.94 kB |                 1.82 kB
+chunk-ZKGP3QUS.js   | -                             |   5.91 kB |                 2.07 kB
+chunk-Y4GDHYDS.js   | -                             |   5.74 kB |                 2.13 kB
+chunk-4BRBL32C.js   | -                             |   3.95 kB |                 1.22 kB
+chunk-AS5QRHCY.js   | -                             |   3.46 kB |                 1.63 kB
+chunk-4KSQOAC3.js   | -                             |   3.44 kB |                 1.37 kB
+chunk-KZB2YDBI.js   | -                             |   3.23 kB |                 1.19 kB
+chunk-QDYYCAQB.js   | -                             |   3.10 kB |               901 bytes
+chunk-7ZJA5ZJF.js   | -                             |   2.65 kB |                 1.01 kB
+chunk-H6YFDVVB.js   | -                             |   2.19 kB |               830 bytes
+chunk-R7HJ7YBK.js   | -                             |   1.75 kB |               746 bytes
+chunk-YMJDIOFO.js   | -                             |   1.49 kB |               616 bytes
+chunk-HU6DUUP4.js   | -                             |   1.23 kB |               530 bytes
+chunk-MWUESNOR.js   | -                             |   1.10 kB |               551 bytes
+chunk-DQ6TA46D.js   | -                             |   1.08 kB |               510 bytes
+chunk-N4PMC553.js   | -                             | 998 bytes |               998 bytes
+chunk-KQR5P6KK.js   | -                             | 942 bytes |               942 bytes
+chunk-NVT3NHBM.js   | -                             | 932 bytes |               932 bytes
+chunk-VKEX3IYB.js   | -                             | 911 bytes |               911 bytes
+chunk-2V7K5YTW.js   | -                             | 780 bytes |               780 bytes
+chunk-PZ7LE6UI.js   | -                             | 779 bytes |               779 bytes
+chunk-HXUBNWDI.js   | -                             | 613 bytes |               613 bytes
+chunk-NDWEG4M7.js   | -                             | 544 bytes |               544 bytes
+chunk-FHVN6A5Z.js   | -                             | 254 bytes |               254 bytes
+chunk-UIGZEDL5.js   | -                             | 199 bytes |               199 bytes
+chunk-B423QRP3.js   | -                             | 141 bytes |               141 bytes
+chunk-YZ23MZC7.js   | -                             | 103 bytes |               103 bytes
+chunk-IVRJWNQH.js   | -                             |  99 bytes |                99 bytes
+
+                    | Initial total                 |   2.60 MB |               528.20 kB
+
+Lazy chunk files    | Names                         |  Raw size | Estimated transfer size
+chunk-BVJNHR4G.js   | -                             |   1.06 MB |               236.38 kB
+chunk-C3NIMD6C.js   | booking-request-page          | 146.84 kB |                30.41 kB
+chunk-52LSGI3M.js   | dashboard-page                | 140.12 kB |                31.46 kB
+chunk-4PYETJWQ.js   | job-details-page              | 113.78 kB |                25.20 kB
+chunk-HCBHKIFK.js   | booking-tracking-page         | 108.67 kB |                24.45 kB
+chunk-NY7PZKFX.js   | -                             |  91.52 kB |                12.67 kB
+chunk-JYJL7VZ6.js   | onboarding-page               |  90.12 kB |                19.91 kB
+chunk-F7LQBKXQ.js   | ion-datetime_3-entry          |  74.50 kB |                14.47 kB
+chunk-TXTDJOMO.js   | driver-list-component         |  63.86 kB |                15.46 kB
+chunk-JHCRJW67.js   | global-ai-pricing-component   |  63.30 kB |                11.73 kB
+chunk-JEINNB3N.js   | settings-component            |  62.30 kB |                12.24 kB
+chunk-RXXWPRH5.js   | ion-item_8-entry              |  55.14 kB |                 7.20 kB
+chunk-XVOKH7JS.js   | marketplace-fare-page         |  53.89 kB |                11.93 kB
+chunk-SZBFV3P7.js   | -                             |  47.56 kB |                15.25 kB
+chunk-EMWHZKEW.js   | market-intelligence-component |  47.43 kB |                 9.18 kB
+...and 190 more lazy chunks files. Use "--verbose" to show all the files.
+
+Application bundle generation complete. [108.963 seconds] - 2026-10-27T14:57:40.732Z
+
+▲ [WARNING] src/app/app.css exceeded maximum budget. Budget 100.00 kB was not met by 13.86 kB with a total of 113.86 kB.
+
+
+Output location: C:\Users\fedri\source\repos\Movabi-mobile-develop\dist\mobile
+

@@ -17,6 +17,17 @@ export class PricingService {
 
   surgeMultiplier = signal<number>(1.0);
 
+  async shoppingCapacity(currency: string): Promise<{ currency: string; maximumBudget: number }> {
+    const { data, error } = await this.supabase.client.auth.getSession();
+    if (error || !data.session?.access_token) throw new Error('Authentication required');
+    return firstValueFrom(this.http.get<{ currency: string; maximumBudget: number }>(
+      this.apiUrlService.getApiUrl('/api/issuing/shopping-capacity'), {
+        params: { currency },
+        headers: { Authorization: `Bearer ${data.session.access_token}` }
+      }
+    ));
+  }
+
   async calculatePrice(serviceTypeId: string, serviceSlug: ServiceTypeEnum, distanceKm: number, lat?: number, lng?: number): Promise<number> {
     if (!serviceTypeId) {
       console.warn('PricingService: Missing serviceTypeId, skipping calculation');

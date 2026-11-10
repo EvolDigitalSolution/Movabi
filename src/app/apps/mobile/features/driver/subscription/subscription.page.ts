@@ -134,7 +134,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
               <ion-icon name="wallet-outline" class="text-xl"></ion-icon>
             </div>
             <p class="text-[10px] uppercase tracking-[0.08em] font-black text-slate-400 mb-1">Starter Fee</p>
-            <p class="text-lg font-display font-black text-slate-950">15%</p>
+            <p class="text-lg font-display font-black text-slate-950">5%</p>
             <p class="text-xs text-slate-500 font-semibold">commission</p>
           </div>
 
@@ -149,7 +149,7 @@ import { BadgeComponent, ButtonComponent } from '../../../../../shared/ui';
         </div>
 
         <div class="space-y-4">
-          <div class="flex items-center justify-between px-1">
+          <div class="flex flex-col items-start gap-3 px-1">
             <div class="flex items-center gap-3">
               <div class="w-1.5 h-6 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20"></div>
               <div>
@@ -322,7 +322,7 @@ export class SubscriptionPage implements OnInit {
 
     starterFeatures = [
         'Pay as you earn',
-        '15% service commission',
+        'Admin-configured service commission',
         'Standard request matching',
         'No monthly subscription'
     ];

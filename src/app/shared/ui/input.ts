@@ -14,8 +14,12 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@a
       multi: true
     }
   ],
+  styles: [`
+    input.embedded-address { border: 0; border-radius: 0; background: transparent; padding: 6px 0; box-shadow: none; font-size: 16px; min-height: 36px; }
+    input.embedded-address:focus { outline: 2px solid #2563eb; outline-offset: 2px; box-shadow: none; }
+  `],
   template: `
-    <div class="mb-4 min-w-0">
+    <div class="min-w-0" [class.mb-4]="!dense">
       @if (label) {
         <label [for]="id" class="block text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 leading-snug">
           {{ label }}
@@ -29,6 +33,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@a
           ></ion-icon>
         }
         <input
+          [class.embedded-address]="embeddedAddress"
           [id]="id"
           [type]="type"
           [placeholder]="placeholder"
@@ -36,11 +41,13 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@a
           [disabled]="disabled"
           (input)="onInput($event)"
           (blur)="onBlur()"
-          class="w-full min-w-0 bg-white border border-slate-300 rounded-[1.1rem] py-3.5 sm:py-4 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all duration-300 text-slate-900 font-medium placeholder:text-slate-400 leading-snug"
+          class="w-full min-w-0 bg-white border border-slate-300 rounded-[1.1rem] focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all duration-300 text-slate-900 font-medium placeholder:text-slate-400 leading-snug"
+          [class.py-3.5]="!dense && !embeddedAddress"
+          [class.py-2.5]="dense && !embeddedAddress"
           [class.pl-11]="icon && !phoneCode"
           [class.pl-[5.5rem]]="icon && phoneCode"
           [class.pl-[3.75rem]]="!icon && phoneCode"
-          [class.px-4]="!icon && !phoneCode"
+          [class.px-4]="!icon && !phoneCode && !embeddedAddress"
           [class.border-red-500]="error"
           [class.focus:ring-red-500/10]="error"
           [class.focus:border-red-500]="error"
@@ -69,6 +76,8 @@ export class InputComponent implements ControlValueAccessor {
   @Input() phoneCode?: string;
   @Input() error?: string;
   @Input() disabled = false;
+  @Input() dense = false;
+  @Input() embeddedAddress = false;
   @Input() id = 'input-' + Math.random().toString(36).substring(2, 9);
 
   value: string | number = '';

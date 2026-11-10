@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Map, NavigationControl, Marker, AttributionControl, LngLatBounds } from 'maplibre-gl';
 import { MapProviderService } from './map-provider.service';
 import { MarkerFactoryService } from './marker-factory.service';
+import { installVayduGreyBasemap } from './map-presentation';
 import { MarkerOptions } from '../../models/maps/map-marker.model';
 import { RouteSummary } from '../../models/maps/route-result.model';
 
@@ -17,6 +18,14 @@ export class MapRendererService {
   private markerAnimationFrames = new globalThis.Map<string, number>();
   private routeLayerId = 'movabi-route-layer';
   private routeSourceId = 'movabi-route-source';
+  /** Latest route requested while the style was still loading (one slot; latest wins). */
+  private pendingRoute: RouteSummary | null = null;
+  private routeStyleListenerRegistered = false;
+
+  // Camera-follow support. Genuine user gestures are identified by MapLibre's
+  // originalEvent metadata; programmatic easeTo events do not carry it.
+  private userGestureListeners: Array<{ event: string; handler: (e: any) => void }> = [];
+  private userGestureCallback: (() => void) | null = null;
 
   initMap(container: HTMLElement): Map | null {
     if (!this.provider.hasMapConfig()) {
@@ -42,6 +51,7 @@ export class MapRendererService {
 
       this.map.addControl(new AttributionControl({ compact: true }));
       this.map.addControl(new NavigationControl(), 'top-right');
+      installVayduGreyBasemap(this.map);
       
       return this.map;
     } catch (error) {
@@ -52,11 +62,84 @@ export class MapRendererService {
 
   destroyMap() {
     this.cancelAllMarkerAnimations();
+    this.detachUserGestureListeners();
+    this.pendingRoute = null;
+    this.routeStyleListenerRegistered = false;
     if (this.map) {
       this.map.remove();
       this.map = null;
     }
     this.markers.clear();
+    this.markerHeadings.clear();
+  }
+
+  /**
+   * Register a callback fired only for genuine user map gestures
+   * (drag / zoom / rotate / pitch). Programmatic camera moves are ignored.
+   */
+  onUserMapGesture(callback: (() => void) | null): void {
+    this.detachUserGestureListeners();
+    this.userGestureCallback = callback;
+
+    if (!this.map || !callback) return;
+
+    const events = ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'];
+    const handler = (event: any) => {
+      // MapLibre sets originalEvent only for genuine user input. Programmatic
+      // easeTo/flyTo/fitBounds events do not carry it, so they cannot disable
+      // auto-follow and cannot create a feedback loop.
+      const original = event?.originalEvent;
+      if (!original) return;
+      this.userGestureCallback?.();
+    };
+
+    events.forEach((name) => {
+      this.map!.on(name as any, handler);
+      this.userGestureListeners.push({ event: name, handler });
+    });
+  }
+
+  private detachUserGestureListeners(): void {
+    if (this.map) {
+      this.userGestureListeners.forEach(({ event, handler }) => {
+        try {
+          this.map!.off(event as any, handler);
+        } catch {
+          // ignore
+        }
+      });
+    }
+    this.userGestureListeners = [];
+  }
+
+  /**
+   * Smoothly move the camera to a real coordinate without resetting zoom.
+   * Used by live tracking follow. Never offsets coordinates.
+   */
+  easeToCenter(lng: number, lat: number, options?: { zoom?: number; duration?: number; padding?: any }): boolean {
+    if (!this.map || isNaN(lng) || isNaN(lat)) return false;
+
+    const next: Record<string, any> = {
+      center: [lng, lat],
+      duration: options?.duration ?? 900,
+      essential: true
+    };
+
+    if (typeof options?.zoom === 'number' && Number.isFinite(options.zoom)) {
+      next['zoom'] = options.zoom;
+    }
+
+    if (options?.padding) {
+      next['padding'] = options.padding;
+    }
+
+    try {
+      this.map.easeTo(next as any);
+      return true;
+    } catch (error) {
+      console.warn('[MapRenderer] easeToCenter failed', error);
+      return false;
+    }
   }
 
   setCenter(lng: number, lat: number, zoom?: number) {
@@ -79,10 +162,24 @@ export class MapRendererService {
     }
 
     try {
-      let marker = this.markers.get(options.id);
-      
+      let marker: Marker | undefined | null = this.markers.get(options.id);
+      const serviceType = String(options.serviceType ?? '');
+      const kind = String(options.kind ?? '');
+
       if (marker) {
-        if (options.kind === 'driver') {
+        const prevServiceType = String((marker as any)._movabiServiceType ?? '');
+        const prevKind = String((marker as any)._movabiKind ?? '');
+        const changed = serviceType !== prevServiceType || kind !== prevKind ||
+          String(options.label || '') !== String((marker as any)._movabiLabel || '');
+
+        if (changed) {
+          // Service/kind changed: rebuild the DOM element so a stale service icon
+          // (e.g. an errand cart pin) cannot survive into a new service request.
+          this.cancelMarkerAnimation(options.id);
+          marker.remove();
+          this.markers.delete(options.id);
+          marker = null;
+        } else if (options.kind === 'driver') {
           this.animateMarkerMovement(
             options.id,
             marker,
@@ -90,24 +187,39 @@ export class MapRendererService {
             options.coordinates.lat,
             options.heading
           );
+          return;
         } else {
           marker.setLngLat([options.coordinates.lng, options.coordinates.lat]);
+          return;
         }
-      } else {
-        const el = this.markerFactory.createMarkerElement(options.kind, options.serviceType, options.label);
-        if (options.onClick) {
-          el.addEventListener('click', () => options.onClick?.(options.id));
-        }
-        marker = new Marker({ element: el })
-          .setLngLat([options.coordinates.lng, options.coordinates.lat])
-          .addTo(this.map);
-        
-        if (options.heading !== undefined) {
-          this.rotateMarker(marker, options.heading);
-        }
-        
-        this.markers.set(options.id, marker);
       }
+
+      const el = this.markerFactory.createMarkerElement(options.kind, options.serviceType, options.label);
+      if (options.onClick) {
+        el.setAttribute('role', 'button');
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('aria-label', options.label || 'View request');
+        el.addEventListener('click', () => options.onClick?.(options.id));
+        el.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault(); options.onClick?.(options.id);
+          }
+        });
+      }
+      marker = new Marker({ element: el })
+        .setLngLat([options.coordinates.lng, options.coordinates.lat])
+        .addTo(this.map);
+
+      (marker as any)._movabiId = options.id;
+      (marker as any)._movabiServiceType = serviceType;
+      (marker as any)._movabiKind = kind;
+      (marker as any)._movabiLabel = options.label || '';
+
+      if (options.heading !== undefined) {
+        this.rotateMarker(marker, options.heading);
+      }
+
+      this.markers.set(options.id, marker);
     } catch (error) {
       console.error(`[MapRenderer] Failed to add/update marker ${options.id}:`, error);
     }
@@ -115,6 +227,7 @@ export class MapRendererService {
 
   removeMarker(id: string) {
     this.cancelMarkerAnimation(id);
+    this.markerHeadings.delete(id);
     const marker = this.markers.get(id);
     if (marker) {
       marker.remove();
@@ -122,14 +235,29 @@ export class MapRendererService {
     }
   }
 
+  private markerHeadings = new globalThis.Map<string, number>();
+
   private rotateMarker(marker: Marker, heading: number) {
     const el = marker.getElement();
     const pin = el.querySelector('.movabi-marker__pin') as HTMLElement;
-    if (pin) {
-      // For drivers, we might want to rotate the whole pin or just an arrow inside
-      // The spec says "directional styling if heading available"
-      pin.style.transform = `rotate(${heading}deg)`;
+    if (!pin) return;
+
+    const markerId = (marker as any)?._movabiId as string | undefined;
+    const previous = markerId ? this.markerHeadings.get(markerId) : undefined;
+
+    let next = ((heading % 360) + 360) % 360;
+
+    if (previous !== undefined) {
+      // Shortest angular direction: 359 -> 1 must not rotate 358 backwards.
+      const delta = ((next - previous + 540) % 360) - 180;
+      next = previous + delta;
     }
+
+    if (markerId) {
+      this.markerHeadings.set(markerId, ((next % 360) + 360) % 360);
+    }
+
+    pin.style.transform = `rotate(${next}deg)`;
   }
 
   private animateMarkerMovement(
@@ -218,6 +346,38 @@ export class MapRendererService {
   drawRoute(route: RouteSummary) {
     if (!this.map || !route.geometry) return;
 
+    this.pendingRoute = route;
+
+    if (!this.map.isStyleLoaded()) {
+      // Style not ready: defer EXACTLY once via MapLibre's own style.load event.
+      // A repeated pre-ready draw overwrites pendingRoute, so the latest route
+      // wins without accumulating duplicate listeners or source/layer work.
+      this.ensureRouteStyleListener();
+      return;
+    }
+
+    this.renderRoute(route);
+  }
+
+  private ensureRouteStyleListener(): void {
+    if (!this.map || this.routeStyleListenerRegistered) return;
+    this.routeStyleListenerRegistered = true;
+
+    this.map.once('style.load', () => {
+      this.routeStyleListenerRegistered = false;
+      const route = this.pendingRoute;
+      this.pendingRoute = null;
+
+      // The map may have been destroyed before readiness — do nothing then.
+      if (route && this.map && this.map.isStyleLoaded()) {
+        this.renderRoute(route);
+      }
+    });
+  }
+
+  private renderRoute(route: RouteSummary) {
+    if (!this.map || !route.geometry) return;
+
     this.clearRoute();
 
     this.map.addSource(this.routeSourceId, {
@@ -266,7 +426,7 @@ export class MapRendererService {
   }
 
   clearRoute() {
-    if (!this.map) return;
+    if (!this.map || !this.map.isStyleLoaded()) return;
     if (this.map.getLayer(this.routeLayerId)) this.map.removeLayer(this.routeLayerId);
     if (this.map.getSource(this.routeSourceId)) this.map.removeSource(this.routeSourceId);
   }
@@ -290,7 +450,7 @@ export class MapRendererService {
         demand: zone.demand,
         drivers: zone.drivers,
         // Color logic: red if demand > drivers, green if drivers >= demand
-        color: zone.demand > zone.drivers ? '#ef4444' : '#10b981',
+        color: zone.demand > zone.drivers ? '#ef4444' : zone.drivers > 0 ? '#10b981' : '#3b82f6',
         radius: Math.min(20 + (zone.demand * 5), 50)
       }
     }));
@@ -317,8 +477,8 @@ export class MapRendererService {
     });
   }
 
-  fitBounds(bounds: [[number, number], [number, number]], options?: unknown) {
-    if (!this.map || !bounds) return;
+  fitBounds(bounds: [[number, number], [number, number]], options?: unknown): boolean {
+    if (!this.map || !bounds) return false;
     
     try {
       // Validate bounds to prevent "Invalid base URL" or other MapLibre errors
@@ -331,7 +491,7 @@ export class MapRendererService {
 
       if (!isValid) {
         console.warn('[MapRenderer] Invalid bounds for fitBounds:', bounds);
-        return;
+        return false;
       }
 
       const container = this.map.getContainer();
@@ -339,7 +499,7 @@ export class MapRendererService {
       const height = container.clientHeight;
 
       if (width <= 120 || height <= 120) {
-        return;
+        return false;
       }
 
       const nextOptions = { ...((options as Record<string, any>) || {}) };
@@ -347,16 +507,18 @@ export class MapRendererService {
 
       if (typeof padding === 'object' && padding !== null) {
         nextOptions['padding'] = {
-          top: Math.min(Number(padding['top'] || 0), Math.max(24, Math.floor(height * 0.22))),
-          bottom: Math.min(Number(padding['bottom'] || 0), Math.max(24, Math.floor(height * 0.28))),
-          left: Math.min(Number(padding['left'] || 0), Math.max(24, Math.floor(width * 0.16))),
-          right: Math.min(Number(padding['right'] || 0), Math.max(24, Math.floor(width * 0.16)))
+          top: Math.min(Number(padding['top'] || 0), Math.max(24, Math.floor(height * 0.6))),
+          bottom: Math.min(Number(padding['bottom'] || 0), Math.max(24, Math.floor(height * 0.85))),
+          left: Math.min(Number(padding['left'] || 0), Math.max(24, Math.floor(width * 0.45))),
+          right: Math.min(Number(padding['right'] || 0), Math.max(24, Math.floor(width * 0.45)))
         };
       }
 
       this.map.fitBounds(bounds, nextOptions);
+      return true;
     } catch (e) {
       console.warn('[MapRenderer] fitBounds failed', e);
+      return false;
     }
   }
 
@@ -364,6 +526,21 @@ export class MapRendererService {
     if (this.map) {
       this.map.resize();
     }
+  }
+
+  /**
+   * Live map container size, used to derive camera padding from real layout
+   * instead of window dimensions. Returns zeros when no map is mounted.
+   */
+  getContainerSize(): { width: number; height: number } {
+    if (!this.map) return { width: 0, height: 0 };
+
+    const container = this.map.getContainer();
+
+    return {
+      width: container?.clientWidth ?? 0,
+      height: container?.clientHeight ?? 0
+    };
   }
 
   drawTrackingPolyline(id: string, coords: Array<{lat:number; lng:number}>): void {
@@ -504,6 +681,7 @@ export class MapRendererService {
 
     // Remove existing marker if it exists
     if (this.markers.has(id)) {
+      this.cancelMarkerAnimation(id);
       const marker = this.markers.get(id);
       if (marker) {
         marker.remove();
@@ -538,6 +716,22 @@ export class MapRendererService {
     }
 
     marker.setLngLat([coords.lng, coords.lat]);
+  }
+
+  clearRouteGeometry(id: string): void {
+    const map = this.map;
+    if (!map) return;
+
+    const sourceId = `${id}-source`;
+    const layerId = `${id}-layer`;
+
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
   }
 
   drawRouteGeometry(id: string, coordinates: number[][]): void {

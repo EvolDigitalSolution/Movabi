@@ -3,7 +3,7 @@ import { IonicModule } from '@ionic/angular';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { RouterModule, Router } from '@angular/router';
+import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 
 @Component({
   selector: 'app-forgot-password',
@@ -13,7 +13,7 @@ import { RouterModule, Router } from '@angular/router';
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/auth/login" class="text-slate-900"></ion-back-button>
         </ion-buttons>
-        <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
+        <ion-title class="font-display font-bold text-2xl text-slate-900"><img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="32" height="32" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px;flex-shrink:0" />Vaydu</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding bg-slate-50">
@@ -30,8 +30,8 @@ import { RouterModule, Router } from '@angular/router';
             </div>
             <h3 class="text-xl font-bold text-slate-900 mb-3">Check your email</h3>
             <p class="text-slate-600 text-sm leading-relaxed mb-8">
-              We've sent a password reset link to <br>
-              <strong class="text-slate-900">{{ emailInput.value }}</strong>
+              If an account exists for <strong class="text-slate-900">{{ emailInput.value }}</strong>,
+              a password reset link has been sent. Please check your inbox.
             </p>
             <ion-button 
               expand="block" 
@@ -96,6 +96,7 @@ export class ForgotPasswordPage {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   forgotForm = this.fb.group({
     email: ['', [Validators.required, Validators.email]]
@@ -106,6 +107,12 @@ export class ForgotPasswordPage {
   isLoading = signal(false);
   isSuccess = signal(false);
   errorMessage = signal<string | null>(null);
+
+  constructor() {
+    // Carry the email from the signup/login link. NEVER a password.
+    const email = this.route.snapshot.queryParamMap.get('email');
+    if (email) this.forgotForm.patchValue({ email: email.trim().toLowerCase() });
+  }
 
   private redirectByRole(role: string) {
     if (role === 'admin') {

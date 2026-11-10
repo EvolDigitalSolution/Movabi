@@ -1,30 +1,29 @@
 import { Component, inject, signal } from '@angular/core';
-import { 
-  IonHeader, 
-  IonToolbar, 
-  IonButtons, 
-  IonBackButton, 
-  IonTitle, 
-  IonContent, 
-  IonIcon, 
-  IonButton, 
-  IonSpinner, 
-  IonSelect, 
-  IonSelectOption,
-  IonBadge
+import {
+  IonHeader,
+  IonToolbar,
+  IonButtons,
+  IonBackButton,
+  IonTitle,
+  IonContent,
+  IonIcon,
+  IonButton,
+  IonSpinner,
+  IonSelect,
+  IonSelectOption
 } from '@ionic/angular/standalone';
 import { Router, RouterModule } from '@angular/router';
 import { addIcons } from 'ionicons';
-import { 
-  checkmarkCircleOutline, 
-  alertCircleOutline, 
-  globeOutline, 
-  personOutline, 
-  mailOutline, 
-  lockClosedOutline, 
-  eyeOutline, 
-  eyeOffOutline, 
-  logoGoogle 
+import {
+  checkmarkCircleOutline,
+  alertCircleOutline,
+  globeOutline,
+  personOutline,
+  mailOutline,
+  lockClosedOutline,
+  eyeOutline,
+  eyeOffOutline,
+  logoGoogle
 } from 'ionicons/icons';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { ProfileService } from '../../../../core/services/profile/profile.service';
@@ -40,7 +39,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/auth/login" class="text-slate-900"></ion-back-button>
         </ion-buttons>
-        <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
+        <ion-title class="font-display font-bold text-2xl text-slate-900"><img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="32" height="32" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px;flex-shrink:0" />Vaydu</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding bg-slate-50 auth-scroll-page">
@@ -50,23 +49,40 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
             <div class="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <ion-icon name="checkmark-circle-outline" class="text-4xl text-emerald-600"></ion-icon>
             </div>
-            <h3 class="text-2xl font-display font-bold text-slate-900 mb-3 tracking-tight">Account Created!</h3>
+            <h3 class="text-2xl font-display font-bold text-slate-900 mb-3 tracking-tight">Check your email</h3>
             <p class="text-slate-600 text-sm leading-relaxed mb-8">
-              Welcome to Movabi. Your account has been created successfully. 
-              Please check your email to confirm your account before signing in.
+              If an account already exists for this email, please sign in or reset your password. Otherwise, check your email for the next step.
             </p>
-            <ion-button 
-              expand="block" 
-              class="h-14 font-bold text-lg rounded-2xl shadow-xl shadow-emerald-600/20"
-              routerLink="/auth/login"
+            <ion-button
+              expand="block"
+              class="h-14 font-bold text-lg rounded-2xl shadow-xl shadow-emerald-600/20 mb-3"
+              [routerLink]="['/auth/login']"
+              [queryParams]="{ email: signupEmail() }"
             >
-              Go to Sign In
+              Sign in
             </ion-button>
+            <ion-button
+              expand="block"
+              fill="outline"
+              class="h-14 font-bold text-lg rounded-2xl mb-4"
+              [routerLink]="['/auth/login']"
+              [queryParams]="{ email: signupEmail(), google: '1' }"
+            >
+              <ion-icon name="logo-google" class="text-xl text-red-500 mr-2"></ion-icon>
+              Continue with Google
+            </ion-button>
+            <a
+              class="block text-center text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
+              [routerLink]="['/auth/forgot-password']"
+              [queryParams]="{ email: signupEmail() }"
+            >
+              Forgot password?
+            </a>
           </div>
         } @else {
           <div class="mb-8 text-center">
             <h1 class="text-3xl font-display font-bold text-slate-900 mb-3">Create account</h1>
-            <p class="text-slate-500 text-sm">Join Movabi and start managing your services today.</p>
+            <p class="text-slate-500 text-sm">Join Vaydu and start managing your services today.</p>
           </div>
 
           @if (errorMessage()) {
@@ -81,9 +97,9 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
               <label for="country" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Country</label>
               <div class="relative group">
                 <ion-icon name="globe-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-                <ion-select 
+                <ion-select
                   id="country"
-                  [value]="config.currentCountry().code" 
+                  [value]="config.currentCountry().code"
                   (ionChange)="onCountryChange($event)"
                   class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
                 >
@@ -95,12 +111,18 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
             </div>
 
             <div>
+              <label for="marketCity" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">City or operating area</label>
+              <input id="marketCity" type="text" formControlName="marketCity" placeholder="e.g. London or Manchester"
+                class="w-full h-14 px-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900">
+            </div>
+
+            <div>
               <label for="fullName" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Full Name</label>
               <div class="relative group">
                 <ion-icon name="person-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-                <input 
+                <input
                   id="fullName"
-                  type="text" 
+                  type="text"
                   formControlName="fullName"
                   placeholder="John Doe"
                   class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
@@ -112,17 +134,16 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
               <label for="email" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Email Address</label>
               <div class="relative group">
                 <ion-icon name="mail-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-                <input 
+                <input
                   id="email"
-                  type="email" 
+                  type="email"
                   formControlName="email"
-                  [readonly]="otpSent()"
                   placeholder="name@example.com"
-                  class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900 read-only:bg-slate-100"
+                  class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
                 >
               </div>
-              @if (otpSent()) {
-                <button type="button" class="mt-2 ml-1 text-xs font-bold text-orange-700" (click)="editEmail()">Use a different email</button>
+              @if (signupForm.get('email')?.touched && signupForm.get('email')?.errors?.['email']) {
+                <p class="mt-1.5 ml-1 text-xs text-red-500 font-medium">Please enter a valid email address.</p>
               }
             </div>
 
@@ -130,14 +151,14 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
               <label for="password" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Password</label>
               <div class="relative group">
                 <ion-icon name="lock-closed-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-                <input 
+                <input
                   id="password"
-                  [type]="showPassword() ? 'text' : 'password'" 
+                  [type]="showPassword() ? 'text' : 'password'"
                   formControlName="password"
                   placeholder="••••••••"
                   class="w-full h-14 pl-12 pr-12 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
                 >
-                <button 
+                <button
                   type="button"
                   (click)="togglePassword()"
                   class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
@@ -151,9 +172,9 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
               <label for="confirmPassword" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Confirm Password</label>
               <div class="relative group">
                 <ion-icon name="lock-closed-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-                <input 
+                <input
                   id="confirmPassword"
-                  [type]="showPassword() ? 'text' : 'password'" 
+                  [type]="showPassword() ? 'text' : 'password'"
                   formControlName="confirmPassword"
                   placeholder="••••••••"
                   class="w-full h-14 pl-12 pr-12 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
@@ -164,55 +185,17 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
               }
             </div>
 
-            @if (otpSent()) {
-              <div class="rounded-3xl border border-orange-200 bg-orange-50 p-5 space-y-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <p class="text-xs font-black uppercase tracking-[0.22em] text-orange-700">Email verification</p>
-                    <h2 class="mt-1 text-lg font-display font-bold text-slate-950">Check your inbox</h2>
-                  </div>
-                  <ion-badge class="bg-white text-orange-700 border border-orange-200 rounded-full px-3 py-2">
-                    {{ emailVerified() ? 'Verified' : 'OTP sent' }}
-                  </ion-badge>
-                </div>
-                <div class="rounded-2xl bg-white border border-orange-100 p-4">
-                  <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Registration email</p>
-                  <p class="mt-1 text-base font-bold text-slate-900 break-all">{{ lockedEmail() }}</p>
-                  <p class="mt-2 text-sm font-medium text-slate-600">
-                    Enter the 6 digit code sent to this email to finish creating your account.
-                  </p>
-                </div>
-                <div>
-                  <label for="otpCode" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Verification Code</label>
-                  <input
-                    id="otpCode"
-                    type="text"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    maxlength="6"
-                    [value]="otpCode()"
-                    (input)="onOtpInput($event)"
-                    placeholder="123456"
-                    class="w-full h-14 px-5 bg-white border border-orange-200 rounded-2xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all font-black tracking-[0.35em] text-center text-slate-950"
-                  >
-                </div>
-                <button type="button" class="text-sm font-bold text-orange-700" (click)="sendOtp()" [disabled]="isLoading()">
-                  Send a new code
-                </button>
-              </div>
-            }
-
             <div class="pt-4">
-              <ion-button 
-                type="submit" 
-                expand="block" 
+              <ion-button
+                type="submit"
+                expand="block"
                 class="h-14 font-bold text-lg rounded-2xl shadow-xl shadow-blue-600/20"
-                [disabled]="signupForm.invalid || (otpSent() && otpCode().length !== 6) || isLoading()"
+                [disabled]="signupForm.invalid || isLoading()"
               >
                 @if (isLoading()) {
                   <ion-spinner name="crescent"></ion-spinner>
                 } @else {
-                  {{ primaryButtonText() }}
+                  Create Account
                 }
               </ion-button>
             </div>
@@ -227,9 +210,9 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
             </div>
           </div>
 
-          <button 
+          <button
             type="button"
-            class="w-full h-14 flex items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98] disabled:opacity-50" 
+            class="w-full h-14 flex items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98] disabled:opacity-50"
             (click)="loginWithGoogle()"
             [disabled]="isLoading()"
           >
@@ -239,20 +222,20 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
 
           <div class="mt-8 p-6 bg-blue-50 rounded-2xl border border-blue-100">
             <p class="text-xs text-blue-800 font-medium leading-relaxed text-center">
-              <span class="font-bold">Driving with Movabi?</span> Choose between our commission-free Pro plan or our flexible Starter plan after you sign up.
+              <span class="font-bold">Driving with Vaydu?</span> Choose between our commission-free Pro plan or our flexible Starter plan after you sign up.
             </p>
           </div>
 
           <p class="mt-6 text-center text-slate-500 text-xs leading-relaxed">
-            By creating an account, you agree to use Movabi for lawful bookings and understand how Movabi handles account,
+            By creating an account, you agree to use Vaydu for lawful bookings and understand how Vaydu handles account,
             location, service, wallet, card, driver, and support data in the
             <a routerLink="/privacy" class="text-orange-700 font-bold"> Privacy notice</a>.
             Need help with the controls?
-            <a routerLink="/help" class="text-orange-700 font-bold"> Read how Movabi works</a>.
+            <a routerLink="/help" class="text-orange-700 font-bold"> Read how Vaydu works</a>.
           </p>
 
           <p class="mt-8 text-center text-slate-600 text-sm pb-8">
-            Already have an account? 
+            Already have an account?
             <a routerLink="/auth/login" class="text-blue-600 font-bold hover:text-blue-700 transition-colors">Sign In</a>
           </p>
         }
@@ -261,22 +244,21 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
   `,
   standalone: true,
   imports: [
-    CommonModule, 
-    FormsModule, 
-    ReactiveFormsModule, 
-    RouterModule, 
-    IonHeader, 
-    IonToolbar, 
-    IonButtons, 
-    IonBackButton, 
-    IonTitle, 
-    IonContent, 
-    IonIcon, 
-    IonButton, 
-    IonSpinner, 
-    IonSelect, 
-    IonSelectOption,
-    IonBadge
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    RouterModule,
+    IonHeader,
+    IonToolbar,
+    IonButtons,
+    IonBackButton,
+    IonTitle,
+    IonContent,
+    IonIcon,
+    IonButton,
+    IonSpinner,
+    IonSelect,
+    IonSelectOption
   ]
 })
 export class SignupPage {
@@ -288,6 +270,7 @@ export class SignupPage {
 
   signupForm = this.fb.group({
     fullName: ['', [Validators.required, Validators.minLength(2)]],
+    marketCity: ['', [Validators.maxLength(120)]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(6)]],
     confirmPassword: ['', [Validators.required]]
@@ -297,29 +280,31 @@ export class SignupPage {
   isLoading = signal(false);
   isSuccess = signal(false);
   errorMessage = signal<string | null>(null);
-  otpSent = signal(false);
-  emailVerified = signal(false);
-  lockedEmail = signal('');
-  otpCode = signal('');
+  /** Email carried to the Sign in / Forgot password links. Never a password. */
+  signupEmail = signal('');
 
   constructor() {
-    addIcons({ 
-      checkmarkCircleOutline, 
-      alertCircleOutline, 
-      globeOutline, 
-      personOutline, 
-      mailOutline, 
-      lockClosedOutline, 
-      eyeOutline, 
-      eyeOffOutline, 
-      logoGoogle 
+    addIcons({
+      checkmarkCircleOutline,
+      alertCircleOutline,
+      globeOutline,
+      personOutline,
+      mailOutline,
+      lockClosedOutline,
+      eyeOutline,
+      eyeOffOutline,
+      logoGoogle
     });
   }
 
   onCountryChange(event: Event) {
     const customEvent = event as CustomEvent;
     const code = customEvent.detail.value;
+    if (!code || code === this.config.currentCountry().code) return;
     this.config.setCountry(code);
+    // A city / operating area belongs to the previously selected country, so it must not
+    // be silently carried over (e.g. "London" submitted together with country_code NG).
+    this.signupForm.patchValue({ marketCity: '' });
   }
 
   passwordMatchValidator(g: FormGroup) {
@@ -332,77 +317,24 @@ export class SignupPage {
     this.showPassword.update(v => !v);
   }
 
-  primaryButtonText() {
-    if (!this.otpSent()) return 'Send Verification Code';
-    if (!this.emailVerified()) return 'Verify Email & Create Account';
-    return 'Create Account';
-  }
-
-  onOtpInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const value = input.value.replace(/\D/g, '').slice(0, 6);
-    input.value = value;
-    this.otpCode.set(value);
-  }
-
-  editEmail() {
-    this.otpSent.set(false);
-    this.emailVerified.set(false);
-    this.lockedEmail.set('');
-    this.otpCode.set('');
-    this.errorMessage.set(null);
-  }
-
-  async sendOtp() {
-    const email = String(this.signupForm.get('email')?.value || '').trim().toLowerCase();
-
-    if (this.signupForm.get('email')?.invalid || !email) {
-      this.signupForm.get('email')?.markAsTouched();
-      this.errorMessage.set('Enter a valid email address before requesting a code.');
-      return;
-    }
-
-    this.isLoading.set(true);
-    this.errorMessage.set(null);
-
-    try {
-      const result = await this.auth.sendRegistrationOtp(email);
-      this.lockedEmail.set(result.email || email);
-      this.otpSent.set(true);
-      this.emailVerified.set(false);
-      this.otpCode.set('');
-    } catch (err: unknown) {
-      console.error('OTP send failed:', err);
-      const message = err instanceof Error ? err.message : 'Could not send verification code. Please try again.';
-      this.errorMessage.set(message);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
   async onSubmit() {
     if (this.signupForm.invalid) return;
-    const { email, password, fullName } = this.signupForm.value;
+    const { email, password, fullName, marketCity } = this.signupForm.value;
     if (!email || !password || !fullName) return;
 
     this.isLoading.set(true);
     this.errorMessage.set(null);
+    this.signupEmail.set(String(email).trim().toLowerCase());
     try {
-      if (!this.otpSent()) {
-        this.isLoading.set(false);
-        await this.sendOtp();
+      const result = await this.auth.signUp(email, password, { full_name: fullName, country_code: this.config.currentCountry().code, market_city: marketCity || null });
+      // Confirmation DISABLED: a genuinely new user is auto-signed-in; continue
+      // onboarding through the existing post-auth redirect.
+      if (result?.session) {
+        await this.auth.handlePostAuthRedirect();
         return;
       }
-
-      if (!this.emailVerified()) {
-        await this.auth.verifyRegistrationOtp(this.lockedEmail() || email, this.otpCode());
-        this.emailVerified.set(true);
-      }
-
-      await this.auth.signUp(this.lockedEmail() || email, password, {
-        full_name: fullName,
-        email_verified_by_movabi: true
-      });
+      // Confirmation ENABLED (or existing address): neutral screen, no claim
+      // that the account was created or that a confirmation email was sent.
       this.isSuccess.set(true);
     } catch (err: unknown) {
       console.error('Signup failed:', err);

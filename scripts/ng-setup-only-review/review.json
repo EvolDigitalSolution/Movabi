@@ -1,0 +1,16 @@
+{
+  "imageId": "sha256:084b2cf6a7db7713244a7554a38acb54f0dd78323250ce9c260a2d541d7c3cfa",
+  "schemaScope": "setup-only-550",
+  "merchantIdentityApproved": false,
+  "administrativeDefaultApproved": false,
+  "activationEnabled": false,
+  "protectedSourceHashes": {
+    "server/routes/connect.routes.ts": "0b6d6d7091be7633b3d8cb6b8fe0f5818fe697d289ee59ad36caf1293624b816",
+    "server/services/stripe.service.ts": "5ff2e7803e10458d02c307c28071f29d80d7e1292500ca9e17f593ece7b66b72",
+    "server/routes/payment.routes.ts": "8626ab550c7fbeb539e0004cffccc7cda2815ed70c05e4a9749ed40fd01a09de",
+    "server/routes/booking.routes.ts": "77e245343b319a45c0bbd0bbc25dde32248d88d81350dc739f7c1bd213bb3224",
+    "server/routes/stripe-webhook.routes.ts": "c66b73738c17d8a6066ecf29fe6e3f4a95d26a1eed3faad1fc8019a8941a39c5",
+    "server/services/payout-eligibility.service.ts": "eaf36ab039f286d74954e2b4ba575f65a44d288d36cd15576ce95300d4f21cc3",
+    "server/services/job-payout.service.ts": "de5777d71dcb9f019014a71d3992c63de1ed2cdac2898697f84497ac4061dd9a"
+  }
+}

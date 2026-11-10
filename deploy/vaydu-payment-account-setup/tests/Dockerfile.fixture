@@ -1,0 +1,9 @@
+ARG RUNTIME=vaydu-api:wallet-operator-20261028
+FROM ${RUNTIME}
+# Restore exactly the three reviewed sources, then exercise the real patcher.
+COPY baseline/ /app/
+COPY api/ /app/server/payment-account-closure/
+COPY patch-entry.cjs integration-plan.json /tmp/vaydu-payment-account-patch/
+RUN node /tmp/vaydu-payment-account-patch/patch-entry.cjs
+COPY tests/fixture-entry.cjs /app/local-runtime-fixture.cjs
+CMD ["node","/app/local-runtime-fixture.cjs"]

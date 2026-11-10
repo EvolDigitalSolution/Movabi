@@ -1,0 +1,55 @@
+Payment-account frontend fixes — exact change record (2026-10-29)
+==================================================================
+
+Files changed by this task (3):
+
+1) src/app/shared/ui/driver-payment-account.component.ts  [untracked — concurrent
+   payment-account feature file; this task edited it in place]
+   - Template: added explanatory line "Add and verify your bank account. No money
+     is moved during setup."; added `role="alert"` error banner bound to error();
+     `role="status"` now shows "Working…" during busy().
+   - Buttons now styled + separated:
+       "Set up bank account"   -> class="rounded-xl bg-slate-900 px-4 py-2.5
+                                  text-sm font-semibold text-white disabled:opacity-50"
+       "Check account"         -> same primary styling
+       "Confirm payment account"-> bg-emerald-700 variant
+       "Check setup status"    -> primary styling
+       "Refresh status"        -> class="rounded-xl border border-slate-300 bg-white
+                                  px-4 py-2.5 text-sm font-semibold text-slate-700
+                                  disabled:opacity-50" (renamed from "Refresh")
+   - Class: added error=signal(''); added private fail(e,fallback) mapping
+     error.error.errorCode==='PAYMENT_ACCOUNT_SETUP_FAILED' to:
+     'Setup could not be verified right now. Tap Refresh status to retry, or
+      contact support.'
+   - refresh/open/resolve/reconcile/save now clear error() on entry and call
+     fail() on catch; busy() still guards all entry points (no duplicate submit);
+     save() catch still sets reconcileOnly(true) and clears account fields.
+
+2) src/app/core/services/driver/driver.service.ts  [tracked; file also contains
+   UNRELATED concurrent changes — do not attribute them to this task]
+   My exact additions:
+       +import { MarketSafetyService } from '../payments/market-safety.service';
+       +    private marketSafety = inject(MarketSafetyService);
+       in fetchStripeAccount(), after the user check:
+       +        const wallet = await this.marketSafety.refreshWallet().catch(() => null);
+       +        if (wallet && wallet.provider !== 'stripe') { this.stripeAccount.set(null); return null; }
+   Rationale: wallet.provider is the payout-market provider (driver-wallet
+   context; same source as requireStripePayoutMarket). NG/Flutterwave drivers
+   no longer call Stripe getPayoutSettings; GB/Stripe unchanged; wallet-context
+   failure keeps prior behavior via catch->null.
+
+3) src/testing/driver-payment-account-component.spec.ts  [new file, untracked]
+   - jsdom + TestBed.initTestEnvironment + provideZonelessChangeDetection.
+   - Mocks HttpClient/ApiUrlService/SupabaseService; 5 tests:
+     distinct button labels, bank-list open, 409 -> visible alert + busy clears,
+     refresh recovery, no duplicate setup submit.
+
+Verification:
+   - npx vitest run component spec -> 5/5 pass
+   - payment-account regressions (http, runtime, v23, flutterwave, requirement)
+     -> 94/94 pass
+   - npx ng build mobile --configuration develop -> success (85s)
+
+Note: driver.service.ts diff additionally contains concurrent Codex changes
+(driver-market-scope, poll-retry-delay, DriverRequestStateService, requestState,
+declinedLoadedAt, effect import) — preserved untouched.

@@ -1,4 +1,6 @@
-import { Component, inject, OnDestroy, OnInit, signal, ViewChild } from '@angular/core';
+import { IssuingTestTerminalComponent } from '../issuing-test-terminal/issuing-test-terminal.component';
+import { AdminFinanceComponent } from '../finance/admin-finance.component';
+import { Component, inject, OnDestroy, OnInit, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
 import { RouterModule } from '@angular/router';
@@ -49,10 +51,10 @@ interface AdminEvent {
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, IonicModule, RouterModule, BadgeComponent, MapComponent],
+  imports: [IssuingTestTerminalComponent, CommonModule, IonicModule, RouterModule, BadgeComponent, MapComponent, AdminFinanceComponent],
   template: `
-    <div class="space-y-6 container-padding pb-12 bg-slate-50 min-h-screen">
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pt-6">
+    <div class="space-y-5 pb-6 bg-slate-50 min-h-screen">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl md:text-3xl font-display font-bold text-slate-950 tracking-tight">Operations Dashboard</h1>
           <p class="text-sm text-slate-500 font-medium mt-1">Real-time platform monitoring and insights.</p>
@@ -95,10 +97,10 @@ interface AdminEvent {
 
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
         @for (stat of statsList; track stat.label) {
-          <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-5 hover:shadow-lg hover:shadow-slate-200/60 transition">
-            <div class="flex items-start justify-between gap-4 mb-5">
-              <div [class]="'w-12 h-12 rounded-2xl flex items-center justify-center ' + stat.bgClass">
-                <ion-icon [name]="stat.icon" [class]="'text-2xl ' + stat.iconClass"></ion-icon>
+          <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-4 hover:shadow-lg hover:shadow-slate-200/60 transition">
+            <div class="flex items-start justify-between gap-4 mb-4">
+              <div [class]="'w-10 h-10 rounded-2xl flex items-center justify-center ' + stat.bgClass">
+                <ion-icon [name]="stat.icon" [class]="'text-xl ' + stat.iconClass"></ion-icon>
               </div>
 
               <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">{{ stat.label }}</span>
@@ -108,10 +110,10 @@ interface AdminEvent {
               @if (stat.prefix) {
                 <span class="text-base font-bold text-slate-500">{{ stat.prefix }}</span>
               }
-              <h3 class="text-3xl font-display font-black text-slate-950 tracking-tight">{{ stat.value }}</h3>
+              <h3 class="text-2xl font-display font-black text-slate-950 tracking-tight">{{ stat.value }}</h3>
             </div>
 
-            <div class="mt-4 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+            <div class="mt-3 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
               <ion-icon name="pulse-outline" class="text-sm text-emerald-600"></ion-icon>
               <span>{{ stat.note }}</span>
             </div>
@@ -122,21 +124,18 @@ interface AdminEvent {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div class="metric-panel bg-slate-950">
           <p class="metric-label text-slate-300">Drivers Online</p>
-          <h4 class="metric-value text-white">{{ operationalMetrics()?.online_drivers_count || 0 }}</h4>
+          <h4 class="metric-value text-white">{{ livePresence()?.online_drivers_count ?? '—' }}</h4>
           <p class="metric-note text-slate-300">
             <span class="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse mr-2"></span>
-            Live monitoring active
+            Active app within 2 minutes<br>Customers online: {{ livePresence()?.online_customers_count ?? '—' }}
           </p>
         </div>
 
-        <div class="metric-panel bg-blue-700 text-white">
-          <p class="metric-label !text-white">Platform Earnings Today</p>
-          <h4 class="metric-value text-white">{{ formatPrice(operationalMetrics()?.platform_earnings_today || 0) }}</h4>
-          <div class="mt-5 space-y-1 text-xs font-semibold text-white/90">
-            <p>Total fare: {{ formatPrice(operationalMetrics()?.revenue_today || 0) }}</p>
-            <p>Driver payouts: {{ formatPrice(operationalMetrics()?.driver_payouts_today || 0) }}</p>
-          </div>
-        </div>
+        <button type="button" (click)="showFinancialReport()" class="metric-panel bg-blue-700 text-white block w-full text-left" aria-label="View daily financial report">
+          <p class="metric-label !text-white">Financial reporting</p>
+          <h4 class="text-xl font-bold text-white">Commission, platform fees and payouts</h4>
+          <p class="mt-5 text-xs text-white/90">View daily figures by region and currency below.</p>
+        </button>
 
         <div class="metric-panel bg-indigo-700 text-white">
           <p class="metric-label !text-white">Active Jobs</p>
@@ -152,7 +151,7 @@ interface AdminEvent {
         <div class="p-5 border-b border-slate-100 flex items-center justify-between gap-4">
           <div>
             <h3 class="text-lg font-bold text-slate-950">Demand Heatmap</h3>
-            <p class="text-sm text-slate-500 font-medium">Live demand zones and driver activity.</p>
+            <p class="text-sm text-slate-500 font-medium">Live demand zones and driver activity.</p><p class="text-xs text-slate-500" aria-live="polite">{{mapStatus()}}</p>
           </div>
 
           <div class="hidden sm:flex items-center gap-4">
@@ -167,35 +166,7 @@ interface AdminEvent {
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div class="xl:col-span-2 rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-5">
-          <div class="flex items-center justify-between gap-4 mb-8">
-            <div>
-              <h3 class="text-lg font-bold text-slate-950">Revenue Overview</h3>
-              <p class="text-sm text-slate-500 font-medium">Recent completed-job revenue.</p>
-            </div>
-            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last 7 Days</span>
-          </div>
-
-          <div class="h-80 w-full flex items-end justify-between gap-4 px-2 pt-8">
-            @for (bar of (revenueBars || []); track bar.day) {
-              <div class="flex-1 flex flex-col items-center gap-4 group h-full justify-end">
-                <div class="w-full bg-slate-100 rounded-t-2xl relative overflow-hidden flex items-end min-h-[10px]" [style.height.%]="bar.height || 4">
-                  <div class="w-full h-full bg-blue-600/80 group-hover:bg-blue-700 transition-all"></div>
-                </div>
-                <div class="text-center">
-                  <p class="text-[11px] font-bold text-slate-700">{{ formatPrice(bar.value || 0) }}</p>
-                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ bar.day }}</span>
-                </div>
-              </div>
-            }
-
-            @if ((revenueBars || []).length === 0) {
-              <div class="w-full h-full flex items-center justify-center text-sm text-slate-400 font-medium">
-                No revenue data available.
-              </div>
-            }
-          </div>
-        </div>
+        <div #financeSection tabindex="-1" class="xl:col-span-2"><app-admin-finance></app-admin-finance><div class="mt-5"><app-issuing-test-terminal></app-issuing-test-terminal></div></div>
 
         <div class="rounded-[1.5rem] bg-white border border-slate-100 shadow-sm p-5">
           <div class="flex items-center justify-between gap-4 mb-5">
@@ -220,7 +191,7 @@ interface AdminEvent {
 
                 <div class="text-right shrink-0">
                   <app-badge variant="info">{{ job.status || 'unknown' }}</app-badge>
-                  <p class="text-xs font-bold text-slate-900 mt-2">{{ formatPrice(job.price || 0) }}</p>
+                  <p class="text-xs font-bold text-slate-900 mt-2">{{ formatJobPrice(job) }}</p>
                 </div>
               </a>
             }
@@ -281,7 +252,8 @@ interface AdminEvent {
                 </div>
 
                 <p [class]="'text-sm font-bold whitespace-nowrap ' + (payment.type === 'credit' ? 'text-emerald-700' : 'text-rose-700')">
-                  {{ payment.type === 'credit' ? '+' : '-' }}{{ formatPrice(payment.amount || 0) }}
+                  {{ payment.type === 'credit' ? '+' : '-' }}{{ formatNumber(payment.amount || 0) }}
+                  <span class="block text-[10px] font-medium">Currency not supplied by activity feed</span>
                 </p>
               </div>
             }
@@ -388,6 +360,14 @@ interface AdminEvent {
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
   @ViewChild('adminMap') adminMap!: MapComponent;
+  @ViewChild('financeSection') financeSection?: ElementRef<HTMLElement>;
+
+  showFinancialReport() {
+    const section = this.financeSection?.nativeElement;
+    if (!section) return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    section.focus({ preventScroll: true });
+  }
 
   private adminService = inject(AdminService);
   private supabase = inject(SupabaseService);
@@ -397,6 +377,24 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   stats = this.adminService.stats;
   activeJobs = signal<Job[]>([]);
   stuckJobs = signal<JobAnomaly[]>([]);
+  mapStatus=signal('Loading live map…');
+  private mapBusy=false;
+  private mapCentered=false;
+  private async refreshDemandMap(){
+    if(this.mapBusy||!this.adminMap)return;
+    this.mapBusy=true;
+    try{
+      const data=await this.adminService.getHeatmapData();
+      this.adminMap.drawHeatmap(data.zones);
+      if(!this.mapCentered&&data.zones.length){this.adminMap.setCenter(data.zones[0].lng,data.zones[0].lat,12);this.mapCentered=true;}
+      this.mapStatus.set(data.zones.length?'Updated '+new Date(data.checkedAt).toLocaleTimeString():'No current requests or drivers with recent location data.');
+    }catch{this.adminMap.drawHeatmap([]);this.mapStatus.set('Live map unavailable. Retrying…');}
+    finally{this.mapBusy=false;}
+  }
+  livePresence=signal<{online_drivers_count:number;online_customers_count:number}|null>(null);
+  private presenceTimer:ReturnType<typeof setInterval>|null=null;
+  private presenceBusy=false;
+  private async refreshPresence(){if(this.presenceBusy)return;this.presenceBusy=true;try{this.livePresence.set(await this.adminService.getLivePresence());}catch{this.livePresence.set(null);}finally{this.presenceBusy=false;}await this.refreshDemandMap();}
   operationalMetrics = signal<OperationalMetrics | null>(null);
   failedBookings = signal<FailedBooking[]>([]);
   recentPayments = signal<WalletTransaction[]>([]);
@@ -413,12 +411,15 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     }
 
     await this.refreshData();
+    await this.refreshPresence();
+    this.presenceTimer=setInterval(()=>{void this.refreshPresence();},15000);
 
     // Keep disabled until Kong realtime websocket config is stable.
     // this.setupRealtime();
   }
 
   ngOnDestroy() {
+    if(this.presenceTimer)clearInterval(this.presenceTimer);
     this.channels.forEach(channel => channel.unsubscribe());
   }
 
@@ -452,29 +453,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
       this.failedBookings.set(safeFailures);
       this.recentPayments.set(safePayments);
 
-      const revenueData = await this.adminService.getRevenueStats();
-      const safeRevenueData = Array.isArray(revenueData) ? revenueData : [];
-      const maxValue = Math.max(...safeRevenueData.map((item: any) => Number(item.value || 0)), 100);
-
-      this.revenueBars = safeRevenueData.map((item: any) => ({
-        day: String(item.day || ''),
-        value: Number(item.value || 0),
-        height: Math.max(4, (Number(item.value || 0) / maxValue) * 100)
-      }));
-
-      try {
-        const heatmap = await this.adminService.getHeatmapData();
-
-        if (heatmap?.zones && Array.isArray(heatmap.zones) && this.adminMap) {
-          this.adminMap.drawHeatmap(heatmap.zones);
-
-          if (heatmap.zones.length > 0) {
-            this.adminMap.setCenter(heatmap.zones[0].lng, heatmap.zones[0].lat, 12);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load heatmap', error);
-      }
+      await this.refreshDemandMap();
     } catch (error) {
       console.error('AdminDashboard refreshData failed:', error);
     }
@@ -501,13 +480,12 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   private updateStatsList() {
     this.statsList = [
       {
-        label: 'Total Revenue',
-        value: this.formatNumber(this.stats().totalRevenue || 0),
-        prefix: this.config.currentCountry()?.currencySymbol || this.config.currencySymbol || '£',
+        label: 'Customer Payments',
+        value: 'By currency',
         icon: 'cash-outline',
         bgClass: 'bg-emerald-100',
         iconClass: 'text-emerald-700',
-        note: 'Revenue tracked'
+        note: 'See daily financial report'
       },
       {
         label: 'Total Users',
@@ -518,7 +496,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
         note: 'Registered users'
       },
       {
-        label: 'Active Drivers',
+        label: 'Registered Drivers',
         value: this.formatNumber(this.stats().totalDrivers || 0),
         icon: 'car-outline',
         bgClass: 'bg-amber-100',
@@ -558,6 +536,14 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     }
 
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  formatJobPrice(job: Job): string {
+    const agreed = Number((job as Job & { agreed_fare?: number | string | null }).agreed_fare);
+    const amount = Number.isFinite(agreed) && agreed > 0 ? agreed : Number(job.total_price ?? job.price ?? 0);
+    return job.currency_code
+      ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: job.currency_code, currencyDisplay: 'code' }).format(amount)
+      : `${amount.toFixed(2)} (currency unknown)`;
   }
 
   formatPrice(amount: number) {

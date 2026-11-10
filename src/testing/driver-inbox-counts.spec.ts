@@ -1,0 +1,10 @@
+import '@angular/compiler';import {signal} from '@angular/core';import {afterEach,describe,it,expect,vi} from 'vitest';
+import {DriverInboxService} from '../app/core/services/driver/driver-inbox.service';
+function service(){const s:any=Object.create(DriverInboxService.prototype);s.revision=signal(0);s.owner='driver';s.generation=0;s.countPending=false;s.counts=signal({messages:0,updates:0});s.countError=signal(false);s.request=vi.fn();return s;}
+describe('inbox unread refresh lifecycle',()=>{
+ afterEach(()=>vi.useRealTimers());
+ it('coalesces simultaneous counts requests',async()=>{const s=service();s.request.mockResolvedValue({messages:3,updates:2});await Promise.all([s.refreshCounts(),s.refreshCounts()]);expect(s.request).toHaveBeenCalledOnce();expect(s.counts()).toEqual({messages:3,updates:2});});
+ it('retains last counts and surfaces a refresh failure',async()=>{const s=service();s.counts.set({messages:3,updates:2});s.request.mockRejectedValue(Error('offline'));await s.refreshCounts();expect(s.counts()).toEqual({messages:3,updates:2});expect(s.countError()).toBe(true);});
+ it('clears counts at sign-out and ignores a late old-session response',async()=>{const s=service();let resolve:any;s.request.mockImplementation(()=>new Promise(r=>resolve=r));const pending=s.refreshCounts();s.stop();resolve({messages:99,updates:99});await pending;expect(s.counts()).toEqual({messages:0,updates:0});expect(s.countPending).toBe(false);});
+ it('subscribes only to the current recipients events and stops its timer/channel',async()=>{vi.useFakeTimers();const s=service(),filters:any[]=[];const unsubscribe=vi.fn();const channel:any={on:(_event:string,filter:any)=>{filters.push(filter);return channel;},subscribe:()=>channel,unsubscribe};s.db={channel:vi.fn(()=>channel)};s.request.mockResolvedValue({messages:1,updates:0});s.start('driver');await Promise.resolve();expect(filters.map(f=>f.filter)).toEqual(['user_id=eq.driver','receiver_id=eq.driver']);s.stop();const calls=s.request.mock.calls.length;await vi.advanceTimersByTimeAsync(60000);expect(s.request).toHaveBeenCalledTimes(calls);expect(unsubscribe).toHaveBeenCalledOnce();});
+});

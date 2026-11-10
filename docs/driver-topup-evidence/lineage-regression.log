@@ -1,0 +1,311 @@
+5f91a057911e4e31d0989e832fe0a7a04b6eb1d5a6aedf6c3a159261992c11c4
+514f1e39035cf5ab578a0be5c1e5587b9f65be0ac1ab0d648a2c77e8f27149a9
+CREATE SCHEMA
+CREATE FUNCTION
+DO
+GRANT
+ALTER ROLE
+DROP TABLE
+psql:/tmp/test.sql:21: NOTICE:  table "market_availability" does not exist, skipping
+CREATE TABLE
+INSERT 0 6
+DROP TABLE
+psql:/tmp/test.sql:28: NOTICE:  table "market_payment_routes" does not exist, skipping
+CREATE TABLE
+INSERT 0 2
+psql:/tmp/test.sql:47: NOTICE:  table "wallet_transactions" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+Batch 1C fixture ready
+ALTER TABLE
+BEGIN
+DO
+DO
+ALTER TABLE
+CREATE INDEX
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMENT
+COMMIT
+BEGIN
+DO
+CREATE FUNCTION
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE FUNCTION
+psql:/tmp/test.sql:158: NOTICE:  trigger "wallet_accounts_append_only" for relation "public.wallet_accounts" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+psql:/tmp/test.sql:161: NOTICE:  trigger "wallet_business_events_append_only" for relation "public.wallet_business_events" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+psql:/tmp/test.sql:164: NOTICE:  trigger "wallet_movements_append_only" for relation "public.wallet_movements" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE VIEW
+COMMENT
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+DROP POLICY
+psql:/tmp/test.sql:438: NOTICE:  policy "wallet_accounts_select_own" for relation "public.wallet_accounts" does not exist, skipping
+CREATE POLICY
+psql:/tmp/test.sql:441: NOTICE:  policy "wallet_business_events_select_own" for relation "public.wallet_business_events" does not exist, skipping
+DROP POLICY
+CREATE POLICY
+DROP POLICY
+psql:/tmp/test.sql:444: NOTICE:  policy "wallet_movements_select_own" for relation "public.wallet_movements" does not exist, skipping
+CREATE POLICY
+REVOKE
+GRANT
+REVOKE
+GRANT
+REVOKE
+REVOKE
+GRANT
+GRANT
+GRANT
+COMMIT
+BEGIN
+SET
+DO
+CREATE TABLE
+DO
+CREATE TABLE
+CREATE FUNCTION
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE FUNCTION
+CREATE FUNCTION
+DO
+CREATE FUNCTION
+psql:/tmp/test.sql:251: NOTICE:  trigger "wallet_topup_attempt_freeze" for relation "public.wallet_topup_attempts" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+CREATE FUNCTION
+psql:/tmp/test.sql:567: NOTICE:  policy "wallet_topup_attempts_select_own" for relation "public.wallet_topup_attempts" does not exist, skipping
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+DO
+ALTER TABLE
+DROP POLICY
+CREATE POLICY
+REVOKE
+GRANT
+GRANT
+GRANT
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+COMMIT
+BEGIN
+DO
+ALTER TABLE
+ALTER TABLE
+COMMIT
+BEGIN
+DO
+CREATE TABLE
+CREATE INDEX
+ALTER TABLE
+COMMENT
+COMMENT
+COMMENT
+INSERT 0 1
+REVOKE
+GRANT
+COMMIT
+BEGIN
+DO
+CREATE FUNCTION
+CREATE FUNCTION
+REVOKE
+REVOKE
+GRANT
+GRANT
+COMMIT
+BEGIN
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+CREATE FUNCTION
+CREATE FUNCTION
+REVOKE
+GRANT
+REVOKE
+GRANT
+COMMIT
+BEGIN
+SET
+DO
+psql:/tmp/test.sql:164: NOTICE:  Batch 1C top-up test passed
+ROLLBACK
+INSERT 0 2
+BEGIN
+ALTER TABLE
+DO
+CREATE FUNCTION
+DROP TRIGGER
+CREATE TRIGGER
+CREATE FUNCTION
+REVOKE
+GRANT
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+REVOKE
+REVOKE
+GRANT
+GRANT
+COMMIT
+BEGIN
+SET
+psql:/tmp/test.sql:69: NOTICE:  Batch 2A/2B fee-integration test passed
+DO
+ROLLBACK
+BEGIN
+DO
+CREATE TABLE
+DO
+ALTER TABLE
+REVOKE
+GRANT
+CREATE TABLE
+CREATE INDEX
+CREATE FUNCTION
+CREATE TRIGGER
+REVOKE
+GRANT
+ALTER TABLE
+CREATE FUNCTION
+ALTER FUNCTION
+CREATE FUNCTION
+REVOKE
+GRANT
+REVOKE
+CREATE FUNCTION
+CREATE TRIGGER
+COMMIT
+BEGIN
+INSERT 0 2
+UPDATE 1
+INSERT 0 1
+DO
+INSERT 0 2
+INSERT 0 2
+INSERT 0 2
+INSERT 0 2
+DO
+ROLLBACK
+BEGIN
+DO
+ROLLBACK
+BEGIN
+SET
+DO
+ROLLBACK
+BEGIN
+LOCK TABLE
+DO
+DROP TRIGGER
+DROP FUNCTION
+DROP FUNCTION
+ALTER FUNCTION
+GRANT
+ALTER TABLE
+DROP TABLE
+DROP FUNCTION
+DROP FUNCTION
+COMMIT
+BEGIN
+DO
+CREATE TABLE
+psql:/tmp/test.sql:16: NOTICE:  relation "payment_checkout_attempts" already exists, skipping
+DO
+ALTER TABLE
+REVOKE
+GRANT
+CREATE TABLE
+CREATE INDEX
+CREATE FUNCTION
+CREATE TRIGGER
+REVOKE
+GRANT
+ALTER TABLE
+CREATE FUNCTION
+ALTER FUNCTION
+CREATE FUNCTION
+REVOKE
+GRANT
+REVOKE
+CREATE FUNCTION
+CREATE TRIGGER
+COMMIT
+BEGIN
+INSERT 0 2
+UPDATE 1
+INSERT 0 1
+DO
+INSERT 0 2
+INSERT 0 2
+INSERT 0 2
+INSERT 0 2
+DO
+ROLLBACK
+
+ RUN  v4.1.2 C:/Users/fedri/source/repos/Movabi-mobile-develop
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:45:25
+   Duration  21.78s (transform 387ms, setup 0ms, import 9.09s, tests 10.44s, environment 0ms)
+
+PASS: rollback refused after financial snapshots
+PASS: isolated PostgreSQL migrations, accounting, fee schedules, rollback/reapplication

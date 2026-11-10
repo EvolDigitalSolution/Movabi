@@ -2,9 +2,19 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import { rateLimit } from 'express-rate-limit';
 import { EmailService } from '../services/email.service';
-import { supabaseAdmin } from '../services/supabase.service';
+import { supabaseAdmin, getSupabaseAuthRegistrationClient } from '../services/supabase.service';
+import { MarketAvailabilityError, MarketAvailabilityService } from '../services/market-availability.service';
+import { RegistrationEligibilityService } from '../services/registration-eligibility.service';
 
 const router = express.Router();
+
+/** Resolve the authenticated user id from the Bearer session (never the body). */
+const authUser = async (req: Request): Promise<string | null> => {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+  const { data } = await supabaseAdmin.auth.getUser(token);
+  return data.user?.id || null;
+};
 
 const otpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -15,6 +25,7 @@ const otpLimiter = rateLimit({
 const OTP_TTL_MS = 10 * 60 * 1000;
 const VERIFIED_TTL_MS = 20 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
+const registrationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 8, message: { error: 'Too many registration attempts. Please wait and try again.' } });
 
 function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
@@ -32,6 +43,165 @@ function createCode(): string {
 function isEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
+
+router.post('/register', registrationLimiter, async (req: Request, res: Response) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    const countryCode = MarketAvailabilityService.normalizeCountry(req.body?.countryCode);
+    const marketCity = MarketAvailabilityService.normalizeCity(req.body?.marketCity);
+    if (!isEmail(email) || password.length < 6) return res.status(400).json({ error: 'A valid email and password of at least 6 characters are required.' });
+    if (!countryCode) return res.status(422).json({ error: 'Choose the country where you intend to use Vaydu.', code: 'MARKET_LOCATION_UNRESOLVED' });
+    const market = await MarketAvailabilityService.requireCapability({ countryCode, marketCity, capability: 'customer_registration', endpoint: '/api/auth/register' });
+    const redirectTo = String(req.body?.emailRedirectTo || '');
+    const safeRedirect = /^(https:\/\/|http:\/\/localhost(?::\d+)?\/|com\.movabi\.app:\/\/)/i.test(redirectTo) ? redirectTo : undefined;
+    const metadata = { ...(req.body?.data || {}), registration_country_code: market.countryCode, registration_market_city: market.marketCity };
+    const { data, error } = await getSupabaseAuthRegistrationClient().auth.signUp({ email, password, options: { data: metadata, ...(safeRedirect ? { emailRedirectTo: safeRedirect } : {}) } });
+    // Privacy-preserving public response: identical status and body for a new
+    // and an existing address. Never returns an existing-account flag, a
+    // session, a user object, or a claim that an email was sent.
+    const NEUTRAL_REGISTRATION_RESPONSE = {
+      ok: true,
+      message: 'If an account already exists for this email, please sign in or reset your password. Otherwise, check your email for the next step.',
+    } as const;
+    if (error) {
+      if (/already (registered|exists)|user already/i.test(error.message)) {
+        return res.status(202).json(NEUTRAL_REGISTRATION_RESPONSE);
+      }
+      return res.status(error.status || 400).json({ error: error.message });
+    }
+
+    // Supabase obfuscates an existing confirmed email by returning a user with
+    // an empty identities array. Activate only real new identities; the public
+    // response is the same either way.
+    const existing = Array.isArray((data.user as { identities?: unknown[] } | null)?.identities)
+      && ((data.user as { identities: unknown[] }).identities.length === 0);
+
+    if (!existing && data.user?.id) {
+      // Server-authoritative registration activation. Market eligibility was
+      // validated ABOVE (before auth creation), so this identity is eligible.
+      try {
+        await RegistrationEligibilityService.activate(data.user.id, {
+          countryCode: market.countryCode,
+          marketCity: market.marketCity
+        });
+      } catch (activationError) {
+        // The identity and its pending profile still exist; the client can retry
+        // through /api/markets/registration-eligibility. Never fail auth creation.
+        console.error('[AuthRoutes] registration activation failed:', activationError);
+      }
+    }
+
+    // Confirmation ENABLED: Supabase returns no session for either a new or an
+    // existing (obfuscated) identity, so both receive the identical neutral
+    // response — no existence leak, no delivery claim.
+    //
+    // Confirmation DISABLED: a genuinely new user receives a session (existing
+    // addresses never reach here — they are normalised above), so return it to
+    // preserve auto-sign-in and onboarding. This branch is unreachable in the
+    // confirmation-enabled configuration.
+    if (data.session) {
+      return res.status(201).json({ ok: true, session: data.session });
+    }
+    return res.status(202).json(NEUTRAL_REGISTRATION_RESPONSE);
+  } catch (error) {
+    if (error instanceof MarketAvailabilityError) return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Registration failed' });
+  }
+});
+
+/**
+ * Server-authoritative role selection (Phase 1).
+ *
+ * Registration must already be activated, and the role's OWN market capability
+ * is enforced here, so a customer-registered market with driver registration
+ * disabled cannot be bypassed by switching role. An account that already has a
+ * role is returned unchanged (established users are never re-gated).
+ */
+router.post('/select-role', async (req: Request, res: Response) => {
+  try {
+    const userId = await authUser(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    const role = String(req.body?.role || '').toLowerCase();
+    if (role !== 'customer' && role !== 'driver') {
+      return res.status(400).json({ error: 'Choose customer or driver.', code: 'INVALID_ROLE' });
+    }
+
+    const registration = await RegistrationEligibilityService.getState(userId);
+    if (!registration) return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
+    if (!registration.activated) {
+      return res.status(409).json({ error: 'Complete your registration market eligibility first.', code: 'REGISTRATION_PENDING' });
+    }
+
+    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', userId).maybeSingle();
+    const existingRole = String((profile as { role?: string } | null)?.role || '').toLowerCase();
+    if (existingRole) {
+      // Established role: never reassign or re-gate.
+      return res.json({ role: existingRole, changed: false, registration });
+    }
+
+    const capability = role === 'driver' ? 'driver_registration' : 'customer_registration';
+    await MarketAvailabilityService.requireCapability({
+      countryCode: registration.registrationCountryCode,
+      marketCity: registration.registrationMarketCity,
+      capability,
+      endpoint: '/api/auth/select-role'
+    });
+
+    const { error } = await supabaseAdmin.from('profiles').update({ role }).eq('id', userId);
+    if (error) return res.status(400).json({ error: error.message });
+
+    return res.json({ role, changed: true, registration });
+  } catch (error) {
+    if (error instanceof MarketAvailabilityError) {
+      return res.status(error.httpStatus).json({ error: error.message, code: error.code, market: error.market });
+    }
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Could not set your role.' });
+  }
+});
+
+/**
+ * Logout / account-switch hygiene: disable the CURRENT authenticated user's
+ * device push registrations so they stop receiving pushes after signing out.
+ *
+ * The identity is derived ONLY from the Bearer session; a caller can never
+ * disable another user's tokens. Uses existing `device_push_tokens` columns —
+ * no migration.
+ */
+router.post('/push-logout', async (req: Request, res: Response) => {
+  try {
+    const userId = await authUser(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    // CURRENT-DEVICE invalidation. The client sends ITS OWN device subscription
+    // id (never a userId); the user is still derived only from the session, so a
+    // caller can never disable another user's tokens or another device. A user
+    // signed in on several devices keeps push on their other devices.
+    const subscriptionId = typeof req.body?.subscriptionId === 'string'
+      ? req.body.subscriptionId.trim()
+      : '';
+
+    if (!subscriptionId) {
+      // No device identity to scope to (e.g. push never granted). Nothing to
+      // invalidate; the client-side OneSignal unbind already stops delivery for
+      // this device.
+      return res.json({ success: true });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('device_push_tokens')
+      .update({ enabled: false, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('subscription_id', subscriptionId);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to disable push registrations' });
+  }
+});
 
 router.post('/registration-otp/send', otpLimiter, async (req: Request, res: Response) => {
   const email = normalizeEmail(req.body?.email);

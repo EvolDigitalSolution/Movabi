@@ -1,0 +1,7 @@
+# Compact wallet and payout text
+
+Formatting-only correction to the existing Driver Hub Wallet and Profile payout cards. Wallet replaces the repeated explanation with "Recorded earnings · Not your withdrawable balance". Only the exact known connected-account boilerplate is shortened; missing configuration, account review, disabled-market and verification errors are preserved. Profile retains its provider label, one status badge and original payout button. Duplicate status heading is removed.
+
+The two affected card headers stack on small screens, notes occupy the full card width, and status text may wrap. Scoped typography uses 14px normal-weight explanatory notes and 12px status labels. Larger screens can use a row. No global font, navigation, requests, maps, cash-credit placement, earnings amounts, payout eligibility, API, provider, gate or database changes. The pre-existing placement baseline is updated to include exactly these approved formatting changes; its guard still rejects any other changes.
+
+Installer verifies exact current local file hashes, six applied migration baselines and package checksums, backs up both changed files, supports guarded rollback and performs no git/deployment/money operations. Available checks: exact placement guard, existing 35 reader/service behaviors, short-message behavior preserving warnings, installer/rollback. Angular builds and signed-in visual acceptance remain owner-run.

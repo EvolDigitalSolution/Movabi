@@ -1,0 +1,86 @@
+> Current staging sequence and compatibility correction: [disabled application-only staging](NG_COHOST_DISABLED_STAGE_COPY_PASTE.md). The earlier broad migration deployment is deferred because it changes routing/booking authorities and triggers. Use the new checksum-pinned bundle for disabled staging only.
+
+> Local implementation and exact disabled staging/rollback commands: [implemented co-hosted develop integration](NG_SUBACCOUNT_COHOSTED_DEVELOP_IMPLEMENTATION.md). Merchant identity and default approval remain unresolved.
+
+# One proposed develop rollout: first subaccount through existing onboarding
+
+Prepared 28 October 2026. This supersedes the separate-process/database-binding proposal in the earlier onboarding plan. This is a concrete proposed patch/deployment design; the co-hosted runtime changes below are not implemented or deployed. No key, backup, provisioning, subaccount creation, payment or transfer was repeated.
+
+## Merchant identity: private operator checklist
+
+1. Open https://app.flutterwave.com/ and sign in privately using the normal business login. Select the intended business from the business/account switcher; do not rely on Vaydu's previously entered alias as the business identity.
+2. Select TEST mode and confirm its visible indicator before proceeding. Flutterwave's published instructions place the switch in the business/Merchant-ID dropdown or settings sidebar; older dashboard variants show it at the top right. Follow the labelled Test/Live control, not an assumed screen coordinate. Do not activate live mode or generate new keys.
+3. Read Merchant ID (MID), normally below the business name at the top left or in its service/account menu. Retain the exact string including leading zeros. Check the selected business name against the intended test business. MID is provider identity; FLUTTERWAVE_COLLECTION_MERCHANT_REF remains Vaydu's internal alias. A transaction account_id must not be presumed equal to MID.
+4. Open Settings > Developers > API Keys (some versions label this Settings > API Keys/API). Confirm the TEST context and that this is the business from which the already-entered v3 key originated. Do not copy/re-enter, regenerate, screenshot, paste or send any key. Navigating this page alone does not establish that the installed key came from it.
+5. If the business provides private API request logs, match the previously completed diagnostic UTC times, GET /v3/subaccounts variants, and HTTP 400 outcomes to that business's logs. Do not rerun provisioning or create anything. If provenance cannot be established this way or from the original operator's provisioning record, ask Flutterwave to confirm the intended MID against those request timestamps/path/status; bank/fee success is insufficient.
+6. Record a controlled attestation: alias -> business/MID -> test environment, who checked it, when, and the log/support evidence reference. No key, bank details or raw logs. This can stay in the private release record; only confirmation/evidence reference is needed for rollout. Do not click Create subaccount on the dashboard.
+
+Official references: https://developer.flutterwave.com/docs/authentication ; https://developer.flutterwave.com/docs/wallet-to-wallet ; https://flutterwave.com/us/support/integrations/flutterwave-live-and-test-environments . Published dashboard versions differ in control position.
+
+## Default flat zero: what is known and what is not
+
+The v3 create API requires split_value and permits split_type=flat. This stores an administrative default for later payments referencing the subaccount; creation itself does not collect or allocate money. Zero is an amount of NGN 0, not 0%, not the booking commission and not the 5% wallet fee.
+
+There is a material documentation conflict. The creation-parameter table describes flat as the platform's fixed commission and the driver receiving the remainder. Its later rules describe flat as a fixed amount received by the subaccount. These would make zero mean respectively platform 0 / driver remainder, or driver 0 / platform remainder, before applicable fee treatment. It is therefore unsafe to assert either as this merchant's actual default behaviour. Transaction-level transaction_charge_type is a different field; its examples cannot settle the contradictory creation-default description. No booking collection is permitted under either interpretation in this test.
+
+The create reference specifies a required double but does not explicitly document a zero minimum or a test-mode guarantee. Acceptance of flat 0 by this merchant is NOT VERIFIED. Local validation/mocks accepting zero and successful GET fee/list calls do not verify it. No documented validate-only create endpoint was found. Testing by a manual POST would create a subaccount outside onboarding and is excluded.
+
+Concrete next action: submit this non-secret question through the intended business's Flutterwave support channel: "For our v3 NG/NGN TEST collection subaccount, is POST /v3/subaccounts with split_type=flat and numeric split_value=0 accepted? For this creation default, does flat describe the main merchant commission or the beneficiary allocation? Please reconcile the differing parameter-table/rules descriptions and confirm fee treatment. We are creating only through authenticated driver onboarding; no checkout or transfer is authorised." Record the answer/reference privately. Do not include keys or bank details.
+
+Decision: keep the proposal unapproved/unapplied. After provider clarification, the owner may approve the administrative value for a setup-only test. Actual API acceptance and read-back can then be established by the driver's single confirmed onboarding creation, not a preliminary/manual account. If the provider does not confirm zero, obtain an explicit alternative decision before activation. If the one UI create fails or times out, retain the durable claim and reconcile; no automatic replacement POST or changed default. Successful read-back proves stored configuration, not actual settlement semantics. Settlement remains untested and disabled.
+
+Sources checked 28 October 2026: https://developer.flutterwave.com/reference/create-a-sub-account ; https://developer.flutterwave.com/docs/split-payments . Frozen booking fare/commission rules and wallet top-up policy remain unchanged.
+
+## Smallest supported database integration
+
+Source already supports in-process dependency injection:
+
+- server/services/supabase.service.ts owns a lazy singleton/proxy, supabaseAdmin, initialised using the develop API's existing connection. No separate database client or credential transport is required.
+- server/routes/driver-payment-account.routes.ts already accepts db and service arguments. server/index.ts already mounts /api/driver-payment-account. DriverCollectionAccountService and DriverPaymentAccountService accept that client.
+- The existing /driver/onboarding page already embeds DriverPaymentAccountComponent. Status does not list provider subaccounts and permits not_started with no existing account.
+- The only runtime mismatch is the provider factory's current test/development NODE_ENV guard; the deployed develop API correctly uses NODE_ENV=production. Do not change NODE_ENV or weaken the isolated sandbox factory globally.
+
+Recommendation: co-host the collection-setup service in the verified develop API and pass the existing supabaseAdmin object directly. Retire the separate port-3022 process/proxy proposal for this test. No database binding needs to be found or newly invented. Do not read/export Docker Env, serialize client configuration, copy database credentials/files or call an administrative database login from application code.
+
+### Exact proposed code changes
+
+1. Add server/services/payments/flutterwave-collection-develop.ts with an explicit co-hosted provider factory. It accepts the existing client by reference and validates only non-secret develop target identity, VAYDU_DEPLOYMENT_ENV=develop, new opt-in VAYDU_DRIVER_SUBACCOUNT_COHOST_DEVELOP=true, and VAYDU_DRIVER_SUBACCOUNT_SANDBOX=true. Require exact existing develop URL allowlist, TEST-prefix provider key, verified configured merchant alias and existing stable fingerprint secret. Reject Flutterwave live credentials and ambiguous/missing guards before provider calls. NODE_ENV=production is permitted ONLY in this explicit factory; sandboxSubaccountProvider remains unchanged for isolated processes.
+2. Require the co-hosted factory to reject activation if VAYDU_DRIVER_PAYOUT_SANDBOX, VAYDU_DRIVER_TOPUP_API, VAYDU_FLUTTERWAVE_BOOKING_SPLIT_SANDBOX or VAYDU_BOOKING_SPLIT_TIMING_APPROVED is true. Do not reject or change the existing Stripe credential/configuration; this factory never calls Stripe. Use an immutable provider configuration snapshot so request input cannot select environment, merchant or endpoint.
+3. Extend driverPaymentAccountRouter's factory options with collectionOnly (default false). In the co-hosted mode expose only status, banks, resolve, setup and reconcile; do not register the transfer webhook. Keep existing owner JWT validation, no-store, rate limits and safe errors. Keep GB status delegation to the existing Stripe flow. Do not mount a new booking checkout route or start a worker through this integration.
+4. In server/index.ts, when the explicit co-hosted opt-in is true, construct DriverCollectionAccountService(supabaseAdmin, existing account-scope service, co-hosted provider factory) and pass it plus the same client into driverPaymentAccountRouter with collectionOnly=true. Otherwise preserve the existing router/default behaviour. An opted-in but invalid configuration fails closed; do not fall back to another provider or environment. No new public port, DB connection, authentication scheme, callback or browser secret is introduced.
+5. No SQL or new account table is needed beyond the already-rehearsed collection migration set. No frontend flow replacement is needed: retain Set up payment account -> contact/bank form -> resolve -> explicit confirmation -> create once -> verified retrieval/link -> status. Do not introduce a list-success or existing-subaccount prerequisite. Completed status does not independently approve paid work or payouts.
+6. Tests required before release: production NODE_ENV plus exact develop opt-in/target succeeds; production/missing target/flag/live Flutterwave key rejects; isolated guard remains strict; explicit reference identity of injected DB client; no client reconstruction/credential export; co-hosted webhook unavailable; wrong driver/tenant blocked; initial empty-list form; one create after confirmation; timeout/empty list stays reconciliation-only; completed requires matching retrieval; GB Stripe regressions and unchanged booking/capture routes. Existing 83 backend tests/four browser tests passed for the prior empty-list fix; these new co-host-specific tests have not yet been implemented or run.
+
+### Exact proposed deployment/configuration changes
+
+Use the existing develop application's actual release configuration/launcher (not the generic production compose). Verify compose project movabi-develop, develop API/database identities and expected develop target before mutation. Preserve its existing database environment and NODE_ENV=production verbatim. Build/release a newly reviewed main API image containing the proposed changes; do not deploy the old isolated review image.
+
+Reference the already-private file /home/edsadmin/.config/vaydu-collection-subaccount-sandbox/flutterwave-test.env as an additional provider-only env_file on the develop API service using the deployment's existing Compose mechanism, preserving all existing env_file entries. Do not print docker compose config or inspect container Env, because they can expose resolved secrets. The file is not copied into the repository/image; do not rewrite/re-provision it. It contains no DB connection. A Compose env_file supplies provider values to the process; it is not a newly claimed secret manager. It requires the actual release mechanism to support that existing host path; if the remote release tool cannot reference host files, resolve that provider-file mounting detail before rollout rather than extracting a connection.
+
+The existing private file stores sandbox flags false. A service-scoped, non-secret Compose environment override takes precedence; keep activation false initially:
+
+    VAYDU_DEPLOYMENT_ENV=develop
+    VAYDU_DRIVER_SUBACCOUNT_COHOST_DEVELOP=false
+    VAYDU_DRIVER_SUBACCOUNT_SANDBOX=false
+    VAYDU_DRIVER_PAYOUT_SANDBOX=false
+    VAYDU_DRIVER_TOPUP_API=false
+    VAYDU_FLUTTERWAVE_BOOKING_SPLIT_SANDBOX=false
+    VAYDU_BOOKING_SPLIT_TIMING_APPROVED=false
+
+Require Flutterwave live keys absent/empty in the merged runtime. Preserve Stripe variables and existing routes. Do not inject/change SUPABASE_SERVICE_ROLE_KEY or copy a database env file. Keep the stable fingerprint key unchanged across restarts and claims. Because process environment is available to Docker/process administrators, the co-hosted test key shares the existing API's administrative trust boundary; do not describe env_file as protection from a host administrator.
+
+Security tradeoff: same-process reuse avoids credential duplication, but the added provider code shares the API's service-role privilege and restart/failure boundary. JWT/tenant/market allowlisting and server-only private tables are essential because service-role access bypasses RLS. Do not accept driver/tenant/merchant identifiers from request bodies as authority. The provider adapter gets no browser-facing database/service-role key. There is no separate process isolation; review this tradeoff explicitly.
+
+## One ordered release/test plan
+
+1. Keep the accepted fresh backup/rehearsal and existing key provisioning. Resolve merchant identity and the default-value question/approval. Review/select the co-hosted topology above; no nonexistent binding remains on the checklist.
+2. Implement/review the narrow factory/router/index changes and run the listed tests. Build the main API and develop frontend; record source revision and immutable image IDs. No rollout yet.
+3. On explicit deployment instruction, use the reviewed migration manifest and apply only unapplied matching files in order 20261253900000, 20261254600000, 20261254700000, 20261254800000, 20261254900000. Stop on divergent history/hashes. The prior clone rehearsal remains valid because this proposal changes no SQL. Leave all new setup/split/payout approvals disabled initially. Preserve existing Kora and Stripe booking routing.
+4. Add the provider-only private file reference and disabled overrides to the actual develop API release, preserving its existing connection and NODE_ENV. Deploy the new API/frontend. Verify existing Stripe/status endpoints and that no creation occurs. No second process, proxy redirect or database transport is required.
+5. Through the controlled existing develop administration path, configure only driver_collection_markets NG/NGN with provider=flutterwave, environment=test, driver 318e6be9-9164-41fa-bb0c-c5ccd3526585 and tenant d0e8e8e8-e8e8-e8e8-e8e8-d0e8e8e8e8e8, verified internal alias/evidence reference and explicitly approved default. Only then set setup_approved and adapter_ready true. Keep f4b_approved, split_collection_approved, split_semantics_verified, fee_passing_verified and settlement_verified false; other markets unchanged.
+6. Set only the two co-host/setup runtime opt-ins true on the develop API and recreate that service through its existing release mechanism. Retain all payout/top-up/new booking split/timing opt-ins false, Flutterwave live credentials absent, existing Stripe configuration unchanged. Run authenticated status as the selected driver; not_started/available must open the form without any existing subaccount. Other scopes remain unavailable.
+7. Existing driver opens /driver/onboarding > Payment account > Set up payment account, enters merchant-supported sandbox contact/bank data privately, checks the resolved name and confirms. This triggers the only creation POST. Verify matching retrieval and secure driver/tenant/NG/NGN/test association before marking completed. Default acceptance/read-back becomes real evidence here; no payment, transfer or settlement is tested.
+8. Refresh/reload; confirm same operation/reference and no duplicate POST. An uncertain result or recognised empty list remains Check setup status only, indefinitely until reconciled; no claim deletion, manual account or automatic new create. Driver may continue normal onboarding after verified setup, without implying approval for live work/payments.
+9. Rollback by disabling the two opt-ins/selected setup approval and restoring the prior develop API image if necessary. Preserve all durable operation/subaccount references and uncertain history. Never rotate keys or remove a claim to retry. Keep unrelated Stripe and booking behaviour unchanged.
+
+Remaining decisions are explicit: accept the co-hosted trust/restart boundary, attest the merchant identity, and choose/approve the administrative default after provider clarification (or explicitly approve discovering acceptance via the single onboarding test). This document does not apply those decisions or perform a deployment.

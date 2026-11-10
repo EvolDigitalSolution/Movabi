@@ -9,9 +9,13 @@ import { environment } from '../../../../environments/environment';
 import { firstValueFrom } from 'rxjs';
 import { JobEventService } from '../job/job-event.service';
 import { ApiUrlService } from '../api-url.service';
+import { SupabaseService } from '../supabase/supabase.service';
 
 export interface CreateJobPaymentIntentResponse {
     clientSecret: string;
+    paymentIntentId?: string;
+    status?: string;
+    reused?: boolean;
 }
 
 export interface CreateWalletTopupIntentResponse {
@@ -26,9 +30,24 @@ export class PaymentService {
     private http = inject(HttpClient);
     private eventService = inject(JobEventService);
     private apiUrlService = inject(ApiUrlService);
+    private supabase = inject(SupabaseService);
 
     private stripePromise: Promise<Stripe | null> | null = null;
     private readonly apiUrl = this.apiUrlService.getApiUrl('/api/payment');
+
+    private async getAuthHeaders(): Promise<Record<string, string>> {
+        const { data } = await this.supabase.auth.getSession();
+        const token = data.session?.access_token;
+
+        if (!token) {
+            throw new Error('Please sign in again before starting payment.');
+        }
+
+        return {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+    }
 
     // ✅ Safe singleton Stripe loader
     async getStripe(): Promise<Stripe | null> {
@@ -50,12 +69,35 @@ export class PaymentService {
     // JOB PAYMENT
     // =========================
 
+    async cardWallet():Promise<{canAdd:boolean;consentVersion:string;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}> {
+        return firstValueFrom(this.http.get<{canAdd:boolean;consentVersion:string;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}>(`${this.apiUrl}/card-wallet`,{headers:await this.getAuthHeaders()}));
+    }
+    async beginCardSetup(requestId:string,consentVersion:string):Promise<{clientSecret:string;setupIntentId:string}> {
+        return firstValueFrom(this.http.post<{clientSecret:string;setupIntentId:string}>(`${this.apiUrl}/card-wallet/setup`,{requestId,consentVersion},{headers:await this.getAuthHeaders()}));
+    }
+    async removeWalletCard(id:string):Promise<void> {
+        await firstValueFrom(this.http.delete(`${this.apiUrl}/card-wallet/${encodeURIComponent(id)}`,{headers:await this.getAuthHeaders()}));
+    }
+    async savedCards():Promise<{enabled:boolean;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}> {
+        return firstValueFrom(this.http.get<{enabled:boolean;cards:Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>}>(`${this.apiUrl}/cards`,{headers:await this.getAuthHeaders()}));
+    }
+    async removeSavedCard(id:string):Promise<void> {
+        await firstValueFrom(this.http.delete(`${this.apiUrl}/cards/${encodeURIComponent(id)}`,{headers:await this.getAuthHeaders()}));
+    }
+    async confirmSavedCard(clientSecret:string,methodId:string) {
+        const stripe=await this.getStripe();if(!stripe)throw new Error('Payment service unavailable');
+        const result=await stripe.confirmCardPayment(clientSecret,{payment_method:methodId});
+        if(result.error||!result.paymentIntent)throw new Error(result.error?.message||'Card confirmation failed');
+        return result.paymentIntent;
+    }
+
     async createPaymentIntent(
         jobId: string,
         amount: number,
         currency: string,
         tenantId: string,
-        surgeMultiplier = 1.0
+        surgeMultiplier = 1.0,
+        cardOptions: {saveCard?:boolean;savedPaymentMethodId?:string} = {}
     ): Promise<CreateJobPaymentIntentResponse> {
 
         if (!environment.stripePublicKey) {
@@ -78,6 +120,7 @@ export class PaymentService {
         );
 
         try {
+            const headers = await this.getAuthHeaders();
             const response = await firstValueFrom(
                 this.http.post<CreateJobPaymentIntentResponse>(
                     `${this.apiUrl}/create-intent`,
@@ -86,8 +129,10 @@ export class PaymentService {
                         amount,
                         currency,
                         tenantId,
-                        surgeMultiplier
-                    }
+                        surgeMultiplier,
+                        ...cardOptions
+                    },
+                    { headers }
                 )
             );
 
@@ -95,7 +140,7 @@ export class PaymentService {
                 throw new Error('Invalid payment response');
             }
 
-            return response;
+            return response as CreateJobPaymentIntentResponse;
 
         } catch (error: any) {
             console.error('[PaymentService] createPaymentIntent failed:', error);
@@ -127,6 +172,7 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             const response = await firstValueFrom(
                 this.http.post<CreateWalletTopupIntentResponse>(
                     `${this.apiUrl}/create-wallet-topup-intent`,
@@ -135,7 +181,8 @@ export class PaymentService {
                         amount,
                         currency: currencyCode,
                         tenantId
-                    }
+                    },
+                    { headers }
                 )
             );
 
@@ -216,8 +263,9 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             return await firstValueFrom(
-                this.http.post(`${this.apiUrl}/confirm-wallet-topup`, data)
+                this.http.post(`${this.apiUrl}/confirm-wallet-topup`, data, { headers })
             );
         } catch (error: any) {
             console.error('[PaymentService] confirmWalletTopup failed:', error);
@@ -235,10 +283,11 @@ export class PaymentService {
         }
 
         try {
+            const headers = await this.getAuthHeaders();
             return await firstValueFrom(
                 this.http.get<Record<string, unknown>[]>(
                     `${this.apiUrlService.getApiUrl('/api/wallet')}/transactions`,
-                    { params: { userId } }
+                    { params: { userId }, headers }
                 )
             );
         } catch (error: any) {
@@ -252,22 +301,30 @@ export class PaymentService {
     // =========================
 
     async refundPayment(
-        paymentIntentId: string,
+        jobId: string,
         amount?: number,
-        reason?: string
+        reason?: string,
+        idempotencyKey?: string
     ): Promise<unknown> {
 
-        if (!paymentIntentId) {
-            throw new Error('paymentIntentId is required');
+        if (!jobId) {
+            throw new Error('jobId is required');
         }
 
+        // One stable operation identity per refund action: the caller supplies it
+        // and reuses it on retries; a separate legitimate refund uses a NEW key.
+        // (The server generates a fresh key only when none is supplied.)
+        const operationKey = idempotencyKey || `refund-${jobId}-${crypto.randomUUID()}`;
+
         try {
+            const headers = await this.getAuthHeaders();
             return await firstValueFrom(
                 this.http.post(`${this.apiUrl}/refund`, {
-                    paymentIntentId,
+                    jobId,
                     amount,
-                    reason
-                })
+                    reason,
+                    idempotencyKey: operationKey
+                }, { headers })
             );
         } catch (error: any) {
             console.error('[PaymentService] refundPayment failed:', error);

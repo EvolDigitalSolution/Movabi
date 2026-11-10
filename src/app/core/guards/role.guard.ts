@@ -5,6 +5,13 @@ import { AuthService } from '../services/auth/auth.service';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom } from 'rxjs';
 
+/**
+ * Role / onboarding guard.
+ *
+ * Driver Hub is reachable only after onboarding is complete, including the
+ * configured payment-account requirement. There is no dashboard-admission
+ * exception: incomplete onboarding always returns the driver to onboarding.
+ */
 export const roleGuard: CanActivateFn = async (route) => {
   const profileService = inject(ProfileService);
   const authService = inject(AuthService);
@@ -49,7 +56,7 @@ export const roleGuard: CanActivateFn = async (route) => {
 
   // 2. Onboarding Gate
   const isAtOnboardingPage = route.routeConfig?.path === 'onboarding' || route.parent?.routeConfig?.path === 'onboarding';
-  
+
   if (userRole && !onboardingCompleted && !isAtOnboardingPage) {
     if (userRole === 'customer') {
       router.navigate(['/customer/onboarding']);
@@ -90,6 +97,6 @@ export const roleGuard: CanActivateFn = async (route) => {
     router.navigate(['/auth/login']);
     return false;
   }
-  
+
   return false;
 };

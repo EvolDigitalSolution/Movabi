@@ -1,0 +1,11 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const root=path.resolve(__dirname,'..'),read=n=>fs.readFileSync(path.join(root,n),'utf8').replace(/\r\n/g,'\n');
+const service=read('src/app/core/services/wallet/wallet.service.ts'),baseline=JSON.parse(read('scripts/customer-wallet-currency-baseline.json'));
+assert.equal(crypto.createHash('sha256').update(service.slice(service.indexOf('  async reserveErrandFunds'))).digest('hex'),baseline.writerSuffix,'Financial writer body changed');
+const home=read('src/app/apps/mobile/features/customer/home.page.ts'),wallet=read('src/app/apps/mobile/features/customer/wallet/wallet.page.ts');
+assert.ok(home.includes('walletService.walletBalanceText(true)'));
+assert.ok(wallet.includes('walletService.walletBalanceText()'));
+assert.ok(wallet.includes('formatRecordedTransaction(tx)'));
+assert.equal(home.includes('formatCurrency(walletService.wallet()?.available_balance || 0)'),false);
+assert.equal(wallet.includes("appConfig.formatCurrency(toNumber(tx['amount']))"),false);
+console.log('CUSTOMER_WALLET_DISPLAY_AND_WRITERS=PASS (supplemental source check)');

@@ -1,22 +1,22 @@
 import { Component, inject, signal } from '@angular/core';
-import { 
-  IonHeader, 
-  IonToolbar, 
-  IonTitle, 
-  IonContent, 
-  IonIcon, 
-  IonButton, 
+import {
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonIcon,
+  IonButton,
   IonSpinner
 } from '@ionic/angular/standalone';
-import { Router, RouterModule } from '@angular/router';
+import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { addIcons } from 'ionicons';
-import { 
-  alertCircleOutline, 
-  mailOutline, 
-  lockClosedOutline, 
-  eyeOutline, 
-  eyeOffOutline, 
-  logoGoogle 
+import {
+  alertCircleOutline,
+  mailOutline,
+  lockClosedOutline,
+  eyeOutline,
+  eyeOffOutline,
+  logoGoogle
 } from 'ionicons/icons';
 import { AuthService } from '../../../../core/services/auth/auth.service';
 import { ProfileService } from '../../../../core/services/profile/profile.service';
@@ -28,14 +28,17 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
   template: `
     <ion-header class="ion-no-border">
       <ion-toolbar class="px-4 pt-4 bg-white">
-        <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
+        <ion-title class="font-display font-bold text-2xl text-slate-900"><img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="32" height="32" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px;flex-shrink:0" />Vaydu</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding bg-slate-50 auth-scroll-page">
       <div class="auth-form-shell flex flex-col max-w-md mx-auto pt-8">
-        <div class="mb-10 text-center">
+        <div class="mb-8 text-center">
           <h1 class="text-3xl font-display font-bold text-slate-900 mb-3">Welcome back</h1>
-          <p class="text-slate-500 text-sm">Sign in to your Movabi account to manage your services.</p>
+          <p class="text-slate-500 text-sm">Sign in to your Vaydu account to manage your services.</p>
+          <p class="text-slate-400 text-xs mt-2">
+            Use the same method you signed up with — email and password, or Continue with Google.
+          </p>
         </div>
 
         @if (errorMessage()) {
@@ -50,9 +53,9 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
             <label for="email" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Email Address</label>
             <div class="relative group">
               <ion-icon name="mail-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-              <input 
+              <input
                 id="email"
-                type="email" 
+                type="email"
                 formControlName="email"
                 placeholder="name@example.com"
                 class="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
@@ -70,14 +73,14 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
             </div>
             <div class="relative group">
               <ion-icon name="lock-closed-outline" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-blue-600 transition-colors"></ion-icon>
-              <input 
+              <input
                 id="password"
-                [type]="showPassword() ? 'text' : 'password'" 
+                [type]="showPassword() ? 'text' : 'password'"
                 formControlName="password"
                 placeholder="••••••••"
                 class="w-full h-14 pl-12 pr-12 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
               >
-              <button 
+              <button
                 type="button"
                 (click)="togglePassword()"
                 class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
@@ -89,9 +92,9 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
           </div>
 
           <div class="pt-4">
-            <ion-button 
-              type="submit" 
-              expand="block" 
+            <ion-button
+              type="submit"
+              expand="block"
               class="h-14 font-bold text-lg rounded-2xl shadow-xl shadow-blue-600/20"
               [disabled]="loginForm.invalid || isLoading()"
             >
@@ -104,7 +107,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
           </div>
         </form>
 
-        <div class="relative my-10">
+        <div class="relative my-8">
           <div class="absolute inset-0 flex items-center">
             <div class="w-full border-t border-slate-200"></div>
           </div>
@@ -113,9 +116,12 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
           </div>
         </div>
 
-        <button 
+        <p class="text-center text-slate-500 text-xs mb-3">
+          Signed up with Google? Use the button below.
+        </p>
+        <button
           type="button"
-          class="w-full h-14 flex items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98] disabled:opacity-50" 
+          class="w-full h-14 flex items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98] disabled:opacity-50"
           (click)="loginWithGoogle()"
           [disabled]="isLoading()"
         >
@@ -124,7 +130,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
         </button>
 
         <p class="mt-10 text-center text-slate-600 text-sm">
-          New to Movabi? 
+          New to Vaydu?
           <a routerLink="/auth/signup" class="text-blue-600 font-bold hover:text-blue-700 transition-colors">Create your account</a>
         </p>
       </div>
@@ -132,16 +138,16 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angu
   `,
   standalone: true,
   imports: [
-    CommonModule, 
-    FormsModule, 
-    ReactiveFormsModule, 
-    RouterModule, 
-    IonHeader, 
-    IonToolbar, 
-    IonTitle, 
-    IonContent, 
-    IonIcon, 
-    IonButton, 
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    RouterModule,
+    IonHeader,
+    IonToolbar,
+    IonTitle,
+    IonContent,
+    IonIcon,
+    IonButton,
     IonSpinner
   ]
 })
@@ -150,6 +156,7 @@ export class LoginPage {
   public auth = inject(AuthService);
   private profileService = inject(ProfileService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   loginForm = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
@@ -162,14 +169,17 @@ export class LoginPage {
   private isSubmitting = false;
 
   constructor() {
-    addIcons({ 
-      alertCircleOutline, 
-      mailOutline, 
-      lockClosedOutline, 
-      eyeOutline, 
-      eyeOffOutline, 
-      logoGoogle 
+    addIcons({
+      alertCircleOutline,
+      mailOutline,
+      lockClosedOutline,
+      eyeOutline,
+      eyeOffOutline,
+      logoGoogle
     });
+    // Carry the email from signup/forgot-password links. NEVER a password.
+    const email = this.route.snapshot.queryParamMap.get('email');
+    if (email) this.loginForm.patchValue({ email: email.trim().toLowerCase() });
   }
 
   togglePassword() {

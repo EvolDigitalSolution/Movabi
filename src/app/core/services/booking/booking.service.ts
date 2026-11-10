@@ -1,6 +1,6 @@
-﻿import { Injectable, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { firstValueFrom, timeout } from 'rxjs';
 import { SupabaseService } from '../supabase/supabase.service';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import {
@@ -17,6 +17,17 @@ import { NotificationService } from '../notification.service';
 import { JobEventService } from '../job/job-event.service';
 import { EmailService } from '../notification/email.service';
 import { ApiUrlService } from '../api-url.service';
+import { MarketplaceConfigService } from '../marketplace/marketplace-config.service';
+
+export type BookingLifecycleState =
+    | 'draft'
+    | 'negotiating'
+    | 'fare_agreed_unpaid'
+    | 'payment_pending'
+    | 'paid_ready_for_dispatch'
+    | 'active'
+    | 'completed'
+    | 'cancelled';
 
 @Injectable({
     providedIn: 'root'
@@ -31,9 +42,106 @@ export class BookingService {
     private eventService = inject(JobEventService);
     private emailService = inject(EmailService);
     private apiUrlService = inject(ApiUrlService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
 
     activeBooking = signal<Booking | null>(null);
     bookingHistory = signal<Booking[]>([]);
+    pendingMarketplaceBookings = signal<Booking[]>([]);
+
+    private readonly safeNegotiationSlugs = new Set([
+        'shop',
+        'shopping',
+        'errand',
+        'errands',
+        'delivery',
+        'van-moving'
+    ]);
+
+    private canonicalServiceSlug(slug: string): string {
+        const raw = String(slug || '').trim().toLowerCase();
+
+        if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+        if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+        if (['van', 'moving', 'move', 'van-moving', 'van moving', 'van_moving'].includes(raw)) return 'van-moving';
+        if (['ride', 'rides'].includes(raw)) return 'ride';
+
+        return raw;
+    }
+
+    getBookingLifecycleState(job: Partial<Booking> | Record<string, any> | null | undefined): BookingLifecycleState {
+        const status = String((job as any)?.status || '').toLowerCase();
+        const paymentStatus = String((job as any)?.payment_status || '').toLowerCase();
+        const hasPaymentIntent = !!String((job as any)?.payment_intent_id || '').trim();
+        const hasDriver = !!String((job as any)?.driver_id || '').trim();
+        const dispatchStarted = !!String((job as any)?.dispatch_started_at || '').trim();
+
+        const paidStatuses = new Set([
+            'authorized',
+            'requires_capture',
+            'succeeded',
+            'wallet_funded',
+            'paid',
+            'captured',
+            'capture_pending'
+        ]);
+        const paymentPendingStatuses = new Set(['pending_payment', 'payment_pending', 'requires_payment_method']);
+        const activeStatuses = new Set([
+            'accepted',
+            'assigned',
+            'arrived',
+            'heading_to_pickup',
+            'driver_en_route',
+            'driver_arrived',
+            'picked_up',
+            'in_progress',
+            'arrived_at_store',
+            'shopping_in_progress',
+            'collected',
+            'en_route_to_customer',
+            'delivered'
+        ]);
+        const dispatchStatuses = new Set(['searching', 'broadcasting', 'waiting']);
+
+        const isPaid = paidStatuses.has(paymentStatus) || (hasPaymentIntent && !['failed', 'canceled', 'pending', 'requires_payment_method', 'unpaid'].includes(paymentStatus));
+
+        if (['completed', 'settled'].includes(status)) return 'completed';
+        if (['cancelled', 'canceled', 'no_driver_found', 'expired', 'failed'].includes(status)) return 'cancelled';
+        if (activeStatuses.has(status)) return status === 'delivered' ? 'completed' : 'active';
+        if (dispatchStatuses.has(status)) return isPaid ? 'paid_ready_for_dispatch' : 'payment_pending';
+        if (status === 'fare_agreed') return isPaid ? 'paid_ready_for_dispatch' : 'fare_agreed_unpaid';
+        if (isPaid && ['pending', 'requested', 'pending_fare_confirmation', 'negotiating'].includes(status)) return 'paid_ready_for_dispatch';
+        if (['pending_fare_confirmation', 'negotiating'].includes(status)) return 'negotiating';
+        if (paymentPendingStatuses.has(status) || paymentPendingStatuses.has(paymentStatus)) return 'payment_pending';
+
+        return 'draft';
+    }
+
+    isVisibleActivityBooking(job: Partial<Booking> | Record<string, any> | null | undefined): boolean {
+        return [
+            'paid_ready_for_dispatch',
+            'active',
+            'completed',
+            'cancelled'
+        ].includes(this.getBookingLifecycleState(job));
+    }
+
+    isPendingMarketplaceBooking(job: Partial<Booking> | Record<string, any> | null | undefined): boolean {
+        const status = String((job as any)?.status || '').toLowerCase();
+        const expiredAt = String((job as any)?.expired_at || '').trim();
+
+        if (expiredAt || status === 'expired') {
+            return false;
+        }
+
+        // Patch 1A: `pending_fare_confirmation` is the status a live negotiation job is
+        // created with (booking.routes.ts), and getBookingLifecycleState() already
+        // classifies it as 'negotiating' (see the mapper below). The former early
+        // `return false` for this status contradicted that mapper and made every active
+        // negotiation invisible in Activities. It is deliberately NOT filtered here.
+        // `is_draft` is likewise NOT a hiding reason for a live negotiation.
+        const state = this.getBookingLifecycleState(job);
+        return ['negotiating', 'fare_agreed_unpaid'].includes(state);
+    }
 
     async getServiceTypes(): Promise<ServiceType[]> {
         const { data, error } = await this.supabase
@@ -59,7 +167,6 @@ export class BookingService {
         }
 
         const normalizedDetails = this.normalizeDetails(serviceSlug, details);
-        const completionPin = this.generateCompletionPin();
 
         this.validateDetails(serviceSlug, {
             ...details,
@@ -117,11 +224,77 @@ export class BookingService {
         const distanceMeters = Number((bookingData as any).distance_meters || 0);
         const durationSeconds = Number((bookingData as any).duration_seconds || 0);
 
+        const canonicalService = this.canonicalServiceSlug(serviceSlug);
+        let negotiationEnabled = Boolean(pricing?.marketplaceFlags?.negotiationEnabled);
+        let biddingEnabled = Boolean(pricing?.marketplaceFlags?.biddingEnabled);
+        let marketplaceFlags = pricing?.marketplaceFlags ?? {
+            dynamicPricingEnabled: false,
+            negotiationEnabled: false,
+            biddingEnabled: false
+        };
+
+        if (!this.safeNegotiationSlugs.has(canonicalService)) {
+            negotiationEnabled = false;
+            biddingEnabled = false;
+            marketplaceFlags = {
+                ...marketplaceFlags,
+                negotiationEnabled: false,
+                biddingEnabled: false
+            };
+        }
+
+        // Safe fallback: if the backend pricing response does not mark a known
+        // marketplace service as negotiation-eligible (e.g. because of a slug/DB
+        // mismatch), still enable negotiation when the admin toggle is on.
+        if (!negotiationEnabled) {
+            try {
+                const effectiveStatus = await this.marketplaceConfig.getEffectiveHybridStatus(canonicalService);
+                const fallbackNegotiation =
+                    effectiveStatus.enabled && this.safeNegotiationSlugs.has(canonicalService);
+
+                console.log('[BookingService] marketplace eligibility check', {
+                    serviceSlug,
+                    canonicalServiceSlug: canonicalService,
+                    negotiationEnabledFromPricing: Boolean(pricing?.marketplaceFlags?.negotiationEnabled),
+                    effectiveHybridStatus: effectiveStatus,
+                    fallbackNegotiationEnabled: fallbackNegotiation
+                });
+
+                if (fallbackNegotiation) {
+                    negotiationEnabled = true;
+                    marketplaceFlags = { ...marketplaceFlags, negotiationEnabled: true };
+                }
+            } catch (e) {
+                console.warn('[BookingService] Could not load marketplace settings for fallback', e);
+            }
+        } else {
+            console.log('[BookingService] marketplace eligibility from pricing', {
+                serviceSlug,
+                canonicalServiceSlug: canonicalService,
+                negotiationEnabled,
+                biddingEnabled,
+                marketplaceFlags
+            });
+        }
+
+        const fareBreakdown = this.buildCustomerQuoteSnapshot({
+            pricingBreakdown: ((bookingData as any)?.fare_breakdown as Record<string, any> | null) ?? pricing?.fareBreakdown ?? null,
+            customerServiceTotal: safePrice,
+            currencyCode,
+            currencySymbol,
+            quoteId: (bookingData as any)?.quote_id || (bookingData as any)?.metadata?.quote_id || null,
+            shoppingBudget: Number((normalizedDetails as any)?.estimated_budget || 0)
+        });
+
         const insertPayload: Record<string, unknown> = {
             customer_id: user.id,
             service_type_id: bookingData.service_type_id || null,
-            status: 'requested',
+            status: negotiationEnabled ? 'pending_fare_confirmation' : 'requested',
             payment_status: 'pending',
+            is_draft: negotiationEnabled,
+            expires_at: negotiationEnabled ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
+            expired_at: null,
+            expiry_reason: null,
 
             pickup_address: bookingData.pickup_address || '',
             pickup_lat: bookingData.pickup_lat ?? null,
@@ -134,6 +307,18 @@ export class BookingService {
             total_price: safePrice,
             estimated_price: safePrice,
 
+            distance_km: Number.isFinite(distanceKm) ? Number(distanceKm) : null,
+            estimated_distance_km: Number.isFinite(distanceKm) ? Number(distanceKm) : null,
+            distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
+                ? Math.round(distanceMeters)
+                : (Number.isFinite(distanceKm) ? Math.round(distanceKm * 1000) : null),
+            duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Math.round(durationSeconds)
+                : null,
+            estimated_duration: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Math.round(durationSeconds / 60)
+                : null,
+
             country_code: countryCode,
             currency_code: currencyCode,
             currency_symbol: currencySymbol,
@@ -142,21 +327,30 @@ export class BookingService {
             pricing_plan_used: pricing?.pricingPlanUsed || (bookingData as any).pricing_plan || 'starter',
             base_fare_used: Number(pricing?.baseFareUsed || 0),
             price_per_km_used: Number(pricing?.pricePerKmUsed || 0),
-            commission_rate_used: Number(pricing?.commissionRateUsed || 15),
-            platform_fee: Number(pricing?.platformFee || 0),
-            driver_payout: Number(pricing?.driverPayout || 0),
-            tax_amount: Number(pricing?.taxAmount || 0),
-            surge_multiplier: Number(pricing?.surgeMultiplier || 1),
+            commission_rate_used: Number(
+                pricing?.commissionRateUsed ??
+                this.marketplaceConfig.settingsSignal()?.commission.percent ??
+                this.marketplaceConfig.defaultSettings().commission.percent
+            ),
+            platform_fee: Number(pricing?.platformFee ?? pricing?.commissionFee ?? 0),
+            driver_payout: Number(pricing?.driverPayout ?? 0),
+            tax_amount: Number(pricing?.taxAmount ?? 0),
+            surge_multiplier: Number(pricing?.surgeMultiplier ?? 1),
+            dynamic_pricing_multiplier: Number(pricing?.dynamicPricingMultiplier ?? 1),
+            fare_breakdown: fareBreakdown,
+            marketplace_flags: marketplaceFlags,
+            bid_mode_enabled: biddingEnabled,
+            negotiation_mode_enabled: negotiationEnabled,
+            agreed_fare: null,
 
             scheduled_time: bookingData.scheduled_time || new Date().toISOString(),
             tenant_id: this.auth.tenantId(),
 
             metadata: {
                 ...(bookingData.metadata || {}),
-                completion_pin: completionPin,
                 completion_pin_required: true,
-                completion_pin_created_at: new Date().toISOString(),
                 pricing_source: pricing?.pricingSource || pricing?.source || 'app_confirmed_fare',
+                quote_id: fareBreakdown?.['quoteId'] || null,
                 distance_km: distanceKm,
                 distance_meters: Number.isFinite(distanceMeters) && distanceMeters > 0
                     ? distanceMeters
@@ -171,13 +365,14 @@ export class BookingService {
             }
         };
 
-        const { data: job, error: bError } = await this.supabase
-            .from('jobs')
-            .insert(insertPayload)
-            .select('*, service_type:service_types(*)')
-            .single();
-
-        if (bError) throw bError;
+        // /api/booking/create requires an authenticated caller (requireAuthenticatedUser ->
+        // 401 AUTHENTICATION_REQUIRED). There is no global HTTP interceptor in this app, so the
+        // Bearer token must be attached per call -- exactly as cancelBooking/notifyStatus do.
+        const job = await firstValueFrom(this.http.post<Booking>(
+            this.apiUrlService.getApiUrl('/api/booking/create'),
+            { booking: insertPayload },
+            { headers: await this.authHeaders() }
+        ));
 
         const detailsTable = this.getDetailsTable(serviceSlug);
         if (!detailsTable) {
@@ -210,14 +405,38 @@ export class BookingService {
                 break;
         }
 
-        const { error: dError } = await this.supabase
+        let detailPayload = this.omitUndefinedFields(detailsInsert);
+        let detailInsertResult = await this.supabase
             .from(detailsTable)
-            .insert(detailsInsert);
+            .insert(detailPayload);
 
-        if (dError) throw dError;
+        if (detailInsertResult.error && this.isMissingColumnError(detailInsertResult.error)) {
+            const missingColumn = this.getMissingColumnName(detailInsertResult.error);
 
-        await this.logStatusHistory(job.id, 'requested', 'Job created, awaiting payment');
-        await this.eventService.logEvent(job.id, 'job_created', 'Job initialized in requested state');
+            if (missingColumn && missingColumn in detailPayload) {
+                console.warn('[BookingService] optional detail column missing; retrying without field', {
+                    table: detailsTable,
+                    column: missingColumn
+                });
+
+                const retryPayload = { ...detailPayload };
+                delete retryPayload[missingColumn];
+                detailPayload = retryPayload;
+
+                detailInsertResult = await this.supabase
+                    .from(detailsTable)
+                    .insert(detailPayload);
+            }
+        }
+
+        if (detailInsertResult.error) {
+            await this.cleanupIncompleteJob(job.id, user.id, detailInsertResult.error);
+            throw detailInsertResult.error;
+        }
+
+        const initialStatus = String(job.status || 'requested') as BookingStatus;
+        await this.logStatusHistory(job.id, initialStatus, 'Job created, awaiting payment');
+        await this.eventService.logEvent(job.id, 'job_created', `Job initialized in ${initialStatus} state`);
 
         const booking = this.mapJobToBooking(job);
         this.activeBooking.set(booking);
@@ -286,6 +505,54 @@ export class BookingService {
         );
 
         return Number.isFinite(distance) ? distance : 0;
+    }
+
+    private buildCustomerQuoteSnapshot(options: {
+        pricingBreakdown: Record<string, any> | null;
+        customerServiceTotal: number;
+        currencyCode: string;
+        currencySymbol: string;
+        quoteId?: string | null;
+        shoppingBudget?: number;
+    }): Record<string, unknown> | null {
+        const customerServiceTotal = this.roundMoney(options.customerServiceTotal);
+        if (!customerServiceTotal) {
+            return options.pricingBreakdown;
+        }
+
+        const existing = options.pricingBreakdown || {};
+        const platformFee = this.roundMoney(existing['platformFeeAmount'] ?? existing['platformFee'] ?? 0);
+        const shoppingBudget = this.roundMoney(options.shoppingBudget || existing['shoppingBudget'] || 0);
+        const quoteId = String(
+            options.quoteId ||
+            existing['quoteId'] ||
+            `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        );
+        const serviceFareBeforePlatformFee = this.roundMoney(Math.max(0, customerServiceTotal - platformFee));
+
+        return {
+            ...existing,
+            quoteId,
+            currencyCode: options.currencyCode,
+            currencySymbol: options.currencySymbol,
+            customerServiceTotal,
+            serviceFare: customerServiceTotal,
+            total: customerServiceTotal,
+            platformFeeAmount: platformFee,
+            platformFee,
+            shoppingBudget,
+            totalAuthorisation: this.roundMoney(customerServiceTotal + shoppingBudget),
+            quoteExpiresAt: existing['quoteExpiresAt'] || existing['expiresAt'] || null,
+            serviceFareBeforePlatformFee,
+            driverGrossEarnings: this.roundMoney(existing['driverGrossEarnings'] ?? serviceFareBeforePlatformFee),
+            calculationVersion: existing['calculationVersion'] || 'marketplace-v1',
+            reconciliationValid: true
+        };
+    }
+
+    private roundMoney(value: unknown): number {
+        const n = Number(value);
+        return Number.isFinite(n) ? Number((n + Number.EPSILON).toFixed(2)) : 0;
     }
 
     private getCountryCode(): string {
@@ -395,6 +662,49 @@ export class BookingService {
         }
     }
 
+    private omitUndefinedFields(payload: Record<string, unknown>): Record<string, unknown> {
+        return Object.fromEntries(
+            Object.entries(payload).filter(([, value]) => value !== undefined)
+        );
+    }
+
+    private getMissingColumnName(error: unknown): string | null {
+        const message = String((error as any)?.message || '');
+        const match = message.match(/column "([^"]+)"/i);
+        return match?.[1] || null;
+    }
+
+    private async cleanupIncompleteJob(jobId: string, customerId: string, cause: unknown): Promise<void> {
+        console.warn('[BookingService] detail insert failed; cleaning up incomplete job', {
+            jobId,
+            cause
+        });
+
+        const deleteResult = await this.supabase
+            .from('jobs')
+            .delete()
+            .eq('id', jobId)
+            .eq('customer_id', customerId)
+            .eq('payment_status', 'pending');
+
+        if (!deleteResult.error) {
+            return;
+        }
+
+        console.warn('[BookingService] incomplete job delete failed; marking cancelled instead', deleteResult.error);
+
+        await this.supabase
+            .from('jobs')
+            .update({
+                status: 'cancelled',
+                expiry_reason: 'detail_insert_failed',
+                expired_at: new Date().toISOString()
+            })
+            .eq('id', jobId)
+            .eq('customer_id', customerId)
+            .eq('payment_status', 'pending');
+    }
+
     private validateDetails(serviceCode: ServiceTypeEnum, details: Record<string, unknown>): void {
         switch (serviceCode) {
             case ServiceTypeEnum.RIDE:
@@ -491,20 +801,33 @@ export class BookingService {
             status: nextStatus
         };
 
+        // Batch 2C Phase B (ownership hardening).
+        //
+        // `driver_id` is deliberately NOT copied out of `additionalData`. Job
+        // ownership is an ACQUISITION and must only ever be written by a trusted
+        // server action or an ownership RPC (`accept_searching_job`,
+        // `accept_assigned_job`, `accept_fare_negotiation`, admin
+        // `assign_driver_to_job`), all of which derive or authorise the driver
+        // server-side. Forwarding a caller-supplied driver_id here let any caller
+        // of this generic status method claim a job.
+        //
+        // A caller that still passes driver_id gets a loud error instead of a
+        // silent drop, so a reintroduced acquisition path fails fast in tests
+        // rather than acquiring ownership in production.
         if (additionalData.driver_id) {
-            updatePayload['driver_id'] = additionalData.driver_id;
+            throw new Error('Assigning a driver is not a status update. Use the job acceptance action.');
         }
 
+        // Release closure: the client is NEVER authoritative for money. price /
+        // estimated_price are server-derived from the verified quote, so a status
+        // update must not round-trip a client-supplied price (which would let a
+        // caller inflate the payout/commission basis).
         if (additionalData.total_price !== undefined && additionalData.total_price !== null) {
-            const price = Number(additionalData.total_price) || 0;
-            updatePayload['price'] = price;
-            updatePayload['estimated_price'] = price;
+            // Intentionally dropped: server authority only.
         }
 
         if (additionalData.price !== undefined && additionalData.price !== null) {
-            const price = Number(additionalData.price) || 0;
-            updatePayload['price'] = price;
-            updatePayload['estimated_price'] = price;
+            // Intentionally dropped: server authority only.
         }
 
         const query = this.supabase
@@ -549,6 +872,9 @@ export class BookingService {
         const statusMessages: Record<string, { title: string; body: string }> = {
             pending: { title: 'Booking Pending', body: 'Your booking is being processed.' },
             requested: { title: 'Booking Requested', body: 'Your booking has been received.' },
+            pending_fare_confirmation: { title: 'Confirm Fare', body: 'Please confirm the fare for your booking.' },
+            negotiating: { title: 'Negotiating Fare', body: 'Your fare is being negotiated.' },
+            fare_agreed: { title: 'Fare Agreed', body: 'The fare has been agreed. We will find a driver next.' },
             searching: { title: 'Searching for Driver', body: 'We are looking for a driver for your request.' },
             assigned: { title: 'Driver Assigned', body: 'A driver has been assigned to your booking.' },
             accepted: { title: 'Driver Accepted', body: 'Your driver is on the way!' },
@@ -561,7 +887,7 @@ export class BookingService {
             delivered: { title: 'Items Delivered', body: 'Your driver has delivered your items.' },
             in_progress: { title: 'Trip Started', body: 'Your trip is now in progress.' },
             settled: { title: 'Errand Settled', body: 'The funds for your errand have been settled.' },
-            completed: { title: 'Trip Completed', body: 'Thank you for choosing Movabi!' },
+            completed: { title: 'Trip Completed', body: 'Thank you for choosing Vaydu!' },
             cancelled: { title: 'Booking Cancelled', body: 'Your booking has been cancelled.' },
             no_driver_found: { title: 'No Driver Found', body: 'We could not find a driver for your request. Please try again later.' }
         };
@@ -575,7 +901,7 @@ export class BookingService {
             msg.title,
             msg.body,
             'booking',
-            { bookingId: booking.id }
+            { bookingId: booking.id, status: booking.status, action: 'status_update' }
         );
 
         if (booking.driver_id) {
@@ -584,8 +910,21 @@ export class BookingService {
                 msg.title,
                 msg.body,
                 'booking',
-                { bookingId: booking.id }
+                { bookingId: booking.id, status: booking.status, action: 'status_update' }
             );
+        }
+
+        // Also send a native push notification via the backend so the alert
+        // reaches the customer when the app is backgrounded.
+        try {
+            await firstValueFrom(
+                this.http.post(this.apiUrlService.getApiUrl('/api/booking/notify-status'), {
+                    jobId: booking.id,
+                    status: booking.status
+                }, { headers: await this.authHeaders() })
+            );
+        } catch (error) {
+            console.warn('[BookingService] Failed to send backend push notification:', error);
         }
 
         if (booking.status === 'completed') {
@@ -601,12 +940,22 @@ export class BookingService {
         }
     }
 
+    /**
+     * Announce a status that was changed outside updateBookingStatus (for example by
+     * an atomic RPC), reusing the existing status notification mechanism so the
+     * customer message stays consistent with the real job status.
+     */
+    async notifyBookingStatus(bookingId: string, status: BookingStatus): Promise<void> {
+        const booking = await this.getBooking(bookingId);
+        await this.notifyStatusChange({ ...booking, status });
+    }
+
     async getBooking(bookingId: string): Promise<Booking> {
         const { data, error } = await this.supabase
             .from('jobs')
             .select('*, service_type:service_types(*)')
             .eq('id', bookingId)
-            .single();
+            .maybeSingle();
 
         if (error) {
             if (error.code === 'PGRST116') {
@@ -614,6 +963,8 @@ export class BookingService {
             }
             throw error;
         }
+
+        if (!data) throw new Error('Booking is unavailable or not accessible to your account.');
 
         if (data.customer_id) {
             const { data: customer } = await this.supabase
@@ -623,6 +974,16 @@ export class BookingService {
                 .maybeSingle();
 
             data.customer = customer;
+        }
+
+        // Profiles RLS can hide the customer from the assigned driver. Use the scoped API projection.
+        if (data.driver_id === this.auth.currentUser()?.id) {
+            try {
+                const response = await firstValueFrom(this.http.get<{ customer: Record<string, unknown> }>(
+                    this.apiUrlService.getApiUrl(`/api/booking/${bookingId}/customer`),
+                    { headers: await this.authHeaders() }).pipe(timeout(12000)));
+                data.customer = { ...(data.customer || {}), ...response.customer };
+            } catch { /* Keep an already-readable profile when the optional lookup is unreachable. */ }
         }
 
         if (data.driver_id) {
@@ -645,6 +1006,23 @@ export class BookingService {
                     vehicle: vehicles?.[0] || null
                 };
             }
+        }
+
+        const serviceSlug = data?.service_type?.slug || data?.service_slug || '';
+        if (String(serviceSlug).toLowerCase() === 'errand') {
+            const { data: errandDetails } = await this.supabase
+                .from('errand_details')
+                .select('*')
+                .eq('job_id', bookingId)
+                .maybeSingle();
+            data.errand_details = errandDetails;
+
+            const { data: errandFunding } = await this.supabase
+                .from('errand_funding')
+                .select('*')
+                .eq('job_id', bookingId)
+                .maybeSingle();
+            data.errand_funding = errandFunding;
         }
 
         return this.mapJobToBooking(data);
@@ -715,42 +1093,16 @@ export class BookingService {
     }
 
     async confirmJobPayment(jobId: string, paymentIntentId: string): Promise<Booking> {
-        const isWallet = paymentIntentId === 'wallet_funded';
-        const now = new Date();
-        const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
+        // C2A.1: the client is never authoritative for payment or dispatch state.
+        // The server verifies Stripe (or the wallet reservation) and transitions
+        // the job; this is the single client path to "paid and searchable".
+        const response = await firstValueFrom(this.http.post<{ booking: unknown }>(
+            this.apiUrlService.getApiUrl('/api/payment/confirm'),
+            { jobId },
+            { headers: await this.authHeaders() }
+        ));
 
-        const { data, error } = await this.supabase
-            .from('jobs')
-            .update({
-                payment_status: isWallet ? 'wallet_funded' : 'authorized',
-                payment_intent_id: isWallet ? null : paymentIntentId,
-                status: 'searching',
-                dispatch_started_at: now.toISOString(),
-                driver_search_expires_at: expiresAt,
-                dispatch_attempts: 1,
-                no_driver_reason: null
-            })
-            .eq('id', jobId)
-            .select('*, service_type:service_types(*)')
-            .single();
-
-        if (error) throw error;
-
-        await this.logStatusHistory(
-            jobId,
-            'searching',
-            isWallet
-                ? 'Wallet funds reserved, job is now dispatchable'
-                : 'Payment authorized, job is now dispatchable'
-        );
-
-        await this.eventService.logEvent(
-            jobId,
-            'payment_succeeded',
-            isWallet ? 'Payment confirmed via Wallet' : 'Payment authorized via Stripe'
-        );
-
-        const booking = this.mapJobToBooking(data);
+        const booking = this.mapJobToBooking(response.booking as any);
         this.activeBooking.set(booking);
 
         return booking;
@@ -787,6 +1139,41 @@ export class BookingService {
         return data;
     }
 
+    /** Bounded history pages; live bookings are loaded independently on refresh. */
+    async getActivityHistoryPage(cursor?: { created_at: string; id: string }): Promise<{
+        bookings: Booking[]; cursor: { created_at: string; id: string } | null;
+    }> {
+        const user = this.auth.currentUser();
+        if (!user?.id) throw new Error('Please sign in again.');
+        const ended = ['completed','settled','cancelled','canceled','failed','expired','no_driver_found','refunded'];
+        let query = this.supabase.from('jobs').select('*, service_type:service_types(*)')
+            .eq('customer_id', user.id).in('status', ended)
+            .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(11);
+        if (cursor) {
+            if (!/^[0-9a-f-]{36}$/i.test(cursor.id) || !/^\d{4}-\d{2}-\d{2}T[\d:.+Z-]+$/.test(cursor.created_at)) {
+                throw new Error('Invalid history cursor');
+            }
+            query = query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`);
+        }
+        const [past, live] = await Promise.all([
+            query,
+            cursor ? Promise.resolve({ data: [], error: null }) : this.supabase.from('jobs')
+                .select('*, service_type:service_types(*)').eq('customer_id', user.id)
+                .not('status', 'in', '(' + ended.join(',') + ')')
+                .order('created_at', { ascending: false })
+        ]);
+        if (this.auth.currentUser()?.id !== user.id) throw new Error('Session changed');
+        if (past.error) throw past.error;
+        if (live.error) throw live.error;
+        if (!Array.isArray(past.data) || !Array.isArray(live.data)) throw new Error('History response was not a list');
+        const rows = past.data.slice(0, 10);
+        const last = rows[rows.length - 1];
+        return {
+            bookings: [...live.data, ...rows].map((row: any) => this.mapJobToBooking(row)),
+            cursor: past.data.length > 10 && last ? { created_at: last.created_at, id: last.id } : null
+        };
+    }
+
     async getHistory(): Promise<void> {
         const user = this.auth.currentUser();
 
@@ -803,9 +1190,18 @@ export class BookingService {
 
         if (error) throw error;
 
+        // A list endpoint must answer with an array. A non-array (an error envelope,
+        // a single object, or null) is a MALFORMED response: throw so the caller's
+        // error handling runs instead of silently rendering an empty history.
+        if (!Array.isArray(jobs)) {
+            throw new Error(`History response was not a list (received ${jobs === null ? 'null' : typeof jobs}).`);
+        }
+
+        const jobRows: any[] = jobs;
+
         const driverIds = Array.from(
             new Set(
-                (jobs || [])
+                jobRows
                     .map((job: any) => job.driver_id)
                     .filter(Boolean)
             )
@@ -825,14 +1221,15 @@ export class BookingService {
             }, {});
         }
 
-        const bookings = (jobs || []).map((job: any) =>
+        const allBookings = jobRows.map((job: any) =>
             this.mapJobToBooking({
                 ...job,
                 driver: job.driver_id ? driversById[job.driver_id] || null : null
             })
         );
 
-        this.bookingHistory.set(bookings);
+        this.bookingHistory.set(allBookings.filter((booking: Booking) => this.isVisibleActivityBooking(booking)));
+        this.pendingMarketplaceBookings.set(allBookings.filter((booking: Booking) => this.isPendingMarketplaceBooking(booking)));
     }
 
     async rateBooking(bookingId: string, score: number, comment: string): Promise<void> {
@@ -848,7 +1245,41 @@ export class BookingService {
                 customerId: user.id,
                 score,
                 comment
-            })
+            }, { headers: await this.authHeaders() })
+        );
+    }
+
+    /**
+     * Batch 2C Phase B.1 — bearer headers for the authenticated booking routes.
+     *
+     * `/cancel` and `/notify-status` now require a session (they were previously
+     * anonymous), so their client calls must carry the caller's token. Identity is
+     * never taken from the request body by those routes.
+     */
+    private async authHeaders(): Promise<HttpHeaders> {
+        const { data } = await this.supabase.auth.getSession();
+        if (!data.session?.access_token) throw new Error('Please sign in again.');
+        return new HttpHeaders({ Authorization: `Bearer ${data.session.access_token}` });
+    }
+
+    async applyDiscount(code: string, quoteReference: string, fareMinor: number): Promise<{ discountMinor: number; campaignId: string }> {
+        const response = await firstValueFrom(
+            this.http.post<{ discountMinor: number; campaignId: string }>(
+                this.apiUrlService.getApiUrl('/api/booking/campaigns/apply'),
+                { code, quoteReference, fareMinor },
+                { headers: await this.authHeaders() }
+            )
+        );
+        return response;
+    }
+
+    async removeDiscount(campaignId: string, quoteReference: string): Promise<void> {
+        await firstValueFrom(
+            this.http.post(
+                this.apiUrlService.getApiUrl('/api/booking/campaigns/remove'),
+                { campaignId, quoteReference },
+                { headers: await this.authHeaders() }
+            )
         );
     }
 
@@ -861,7 +1292,7 @@ export class BookingService {
                 }>(this.apiUrlService.getApiUrl('/api/booking/cancel'), {
                     jobId: bookingId,
                     reason
-                })
+                }, { headers: await this.authHeaders() })
             );
 
             if (response?.data) {
@@ -907,6 +1338,7 @@ export class BookingService {
             .from('errand_funding')
             .select('*')
             .eq('job_id', bookingId)
+            .abortSignal(AbortSignal.timeout(8000))
             .maybeSingle();
 
         if (error) {
@@ -934,5 +1366,15 @@ export class BookingService {
                 }
             )
             .subscribe();
+    }
+
+    private isMissingColumnError(error: unknown): boolean {
+        const message = String(
+            (error as any)?.message ||
+            (error as any)?.error?.message ||
+            (error as any)?.error_description ||
+            (error instanceof Error ? error.message : '')
+        ).toLowerCase();
+        return message.includes('column') && message.includes('does not exist');
     }
 }

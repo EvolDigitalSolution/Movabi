@@ -1,0 +1,31 @@
+{
+  "purpose": "vaydu-driver-collection-setup-only-v1",
+  "files": [
+    {
+      "name": "20261255000000_driver_collection_setup_only.sql",
+      "sha256": "cd572ea992590aa9f211b0e2508ab266da0add18768dc5e2f175bb4bfd9156be"
+    }
+  ],
+  "lineage": {
+    "version": "20261255000000",
+    "scope": "independent setup-only additive branch",
+    "dependsOn": [
+      "profiles schema/activated selected driver",
+      "market_availability NG/NGN",
+      "PostgreSQL UUID generation",
+      "anon/authenticated/service_role roles"
+    ],
+    "doesNotDependOn": [
+      "20261253900000",
+      "20261254600000",
+      "20261254700000",
+      "20261254800000",
+      "20261254900000"
+    ],
+    "existingMigrationFilesRewritten": false,
+    "legacyCollectionRecordsImported": false
+  },
+  "merchantIdentityApproved": false,
+  "administrativeDefaultApproved": false,
+  "activationEnabled": false
+}

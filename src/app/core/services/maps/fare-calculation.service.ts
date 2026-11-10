@@ -32,7 +32,7 @@ export class FareCalculationService {
 
     const subtotal = this.normalizeMoney(baseFare + distanceFare + timeFare);
     let totalBeforeMinimum = this.normalizeMoney(subtotal + serviceFee);
-    
+
     // Apply Surge Multiplier
     const surgeMultiplier = input.surgeMultiplier || 1.0;
     let surgeAmount = 0;
@@ -42,31 +42,15 @@ export class FareCalculationService {
       surgeAmount = this.normalizeMoney(totalBeforeMinimum - originalTotal);
     }
 
-    // Apply errand-specific logic
-    if (serviceType === 'errand' && input.errandDetails) {
-      const mode = input.errandDetails.mode || 'collect_deliver';
-      
-      // Mode-specific service fee additions
-      switch (mode) {
-        case 'quick_buy':
-          totalBeforeMinimum += 2.0; // Extra £2 for quick buy
-          break;
-        case 'shop_deliver':
-          totalBeforeMinimum += 5.0; // Extra £5 for full shopping
-          break;
-        default:
-          // collect_deliver uses base service fee
-          break;
-      }
-      
-      totalBeforeMinimum = this.normalizeMoney(totalBeforeMinimum);
-    }
+    // Errand mode pricing must come from pricing_config and explicit item or
+    // budget add-ons. Hidden mode charges make the breakdown double-count base
+    // fare or service extras on later screens.
 
     // Apply van-moving multipliers if applicable
     if (serviceType === 'van-moving' && input.moveDetails) {
       const details = input.moveDetails;
       let multiplier = 1.0;
-      
+
       // Size multiplier
       switch (details.size) {
         case 'medium': multiplier = 1.3; break;
@@ -74,12 +58,12 @@ export class FareCalculationService {
         case 'full-house': multiplier = 2.5; break;
         default: multiplier = 1.0;
       }
-      
+
       totalBeforeMinimum *= multiplier;
-      
+
       // Add-ons
       if (details.helperCount > 0) {
-        totalBeforeMinimum += (details.helperCount * 15.0); // £15 per helper
+        totalBeforeMinimum += (details.helperCount * 15.0);
       }
       if (details.stairsInvolved) {
         totalBeforeMinimum += 10.0;
@@ -90,7 +74,7 @@ export class FareCalculationService {
       if (details.fragileItems) {
         totalBeforeMinimum += 5.0;
       }
-      
+
       totalBeforeMinimum = this.normalizeMoney(totalBeforeMinimum);
     }
 

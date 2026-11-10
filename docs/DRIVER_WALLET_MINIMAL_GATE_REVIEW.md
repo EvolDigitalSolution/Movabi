@@ -1,0 +1,26 @@
+# One Flutterwave TEST wallet top-up: gate review
+
+Scope remains the confirmed develop NG/NGN driver/tenant, 5% wallet-credit fee and one browser payment. No existing-transaction identity checker, separate payment, subaccount, payout, other market or native certification is needed for this task.
+
+| Check | Why it exists | Minimal decision |
+|---|---|---|
+| Authenticated activated driver, owner/tenant and NG/NGN restrictions | Vaydu authorization and isolation requirements | Keep server-side; never trust submitted driver/tenant. |
+| Explicit develop opt-in and existing TEST credentials; LIVE rejected | User's sandbox authorization | Keep. Reuse the privately entered TEST key; no key regeneration or credentials in reports. |
+| Credit, 5% fee and final charge separately shown, exact configured minor-unit exponent | Approved Vaydu fee policy, not Flutterwave commission | Keep versioned server quote and explicit total agreement. |
+| Frozen provider request and credential fingerprint before POST | Prevent ambiguous retries, changed account/key/amount and duplicate checkout | Keep durable attempt and provider idempotency. |
+| Server verification of successful status, original reference, exact amount/charged amount, currency and card method | Payment correctness, consistent with provider verification guidance | Keep all; webhook/URL status is not evidence. Card/amount checks must apply even without an advance account_id pin. |
+| Atomic, balanced, unique wallet credit excluding the fee | Existing Vaydu ledger authority | Keep; all reloads/callbacks must resolve the same event. |
+| Hosted callback page and saved-attempt recovery | Operational prerequisite for this chosen browser test | Verify actual hosted behavior. Do not demand native certification. |
+| Separate authenticated webhook secret | Needed if accepting provider webhooks; polling verification can also complete a payment | Never silently borrow the subaccount webhook hash. Do not misrepresent webhook delivery as a prerequisite imposed by Flutterwave for every synchronous verification. |
+| Merchant absorbs any additional provider charge / exact final total checked | Necessary for the approved credit+5% total in this rollout | Keep the actual no-added-charge check. Merchant-pays is the chosen configuration, not a universal Flutterwave rule. |
+| Pre-known transaction account_id equal to dashboard MID | Neither documented equivalence nor a provider prerequisite | Remove the circular assumption. Never invent an ID or fill unknown with MID. Preserve a known expected pin when actually configured. |
+| Formal MID/alias/account mapping attestations and evidence-reference strings | Administrative checks introduced by our release tooling | Optional records, not extra Flutterwave requirements. They must not be falsely marked true to allow a first payment. |
+| Three yes/no browser certification fields | Additional release-tool design | Useful observations, not provider requirements. The actual browser flow and automated hosted-route checks matter; do not substitute a form for execution. |
+| Fixed two-hour rehearsal expiry | Release-tool freshness choice | Never rebuild the successful API or repeat rehearsal to work around a receipt defect. Repeat only if a necessary source/SQL input changes or the defined freshness rule genuinely expires. |
+| Existing protected source/image/Compose guards | User explicitly requires Stripe, booking and payouts unchanged | Keep; this is change isolation, not a Flutterwave onboarding requirement. |
+
+First-transaction resolution must be within the ONE saved wallet attempt: use the selected merchant's TEST key, freeze its credential fingerprint and terms before submission, then observe the account_id in the authenticated successful provider verification. Identity observation itself never credits a wallet; only the unchanged atomic wallet-confirmation path may credit after every payment check passes. A previously configured known account pin must still reject mismatches. No separate discovery payment is needed, and an unknown account_id must remain NULL/unknown rather than a guessed identifier.
+
+The current implementation makes this optional advance pin mandatory in the private-file parser, scope NOT NULL constraint and service market check. Therefore the first-payment correction is a real, narrowly scoped wallet code/schema input change, not something to bypass in an activation script. It must be explicit TEST-only for this driver/tenant and preserve normal verification, durable idempotency and ledger checks. A necessary wallet payload update is distinct from unnecessarily rebuilding the already-successful API because a UI image build failed. No such rebuild or SQL application is performed by the UI depth correction.
+
+Current actual UI error: third COPY at Dockerfile line 5 fails with Docker 'max depth exceeded'. The focused correction assembles the same public files in a rootfs overlay and uses one COPY layer, preserves inherited startup metadata, replaces compressed index variants in that same layer, validates nginx and compares original booking-asset manifests against the actual pinned base. No environment/credential extraction, framework expansion, app deployment or payment is included.

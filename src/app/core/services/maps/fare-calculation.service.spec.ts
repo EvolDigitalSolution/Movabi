@@ -78,7 +78,7 @@ describe('FareCalculationService', () => {
     expect(estimate.total).toBe(3.99);
   });
 
-  it('applies real-life errand mode surcharges', () => {
+  it('does not invent client-only errand mode surcharges', () => {
     const collectDeliver = service.calculateFare({
       serviceType: 'errand',
       distanceMeters: 5000,
@@ -92,7 +92,7 @@ describe('FareCalculationService', () => {
       errandDetails: { mode: 'shop_deliver' }
     });
 
-    expect(Number((shopDeliver.total - collectDeliver.total).toFixed(2))).toBe(5);
+    expect(Number((shopDeliver.total - collectDeliver.total).toFixed(2))).toBe(0);
   });
 
   it('prices larger moving jobs above small moves with boundary add-ons', () => {

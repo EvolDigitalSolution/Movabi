@@ -1,0 +1,32 @@
+{
+  "sourceContainer": "vaydu-backup-fixture-823fabe1",
+  "sourceDatabase": "movabi_develop",
+  "sourceImage": "sha256:881ac26a02870c6784d9fbec67a6a9c5026905216bbd7dfbfa289ecc48073387",
+  "countsBefore": {
+    "wallet_accounts": 0,
+    "wallet_business_events": 0,
+    "wallet_movements": 0,
+    "wallet_topup_attempts": 0,
+    "payment_checkout_attempts": 2
+  },
+  "databaseBytes": 7869231,
+  "restoreVerified": true,
+  "dumpBytes": 5464,
+  "sha256": "99a17e0f38760be165599b26911fb1c044b526582f0713c97a5f494730647ece",
+  "countsAfter": {
+    "wallet_accounts": 0,
+    "wallet_business_events": 0,
+    "wallet_movements": 0,
+    "wallet_topup_attempts": 0,
+    "payment_checkout_attempts": 2
+  },
+  "restoredCounts": {
+    "wallet_accounts": 0,
+    "wallet_business_events": 0,
+    "wallet_movements": 0,
+    "wallet_topup_attempts": 0,
+    "payment_checkout_attempts": 2
+  },
+  "walletOwnershipAndACLVerified": true,
+  "restoreScope": "Full archive with object ownership/ACL restored; wallet table owners/ACLs compared; structural role attributes copied only into the isolated clone, all copied roles NOLOGIN and no credentials copied"
+}

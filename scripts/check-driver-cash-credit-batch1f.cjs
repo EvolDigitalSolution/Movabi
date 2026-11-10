@@ -1,0 +1,13 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'..');const read=n=>fs.readFileSync(path.join(root,n),'utf8');
+const booking=read('server/routes/booking.routes.ts'),route=read('server/routes/market-safety.routes.ts'),elig=read('server/services/driver-eligibility.service.ts');
+assert.ok(booking.includes("import earlyStopRoutes from './early-stop.routes'"));
+assert.ok(booking.includes("router.use('/early-stop', earlyStopRoutes)"));
+assert.ok(booking.includes('await assertDriverJobMarket(supabaseAdmin,driverId,job)'));
+assert.ok(booking.includes('await cashRideAcquisitionApproved(supabaseAdmin,driverId,job)'));
+assert.ok(booking.includes('await PayoutEligibilityService.assertEligible(driverId)'));
+assert.ok(booking.includes('mapDriverAcquisitionError(rpcError)'));
+assert.ok(route.includes("router.get('/driver-cash-credit'"));
+assert.ok(route.includes('readDriverCashCredit(db,(req as any).marketUserId)'));
+assert.ok(elig.includes('mapCashCreditError(error)'));
+console.log('BATCH1F_INTEGRATION_SOURCE_CHECKS=PASSED (supplemental, not runtime proof)');

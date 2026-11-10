@@ -1,0 +1,5 @@
+# Append to the verified original develop web override chain; never use alone.
+services:
+  web:
+    image: ${VAYDU_DRIVER_CARD_WEB_IMAGE:?Pin the reviewed develop web image ID}
+    pull_policy: never

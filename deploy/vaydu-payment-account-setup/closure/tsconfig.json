@@ -1,0 +1,22 @@
+﻿{
+  "compilerOptions": {
+    "outDir": "build",
+    "rootDir": "../../../server",
+    "module": "commonjs",
+    "target": "es2020",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "strict": false,
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "files": [
+    "../../../server/payment-account-closure/router.ts",
+    "../../../server/payment-account-closure/service.ts",
+    "../../../server/services/payments/flutterwave-driver-payout.ts",
+    "../../../server/services/payments/flutterwave-wallet-collection.ts",
+    "../../../server/services/payments/payment-contracts.ts"
+  ]
+}

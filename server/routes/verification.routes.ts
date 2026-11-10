@@ -5,6 +5,9 @@ import { NextFunction, Request, Response, Router, raw } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
+import { DriverRequirementService } from '../services/driver-requirement.service';
+import { mapDriverVehicleRow } from '../models/driver-vehicle.model';
+import { mapDriverProfile } from '../models/driver-profile.model';
 import {
   getAdminReviewRequirements,
   getBlockingRequirements,
@@ -114,6 +117,7 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction) => 
     return res.status(403).json({ error: 'Administrator access required.' });
   }
 
+  (req as any).adminUserId=authData.user.id;
   return next();
 };
 
@@ -138,7 +142,7 @@ async function inspectionVehicle(driverId: string) {
 }
 
 async function inspectionRows(driverId: string, tenant: string, vehicle: {id:string;inspection_revision:string}) {
-  const {data,error} = await supabase.from('driver_inspection_photos').select('id,slot,status,reason,storage_path')
+  const {data,error} = await supabase.from('driver_vehicle_inspection_photos').select('id,slot,status,rejection_reason,storage_path')
     .eq('driver_id',driverId).eq('tenant_id',tenant).eq('vehicle_id',vehicle.id)
     .eq('vehicle_revision',vehicle.inspection_revision).neq('status','replaced');
   if (error) throw error;
@@ -176,7 +180,7 @@ router.get('/inspection-photos', async (req,res) => {
     const rows = await inspectionRows(actor.id,actor.tenant_id,vehicle);
     return res.json({vehicleId:vehicle.id, revision:vehicle.inspection_revision, slots:inspectionSlots(normaliseVehicleClass(vehicle)==='bike').map(slot => {
       const photo = rows.find(row => row.slot === slot);
-      return {slot,status:photo?.status || 'missing',reason:photo?.reason || null};
+      return {slot,status:photo?.status || 'missing',reason:photo?.rejection_reason || null};
     })});
   } catch { return res.status(500).json({error:'Could not load inspection photos.'}); }
 });
@@ -233,7 +237,7 @@ router.get('/drivers/:driverId/inspection-photos', async (req,res) => {
       if (!photo) return {slot,status:'missing'};
       const {data,error:signError} = await supabase.storage.from(inspectionBucket).createSignedUrl(photo.storage_path,120);
       if (signError) throw signError;
-      return {id:photo.id,slot,status:photo.status,reason:photo.reason,url:data.signedUrl};
+      return {id:photo.id,slot,status:photo.status,reason:photo.rejection_reason,url:data.signedUrl};
     }));
     res.set('Cache-Control','no-store');
     return res.json({vehicle:{id:vehicle.id,label:[vehicle.make,vehicle.model,vehicle.license_plate].filter(Boolean).join(' ')},slots});
@@ -247,9 +251,9 @@ router.post('/inspection-photos/:photoId/review', async (req,res) => {
     const id = String(req.params.photoId);
     if (!uuidPattern.test(id)) return res.sendStatus(404);
     const {status} = req.body || {};
-    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0,500) : '';
+    const reason = typeof req.body?.rejection_reason === 'string' ? req.body.rejection_reason.trim().slice(0,500) : '';
     if (!['approved','rejected'].includes(status) || (status === 'rejected' && !reason)) return res.sendStatus(400);
-    const {data:photo,error} = await supabase.from('driver_inspection_photos')
+    const {data:photo,error} = await supabase.from('driver_vehicle_inspection_photos')
       .select('driver_id,vehicle_id,vehicle_revision').eq('id',id).eq('tenant_id',actor.tenant_id).maybeSingle();
     if (error) throw error;
     if (!photo) return res.sendStatus(404);
@@ -258,7 +262,7 @@ router.post('/inspection-photos/:photoId/review', async (req,res) => {
     if (!driver || !canReviewInspection(actor,driver)) return res.sendStatus(404);
     const vehicle = await inspectionVehicle(photo.driver_id);
     if (vehicle?.id !== photo.vehicle_id || vehicle?.inspection_revision !== photo.vehicle_revision) return res.sendStatus(409);
-    const result = await supabase.from('driver_inspection_photos').update({
+    const result = await supabase.from('driver_vehicle_inspection_photos').update({
       status,reason:status==='rejected' ? reason : null,reviewed_by:actor.id,reviewed_at:new Date().toISOString()
     }).eq('id',id).eq('tenant_id',actor.tenant_id).eq('status','pending').select('id').maybeSingle();
     if (result.error) throw result.error;
@@ -322,6 +326,8 @@ router.post('/driver-submission', async (req, res) => {
 
 router.use(requireAdmin);
 
+router.post('/drivers/:driverId/dob-correction/:requestId',async(req,res)=>{try{const{driverId,requestId}=req.params;const approved=req.body?.approved===true;const publicMessage=String(req.body?.publicMessage||'').trim();const privateNote=String(req.body?.privateNote||'').trim();const token=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();const{data:actor}=await supabase.auth.getUser(token);const now=new Date().toISOString();const{data,error}=await supabase.from('driver_onboarding_requests').update({status:approved?'approved':'rejected',public_message:publicMessage||(approved?'Correction approved. You may update your date of birth once.':'Correction request was not approved.'),private_admin_note:privateNote||null,resolved_at:now,permission_consumed_at:null,updated_at:now}).eq('id',requestId).eq('driver_id',driverId).eq('request_type','identity_correction').select('id,status,public_message').single();if(error||!data)return res.status(404).json({error:error?.message||'DOB correction request not found.'});const{error:auditError}=await supabase.from('driver_requirement_audit').insert({driver_id:driverId,event_type:approved?'dob_correction_granted':'dob_correction_rejected',actor_id:actor.user?.id||null,selected_services:[],requirement_codes:['profile.date_of_birth'],metadata:{requestId,privateNotePresent:!!privateNote}});if(auditError)throw auditError;return res.json({request:data});}catch(error:any){return res.status(500).json({error:error?.message||'Unable to resolve DOB correction request.'});}});
+
 router.post('/drivers/:driverId/preverify', async (req, res) => {
   try {
     if (!serviceRoleKey) {
@@ -343,7 +349,7 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     const { data: vehicle } = await supabase
       .from('vehicles')
       .select('*')
-      .eq('driver_id', driverId)
+      .eq('user_id', driverId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -375,9 +381,22 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       selectedServices
     };
     const requirements = getDriverRequirements(requirementsInput);
+    const authoritativeResolution = DriverRequirementService.resolve({
+      profile: driverProfileWithVerificationItems,
+      canonicalProfile: mapDriverProfile(profile,!!authUser?.user?.email_confirmed_at),
+      vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null,
+      authEmailConfirmed: !!authUser?.user?.email_confirmed_at,
+      countryCode: profile.country_code || profile.country || vehicle?.country_code
+    });
     const blockingRequirements = getBlockingRequirements(requirementsInput);
-    const adminReviewRequirements = getAdminReviewRequirements(requirementsInput);
-    const blockers = blockingRequirements.map((requirement) => requirement.message);
+    // Release closure: the CANONICAL resolution (DriverRequirementService) is the
+    // authority for whether a driver can be approved, so admin pre-verify agrees
+    // with the mobile setup checklist. The shared engine result is kept only for
+    // backward-compatible display fields below.
+    const adminReviewRequirements = authoritativeResolution.automaticRequirements.filter((requirement) => requirement.needsAdminReview);
+    const blockers = authoritativeResolution.automaticRequirements
+      .filter((requirement) => requirement.blockingForSubmission)
+      .map((requirement) => requirement.reason);
     const canApprove = blockers.length === 0;
     const rideSelected = isRideSelected(profile, vehicle);
     const vehiclePlate = getVehiclePlateValue(vehicle);
@@ -411,6 +430,7 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       blockers,
       requirements,
       adminReviewRequirements,
+      authoritativeResolution,
       checks: {
         vehicle: {
           status: registrationRequired ? (vehiclePlate ? 'uploaded' : 'missing') : 'not_required',
@@ -428,6 +448,29 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
     return res.status(500).json({
       error: error?.message || 'Pre-verification failed.'
     });
+  }
+});
+
+// Informational messages never change verification or outstanding requirements.
+router.post('/drivers/:driverId/message', async (req, res) => {
+  try {
+    const body = String(req.body?.message || '').trim();
+    if (!body || body.length > 2000) return res.status(422).json({ error: 'Enter a message of 1–2000 characters.' });
+    const { driverId } = req.params;
+    const { data: driver, error: profileError } = await supabase.from('profiles').select('id,role').eq('id', driverId).single();
+    if (profileError || !driver || driver.role !== 'driver') return res.status(404).json({ error: 'Driver not found.' });
+    const { data, error } = await supabase.from('notifications').insert({
+      user_id: driverId, title: 'Message from Vaydu Admin', body, type: 'system_alert',
+      data: { action: 'admin_driver_message', admin_sender_id:(req as any).adminUserId, route: '/driver/settings' },
+      metadata: { action: 'admin_driver_message', admin_sender_id:(req as any).adminUserId, route: '/driver/settings' },
+      route: '/driver/settings', is_read: false
+    }).select('id').single();
+    if (error || !data) throw error || new Error('Message was not saved.');
+    await NotificationService.pushSavedAdminMessage(driverId, data.id, 'driver').catch(error => console.warn('[AdminDriverMessage] push failed:', error?.message));
+    return res.status(201).json({ sent: true, messageId: data.id });
+  } catch (error: unknown) {
+    console.error('[AdminDriverMessage] save failed', error);
+    return res.status(500).json({ error: 'Could not save the driver message.' });
   }
 });
 
@@ -451,9 +494,12 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       return res.status(400).json({ error: 'Add at least one blocker or review note before sending.' });
     }
 
+    // See DriverOnboardingNotificationService.enqueue: `profiles.first_name` does not exist
+    // in this schema, so a hand-written column list here would 42703 the same way. The
+    // name fallback below tolerates the columns being absent.
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('driver_review_history, full_name, first_name, last_name, email')
+      .select('*')
       .eq('id', driverId)
       .single();
 
@@ -493,6 +539,50 @@ router.post('/drivers/:driverId/request-info', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // Reconcile with the mobile "Outstanding Requests" feed, which reads
+    // driver_onboarding_requests (not the blocker columns). One open
+    // 'admin.missing_info' row per driver keeps the partial unique index
+    // idx_driver_onboarding_requests_one_open satisfied and makes the explicit
+    // admin request visible to the driver.
+    const requestItem = selectedBlockers.length
+      ? selectedBlockers.join(' · ').slice(0, 160)
+      : 'Update your details';
+    const requestMessage = String(notes || '').trim() || requestItem;
+    // Deterministic single-row lookup. `.maybeSingle()` ERRORS when more than one
+    // row matches, which previously left `data` null and fell through to an INSERT
+    // -- tripping idx_driver_onboarding_requests_one_open and failing the Admin
+    // request with a 500. Take the newest open row explicitly instead.
+    const { data: existingOpenRequests, error: existingOpenError } = await supabase
+      .from('driver_onboarding_requests')
+      .select('id')
+      .eq('driver_id', driverId)
+      .eq('requirement_code', 'admin.missing_info')
+      .in('status', ['pending', 'rejected'])
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (existingOpenError) throw existingOpenError;
+    const existingOpenRequest = existingOpenRequests?.[0] ?? null;
+    const requestPatch = {
+      item: requestItem,
+      public_message: requestMessage,
+      request_type: 'missing_info',
+      status: 'pending',
+      sent_at: sentAt,
+      updated_at: sentAt
+    };
+    if (existingOpenRequest) {
+      const { error: requestUpdateError } = await supabase
+        .from('driver_onboarding_requests')
+        .update(requestPatch)
+        .eq('id', existingOpenRequest.id);
+      if (requestUpdateError) throw requestUpdateError;
+    } else {
+      const { error: requestInsertError } = await supabase
+        .from('driver_onboarding_requests')
+        .insert({ driver_id: driverId, requirement_code: 'admin.missing_info', ...requestPatch });
+      if (requestInsertError) throw requestInsertError;
+    }
 
     await NotificationService
       .notifyDriverReviewActionRequired(driverId, selectedBlockers, historyEntry.notes)
@@ -549,6 +639,48 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
     if (!testingOverride) {
       return res.status(400).json({
         error: 'Manual approval requires testingOverride=true'
+      });
+    }
+
+    // Approval must never contradict the canonical requirement engine: evaluate the
+    // exact same requirements the driver sees before granting approval.
+    const { data: approvalProfile, error: approvalProfileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', driverId)
+      .single();
+
+    if (approvalProfileError || !approvalProfile) {
+      return res.status(404).json({ error: approvalProfileError?.message || 'Driver profile not found.' });
+    }
+
+    const { data: approvalVehicleRow } = await supabase
+      .from('vehicles')
+      .select('*')
+      .eq('user_id', driverId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: approvalAuth } = await supabase.auth.admin.getUserById(driverId);
+    const approvalCanonicalProfile = mapDriverProfile(approvalProfile, !!approvalAuth?.user?.email_confirmed_at);
+    const approvalResolution = DriverRequirementService.resolve({
+      profile: approvalProfile,
+      canonicalProfile: approvalCanonicalProfile,
+      vehicle: approvalVehicleRow ? mapDriverVehicleRow(approvalVehicleRow) : null,
+      authEmailConfirmed: approvalCanonicalProfile.emailConfirmed,
+      countryCode: approvalProfile.country_code,
+      marketCity: approvalProfile.market_city || approvalProfile.city
+    });
+
+    const approvalBlockers = approvalResolution.automaticRequirements.filter((item) => item.blockingForSubmission);
+
+    if (approvalBlockers.length) {
+      return res.status(422).json({
+        error: approvalBlockers[0].reason,
+        code: 'DRIVER_REQUIREMENTS_INCOMPLETE',
+        requirements: approvalBlockers,
+        progress: approvalResolution.progress
       });
     }
 

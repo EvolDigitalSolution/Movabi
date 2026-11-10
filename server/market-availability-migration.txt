@@ -1,0 +1,34 @@
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE IF NOT EXISTS public.market_availability (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), country_code varchar(2) NOT NULL, market_city varchar(120), zone_id uuid,
+ launch_status varchar(30) NOT NULL CHECK (launch_status IN ('disabled','coming_soon','driver_onboarding','customer_beta','live','paused')),
+ customer_app_enabled boolean NOT NULL DEFAULT false, customer_registration_enabled boolean NOT NULL DEFAULT false,
+ driver_registration_enabled boolean NOT NULL DEFAULT false, driver_online_enabled boolean NOT NULL DEFAULT false,
+ quote_enabled boolean NOT NULL DEFAULT false, booking_enabled boolean NOT NULL DEFAULT false, payment_enabled boolean NOT NULL DEFAULT false,
+ waiting_list_enabled boolean NOT NULL DEFAULT true, supported_currency varchar(3), timezone varchar(80),
+ unavailable_title varchar(160), unavailable_message text, valid_from timestamptz, valid_until timestamptz,
+ enabled boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_market_availability_unique_scope ON public.market_availability
+ (upper(country_code),lower(COALESCE(market_city,'')),COALESCE(zone_id::text,''));
+CREATE TABLE IF NOT EXISTS public.market_availability_audit (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), country_code varchar(2), market_city varchar(120), zone_id uuid,
+ capability varchar(40) NOT NULL, allowed boolean NOT NULL, launch_status varchar(30), resolution_level varchar(20) NOT NULL,
+ endpoint varchar(160), error_code varchar(50), created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.market_waiting_list (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text NOT NULL, country_code varchar(2) NOT NULL, market_city varchar(120),
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_market_waiting_list_unique ON public.market_waiting_list(lower(email),upper(country_code),lower(COALESCE(market_city,'')));
+INSERT INTO public.market_availability(country_code,market_city,zone_id,launch_status,customer_app_enabled,customer_registration_enabled,
+ driver_registration_enabled,driver_online_enabled,quote_enabled,booking_enabled,payment_enabled,waiting_list_enabled,supported_currency,timezone,enabled)
+VALUES ('GB',NULL,NULL,'live',true,true,true,true,true,true,true,false,'GBP','Europe/London',true),
+ ('GB','London',NULL,'live',true,true,true,true,true,true,true,false,'GBP','Europe/London',true)
+ON CONFLICT (upper(country_code),lower(COALESCE(market_city,'')),COALESCE(zone_id::text,'')) DO UPDATE SET
+ launch_status=EXCLUDED.launch_status,customer_app_enabled=EXCLUDED.customer_app_enabled,customer_registration_enabled=EXCLUDED.customer_registration_enabled,
+ driver_registration_enabled=EXCLUDED.driver_registration_enabled,driver_online_enabled=EXCLUDED.driver_online_enabled,
+ quote_enabled=EXCLUDED.quote_enabled,booking_enabled=EXCLUDED.booking_enabled,payment_enabled=EXCLUDED.payment_enabled,
+ waiting_list_enabled=EXCLUDED.waiting_list_enabled,supported_currency=EXCLUDED.supported_currency,timezone=EXCLUDED.timezone,enabled=true,updated_at=now();
+COMMIT;

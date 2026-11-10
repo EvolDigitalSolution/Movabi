@@ -1,3 +1,6 @@
+import {savedCustomerAddress,customerAddressUpdate} from '@shared/utils/customer-home-address';
+import { ReferralPanelComponent } from '@shared/ui/referral-panel.component';
+import { NotificationService } from '@core/services/notification.service';
 import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -20,6 +23,7 @@ import {
     chevronBackOutline,
     closeCircleOutline,
     globeOutline,
+    logOutOutline,
     mailOutline,
     personCircleOutline,
     saveOutline,
@@ -30,13 +34,15 @@ import { AuthService } from '@core/services/auth/auth.service';
 import { ProfileService } from '@core/services/profile/profile.service';
 import { StorageUploadService } from '@core/services/storage/storage-upload.service';
 import { OneSignalService } from '@core/services/notification/onesignal.service';
+import { DriverOnboardingStatusService } from '@core/services/driver/driver-onboarding-status.service';
 import { ButtonComponent } from '@shared/ui';
 import { Profile } from '@shared/models/booking.model';
+import { CustomerBottomNavComponent } from '@shared/components/customer-shell/customer-bottom-nav.component';
 
 @Component({
     selector: 'app-account-settings',
     standalone: true,
-    imports: [
+    imports: [ReferralPanelComponent,
         CommonModule,
         ReactiveFormsModule,
         IonHeader,
@@ -46,7 +52,8 @@ import { Profile } from '@shared/models/booking.model';
         IonTitle,
         IonContent,
         IonIcon,
-        ButtonComponent
+        ButtonComponent,
+        CustomerBottomNavComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -63,6 +70,10 @@ import { Profile } from '@shared/models/booking.model';
 
     <ion-content class="bg-slate-50">
       <div class="w-full max-w-xl mx-auto px-3 py-4 space-y-6 pb-24">
+        <button type="button" class="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left" (click)="openMessages()"><span class="text-sm font-bold">Messages from Vaydu</span><span class="ml-3 text-xs text-blue-600">{{messages.unreadAdminMessageCount()}} unread</span></button>
+        @if (defaultBackHref().startsWith('/customer')) {
+          <button type="button" class="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left" (click)="openPaymentMethods()"><span class="text-sm font-bold">Payment methods</span><p class="mt-1 text-xs text-slate-500">Manage saved cards. Saving a card is optional.</p></button>
+        }
         <section class="rounded-[2rem] bg-white border border-slate-200 shadow-xl shadow-slate-900/10 p-5">
           <div class="flex items-start gap-4">
             <button
@@ -79,7 +90,7 @@ import { Profile } from '@shared/models/booking.model';
 
             <div class="min-w-0">
               <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
-                Movabi profile
+                Vaydu profile
               </p>
               <h1 class="font-display font-black text-2xl text-slate-950 tracking-tight">
                 Keep your details up to date
@@ -98,6 +109,8 @@ import { Profile } from '@shared/models/booking.model';
           </div>
         </section>
 
+        <app-referral-panel class="block" />
+
         <form [formGroup]="form" (ngSubmit)="save()" class="rounded-[2rem] bg-white border border-slate-200 shadow-sm overflow-hidden">
           <div class="divide-y divide-slate-100">
             <label class="flex items-center gap-4 p-4">
@@ -106,7 +119,10 @@ import { Profile } from '@shared/models/booking.model';
               </span>
               <span class="min-w-0 flex-1">
                 <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Full name</span>
-                <input formControlName="full_name" placeholder="Your name" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300">
+                <input formControlName="full_name" placeholder="Your name" [readonly]="isVerifiedDriver()" [class.text-slate-400]="isVerifiedDriver()" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300">
+                @if (isVerifiedDriver()) {
+                  <span class="block text-xs text-slate-500 mt-1 leading-relaxed">Your legal name is tied to your verified driver identity. Contact support to request a name change.</span>
+                }
               </span>
             </label>
 
@@ -126,10 +142,23 @@ import { Profile } from '@shared/models/booking.model';
               </span>
               <span class="min-w-0 flex-1">
                 <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Country code</span>
-                <input formControlName="country_code" placeholder="GB" maxlength="2" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                <input formControlName="country_code" placeholder="GB" maxlength="2" [readonly]="isVerifiedDriver()" [class.text-slate-400]="isVerifiedDriver()" class="w-full bg-transparent border-none outline-none text-base font-bold text-slate-950 placeholder:text-slate-300 uppercase">
+                @if (isVerifiedDriver()) {
+                  <span class="block text-xs text-slate-500 mt-1 leading-relaxed">Your operating country is tied to your verified driver identity. Contact support to request a change.</span>
+                }
               </span>
             </label>
 
+            @if (auth.userRole() === 'customer') {
+              <label class="block p-4">
+                <span class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Home address</span>
+                <textarea formControlName="home_address" rows="4" maxlength="600" autocomplete="street-address" placeholder="House number and street, area, city and postal code" class="w-full rounded-xl border border-slate-200 p-3 text-base text-slate-950"></textarea>
+                <span class="block text-xs text-slate-500 mt-2">Use separate lines for your street, apartment or landmark, city and postal code where applicable. This does not change your booking pickup.</span>
+                @if (form.controls.home_address.touched && form.controls.home_address.invalid) {
+                  <span role="alert" class="block text-xs text-red-700 mt-2">Enter your home address using no more than 600 characters.</span>
+                }
+              </label>
+            }
             <div class="flex items-center gap-4 p-4 bg-slate-50">
               <span class="w-11 h-11 rounded-2xl bg-white border border-slate-100 text-slate-500 flex items-center justify-center shrink-0">
                 <ion-icon name="mail-outline" class="text-xl"></ion-icon>
@@ -188,6 +217,25 @@ import { Profile } from '@shared/models/booking.model';
           </div>
         </section>
 
+        <section class="rounded-[2rem] bg-white border border-slate-200 shadow-sm p-5">
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="font-display font-black text-slate-950 text-lg">Sign out</h2>
+              <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-1">
+                You can sign back in anytime with the same account.
+              </p>
+            </div>
+            <button
+              type="button"
+              (click)="signOut()"
+              [disabled]="signingOut()"
+              class="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 text-slate-600 flex items-center justify-center shrink-0 active:scale-95 transition-all disabled:opacity-50"
+            >
+              <ion-icon name="log-out-outline" class="text-xl"></ion-icon>
+            </button>
+          </div>
+        </section>
+
         <section class="rounded-[2rem] bg-white border border-rose-100 shadow-sm p-5">
           <div class="flex items-start gap-4">
             <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -197,7 +245,7 @@ import { Profile } from '@shared/models/booking.model';
             <div class="min-w-0 flex-1">
               <h2 class="font-display font-black text-slate-950 text-lg">Close account</h2>
               <p class="text-sm text-slate-600 font-semibold leading-relaxed mt-2">
-                Closing your account disables access. Movabi may keep booking, payment, safety, tax, and legal records where required.
+                Closing your account disables access. Vaydu may keep booking, payment, safety, tax, and legal records where required.
               </p>
             </div>
           </div>
@@ -213,11 +261,15 @@ import { Profile } from '@shared/models/booking.model';
         </section>
       </div>
     </ion-content>
+
+    @if (auth.userRole() === 'customer') {
+      <app-customer-bottom-nav></app-customer-bottom-nav>
+    }
   `
 })
 export class AccountSettingsPage implements OnInit {
     private fb = inject(FormBuilder);
-    private auth = inject(AuthService);
+    public auth = inject(AuthService);
     private profileService = inject(ProfileService);
     private storageUpload = inject(StorageUploadService);
     private oneSignal = inject(OneSignalService);
@@ -225,8 +277,13 @@ export class AccountSettingsPage implements OnInit {
     private toastCtrl = inject(ToastController);
     private alertCtrl = inject(AlertController);
     private router = inject(Router);
+    readonly messages = inject(NotificationService);
+    openMessages(){void this.router.navigate(['/account/messages']);}
+    openPaymentMethods(){void this.router.navigate(['/customer/payment-methods']);}
+    private onboardingStatus = inject(DriverOnboardingStatusService);
 
     saving = signal(false);
+    signingOut = signal(false);
     email = signal('');
     photoUrl = signal<string | null>(null);
     pushDiagnostics = this.oneSignal.diagnostics;
@@ -234,6 +291,7 @@ export class AccountSettingsPage implements OnInit {
     form = this.fb.group({
         full_name: ['', [Validators.required, Validators.minLength(2)]],
         phone: ['', [Validators.minLength(8)]],
+        home_address: ['', [Validators.maxLength(600)]],
         country_code: ['GB', [Validators.required, Validators.minLength(2), Validators.maxLength(2)]]
     });
 
@@ -243,6 +301,7 @@ export class AccountSettingsPage implements OnInit {
             chevronBackOutline,
             closeCircleOutline,
             globeOutline,
+            logOutOutline,
             mailOutline,
             personCircleOutline,
             saveOutline,
@@ -251,6 +310,12 @@ export class AccountSettingsPage implements OnInit {
     }
 
     async ngOnInit() {
+        if (this.auth.userRole() === 'customer') {
+            this.form.controls.home_address.addValidators([Validators.required, Validators.pattern(/\S/)]);
+            this.form.controls.home_address.updateValueAndValidity({emitEvent:false});
+        }
+        this.messages.initialize();
+        void this.messages.fetchNotifications().catch(() => undefined);
         const user = this.auth.currentUser();
         this.email.set(user?.email || '');
 
@@ -271,11 +336,17 @@ export class AccountSettingsPage implements OnInit {
         return this.auth.userRole() === 'driver' ? '/driver' : '/customer';
     }
 
+    isVerifiedDriver(): boolean {
+        const profile = this.profileService.profile();
+        return this.auth.userRole() === 'driver' && ((profile as any)?.is_verified === true || (profile as any)?.verification_status === 'approved');
+    }
+
     private patchProfile(profile: Profile) {
         this.form.patchValue(
             {
                 full_name: profile.full_name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || '',
                 phone: profile.phone || '',
+                home_address: savedCustomerAddress(profile),
                 country_code: profile.country_code || 'GB'
             },
             { emitEvent: false }
@@ -348,16 +419,43 @@ export class AccountSettingsPage implements OnInit {
         try {
             const raw = this.form.getRawValue();
             const fullName = String(raw.full_name || '').trim();
+            const countryCode = String(raw.country_code || '').trim().toUpperCase();
+            const isDriver = this.auth.userRole() === 'driver';
+            const profile = this.profileService.profile() as any;
+            const currentName = String(profile?.full_name || '').trim();
+            const currentCountry = String(profile?.country_code || '').trim().toUpperCase();
+            const nameChanged = fullName !== currentName;
+            const countryChanged = countryCode !== currentCountry;
+
+            if (isDriver) {
+                // Legal name and operating country are server-authoritative for
+                // drivers: route any change through /api/driver-onboarding/profile,
+                // which rejects verified drivers.
+                if (nameChanged || countryChanged) {
+                    await this.onboardingStatus.saveCurrentProfile({
+                        ...(nameChanged ? { fullName } : {}),
+                        ...(countryChanged ? { countryCode } : {})
+                    });
+                }
+            } else {
+                const direct: Partial<Profile> = {};
+                if (nameChanged) direct.full_name = fullName;
+                if (countryChanged) direct.country_code = countryCode;
+                Object.assign(direct, customerAddressUpdate(raw.home_address));
+                if (Object.keys(direct).length) {
+                    await this.profileService.updateProfile(user.id, direct);
+                }
+            }
 
             await this.profileService.updateProfile(user.id, {
-                full_name: fullName,
-                phone: String(raw.phone || '').trim(),
-                country_code: String(raw.country_code || 'GB').trim().toUpperCase()
+                phone: String(raw.phone || '').trim()
             } as Partial<Profile>);
 
             await this.showToast('Account details updated.', 'success');
-        } catch {
-            await this.showToast('Could not save account details.', 'danger');
+        } catch (error: any) {
+            const message = String(error?.message || '');
+            const protectedField = message.includes('legal name') || message.includes('NAME_CHANGE') || message.includes('operating country') || message.includes('COUNTRY_CHANGE');
+            await this.showToast(protectedField ? message : 'Could not save account details.', 'danger');
         } finally {
             this.saving.set(false);
             await loading.dismiss();
@@ -368,10 +466,26 @@ export class AccountSettingsPage implements OnInit {
         await this.oneSignal.getDiagnostics().catch(() => undefined);
     }
 
+    async signOut(): Promise<void> {
+        if (this.signingOut()) return;
+
+        this.signingOut.set(true);
+
+        try {
+            await this.auth.signOut();
+            await this.router.navigate(['/auth/login']);
+        } catch (error) {
+            console.error('Sign out failed:', error);
+            await this.showToast('Could not sign out. Please try again.', 'danger');
+        } finally {
+            this.signingOut.set(false);
+        }
+    }
+
     async confirmCloseAccount() {
         const alert = await this.alertCtrl.create({
             header: 'Request account closure?',
-            message: 'This will disable your Movabi access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
+            message: 'This will disable your Vaydu access. Your records may be retained for booking, payment, safety, tax and legal purposes.',
             inputs: [
                 {
                     name: 'understood',

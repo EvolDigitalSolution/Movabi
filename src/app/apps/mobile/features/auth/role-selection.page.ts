@@ -34,14 +34,14 @@ import { AuthService } from '@core/services/auth/auth.service';
   template: `
     <ion-header [translucent]="true" class="ion-no-border">
       <ion-toolbar>
-        <ion-title>Welcome to Movabi</ion-title>
+        <ion-title><img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="32" height="32" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px;flex-shrink:0" />Welcome to Vaydu</ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content [fullscreen]="true" class="ion-padding">
       <div class="onboarding-container">
         <div class="header-section">
-          <h1 class="title">How will you use Movabi?</h1>
+          <h1 class="title">How will you use Vaydu?</h1>
           <p class="subtitle">Choose the role that best fits your needs. You can always change this later.</p>
         </div>
 
@@ -54,7 +54,7 @@ import { AuthService } from '@core/services/auth/auth.service';
                 </div>
                 <div class="text-wrapper">
                   <ion-card-title>I'm a Customer</ion-card-title>
-                  <p>I want to book errands, taxis, or moving services.</p>
+                  <p>I want to book rides, shop, deliver, or move.</p>
                 </div>
                 <ion-icon name="chevron-forward-outline" class="arrow-icon"></ion-icon>
               </div>
@@ -202,8 +202,9 @@ export class RoleSelectionPage {
     await loading.present();
 
     try {
-      // Update profile in DB
-      await this.profileService.updateProfile(user.id, { role });
+      // Phase 1 — server-authoritative role selection: the server validates this
+      // role's own market capability and refuses to change an established role.
+      await this.authService.selectRole(role);
       
       // Update local state
       this.authService.userRole.set(role);

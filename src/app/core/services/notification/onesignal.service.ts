@@ -1,5 +1,7 @@
+import { adminMessageRoute } from '../../../shared/utils/admin-message-route';
 import { Injectable, inject, signal } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
+import { Router } from '@angular/router';
 import { SupabaseService } from '../supabase/supabase.service';
 import { NativePlatformService } from '../native/native-platform.service';
 
@@ -20,6 +22,7 @@ const REGISTRATION_CONFIRMED_KEY = 'onesignal_registration_confirmed';
 export class OneSignalService {
     private supabase = inject(SupabaseService);
     private nativePlatform = inject(NativePlatformService);
+    private router = inject(Router);
 
     private initialized = false;
     private webPushSkipped = false;
@@ -249,7 +252,7 @@ export class OneSignalService {
 
     async notifyNewJob(serviceName: string, priceLabel: string, jobId: string): Promise<void> {
         await this.showLocalStatusNotification(
-            'New Movabi request',
+            'New Vaydu request',
             `${serviceName} nearby - ${priceLabel}`,
             { route: '/driver', jobId, type: 'new_job_request' }
         );
@@ -258,7 +261,7 @@ export class OneSignalService {
     async notifyVerificationActionRequired(): Promise<void> {
         await this.showLocalStatusNotification(
             'Verification action required',
-            'Your Movabi driver verification needs more information.',
+            'Your Vaydu driver verification needs more information.',
             { route: '/driver/settings', type: 'driver_review_action_required' }
         );
     }
@@ -363,12 +366,17 @@ export class OneSignalService {
                 });
             }
 
-            // Handle foreground notifications
+            // Handle foreground notifications. Driver opportunity/negotiation
+            // events are owned by the in-app realtime Audio alarm, so their OS
+            // banner/sound is suppressed to avoid a double alarm. All other
+            // events display normally.
             if (typeof oneSignal.Notifications?.addEventListener === 'function') {
                 oneSignal.Notifications.addEventListener('foregroundWillDisplay', (event: any) => {
-                    // Allow foreground notifications to display
+                    const data = event.notification?.additionalData || event.notification?.data || {};
                     event.preventDefault();
-                    event.notification.display();
+                    if (!this.isDriverOpportunity(data)) {
+                        event.notification.display();
+                    }
                 });
             }
         } catch (error) {
@@ -379,40 +387,45 @@ export class OneSignalService {
     private handleNotificationClick(event: any): void {
         try {
             const data = event.notification?.additionalData || event.data || {};
-            const { job_id, type, open, role } = data;
+            const action = String(data['action'] || '').toLowerCase();
+            const role = String(data['role'] || '').toLowerCase();
+            const open = String(data['open'] || '').toLowerCase();
+            const jobId = String(data['job_id'] || data['jobId'] || '');
 
-            console.log('[OneSignal] Notification clicked:', { job_id, type, open, role });
-
-            if (!job_id || !open || !role) {
-                console.warn('[OneSignal] Missing required notification data');
-                return;
-            }
-
-            // Build the correct route based on role and notification type
             let route = '';
-            if (role === 'customer') {
+
+            if (action === 'admin_message' || action === 'admin_driver_message') {
+                route = adminMessageRoute(data['message_id'] || data['messageId']) || '/account/messages';
+            } else if (role === 'driver' || open === 'driver_marketplace') {
+                // The driver marketplace dashboard is the canonical destination.
+                // It refetches authoritative server state (opportunities) and the
+                // driver taps the actual card, which performs the certified
+                // acknowledgement and the server-authoritative action. A push
+                // notification never grants authority by itself.
+                route = '/driver';
+            } else if (role === 'customer') {
+                if (!jobId) return;
                 if (open === 'booking_chat') {
-                    route = `/customer/tracking/${job_id}?tab=chat`;
+                    route = `/customer/tracking/${jobId}?tab=chat`;
                 } else {
-                    route = `/customer/tracking/${job_id}`;
-                }
-            } else if (role === 'driver') {
-                if (open === 'booking_chat') {
-                    route = `/driver/jobs/${job_id}?tab=chat`;
-                } else if (open === 'driver_marketplace') {
-                    route = `/driver`;
-                } else {
-                    route = `/driver/jobs/${job_id}`;
+                    route = `/customer/tracking/${jobId}`;
                 }
             }
 
             if (route) {
-                // Use window.location for navigation since we're outside Angular context
-                window.location.href = route;
+                // Use the Angular router so warm and cold launches share one path.
+                void this.router.navigateByUrl(route);
             }
         } catch (error) {
             console.error('[OneSignal] Failed to handle notification click:', error);
         }
+    }
+
+    private isDriverOpportunity(data: any): boolean {
+        if (!data) return false;
+        const role = String(data['role'] || '').toLowerCase();
+        const action = String(data['action'] || '').toLowerCase();
+        return role === 'driver' && (action === 'new_job' || action === 'negotiation');
     }
 
     private attachSubscriptionObserver(oneSignal: any): void {

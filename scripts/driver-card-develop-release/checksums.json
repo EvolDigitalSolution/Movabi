@@ -1,0 +1,7 @@
+{
+  "check-driver-card-disabled-release.py": "3ca9ff193289655617ab15b8bd167cec578e309aa629d6af4be8aaad131ae56f",
+  "compose.sandbox.yml": "5d2702d642cb276f3bbd1d3b8ad69930837165900a1a35ba48a88e77a44f14cb",
+  "release-manifest.json": "29f71b89272bf8ec4e5727d339a85263438e8f08372064a5db98ea44a5de5b9a",
+  "supabase_incremental_schema_reconcile.sql": "e464e94db05a0842519bcbc8081a0cdfcf56a8ced90ac6a766b4b340f1f7caa4",
+  "web.override.yml": "f4721b4af5dfb036f3f2a2817c00f4bb23feeebb35b51616e5f2d8d2cd40f27f"
+}

@@ -1,3 +1,4 @@
+import { hasActiveCommissionSubscription } from '../services/subscription-policy.service';
 import { Router, Request, Response } from 'express';
 import {
   createStripeCheckoutSession,
@@ -69,12 +70,19 @@ router.post('/create-portal-session', async (req: Request, res: Response) => {
 });
 
 // Stripe Webhook
-router.post('/webhook', async (req: Request, res: Response) => {
+export async function subscriptionWebhookHandler(req: Request, res: Response) {
   const sig = req.headers['stripe-signature'] as string;
+  const webhookSecret = process.env.STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.error('[Subscriptions webhook] Missing STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET');
+    return res.status(500).send('Missing webhook secret');
+  }
+
   let event: Stripe.Event;
 
   try {
-    event = verifyWebhookSignature(req.body, sig);
+    event = verifyWebhookSignature(req.body, sig, webhookSecret);
   } catch (err: any) {
     console.error('Webhook signature verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -137,8 +145,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
             const { error: profileError } = await supabaseAdmin
               .from('profiles')
               .update({
-                subscription_status: 'active',
-                pricing_plan: 'pro',
+                subscription_status: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'active' : 'inactive',
+                pricing_plan: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'pro' : 'starter',
                 stripe_customer_id: stripeCustomerId
               })
               .eq('id', userId);
@@ -180,7 +188,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
           console.error('Error updating subscription status:', error);
         }
 
-        if (event.type === 'customer.subscription.deleted') {
+        // Refresh benefit labels for expiry, payment failure and reactivation too.
+        // Jobs already assigned keep their frozen commission terms.
+        if (!error) {
           const { data: subData } = await supabaseAdmin
             .from('subscriptions')
             .select('user_id')
@@ -191,8 +201,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
             await supabaseAdmin
               .from('profiles')
               .update({
-                subscription_status: 'inactive',
-                pricing_plan: 'starter'
+                subscription_status: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'active' : 'inactive',
+                pricing_plan: hasActiveCommissionSubscription(stripeSub.status,currentPeriodEnd) ? 'pro' : 'starter'
               })
               .eq('id', subData.user_id);
           }
@@ -343,7 +353,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
     console.error('Error handling subscription webhook:', error);
     return res.status(500).json({ error: error.message });
   }
-});
+}
+
+router.post('/webhook', subscriptionWebhookHandler);
 
 /**
  * Manually switch pricing plan (for admins or internal use)

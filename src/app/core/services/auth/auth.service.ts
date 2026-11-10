@@ -4,10 +4,14 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { Router, Route } from '@angular/router';
 import { ProfileService } from '../profile/profile.service';
+import { RegistrationService } from './registration.service';
 import { AccountStatus } from '@shared/models/booking.model';
 import { environment } from '@env/environment';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { OneSignalService } from '../notification/onesignal.service';
 
 @Injectable({
     providedIn: 'root'
@@ -15,8 +19,11 @@ import { Browser } from '@capacitor/browser';
 export class AuthService {
     private supabase = inject(SupabaseService);
     private router = inject(Router);
-    private apiUrlService = inject(ApiUrlService);
     public profileService = inject(ProfileService);
+    private registration = inject(RegistrationService);
+    private http = inject(HttpClient);
+    private apiUrl = inject(ApiUrlService);
+    private oneSignal = inject(OneSignalService);
 
     currentUser = signal<User | null>(null);
     session = signal<Session | null>(null);
@@ -28,6 +35,9 @@ export class AuthService {
     stripeConnectStatus = signal<'not_started' | 'pending' | 'restricted' | 'enabled' | 'connected'>('not_started');
 
     private redirecting = false;
+
+    /** Upper bound (ms) for the whole pre-logout push-identity cleanup. */
+    private static readonly PUSH_LOGOUT_TIMEOUT_MS = 2500;
 
     constructor() {
         void this.init();
@@ -115,53 +125,46 @@ export class AuthService {
         return `${cleanOrigin}${cleanPath}`;
     }
 
+    /**
+     * Registration. With email confirmation ENABLED the public response is
+     * neutral and identical for a new and an existing address (no enumeration
+     * oracle, no delivery claim). With confirmation DISABLED Supabase returns a
+     * session for a genuinely new user; it is applied here so sign-up and
+     * onboarding continue exactly as before.
+     */
     async signUp(email: string, password: string, data?: Record<string, unknown>) {
-        const { data: result, error } = await this.supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                data,
-                emailRedirectTo: this.getRedirectUrl('/auth/callback')
-            }
-        });
+        const result = await firstValueFrom(this.http.post<{ ok?: boolean; message?: string; session?: Session | null }>(this.apiUrl.getApiUrl('/api/auth/register'), {
+            email, password, data,
+            countryCode: data?.['country_code'], marketCity: data?.['market_city'],
+            emailRedirectTo: this.getRedirectUrl('/auth/callback')
+        }));
 
-        if (error) throw error;
+        // Confirmation-disabled auto-sign-in (preserved behaviour).
+        if (result.session?.access_token && result.session.refresh_token) {
+            await this.supabase.auth.setSession({ access_token: result.session.access_token, refresh_token: result.session.refresh_token });
+        }
 
         localStorage.setItem('movabi_returning_user', 'true');
         return result;
     }
 
-    async sendRegistrationOtp(email: string): Promise<{ email: string; expiresInSeconds: number }> {
-        const response = await fetch(this.apiUrlService.getApiUrl('/api/auth/registration-otp/send'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
-        });
+    /**
+     * Phase 1 — server-authoritative role selection.
+     *
+     * The server enforces the role's OWN market capability
+     * (customer_registration / driver_registration) and refuses to change an
+     * existing role, so role choice cannot bypass a disabled capability.
+     */
+    async selectRole(role: 'customer' | 'driver'): Promise<{ role: string; changed: boolean }> {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) throw new Error('Please sign in again to choose your role.');
 
-        const body = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-            throw new Error(body?.error || 'Could not send verification code. Please try again.');
-        }
-
-        return {
-            email: body.email || email,
-            expiresInSeconds: Number(body.expiresInSeconds || 600)
-        };
-    }
-
-    async verifyRegistrationOtp(email: string, code: string): Promise<void> {
-        const response = await fetch(this.apiUrlService.getApiUrl('/api/auth/registration-otp/verify'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, code })
-        });
-
-        const body = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-            throw new Error(body?.error || 'Could not verify the code. Please try again.');
-        }
+        return await firstValueFrom(this.http.post<{ role: string; changed: boolean }>(
+            this.apiUrl.getApiUrl('/api/auth/select-role'),
+            { role },
+            { headers: { Authorization: `Bearer ${token}` } }
+        ));
     }
 
     async signIn(email: string, password: string) {
@@ -224,6 +227,12 @@ export class AuthService {
     }
 
     async signOut() {
+        // Deterministic, bounded push-identity cleanup while the current session
+        // is still valid (server invalidation needs the Bearer; OneSignal unbind
+        // targets the still-bound identity). Neither step can block logout: each
+        // is bounded by a short timeout and failures are swallowed.
+        await this.cleanupPushIdentity();
+
         try {
             const { error } = await this.supabase.auth.signOut();
             if (error) throw error;
@@ -271,6 +280,23 @@ export class AuthService {
             if (status !== 'active') {
                 await this.safeNavigate(['/auth/blocked', '/blocked', '/auth/login']);
                 return;
+            }
+
+            // AUTHENTICATED is not the same as REGISTRATION-ACTIVATED. A valid
+            // session (including one Google created before Movabi was involved)
+            // must confirm its registration market first. An already-activated
+            // account passes straight through and is never re-gated on location.
+            const registration = await this.registration.ensureLoaded(true);
+            if (registration?.pending) {
+                await this.safeNavigate(['/auth/registration']);
+                return;
+            }
+
+            // Restore only this known inbox route after normal account/registration checks.
+            let pendingMessage = '';
+            try { pendingMessage = sessionStorage.getItem('movabi.pendingAdminMessage') || ''; sessionStorage.removeItem('movabi.pendingAdminMessage'); } catch { /* storage unavailable */ }
+            if (/^\/account\/messages(?:\?messageId=[0-9a-f-]{36})?$/i.test(pendingMessage)) {
+                await this.router.navigateByUrl(pendingMessage); return;
             }
 
             const role = String(profile?.role || this.userRole() || '').toLowerCase();
@@ -397,10 +423,72 @@ export class AuthService {
         this.accountStatus.set('active');
         this.stripeConnectStatus.set('not_started');
         this.profileService.profile.set(null);
+        this.registration.clear();
     }
 
     private markReturningUser(): void {
         if (typeof localStorage === 'undefined') return;
         localStorage.setItem('movabi_returning_user', 'true');
+    }
+
+    /**
+     * Bounded, fail-safe push-identity cleanup. Runs server invalidation and the
+     * OneSignal unbind in parallel, each capped by a short timeout, so logout is
+     * never delayed indefinitely and never blocked by offline/API/OneSignal.
+     */
+    private async cleanupPushIdentity(): Promise<void> {
+        await Promise.allSettled([
+            this.invalidatePushTokens(),
+            this.unbindOneSignalIdentity()
+        ]);
+    }
+
+    /**
+     * Disable THIS device's push registration for the current user. The device
+     * identity (subscription_id) is sent in the body, but the USER is always
+     * derived server-side from the Bearer session, so a caller cannot disable
+     * another user's tokens or a device it does not own.
+     */
+    private async invalidatePushTokens(): Promise<void> {
+        try {
+            await this.withTimeout(this.doInvalidatePushTokens(), AuthService.PUSH_LOGOUT_TIMEOUT_MS);
+        } catch {
+            // Fail-safe: never blocks logout.
+        }
+    }
+
+    private async doInvalidatePushTokens(): Promise<void> {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const subscriptionId = await this.oneSignal.getSubscriptionId().catch(() => null);
+
+        await firstValueFrom(this.http.post(
+            this.apiUrl.getApiUrl('/api/auth/push-logout'),
+            { subscriptionId: subscriptionId || undefined },
+            { headers: { Authorization: `Bearer ${token}` } }
+        ));
+    }
+
+    /**
+     * Unbind this device's OneSignal identity while the current account is still
+     * the bound identity. Idempotent (logout/removeExternalUserId are no-ops on
+     * an already-unbound device); the reactive user-null effect in
+     * NotificationService remains a harmless safety net.
+     */
+    private async unbindOneSignalIdentity(): Promise<void> {
+        try {
+            await this.withTimeout(this.oneSignal.logout(), AuthService.PUSH_LOGOUT_TIMEOUT_MS);
+        } catch {
+            // Fail-safe: never blocks logout.
+        }
+    }
+
+    private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+        return Promise.race([
+            promise,
+            new Promise<T>((_, reject) => setTimeout(() => reject(new Error('push cleanup timed out')), ms))
+        ]);
     }
 }

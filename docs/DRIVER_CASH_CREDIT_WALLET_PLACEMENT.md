@@ -1,0 +1,7 @@
+# Correct cash-credit placement
+
+The screenshots show the main Driver Hub Wallet tab and a separate Earnings/Full History page. Batch 1G originally added the status to the latter. This correction moves that exact feature into the Wallet tab, below the existing wallet summary and above Transactions. It restores the standalone Earnings page exactly to its uploaded original source.
+
+Existing dashboard markup, styles, wallet buttons, payouts, requests, maps, navigation, trip history and other tabs remain identical after removing only the new imports, bindings, single conditional Wallet section and read-refresh addition. The cash-credit request joins the existing wallet read when Wallet is selected; no cash-credit read is added for other tabs. Status reader/API/money/security logic is unchanged; all existing 35 behavioral cases remain applicable. No database/API/provider/gate changes.
+
+The guarded installer requires the actual supplied dashboard baseline and the exact installed 1G Earnings/checker/UI-fragment baselines. It refuses unrelated edits before any writes, validates the six applied wallet migration hashes and package checksums, saves original bytes, and prints rollback. The old 1G checker is updated so the existing 1G Vitest spec remains valid. New placement check verifies containment within Wallet, one occurrence, exact restored Earnings and exact original dashboard after removing the allowed additions. These are source assertions, not browser visual proof. Full Angular builds and signed-in screenshot acceptance are owner-run.

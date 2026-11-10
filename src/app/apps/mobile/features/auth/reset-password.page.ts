@@ -13,7 +13,7 @@ import { SupabaseService } from '../../../../core/services/supabase/supabase.ser
         <ion-buttons slot="start">
           <ion-back-button defaultHref="/auth/login" text="" icon="chevron-back-outline"></ion-back-button>
         </ion-buttons>
-        <ion-title class="font-display font-bold text-2xl text-slate-900">Movabi</ion-title>
+        <ion-title class="font-display font-bold text-2xl text-slate-900"><img src="assets/brand/vaydu-icon.png" alt="" aria-hidden="true" width="32" height="32" style="display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px;flex-shrink:0" />Vaydu</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding bg-slate-50">

@@ -1,0 +1,38 @@
+{
+  "driverId": "318e6be9-9164-41fa-bb0c-c5ccd3526585",
+  "tenantId": "d0e8e8e8-e8e8-e8e8-e8e8-d0e8e8e8e8e8",
+  "country": "NG",
+  "currency": "NGN",
+  "source": "user-confirmed develop audit",
+  "privateCredentialFile": "/home/edsadmin/.config/vaydu-collection-subaccount-sandbox/flutterwave-test.env",
+  "databaseConnectionConfigured": false,
+  "deployApproved": false,
+  "setupEnabled": false,
+  "bookingCollectionEnabled": false,
+  "payoutsEnabled": false,
+  "defaultSplitProposal": {
+    "type": "flat",
+    "value": "0",
+    "approved": false
+  },
+  "reportedRehearsal": {
+    "restoreVerified": true,
+    "collectionMigrationCloneVerified": true,
+    "selectedExistingDriverVerified": true,
+    "collectionGatesDisabledVerified": true,
+    "canonicalCloneVerified": false,
+    "canonicalValidationRequested": false
+  },
+  "reportedMerchantProbe": {
+    "ngBankCatalogueAccessible": true,
+    "ngnFeeQuoteAccessible": true,
+    "collectionSubaccountListHttpStatus": 400,
+    "collectionSubaccountListCategory": "no_rows",
+    "bothListVariantsEmpty": true,
+    "creationPermissionVerified": false,
+    "merchantIdentityVerified": false,
+    "creationTested": false,
+    "settlementTested": false,
+    "transferTested": false
+  }
+}

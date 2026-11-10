@@ -1,3 +1,6 @@
+import {resolvedAddressCountry} from '@shared/utils/address-country';
+import {automaticPlaceSearch} from '../../../../../shared/utils/place-search-fallback';
+import { PlaceSearchScope, PlaceSearchPlan, validSearchPoint } from '../../../../../shared/utils/local-place-search';
 import {
     Component,
     inject,
@@ -18,7 +21,8 @@ import {
     Validators,
     AbstractControl
 } from '@angular/forms';
-import { IonicModule, LoadingController, ToastController } from '@ionic/angular';
+import { IonicModule } from '@ionic/angular';
+import { LoadingController, ToastController } from '@ionic/angular/standalone';
 import { Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
 import { addIcons } from 'ionicons';
 import {
@@ -37,24 +41,33 @@ import {
     carOutline,
     cubeOutline,
     busOutline,
+    bicycleOutline,
     helpCircleOutline,
     searchOutline,
     swapHorizontalOutline,
+    closeCircle,
     closeCircleOutline,
+    closeOutline,
     walletOutline,
     alertCircle,
     homeOutline,
     storefrontOutline,
     personOutline,
     callOutline,
-    layersOutline
+    layersOutline,
+    navigateOutline,
+    informationCircleOutline,
+    chevronDownOutline,
+    chevronUpOutline,
+    calendarOutline
 } from 'ionicons/icons';
 import { Router, ActivatedRoute } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged, firstValueFrom } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged, firstValueFrom, timer, Subscription } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BookingService } from '../../../../../core/services/booking/booking.service';
 import { PricingService } from '../../../../../core/services/pricing.service';
+import { MarketplaceConfigService, MarketplaceEffectiveHybridStatus, MarketplaceSettings } from '../../../../../core/services/marketplace/marketplace-config.service';
 import { AppConfigService, PopularShopPreset } from '../../../../../core/services/config/app-config.service';
 import { LocationService } from '../../../../../core/services/logistics/location.service';
 import { AnalyticsService } from '../../../../../core/services/analytics/analytics.service';
@@ -63,9 +76,18 @@ import { AuthService } from '../../../../../core/services/auth/auth.service';
 import { WalletService } from '../../../../../core/services/wallet/wallet.service';
 import { GeocodingService } from '../../../../../core/services/maps/geocoding.service';
 import { RoutingService } from '../../../../../core/services/maps/routing.service';
-import { FareCalculationService } from '../../../../../core/services/maps/fare-calculation.service';
+import { PricingConfigService } from '../../../../../core/services/pricing/pricing-config.service';
+import {
+    GlobalAiPricingQuoteService,
+    GlobalAiPricingFareBreakdown,
+    GlobalAiPricingNoShowTerms,
+    GlobalAiPricingQuoteRequest
+} from '../../../../../core/services/pricing/global-ai-pricing-quote.service';
 import { SupabaseService } from '../../../../../core/services/supabase/supabase.service';
 import { ComplianceService } from '../../../../../core/services/compliance/compliance.service';
+import { buildQuoteSignature } from '../../../../../shared/utils/quote-signature';
+import { describeMarketFailure } from '../../../../../shared/utils/market-failure';
+import { describeHttpFailure } from '../../../../../shared/utils/http-failure';
 
 import {
     Booking,
@@ -81,6 +103,8 @@ import {
 } from '../../../../../shared/ui';
 
 import { MapComponent } from '../../../../../shared/components/map/map.component';
+import { LocalServiceSelectorComponent } from '../../../../../shared/components/local-service-selector/local-service-selector.component';
+import { LocalServiceCategory, LocalServicesService, LocalServiceSelection } from '../../../../../core/services/local-services.service';
 
 import {
     AutocompleteResult,
@@ -104,7 +128,8 @@ type PackageSize = 'small' | 'medium' | 'large';
         ReactiveFormsModule,
         ButtonComponent,
         InputComponent,
-        MapComponent
+        MapComponent,
+        LocalServiceSelectorComponent
     ],
     template: `
     <ion-header class="ion-no-border">
@@ -117,12 +142,13 @@ type PackageSize = 'small' | 'medium' | 'large';
     </ion-header>
 
     <ion-content class="bg-slate-50" [fullscreen]="true">
-      <div class="flex flex-col h-full ion-padding-bottom">
-        <div class="w-full h-[33vh] min-h-[250px] relative z-10 shadow-lg">
+      <div class="booking-layout flex flex-col h-full ion-padding-bottom">
+        <div class="booking-map w-full h-[33vh] min-h-[250px] relative z-10 isolate overflow-hidden shadow-lg">
           <app-map #map></app-map>
 
+        </div>
           @if (routeResult()) {
-            <div class="absolute bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
+            <div class="booking-route-summary relative z-30 bg-white backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-white/40 animate-in fade-in slide-in-from-bottom-6">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
                   <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200 shrink-0">
@@ -131,7 +157,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                   <div class="min-w-0">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Estimated Trip</p>
                     <p class="text-lg font-display font-bold text-slate-900">
-                      {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km • {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
+                      {{ (routeResult()?.distanceMeters! / 1000).toFixed(1) }} km &bull; {{ (routeResult()?.durationSeconds! / 60).toFixed(0) }} mins
                     </p>
                     
                   </div>
@@ -139,17 +165,16 @@ type PackageSize = 'small' | 'medium' | 'large';
               </div>
             </div>
           }
-        </div>
 
-        <div class="flex-1 bg-white rounded-t-[2rem] -mt-4 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-5 pt-5 pb-8 overflow-y-auto ion-padding-bottom">
-          <div class="max-w-2xl mx-auto space-y-5 pb-safe">
-            <div class="flex items-center gap-4 p-1">
-              <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-900 shadow-sm border border-slate-100 shrink-0">
-                <ion-icon [name]="getIcon()" class="text-2xl"></ion-icon>
+        <div class="booking-panel flex-1 bg-white rounded-t-[1.75rem] mt-0 relative z-20 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)] px-3 pt-3 pb-8 overflow-y-auto ion-padding-bottom">
+          <div class="max-w-2xl mx-auto space-y-3 pb-safe">
+            <div class="service-identity">
+              <div class="service-identity__icon">
+                <ion-icon [name]="getIcon()" class="text-xl"></ion-icon>
               </div>
-              <div>
-                <h2 class="text-2xl font-display font-bold text-slate-900 tracking-tight mb-0.5">{{ getTitle() }}</h2>
-                <p class="text-slate-400 font-medium text-sm">Trusted local movement for your needs.</p>
+              <div class="min-w-0">
+                <h2 class="service-identity__title">{{ getServiceLabel() }}</h2>
+                <p class="service-identity__desc">{{ getServiceDescription() }}</p>
               </div>
             </div>
 
@@ -165,12 +190,12 @@ type PackageSize = 'small' | 'medium' | 'large';
               </div>
             }
 
-            <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-5">
+            <form [formGroup]="bookingForm" (ngSubmit)="submit()" class="space-y-4">
               @if (type === ServiceTypeEnum.ERRAND) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="booking-shop-options p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Errand Type</p>
-                    <div class="grid grid-cols-3 gap-3">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Shop Type</p>
+                    <div class="booking-service-options grid grid-cols-3 gap-3">
                       <button
                         type="button"
                         (click)="setErrandMode('collect_deliver')"
@@ -215,7 +240,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                     </div>
                   </div>
 
-                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver') {
+                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver' && !popularShopsCollapsed()) {
                     <div class="space-y-3">
                       <div class="flex items-center justify-between gap-3">
                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Popular shops</p>
@@ -237,96 +262,195 @@ type PackageSize = 'small' | 'medium' | 'large';
                           </button>
                         }
                       </div>
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                      <p class="px-2 text-xs text-slate-400 font-semibold leading-relaxed">
                         Picking a shop fills pickup with a nearby branch search. You can still type a different shop or exact address.
                       </p>
                     </div>
                   }
+                  @if (bookingForm.get('errand_mode')?.value === 'shop_deliver' && popularShopsCollapsed()) {
+                    <button type="button" class="text-sm font-bold text-blue-700 py-2" (click)="popularShopsCollapsed.set(false)">Change shop</button>
+                  }
                 </div>
               }
 
-              <div class="space-y-5">
-                <div class="relative">
-                  <app-input
-                    label="Pickup Location"
-                    formControlName="pickup_address"
-                    (input)="onAddressInput('pickup', $any($event).target.value)"
-                    placeholder="Where should we pick up?"
-                    icon="location-outline"
-                    (focus)="showPickupResults.set(true)"
-                    (blur)="hideResults('pickup')">
+              @if (showLocalServiceCatalogue()) {
+                <app-local-service-selector
+                  [countryCode]="localServiceCountryCode()"
+                  [serviceSlug]="localServiceCatalogueSlug()"
+                  [currentLocation]="localServiceCurrentLocation()"
+                  [selectedCategoryId]="selectedLocalServiceCategoryId()"
+                  [selectedProviderId]="selectedLocalServiceProviderId()"
+                  [allowCustomEntry]="true"
+                  (categoryChange)="onLocalServiceCategoryChange($event)"
+                  (providerChange)="onLocalServiceProviderChange($event)"
+                  (customProviderChange)="onLocalServiceCustomProvider($event)">
+                </app-local-service-selector>
+              }
 
-                    @if (showPickupResults() && displayPickupResults().length > 0) {
-                      <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of displayPickupResults(); track result.label) {
-                          <button
-                            type="button"
-                            (mousedown)="selectResult('pickup', result)"
-                            class="w-full px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors">
-                            <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                              <ion-icon name="location-outline" class="text-lg"></ion-icon>
+              <div class="space-y-3">
+                <div class="address-field">
+                  <span class="address-field__icon">
+                    <ion-icon name="location-outline"></ion-icon>
+                  </span>
+                  <div class="address-field__body">
+                    <span class="address-field__label">Pickup</span>
+                    <app-input #pickupAddressInput
+                      [dense]="true"
+                      [embeddedAddress]="true"
+                      formControlName="pickup_address"
+                      (input)="onAddressInput('pickup', $any($event).target.value)"
+                      [placeholder]="pickupPlaceholder()"
+                      (focus)="showPickupResults.set(true)"
+                      (keydown.escape)="showPickupResults.set(false)"
+                      (blur)="hideResults('pickup')">
+
+                      <ng-template #pickupSearchControls>
+                        <div class="address-results__toolbar">
+                          <div class="address-results__heading"><span>{{pickupSearchText().trim().length<3?'Recent places':searchArea('pickup').localPlace && pickupSearchScope()!=='country'?'Find a nearby place':'Address & place results'}}</span><button type="button" class="address-results__close" aria-label="Close pickup search results" (mousedown)="$event.preventDefault()" (click)="showPickupResults.set(false)">×</button></div>
+                          @if(searchArea('pickup').localPlace && pickupSearchText().trim().length>=3){
+                            <p class="address-results__area">{{locatingSearchArea()?'Finding your location…':searchArea('pickup').needsLocation?'Enable location access or enter a full address.':pickupSearchScope()==='country'?'Searching across '+config.currentCountry().name:'Within '+pickupSearchScope()+' km · nearest matches first'}}</p>
+                            <div class="address-results__scopes" aria-label="Pickup search area">
+                              <button type="button" [attr.aria-pressed]="pickupSearchScope()===10" (mousedown)="$event.preventDefault()" (click)="setSearchScope('pickup',10)">10 km</button>
+                              <button type="button" [attr.aria-pressed]="pickupSearchScope()===25" (mousedown)="$event.preventDefault()" (click)="setSearchScope('pickup',25)">25 km</button>
+                              <button type="button" [attr.aria-pressed]="pickupSearchScope()==='country'" (mousedown)="$event.preventDefault()" (click)="setSearchScope('pickup','country')">Farther away</button>
                             </div>
-                            <div class="flex-1 min-w-0">
-                              <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ pickupResults().length > 0 ? 'Select location' : 'Recent pickup' }}</p>
-                            </div>
-                          </button>
-                        }
-                      </div>
+                            @if(searchArea('pickup').needsLocation){<button type="button" class="address-results__locate" [disabled]="locatingSearchArea()" (mousedown)="$event.preventDefault()" (click)="locatePlaceSearch('pickup')"><ion-icon name="locate"></ion-icon> {{locatingSearchArea()?'Finding your location…':'Use my location'}}</button>}
+                          }
+                        </div>
+                        @if(addressSearchAttribution()){<div style="padding:6px 16px;font-size:11px;line-height:1.35;color:#64748b">
+  <a [href]="addressSearchAttribution().includes('TomTom')?'https://www.tomtom.com/':'https://www.mapbox.com/about/maps/'" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:inherit;text-decoration:underline">{{addressSearchAttribution().includes('TomTom')?'© TomTom':'© Mapbox'}}</a>
+  <details style="display:inline;font-size:11px;margin-left:8px"><summary style="display:inline;cursor:pointer;font-size:11px;text-decoration:underline">Attribution details</summary><div style="padding-top:6px;font-size:11px;line-height:1.4;overflow-wrap:anywhere">{{addressSearchAttribution()}}</div></details>
+</div>}
+                        @if(pickupSearchError()){<div class="address-results__state address-results__state--error" role="alert"><ion-icon name="alert-circle"></ion-icon><p>{{pickupSearchError()}}</p><button type="button" (mousedown)="$event.preventDefault()" (click)="retryPlaceSearch('pickup')">Retry search</button></div>}
+                      </ng-template>
+                      @if (showPickupResults() && displayPickupResults().length > 0) {
+                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container>
+                          @for (result of displayPickupResults(); track result.label + '|' + result.lat + '|' + result.lng + '|' + $index) {
+                            <button
+                              type="button"
+                              (mousedown)="$event.preventDefault()"
+                              (click)="selectResult('pickup', result)"
+                              [attr.aria-label]="'Select '+(result.primaryText || result.label)+', '+(result.secondaryText || '')"
+                              class="address-results__item focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+                              <div class="address-results__icon">
+                                <ion-icon [name]="placeResultIcon(result)" aria-hidden="true"></ion-icon>
+                              </div>
+                              <div class="address-results__copy">
+                                <p class="address-results__name">{{ result.primaryText || result.label }}</p>
+                                @if (result.secondaryText) {
+                                  <p class="address-results__address">{{ result.secondaryText }}</p>
+                                } @else if (pickupResults().length === 0) {
+                                  <p class="address-results__address">Recent pickup</p>
+                                }
+                              </div>
+                              <div class="address-results__tail">@if(placeResultDistance(result);as distance){<span class="address-results__distance">{{distance}}</span>}<span class="address-results__chevron" aria-hidden="true">›</span></div>
+                            </button>
+                          }
+                          <p class="address-results__hint">Choose a place to confirm your pickup.</p>
+                        </div>
+                      } @else if(showPickupResults() && pickupSearchText().trim().length>=3) {
+                        <div dropdown class="address-results" role="group" aria-label="Pickup search results" (focusout)="searchTrayFocusOut('pickup',$event)" (keydown.escape)="showPickupResults.set(false)"><ng-container [ngTemplateOutlet]="pickupSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!pickupSearchError()">{{ pickupSearchLoading()?'Searching places…':searchArea('pickup').namedLandmark?'No matching landmark found. Try the full place name or street address.':'No matching address found. Add the town or city, or choose a point on the map.' }}</p>@if(!pickupSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
+                      }
+                    </app-input>
+                  </div>
+                  <div class="address-field__action">
+                    @if (pickupShowCurrentBadge()) {
+                      <span class="address-badge">Current</span>
+                    } @else if (bookingForm.get('pickup_address')?.value) {
+                      <button type="button" aria-label="Clear pickup address" (click)="clearAddress('pickup')" class="address-action-btn">
+                        <ion-icon name="close-circle"></ion-icon>
+                      </button>
+                    } @else {
+                      <button type="button" aria-label="Use current location for pickup" (click)="useCurrentLocation('pickup')" class="address-action-btn">
+                        <ion-icon name="locate"></ion-icon>
+                      </button>
                     }
-                  </app-input>
-
-                  <button
-                    type="button"
-                    (click)="useCurrentLocation('pickup')"
-                    class="absolute right-4 top-10 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50/50 px-3 py-1 rounded-full z-10">
-                    <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                    Current
-                  </button>
+                  </div>
                 </div>
 
-                <div class="relative">
-                  <app-input
-                    label="Dropoff Location"
-                    formControlName="dropoff_address"
-                    (input)="onAddressInput('dropoff', $any($event).target.value)"
-                    [placeholder]="type === ServiceTypeEnum.DELIVERY ? 'Where should we deliver the package?' : 'Where should we deliver?'"
-                    icon="pin-outline"
-                    (focus)="showDropoffResults.set(true)"
-                    (blur)="hideResults('dropoff')">
+                <div class="address-field">
+                  <span class="address-field__icon address-field__icon--dropoff">
+                    <ion-icon name="pin-outline"></ion-icon>
+                  </span>
+                  <div class="address-field__body">
+                    <span class="address-field__label">Drop-off</span>
+                    <app-input
+                      [dense]="true"
+                      [embeddedAddress]="true"
+                      formControlName="dropoff_address"
+                      (input)="onAddressInput('dropoff', $any($event).target.value)"
+                      [placeholder]="dropoffPlaceholder()"
+                      (focus)="showDropoffResults.set(true)"
+                      (keydown.escape)="showDropoffResults.set(false)"
+                      (blur)="hideResults('dropoff')">
 
-                    @if (showDropoffResults() && displayDropoffResults().length > 0) {
-                      <div dropdown class="absolute z-[9999] left-0 right-0 top-[calc(100%+8px)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-y-auto max-h-[280px] animate-in fade-in zoom-in-95 duration-200">
-                        @for (result of displayDropoffResults(); track result.label) {
-                          <button
-                            type="button"
-                            (mousedown)="selectResult('dropoff', result)"
-                            class="w-full px-5 py-4 text-left hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors">
-                            <div class="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
-                              <ion-icon name="pin-outline" class="text-lg"></ion-icon>
+                      <ng-template #dropoffSearchControls>
+                        <div class="address-results__toolbar">
+                          <div class="address-results__heading"><span>{{dropoffSearchText().trim().length<3?'Recent places':searchArea('dropoff').localPlace && dropoffSearchScope()!=='country'?'Find a nearby place':'Address & place results'}}</span><button type="button" class="address-results__close" aria-label="Close dropoff search results" (mousedown)="$event.preventDefault()" (click)="showDropoffResults.set(false)">×</button></div>
+                          @if(searchArea('dropoff').localPlace && dropoffSearchText().trim().length>=3){
+                            <p class="address-results__area">{{locatingSearchArea()?'Finding your location…':searchArea('dropoff').needsLocation?'Enable location access or enter a full address.':dropoffSearchScope()==='country'?'Searching across '+config.currentCountry().name:'Within '+dropoffSearchScope()+' km · nearest matches first'}}</p>
+                            <div class="address-results__scopes" aria-label="Dropoff search area">
+                              <button type="button" [attr.aria-pressed]="dropoffSearchScope()===10" (mousedown)="$event.preventDefault()" (click)="setSearchScope('dropoff',10)">10 km</button>
+                              <button type="button" [attr.aria-pressed]="dropoffSearchScope()===25" (mousedown)="$event.preventDefault()" (click)="setSearchScope('dropoff',25)">25 km</button>
+                              <button type="button" [attr.aria-pressed]="dropoffSearchScope()==='country'" (mousedown)="$event.preventDefault()" (click)="setSearchScope('dropoff','country')">Farther away</button>
                             </div>
-                            <div class="flex-1 min-w-0">
-                              <p class="text-sm font-bold text-slate-900 truncate">{{ result.label }}</p>
-                              <p class="text-[9px] text-slate-500 truncate font-bold">{{ dropoffResults().length > 0 ? 'Select destination' : 'Recent destination' }}</p>
-                            </div>
-                          </button>
-                        }
-                      </div>
+                            @if(searchArea('dropoff').needsLocation){<button type="button" class="address-results__locate" [disabled]="locatingSearchArea()" (mousedown)="$event.preventDefault()" (click)="locatePlaceSearch('dropoff')"><ion-icon name="locate"></ion-icon> {{locatingSearchArea()?'Finding your location…':'Use my location'}}</button>}
+                          }
+                        </div>
+                        @if(addressSearchAttribution()){<div style="padding:6px 16px;font-size:11px;line-height:1.35;color:#64748b">
+  <a [href]="addressSearchAttribution().includes('TomTom')?'https://www.tomtom.com/':'https://www.mapbox.com/about/maps/'" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:inherit;text-decoration:underline">{{addressSearchAttribution().includes('TomTom')?'© TomTom':'© Mapbox'}}</a>
+  <details style="display:inline;font-size:11px;margin-left:8px"><summary style="display:inline;cursor:pointer;font-size:11px;text-decoration:underline">Attribution details</summary><div style="padding-top:6px;font-size:11px;line-height:1.4;overflow-wrap:anywhere">{{addressSearchAttribution()}}</div></details>
+</div>}
+                        @if(dropoffSearchError()){<div class="address-results__state address-results__state--error" role="alert"><ion-icon name="alert-circle"></ion-icon><p>{{dropoffSearchError()}}</p><button type="button" (mousedown)="$event.preventDefault()" (click)="retryPlaceSearch('dropoff')">Retry search</button></div>}
+                      </ng-template>
+                      @if (showDropoffResults() && displayDropoffResults().length > 0) {
+                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container>
+                          @for (result of displayDropoffResults(); track result.label + '|' + result.lat + '|' + result.lng + '|' + $index) {
+                            <button
+                              type="button"
+                              (mousedown)="$event.preventDefault()"
+                              (click)="selectResult('dropoff', result)"
+                              [attr.aria-label]="'Select '+(result.primaryText || result.label)+', '+(result.secondaryText || '')"
+                              class="address-results__item focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+                              <div class="address-results__icon">
+                                <ion-icon [name]="placeResultIcon(result)" aria-hidden="true"></ion-icon>
+                              </div>
+                              <div class="address-results__copy">
+                                <p class="address-results__name">{{ result.primaryText || result.label }}</p>
+                                @if (result.secondaryText) {
+                                  <p class="address-results__address">{{ result.secondaryText }}</p>
+                                } @else if (dropoffResults().length === 0) {
+                                  <p class="address-results__address">Recent destination</p>
+                                }
+                              </div>
+                              <div class="address-results__tail">@if(placeResultDistance(result);as distance){<span class="address-results__distance">{{distance}}</span>}<span class="address-results__chevron" aria-hidden="true">›</span></div>
+                            </button>
+                          }
+                          <p class="address-results__hint">Choose a place to confirm your destination.</p>
+                        </div>
+                      } @else if(showDropoffResults() && dropoffSearchText().trim().length>=3) {
+                        <div dropdown class="address-results" role="group" aria-label="Dropoff search results" (focusout)="searchTrayFocusOut('dropoff',$event)" (keydown.escape)="showDropoffResults.set(false)"><ng-container [ngTemplateOutlet]="dropoffSearchControls"></ng-container><p class="address-results__state" role="status" aria-live="polite" [hidden]="!!dropoffSearchError()">{{ dropoffSearchLoading()?'Searching places…':searchArea('dropoff').namedLandmark?'No matching landmark found. Try the full place name or street address.':'No matching address found. Add the town or city, or choose a point on the map.' }}</p>@if(!dropoffSearchLoading()){<div class="address-results__state"><p>Business listings may be incomplete. You can enter the full street address above.</p></div>}</div>
+                      }
+                    </app-input>
+                  </div>
+                  <div class="address-field__action">
+                    @if (dropoffShowCurrentBadge()) {
+                      <span class="address-badge">Current</span>
+                    } @else if (bookingForm.get('dropoff_address')?.value) {
+                      <button type="button" aria-label="Clear drop-off address" (click)="clearAddress('dropoff')" class="address-action-btn">
+                        <ion-icon name="close-circle"></ion-icon>
+                      </button>
+                    } @else {
+                      <button type="button" aria-label="Use current location for drop-off" (click)="useCurrentLocation('dropoff')" class="address-action-btn">
+                        <ion-icon name="locate"></ion-icon>
+                      </button>
                     }
-                  </app-input>
-
-                  <button
-                    type="button"
-                    (click)="useCurrentLocation('dropoff')"
-                    class="absolute right-4 top-10 text-blue-600 font-bold text-[10px] uppercase tracking-widest hover:text-blue-700 transition-colors bg-blue-50/50 px-3 py-1 rounded-full z-10">
-                    <ion-icon name="locate" class="mr-1 align-middle"></ion-icon>
-                    Current
-                  </button>
+                  </div>
                 </div>
               </div>
 
               @if (type !== ServiceTypeEnum.VAN) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="flex items-center justify-between gap-3">
                     <div>
                       <p class="text-xs font-black text-slate-700">Choose vehicle</p>
@@ -358,7 +482,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.RIDE) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="flex items-center justify-between gap-3">
                     <div>
                       <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Passengers</p>
@@ -388,11 +512,11 @@ type PackageSize = 'small' | 'medium' | 'large';
                   @if (passengerCount() > 4) {
                     <div class="p-3 rounded-2xl bg-amber-50 border border-amber-100">
                       <p class="text-xs font-bold text-amber-700 leading-relaxed">
-                        5-7 passengers need a larger vehicle. {{ config.formatCurrency(largeRideSurcharge()) }} XL charge is added.
+                        5-7 passengers need a larger vehicle. {{ formatRequestCurrency(largeRideSurcharge()) }} XL charge is added.
                       </p>
                     </div>
                   } @else {
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    <p class="text-xs text-slate-400 font-semibold leading-relaxed">
                       Standard cars can carry up to 4 passengers.
                     </p>
                   }
@@ -419,7 +543,7 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.ERRAND) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-5">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                   @if (usesItemListMode()) {
                     <div class="space-y-2">
                       <label for="items_list" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
@@ -436,7 +560,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                       <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                         {{ itemCount() }} ITEM{{ itemCount() === 1 ? '' : 'S' }}
                         @if (additionalItemCharge() > 0) {
-                          • +{{ config.formatCurrency(additionalItemCharge()) }} extra item charge
+                          &bull; +{{ formatRequestCurrency(additionalItemCharge()) }} extra item charge
                         }
                       </p>
                     </div>
@@ -452,6 +576,8 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <ion-icon name="cash-outline" class="text-slate-400 text-xl shrink-0"></ion-icon>
                         <input
                           id="estimated_budget"
+                          [attr.aria-describedby]="shoppingBudgetError() && !fareCalculating() ? 'shopping-budget-error' : null"
+                          [attr.aria-invalid]="shoppingBudgetError() && !fareCalculating() ? 'true' : null"
                           type="text"
                           inputmode="decimal"
                           [value]="displayBudgetValue()"
@@ -460,28 +586,34 @@ type PackageSize = 'small' | 'medium' | 'large';
                           placeholder="0.00"
                           class="w-full bg-transparent border-0 outline-none text-slate-900 text-lg font-bold placeholder:text-slate-300" />
                       </div>
+                      @if (shoppingBudgetError() && !fareCalculating()) {
+                        <p id="shopping-budget-error" role="alert" class="text-red-600 text-xs leading-relaxed mt-1 ml-1">
+                          {{ shoppingBudgetError() }}
+                        </p>
+                      }
+                      <p id="shopping-budget-limit" class="text-xs text-slate-500 leading-relaxed ml-1">
+                        @if (maximumShoppingBudget() !== null) {
+                          Maximum currently reservable: <strong>{{ formatRequestCurrency(maximumShoppingBudget()!) }}</strong>.
+                          Availability may change before payment.
+                        } @else if (shoppingCapacityChecked()) {
+                          Maximum shopping budget is temporarily unavailable. Please try again shortly.
+                        } @else {
+                          Checking the maximum available shopping budget…
+                        }
+                      </p>
                       @if (bookingForm.get('estimated_budget')?.hasError('invalidCurrency')) {
                         <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid amount, for example 15 or 15.50.</p>
                       }
 
-                      <p class="px-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                        This amount must be available in your wallet and will be reserved for item purchase only.
-                      </p>
+                      <div class="reservation-note">
+                        <ion-icon name="information-circle-outline" class="reservation-note__icon"></ion-icon>
+                        <p class="reservation-note__text">{{ itemBudgetDescription() }}</p>
+                      </div>
                     </div>
                   }
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
-                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Contact Information</p>
-                    <app-input
-                      label="Your Phone"
-                      type="tel"
-                      formControlName="customer_phone"
-                      icon="call-outline"
-                      placeholder="Your contact number">
-                    </app-input>
-                    @if (bookingForm.get('customer_phone')?.hasError('invalidPhone') || bookingForm.get('customer_phone')?.hasError('invalidPhoneLength')) {
-                      <p class="text-red-500 text-xs mt-1 ml-1">Enter a valid phone number.</p>
-                    }
+                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Recipient Contact (optional)</p>
                     <div class="grid grid-cols-2 gap-4">
                       <app-input
                         label="Recipient Name"
@@ -536,14 +668,22 @@ type PackageSize = 'small' | 'medium' | 'large';
               }
 
               @if (type === ServiceTypeEnum.DELIVERY) {
-                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                   <div class="space-y-3">
-                    <p class="text-xs font-black text-slate-700 ml-1">Package size</p>
+                    <p class="text-xs font-black text-slate-700 ml-1">Parcel size</p>
+                    @if (bikeLimitText()) {
+                      <p class="text-[10px] font-bold text-blue-600 ml-1">{{ bikeLimitText() }}</p>
+                    }
+                    @if (bikeUnavailableMessage()) {
+                      <p class="text-[10px] font-bold text-red-600 ml-1">{{ bikeUnavailableMessage() }}</p>
+                    }
                     <div class="grid grid-cols-3 gap-3">
                       @for (size of packageSizeOptions; track size.id) {
                         <button
                           type="button"
+                          [disabled]="packageSizeDisabled(size.id)"
                           (click)="setPackageSize(size.id)"
+                          [class.opacity-50]="packageSizeDisabled(size.id)"
                           [class.bg-blue-600]="packageSize() === size.id"
                           [class.text-white]="packageSize() === size.id"
                           [class.border-blue-600]="packageSize() === size.id"
@@ -559,7 +699,7 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                   <div class="p-4 bg-white rounded-xl border border-slate-100 space-y-3">
                     <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Delivery Contact
+                      Recipient Contact
                     </p>
 
                     <div class="grid grid-cols-1 gap-4">
@@ -585,27 +725,27 @@ type PackageSize = 'small' | 'medium' | 'large';
 
                   <div class="space-y-2">
                     <label for="item_description" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                      Package Details
+                      Parcel Details
                     </label>
 
                     <textarea
                       id="item_description"
                       formControlName="item_description"
-                      placeholder="Describe the package, size, or handling notes."
+                      placeholder="Describe the parcel, size, or handling notes."
                       class="w-full px-4 py-3 rounded-xl bg-white border border-slate-100 text-slate-900 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-500 transition-all min-h-[90px] placeholder:text-slate-300 shadow-sm">
                     </textarea>
                   </div>
 
                   <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
                     <p class="text-sm leading-7 text-slate-700">
-                      Delivery requests are for parcels, documents, and small-to-medium items. For furniture or large items, use Van Moving.
+                      Deliver requests are for parcels, documents, and small-to-medium items. For furniture or large items, use Move.
                     </p>
                   </div>
                 </div>
               }
 
               @if (type === ServiceTypeEnum.VAN) {
-                <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-4">
+                <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                   <div class="space-y-3">
                     <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Move Size</p>
                     <div class="grid grid-cols-2 gap-3">
@@ -683,7 +823,61 @@ type PackageSize = 'small' | 'medium' | 'large';
                 </textarea>
               </div>
 
-                @if (fareEstimate()) {
+                @if (fareCalculating() && !fareEstimate() && !shouldShowMarketplaceFare()) {
+                  <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40 flex items-center gap-3 animate-in fade-in">
+                    <ion-spinner name="crescent" color="primary"></ion-spinner>
+                    <p class="text-sm font-bold text-slate-500">Calculating your fare...</p>
+                  </div>
+                }
+
+                @if (fareCalculationError() && !fareCalculating() && !shoppingBudgetError()) {
+                  <div class="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-700 text-sm font-medium animate-in fade-in">
+                    <ion-icon name="information-circle" class="text-2xl text-red-500 shrink-0"></ion-icon>
+                    <p class="flex-1">{{ fareCalculationError() }}</p>
+                  </div>
+                }
+
+                @if (shouldShowMarketplaceFare() && quoteValid()) {
+                  <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
+                    <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
+                      <div class="flex items-start justify-between gap-4">
+                        <div>
+                          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                            Marketplace Fare
+                          </p>
+                          <h3 class="text-4xl font-display font-black text-blue-600 tracking-tight">
+                            {{ formatRequestCurrency(cardChargeRequired()) }}
+                          </h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                          <ion-icon name="storefront-outline" class="text-2xl"></ion-icon>
+                        </div>
+                      </div>
+
+                      <div class="mt-5 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                        <p class="text-sm leading-7 text-slate-700">
+                          This is the <strong>suggested fare</strong> for your request.
+                          On the next screen you can <strong>Accept Fare</strong> or <strong>Make an Offer</strong>.
+                          Payment is only collected after the fare is agreed.
+                        </p>
+                      </div>
+
+                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Suggested Fare</p>
+                            <p class="text-sm font-bold text-slate-900">Driver fare and platform fee</p>
+                          </div>
+                          <p class="text-lg font-display font-bold text-slate-900">
+                            {{ formatRequestCurrency(cardChargeRequired()) }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                }
+
+                @if (fareEstimate() && !shouldShowMarketplaceFare()) {
                   <div class="animate-in fade-in slide-in-from-bottom-4 space-y-4">
 
                     <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-lg shadow-slate-200/40">
@@ -694,7 +888,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                           </p>
 
                           <h3 class="text-4xl font-display font-black text-blue-600 tracking-tight">
-                            {{ config.formatCurrency(cardChargeRequired()) }}
+                            {{ formatRequestCurrency(cardChargeRequired()) }}
                           </h3>
                         </div>
 
@@ -707,7 +901,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                         <div class="mt-5 p-4 bg-blue-50 rounded-2xl border border-blue-100">
                           <p class="text-sm leading-7 text-slate-700">
                             The <strong>Service Estimate</strong> will be authorised on your card.
-                            You will only be charged once the errand service is completed.
+                            You will only be charged once the shop service is completed.
                           </p>
                         </div>
                       } @else {
@@ -719,21 +913,97 @@ type PackageSize = 'small' | 'medium' | 'large';
                         </div>
                       }
 
-                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
-                        <div class="flex items-center justify-between">
-                          <div>
-                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                              Fare
-                            </p>
-                            <p class="text-sm font-bold text-slate-900">
-                              Driver fare and platform fee
+                      <div class="mt-5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm space-y-3">
+                        @if (type === ServiceTypeEnum.ERRAND) {
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Shopping Budget (Reserved)</p>
+                              <p class="text-sm font-bold text-slate-900">Reserved for item purchase</p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-slate-900">
+                              {{ formatRequestCurrency(walletBudgetRequired()) }}
                             </p>
                           </div>
-                          <p class="text-lg font-display font-bold text-slate-900">
-                            {{ config.formatCurrency(cardChargeRequired()) }}
-                          </p>
-                        </div>
+
+                          <div class="h-px bg-slate-100"></div>
+
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Service Fare</p>
+                              <p class="text-sm font-bold text-slate-900">Booking, distance &amp; time</p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-slate-900">
+                              {{ formatRequestCurrency(cardChargeRequired()) }}
+                            </p>
+                          </div>
+
+                          <div class="h-px bg-slate-100"></div>
+
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Estimated Total</p>
+                              <p class="text-sm font-bold text-slate-900">Budget + Service Fare</p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-blue-600">
+                              {{ formatRequestCurrency(walletPaymentRequired()) }}
+                            </p>
+                          </div>
+                        } @else {
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                Fare
+                              </p>
+                              <p class="text-sm font-bold text-slate-900">
+                                Driver fare and platform fee
+                              </p>
+                            </div>
+                            <p class="text-lg font-display font-bold text-slate-900">
+                              {{ formatRequestCurrency(cardChargeRequired()) }}
+                            </p>
+                          </div>
+
+                          @if (effectiveDiscount(); as disc) {
+                            <div class="h-px bg-slate-100"></div>
+                            <div class="flex items-center justify-between" data-testid="applied-discount">
+                              <div>
+                                <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest">Discount · {{ disc.code }}</p>
+                                <p class="text-sm font-bold text-slate-900">Applied to this quote</p>
+                              </div>
+                              <div class="flex items-center gap-3">
+                                <p class="text-lg font-display font-bold text-emerald-600">-{{ formatRequestCurrency(disc.discountMinor / 100) }}</p>
+                                <button type="button" (click)="removeDiscountCode()" [disabled]="discountBusy()" class="text-xs font-bold text-slate-400 underline">Remove</button>
+                              </div>
+                            </div>
+                            <div class="flex items-center justify-between">
+                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">You pay</p>
+                              <p class="text-lg font-display font-bold text-blue-600">{{ formatRequestCurrency(payableAfterDiscount()) }}</p>
+                            </div>
+                          }
+                        }
                       </div>
+
+                      @if (!effectiveDiscount() && hasCurrentQuote()) {
+                        <div class="mt-4 flex items-center gap-2" data-testid="discount-entry">
+                          <input
+                            type="text"
+                            [ngModel]="discountCodeInput()"
+                            (ngModelChange)="discountCodeInput.set($event)"
+                            placeholder="Discount code"
+                            autocomplete="off"
+                            class="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold uppercase tracking-wide focus:border-blue-400 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            (click)="applyDiscountCode()"
+                            [disabled]="discountBusy() || !discountCodeInput().trim()"
+                            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                          >{{ discountBusy() ? 'Applying…' : 'Apply' }}</button>
+                        </div>
+                        @if (discountError()) {
+                          <p class="mt-2 text-xs font-semibold text-red-600" role="alert">{{ discountError() }}</p>
+                        }
+                      }
 
                       @if (fareEstimate()?.minimumFareApplied) {
                         <div class="mt-4 px-4 py-2 bg-blue-50 border border-blue-100 rounded-xl">
@@ -774,7 +1044,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                             Wallet
                           </p>
                           <p class="mt-1 text-sm font-bold">
-                            {{ config.formatCurrency(walletBalance()) }}
+                            {{ formatRequestCurrency(walletBalance()) }}
                           </p>
                         </div>
 
@@ -783,7 +1053,7 @@ type PackageSize = 'small' | 'medium' | 'large';
                             Total
                           </p>
                           <p class="mt-1 text-sm font-bold">
-                            {{ config.formatCurrency(walletPaymentRequired()) }}
+                            {{ formatRequestCurrency(walletPaymentRequired()) }}
                           </p>
                         </div>
 
@@ -792,40 +1062,55 @@ type PackageSize = 'small' | 'medium' | 'large';
                             Card
                           </p>
                           <p class="mt-1 text-sm font-bold">
-                            {{ config.formatCurrency(cardFallbackAmount()) }}
+                            {{ formatRequestCurrency(cardFallbackAmount()) }}
                           </p>
                         </div>
                       </div>
 
-                      @if (walletShortfall() > 0) {
-                        <div class="p-3 bg-amber-400/15 rounded-xl border border-amber-300/30">
-                          <p class="text-xs font-bold text-amber-100 flex items-center gap-2">
-                            <ion-icon name="alert-circle"></ion-icon>
-                            Wallet is short by {{ config.formatCurrency(walletShortfall()) }}. We will use your card for this request.
-                          </p>
-                        </div>
-                      } @else {
-                        <div class="p-3 bg-emerald-400/15 rounded-xl border border-emerald-300/30">
-                          <p class="text-xs font-bold text-emerald-100 flex items-center gap-2">
-                            <ion-icon name="wallet-outline"></ion-icon>
-                            Your wallet covers this request. No card authorization needed.
-                          </p>
-                        </div>
-                      }
+                      <fieldset class="space-y-2">
+                        <legend class="text-xs font-semibold text-slate-200">Payment method</legend>
+                        <label class="flex items-center gap-2 text-sm text-white">
+                          <input type="radio" name="bookingPaymentChoice" value="card" [checked]="paymentChoice() === 'card'" (change)="paymentChoice.set('card')" [disabled]="submitting() || paymentProcessing()">
+                          Card
+                        </label>
+                        @if (walletBalance() >= walletPaymentRequired() && walletPaymentRequired() > 0) {
+                          <label class="flex items-center gap-2 text-sm text-white">
+                            <input type="radio" name="bookingPaymentChoice" value="wallet" [checked]="paymentChoice() === 'wallet'" (change)="paymentChoice.set('wallet')" [disabled]="submitting() || paymentProcessing()">
+                            Use existing wallet credit
+                          </label>
+                        }
+                      </fieldset>
                     </div>
 
-                    @if (cardFallbackRequired()) {
+                    @if(cardFallbackRequired() && !stripeJourney()){<p class="rounded-xl bg-amber-50 p-4 text-sm" role="status">Payment setup for this journey market is not ready yet.</p>}
+                    @if (cardFallbackRequired() && stripeJourney()) {
                       <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                         <div class="flex items-center justify-between">
                           <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                            Card Fallback
+                            Card Payment
                           </p>
                           <p class="text-xs font-bold text-slate-700">
-                            {{ config.formatCurrency(cardFallbackAmount()) }}
+                            {{ formatRequestCurrency(cardFallbackAmount()) }}
                           </p>
                         </div>
 
-                        <div
+                        @if (savedCardsEnabled()) {
+                          <fieldset class="space-y-2">
+                            <legend class="text-sm font-semibold">Your cards</legend>
+                            <label class="flex gap-2 text-sm"><input type="radio" name="savedCard" [checked]="!selectedSavedCard()" (change)="selectedSavedCard.set(null)" [disabled]="submitting() || paymentProcessing()">Use a new card</label>
+                            @for (saved of savedCards(); track saved.id) {
+                              <div class="flex items-center justify-between gap-2">
+                                <label class="flex gap-2 text-sm"><input type="radio" name="savedCard" [checked]="selectedSavedCard() === saved.id" (change)="selectedSavedCard.set(saved.id); saveCard.set(false)" [disabled]="submitting() || paymentProcessing()">{{saved.brand}} ending {{saved.last4}} · {{saved.expMonth}}/{{saved.expYear}}</label>
+                                <button type="button" class="text-sm underline" (click)="removeSavedCard(saved.id)" [disabled]="submitting() || paymentProcessing()" [attr.aria-label]="'Remove card ending ' + saved.last4">Remove</button>
+                              </div>
+                            }
+                          </fieldset>
+                          @if (!selectedSavedCard()) {
+                            <label class="flex items-start gap-2 text-sm"><input type="checkbox" [checked]="saveCard()" (change)="saveCard.set($any($event.target).checked)" [disabled]="submitting() || paymentProcessing()">Save this card for future payments</label>
+                            <p class="text-xs text-slate-600">Your payment provider securely stores the card. You choose when to pay and can remove it here.</p>
+                          }
+                        }
+                        <div [hidden]="!!selectedSavedCard()"
                           #cardElementContainer
                           class="p-4 bg-white rounded-xl border border-slate-100 min-h-[52px]">
                         </div>
@@ -843,6 +1128,17 @@ type PackageSize = 'small' | 'medium' | 'large';
                         }
                       </div>
                     }
+                  </div>
+                }
+
+
+                @if (showNoShowDisclosure()) {
+                  <div data-testid="no-show-disclosure" class="text-xs text-slate-500 leading-relaxed">
+                    <p>By booking, you agree to the cancellation and no-show policy.</p>
+                    <details class="mt-1">
+                      <summary class="cursor-pointer font-semibold underline">View policy</summary>
+                      <p class="mt-2">Please meet your driver within {{ (quoteNoShow()?.graceSeconds || 300) / 60 }} minutes of verified arrival. If you do not, a no-show fee of {{ noShowFeeDisplay() }} may apply. A cancelled ride is not charged a separate waiting fee.</p>
+                    </details>
                   </div>
                 }
 
@@ -865,10 +1161,221 @@ type PackageSize = 'small' | 'medium' | 'large';
         </div>
       </div>
     </ion-content>
-  `
+  `,
+    styles: [`
+    /* VAYDU_BOOKING_COMPACT_LAYOUT: presentation only. */
+    .booking-layout { min-height: 0; }
+    .booking-map { height: clamp(160px, 26vh, 230px); min-height: 160px; flex: 0 0 auto; }
+    .booking-panel { min-height: 0; padding: 12px 12px calc(24px + env(safe-area-inset-bottom, 0px)); scroll-padding-bottom: 24px; }
+    .booking-panel .service-identity { min-height: 56px; padding: 6px 2px; gap: 10px; }
+    .booking-panel .service-identity__icon { width: 38px; height: 38px; border-radius: 12px; }
+    .booking-panel .service-identity__title { font-size: 18px; line-height: 24px; }
+    .booking-panel .service-identity__desc { white-space: normal; font-size: 12px; line-height: 17px; color: #64748b; }
+    .booking-shop-options { padding: 10px; border-radius: 18px; }
+    .booking-service-options { gap: 8px; }
+    .booking-service-options > button { min-height: 64px; padding: 8px 4px; gap: 4px; border-radius: 13px; }
+    .booking-service-options > button > span { font-size: 10px; line-height: 14px; letter-spacing: normal; }
+    .booking-service-options > button:focus-visible { outline: 3px solid #0f172a; outline-offset: 2px; }
+    .booking-panel .address-field { min-height: 60px; padding: 8px; border-radius: 15px; }
+    .booking-route-summary { bottom: 20px; padding: 8px 12px; border-radius: 14px; }
+    .booking-route-summary .w-12 { width: 32px; height: 32px; border-radius: 10px; }
+    .booking-route-summary .text-lg { font-size: 14px; line-height: 20px; }
+    @media (max-height: 600px) { .booking-map { height: 140px; min-height: 140px; } }
+    @media (min-width: 768px) and (min-height: 700px) { .booking-map { height: 28vh; max-height: 300px; } }
+
+
+    /* VAYDU_MAP_SPACING_V2: scoped booking-page presentation. */
+    .booking-layout > .booking-map { --movabi-map-min-height: 0px; height: clamp(200px, 26vh, 260px); min-height: 200px; padding: 0; }
+    .booking-layout > .booking-map app-map { display: block; width: 100%; height: 100%; }
+    .booking-layout > .booking-route-summary { flex: 0 0 auto; margin: 6px 12px; padding: 8px 12px; bottom: auto; left: auto; right: auto; }
+    .booking-layout > .booking-panel { margin-top: 0; padding-top: 10px; }
+    .booking-panel .booking-service-options { gap: 6px; }
+    .booking-panel .booking-service-options > button { min-height: 60px; padding: 6px 4px; gap: 3px; box-shadow: none; }
+    .booking-panel .booking-shop-options { padding: 8px; }
+    .booking-panel .booking-shop-options > .space-y-3 > p { margin-bottom: 6px; }
+    .booking-panel .address-field { padding: 6px 8px; gap: 6px; min-height: 58px; }
+    .booking-panel .address-field__label { margin-bottom: 0; line-height: 13px; }
+    .booking-panel .service-identity { padding: 4px 2px; min-height: 48px; }
+    @media (max-height: 600px) { .booking-layout > .booking-map { height: 180px; min-height: 180px; } }
+    .reservation-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid #f1f5f9;
+    }
+    .reservation-note__icon {
+      font-size: 16px;
+      color: #94a3b8;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .reservation-note__text {
+      font-size: 13px;
+      font-weight: 600;
+      color: #64748b;
+      line-height: 1.45;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+    .service-identity {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 4px;
+      min-height: 78px;
+    }
+    .service-identity__icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      background: #f8fafc;
+      border: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0f172a;
+      flex-shrink: 0;
+    }
+    .service-identity__title {
+      font-weight: 800;
+      font-size: 1.3rem;
+      color: #0f172a;
+      line-height: 1.15;
+    }
+    .service-identity__desc {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .address-field {
+      position: relative;
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 8px;
+      min-height: 64px;
+      padding: 8px;
+      border-radius: 18px;
+      background: #f8fafc;
+      border: 1px solid #eef2f6;
+    }
+    .address-field__icon {
+      width: 32px;
+      height: 36px;
+      border-radius: 12px;
+      background: #fff7ed;
+      color: #ea580c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .address-field__icon--dropoff {
+      background: #eff6ff;
+      color: #2563eb;
+    }
+    .address-field__body {
+      min-width: 0;
+    }
+    .address-field__label {
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      margin-bottom: 2px;
+      margin-left: 2px;
+    }
+    .address-field__action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+    }
+    .address-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #2563eb;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+    .address-action-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      font-size: 20px;
+      background: transparent;
+    }
+    .address-action-btn:active {
+      background: #f1f5f9;
+    }
+    .address-action-btn:focus-visible {
+      outline: 2px solid #f97316;
+      outline-offset: 2px;
+    }
+    .address-results {
+      position:relative;z-index:30;left:-40px;right:auto;top:auto;width:calc(100% + 88px);margin-top:10px;
+      background:#fff;border:1px solid #e2e8f0;border-radius:20px;
+      box-shadow:0 16px 45px rgba(15,23,42,.16);overflow-y:auto;
+      max-height:min(26rem,52dvh);overscroll-behavior:contain;isolation:isolate;
+    }
+    .address-results__toolbar{position:sticky;top:0;z-index:1;background:rgba(255,255,255,.98);padding:12px 14px;border-bottom:1px solid #edf2f7}
+    .address-results__heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:800;color:#0f172a}
+    .address-results__close{display:grid;place-items:center;min-width:36px;min-height:36px;border-radius:50%;background:#f1f5f9;color:#475569;font-size:23px;line-height:1}
+    .address-results__area{font-size:11px;line-height:1.5;color:#64748b;margin:2px 0 9px;font-weight:600}
+    .address-results__scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+    .address-results__scopes button{min-height:38px;border:1px solid #e2e8f0;border-radius:11px;padding:7px 4px;font-size:11px;font-weight:700;color:#475569;background:#fff}
+    .address-results__scopes [aria-pressed=true]{background:#fff7ed;border-color:#fdba74;color:#c2410c;box-shadow:inset 0 0 0 1px #fdba74}
+    .address-results__locate{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:42px;margin-top:9px;border-radius:11px;background:#0f172a;color:white;font-size:12px;font-weight:700;padding:8px}
+    .address-results__item{width:100%;min-height:78px;padding:13px 14px;display:flex;align-items:center;gap:10px;text-align:left;border-bottom:1px solid #f1f5f9;background:white;transition:background-color .15s ease}
+    .address-results__item:last-child{border-bottom:0}
+    .address-results__item:hover,.address-results__item:focus-visible{background:#fff7ed}
+    .address-results__item:focus-visible,.address-results button:focus-visible{outline:3px solid #f97316;outline-offset:-3px}
+    .address-results__icon{display:flex;align-items:center;justify-content:center;flex:0 0 38px;width:38px;height:38px;border-radius:12px;background:#fff7ed;color:#ea580c;font-size:18px;border:1px solid #ffedd5}
+    .address-results__copy{flex:1;min-width:0}
+    .address-results__name{font-size:14px;font-weight:800;color:#0f172a;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
+    .address-results__address{font-size:11px;font-weight:500;color:#64748b;line-height:1.5;margin-top:3px;white-space:normal;overflow-wrap:anywhere}
+    .address-results__tail{display:grid;justify-items:end;gap:4px;flex-shrink:0}
+    .address-results__distance{font-size:10px;font-weight:700;white-space:nowrap;color:#475569;background:#f1f5f9;padding:3px 6px;border-radius:7px;font-variant-numeric:tabular-nums}
+    .address-results__chevron{font-size:22px;color:#cbd5e1;line-height:1}
+    .address-results__state{padding:20px 15px;margin:0;font-size:12px;line-height:1.6;color:#64748b;text-align:center}
+    .address-results__state[hidden]{display:none}
+    .address-results__state--error{background:#fff1f2;color:#be123c;display:grid;justify-items:center;gap:8px}
+    .address-results__state button{border:1px solid #fecdd3;background:white;border-radius:9px;min-height:40px;padding:7px 14px;font-weight:700}
+    .address-results__hint{margin:0;padding:10px 14px;background:#f8fafc;font-size:10px;line-height:1.5;color:#94a3b8;text-align:center}
+    @media(max-width:360px){.address-results{left:-40px;right:auto;width:calc(100% + 88px)}.address-results__item{padding:11px 10px;gap:8px}.address-results__icon{flex-basis:32px;width:32px;height:34px}.address-results__name{font-size:13px}}
+    @media (prefers-reduced-motion: reduce) {
+      .address-results__item {
+        transition: none;
+      }
+    }
+  `]
 })
 export class BookingRequestPage implements OnInit, OnDestroy {
     @ViewChild('map') mapComponent!: MapComponent;
+    @ViewChild('map', { read: ElementRef }) private bookingMapHost?: ElementRef<HTMLElement>;
 
     private cardElementHost: ElementRef<HTMLDivElement> | null = null;
 
@@ -890,6 +1397,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     public router = inject(Router);
     private bookingService = inject(BookingService);
     private pricingService = inject(PricingService);
+    private marketplaceConfig = inject(MarketplaceConfigService);
+    private localServices = inject(LocalServicesService);
     private loadingCtrl = inject(LoadingController);
     private toastCtrl = inject(ToastController);
     private paymentService = inject(PaymentService);
@@ -899,8 +1408,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     public locationService = inject(LocationService);
     private analytics = inject(AnalyticsService);
     private geocoding = inject(GeocodingService);
+    readonly addressSearchAttribution=this.geocoding.searchAttribution;
     private routing = inject(RoutingService);
-    private fareCalculator = inject(FareCalculationService);
+    private pricingConfig = inject(PricingConfigService);
+    private globalAiPricingQuote = inject(GlobalAiPricingQuoteService);
     private supabase = inject(SupabaseService);
     private compliance = inject(ComplianceService);
     private destroyRef = inject(DestroyRef);
@@ -912,6 +1423,24 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     estimatedPrice = signal(0);
     submitting = signal(false);
     cardError = signal<string | null>(null);
+    quotedMarket=signal<{countryCode:string;currency:string}|null>(null);
+    readonly stripeJourney=computed(()=>this.quotedMarket()?.countryCode==='GB' && this.quotedMarket()?.currency==='GBP');
+    private savedCardsOwner:string|null=null;
+    savedCardsEnabled=signal(false);
+    savedCards=signal<Array<{id:string;brand:string;last4:string;expMonth:number;expYear:number}>>([]);
+    selectedSavedCard=signal<string|null>(null);
+    saveCard=signal(false);
+    async loadSavedCards() {
+        if(!this.stripeJourney())return;
+        const owner=this.auth.currentUser()?.id||null;if(!owner || this.savedCardsOwner===owner)return;this.savedCardsOwner=owner;
+        try {const result=await this.paymentService.savedCards();if(owner!==this.auth.currentUser()?.id || !this.stripeJourney())return;this.savedCardsEnabled.set(result.enabled);this.savedCards.set(result.cards);}
+        catch {if(owner===this.auth.currentUser()?.id){this.savedCardsEnabled.set(false);this.savedCards.set([]);this.selectedSavedCard.set(null);}}
+    }
+    async removeSavedCard(id:string) {
+        try {await this.paymentService.removeSavedCard(id);if(this.selectedSavedCard()===id)this.selectedSavedCard.set(null);this.savedCardsOwner=null;await this.loadSavedCards();}
+        catch {await this.showPaymentCardError();}
+    }
+    private async showPaymentCardError(){const toast=await this.toastCtrl.create({message:'Could not remove this saved card. Please retry.',duration:3000});await toast.present();}
     cardReady = signal(false);
     cardComplete = signal(false);
     paymentProcessing = signal(false);
@@ -943,19 +1472,161 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     dropoffResults = signal<AutocompleteResult[]>([]);
     showPickupResults = signal(false);
     showDropoffResults = signal(false);
+    pickupExpanded = signal(false);
+    pickupAutofilling = signal(false);
+    pickupManuallyChanged = signal(false);
+    selectedLocalService = signal<Record<string, unknown> | null>(null);
 
-    displayPickupResults = computed(() => this.pickupResults().length > 0
-        ? this.pickupResults()
-        : this.recentLocationResults('pickup')
-    );
+    pickupSearchText=signal('');dropoffSearchText=signal('');
+    pickupSearchScope=signal<PlaceSearchScope>(10);dropoffSearchScope=signal<PlaceSearchScope>(10);
+    pickupSearchError=signal('');dropoffSearchError=signal('');
+    locatingSearchArea=signal(false);
+    pickupSearchLoading=signal(false);dropoffSearchLoading=signal(false);
+    private addressSearchVersion={pickup:0,dropoff:0};
+    displayPickupResults = computed(() => this.addressSuggestions('pickup'));
+    displayDropoffResults = computed(() => this.addressSuggestions('dropoff'));
+    private addressSuggestions(type:'pickup'|'dropoff'):AutocompleteResult[] {
+        const results=(type==='pickup'?this.pickupResults:this.dropoffResults)();
+        const query=(type==='pickup'?this.pickupSearchText:this.dropoffSearchText)();
+        return results.length?results:query.trim().length<3?this.recentLocationResults(type):[];
+    }
 
-    displayDropoffResults = computed(() => this.dropoffResults().length > 0
-        ? this.dropoffResults()
-        : this.recentLocationResults('dropoff')
-    );
+    pickupSummaryTitle = computed(() => {
+        const source = this.pickupLocation.source;
+        if (source === 'gps') return 'Current location';
+        if (source === 'map') return 'Selected on map';
+        return this.pickupLocation.address?.trim() ? 'Saved pickup' : 'Choose pickup';
+    });
+
+    pickupSummaryAddress = computed(() => {
+        const address = this.bookingForm?.get('pickup_address')?.value || this.pickupLocation.address;
+        return String(address || '').trim() || 'Search for an address or use current location';
+    });
+
+    pickupPlaceholder = computed(() => {
+        if (this.pickupAutofilling()) return 'Finding your current address…';
+        return 'Search for pickup address';
+    });
+
+    dropoffPlaceholder = computed(() => {
+        return this.type === ServiceTypeEnum.DELIVERY
+            ? 'Where should we deliver the parcel?'
+            : 'Where should we deliver?';
+    });
+
+    pickupShowCurrentBadge = computed(() => {
+        return this.pickupLocation.source === 'gps' && !this.pickupManuallyChanged();
+    });
+
+    dropoffShowCurrentBadge = computed(() => {
+        return this.dropoffLocation.source === 'gps';
+    });
+
+    showLocalServiceCatalogue = computed(() => {
+        // Disabled for v1 hardening: Local Service Discovery catalogue (nearby provider
+        // search, category accordions, brand-query bridge) is dormant until it is
+        // independently stabilised and re-tested. Shop/Delivery flows use manual
+        // shop/address entry + popular shop shortcuts only. Backend/service
+        // infrastructure is untouched and can be re-enabled by restoring this check.
+        return false;
+    });
+
+    localServiceCountryCode = computed(() => {
+        return this.config.currentCountry()?.code || 'GB';
+    });
+
+    localServiceCatalogueSlug = computed(() => {
+        if (this.type === ServiceTypeEnum.DELIVERY) return 'delivery';
+        const mode = String(this.bookingForm?.get('errand_mode')?.value || 'collect_deliver') as ErrandMode;
+        if (mode === 'quick_buy') return 'quick-buy';
+        if (mode === 'shop_deliver') return 'errand';
+        return 'collect-deliver';
+    });
+
+    localServiceCurrentLocation = computed(() => {
+        const lat = this.pickupLocation.latitude;
+        const lng = this.pickupLocation.longitude;
+        return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+            ? { lat, lng }
+            : null;
+    });
+
+    selectedLocalServiceCategoryId = computed(() => {
+        return String(this.selectedLocalService()?.['categoryId'] || '').trim() || null;
+    });
+
+    selectedLocalServiceProviderId = computed(() => {
+        return String(this.selectedLocalService()?.['providerId'] || '').trim() || null;
+    });
 
     routeResult = signal<RouteSummary | null>(null);
     fareEstimate = signal<FareEstimate | null>(null);
+    fulfilmentSnapshot = signal<Record<string, unknown> | null>(null);
+    fareCalculating = signal(false);
+    maximumShoppingBudget = signal<number | null>(null);
+    shoppingCapacityChecked = signal(false);
+    private capacityRequestInFlight = false;
+
+    private async refreshShoppingCapacity(): Promise<void> {
+        if (!this.usesBudgetMode() || this.capacityRequestInFlight) return;
+        const currency = this.config.currencyCode;
+        this.capacityRequestInFlight = true;
+        try {
+            const capacity = await this.pricingService.shoppingCapacity(currency);
+            if (capacity.currency !== this.config.currencyCode || !Number.isFinite(capacity.maximumBudget) || capacity.maximumBudget < 0) {
+                this.maximumShoppingBudget.set(null);
+            } else this.maximumShoppingBudget.set(capacity.maximumBudget);
+        } catch { this.maximumShoppingBudget.set(null); }
+        finally { this.capacityRequestInFlight = false; this.shoppingCapacityChecked.set(true); }
+    }
+
+    fareCalculationError = signal<string | null>(null);
+    shoppingBudgetError = computed(() => {
+        const message = this.fareCalculationError();
+        return this.usesBudgetMode() && message && [
+            'This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.',
+            'Shopping funding could not be verified. Please try again later.',
+            'Shopping purchase funding is currently unavailable. Please try later. Collection and delivery without purchases remain available.'
+        ].includes(message) ? message : null;
+    });
+    private lastFareBreakdown: GlobalAiPricingFareBreakdown | null = null;
+    private lastQuoteReference: string | null = null;
+    private lastQuoteExpiresAt: string | null = null;
+    /** Signature of the last SUCCESSFUL authoritative quote (null until one succeeds). */
+    private lastQuotedSignature: string | null = null;
+    /** Signature currently in flight, to absorb double-clicks and re-entrant triggers. */
+    private quoteInFlightSignature: string | null = null;
+    /** Signature of the pricing inputs the latest quote attempt was made for. */
+    private currentQuoteSignature = signal<string | null>(null);
+    /** Authoritative quote that succeeded AND belongs to the current pricing inputs. */
+    private authoritativeQuote = signal<{ signature: string; total: number; expiresAt: string | null } | null>(null);
+    private fareRequestSequence = 0;
+    negotiationSettings = signal<MarketplaceSettings['negotiation'] | null>(null);
+    effectiveHybridStatus = signal<MarketplaceEffectiveHybridStatus | null>(null);
+
+    shouldShowMarketplaceFare = computed(() => {
+        return this.effectiveHybridStatus()?.enabled === true;
+    });
+
+    /**
+     * The single invariant that authorises marketplace continuation, payment and booking
+     * submission. A failed, missing, zero, non-finite, mismatched or stale quote can never
+     * satisfy it, so a failed quote can never become a legitimate £0.00 suggested fare.
+     * This is enforced in the handlers as well as the template, so it cannot be bypassed
+     * by stale UI state or a programmatic click.
+     */
+    quoteValid = computed(() => {
+        const quote = this.authoritativeQuote();
+        if (!quote) return false;
+        if (this.fareCalculating() || this.fareCalculationError()) return false;
+        if (quote.signature !== this.currentQuoteSignature()) return false;
+        const estimate = this.fareEstimate();
+        if (!estimate) return false;
+        const total = Number(estimate.total);
+        if (!Number.isFinite(total) || total <= 0) return false;
+        if (quote.expiresAt && Date.parse(quote.expiresAt) <= Date.now()) return false;
+        return true;
+    });
 
     usesItemListMode = computed(() => {
         if (this.type !== ServiceTypeEnum.ERRAND) return false;
@@ -976,8 +1647,23 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         if (this.type !== ServiceTypeEnum.ERRAND) return 0;
         if (!this.usesItemListMode()) return 0;
 
-        const extraItems = Math.max(0, this.itemCount() - 1);
-        return this.toMoney(extraItems * 0.75);
+        const config = this.pricingConfig.getConfig(this.getServiceSlug());
+        const freeItems = Math.max(0, Math.round(config.freeIncludedItems ?? 1));
+        const extraItemFee = config.extraItemFee ?? 0.75;
+        const extraItems = Math.max(0, this.itemCount() - freeItems);
+        return this.toMoney(extraItems * extraItemFee);
+    });
+
+    largeShoppingSurcharge = computed(() => {
+        if (this.type !== ServiceTypeEnum.ERRAND) return 0;
+        if (!this.usesBudgetMode()) return 0;
+
+        const config = this.pricingConfig.getConfig(this.getServiceSlug());
+        const threshold = config.largeShoppingThreshold || 50;
+        if (this.budgetValue() > threshold) {
+            return this.toMoney(config.largeShoppingSurcharge || 0);
+        }
+        return 0;
     });
 
     driverItemCharge = computed(() => {
@@ -992,17 +1678,45 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return this.toMoney(this.fareEstimate()?.total || 0);
     });
 
+    // Discount codes: the server application is bound to the CURRENT quote
+    // reference — a quote refresh (new lastQuoteReference) invalidates the
+    // applied discount automatically, so a stale code can never discount a
+    // different fare.
+    discountCodeInput = signal('');
+    appliedDiscount = signal<{ code: string; discountMinor: number; campaignId: string; quoteReference: string } | null>(null);
+    discountBusy = signal(false);
+    discountError = signal('');
+
+    effectiveDiscount = computed(() => {
+        const d = this.appliedDiscount();
+        return d && d.quoteReference === this.lastQuoteReference ? d : null;
+    });
+    effectiveDiscountMinor = computed(() => this.effectiveDiscount()?.discountMinor ?? 0);
+
+    /** Customer payable after a platform-funded campaign discount. */
+    payableAfterDiscount = computed(() => {
+        return this.toMoney(Math.max(0, this.cardChargeRequired() - this.effectiveDiscountMinor() / 100));
+    });
+
+    /** A current authoritative quote exists, so a discount code can be bound to it. */
+    hasCurrentQuote = computed(() => !!this.lastQuoteReference);
+
     walletBalance = computed(() => {
-        return this.toMoney(this.walletService.wallet()?.available_balance || 0);
+        const wallet=this.walletService.wallet();
+        const bookingCurrency=this.quotedMarket()?.currency || this.config.currencyCode;
+        if(String(wallet?.currency_code || 'GBP').toUpperCase()!==bookingCurrency)return 0;
+        return this.toMoney(wallet?.available_balance || 0);
     });
 
     walletPaymentRequired = computed(() => {
         return this.toMoney(this.cardChargeRequired() + this.walletBudgetRequired());
     });
 
+    paymentChoice = signal<'card' | 'wallet'>('card');
+
     walletCoversPayment = computed(() => {
         const required = this.walletPaymentRequired();
-        return required > 0 && this.walletBalance() >= required;
+        return this.paymentChoice() === 'wallet' && required > 0 && this.walletBalance() >= required;
     });
 
     walletShortfall = computed(() => {
@@ -1022,12 +1736,30 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return false;
         }
 
+        // A failed, missing, zero, non-finite, mismatched or stale quote can never authorise
+        // progress, so the marketplace CTA cannot appear enabled on a £0.00/missing fare.
+        if (!this.quoteValid()) {
+            return false;
+        }
+
+        if (this.shouldShowMarketplaceFare()) {
+            return true;
+        }
+
         if (this.cardFallbackRequired()) {
-            return this.cardReady() && this.cardComplete();
+            if(!this.stripeJourney())return false;
+            return !!this.selectedSavedCard() || (this.cardReady() && this.cardComplete());
         }
 
         return this.walletPaymentRequired() > 0;
     });
+
+    // Customer no-show disclosure — driven ENTIRELY by the server-issued quote
+    // terms (`response.noShow`). No client override controls booking terms.
+    quoteNoShow = signal<GlobalAiPricingNoShowTerms | null>(null);
+    showNoShowDisclosure = computed(() => !!this.quoteNoShow() && !this.shouldShowMarketplaceFare());
+    noShowFeeMinor = computed(() => this.quoteNoShow()?.feeMinor ?? 0);
+    noShowFeeDisplay = computed(() => this.formatRequestCurrency(this.noShowFeeMinor() / 100));
 
     moveSizes = signal([
         { id: 'small', label: 'Small (Few items)', icon: 'cube-outline' },
@@ -1039,6 +1771,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private pickupSearch$ = new Subject<string>();
     private dropoffSearch$ = new Subject<string>();
     private lastBookingTime = 0;
+    private lastResolvedType: ServiceTypeEnum | null = null;
+    private lastFreshRequest:string|null=null;
     readonly passengerOptions = [1, 2, 3, 4, 5, 6, 7];
 
     constructor() {
@@ -1058,44 +1792,148 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             carOutline,
             cubeOutline,
             busOutline,
+            bicycleOutline,
             helpCircleOutline,
             searchOutline,
             swapHorizontalOutline,
+            closeCircle,
             closeCircleOutline,
+            closeOutline,
             walletOutline,
             alertCircle,
             homeOutline,
             storefrontOutline,
             personOutline,
             callOutline,
-            layersOutline
+            layersOutline,
+            navigateOutline,
+            informationCircleOutline,
+            chevronDownOutline,
+            chevronUpOutline,
+            calendarOutline
         });
     }
 
     ngOnInit() {
-        const typeParam = this.route.snapshot.queryParams['type'];
-        this.type = this.normalizeTypeParam(typeParam);
-
-        this.initForm();
+        // Saved cards are loaded only after the service-country quote is known.
+        timer(0, 30000).pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe(() => { void this.refreshShoppingCapacity(); });
         void this.config.detectRuntimeCountry();
-        void this.loadPricing();
         void this.walletService.fetchWallet();
         void this.bookingService.getHistory();
 
+        this.route.queryParamMap
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe(params => {
+                const fresh=params.get('freshRequest');
+                if(fresh&&fresh!==this.lastFreshRequest){this.lastFreshRequest=fresh;this.lastResolvedType=null;}
+                this.applyRequestedType(params.get('type'), params.get('mode'));
+            });
+
         this.pickupSearch$
-            .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .pipe(debounceTime(650), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
             .subscribe(query => {
                 this.performSearch('pickup', query);
             });
 
         this.dropoffSearch$
-            .pipe(debounceTime(400), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .pipe(debounceTime(650), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
             .subscribe(query => {
                 this.performSearch('dropoff', query);
             });
     }
 
+    private applyRequestedType(typeParam: unknown, modeParam?: unknown): void {
+        const nextType = this.normalizeTypeParam(typeParam);
+        const changed = this.lastResolvedType !== nextType;
+
+        if (!changed) return;
+
+        this.type = nextType;
+        this.lastResolvedType = nextType;
+        this.resetRequestState();
+
+        this.initForm();
+
+        if (nextType === ServiceTypeEnum.ERRAND) {
+            const requestedMode = String(modeParam || '').trim();
+            if (requestedMode === 'quick_buy' || requestedMode === 'collect_deliver' || requestedMode === 'shop_deliver') {
+                this.setErrandMode(requestedMode);
+            }
+        }
+
+        void this.loadPricing();
+        void this.autoPrefillPickupOnce();
+    }
+
+    private async autoPrefillPickupOnce(): Promise<void> {
+        if (this.pickupManuallyChanged() || this.bookingForm?.get('pickup_address')?.value) return;
+
+        this.pickupAutofilling.set(true);
+
+        try {
+            await this.useCurrentLocation('pickup', { silent: true, auto: true });
+        } finally {
+            this.pickupAutofilling.set(false);
+            if (!this.bookingForm?.get('pickup_address')?.value) {
+                this.pickupExpanded.set(true);
+            }
+        }
+    }
+
+    /**
+     * Reset every request-scoped field so a previous request never bleeds into a
+     * new service. Called whenever the route resolves a DIFFERENT service type
+     * (starting a new request). Deliberately does NOT touch authentication,
+     * profile, saved addresses, or any persistent user preference.
+     */
+    private resetRequestState(): void {
+        this.globalAiPricingQuote.startNewRequest();
+        this.quotedMarket.set(null);this.savedCardsOwner=null;this.savedCardsEnabled.set(false);this.savedCards.set([]);this.selectedSavedCard.set(null);
+        // Pricing / route / quote state belongs to the previous request.
+        this.serviceType.set(null);
+        this.fareEstimate.set(null); this.fulfilmentSnapshot.set(null);
+        this.estimatedPrice.set(0);
+        this.routeResult.set(null);
+        this.lastFareBreakdown = null;
+        this.lastQuoteReference = null;
+        this.lastQuoteExpiresAt = null;
+
+        // Invalidate the COMPLETE quote authority/dedupe generation. Clearing the
+        // visible reference is not enough: these fields can otherwise keep the
+        // previous request's consumed quote authoritative and re-submit its
+        // quote_id (23505 idx_jobs_unique_quote_reference).
+        this.lastQuotedSignature = null;
+        this.quoteInFlightSignature = null;
+        this.currentQuoteSignature.set(null);
+        this.authoritativeQuote.set(null);
+        // fareRequestSequence is a MONOTONIC generation counter (++ on every quote
+        // attempt). It is advanced, NOT reset to 0: resetting it would let a late
+        // response from the PREVIOUS request (requestId == N) collide with this
+        // request's generation (N again) and become authoritative. Advancing it
+        // keeps every in-flight response's `requestId !== fareRequestSequence`,
+        // so a stale response can never populate authoritativeQuote /
+        // lastQuoteReference / lastFareBreakdown in this new request.
+        this.fareRequestSequence += 1;
+
+        // Draft locations belong to the previous request. A new request starts
+        // with empty pickup/dropoff (pickup is then re-autofilled from GPS).
+        this.pickupLocation = { source: 'manual', address: '' };
+        this.dropoffLocation = { source: 'manual', address: '' };
+        this.pickupManuallyChanged.set(false);
+
+        // Clear the map presentation (markers + route geometry) without a
+        // browser reload. The MapRenderer rebuild-on-service-change fix is
+        // retained; this removes the previous request's leftover primitives.
+        this.mapComponent?.removeMarker('pickup');
+        this.mapComponent?.removeMarker('dropoff');
+        this.mapComponent?.clearRoute();
+    }
+
     ngOnDestroy() {
+        this.searchDisposed=true;
+        this.addressSearchSubscriptions?.pickup?.unsubscribe();
+        this.addressSearchSubscriptions?.dropoff?.unsubscribe();
         this.cardReady.set(false);
         this.cardComplete.set(false);
         this.paymentProcessing.set(false);
@@ -1113,11 +1951,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     private normalizeTypeParam(value: unknown): ServiceTypeEnum {
         const raw = String(value || '').trim().toLowerCase();
 
-        if (raw === ServiceTypeEnum.ERRAND || raw === 'errand') return ServiceTypeEnum.ERRAND;
+        if (raw === ServiceTypeEnum.ERRAND || raw === 'errand' || raw === 'shop' || raw === 'shopping') return ServiceTypeEnum.ERRAND;
         if (raw === ServiceTypeEnum.DELIVERY || raw === 'delivery' || raw === 'courier' || raw === 'parcel' || raw === 'package') return ServiceTypeEnum.DELIVERY;
-        if (raw === ServiceTypeEnum.VAN || raw === 'van' || raw === 'van-moving' || raw === 'moving') return ServiceTypeEnum.VAN;
+        if (raw === ServiceTypeEnum.VAN || raw === 'van' || raw === 'van-moving' || raw === 'moving' || raw === 'move') return ServiceTypeEnum.VAN;
 
         return ServiceTypeEnum.RIDE;
+    }
+
+    private canonicalServiceSlug(slug: string): string {
+        const raw = String(slug || '').trim().toLowerCase();
+
+        if (['shop', 'shopping', 'errands', 'errand'].includes(raw)) return 'errand';
+        if (['courier', 'parcel', 'package', 'delivery'].includes(raw)) return 'delivery';
+        if (['van', 'moving', 'move', 'van-moving', 'van moving', 'van_moving'].includes(raw)) return 'van-moving';
+        if (['ride', 'rides'].includes(raw)) return 'ride';
+
+        return raw;
     }
 
     private isQuickBuyMode(mode: unknown): mode is ErrandMode {
@@ -1132,11 +1981,108 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.bookingForm.patchValue({ errand_mode: mode });
     }
 
+    private searchLocationPending:Promise<void>|null=null;
+    private searchLocationRetryAt=0;
+    private searchDisposed=false;
+    private addressSearchSubscriptions:Partial<Record<'pickup'|'dropoff',Subscription>>={};
+    private async refreshSearchLocation():Promise<void>{
+        if(this.searchLocationPending)return this.searchLocationPending;
+        this.locatingSearchArea.set(true);
+        this.searchLocationPending=Promise.resolve().then(async()=>{
+            try{
+                const position=await this.locationService.getCurrentPosition();
+                if(this.searchDisposed)return;
+                const point=position?validSearchPoint({lat:position.coords.latitude,lng:position.coords.longitude}):undefined;
+                if(point){this.localSearchGps=point;this.localSearchGpsAt=Date.now();this.searchLocationRetryAt=0;}
+                else this.searchLocationRetryAt=Date.now()+60_000;
+            }catch{this.searchLocationRetryAt=Date.now()+60_000;}
+            finally{this.locatingSearchArea.set(false);this.searchLocationPending=null;}
+        });
+        return this.searchLocationPending;
+    }
+
+    private localSearchGps:{lat:number;lng:number}|null=null;
+    private localSearchGpsAt=0;
+    private searchOrigin(type:'pickup'|'dropoff'):{lat:number;lng:number}|undefined {
+        const age=Date.now()-this.localSearchGpsAt;
+        const gps=age>=0&&age<=120000?this.localSearchGps:null;
+        if(gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180)return gps;
+        const location=type==='pickup'?this.dropoffLocation:this.pickupLocation;
+        if(typeof location.latitude==='number'&&typeof location.longitude==='number'&&Number.isFinite(location.latitude)&&Number.isFinite(location.longitude)&&Math.abs(location.latitude)<=90&&Math.abs(location.longitude)<=180)return {lat:location.latitude,lng:location.longitude};
+        return gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && Math.abs(gps.lat)<=90 && Math.abs(gps.lng)<=180?gps:undefined;
+    }
+
+    popularShopsCollapsed=signal(false);
+    @ViewChild('pickupAddressInput',{read:ElementRef}) private pickupAddressInput?:ElementRef<HTMLElement>;
+    private focusShopPickup():void{
+        this.popularShopsCollapsed.set(true);
+        this.pickupExpanded.set(true);
+        requestAnimationFrame(()=>{
+            const input=this.pickupAddressInput?.nativeElement.querySelector('input');
+            if(!input)return;
+            input.scrollIntoView({behavior:'smooth',block:'center'});
+            input.focus({preventScroll:true});
+        });
+    }
     selectPopularShop(shop: PopularShopPreset): void {
+        this.focusShopPickup();
         const query = shop.query;
+
+        // "Other" (empty query) means the customer wants to type the shop/address
+        // manually. Expand the pickup field instead of prefilling any text so the
+        // original address input chain stays untouched.
+        if (!query) {
+            this.pickupExpanded.set(true);
+            return;
+        }
+
+        this.selectedLocalService.set({
+            categorySlug: 'shop-deliver',
+            categoryName: 'Shop & Deliver',
+            providerName: shop.name,
+            providerLogoUrl: shop.logo,
+            providerAddress: query,
+            countryCode: this.config.currentCountry()?.code || 'GB',
+            source: 'configured-popular-shop'
+        });
         this.bookingForm.patchValue({ pickup_address: query });
         this.onAddressInput('pickup', query);
         this.showPickupResults.set(true);
+    }
+
+    onLocalServiceCategoryChange(category: LocalServiceCategory): void {
+        const current = this.selectedLocalService() || {};
+        this.selectedLocalService.set({
+            ...current,
+            categoryId: category.id,
+            categorySlug: category.categorySlug,
+            categoryName: category.categoryName,
+            countryCode: this.localServiceCountryCode(),
+            source: current['source'] || 'catalogue'
+        });
+    }
+
+    onLocalServiceProviderChange(selection: LocalServiceSelection): void {
+        this.selectedLocalService.set(selection as Record<string, unknown>);
+        const address = String(selection.providerAddress || selection.providerName || '').trim();
+        if (address) {
+            this.bookingForm.patchValue({ pickup_address: address });
+            this.onAddressInput('pickup', address);
+            if (Number.isFinite(Number(selection.providerLatitude)) && Number.isFinite(Number(selection.providerLongitude))) {
+                this.pickupLocation = this.locationService.normalizeLocation(
+                    'map',
+                    { lat: Number(selection.providerLatitude), lng: Number(selection.providerLongitude) },
+                    address
+                );
+                this.updateMarker('pickup');
+                this.updateRoute();
+            }
+        }
+    }
+
+    onLocalServiceCustomProvider(selection: LocalServiceSelection): void {
+        this.selectedLocalService.set(selection as Record<string, unknown>);
+        this.pickupExpanded.set(true);
     }
 
     private parseErrandItems(raw: unknown): string[] {
@@ -1185,12 +2131,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return value ? String(value) : '';
     }
 
+    formatRequestCurrency(amount:number|string|null|undefined):string {
+        return this.config.formatCurrency(amount,this.quotedMarket()?.currency || this.fareEstimate()?.currencyCode || this.config.currencyCode);
+    }
+
     paymentPlanLabel(): string {
         if (this.walletCoversPayment()) {
             return 'Wallet covers this request';
         }
 
-        return 'Card fallback ready';
+        return 'Pay by card';
     }
 
     paymentPlanDescription(): string {
@@ -1199,15 +2149,31 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return 'Your item budget and service estimate will be reserved from wallet before matching a driver.';
             }
 
-            return 'Movabi will reserve the request amount from wallet before matching a driver.';
+            return 'Vaydu will reserve the request amount from wallet before matching a driver.';
         }
 
-        return 'Movabi checks wallet first. Because the balance is lower than this request, card payment is used instead.';
+        return 'Your card will be authorised before matching a driver. Payment is captured after completion; unused authorisation is released.';
+    }
+
+    itemBudgetDescription(): string {
+        if (this.walletCoversPayment()) {
+            return 'This amount will be reserved from your Vaydu Wallet to cover the estimated item purchase. Only the actual amount spent will be charged, and any unused balance will be returned automatically.';
+        }
+
+        if (this.cardFallbackRequired()) {
+            return 'This amount will be authorised on your card to cover the estimated item purchase. Only the actual purchase amount will be charged, and any unused authorised amount will be released by your bank after shopping is completed.';
+        }
+
+        return 'The estimated item purchase amount will be reserved using your selected payment method (Wallet or Card). Only the actual amount spent will be charged, and any unused reserved funds will be released automatically.';
     }
 
     checkoutButtonLabel(): string {
         if (this.submitting()) {
             return 'Processing...';
+        }
+
+        if (this.shouldShowMarketplaceFare() && this.quoteValid()) {
+            return 'Continue to Marketplace Fare';
         }
 
         return this.walletCoversPayment()
@@ -1216,9 +2182,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     paymentSecurityLabel(): string {
+        if (this.shouldShowMarketplaceFare()) {
+            return 'Review and negotiate the fare before payment';
+        }
+
         return this.walletCoversPayment()
-            ? 'Secure wallet reservation via Movabi Pay'
-            : 'Secure card fallback via Movabi Pay';
+            ? 'Secure wallet reservation via Vaydu Pay'
+            : 'Secure card payment via Vaydu Pay';
     }
 
     passengerCount(): number {
@@ -1259,6 +2229,42 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return String(this.bookingForm?.get('package_size')?.value || 'small') as PackageSize;
     }
 
+    packageSizeDisabled(size: PackageSize): boolean {
+        if (this.vehicleClass() !== 'bike') return false;
+        const snap = this.fulfilmentSnapshot();
+        // No quote yet: allow the customer to pick any size and request a fresh quote.
+        if (!snap) return false;
+        const bikeLimits = snap['bike_limits'] as Record<string, { max_kg: number; max_cm: number }> | null;
+        const requirements = (snap['package_size_requirements'] as Record<string, { kg: number; cm: number }> | undefined) || {
+            small: { kg: 1, cm: 40 },
+            medium: { kg: 15, cm: 60 },
+            large: { kg: 25, cm: 100 }
+        };
+        if (!bikeLimits) return true;
+        const req = requirements[size];
+        if (!req) return false;
+        return !Object.values(bikeLimits).some(limit => (limit?.max_kg ?? 0) >= req.kg && (limit?.max_cm ?? 0) >= req.cm);
+    }
+
+    bikeLimitText(): string | null {
+        if (this.vehicleClass() !== 'bike') return null;
+        const snap = this.fulfilmentSnapshot();
+        if (!snap) return null;
+        const bikeLimits = snap['bike_limits'] as Record<string, { max_kg: number; max_cm: number }> | null;
+        if (!bikeLimits || !Object.keys(bikeLimits).length) return 'Bike delivery is not configured for this market';
+        const maxKg = Math.max(...Object.values(bikeLimits).map(l => l?.max_kg ?? 0));
+        const maxCm = Math.max(...Object.values(bikeLimits).map(l => l?.max_cm ?? 0));
+        return `Bike parcels up to ${maxKg}kg and ${maxCm}cm in this market`;
+    }
+
+    bikeUnavailableMessage(): string | null {
+        if (this.vehicleClass() !== 'bike') return null;
+        const snap = this.fulfilmentSnapshot();
+        if (!snap) return null;
+        if (snap['bike_available'] === false) return String(snap['bike_unavailable_reason'] || 'No bike courier is available for this parcel size.');
+        return null;
+    }
+
     vehicleOptions(): Array<{ id: VehicleClass; label: string; helper: string; icon: string }> {
         switch (this.type) {
             case ServiceTypeEnum.RIDE:
@@ -1269,13 +2275,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ];
             case ServiceTypeEnum.DELIVERY:
                 return [
-                    { id: 'bike', label: 'Bike', helper: 'Fast & small', icon: 'navigate' },
+                    { id: 'bike', label: 'Bike', helper: 'Fast & small', icon: 'bicycle-outline' },
                     { id: 'car', label: 'Car', helper: 'Medium items', icon: 'car-outline' },
                     { id: 'small_van', label: 'Small Van', helper: 'Bulky items', icon: 'bus-outline' }
                 ];
             case ServiceTypeEnum.ERRAND:
                 return [
-                    { id: 'bike', label: 'Bike', helper: 'Small errands', icon: 'navigate' },
+                    { id: 'bike', label: 'Bike', helper: 'Small errands', icon: 'bicycle-outline' },
                     { id: 'car', label: 'Car', helper: 'More bags', icon: 'car-outline' },
                     { id: 'small_van', label: 'Small Van', helper: 'Large pickup', icon: 'bus-outline' }
                 ];
@@ -1343,7 +2349,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private defaultVehicleClass(): VehicleClass {
         if (this.type === ServiceTypeEnum.RIDE) return 'standard';
-        if (this.type === ServiceTypeEnum.DELIVERY || this.type === ServiceTypeEnum.ERRAND) return 'bike';
+        if (this.type === ServiceTypeEnum.DELIVERY || this.type === ServiceTypeEnum.ERRAND) return 'car';
         return 'small_van';
     }
 
@@ -1422,7 +2428,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private optionalPhoneValidator(control: AbstractControl) {
         const raw = String(control.value || '').trim();
-        if (!raw) return null;
+        if (!raw || raw === '0') return null;
 
         if (!/^[+\d\s\-()]+$/.test(raw)) {
             return { invalidPhone: true };
@@ -1438,6 +2444,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     private async initStripeElements() {
+        if(!this.stripeJourney())return;
         if (this.cardMounted || this.stripeInitializing) return;
         if (!this.cardElementHost?.nativeElement) return;
 
@@ -1500,25 +2507,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
-    async useCurrentLocation(type: 'pickup' | 'dropoff') {
-        const loading = await this.loadingCtrl.create({
-            message: 'Locating...',
-            spinner: 'crescent'
-        });
+    async useCurrentLocation(type: 'pickup' | 'dropoff', options: { silent?: boolean; auto?: boolean } = {}) {
+        if (options.auto && type === 'pickup' && this.pickupManuallyChanged()) return;
 
-        await loading.present();
+        const loading = options.silent
+            ? null
+            : await this.loadingCtrl.create({
+                message: 'Locating...',
+                spinner: 'crescent'
+            });
+
+        await loading?.present();
 
         try {
             const pos = await this.locationService.getCurrentPosition();
 
             if (!pos) {
-                await loading.dismiss();
-                const toast = await this.toastCtrl.create({
-                    message: `Location is off, so Movabi will use ${this.locationService.getFallbackAddressLabel()} for search. You can still type or select any address.`,
-                    duration: 3500,
-                    color: 'warning'
-                });
-                await toast.present();
+                await loading?.dismiss();
+
+                if (!options.silent) {
+                    const toast = await this.toastCtrl.create({
+                        message: `Location is off, so Vaydu will use ${this.locationService.getFallbackAddressLabel()} for search. You can still type or select any address.`,
+                        duration: 3500,
+                        color: 'warning'
+                    });
+                    await toast.present();
+                }
                 return;
             }
 
@@ -1527,17 +2541,21 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 lng: pos.coords.longitude
             };
 
+            this.localSearchGps=coords;this.localSearchGpsAt=Date.now();
             this.geocoding.reverseGeocode(coords.lat, coords.lng).subscribe({
                 next: address => {
-                    void loading.dismiss();
+                    void loading?.dismiss();
 
                     const finalAddress = address || 'Current Location';
 
                     if (type === 'pickup') {
+                        if (options.auto && this.pickupManuallyChanged()) return;
+                        this.finishAddressSearch('pickup');
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
                     } else {
+                        this.finishAddressSearch('dropoff');
                         this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('dropoff');
@@ -1546,16 +2564,19 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     this.updateRoute();
                 },
                 error: (error) => {
-                    void loading.dismiss();
+                    void loading?.dismiss();
                     console.warn('[BookingRequest] Reverse geocoding failed:', error);
 
                     const finalAddress = 'Current Location';
 
                     if (type === 'pickup') {
+                        if (options.auto && this.pickupManuallyChanged()) return;
+                        this.finishAddressSearch('pickup');
                         this.pickupLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ pickup_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('pickup');
                     } else {
+                        this.finishAddressSearch('dropoff');
                         this.dropoffLocation = this.locationService.normalizeLocation('gps', coords, finalAddress);
                         this.bookingForm.patchValue({ dropoff_address: finalAddress }, { emitEvent: false });
                         this.updateMarker('dropoff');
@@ -1566,7 +2587,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             });
         } catch (error) {
             console.error('[BookingRequest] useCurrentLocation failed:', error);
-            await loading.dismiss();
+            await loading?.dismiss();
         }
     }
 
@@ -1595,8 +2616,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     items_list: [''],
                     estimated_budget: [0],
                     errand_mode: ['collect_deliver', Validators.required],
-                    vehicle_class: ['bike', Validators.required],
-                    customer_phone: [this.auth.currentUser()?.phone || '', [Validators.required, this.requiredPhoneValidator.bind(this)]],
+                    vehicle_class: ['car', Validators.required],
                     recipient_phone: ['', this.optionalPhoneValidator.bind(this)],
                     recipient_name: [''],
                     substitution_rule: ['contact_me']
@@ -1607,7 +2627,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm = this.fb.group({
                     ...baseFields,
                     dropoff_address: ['', Validators.required],
-                    vehicle_class: ['bike', Validators.required],
+                    vehicle_class: ['car', Validators.required],
                     package_size: ['small', Validators.required],
                     recipient_name: ['', Validators.required],
                     recipient_phone: ['', [Validators.required, this.requiredPhoneValidator.bind(this)]],
@@ -1662,7 +2682,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.formValidSignal.set(this.bookingForm.valid);
 
         this.bookingForm.valueChanges
-            .pipe(takeUntilDestroyed(this.destroyRef))
+            .pipe(
+                debounceTime(400),
+                distinctUntilChanged(),
+                takeUntilDestroyed(this.destroyRef)
+            )
             .subscribe(() => {
                 this.syncFormSignals(this.bookingForm.getRawValue());
                 this.formValidSignal.set(this.bookingForm.valid);
@@ -1690,6 +2714,13 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
         const items = quickBuyMode ? values['items_list'] : '';
         this.itemCount.set(this.getErrandItemCount(items));
+    }
+
+    togglePickupExpanded(): void {
+        this.pickupExpanded.update(value => !value);
+        if (!this.pickupExpanded()) {
+            this.showPickupResults.set(false);
+        }
     }
 
     private applyErrandModeRules(mode: ErrandMode) {
@@ -1723,8 +2754,37 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         budgetControl.updateValueAndValidity({ emitEvent: false });
     }
 
+    private pickupCountryCache=new Map<string,string>();
+    private rememberPickupCountry(lat:number,lng:number,code:string):void {
+        const country=resolvedAddressCountry(code,this.config.countries());
+        this.config.setCountry(country.code);
+        if(this.pickupCountryCache.size>=50)this.pickupCountryCache.clear();
+        this.pickupCountryCache.set(JSON.stringify([lat,lng]),country.code);
+    }
+    private async resolvePickupCountry():Promise<void>{
+        const lat=this.pickupLocation.latitude,lng=this.pickupLocation.longitude;
+        if(typeof lat!=='number'||typeof lng!=='number')throw Error('Choose a precise pickup address.');
+        const key=JSON.stringify([lat,lng]);
+        const code=this.pickupCountryCache.get(key)||await firstValueFrom(this.geocoding.countryForPoint(lat,lng));
+        if(this.pickupLocation.latitude!==lat||this.pickupLocation.longitude!==lng)throw Error('The pickup changed. Please wait for a new quote.');
+        this.rememberPickupCountry(lat,lng,code);
+    }
+    clearAddress(type: 'pickup' | 'dropoff'): void {
+        this.bookingForm.patchValue({ [type === 'pickup' ? 'pickup_address' : 'dropoff_address']: '' });
+        this.onAddressInput(type, '');
+    }
+
     onAddressInput(type: 'pickup' | 'dropoff', query: string) {
+        this.addressSearchSubscriptions?.[type]?.unsubscribe();
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope).set(10);
+        (type==='pickup'?this.pickupSearchError:this.dropoffSearchError).set('');
+        (type==='pickup'?this.pickupSearchText:this.dropoffSearchText).set(query || '');
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(String(query || '').trim().length>=3);
+        (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
+        (type==='pickup'?this.showPickupResults:this.showDropoffResults).set(true);
         if (type === 'pickup') {
+            this.pickupManuallyChanged.set(true);
             this.pickupLocation.address = query;
             this.pickupLocation.latitude = undefined;
             this.pickupLocation.longitude = undefined;
@@ -1741,8 +2801,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.clearRouteAndFare();
     }
 
-    private performSearch(type: 'pickup' | 'dropoff', query: string) {
+    private performSearch(type: 'pickup' | 'dropoff', query: string, additionalListings=false, locationChecked=false) {
+        this.addressSearchSubscriptions?.[type]?.unsubscribe();
+        const version=this.addressSearchVersion[type];
+        const loading=type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading;
         if (!query || query.length < 3) {
+            loading.set(false);
             if (type === 'pickup') {
                 this.pickupResults.set([]);
                 this.showPickupResults.set(this.recentLocationResults('pickup').length > 0);
@@ -1753,19 +2817,90 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return;
         }
 
-        this.geocoding.autocomplete(this.withLocationContext(type, query)).subscribe(results => {
-            if (type === 'pickup') {
-                this.pickupResults.set(results);
-                this.showPickupResults.set(true);
-            } else {
-                this.dropoffResults.set(results);
-                this.showDropoffResults.set(true);
-            }
-        });
+        const origin=this.searchOrigin(type),scope=(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)();
+        const searchError=type==='pickup'?this.pickupSearchError:this.dropoffSearchError;
+        searchError.set('');
+        const text=this.withLocationContext(type,query);
+        const plan=this.geocoding.searchPlan(text,origin,{scope});
+        const gpsAge=Date.now()-this.localSearchGpsAt;
+        const freshGps=validSearchPoint(this.localSearchGps) && gpsAge>=0 && gpsAge<=120000;
+        if(plan.localPlace && plan.radiusKm && !freshGps && !locationChecked && Date.now()>=(this.searchLocationRetryAt || 0)){
+            loading.set(true);
+            void this.refreshSearchLocation().then(()=>{
+                if(!this.searchDisposed && version===this.addressSearchVersion[type])this.performSearch(type,query,additionalListings,true);
+            });
+            return;
+        }
+        const primary=this.geocoding.autocomplete(text,origin,{scope,strict:true,...(additionalListings?{additionalListings:true}:{})});
+        const request=automaticPlaceSearch(primary,()=>this.geocoding.autocomplete(text,origin,{scope,strict:true,additionalListings:true}),!additionalListings && !!plan.localPlace && !!plan.radiusKm && !!origin);
+        this.addressSearchSubscriptions ??={};
+        this.addressSearchSubscriptions[type]=request.subscribe({next:results=>{
+            const current=type==='pickup'?this.pickupLocation.address:this.dropoffLocation.address;
+            if(current!==query||version!==this.addressSearchVersion[type])return;
+            loading.set(false);
+            (type==='pickup'?this.pickupResults:this.dropoffResults).set(results);
+            (type==='pickup'?this.showPickupResults:this.showDropoffResults).set(true);
+        },error:error=>{
+            if(version!==this.addressSearchVersion[type])return;
+            loading.set(false);searchError.set(error?.message || 'Search is unavailable. Please retry.');
+            (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
+            (type==='pickup'?this.showPickupResults:this.showDropoffResults).set(true);
+        }});
+    }
+
+    placeResultDistance(result:AutocompleteResult):string {
+        const distance=result.distanceKm;
+        if(typeof distance!=='number'||!Number.isFinite(distance)||distance<0)return '';
+        return distance<1?`${Math.max(1,Math.round(distance*1000))} m`:`${distance.toFixed(distance<10?1:0)} km`;
+    }
+    placeResultIcon(result:AutocompleteResult):string {
+        return ['poi','venue'].includes(result.placeType || '')?'storefront-outline':result.placeType==='address'?'home-outline':'location-outline';
+    }
+
+    searchArea(type:'pickup'|'dropoff'):PlaceSearchPlan {
+        return this.geocoding.searchPlan((type==='pickup'?this.pickupSearchText:this.dropoffSearchText)(),this.searchOrigin(type),{scope:(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)()});
+    }
+    setSearchScope(type:'pickup'|'dropoff',scope:PlaceSearchScope):void {
+        (type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope).set(scope);
+        this.retryPlaceSearch(type);
+    }
+    retryPlaceSearch(type:'pickup'|'dropoff'):void {
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(true);
+        (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
+        this.performSearch(type,(type==='pickup'?this.pickupSearchText:this.dropoffSearchText)());
+    }
+    searchAdditionalListings(type:'pickup'|'dropoff'):void {
+        if((type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading)())return;
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(true);
+        this.performSearch(type,(type==='pickup'?this.pickupSearchText:this.dropoffSearchText)(),true);
+    }
+
+    async locatePlaceSearch(type:'pickup'|'dropoff'):Promise<void> {
+        if(this.locatingSearchArea())return;
+        this.locatingSearchArea.set(true);
+        const version=this.addressSearchVersion[type];
+        try{
+            const position=await this.locationService.getCurrentPosition();
+            if(version!==this.addressSearchVersion[type])return;
+            const point=position?{lat:position.coords.latitude,lng:position.coords.longitude}:null;
+            if(!validSearchPoint(point))throw Error('Location is unavailable. Enable location access or enter a full address/town.');
+            this.localSearchGps=validSearchPoint(point)!;this.localSearchGpsAt=Date.now();
+            // This locates the search area; it does not replace the typed shop.
+            this.retryPlaceSearch(type);
+        }catch(error:any){if(version===this.addressSearchVersion[type])(type==='pickup'?this.pickupSearchError:this.dropoffSearchError).set(error?.message || 'Could not get your location.');}
+        finally{this.locatingSearchArea.set(false);}
+    }
+
+    searchTrayFocusOut(type:'pickup'|'dropoff',event:FocusEvent):void {
+        const next=event.relatedTarget as HTMLElement|null;
+        if(next && !next.closest('.address-results'))(type==='pickup'?this.showPickupResults:this.showDropoffResults).set(false);
     }
 
     hideResults(type: 'pickup' | 'dropoff') {
         setTimeout(() => {
+            if(typeof document!=='undefined' && document.activeElement?.closest('.address-results'))return;
             if (type === 'pickup') {
                 this.showPickupResults.set(false);
             } else {
@@ -1776,8 +2911,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }, 250);
     }
 
+    private finishAddressSearch(type:'pickup'|'dropoff'):void {
+        this.addressSearchSubscriptions?.[type]?.unsubscribe();
+        this.addressSearchVersion[type]++;
+        (type==='pickup'?this.pickupSearchText:this.dropoffSearchText).set('');
+        (type==='pickup'?this.pickupSearchLoading:this.dropoffSearchLoading).set(false);
+        (type==='pickup'?this.pickupResults:this.dropoffResults).set([]);
+        (type==='pickup'?this.showPickupResults:this.showDropoffResults).set(false);
+    }
+
     selectResult(type: 'pickup' | 'dropoff', result: AutocompleteResult) {
+        if(type==='pickup'&&result.countryCode)this.rememberPickupCountry(result.lat,result.lng,result.countryCode);
+        this.finishAddressSearch(type);
         if (type === 'pickup') {
+            this.pickupManuallyChanged.set(true);
             this.pickupLocation = this.locationService.normalizeLocation(
                 'map',
                 { lat: result.lat, lng: result.lng },
@@ -1810,14 +2957,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const query = String(this.bookingForm.get(controlName)?.value || loc.address || '').trim();
 
         if (query.length < 3) return;
+        const plan=this.geocoding.searchPlan(query,this.searchOrigin(type),{scope:(type==='pickup'?this.pickupSearchScope:this.dropoffSearchScope)()});
+        if(plan.localPlace || plan.namedLandmark)return;
+        const version=this.addressSearchVersion[type];
 
         try {
-            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query)));
-            const result = results?.[0];
+            const results = await firstValueFrom(this.geocoding.geocodeAddress(this.withLocationContext(type, query),this.searchOrigin(type)));
+            if(version!==this.addressSearchVersion[type] || String(this.bookingForm.get(controlName)?.value || '').trim()!==query)return;
+            const result = results?.length===1?results[0]:null;
 
             if (!result || !Number.isFinite(Number(result.lat)) || !Number.isFinite(Number(result.lng))) {
                 return;
             }
+
+            const requestedNumber=query.match(/^(\d+[a-z]?)\s+/i)?.[1]?.toLowerCase();
+            const returnedNumber=result.label?.split(',')[0].trim().match(/^(\d+[a-z]?)\s+/i)?.[1]?.toLowerCase();
+            if(requestedNumber && requestedNumber!==returnedNumber)return;
 
             const normalized = this.locationService.normalizeLocation(
                 'map',
@@ -1826,6 +2981,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             );
 
             if (type === 'pickup') {
+                if(result.countryCode)this.rememberPickupCountry(Number(result.lat),Number(result.lng),result.countryCode);
                 this.pickupLocation = normalized;
                 this.pickupResults.set([]);
                 this.showPickupResults.set(false);
@@ -1837,6 +2993,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 this.bookingForm.patchValue({ dropoff_address: normalized.address }, { emitEvent: false });
             }
 
+            this.finishAddressSearch(type);
             this.updateMarker(type);
             this.fitMapToSelectedLocations();
             this.updateRoute();
@@ -1845,32 +3002,10 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
-    private withLocationContext(type: 'pickup' | 'dropoff', query: string): string {
-        const cleanQuery = String(query || '').replace(/\s+/g, ' ').trim();
-
-        if (!cleanQuery || cleanQuery.includes(',')) return cleanQuery;
-
-        const contextAddress = type === 'dropoff'
-            ? this.pickupLocation.address
-            : this.dropoffLocation.address;
-        const locality = this.extractLocality(contextAddress);
-
-        if (!locality || cleanQuery.toLowerCase().includes(locality.toLowerCase())) {
-            return cleanQuery;
-        }
-
-        return `${cleanQuery}, ${locality}`;
-    }
-
-    private extractLocality(address?: string): string {
-        const parts = String(address || '')
-            .split(',')
-            .map(part => part.trim())
-            .filter(Boolean);
-
-        if (parts.length < 2) return '';
-
-        return parts[1];
+    private withLocationContext(_type: 'pickup' | 'dropoff', query: string): string {
+        // Country and proximity are structured provider parameters. Never append
+        // an inferred street/country as if the customer had typed a locality.
+        return String(query || '').replace(/\s+/g,' ').trim();
     }
 
     private updateMarker(kind: 'pickup' | 'dropoff') {
@@ -1893,6 +3028,20 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
+    private bookingMapPadding(): { top: number; bottom: number; left: number; right: number } {
+        this.mapComponent?.resize();
+        const rect = this.bookingMapHost?.nativeElement.getBoundingClientRect();
+        const height = Math.max(1, rect?.height || 220);
+        const width = Math.max(1, rect?.width || 320);
+        // Leave room for marker labels and the controls without exhausting a short map.
+        return {
+            top: Math.min(64, Math.floor(height * 0.30)),
+            bottom: Math.min(48, Math.floor(height * 0.22)),
+            left: Math.min(36, Math.floor(width * 0.12)),
+            right: Math.min(60, Math.floor(width * 0.20))
+        };
+    }
+
     private fitMapToSelectedLocations() {
         const pickupReady = this.pickupLocation.latitude && this.pickupLocation.longitude;
         const dropoffReady = this.dropoffLocation.latitude && this.dropoffLocation.longitude;
@@ -1901,7 +3050,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const bounds = this.getSelectedLocationBounds();
             if (bounds) {
                 this.mapComponent?.fitBounds(bounds, {
-                    padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                    padding: this.bookingMapPadding(),
                     maxZoom: 15
                 });
             }
@@ -1950,7 +3099,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                         const bounds = this.getSelectedLocationBounds();
                         if (bounds) {
                             this.mapComponent.fitBounds(bounds, {
-                                padding: { top: 48, bottom: 88, left: 36, right: 36 },
+                                padding: this.bookingMapPadding(),
                                 maxZoom: 15
                             });
                         }
@@ -1971,7 +3120,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private clearRouteAndFare() {
         this.routeResult.set(null);
-        this.fareEstimate.set(null);
+        this.fareEstimate.set(null); this.fulfilmentSnapshot.set(null);
         this.estimatedPrice.set(0);
         this.mapComponent?.clearRoute();
     }
@@ -2035,12 +3184,25 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         const types = await this.bookingService.getServiceTypes();
         const slug = this.getServiceSlug();
 
+        try {
+            const marketplaceSettings = await this.marketplaceConfig.loadSettings();
+            this.negotiationSettings.set(marketplaceSettings.negotiation);
+            this.effectiveHybridStatus.set(await this.marketplaceConfig.getEffectiveHybridStatus(slug));
+        } catch (e) {
+            console.warn('[BookingRequest] Could not load marketplace settings', e);
+            this.effectiveHybridStatus.set(null);
+        }
+
         const selected = types.find((t: ServiceType) => {
             const serviceSlug = String((t as any).slug || (t as any).name || '').toLowerCase();
+            const canonicalCandidate = this.canonicalServiceSlug(serviceSlug);
+            const canonicalRequested = this.canonicalServiceSlug(slug);
 
             if (serviceSlug === slug) return true;
+            if (canonicalCandidate === canonicalRequested) return true;
             if (slug === 'van-moving' && (serviceSlug === 'van' || serviceSlug === 'van moving')) return true;
             if (slug === 'delivery' && ['courier', 'package', 'parcel', 'delivery'].includes(serviceSlug)) return true;
+            if (slug === 'errand' && ['shop', 'shopping', 'errand', 'errands'].includes(serviceSlug)) return true;
 
             return false;
         });
@@ -2048,6 +3210,12 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         console.log('AVAILABLE SERVICE TYPES', types);
         console.log('REQUESTED SLUG', slug);
         console.log('SELECTED SERVICE TYPE', selected);
+        console.log('[BookingRequest] resolved service type', {
+            requestedType: this.type,
+            requestedSlug: slug,
+            selectedServiceTypeSlug: selected?.slug || selected?.name || null,
+            resolvedServiceType: selected || null
+        });
 
         if (selected) {
             this.serviceType.set(selected);
@@ -2056,139 +3224,238 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         }
     }
 
+    /**
+     * Fetches the customer's fare estimate from the authoritative backend
+     * pricing pipeline (GlobalAiPricingService -> PricingService ->
+     * MarketPricingService). This page never re-derives fare-affecting
+     * numbers itself - it only sends booking inputs and displays exactly
+     * what the backend returns.
+     */
     private async recalculateFare() {
         const route = this.routeResult();
         const serviceSlug = this.getServiceSlug();
         const formVal = this.bookingForm?.getRawValue?.() || this.bookingForm?.value || {};
 
-        if (!this.hasConfirmedRoute(route)) {
-            this.fareEstimate.set(null);
+        if (!this.hasConfirmedRoute(route) || !this.pickupLocation.latitude || !this.pickupLocation.longitude) {
+            this.fareEstimate.set(null); this.fulfilmentSnapshot.set(null);
             this.estimatedPrice.set(0);
+            this.lastFareBreakdown = null;
+            this.fareCalculating.set(false);
+            this.fareCalculationError.set(null);
             return;
         }
 
+        try{await this.resolvePickupCountry();}catch(error:any){
+            this.fareEstimate.set(null); this.fulfilmentSnapshot.set(null);this.estimatedPrice.set(0);this.authoritativeQuote.set(null);
+            this.fareCalculating.set(false);this.fareCalculationError.set(error?.message||'Could not identify the pickup country. Please choose an address.');return;
+        }
+        if(this.routeResult()!==route)return;
         const distanceKm = this.toMoney((route?.distanceMeters || 0) / 1000);
         const durationMinutes = this.toMoney((route?.durationSeconds || 0) / 60);
 
-        let fixedFare = 0;
+        const countryCode = this.config.currentCountry()?.code || 'GB';
+        const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
 
-        if (distanceKm > 0) {
-            fixedFare = await this.getFixedFareBandPrice(
-                serviceSlug,
-                distanceKm,
-                this.config.currentCountry()?.code || 'GB',
-                this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP'
-            );
-        }
-
-        const localEstimate = this.fareCalculator.calculateFare({
-            serviceType: serviceSlug,
-            distanceMeters: route?.distanceMeters || 0,
-            durationSeconds: route?.durationSeconds || 0,
-            basePriceOverride: this.serviceType()?.base_price,
-            surgeMultiplier: 1,
-            errandDetails: serviceSlug === 'errand'
-                ? { mode: formVal.errand_mode }
-                : null,
-            moveDetails: serviceSlug === 'van-moving'
-                ? {
-                    size: formVal.size,
-                    helperCount: formVal.helper_count,
-                    stairsInvolved: formVal.stairs_involved,
-                    packingAssistance: formVal.packing_assistance,
-                    fragileItems: formVal.fragile_items
-                }
-                : null
-        });
-
-        const baseTotal = fixedFare > 0
-            ? fixedFare
-            : this.toMoney(localEstimate.total);
-
-        const baseServiceFee =
-            serviceSlug === 'errand'
-                ? this.toMoney(baseTotal >= 25 ? 1.5 : 1.0)
-                : this.toMoney(localEstimate.serviceFee || 0);
-
-        const baseFare = this.toMoney(Math.max(0, baseTotal - baseServiceFee));
-
-        const extraDriverCharge =
-            serviceSlug === 'errand' && this.usesItemListMode()
-                ? this.driverItemCharge()
-                : 0;
-
-        const extraPlatformCharge =
-            serviceSlug === 'errand' && this.usesItemListMode()
-                ? this.platformItemCharge()
-                : 0;
-
-        const serviceOptionSurcharge = this.vehicleSurcharge(serviceSlug);
-        const subtotal = this.toMoney(baseFare + extraDriverCharge + serviceOptionSurcharge);
-        const serviceFee = this.toMoney(baseServiceFee + extraPlatformCharge);
-        const finalTotal = this.toMoney(subtotal + serviceFee);
-
-        const estimate: FareEstimate = {
-            ...localEstimate,
-            subtotal,
-            serviceFee,
-            total: finalTotal,
-            minimumFareApplied: localEstimate.minimumFareApplied || fixedFare > 0
-        };
-
-        this.fareEstimate.set(estimate);
-        this.estimatedPrice.set(estimate.total);
-
-        console.log('[BookingRequest] fare estimate', {
+        const quoteRequest: GlobalAiPricingQuoteRequest = {
+            lat: this.pickupLocation.latitude,
+            lng: this.pickupLocation.longitude,
+            dropoffLat: this.dropoffLocation.latitude ?? null,
+            dropoffLng: this.dropoffLocation.longitude ?? null,
             serviceSlug,
             distanceKm,
             durationMinutes,
-            fixedFare,
-            serviceOptionSurcharge,
+            countryCode,
+            currencyCode,
+            vehicleClass: serviceSlug === 'ride' || serviceSlug === 'delivery' || serviceSlug === 'errand'
+                ? this.vehicleClass()
+                : null,
             passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
-            vehicleClass: this.vehicleClass(),
-            packageSize: serviceSlug === 'delivery' ? this.packageSize() : undefined,
-            subtotal,
-            serviceFee,
-            finalTotal
-        });
-    }
+            packageSize: serviceSlug === 'delivery' ? this.packageSize() : null,
+            itemCount: serviceSlug === 'errand' && this.usesItemListMode() ? this.itemCount() : undefined,
+            errandMode: serviceSlug === 'errand' ? (this.usesBudgetMode() ? 'budget' : 'items') : null,
+            budget: serviceSlug === 'errand' && this.usesBudgetMode() ? this.budgetValue() : undefined,
+            moveDetails: serviceSlug === 'van-moving'
+                ? {
+                    size: formVal.size,
+                    helperCount: Number(formVal.helper_count) || 0,
+                    stairsInvolved: !!formVal.stairs_involved,
+                    packingAssistance: !!formVal.packing_assistance,
+                    fragileItems: !!formVal.fragile_items
+                }
+                : null
+        };
 
-    private async getFixedFareBandPrice(
-        serviceType: ServiceTypeSlug,
-        distanceKm: number,
-        countryCode: string,
-        currencyCode: string
-    ): Promise<number> {
-        if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
+        // ONE authoritative dedupe mechanism for every trigger that reaches this method.
+        // The signature covers exactly the pricing-relevant inputs, so an unchanged booking
+        // form (or a duplicate trigger) cannot produce another quote POST, while any genuine
+        // pricing change still does.
+        const signature = buildQuoteSignature(quoteRequest);
+        // Record the signature of the inputs we are pricing for BEFORE any early return, so a
+        // previously successful quote for different inputs stops authorising continuation at
+        // once -- the UI cannot keep a stale fare alive after a pricing-relevant change.
+        this.currentQuoteSignature.set(signature);
+        const existingQuoteStillFresh = signature === this.lastQuotedSignature
+            && !!this.lastQuoteExpiresAt && Date.parse(this.lastQuoteExpiresAt) > Date.now();
+        if (existingQuoteStillFresh) return;
+        if (signature === this.quoteInFlightSignature) return;
+
+        const requestId = ++this.fareRequestSequence;
+        this.quoteInFlightSignature = signature;
+        this.fareCalculating.set(true);
+        this.fareCalculationError.set(null);
 
         try {
-            const { data, error } = await this.supabase.client
-                .from('fixed_fare_bands')
-                .select('fare, flat_rate, min_distance_km, max_distance_km, priority')
-                .eq('country_code', countryCode)
-                .eq('currency_code', currencyCode)
-                .eq('service_type', serviceType)
-                .eq('is_active', true)
-                .lte('min_distance_km', distanceKm)
-                .gt('max_distance_km', distanceKm)
-                .order('priority', { ascending: false })
-                .limit(1)
-                .maybeSingle();
+            const response = await this.globalAiPricingQuote.getQuote(quoteRequest);
 
-            if (error) {
-                console.warn('[BookingRequest] fixed fare lookup failed', error);
-                return 0;
+            // Ignore stale responses if the user changed inputs while this request was in flight.
+            if (requestId !== this.fareRequestSequence) return;
+
+            if(!/^[A-Z]{2}$/.test(response.market.countryCode)||!/^[A-Z]{3}$/.test(response.market.currency)) {
+                throw new Error('The quote did not resolve a valid service country and currency.');
+            }
+            this.quotedMarket.set({countryCode:response.market.countryCode,currency:response.market.currency});
+            if(this.stripeJourney())void this.loadSavedCards();else{this.savedCardsEnabled.set(false);this.savedCards.set([]);this.selectedSavedCard.set(null);}
+            this.lastQuotedSignature = signature;
+
+            const breakdown = response.legacy.fareBreakdown;
+            this.lastFareBreakdown = breakdown;
+            this.lastQuoteReference = response.quoteReference;
+            this.lastQuoteExpiresAt = response.priceLockedUntil;
+            // Server-issued no-show terms (absent when disabled/ineligible).
+            this.quoteNoShow.set(response.noShow ?? null);
+
+            const estimate: FareEstimate = {
+                serviceType: serviceSlug,
+                currencyCode: response.market.currency,
+                distanceKm,
+                durationMinutes,
+                baseFare: this.toMoney(breakdown.baseFare || 0),
+                distanceFare: this.toMoney(breakdown.distanceCost || 0),
+                timeFare: this.toMoney(breakdown.durationCost || 0),
+                serviceFee: this.toMoney(breakdown.serviceFee || 0),
+                subtotal: this.toMoney((breakdown.baseFare || 0) + (breakdown.distanceCost || 0) + (breakdown.durationCost || 0)),
+                minimumFareApplied: (breakdown.minimumFareAdjustment || 0) > 0,
+                surgeMultiplier: breakdown.multiplier || 1,
+                surgeAmount: this.toMoney(breakdown.dynamicPricingAmount || 0),
+                total: this.toMoney(breakdown.total ?? response.legacy.totalPrice ?? 0)
+            };
+
+            this.fareEstimate.set(estimate);
+            this.fulfilmentSnapshot.set(response.fulfilmentSnapshot ?? null);
+            this.estimatedPrice.set(estimate.total);
+
+            // Only a positive, finite total for the CURRENT inputs may authorise progression.
+            const quotedTotal = Number(estimate.total);
+            this.authoritativeQuote.set(Number.isFinite(quotedTotal) && quotedTotal > 0
+                ? { signature, total: quotedTotal, expiresAt: this.lastQuoteExpiresAt }
+                : null);
+
+            console.log('[BookingRequest] backend fare quote', {
+                serviceSlug,
+                distanceKm,
+                durationMinutes,
+                vehicleClass: this.vehicleClass(),
+                passengerCount: serviceSlug === 'ride' ? this.passengerCount() : undefined,
+                packageSize: serviceSlug === 'delivery' ? this.packageSize() : undefined,
+                source: breakdown.source,
+                total: estimate.total,
+                fallbackUsed: response.fallback?.used ?? false
+            });
+        } catch (error: any) {
+            if (requestId !== this.fareRequestSequence) return;
+
+            // Keep the authoritative market reason instead of collapsing every failure into
+            // the generic fare message. The machine-readable code is preserved for diagnostics
+            // and for the honest customer-facing state.
+            const marketFailure = describeMarketFailure(error);
+            if (marketFailure) {
+                console.warn('[BookingRequest] market rejected the fare quote', { code: marketFailure.code });
+            } else {
+                console.error('[BookingRequest] Failed to fetch backend fare quote', error);
             }
 
-            const price = Number(data?.flat_rate ?? data?.fare ?? 0);
-
-            if (!Number.isFinite(price) || price <= 0) return 0;
-
-            return this.toMoney(price);
-        } catch (error) {
-            console.warn('[BookingRequest] fixed fare lookup crashed', error);
-            return 0;
+            this.fareEstimate.set(null); this.fulfilmentSnapshot.set(null);
+            this.estimatedPrice.set(0);
+            this.lastFareBreakdown = null;
+            this.lastQuoteReference = null;
+            this.lastQuoteExpiresAt = null;
+            // No successful quote for this signature, so a retry must remain possible.
+            this.lastQuotedSignature = null;
+            // Drop the authoritative quote: a failed recalculation must never leave the
+            // previous fare able to authorise marketplace continuation or payment.
+            this.authoritativeQuote.set(null);
+            void this.refreshShoppingCapacity();
+            this.fareCalculationError.set(
+                marketFailure?.message ||
+                (['This shopping budget exceeds current funding capacity. Reduce the purchase budget or try again later.',
+                  'Shopping funding could not be verified. Please try again later.']
+                  .includes((error as { error?: { error?: string } })?.error?.error || '')
+                  ? (error as { error?: { error?: string } })?.error?.error : null) || 'Unable to calculate the fare right now. Please try again.'
+            );
+        } finally {
+            if (this.quoteInFlightSignature === signature) {
+                this.quoteInFlightSignature = null;
+            }
+            if (requestId === this.fareRequestSequence) {
+                this.fareCalculating.set(false);
+            }
         }
+    }
+
+    /**
+     * Builds the fare breakdown attached to the booking creation payload
+     * directly from the last backend quote (server truth). This page never
+     * re-derives fare-affecting amounts - it only forwards what
+     * GlobalAiPricingService/PricingService already calculated and audited.
+     */
+    private buildQuoteFareBreakdown(
+        quoteId: string,
+        currencyCode: string,
+        currencySymbol: string,
+        customerServiceTotal: number,
+        totalAuthorisation: number
+    ): Record<string, unknown> | null {
+        const backend = this.lastFareBreakdown;
+        if (!backend) return null;
+
+        return {
+            ...backend,
+            quoteId,
+            quoteExpiresAt: this.lastQuoteExpiresAt,
+            currencyCode: backend.currencyCode || currencyCode,
+            currencySymbol: backend.currencySymbol || currencySymbol,
+            customerServiceTotal: this.toMoney(customerServiceTotal),
+            totalAuthorisation: this.toMoney(totalAuthorisation),
+            shoppingBudget: this.walletBudgetRequired()
+        };
+    }
+
+    async applyDiscountCode() {
+        const code = this.discountCodeInput().trim();
+        const quote = this.lastQuoteReference;
+        if (!code) return;
+        if (!quote) { this.discountError.set('Get a fare quote before applying a code.'); return; }
+        this.discountBusy.set(true); this.discountError.set('');
+        try {
+            const res = await this.bookingService.applyDiscount(code, quote, Math.round(this.cardChargeRequired() * 100));
+            this.appliedDiscount.set({ code, discountMinor: res.discountMinor, campaignId: res.campaignId, quoteReference: quote });
+            this.discountCodeInput.set('');
+        } catch (error: any) {
+            this.discountError.set(error?.error?.error || error?.message || 'That code did not apply.');
+        } finally {
+            this.discountBusy.set(false);
+        }
+    }
+
+    async removeDiscountCode() {
+        const d = this.effectiveDiscount();
+        if (!d) { this.appliedDiscount.set(null); return; }
+        this.discountBusy.set(true); this.discountError.set('');
+        try {
+            await this.bookingService.removeDiscount(d.campaignId, d.quoteReference);
+        } catch { /* server release is best-effort; the application can only be consumed by this quote anyway */ }
+        this.appliedDiscount.set(null);
+        this.discountBusy.set(false);
     }
 
     getValidationError(type: 'pickup' | 'dropoff'): string | null {
@@ -2201,11 +3468,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             case ServiceTypeEnum.RIDE:
                 return 'Ride Request';
             case ServiceTypeEnum.ERRAND:
-                return 'Errand Service';
+                return 'Shop';
             case ServiceTypeEnum.DELIVERY:
-                return 'Package Delivery';
+                return 'Deliver';
             case ServiceTypeEnum.VAN:
-                return 'Van Moving';
+                return 'Move';
             default:
                 return 'Booking Request';
         }
@@ -2223,6 +3490,36 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 return 'bus-outline';
             default:
                 return 'help-circle-outline';
+        }
+    }
+
+    getServiceLabel(): string {
+        switch (this.type) {
+            case ServiceTypeEnum.RIDE:
+                return 'Ride';
+            case ServiceTypeEnum.ERRAND:
+                return 'Shop';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Deliver';
+            case ServiceTypeEnum.VAN:
+                return 'Move';
+            default:
+                return 'Booking';
+        }
+    }
+
+    getServiceDescription(): string {
+        switch (this.type) {
+            case ServiceTypeEnum.RIDE:
+                return 'Everyday local travel';
+            case ServiceTypeEnum.ERRAND:
+                return 'Shopping, errands and collections';
+            case ServiceTypeEnum.DELIVERY:
+                return 'Trusted local delivery';
+            case ServiceTypeEnum.VAN:
+                return 'Van and moving services';
+            default:
+                return 'Trusted local movement for your needs.';
         }
     }
 
@@ -2253,12 +3550,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return errandSubmissionError;
         }
 
+        if (this.shouldShowMarketplaceFare()) {
+            return null;
+        }
+
         const wallet = await this.walletService.fetchWallet();
         const required = this.walletPaymentRequired();
         const walletBalance = this.toMoney(wallet?.available_balance || 0);
-        const needsCardFallback = required > 0 && walletBalance < required;
+        const needsCardFallback = required > 0 && !(this.paymentChoice() === 'wallet' && String(wallet?.currency_code || 'GBP').toUpperCase()===(this.quotedMarket()?.currency || this.config.currencyCode) && walletBalance >= required);
 
-        if (needsCardFallback) {
+        if(needsCardFallback && !this.stripeJourney())return 'Payment setup for this journey market is not ready yet.';
+        if (needsCardFallback && !this.selectedSavedCard()) {
             if (!this.card || !this.cardMounted || !this.cardReady()) {
                 return 'Card input is still loading. Please wait a moment.';
             }
@@ -2283,6 +3585,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     async submit() {
         if (this.submitting() || this.paymentProcessing()) return;
+
+        if (this.fareCalculating() || !this.fareEstimate() || !this.lastFareBreakdown || !this.quoteValid()) {
+            const toast = await this.toastCtrl.create({
+                message: this.fareCalculationError() || 'Please wait for the fare to finish calculating.',
+                duration: 3000,
+                color: 'warning'
+            });
+            await toast.present();
+            return;
+        }
 
         const now = Date.now();
         if (now - this.lastBookingTime < 30000) {
@@ -2335,10 +3647,17 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const serviceCharge = this.cardChargeRequired();
             const totalDue = this.walletPaymentRequired();
             const walletWillCover = this.walletCoversPayment();
+            if (!this.lastQuoteReference || !this.lastQuoteExpiresAt || Date.parse(this.lastQuoteExpiresAt) <= Date.now()) {
+                throw new Error('Your fare quote expired. Please refresh the quote before booking.');
+            }
+            const quoteId = this.lastQuoteReference;
 
-            const countryCode = this.config.currentCountry()?.code || 'GB';
-            const currencyCode = this.config.currentCountry()?.currency || this.config.currencyCode || 'GBP';
-            const currencySymbol = this.config.currentCountry()?.currencySymbol || this.getCurrencySymbol(currencyCode);
+            const market=this.quotedMarket();
+            if(!market)throw new Error('A server-issued service market is required before payment.');
+            const countryCode=market.countryCode;
+            const currencyCode=market.currency;
+            const currencySymbol=new Intl.NumberFormat(this.config.locale,{style:'currency',currency:currencyCode})
+                .formatToParts(0).find(part=>part.type==='currency')?.value || currencyCode;
 
             const bookingData = {
                 pickup_address: formVal.pickup_address,
@@ -2350,6 +3669,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
                 service_type_id: this.serviceType()?.id,
                 total_price: serviceCharge,
+                quote_id: quoteId,
+                fare_breakdown: this.buildQuoteFareBreakdown(quoteId, currencyCode, currencySymbol, serviceCharge, totalDue),
 
                 distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
                 estimated_distance_km: this.toMoney((this.routeResult()?.distanceMeters || 0) / 1000),
@@ -2360,15 +3681,24 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 currency_code: currencyCode,
                 currency_symbol: currencySymbol,
                 pricing_plan: 'starter',
+                fulfilment_category: this.vehicleClass(),
 
                 metadata: {
                     ...(this.getMetadataPayload(formVal) || {}),
                     country_code: countryCode,
                     currency_code: currencyCode,
                     currency_symbol: currencySymbol,
+                    quote_id: quoteId,
+                    quote_expires_at: this.lastQuoteExpiresAt,
+                    customer_service_total: serviceCharge,
+                    total_authorisation: totalDue,
+                    no_show_acknowledged: this.showNoShowDisclosure(),
+                    no_show_policy_version: this.showNoShowDisclosure() ? this.quoteNoShow()?.policyVersion : null,
+                    ...(this.effectiveDiscount() ? { discount_minor: this.effectiveDiscount()!.discountMinor } : {}),
                     pricing_plan: 'starter',
                     service_vehicle_class: this.vehicleClass(),
                     service_option_surcharge: this.vehicleSurcharge(),
+                    ...(this.selectedLocalService() ? { local_service_selection: this.selectedLocalService() } : {}),
                     ...(this.type === ServiceTypeEnum.DELIVERY ? { package_size: this.packageSize() } : {})
                 }
             };
@@ -2378,6 +3708,25 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             loading.message = 'Creating booking...';
             booking = await this.bookingService.createBooking(bookingData, details, this.type);
             this.lastBookingTime = Date.now();
+
+            // If marketplace negotiation is enabled for this service, let the customer
+            // review/negotiate the fare before taking payment.
+            const shouldShowMarketplaceFare = Boolean((booking as any).negotiation_mode_enabled);
+            console.log('[BookingRequest] eligibility decision before routing', {
+                serviceSlug: this.getServiceSlug(),
+                canonicalServiceSlug: this.canonicalServiceSlug(this.getServiceSlug()),
+                negotiationEnabled: (booking as any).negotiation_mode_enabled,
+                negotiationServices: this.negotiationSettings()?.minServices,
+                shouldShowMarketplaceFare
+            });
+
+            if (booking?.id && shouldShowMarketplaceFare) {
+                await loading.dismiss();
+                await this.router.navigate(['/customer/marketplace-fare', booking.id], {
+                    queryParams: { quoteId }
+                });
+                return;
+            }
 
             if (walletWillCover) {
                 if (this.type === ServiceTypeEnum.ERRAND && itemBudget > 0) {
@@ -2404,11 +3753,14 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     totalDue,
                     currencyCode,
                     this.auth.tenantId() || '',
-                    this.pricingService.surgeMultiplier()
+                    this.pricingService.surgeMultiplier(),
+                    this.selectedSavedCard()?{savedPaymentMethodId:this.selectedSavedCard()!}:{saveCard:this.savedCardsEnabled()&&this.saveCard()}
                 );
 
                 loading.message = 'Charging card...';
-                const paymentIntent = await this.paymentService.confirmPayment(clientSecret, this.card!);
+                const paymentIntent = this.selectedSavedCard()
+                    ? await this.paymentService.confirmSavedCard(clientSecret,this.selectedSavedCard()!)
+                    : await this.paymentService.confirmPayment(clientSecret, this.card!);
                 paymentIntentId = paymentIntent.id;
             }
 
@@ -2424,10 +3776,11 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 throw new Error('Payment confirmation did not complete.');
             }
 
-            await this.bookingService.confirmJobPayment(booking.id, confirmationPaymentId);
+            if (!walletWillCover) await this.bookingService.confirmJobPayment(booking.id, confirmationPaymentId);
             if (walletWillCover) {
                 paymentIntentId = 'wallet_funded';
             }
+            this.recordLocalServicePreference();
 
             this.analytics.track('booking_created', {
                 job_id: booking.id,
@@ -2445,24 +3798,26 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         } catch (e: unknown) {
             console.error('[BookingRequest] submit failed', e);
 
-            const message = e instanceof Error ? e.message : 'An error occurred';
+            // Preserve the authoritative reason (and machine code) instead of collapsing every
+            // failure -- including an expired session -- into 'An error occurred'.
+            const failure = describeHttpFailure(e);
+            const message = failure.message;
+            if (failure.code) {
+                console.warn('[BookingRequest] submit rejected', { status: failure.status, code: failure.code });
+            }
 
-            if (booking?.id && (!paymentIntentId || walletReserved)) {
+            // A lost HTTP response is not proof that payment failed. Never
+            // auto-cancel or directly mutate the job after an ambiguous checkout.
+            if (booking?.id) {
                 try {
-                    if (walletReserved) {
-                        await this.bookingService.cancelBooking(
-                            booking.id,
-                            `Auto-cancelled after wallet checkout failure: ${message}`
-                        );
-                    } else {
-                        await this.bookingService.updateBookingStatus(
-                            booking.id,
-                            'cancelled',
-                            `Auto-cancelled after checkout failure: ${message}`
-                        );
+                    const current = await this.bookingService.getBooking(booking.id);
+                    if (current && ['wallet_funded', 'authorized', 'paid', 'captured', 'succeeded'].includes(String(current.payment_status))) {
+                        await loading.dismiss();
+                        await this.router.navigate(['/customer/tracking', booking.id]);
+                        return;
                     }
-                } catch (cancelError) {
-                    console.error('[BookingRequest] booking auto-cancel failed', cancelError);
+                } catch (lookupError) {
+                    console.warn('[BookingRequest] Could not reconcile checkout; inspect booking before retrying', lookupError);
                 }
             }
 
@@ -2478,6 +3833,18 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.submitting.set(false);
             this.paymentProcessing.set(false);
         }
+    }
+
+    private recordLocalServicePreference(): void {
+        const selection = this.selectedLocalService() as LocalServiceSelection | null;
+        if (!selection?.providerName || !selection.categorySlug) return;
+        this.localServices.saveRecent({
+            ...selection,
+            countryCode: selection.countryCode || this.localServiceCountryCode(),
+            serviceSlug: this.localServiceCatalogueSlug()
+        } as LocalServiceSelection & { serviceSlug?: string }).catch((error) => {
+            console.warn('[BookingRequest] local service preference save skipped', error);
+        });
     }
     private async validateCustomerCanBook(): Promise<string | null> {
         const profile = await this.fetchCurrentCustomerProfile();
@@ -2623,11 +3990,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ? this.parseErrandItems(formVal['items_list'])
                 : [];
 
+            const profile = this.auth.profileService.profile();
+            const user = this.auth.currentUser();
+            const customerPhone = profile?.phone || user?.phone || '';
+            const customerName = profile?.full_name ||
+                (profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : '') ||
+                (user?.user_metadata?.['full_name'] as string) ||
+                user?.email ||
+                '';
+
             return {
                 errand_details: {
                     mode,
                     vehicleClass: this.vehicleClass(),
                     itemCount: items.length,
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
                     ...(isShoppingMode ? { items, budget } : {})
                 },
                 payment_split: {
@@ -2674,13 +4052,22 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 ) as ErrandMode;
 
                 const isShoppingMode = this.isQuickBuyMode(mode);
+                const profile = this.auth.profileService.profile();
+                const user = this.auth.currentUser();
+                const customerPhone = profile?.phone || user?.phone || '';
+                const customerName = profile?.full_name ||
+                    (profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : '') ||
+                    (user?.user_metadata?.['full_name'] as string) ||
+                    user?.email ||
+                    '';
 
                 const payload: Record<string, unknown> = {
                     errand_mode: mode,
                     notes: formVal['notes'],
-                    customer_phone: formVal['customer_phone'],
-                    recipient_phone: formVal['recipient_phone'],
-                    recipient_name: formVal['recipient_name'],
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
+                    recipient_phone: formVal['recipient_phone'] || null,
+                    recipient_name: formVal['recipient_name'] || null,
                     substitution_rule: formVal['substitution_rule']
                 };
 
@@ -2722,16 +4109,16 @@ export class BookingRequestPage implements OnInit, OnDestroy {
 
     private getCurrencySymbol(currencyCode?: string | null): string {
         const map: Record<string, string> = {
-            GBP: '£',
+            GBP: '┬ú',
             USD: '$',
-            EUR: '€',
-            NGN: '₦',
-            AED: 'د.إ',
+            EUR: 'Ôé¼',
+            NGN: 'Ôéª',
+            AED: 'Ï».ÏÑ',
             CAD: '$',
             AUD: '$'
         };
 
-        return map[String(currencyCode || 'GBP').toUpperCase()] || '£';
+        return map[String(currencyCode || 'GBP').toUpperCase()] || '┬ú';
     }
 
     private getServiceSlug(): ServiceTypeSlug {

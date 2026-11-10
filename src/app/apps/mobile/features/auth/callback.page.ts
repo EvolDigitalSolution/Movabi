@@ -73,7 +73,7 @@ export class AuthCallbackPage implements OnInit {
         } catch (error) {
             console.error('[AuthCallback] callback failed:', error);
             this.callbackTitle.set('Google sign-in failed');
-            this.callbackError.set('Movabi could not finish Google sign-in. Please try again or use email and password.');
+            this.callbackError.set('Vaydu could not finish Google sign-in. Please try again or use email and password.');
         }
     }
 
