@@ -66,8 +66,8 @@ begin
   if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
   update public.driver_vehicle_inspection_photos set status='replaced'
     where vehicle_id=p_vehicle and vehicle_revision=p_revision and slot=p_slot and status<>'replaced';
-  insert into public.driver_vehicle_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path)
-    values(p_driver,p_tenant,p_vehicle,p_revision,p_slot,p_path) returning id into photo;
+  insert into public.driver_vehicle_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path,status)
+    values(p_driver,p_tenant,p_vehicle,p_revision,p_slot,p_path,'under_review') returning id into photo;
   return photo;
 end;
 $$;
@@ -138,20 +138,44 @@ drop trigger if exists reopen_replaced_photo_review on public.driver_vehicle_ins
 create trigger reopen_replaced_photo_review after insert on public.driver_vehicle_inspection_photos
 for each row execute function public.reopen_replaced_photo_review();
 
--- Retained upload RPC delegates to the revision-bound path so no caller can
--- write an unbound approval row. vehicle/revision resolved from the driver's
--- current vehicle inside the function.
+-- Retained upload RPCs — SAME signatures and composite return type as the live
+-- 20261102 definitions, internally delegating to the revision-bound writer so
+-- no caller can write an unbound approval row.
 create or replace function public.submit_inspection_photo(
-  p_driver uuid, p_tenant uuid, p_slot text, p_path text, p_bytes int, p_ctype text, p_vehicle uuid default null
-) returns uuid language plpgsql security definer set search_path=public as $$
-declare v public.vehicles%rowtype;
+  p_driver uuid, p_tenant uuid, p_slot text, p_path text, p_bytes int, p_ctype text
+) returns public.driver_vehicle_inspection_photos language plpgsql security definer set search_path=public as $$
+declare v public.vehicles%rowtype; r public.driver_vehicle_inspection_photos;
 begin
-  select * into v from public.vehicles where user_id=p_driver
-    and (p_vehicle is null or id=p_vehicle)
-    order by created_at desc limit 1 for update;
+  select * into v from public.vehicles where user_id=p_driver order by created_at desc limit 1 for update;
   if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
-  return public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path);
+  perform public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path);
+  select * into r from public.driver_vehicle_inspection_photos
+    where driver_id=p_driver and vehicle_id=v.id and vehicle_revision=v.inspection_revision
+      and slot=p_slot and status<>'replaced' order by created_at desc limit 1;
+  return r;
 end;
 $$;
+create or replace function public.submit_inspection_photo(
+  p_driver uuid, p_tenant uuid, p_slot text, p_path text, p_bytes int, p_ctype text, p_vehicle uuid
+) returns public.driver_vehicle_inspection_photos language plpgsql security definer set search_path=public as $$
+declare v public.vehicles%rowtype; r public.driver_vehicle_inspection_photos;
+begin
+  select * into v from public.vehicles where id=p_vehicle and user_id=p_driver for update;
+  if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
+  perform public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path);
+  select * into r from public.driver_vehicle_inspection_photos
+    where driver_id=p_driver and vehicle_id=v.id and vehicle_revision=v.inspection_revision
+      and slot=p_slot and status<>'replaced' order by created_at desc limit 1;
+  return r;
+end;
+$$;
+revoke all on function public.submit_inspection_photo(uuid,uuid,text,text,int,text) from public,anon,authenticated;
+grant execute on function public.submit_inspection_photo(uuid,uuid,text,text,int,text) to service_role;
 revoke all on function public.submit_inspection_photo(uuid,uuid,text,text,int,text,uuid) from public,anon,authenticated;
 grant execute on function public.submit_inspection_photo(uuid,uuid,text,text,int,text,uuid) to service_role;
+
+-- Bike slots: allow 'side' alongside the live six.
+alter table public.driver_vehicle_inspection_photos drop constraint if exists driver_vehicle_inspection_photos_slot_check;
+alter table public.driver_vehicle_inspection_photos
+  add constraint driver_vehicle_inspection_photos_slot_check
+  check (slot in ('front','rear','side','dashboard','seats_interior','left_side','right_side'));
