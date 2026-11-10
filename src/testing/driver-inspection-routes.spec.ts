@@ -88,4 +88,22 @@ describe('inspection upload and tenant review endpoints', () => {
     expect((await call(review,'same-admin',approve)).status).toBe(204);
     expect(mock.tables.driver_vehicle_inspection_photos[0]).toMatchObject({status:'approved',reviewed_by:'same-admin'});
   });
+
+  it('rejects review + submission when the vehicle revision moved on', async () => {
+    // Fresh photo bound to revision-a; vehicle then rotates to revision-b.
+    mock.tables.driver_vehicle_inspection_photos.length = 0;
+    mock.tables.driver_vehicle_inspection_photos.push({
+      id: mock.photo, driver_id: mock.driver, tenant_id: 'tenant-a',
+      vehicle_id: mock.vehicle, vehicle_revision: 'revision-a', slot: 'front',
+      storage_path: 't/d/p.jpg', status: 'under_review'
+    });
+    mock.tables.vehicles[0].inspection_revision = 'revision-b';
+    const review = `${base}/inspection-photos/${mock.photo}/review`;
+    const r = await fetch(review, { method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer same-admin' },
+      body: JSON.stringify({ status: 'approved' }) });
+    expect(r.status).toBe(409);
+    expect(mock.tables.driver_vehicle_inspection_photos[0].status).toBe('under_review');
+    mock.tables.vehicles[0].inspection_revision = 'revision-a';
+  });
 });

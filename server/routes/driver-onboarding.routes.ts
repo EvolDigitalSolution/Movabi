@@ -343,7 +343,7 @@ router.post('/inspection-photo', rateLimit({ windowMs: 60000, limit: 20 }), asyn
         const { data: photoId, error: rpcErr } = await supabaseAdmin.rpc('register_driver_inspection_photo', {
             p_driver: driverId, p_tenant: String((req as any).tenant_id || ''),
             p_vehicle: (vehicle as any)?.id ?? null, p_revision: (vehicle as any)?.inspection_revision ?? null,
-            p_slot: slot, p_path: path
+            p_slot: slot, p_path: path, p_bytes: clean.length, p_ctype: mime
         });
         if (rpcErr) throw rpcErr;
         return res.status(201).json({ slot, status: 'under_review', id: photoId, width, height });

@@ -57,7 +57,7 @@ values ('vehicle-inspection-private','vehicle-inspection-private',false)
 on conflict (id) do update set public=false;
 
 create or replace function public.register_driver_inspection_photo(
-  p_driver uuid,p_tenant uuid,p_vehicle uuid,p_revision uuid,p_slot text,p_path text
+  p_driver uuid,p_tenant uuid,p_vehicle uuid,p_revision uuid,p_slot text,p_path text,p_bytes int default null,p_ctype text default null
 ) returns uuid language plpgsql set search_path=public as $$
 declare photo uuid;
 begin
@@ -65,13 +65,13 @@ begin
   if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
   update public.driver_vehicle_inspection_photos set status='replaced'
     where vehicle_id=p_vehicle and vehicle_revision=p_revision and slot=p_slot and status<>'replaced';
-  insert into public.driver_vehicle_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path,status)
-    values(p_driver,p_tenant,p_vehicle,p_revision,p_slot,p_path,'under_review') returning id into photo;
+  insert into public.driver_vehicle_inspection_photos(driver_id,tenant_id,vehicle_id,vehicle_revision,slot,storage_path,byte_size,content_type,status)
+    values(p_driver,p_tenant,p_vehicle,p_revision,p_slot,p_path,coalesce(p_bytes,0),coalesce(p_ctype,'application/octet-stream'),'under_review') returning id into photo;
   return photo;
 end;
 $$;
-revoke all on function public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text) from public,anon,authenticated;
-grant execute on function public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text) to service_role;
+revoke all on function public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text,int,text) from public,anon,authenticated;
+grant execute on function public.register_driver_inspection_photo(uuid,uuid,uuid,uuid,text,text,int,text) to service_role;
 
 create or replace function public.submit_driver_with_current_inspection(
   p_driver uuid,p_tenant uuid,p_vehicle uuid,p_revision uuid,p_slots text[],p_market text,p_services jsonb
@@ -147,7 +147,7 @@ declare v public.vehicles%rowtype; r public.driver_vehicle_inspection_photos;
 begin
   select * into v from public.vehicles where user_id=p_driver order by created_at desc limit 1 for update;
   if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
-  perform public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path);
+  perform public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path,p_bytes,p_ctype);
   select * into r from public.driver_vehicle_inspection_photos
     where driver_id=p_driver and vehicle_id=v.id and vehicle_revision=v.inspection_revision
       and slot=p_slot and status<>'replaced' order by created_at desc limit 1;
@@ -161,7 +161,7 @@ declare v public.vehicles%rowtype; r public.driver_vehicle_inspection_photos;
 begin
   select * into v from public.vehicles where id=p_vehicle and user_id=p_driver for update;
   if not found then raise exception 'Vehicle changed; reload before uploading'; end if;
-  perform public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path);
+  perform public.register_driver_inspection_photo(p_driver,p_tenant,v.id,v.inspection_revision,p_slot,p_path,p_bytes,p_ctype);
   select * into r from public.driver_vehicle_inspection_photos
     where driver_id=p_driver and vehicle_id=v.id and vehicle_revision=v.inspection_revision
       and slot=p_slot and status<>'replaced' order by created_at desc limit 1;

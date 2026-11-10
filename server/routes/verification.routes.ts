@@ -210,7 +210,7 @@ router.put('/inspection-photos/:slot', raw({type:'application/octet-stream',limi
     const {error: uploadError} = await supabase.storage.from(inspectionBucket).upload(path,image,{contentType:'image/jpeg',upsert:false});
     if (uploadError) throw uploadError;
     const {error} = await supabase.rpc('register_driver_inspection_photo',{
-      p_driver:actor.id,p_tenant:actor.tenant_id,p_vehicle:vehicle.id,p_revision:vehicle.inspection_revision,p_slot:slot,p_path:path
+      p_driver:actor.id,p_tenant:actor.tenant_id,p_vehicle:vehicle.id,p_revision:vehicle.inspection_revision,p_slot:slot,p_path:path,p_bytes:image.length,p_ctype:'image/jpeg'
     });
     if (error) {
       await supabase.storage.from(inspectionBucket).remove([path]);

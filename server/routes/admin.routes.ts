@@ -1644,14 +1644,24 @@ router.delete('/local-services/providers/:id', requireAdmin, async (req: Request
   return res.json({ ok: true });
 });
 
+async function adminTenantId(adminId: string | null | undefined): Promise<string | null> {
+    if (!adminId) return null;
+    const { data } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', adminId).maybeSingle();
+    return (data as any)?.tenant_id || null;
+}
+
 export default router;
 
 /** List inspection photos pending admin review. */
-router.get('/inspection-photos', requireAdmin, async (_req: Request, res: Response) => {
+router.get('/inspection-photos', requireAdmin, async (req: Request, res: Response) => {
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id || null;
+    const tenant = await adminTenantId(adminId);
+    if (!tenant) return res.status(403).json({ error: 'Admin tenant not resolved.' });
     const { data, error } = await supabaseAdmin
         .from('driver_vehicle_inspection_photos')
         .select('id,driver_id,slot,storage_path,status,byte_size,content_type,created_at')
         .eq('status', 'under_review')
+        .eq('tenant_id', tenant)
         .order('created_at', { ascending: true });
     if (error) return res.status(500).json({ error: 'Could not list inspection photos.' });
     // Issue short-lived signed URLs for private review â€” never public paths.
@@ -1664,15 +1674,18 @@ router.get('/inspection-photos', requireAdmin, async (_req: Request, res: Respon
 
 /** Approve or reject an inspection photo (audited). */
 router.post('/inspection-photos/:id/review', requireAdmin, async (req: Request, res: Response) => {
-    const adminId = (req as any).adminId || (req as any).user?.id;
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const { status, reason } = req.body || {};
     if (!['approved', 'rejected'].includes(String(status))) return res.status(400).json({ error: 'status must be approved or rejected' });
     if (status === 'rejected' && !String(reason || '').trim()) return res.status(422).json({ error: 'A rejection reason is required.' });
+    const tenant = await adminTenantId(adminId);
+    if (!tenant) return res.status(403).json({ error: 'Admin tenant not resolved.' });
     const { data, error } = await supabaseAdmin
         .from('driver_vehicle_inspection_photos')
         .update({ status, reviewed_by: adminId, reviewed_at: new Date().toISOString(), rejection_reason: status === 'rejected' ? reason : null })
         .eq('id', req.params.id)
         .eq('status', 'under_review')
+        .eq('tenant_id', tenant)
         .select('id,driver_id,slot')
         .maybeSingle();
     if (error) return res.status(500).json({ error: 'Could not update the photo review.' });
@@ -1693,7 +1706,7 @@ router.get('/drivers/:driverId/pin-policy', requireAdmin, async (req: Request, r
 });
 
 router.post('/drivers/:driverId/pin-policy', requireAdmin, async (req: Request, res: Response) => {
-    const adminId = (req as any).adminId || (req as any).user?.id;
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const { policy, tenantId, reason } = req.body || {};
     if (!['required', 'optional', 'disabled'].includes(String(policy))) return res.status(400).json({ error: 'policy must be required, optional or disabled' });
     if (!tenantId) return res.status(400).json({ error: 'tenantId is required' });
@@ -1721,7 +1734,7 @@ router.get('/receivables', requireAdmin, async (req: Request, res: Response) => 
 });
 
 router.post('/receivables/:id/resolve', requireAdmin, async (req: Request, res: Response) => {
-    const adminId = (req as any).adminId || (req as any).user?.id;
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const { status, reason, paymentReference, paymentProvider, merchantAccountRef } = req.body || {};
     if (!['paid','waived','written_off'].includes(String(status))) return res.status(400).json({ error: 'status must be paid, waived or written_off' });
     const ref = String(paymentReference || '').trim();
@@ -2065,7 +2078,7 @@ router.post('/referrals/:id/adjudicate', requireAdmin, async (req: Request, res:
  *  replacement driver. Failure preserves the original assignment/hold â€”
  *  the RPC raises and nothing is written. Audited operator action. */
 router.post('/cash-jobs/:jobId/reassign', requireAdmin, async (req: Request, res: Response) => {
-    const adminId = (req as any).adminId || (req as any).user?.id;
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const newDriver = String(req.body?.newDriverId || '').trim();
     if (!newDriver) return res.status(400).json({ error: 'newDriverId is required' });
     const { data, error } = await supabaseAdmin.rpc('reassign_cash_job_credit_v1f', {
@@ -2088,7 +2101,7 @@ router.post('/cash-jobs/:jobId/reassign', requireAdmin, async (req: Request, res
  *  stays 'held'; review_due_at targets 24h; escalation is a flag â€” never
  *  an automatic release. Audited operator action. */
 router.post('/cash-jobs/:jobId/review', requireAdmin, async (req: Request, res: Response) => {
-    const adminId = (req as any).adminId || (req as any).user?.id;
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const disputedMinor = Number(req.body?.disputedMinor);
     if (!Number.isFinite(disputedMinor) || disputedMinor <= 0) {
         return res.status(400).json({ error: 'disputedMinor is required' });
@@ -2109,7 +2122,7 @@ router.post('/cash-jobs/:jobId/review', requireAdmin, async (req: Request, res: 
  *  debt_threshold_minor = reference_fare_minor * bps / 10000 at publish so
  *  later fare changes never silently alter the version. */
 router.post('/policies/cancellation/publish', requireAdmin, async (req: Request, res: Response) => {
-    const adminId = (req as any).adminId || (req as any).user?.id;
+    const adminId = (req as any).adminId || (req as any).adminUserId || (req as any).user?.id;
     const { tenantId, market, referenceFareMinor, debtThresholdBps, graceSeconds, feeMinor, feeCapMinor, compensationPercent } = req.body || {};
     if (!tenantId || !market || !Number.isFinite(Number(referenceFareMinor)) || !Number.isFinite(Number(debtThresholdBps))) {
         return res.status(400).json({ error: 'tenantId, market, referenceFareMinor and debtThresholdBps are required' });
