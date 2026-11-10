@@ -288,7 +288,7 @@ router.put('/vehicle',async(req,res)=>{const driverId=await authenticatedDriver(
  * atomic per slot. EXIF removal happens at capture; the server never
  * re-exposes the private object to other tenants.
  */
-const INSPECTION_SLOTS = new Set(['front', 'rear', 'dashboard', 'seats_interior', 'left_side', 'right_side']);
+const INSPECTION_SLOTS = new Set(['front', 'rear', 'side', 'dashboard', 'seats_interior', 'left_side', 'right_side']);
 const INSPECTION_MAX_BYTES = 10 * 1024 * 1024;
 const MAGIC: Array<[number[], string]> = [
     [[0xff, 0xd8, 0xff], 'image/jpeg'],
@@ -398,7 +398,7 @@ router.post('/submit-review', async (req,res)=>{
     let serverOwnedItems: Record<string, unknown> = {};
     if (vehicleInput && ['pedal_bicycle','e_bike','motorcycle','moped'].includes(String(vehicleInput.subtype||'').toLowerCase())) {
       const { data: approvedPhotos } = await supabaseAdmin.from('driver_vehicle_inspection_photos')
-        .select('slot').eq('driver_id', driverId).eq('vehicle_id', vehicle.id).eq('status', 'approved');
+        .select('slot').eq('driver_id', driverId).eq('vehicle_id', vehicle.id).eq('vehicle_revision', (vehicle as any).inspection_revision).eq('status', 'approved');
       const approvedSlots = new Set((approvedPhotos || []).map((p: any) => String(p.slot)));
       serverOwnedItems = { bike_inspection_approved: BIKE_INSPECTION_SLOTS.every(s => approvedSlots.has(s)) };
     }
