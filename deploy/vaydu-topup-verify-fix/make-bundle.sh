@@ -8,7 +8,11 @@ cd "$(git rev-parse --show-toplevel)"
 SHA=$(git rev-parse --short=7 HEAD)
 NAME="vaydu-develop-${SHA}-topup"
 OUT="release/${NAME}"
-PATHS=(server src/app/shared deploy/vaydu-payment-account-setup/api package.json package-lock.json)
+# Running develop API is release-2385da7, whose bundle shipped server/, src/app/shared/, package*.json,
+# tsconfig.json and .dockerignore but NOT deploy/vaydu-payment-account-setup/api/. That directory is only
+# loaded when VAYDU_PAYMENT_ACCOUNT_SETUP is set, so shipping it could change payment-account behaviour.
+# It is left out to preserve current functionality.
+PATHS=(server src/app/shared package.json package-lock.json tsconfig.json .dockerignore)
 FIX=deploy/vaydu-topup-verify-fix
 
 # 1. Source must be exactly the committed tree (no uncommitted edits in shipped paths).

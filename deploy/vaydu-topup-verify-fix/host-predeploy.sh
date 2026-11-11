@@ -32,5 +32,6 @@ join -1 2 -2 2 -a1 -a2 -e MISSING -o 0,1.1,2.1 "$DIR/running-api.sha" "$DIR/bund
 echo "== API files that would change ($DIR/api-changes.txt):"; cat "$DIR/api-changes.txt"
 echo "Expected (fix only): server/routes/driver-wallet-topup.routes.ts, server/services/payments/{driver-card-topup-contracts,driver-wallet-topup,stripe-driver-topup-sandbox}.ts,"
 echo "  src/app/shared/ui/driver-wallet-topup.component.ts, src/app/shared/utils/driver-topup-verify-outcome.ts (ADDED)."
-echo "Anything else means the running API is not at the fix's base commit: STOP and review before deploying."
+echo "Fix base is the running release-2385da7 (2385da7). Anything else (including any ADDED deploy/vaydu-payment-account-setup/api file)"
+echo "  means the running API is not 2385da7: STOP and review before deploying."
 echo "Saved to $DIR"
