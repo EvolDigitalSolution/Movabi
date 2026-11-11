@@ -6,7 +6,11 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 SHA=$(git rev-parse --short=7 HEAD)
-NAME="vaydu-develop-${SHA}-topup"
+# BUNDLE_LABEL distinguishes web builds of the same source, e.g. topup-linux for a dist/mobile built
+# on Linux (node:22-alpine), which keeps the running pipeline's chunk names. Default: topup.
+LABEL="${BUNDLE_LABEL:-topup}"
+case "$LABEL" in topup|topup-linux) ;; *) echo "FATAL: BUNDLE_LABEL must be topup or topup-linux"; exit 1 ;; esac
+NAME="vaydu-develop-${SHA}-${LABEL}"
 OUT="release/${NAME}"
 # Running develop API is release-2385da7, whose bundle shipped server/, src/app/shared/, package*.json,
 # tsconfig.json and .dockerignore but NOT deploy/vaydu-payment-account-setup/api/. That directory is only
