@@ -82,7 +82,7 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
   const total=stripeApiAmountFromLedger(input.amountMinor,input.currency,input.exponent);
   const pi=await this.stripe.paymentIntents.retrieve(id);
   if(!this.piIdentity(pi,input,account,total))return stop();
-  if(!['requires_payment_method','requires_confirmation','requires_action'].includes(pi.status)||!pi.client_secret)throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
+  if(!['requires_payment_method','requires_confirmation','requires_action'].includes(pi.status)||typeof pi.client_secret!=='string'||!pi.client_secret.startsWith(pi.id+'_secret_'))throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
   return {clientSecret:pi.client_secret,nextAction:pi.status==='requires_action'};
  }
  private sessionIdentity(session:Stripe.Checkout.Session,input:DriverCardExpected,account:string,total:number){

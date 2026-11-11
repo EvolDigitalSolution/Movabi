@@ -148,21 +148,28 @@ export class DriverWalletTopupService {
     return {creditedEventId:event};
   }
   /** Re-issues the original unpaid payment's client secret for its owner. Never creates a payment.
-   * Same gates as checkout: kill switch, sandbox flag, reviewed scope and unchanged route. */
-  async resume(token: string, attemptId: string): Promise<{ attemptId: string; clientSecret: string; nextAction: boolean }> {
+   * Bound to the FROZEN attempt: its provider, merchant account, provider account, country and
+   * currency. The current market route is deliberately not re-resolved, so a later market change
+   * can neither redirect this payment to another provider nor strand it. Still required: owner,
+   * kill switch, sandbox flag, and the driver's enabled reviewed scope for exactly that binding.
+   * Provider-specific checks of the secret belong to the adapter. */
+  async resume(token: string, attemptId: string): Promise<{ attemptId: string; provider: string; clientSecret: string; nextAction: boolean }> {
     const user=await this.principal(token);
     if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
     if (!(await this.config.collectionEnabled()) || await this.db.rpc('driver_card_sandbox_enabled', {}) !== true) return fail('COLLECTION_DISABLED');
     const a=await this.attempt(attemptId,user.id,user.tenant);
     if (a.status === 'credited') return fail('TOPUP_ALREADY_CREDITED');
     if (!['submitting','provider_pending'].includes(a.status) || (a.provider_reference && a.provider_reference !== attemptId)) return fail('PAYMENT_RESUME_UNAVAILABLE');
-    const m=await this.market(user.id,user.tenant);
-    if (m.provider!==a.payment_provider || m.merchant!==a.merchant_account_ref || m.country!==a.country_code || m.currency!==a.currency_code || (m.providerAccountId??null)!==(a.provider_account_id??null)) return fail('PAYMENT_RESUME_UNAVAILABLE');
-    const adapter=this.adapter(a.payment_provider,a.merchant_account_ref);
+    if (!/^[A-Z]{2}$/.test(a.country_code)) return fail('TOPUP_NOT_AVAILABLE');
+    const scope=await this.db.from('driver_card_topup_sandbox_scopes').select('id,provider_account_id,policy_version').eq('driver_id',user.id).eq('tenant_id',user.tenant)
+      .eq('provider',a.payment_provider).eq('method','card').eq('country_code',a.country_code).eq('currency_code',a.currency_code).eq('merchant_account_ref',a.merchant_account_ref).eq('enabled',true).maybeSingle();
+    if (scope.error || !scope.data || !uuid(scope.data.id) || scope.data.policy_version!==a.fee_policy_version || (scope.data.provider_account_id??null)!==(a.provider_account_id??null)) return fail('PAYMENT_RESUME_UNAVAILABLE');
+    let adapter:DriverCardTopupAdapter;
+    try { adapter=this.adapter(a.payment_provider,a.merchant_account_ref); } catch { return fail('PAYMENT_RESUME_UNAVAILABLE'); }
     if (typeof adapter.resume !== 'function') return fail('PAYMENT_RESUME_UNAVAILABLE');
     const r=await adapter.resume(this.expected(a));
-    if (typeof r?.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return fail('PAYMENT_RESUME_UNAVAILABLE');
-    return {attemptId, clientSecret:r.clientSecret, nextAction:r.nextAction===true};
+    if (typeof r?.clientSecret !== 'string' || !r.clientSecret) return fail('PAYMENT_RESUME_UNAVAILABLE');
+    return {attemptId, provider:a.payment_provider, clientSecret:r.clientSecret, nextAction:r.nextAction===true};
   }
   /** Discards an UNPAID attempt for its owner: the provider payment is cancelled
    * first (so no late success is possible), then the attempt is marked failed

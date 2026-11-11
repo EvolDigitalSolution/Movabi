@@ -5,7 +5,8 @@ import express from 'express';
 import { createDriverTopupRouter, flutterwaveAttemptStore } from '../../server/routes/driver-wallet-topup.routes';
 import { StripeDriverTopupSandbox } from '../../server/services/payments/stripe-driver-topup-sandbox';
 import type { DriverTopupConfig, DriverTopupDb } from '../../server/services/payments/driver-wallet-topup';
-import { resumeMode, verifyOutcome } from '../app/shared/utils/driver-topup-verify-outcome';
+import { inAppPayment, verifyOutcome } from '../app/shared/utils/driver-topup-verify-outcome';
+import { driverTopupMinor, driverTopupMoney } from '../app/shared/utils/driver-topup-money';
 
 // Regression for the develop Stripe in-app top-up: /verify returned 409
 // PAYMENT_RECONCILIATION_REQUIRED for every non-succeeded PaymentIntent, and the
@@ -25,7 +26,7 @@ function world(){
     wallet_topup_attempts:[], payment_checkout_attempts:[],
   };
   const ledger:{attempt:string;amount:number}[]=[];const observations:any[]=[];
-  let confirmFails=0;let lock=Promise.resolve();let collection=true;
+  let confirmFails=0;let lock=Promise.resolve();let collection=true;const market={country:'GB',currency:'GBP'};
   function qb(table:string){
     const filters:[string,unknown][]=[];let patch:any=null;let single=false;
     const run=()=>{const list=rows[table]||(rows[table]=[]);const hit=list.filter(r=>filters.every(([k,v])=>r[k]===v));
@@ -45,7 +46,7 @@ function world(){
       if(fn==='driver_card_sandbox_enabled')return collection;
       if(fn==='mark_wallet_topup_failed'){const run=lock.then(async()=>{const a=rows.wallet_topup_attempts.find(x=>x.id===args.p_attempt_id);if(a.status==='credited'||a.status==='refunded')throw Error('BP008');a.status='failed';return null;});lock=run.then(()=>undefined,()=>undefined);return run;}
       if(fn==='wallet_currency_minor_exponent')return 2;
-      if(fn==='driver_cash_credit_status_v1f')return {driverId:args.p_driver_id,tenantId:tenant,country:'GB',currency:'GBP'};
+      if(fn==='driver_cash_credit_status_v1f')return {driverId:args.p_driver_id,tenantId:tenant,country:market.country,currency:market.currency};
       if(fn==='initiate_wallet_topup'){const ex=rows.wallet_topup_attempts.find(a=>a.key===args.p_attempt_key);if(ex)return ex.id;
         rows.wallet_topup_attempts.push({key:args.p_attempt_key,id:attemptId,owner_id:args.p_owner_id,tenant_id:args.p_tenant_id,country_code:'GB',currency_code:'GBP',payment_provider:'stripe',merchant_account_ref:'stripe-platform',provider_reference:null,amount_minor:args.p_amount_minor,provider_fee_minor:null,total_charge_minor:null,fee_policy_version:null,fee_exponent:2,destination_account_purpose:'driver_cash_credit',status:'initiated',provider_account_id:null,claimed:false,credited_event_id:null});return attemptId;}
       if(fn==='freeze_wallet_topup_fee'){const a=rows.wallet_topup_attempts.find(x=>x.id===args.p_attempt_id);if(!a.fee_policy_version){
@@ -72,12 +73,12 @@ function world(){
     }) as any,
   };
   // Stateful Stripe test-mode fake.
-  let pi:any=null;let creates=0;const cancels:string[]=[];
+  let pi:any=null;let creates=0;let retrieves=0;const cancels:string[]=[];
   const stripe:any={accounts:{retrieve:async()=>({id:'acct_synthetic'})},
     checkout:{sessions:{list:async()=>({data:[],has_more:false}),retrieve:async()=>{throw Error('unexpected');}}},
     paymentIntents:{
       create:async(p:any)=>{creates++;pi={id:'pi_synthetic',object:'payment_intent',livemode:false,status:'requires_payment_method',last_payment_error:null,amount:p.amount,amount_received:0,currency:p.currency,client_secret:'pi_synthetic_secret_abc',metadata:p.metadata,latest_charge:null};return pi;},
-      retrieve:async()=>({...pi}),search:async()=>({data:pi?[pi]:[]}),
+      retrieve:async()=>{retrieves++;return {...pi};},search:async()=>({data:pi?[pi]:[]}),
       cancel:async(id:string,_p:any,o:any)=>{cancels.push(o?.idempotencyKey);if(id!==pi.id)throw Error('no such PI');
         if(!['requires_payment_method','requires_confirmation','requires_action','canceled'].includes(pi.status))throw Object.assign(Error('payment_intent_unexpected_state'),{type:'StripeInvalidRequestError'});
         pi={...pi,status:'canceled'};return {...pi};}}};
@@ -88,6 +89,7 @@ function world(){
   const app=express();app.use(express.json());
   app.use(createDriverTopupRouter({supabase:db,config,adapter:(provider,merchant)=>{if(provider!=='stripe')throw Error('provider');return new StripeDriverTopupSandbox(stripe,'sk_test_synthetic',merchant,flutterwaveAttemptStore(db));}}));
   return {app,ledger,observations,pay,creates:()=>creates,cancels,failConfirm:(n:number)=>{confirmFails=n;},attempt:()=>rows.wallet_topup_attempts[0],
+    rows,market,retrieves:()=>retrieves,
     setCollection:(v:boolean)=>{collection=v;},dropScope:()=>{rows.driver_card_topup_sandbox_scopes=rows.driver_card_topup_sandbox_scopes.filter(r=>r.driver_id!==owner);},piStatus:()=>pi.status};
 }
 async function call(app:express.Express,path:string,body:unknown,token='owner-token'){
@@ -168,7 +170,8 @@ describe('driver top-up verification states (Stripe in-app, develop binding)',()
     const otherR=await call(w.app,'/resume',{attemptId},'other-token');expect(otherR.status).toBe(404);expect(JSON.stringify(otherR.body)).not.toContain('secret');
     expect((await call(w.app,'/resume',{attemptId,extra:1})).status).toBe(400);
     w.setCollection(false);expect((await call(w.app,'/resume',{attemptId})).body.code).toBe('COLLECTION_DISABLED');w.setCollection(true);
-    w.dropScope();expect((await call(w.app,'/resume',{attemptId})).body.code).toBe('PAYMENT_SANDBOX_REVIEW_REQUIRED');
+    // Resume is bound to the frozen attempt: without the driver's enabled reviewed scope for exactly that binding it is refused.
+    w.dropScope();const noScope=await call(w.app,'/resume',{attemptId});expect(noScope.body.code).toBe('PAYMENT_RESUME_UNAVAILABLE');expect(noScope.body.clientSecret).toBeUndefined();
     expect(w.creates()).toBe(1);
   });
   it('resume refuses failed (discarded) and processing attempts',async()=>{
@@ -232,8 +235,8 @@ describe('3D Secure (requires_action) after a reload continues the SAME payment'
     expect((await call(w.app,'/resume',{attemptId},'bad-token')).status).toBe(401);
     // Owner resumes: same PaymentIntent secret, flagged for authentication; no new payment.
     const r=await call(w.app,'/resume',{attemptId});
-    expect(r.status).toBe(200);expect(r.body).toEqual({attemptId,clientSecret:'pi_synthetic_secret_abc',nextAction:true});
-    expect(resumeMode(r.body,attemptId)).toEqual({mode:'authenticate',clientSecret:'pi_synthetic_secret_abc'});
+    expect(r.status).toBe(200);expect(r.body).toEqual({attemptId,provider:'stripe',clientSecret:'pi_synthetic_secret_abc',nextAction:true});
+    expect(inAppPayment(r.body,attemptId,'stripe')).toEqual({provider:'stripe',mode:'authenticate',clientSecret:'pi_synthetic_secret_abc'});
     expect(w.creates()).toBe(1);expect(w.piStatus()).toBe('requires_action');
     // Challenge completed on that PaymentIntent -> one credit of the wallet amount, idempotent under repeats.
     w.pay('succeeded');
@@ -256,16 +259,81 @@ describe('3D Secure (requires_action) after a reload continues the SAME payment'
     w.pay('requires_payment_method',{last_payment_error:{code:'payment_intent_authentication_failure'}});
     expect((await call(w.app,'/verify',{attemptId})).body.code).toBe('PAYMENT_FAILED');
     const r=await call(w.app,'/resume',{attemptId});expect(r.body.nextAction).toBe(false);
-    expect(resumeMode(r.body,attemptId)?.mode).toBe('card');
+    expect(inAppPayment(r.body,attemptId,'stripe')?.mode).toBe('card');
     const w2=await checkedOut();w2.pay('requires_action');
     expect((await call(w2.app,'/discard',{attemptId})).status).toBe(200);
     expect(w2.piStatus()).toBe('canceled');expect(w2.attempt().status).toBe('failed');expect(w2.creates()).toBe(1);expect(w2.ledger).toHaveLength(0);
   });
   it('the client accepts a resume response only for its own attempt',()=>{
-    expect(resumeMode({attemptId:'other',clientSecret:'pi_x_secret',nextAction:true},attemptId)).toBeNull();
-    expect(resumeMode({attemptId,clientSecret:'seti_x',nextAction:true},attemptId)).toBeNull();
-    expect(resumeMode(null,attemptId)).toBeNull();
-    expect(resumeMode({attemptId,clientSecret:'pi_x_secret'},attemptId)?.mode).toBe('card');
+    expect(inAppPayment({attemptId:'other',provider:'stripe',clientSecret:'pi_x_secret_y',nextAction:true},attemptId,'stripe')).toBeNull();
+    expect(inAppPayment(null,attemptId,'stripe')).toBeNull();
+    expect(inAppPayment({attemptId,provider:'stripe',clientSecret:''},attemptId,'stripe')).toBeNull();
+    // Cross-provider: a response for another provider is never handed to a provider UI.
+    expect(inAppPayment({attemptId,provider:'kora',clientSecret:'opaque'},attemptId,'stripe')).toBeNull();
+    expect(inAppPayment({attemptId,provider:'stripe',clientSecret:'pi_x_secret_y'},attemptId,'fincra')).toBeNull();
+    expect(inAppPayment({attemptId,provider:'stripe',clientSecret:'pi_x_secret_y'},attemptId,undefined)).toBeNull();
+    expect(inAppPayment({attemptId,clientSecret:'pi_x_secret_y'},attemptId,'stripe')).toBeNull();
+    expect(inAppPayment({attemptId,provider:'stripe',clientSecret:'pi_x_secret_y'},attemptId,'stripe')?.mode).toBe('card');
+  });
+});
+
+// Multi-region binding: provider, merchant, account, country and currency come from the
+// server-authorised market at checkout and are FROZEN on the attempt. Resume, verify and
+// discard use the attempt's binding, never the market's current configuration.
+describe('market binding of an existing attempt',()=>{
+  it('a later market change (route moved to another provider) neither redirects nor strands the attempt',async()=>{
+    const w=await checkedOut();
+    w.rows.market_payment_routes=[{provider:'kora',merchant_account_ref:'kora-gb-test',capabilities:['collect'],country_code:'GB',currency_code:'GBP',method:'card',preferred:true,enabled:true,merchant_approved:true,adapter_ready:true}];
+    const r=await call(w.app,'/resume',{attemptId});
+    expect(r.status).toBe(200);expect(r.body).toEqual({attemptId,provider:'stripe',clientSecret:'pi_synthetic_secret_abc',nextAction:false});
+    expect(w.creates()).toBe(1);
+    w.pay('succeeded');
+    expect((await call(w.app,'/verify',{attemptId})).status).toBe(200);
+    expect((await call(w.app,'/verify',{attemptId})).status).toBe(200);
+    expect(w.ledger).toEqual([{attempt:attemptId,amount:10000}]);
+  });
+  it('cross-provider: an attempt frozen to another provider is never resumed through Stripe',async()=>{
+    const w=await checkedOut();
+    const a=w.attempt();a.payment_provider='kora';a.merchant_account_ref='kora-gb-test';
+    w.rows.driver_card_topup_sandbox_scopes.push({id:'99999999-9999-4999-8999-999999999990',driver_id:a.owner_id,tenant_id:a.tenant_id,provider:'kora',method:'card',country_code:'GB',currency_code:'GBP',merchant_account_ref:'kora-gb-test',enabled:true,provider_account_id:a.provider_account_id,policy_version:a.fee_policy_version,fee_passing_mode:'merchant'});
+    const before=w.retrieves();
+    const r=await call(w.app,'/resume',{attemptId});
+    expect(r.status).toBe(409);expect(r.body.code).toBe('PAYMENT_RESUME_UNAVAILABLE');expect(r.body.clientSecret).toBeUndefined();
+    expect(w.retrieves()).toBe(before);expect(w.creates()).toBe(1);expect(w.ledger).toHaveLength(0);
+  });
+  it('the attempt keeps its frozen currency binding: an attempt whose currency no longer matches its reviewed scope is refused',async()=>{
+    const w=await checkedOut();
+    w.attempt().currency_code='EUR';
+    const r=await call(w.app,'/resume',{attemptId});
+    expect(r.body.code).toBe('PAYMENT_RESUME_UNAVAILABLE');expect(r.body.clientSecret).toBeUndefined();
+    expect(w.ledger).toHaveLength(0);
+  });
+  it('another tenant cannot see or resume the attempt (market isolation)',async()=>{
+    const w=await checkedOut();
+    w.attempt().tenant_id='22222222-2222-4222-8222-222222222222';
+    expect((await call(w.app,'/resume',{attemptId})).status).toBe(404);
+    expect((await call(w.app,'/verify',{attemptId})).status).toBe(404);
+    expect((await call(w.app,'/discard',{attemptId})).status).toBe(404);
+    expect(w.piStatus()).toBe('requires_payment_method');
+  });
+  it('an unsupported market gets no quote, no attempt and no provider call',async()=>{
+    const w=world();w.market.country='KE';w.market.currency='KES';
+    const q=await call(w.app,'/checkout',{amountMinor:10000,idempotencyKey:'99999999-9999-4999-8999-999999999999'});
+    expect(q.body.code).toBe('PAYMENT_MARKET_UNAVAILABLE');
+    expect(w.rows.wallet_topup_attempts).toHaveLength(0);expect(w.creates()).toBe(0);
+  });
+});
+
+describe('currency minor units (no two-decimal assumption)',()=>{
+  it.each([
+    ['JPY',0,'1500',1500,'JPY 1500'],['GBP',2,'12.34',1234,'GBP 12.34'],['NGN',2,'2500.50',250050,'NGN 2500.50'],['KWD',3,'1.234',1234,'KWD 1.234'],
+  ])('%s with exponent %i',(currency,exponent,text,minorUnits,label)=>{
+    expect(driverTopupMinor(text as string,exponent as number)).toBe(minorUnits);
+    expect(driverTopupMoney(minorUnits as number,currency as string,exponent as number)).toBe(label);
+  });
+  it('rejects more decimal places than the currency allows',()=>{
+    expect(()=>driverTopupMinor('12.345',2)).toThrow();
+    expect(()=>driverTopupMinor('15.5',0)).toThrow();
   });
 });
 

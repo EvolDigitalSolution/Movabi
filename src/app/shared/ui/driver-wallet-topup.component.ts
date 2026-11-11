@@ -3,7 +3,6 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
 import { Browser } from '@capacitor/browser';
-import { loadStripe, Stripe, StripeCardElement, StripeElements } from '@stripe/stripe-js';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { SupabaseService } from '../../core/services/supabase/supabase.service';
@@ -12,13 +11,14 @@ import { DriverCashCreditService } from '../../core/services/payments/driver-cas
 import { AuthService } from '../../core/services/auth/auth.service';
 import { driverTopupMinor, driverTopupMoney } from '../utils/driver-topup-money';
 import { formatCashCreditMinor } from '../utils/driver-cash-credit';
-import { resumeMode, verifyOutcome, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
+import { inAppPayment, verifyOutcome, type DriverTopupInAppPayment, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
+import { DriverTopupStripeCardComponent, type DriverTopupProviderResult } from './driver-topup-stripe-card.component';
 import {environment} from '@env/environment';
 
 interface Quote { attemptId: string; walletAmountMinor: number; feeMinor: number; totalChargeMinor: number; currency: string; exponent: number; feePolicyVersion: string; feeLabel?:string; provider?:string; }
 interface Saved { key: string; amountMinor: number; quote?: Quote; submitted?: boolean; }
 @Component({
-  selector: 'app-driver-wallet-topup', standalone: true, imports: [FormsModule],
+  selector: 'app-driver-wallet-topup', standalone: true, imports: [FormsModule, DriverTopupStripeCardComponent],
   template: `
   <section class="rounded-2xl border border-slate-200 bg-white p-4 mt-4" aria-label="Driver wallet credit">
     @if (message()) { <p role="status" class="my-3 text-sm text-slate-600">{{message()}}</p> }
@@ -35,23 +35,30 @@ interface Saved { key: string; amountMinor: number; quote?: Quote; submitted?: b
           <div>Total charged: <strong>{{money(q.totalChargeMinor,q)}}</strong></div>
         </dl>
         <p class="text-sm my-3">At checkout, pay only {{money(q.totalChargeMinor,q)}}. If the provider shows a different total, return without paying.</p>
-        @if (pi()) {
-          <div id="driver-card-element" class="border rounded-xl p-3 my-3 bg-white" aria-label="Card details"></div>
-          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3" [disabled]="busy() || payBusy() || !cardReady()" (click)="pay(q)">Pay {{money(q.totalChargeMinor,q)}}</button>
-          <button type="button" class="p-3 ml-2" [disabled]="busy() || payBusy()" (click)="payLater()">Not now</button>
+        @if (active(); as act) {
+          <!-- Provider UI is chosen by the attempt's frozen provider; each provider owns its own SDK. -->
+          @switch (act.provider) {
+            @case ('stripe') {
+              <app-driver-topup-stripe-card [clientSecret]="act.clientSecret" [mode]="act.mode" [amountLabel]="money(q.totalChargeMinor,q)" (done)="providerDone($event)" />
+            }
+            @default {
+              <p class="text-sm my-3" role="alert">This payment cannot be continued in the app. Check its status, or discard it.</p>
+              <button type="button" class="p-3" (click)="providerDone({next:'close'})">Back</button>
+            }
+          }
         } @else if (!attempt.submitted) {
           <label class="block my-3 text-sm"><input type="checkbox" [(ngModel)]="agreed" [disabled]="busy()"> I agree to pay {{money(q.totalChargeMinor,q)}}.</label>
           <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3" [disabled]="busy() || !agreed" (click)="checkout()">Continue to secure checkout</button>
         }
       }
-      @if (attempt.submitted && !pi()) {
+      @if (attempt.submitted && !active()) {
         <p class="text-sm my-3">Payment requires server verification. Returning from checkout does not confirm payment.</p>
-        <button type="button" class="rounded-xl border p-3" [disabled]="busy() || payBusy()" (click)="verify()">Check payment status</button>
+        <button type="button" class="rounded-xl border p-3" [disabled]="busy()" (click)="verify()">Check payment status</button>
         @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'action_required') {
-          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy() || payBusy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : outcome() === 'action_required' ? 'Complete bank confirmation' : 'Continue payment'}}</button>
+          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : outcome() === 'action_required' ? 'Complete bank confirmation' : 'Continue payment'}}</button>
         }
         @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'cancelled' || outcome() === 'action_required') {
-          <button type="button" class="p-3 ml-2" [disabled]="busy() || payBusy()" (click)="discardAttempt()">Discard this unpaid attempt</button>
+          <button type="button" class="p-3 ml-2" [disabled]="busy()" (click)="discardAttempt()">Discard this unpaid attempt</button>
         }
       } @else if (!attempt.submitted) {
         <button type="button" class="rounded-xl border p-3 ml-2" [disabled]="busy()" (click)="review()">{{attempt.quote ? 'Refresh quote' : 'Recover quote'}}</button>
@@ -80,13 +87,10 @@ export class DriverWalletTopupComponent implements OnInit {
   readonly busy = signal(false);
   readonly open = signal(false);
   readonly embedded = signal(false);
-  readonly pi = signal<string|null>(null);
-  readonly payBusy = signal(false);
+  /** The attempt's ORIGINAL in-app provider payment while its provider UI is open. */
+  readonly active = signal<DriverTopupInAppPayment|null>(null);
   /** Last server-reported verification outcome for the saved attempt (drives safe follow-up actions). */
   readonly outcome = signal<DriverTopupOutcome|null>(null);
-  readonly cardReady = signal(false);
-  private stripe: Stripe | null = null;
-  private card: StripeCardElement | null = null;
   @Input() set hideTrigger(v:boolean){this.embedded.set(!!v);}
   readonly message = signal('Checking top-up availability…');
   amount = ''; agreed = false;
@@ -111,8 +115,8 @@ export class DriverWalletTopupComponent implements OnInit {
       this.available.set(await this.call('/availability'));
       this.message.set('');
     } catch { this.message.set('Top-up is currently unavailable. Saved payments can still be checked.'); }
-    // Auto-check on return/focus only when no in-app card payment is in progress.
-    const resume = () => { if (this.saved()?.submitted && !this.pi() && !this.payBusy()) void this.verify(); };
+    // Auto-check on return/focus only while no provider payment UI is open.
+    const resume = () => { if (this.saved()?.submitted && !this.active()) void this.verify(); };
     window.addEventListener('focus', resume);
     const listener = await App.addListener('appStateChange', state => { if (state.isActive) resume(); });
     this.destroy.onDestroy(() => { window.removeEventListener('focus', resume); void listener.remove(); });
@@ -131,38 +135,15 @@ export class DriverWalletTopupComponent implements OnInit {
     return result;
   }
   private persist(attempt:Saved) { localStorage.setItem(this.storageKey,JSON.stringify(attempt)); this.saved.set(attempt); }
-  private dropCard(){ try{this.card?.unmount();}catch{} this.card=null; this.stripe=null; this.cardReady.set(false); }
-  clear() { localStorage.removeItem(this.storageKey); this.saved.set(null); this.agreed=false; this.pi.set(null); this.outcome.set(null); this.dropCard(); }
-  close() { this.open.set(false); this.amount=''; this.agreed=false; this.pi.set(null); this.dropCard(); }
-  private async mountCard():Promise<void> {
-    const secret=this.pi(); if(!secret)return;
-    this.stripe=this.stripe||await loadStripe((environment as any).stripePublicKey);
-    if(!this.stripe)return;
-    const elements:StripeElements=this.stripe.elements();
-    this.card=elements.create('card',{hidePostalCode:true});
-    const host=document.getElementById('driver-card-element');
-    if(!host)return;
-    this.card.mount(host);
-    this.card.on('ready',()=>{this.cardReady.set(true);});
+  clear() { localStorage.removeItem(this.storageKey); this.saved.set(null); this.agreed=false; this.active.set(null); this.outcome.set(null); }
+  close() { this.open.set(false); this.amount=''; this.agreed=false; this.active.set(null); }
+  /** The provider UI finished. Credit is decided only by server verification. */
+  async providerDone(result: DriverTopupProviderResult) {
+    const attempt = this.saved(); if (!attempt) return;
+    this.persist({...attempt,submitted:true});
+    this.active.set(null);
+    await this.verify(result.next === 'verify' ? result.detail : undefined);
   }
-  async pay(q:Quote) {
-    const secret=this.pi(); const attempt=this.saved();
-    if(this.payBusy()||!secret||!attempt||!this.stripe||!this.card)return;
-    this.payBusy.set(true); this.message.set('');
-    let check=false;
-    try {
-      const result=await this.stripe.confirmCardPayment(secret,{payment_method:{card:this.card}});
-      const status=result.paymentIntent?.status;
-      if(status==='succeeded'||status==='processing'){ this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); check=true; }
-      else if(result.error && ['card_error','validation_error'].includes(result.error.type)) this.message.set((result.error.message ? result.error.message+' ' : '')+'No payment was taken. You can correct the card details and try again.');
-      else { this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); check=true; }
-    } catch { this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); check=true; }
-    finally { this.payBusy.set(false); }
-    // Server-side verification is the only source of truth for credit.
-    if(check) await this.verify();
-  }
-  /** Leaves the in-app card form without paying; the attempt stays saved and is checked server-side. */
-  async payLater() { if (this.payBusy()) return; this.dropCard(); this.pi.set(null); await this.verify(); }
   readonly credit = this.cash.status;
   formatMinor(value:string|number,currency:string):string { return formatCashCreditMinor(String(value),currency); }
   ngOnInitCredit(){ void this.cash.refresh(true).catch(()=>{}); }
@@ -190,13 +171,10 @@ export class DriverWalletTopupComponent implements OnInit {
       // Persist before contact: a lost response must reconcile this same attempt.
       this.persist({...attempt,submitted:true});
       const result = await this.call('/checkout',{amountMinor:attempt.amountMinor,idempotencyKey:attempt.key,confirmedTotalMinor:attempt.quote.totalChargeMinor});
-      // In-app Stripe Elements path: a server-issued PaymentIntent clientSecret.
-      if (result.kind === 'checkout' && result.attemptId === attempt.quote.attemptId && typeof result.clientSecret === 'string' && result.clientSecret.startsWith('pi_')) {
-        this.outcome.set(null); this.message.set('');
-        this.pi.set(result.clientSecret);
-        setTimeout(()=>void this.mountCard(),0);
-        return;
-      }
+      // In-app provider payment: the server-issued secret of this attempt's own payment.
+      const inApp = result?.kind === 'checkout' && result.clientSecret !== undefined ? inAppPayment(result, attempt.quote.attemptId, attempt.quote.provider) : null;
+      if (inApp) { this.outcome.set(null); this.message.set(''); this.active.set(inApp); return; }
+      if (result?.kind === 'checkout' && result.clientSecret !== undefined) throw Error('unexpected in-app payment');
       const url = new URL(result.checkoutUrl);
       if (result.kind !== 'checkout' || result.attemptId !== attempt.quote.attemptId || url.protocol !== 'https:' || url.port || url.username || url.password || !((result.provider==='stripe'&&url.hostname==='checkout.stripe.com')||((result.provider==='flutterwave'||result.provider===undefined)&&['checkout.flutterwave.com','ravemodal-dev.flutterwave.com'].includes(url.hostname)))) throw Error();
       if (Capacitor.isNativePlatform()) await Browser.open({url:url.href});
@@ -211,42 +189,24 @@ export class DriverWalletTopupComponent implements OnInit {
   }
   /** Re-opens the ORIGINAL unpaid in-app payment (server returns its existing client secret; nothing new is charged). */
   async resumePayment() {
-    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote || !attempt.submitted) return;
+    const attempt = this.saved(); if (this.busy() || this.active() || !attempt?.quote || !attempt.submitted) return;
     this.busy.set(true); this.message.set('');
-    let authenticate: string | null = null;
     try {
-      const resumed = resumeMode(await this.call('/resume',{attemptId:attempt.quote.attemptId}), attempt.quote.attemptId);
-      if (!resumed) throw Error();
+      // Same provider as the saved quote, or nothing is opened (no cross-provider resume).
+      const resumed = inAppPayment(await this.call('/resume',{attemptId:attempt.quote.attemptId}), attempt.quote.attemptId, attempt.quote.provider);
+      if (!resumed) { this.message.set('This payment could not be reopened safely in the app. Check its status, or discard it.'); return; }
       this.outcome.set(null);
-      // 3D Secure pending on the same PaymentIntent: finish it; never collect a new card here.
-      if (resumed.mode === 'authenticate') authenticate = resumed.clientSecret;
-      else { this.pi.set(resumed.clientSecret); setTimeout(()=>void this.mountCard(),0); }
+      this.active.set(resumed);
     } catch (error:any) {
       const code = error?.error?.code;
       if (code === 'TOPUP_ALREADY_CREDITED') { this.busy.set(false); await this.verify(); return; }
       this.message.set(code === 'PAYMENT_RESUME_UNAVAILABLE' ? 'This payment can no longer be continued. Check its status, or discard it if it was not paid.' : 'Could not reopen this payment. Check its status and try again.');
     } finally { this.busy.set(false); }
-    if (authenticate) await this.completeAuthentication(authenticate);
-  }
-  /** Completes the pending customer authentication of the ORIGINAL PaymentIntent
-   * (Stripe shows the bank's 3D Secure step). Confirms nothing new and creates no
-   * payment; whatever the result, credit is decided only by server verification. */
-  private async completeAuthentication(clientSecret: string) {
-    if (this.payBusy()) return;
-    this.payBusy.set(true); this.message.set('');
-    try {
-      this.stripe = this.stripe || await loadStripe((environment as any).stripePublicKey);
-      if (!this.stripe) throw Error();
-      const result = await this.stripe.handleNextAction({clientSecret});
-      if (result.error) this.message.set((result.error.message ? result.error.message + ' ' : '') + 'No credit has been added. Checking the payment status…');
-    } catch { /* fall through to server verification */ }
-    finally { this.payBusy.set(false); }
-    await this.verify();
   }
   /** Discards an unpaid attempt. The server cancels the provider payment first, so a
    * late success cannot be lost; local state is cleared only after it confirms. */
   async discardAttempt() {
-    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote || !attempt.submitted) return;
+    const attempt = this.saved(); if (this.busy() || this.active() || !attempt?.quote || !attempt.submitted) return;
     this.busy.set(true); this.message.set('');
     try {
       const result = await this.call('/discard',{attemptId:attempt.quote.attemptId});
@@ -259,8 +219,9 @@ export class DriverWalletTopupComponent implements OnInit {
       this.message.set('Could not discard this attempt right now. It is still saved; check its status or try again.');
     } finally { this.busy.set(false); }
   }
-  async verify() {
-    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote) return;
+  /** detail: what the provider reported (shown with the server outcome; never a secret). */
+  async verify(detail?: string) {
+    const attempt = this.saved(); if (this.busy() || this.active() || !attempt?.quote) return;
     this.busy.set(true);
     try {
       const result = await this.call('/verify',{attemptId:attempt.quote.attemptId});
@@ -271,7 +232,7 @@ export class DriverWalletTopupComponent implements OnInit {
       catch { this.message.set('Payment verified. Wallet credit added. Refresh the wallet to check its balance.'); }
     } catch (error:any) {
       const [outcome,text] = verifyOutcome(error?.error?.code);
-      this.outcome.set(outcome); this.message.set(text);
+      this.outcome.set(outcome); this.message.set(detail ? detail + ' ' + text : text);
     }
     finally { this.busy.set(false); }
   }

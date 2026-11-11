@@ -19,14 +19,20 @@ export function verifyOutcome(code: unknown): [DriverTopupOutcome, string] {
   }
 }
 
+/** An in-app provider payment to continue: always the attempt's ORIGINAL provider payment. */
+export interface DriverTopupInAppPayment { provider: string; clientSecret: string; mode: 'authenticate'|'card'; }
+
 /**
- * Validates a /resume response for the saved attempt and decides how the SAME
- * PaymentIntent continues: 'authenticate' finishes its pending customer
- * authentication (3D Secure) without collecting a card; 'card' reopens the card
- * form. null = response not provably for this attempt (do nothing).
+ * Validates a server response that opens the in-app payment of the saved attempt (/checkout or
+ * /resume) and returns what to continue. Provider-neutral: the provider comes from the server
+ * (the attempt's frozen provider) and must equal the one the saved quote was issued for, so a
+ * response for another provider is rejected and never handed to a provider UI. Each provider
+ * UI validates its own secret format. 'authenticate': finish pending customer authentication
+ * without collecting new details. null = not provably this attempt's payment (do nothing).
  */
-export function resumeMode(result: unknown, attemptId: string): {mode:'authenticate'|'card'; clientSecret:string}|null {
-  const r = result as {attemptId?:unknown; clientSecret?:unknown; nextAction?:unknown}|null;
-  if (!r || typeof r !== 'object' || r.attemptId !== attemptId || typeof r.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return null;
-  return {mode: r.nextAction === true ? 'authenticate' : 'card', clientSecret: r.clientSecret};
+export function inAppPayment(result: unknown, attemptId: string, expectedProvider: string | undefined): DriverTopupInAppPayment | null {
+  const r = result as {attemptId?:unknown; provider?:unknown; clientSecret?:unknown; nextAction?:unknown}|null;
+  if (!r || typeof r !== 'object' || r.attemptId !== attemptId || typeof r.clientSecret !== 'string' || !r.clientSecret) return null;
+  if (typeof r.provider !== 'string' || !/^[a-z][a-z0-9_-]{1,31}$/.test(r.provider) || !expectedProvider || r.provider !== expectedProvider) return null;
+  return {provider: r.provider, clientSecret: r.clientSecret, mode: r.nextAction === true ? 'authenticate' : 'card'};
 }
