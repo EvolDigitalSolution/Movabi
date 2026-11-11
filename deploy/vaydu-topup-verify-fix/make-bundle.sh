@@ -29,7 +29,8 @@ git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD -- "${PATHS[
 # Prove it: every extracted file's raw blob id must equal the committed blob id, and no extras.
 git ls-tree -r HEAD -- "${PATHS[@]}" | awk '{print $3"\t"$4}' | sort -k2 > "$OUT.expected-blobs"
 (cd "$OUT" && find "${PATHS[@]}" -type f | sort > "../$NAME.files" \
-  && paste <(git hash-object --no-filters --stdin-paths < "../$NAME.files") "../$NAME.files" | sort -k2) > "$OUT.actual-blobs"
+  && paste <(tr '\n' '\0' < "../$NAME.files" | xargs -0 git hash-object --no-filters --) "../$NAME.files" | sort -k2) > "$OUT.actual-blobs"
+# (paths as arguments: Git for Windows' --stdin-paths ignores --no-filters and re-hashes as CRLF)
 cmp -s "$OUT.expected-blobs" "$OUT.actual-blobs" || { echo "FATAL: bundle source differs from HEAD:"; diff "$OUT.expected-blobs" "$OUT.actual-blobs" | head -20; exit 1; }
 echo "source files byte-identical to HEAD: $(wc -l < "$OUT.actual-blobs")"
 rm -f "$OUT.expected-blobs" "$OUT.actual-blobs" "release/$NAME.files"
