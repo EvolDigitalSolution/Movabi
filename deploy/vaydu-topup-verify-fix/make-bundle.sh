@@ -23,9 +23,18 @@ COMMIT_TS=$(git log -1 --format=%ct); BUILD_TS=$(stat -c %Y dist/mobile/browser/
 grep -rlq "Discard this unpaid attempt" dist/mobile/browser || { echo "FATAL: mobile build does not contain the fixed top-up component"; exit 1; }
 
 rm -rf "$OUT"; mkdir -p "$OUT/mobile"
-git archive --format=tar HEAD -- "${PATHS[@]}" | tar -x -C "$OUT"
+# Exact committed bytes: core.autocrlf (default true on Windows) would otherwise make git archive
+# rewrite LF files as CRLF, so the bundle would not match the SOURCE_SHA it claims.
+git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD -- "${PATHS[@]}" | tar -x -C "$OUT"
+# Prove it: every extracted file's raw blob id must equal the committed blob id, and no extras.
+git ls-tree -r HEAD -- "${PATHS[@]}" | awk '{print $3"\t"$4}' | sort -k2 > "$OUT.expected-blobs"
+(cd "$OUT" && find "${PATHS[@]}" -type f | sort > "../$NAME.files" \
+  && paste <(git hash-object --no-filters --stdin-paths < "../$NAME.files") "../$NAME.files" | sort -k2) > "$OUT.actual-blobs"
+cmp -s "$OUT.expected-blobs" "$OUT.actual-blobs" || { echo "FATAL: bundle source differs from HEAD:"; diff "$OUT.expected-blobs" "$OUT.actual-blobs" | head -20; exit 1; }
+echo "source files byte-identical to HEAD: $(wc -l < "$OUT.actual-blobs")"
+rm -f "$OUT.expected-blobs" "$OUT.actual-blobs" "release/$NAME.files"
 cp -r dist/mobile/browser "$OUT/mobile/browser"
-cp "$FIX/VERIFY.sql" "$FIX/PREREQ.sql" "$FIX/ORDER.txt" "$OUT/"
+for f in VERIFY.sql PREREQ.sql ORDER.txt; do git cat-file -p "HEAD:$FIX/$f" > "$OUT/$f"; done   # committed bytes
 git rev-parse --short=7 HEAD > "$OUT/SOURCE_SHA"
 (cd "$OUT" && sha256sum VERIFY.sql PREREQ.sql ORDER.txt SOURCE_SHA > SHA256SUMS \
   && find . -type f ! -name SHA256SUMS ! -name ALL_SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > ALL_SHA256SUMS)

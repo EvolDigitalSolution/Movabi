@@ -18,8 +18,10 @@ mkdir -p "$DIR/bundle" && tar -xzf "$ARCHIVE" -C "$DIR/bundle"
 (cd "$DIR/bundle/$NAME" && sha256sum -c --quiet SHA256SUMS && sha256sum -c --quiet ALL_SHA256SUMS && echo "bundle checksums OK")
 # Running API source vs bundle: every path the API image is built from (make-bundle.sh PATHS).
 # A path missing on one side shows up as ADDED/REMOVED rather than aborting the check.
+# Hashes ignore CR bytes: earlier bundles built on Windows may hold CRLF copies of LF sources, and a
+# line-ending-only difference is not a code change.
 API_PATHS='server src/app/shared deploy/vaydu-payment-account-setup/api package.json package-lock.json'
-LIST='for p in '"$API_PATHS"'; do [ -e "$p" ] && find "$p" -type f; done | sort | tr "\n" "\0" | xargs -0 sha256sum'
+LIST='for p in '"$API_PATHS"'; do [ -e "$p" ] && find "$p" -type f; done | sort | while IFS= read -r f; do printf "%s  %s\n" "$(tr -d "\r" < "$f" | sha256sum | cut -d" " -f1)" "$f"; done'
 docker exec $API sh -c "cd /app && $LIST" | sort -k2 > "$DIR/running-api.sha"
 (cd "$DIR/bundle/$NAME" && sh -c "$LIST" | sort -k2) > "$DIR/bundle-api.sha"
 echo "running API files hashed: $(wc -l < "$DIR/running-api.sha")   bundle API files: $(wc -l < "$DIR/bundle-api.sha")"

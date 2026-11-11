@@ -74,7 +74,9 @@ npm run build:mobile:develop      # rebuild on the committed tree (bundle script
 bash deploy/vaydu-topup-verify-fix/make-bundle.sh
 ```
 Refuses if shipped paths are dirty, the fix is missing, or `dist/mobile` is older than HEAD or
-lacks the new component. Output: `release/vaydu-develop-<sha>-topup.tar.gz` + `.sha256`,
+lacks the new component. Source files are archived with `core.autocrlf=false` and every one is
+checked against its committed blob id (Windows' default autocrlf would otherwise rewrite LF files
+as CRLF); `VERIFY.sql`/`PREREQ.sql`/`ORDER.txt` come from HEAD, not the working tree. Output: `release/vaydu-develop-<sha>-topup.tar.gz` + `.sha256`,
 layout accepted by `rollout-develop-52097ef.sh` (SHA256SUMS, ALL_SHA256SUMS, SOURCE_SHA,
 VERIFY.sql; ORDER.txt empty – API/web-only modes never replay migrations).
 
