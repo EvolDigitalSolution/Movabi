@@ -23,7 +23,8 @@ export function createDriverTopupRouter(deps: DriverTopupDeps): Router {
     if (error instanceof PaymentLayerError) {
       const status = error.code === 'AUTHENTICATION_REQUIRED' ? 401
         : error.code === 'TOPUP_NOT_AVAILABLE' ? 404
-        : ['COLLECTION_DISABLED','PAYMENT_RECONCILIATION_REQUIRED','TOPUP_QUOTE_MISMATCH'].includes(error.code) ? 409
+        : ['COLLECTION_DISABLED','PAYMENT_RECONCILIATION_REQUIRED','TOPUP_QUOTE_MISMATCH','PAYMENT_PENDING','PAYMENT_NOT_COMPLETED','PAYMENT_FAILED','PAYMENT_CANCELLED','PAYMENT_RESUME_UNAVAILABLE','TOPUP_ALREADY_CREDITED','PAYMENT_NOT_DISCARDABLE','PAYMENT_DISCARD_UNAVAILABLE'].includes(error.code) ? 409
+        : ['PAYMENT_RECEIVED_CREDIT_PENDING','PAYMENT_DISCARD_UNCONFIRMED'].includes(error.code) ? 503
         : 400;
       return res.status(status).json({ code: error.code });
     }
@@ -55,6 +56,18 @@ export function createDriverTopupRouter(deps: DriverTopupDeps): Router {
       return res.json(await service.verify(match[1], req.body.attemptId));
     } catch (error) { return failure(res, error); }
   });
+  // Owner-only actions on an existing attempt. Neither creates a payment.
+  for (const [path, action] of [['/resume', 'resume'], ['/discard', 'discard']] as const) {
+    router.post(path, async (req: Request, res: Response) => {
+      try {
+        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).some(k => k !== 'attemptId') || typeof req.body.attemptId !== 'string')
+          throw new PaymentLayerError('INVALID_PAYMENT_INPUT', 'attemptId is required');
+        const match = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
+        if (!match) throw new PaymentLayerError('AUTHENTICATION_REQUIRED', 'Authentication required');
+        return res.json(await service[action](match[1], req.body.attemptId));
+      } catch (error) { return failure(res, error); }
+    });
+  }
   return router;
 }
 

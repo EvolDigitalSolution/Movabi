@@ -5,6 +5,20 @@ import {stripeApiAmountFromLedger} from './stripe-currency-amounts';
 import type {DriverCardAttemptStore,DriverCardExpected,DriverCardInput,DriverCardTopupAdapter} from './driver-card-topup-contracts';
 
 const stop=():never=>{throw new PaymentLayerError('PAYMENT_RECONCILIATION_REQUIRED','Verify the original sandbox payment');};
+/** Maps a verified-identity, non-succeeded PaymentIntent to an explicit no-credit state. */
+export function notSucceeded(pi:Pick<Stripe.PaymentIntent,'status'|'last_payment_error'>):never{
+ switch(pi.status){
+  case 'processing':case 'requires_action':case 'requires_confirmation':
+   throw new PaymentLayerError('PAYMENT_PENDING','Payment is not final yet');
+  case 'requires_payment_method':
+   if(pi.last_payment_error)throw new PaymentLayerError('PAYMENT_FAILED','The card payment failed');
+   throw new PaymentLayerError('PAYMENT_NOT_COMPLETED','Payment has not been completed');
+  case 'canceled':
+   throw new PaymentLayerError('PAYMENT_CANCELLED','Payment was cancelled');
+  default:
+   return stop();
+ }
+}
 /** Separate driver funding adapter. Existing checkout, saved cards and payouts are untouched. */
 export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
  readonly provider='stripe';
@@ -52,6 +66,61 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
    await this.store.finish(input.reference,'unknown');return stop();
   }
  }
+ /** Returns the ORIGINAL PaymentIntent's client secret so an unpaid attempt can
+  * be completed after a reload. Read-only: never creates or confirms a payment. */
+ async resume(input:DriverCardExpected):Promise<{clientSecret:string}>{
+  const account=await this.account(input),stored=await this.storedAttempt(input,account);
+  const id=stored.providerSessionId;
+  if(typeof id!=='string'||!id.startsWith('pi_'))throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
+  const total=stripeApiAmountFromLedger(input.amountMinor,input.currency,input.exponent);
+  const pi=await this.stripe.paymentIntents.retrieve(id);
+  if(!this.piIdentity(pi,input,account,total))return stop();
+  if(!['requires_payment_method','requires_confirmation','requires_action'].includes(pi.status)||!pi.client_secret)throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
+  return {clientSecret:pi.client_secret};
+ }
+ private sessionIdentity(session:Stripe.Checkout.Session,input:DriverCardExpected,account:string,total:number){
+  return session.livemode===false&&session.mode==='payment'&&session.client_reference_id===input.reference
+   &&session.metadata?.vaydu_driver_topup===input.reference&&session.metadata?.vaydu_account===account
+   &&session.metadata?.vaydu_merchant===this.merchant&&session.metadata?.vaydu_total===String(total)
+   &&session.amount_total===total&&session.currency===input.currency.toLowerCase();
+ }
+ private piIdentity(pi:Stripe.PaymentIntent,input:DriverCardExpected,account:string,total:number){
+  return pi.livemode===false&&pi.amount===total&&pi.currency===input.currency.toLowerCase()
+   &&pi.metadata?.vaydu_driver_topup===input.reference&&pi.metadata?.vaydu_account===account
+   &&pi.metadata?.vaydu_merchant===this.merchant&&pi.metadata?.vaydu_total===String(total);
+ }
+ private async storedAttempt(input:DriverCardExpected,account:string){
+  const stored=await this.store.get(input.reference),req=stored?.request;
+  if(!stored||!['submitted','unknown'].includes(stored.state)||!req||req.provider!=='stripe'||req.reference!==input.reference||req.merchantAccountRef!==this.merchant||req.providerAccountId!==account||req.currency!==input.currency||req.amountMinor!==input.amountMinor||req.exponent!==input.exponent||req.credentialFingerprint!==this.fingerprint)return stop();
+  return stored;
+ }
+ /** Cancels the ORIGINAL unpaid payment at Stripe so it can never succeed later.
+  * Only unpaid states are cancelled; a paid or processing payment is refused so
+  * the caller verifies (and credits) it instead. */
+ async cancel(input:DriverCardExpected):Promise<{status:'canceled'}>{
+  const account=await this.account(input),stored=await this.storedAttempt(input,account);
+  const id=stored.providerSessionId;
+  const notDiscardable=()=>{throw new PaymentLayerError('PAYMENT_NOT_DISCARDABLE','Payment is paid or still processing; verify it instead');};
+  if(typeof id!=='string'||!(id.startsWith('pi_')||id.startsWith('cs_')))throw new PaymentLayerError('PAYMENT_DISCARD_UNAVAILABLE','This payment cannot be discarded automatically');
+  const total=stripeApiAmountFromLedger(input.amountMinor,input.currency,input.exponent);
+  let piId:string|undefined=id.startsWith('pi_')?id:undefined;
+  if(id.startsWith('cs_')){
+   let s=await this.stripe.checkout.sessions.retrieve(id);
+   if(!this.sessionIdentity(s,input,account,total))return stop();
+   if(s.status==='complete')return notDiscardable();
+   if(s.status==='open'){s=await this.stripe.checkout.sessions.expire(id);if(s.status!=='expired')return stop();}
+   piId=typeof s.payment_intent==='string'?s.payment_intent:s.payment_intent?.id;
+   if(!piId){await this.store.observe?.(input.reference,{source:'server-query',provider:'stripe',reference:input.reference,currency:input.currency,status:'expired',providerAccountId:account});return {status:'canceled'};}
+  }
+  let pi=await this.stripe.paymentIntents.retrieve(piId!);
+  if(!this.piIdentity(pi,input,account,total))return stop();
+  if(['requires_payment_method','requires_confirmation','requires_action'].includes(pi.status))
+   pi=await this.stripe.paymentIntents.cancel(pi.id,{cancellation_reason:'abandoned'},{idempotencyKey:'driver-topup-cancel:'+input.reference});
+  if(pi.status!=='canceled')return pi.status==='succeeded'||pi.status==='processing'||pi.status==='requires_capture'?notDiscardable():stop();
+  // Audit: same evidence contract as verify (record_driver_topup_provider_observation accepts only these fields).
+  await this.store.observe?.(input.reference,{source:'server-query',provider:'stripe',reference:input.reference,currency:pi.currency.toUpperCase(),status:pi.status,providerAccountId:account});
+  return {status:'canceled'};
+ }
  async verify(input:DriverCardExpected){
   const account=await this.account(input),stored=await this.store.get(input.reference),req=stored?.request;
   if(!stored||!['started','submitted','unknown'].includes(stored.state)||!req||req.provider!=='stripe'||req.reference!==input.reference||req.merchantAccountRef!==this.merchant||req.providerAccountId!==account||req.currency!==input.currency||req.amountMinor!==input.amountMinor||req.exponent!==input.exponent||req.credentialFingerprint!==this.fingerprint)return stop();
@@ -80,7 +149,13 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
   }else{
    session=await this.stripe.checkout.sessions.retrieve(sessionId!);
    const piId=typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent?.id;
-   if(!piId)return stop();
+   if(!piId){
+    // Checkout Sessions create their PaymentIntent lazily: none means nothing was paid.
+    if(!this.sessionIdentity(session,input,account,total))return stop();
+    if(session.status==='open')throw new PaymentLayerError('PAYMENT_NOT_COMPLETED','Payment has not been completed');
+    if(session.status==='expired')throw new PaymentLayerError('PAYMENT_CANCELLED','Payment was cancelled');
+    return stop();
+   }
    pi=await this.stripe.paymentIntents.retrieve(piId,{expand:['latest_charge.balance_transaction']});
   }
   const charge=typeof pi.latest_charge==='object'?pi.latest_charge:null;
@@ -90,8 +165,16 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
    chargedAmountApiMinor:charge?String(charge.amount):null,providerFeeApiMinor:balance?String(balance.fee):null,
    settlementNetApiMinor:balance?String(balance.net):null,settlementCurrency:balance?.currency.toUpperCase()??null,
    providerBalanceReference:balance?.id??null});
-  const sessionOk=session?(session.livemode===false&&session.mode==='payment'&&session.status==='complete'&&session.payment_status==='paid'&&session.client_reference_id===input.reference&&session.metadata?.vaydu_driver_topup===input.reference&&session.metadata?.vaydu_account===account&&session.metadata?.vaydu_merchant===this.merchant&&session.metadata?.vaydu_total===String(total)&&session.amount_total===total&&session.currency===input.currency.toLowerCase()):true;
-  if(!sessionOk||pi.livemode!==false||pi.status!=='succeeded'||pi.amount!==total||pi.amount_received!==total||pi.currency!==input.currency.toLowerCase()||pi.metadata?.vaydu_driver_topup!==input.reference||pi.metadata?.vaydu_account!==account||pi.metadata?.vaydu_merchant!==this.merchant||pi.metadata?.vaydu_total!==String(total)||!charge||charge.paid!==true||charge.captured!==true||charge.refunded||charge.amount_refunded!==0||charge.amount!==total||charge.currency!==input.currency.toLowerCase()||charge.payment_method_details?.type!=='card')return stop();
+  // Identity first: a PaymentIntent that is not provably this attempt (test mode,
+  // account, merchant, reference, total, currency) always requires reconciliation.
+  const identityOk=this.piIdentity(pi,input,account,total)&&(!session||this.sessionIdentity(session,input,account,total));
+  if(!identityOk)return stop();
+  // Non-success states of the matching PaymentIntent are reported explicitly so
+  // the client can show an accurate state. None of them credits; unknown
+  // statuses still fail closed as reconciliation.
+  if(pi.status!=='succeeded')return notSucceeded(pi);
+  const sessionOk=session?(session.status==='complete'&&session.payment_status==='paid'):true;
+  if(!sessionOk||pi.amount_received!==total||!charge||charge.paid!==true||charge.captured!==true||charge.refunded||charge.amount_refunded!==0||charge.amount!==total||charge.currency!==input.currency.toLowerCase()||charge.payment_method_details?.type!=='card')return stop();
   if(!stored.providerSessionId)await this.store.finish(input.reference,'submitted',undefined,sessionId);
   return {reference:input.reference,merchantAccountRef:this.merchant,currency:input.currency,chargedAmountMinor:input.amountMinor,finalStatus:'succeeded' as const};
  }

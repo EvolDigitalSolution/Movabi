@@ -12,6 +12,7 @@ import { DriverCashCreditService } from '../../core/services/payments/driver-cas
 import { AuthService } from '../../core/services/auth/auth.service';
 import { driverTopupMinor, driverTopupMoney } from '../utils/driver-topup-money';
 import { formatCashCreditMinor } from '../utils/driver-cash-credit';
+import { verifyOutcome, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
 import {environment} from '@env/environment';
 
 interface Quote { attemptId: string; walletAmountMinor: number; feeMinor: number; totalChargeMinor: number; currency: string; exponent: number; feePolicyVersion: string; feeLabel?:string; provider?:string; }
@@ -34,20 +35,25 @@ interface Saved { key: string; amountMinor: number; quote?: Quote; submitted?: b
           <div>Total charged: <strong>{{money(q.totalChargeMinor,q)}}</strong></div>
         </dl>
         <p class="text-sm my-3">At checkout, pay only {{money(q.totalChargeMinor,q)}}. If the provider shows a different total, return without paying.</p>
-        @if (!attempt.submitted) {
+        @if (pi()) {
+          <div id="driver-card-element" class="border rounded-xl p-3 my-3 bg-white" aria-label="Card details"></div>
+          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3" [disabled]="busy() || payBusy() || !cardReady()" (click)="pay(q)">Pay {{money(q.totalChargeMinor,q)}}</button>
+          <button type="button" class="p-3 ml-2" [disabled]="busy() || payBusy()" (click)="payLater()">Not now</button>
+        } @else if (!attempt.submitted) {
           <label class="block my-3 text-sm"><input type="checkbox" [(ngModel)]="agreed" [disabled]="busy()"> I agree to pay {{money(q.totalChargeMinor,q)}}.</label>
-          @if (pi()) {
-            <div id="driver-card-element" class="border rounded-xl p-3 my-3 bg-white" aria-label="Card details"></div>
-            <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3" [disabled]="busy() || payBusy() || !cardReady" (click)="pay(q)">Pay {{money(q.totalChargeMinor,q)}}</button>
-          } @else {
           <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3" [disabled]="busy() || !agreed" (click)="checkout()">Continue to secure checkout</button>
-          }
         }
       }
-      @if (attempt.submitted) {
+      @if (attempt.submitted && !pi()) {
         <p class="text-sm my-3">Payment requires server verification. Returning from checkout does not confirm payment.</p>
-        <button type="button" class="rounded-xl border p-3" [disabled]="busy()" (click)="verify()">Check payment status</button>
-      } @else {
+        <button type="button" class="rounded-xl border p-3" [disabled]="busy() || payBusy()" (click)="verify()">Check payment status</button>
+        @if (outcome() === 'not_completed' || outcome() === 'failed') {
+          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy() || payBusy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : 'Continue payment'}}</button>
+        }
+        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'cancelled') {
+          <button type="button" class="p-3 ml-2" [disabled]="busy() || payBusy()" (click)="discardAttempt()">Discard this unpaid attempt</button>
+        }
+      } @else if (!attempt.submitted) {
         <button type="button" class="rounded-xl border p-3 ml-2" [disabled]="busy()" (click)="review()">{{attempt.quote ? 'Refresh quote' : 'Recover quote'}}</button>
         <button type="button" class="p-3" [disabled]="busy()" (click)="clear()">Cancel quote</button>
       }
@@ -76,7 +82,9 @@ export class DriverWalletTopupComponent implements OnInit {
   readonly embedded = signal(false);
   readonly pi = signal<string|null>(null);
   readonly payBusy = signal(false);
-  cardReady = false;
+  /** Last server-reported verification outcome for the saved attempt (drives safe follow-up actions). */
+  readonly outcome = signal<DriverTopupOutcome|null>(null);
+  readonly cardReady = signal(false);
   private stripe: Stripe | null = null;
   private card: StripeCardElement | null = null;
   @Input() set hideTrigger(v:boolean){this.embedded.set(!!v);}
@@ -103,7 +111,8 @@ export class DriverWalletTopupComponent implements OnInit {
       this.available.set(await this.call('/availability'));
       this.message.set('');
     } catch { this.message.set('Top-up is currently unavailable. Saved payments can still be checked.'); }
-    const resume = () => { if (this.saved()?.submitted) void this.verify(); };
+    // Auto-check on return/focus only when no in-app card payment is in progress.
+    const resume = () => { if (this.saved()?.submitted && !this.pi() && !this.payBusy()) void this.verify(); };
     window.addEventListener('focus', resume);
     const listener = await App.addListener('appStateChange', state => { if (state.isActive) resume(); });
     this.destroy.onDestroy(() => { window.removeEventListener('focus', resume); void listener.remove(); });
@@ -122,8 +131,8 @@ export class DriverWalletTopupComponent implements OnInit {
     return result;
   }
   private persist(attempt:Saved) { localStorage.setItem(this.storageKey,JSON.stringify(attempt)); this.saved.set(attempt); }
-  private dropCard(){ try{this.card?.unmount();}catch{} this.card=null; this.stripe=null; this.cardReady=false; }
-  clear() { localStorage.removeItem(this.storageKey); this.saved.set(null); this.agreed=false; this.pi.set(null); this.dropCard(); }
+  private dropCard(){ try{this.card?.unmount();}catch{} this.card=null; this.stripe=null; this.cardReady.set(false); }
+  clear() { localStorage.removeItem(this.storageKey); this.saved.set(null); this.agreed=false; this.pi.set(null); this.outcome.set(null); this.dropCard(); }
   close() { this.open.set(false); this.amount=''; this.agreed=false; this.pi.set(null); this.dropCard(); }
   private async mountCard():Promise<void> {
     const secret=this.pi(); if(!secret)return;
@@ -134,19 +143,26 @@ export class DriverWalletTopupComponent implements OnInit {
     const host=document.getElementById('driver-card-element');
     if(!host)return;
     this.card.mount(host);
-    this.card.on('ready',()=>{this.cardReady=true;});
+    this.card.on('ready',()=>{this.cardReady.set(true);});
   }
   async pay(q:Quote) {
     const secret=this.pi(); const attempt=this.saved();
     if(this.payBusy()||!secret||!attempt||!this.stripe||!this.card)return;
     this.payBusy.set(true); this.message.set('');
+    let check=false;
     try {
       const result=await this.stripe.confirmCardPayment(secret,{payment_method:{card:this.card}});
-      if(result.paymentIntent?.status==='succeeded'){ this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); await this.verify(); }
-      else this.message.set(result.error?.message||'Payment could not be confirmed. Keep this attempt and check status later.');
-    } catch { this.message.set('Payment could not be confirmed. Keep this attempt and check status later.'); }
+      const status=result.paymentIntent?.status;
+      if(status==='succeeded'||status==='processing'){ this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); check=true; }
+      else if(result.error && ['card_error','validation_error'].includes(result.error.type)) this.message.set((result.error.message ? result.error.message+' ' : '')+'No payment was taken. You can correct the card details and try again.');
+      else { this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); check=true; }
+    } catch { this.persist({...attempt,submitted:true}); this.dropCard(); this.pi.set(null); check=true; }
     finally { this.payBusy.set(false); }
+    // Server-side verification is the only source of truth for credit.
+    if(check) await this.verify();
   }
+  /** Leaves the in-app card form without paying; the attempt stays saved and is checked server-side. */
+  async payLater() { if (this.payBusy()) return; this.dropCard(); this.pi.set(null); await this.verify(); }
   readonly credit = this.cash.status;
   formatMinor(value:string|number,currency:string):string { return formatCashCreditMinor(String(value),currency); }
   ngOnInitCredit(){ void this.cash.refresh(true).catch(()=>{}); }
@@ -176,6 +192,7 @@ export class DriverWalletTopupComponent implements OnInit {
       const result = await this.call('/checkout',{amountMinor:attempt.amountMinor,idempotencyKey:attempt.key,confirmedTotalMinor:attempt.quote.totalChargeMinor});
       // In-app Stripe Elements path: a server-issued PaymentIntent clientSecret.
       if (result.kind === 'checkout' && result.attemptId === attempt.quote.attemptId && typeof result.clientSecret === 'string' && result.clientSecret.startsWith('pi_')) {
+        this.outcome.set(null); this.message.set('');
         this.pi.set(result.clientSecret);
         setTimeout(()=>void this.mountCard(),0);
         return;
@@ -192,8 +209,40 @@ export class DriverWalletTopupComponent implements OnInit {
     }
     finally { this.busy.set(false); }
   }
+  /** Re-opens the ORIGINAL unpaid in-app payment (server returns its existing client secret; nothing new is charged). */
+  async resumePayment() {
+    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote || !attempt.submitted) return;
+    this.busy.set(true); this.message.set('');
+    try {
+      const result = await this.call('/resume',{attemptId:attempt.quote.attemptId});
+      if (result?.attemptId !== attempt.quote.attemptId || typeof result.clientSecret !== 'string' || !result.clientSecret.startsWith('pi_')) throw Error();
+      this.outcome.set(null);
+      this.pi.set(result.clientSecret);
+      setTimeout(()=>void this.mountCard(),0);
+    } catch (error:any) {
+      const code = error?.error?.code;
+      if (code === 'TOPUP_ALREADY_CREDITED') { this.busy.set(false); await this.verify(); return; }
+      this.message.set(code === 'PAYMENT_RESUME_UNAVAILABLE' ? 'This payment can no longer be continued. Check its status, or discard it if it was not paid.' : 'Could not reopen this payment. Check its status and try again.');
+    } finally { this.busy.set(false); }
+  }
+  /** Discards an unpaid attempt. The server cancels the provider payment first, so a
+   * late success cannot be lost; local state is cleared only after it confirms. */
+  async discardAttempt() {
+    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote || !attempt.submitted) return;
+    this.busy.set(true); this.message.set('');
+    try {
+      const result = await this.call('/discard',{attemptId:attempt.quote.attemptId});
+      if (result?.discarded !== true || result.attemptId !== attempt.quote.attemptId) throw Error();
+      this.clear();
+      this.message.set('Unpaid attempt discarded. Nothing was charged. You can start a new top-up.');
+    } catch (error:any) {
+      const code = error?.error?.code;
+      if (code === 'PAYMENT_NOT_DISCARDABLE' || code === 'TOPUP_ALREADY_CREDITED') { this.busy.set(false); await this.verify(); return; }
+      this.message.set('Could not discard this attempt right now. It is still saved; check its status or try again.');
+    } finally { this.busy.set(false); }
+  }
   async verify() {
-    const attempt = this.saved(); if (this.busy() || !attempt?.quote) return;
+    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote) return;
     this.busy.set(true);
     try {
       const result = await this.call('/verify',{attemptId:attempt.quote.attemptId});
@@ -202,7 +251,10 @@ export class DriverWalletTopupComponent implements OnInit {
       this.message.set('Payment verified. Wallet credit added.');
       try { await this.cash.refresh(true); }
       catch { this.message.set('Payment verified. Wallet credit added. Refresh the wallet to check its balance.'); }
-    } catch { this.message.set('Payment has not been confirmed. Keep this attempt and check again later.'); }
+    } catch (error:any) {
+      const [outcome,text] = verifyOutcome(error?.error?.code);
+      this.outcome.set(outcome); this.message.set(text);
+    }
     finally { this.busy.set(false); }
   }
 }

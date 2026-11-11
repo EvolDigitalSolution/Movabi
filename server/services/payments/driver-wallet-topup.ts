@@ -136,9 +136,53 @@ export class DriverWalletTopupService {
     if (reference !== attemptId) return fail('TOPUP_TERMS_UNAVAILABLE');
     const verified=await this.adapter(a.payment_provider,a.merchant_account_ref).verify({reference,merchantAccountRef:a.merchant_account_ref,currency:a.currency_code,amountMinor:a.total,exponent:a.fee_exponent,providerAccountId:a.provider_account_id??undefined});
     if (verified.reference !== reference || verified.merchantAccountRef !== a.merchant_account_ref || verified.currency !== a.currency_code || verified.chargedAmountMinor !== a.total || verified.finalStatus !== 'succeeded') return fail('PAYMENT_RESPONSE_UNCONFIRMED');
-    if (!a.provider_reference) await this.db.rpc('record_wallet_topup_provider_reference',{p_attempt_id:attemptId,p_provider_reference:reference});
-    const event=await this.db.rpc<string>('confirm_wallet_topup_with_total',{p_attempt_id:attemptId,p_verified_provider_reference:reference,p_verified_merchant_account_ref:a.merchant_account_ref,p_verified_currency:a.currency_code,p_verified_total_minor:a.total,p_final_status:'succeeded'});
-    if (!uuid(event)) return fail('TOPUP_RESULT_UNCONFIRMED');
+    // The provider has confirmed this exact payment. If the atomic ledger credit
+    // cannot complete now, report "received, credit pending" (retry is safe: the
+    // confirm RPC is row-locked and idempotent per attempt).
+    let event:unknown;
+    try {
+      if (!a.provider_reference) await this.db.rpc('record_wallet_topup_provider_reference',{p_attempt_id:attemptId,p_provider_reference:reference});
+      event=await this.db.rpc<string>('confirm_wallet_topup_with_total',{p_attempt_id:attemptId,p_verified_provider_reference:reference,p_verified_merchant_account_ref:a.merchant_account_ref,p_verified_currency:a.currency_code,p_verified_total_minor:a.total,p_final_status:'succeeded'});
+    } catch { return fail('PAYMENT_RECEIVED_CREDIT_PENDING'); }
+    if (!uuid(event)) return fail('PAYMENT_RECEIVED_CREDIT_PENDING');
     return {creditedEventId:event};
+  }
+  /** Re-issues the original unpaid payment's client secret for its owner. Never creates a payment.
+   * Same gates as checkout: kill switch, sandbox flag, reviewed scope and unchanged route. */
+  async resume(token: string, attemptId: string): Promise<{ attemptId: string; clientSecret: string }> {
+    const user=await this.principal(token);
+    if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
+    if (!(await this.config.collectionEnabled()) || await this.db.rpc('driver_card_sandbox_enabled', {}) !== true) return fail('COLLECTION_DISABLED');
+    const a=await this.attempt(attemptId,user.id,user.tenant);
+    if (a.status === 'credited') return fail('TOPUP_ALREADY_CREDITED');
+    if (!['submitting','provider_pending'].includes(a.status) || (a.provider_reference && a.provider_reference !== attemptId)) return fail('PAYMENT_RESUME_UNAVAILABLE');
+    const m=await this.market(user.id,user.tenant);
+    if (m.provider!==a.payment_provider || m.merchant!==a.merchant_account_ref || m.country!==a.country_code || m.currency!==a.currency_code || (m.providerAccountId??null)!==(a.provider_account_id??null)) return fail('PAYMENT_RESUME_UNAVAILABLE');
+    const adapter=this.adapter(a.payment_provider,a.merchant_account_ref);
+    if (typeof adapter.resume !== 'function') return fail('PAYMENT_RESUME_UNAVAILABLE');
+    const r=await adapter.resume(this.expected(a));
+    if (typeof r?.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return fail('PAYMENT_RESUME_UNAVAILABLE');
+    return {attemptId, clientSecret:r.clientSecret};
+  }
+  /** Discards an UNPAID attempt for its owner: the provider payment is cancelled
+   * first (so no late success is possible), then the attempt is marked failed
+   * (terminal; the confirm RPC refuses to credit it). Paid or processing payments
+   * are refused so they are verified and credited instead. Safe to repeat. */
+  async discard(token: string, attemptId: string): Promise<{ attemptId: string; discarded: true }> {
+    const user=await this.principal(token);
+    if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
+    const a=await this.attempt(attemptId,user.id,user.tenant);
+    if (a.status === 'credited' || a.status === 'refunded') return fail('TOPUP_ALREADY_CREDITED');
+    if (a.provider_reference && a.provider_reference !== attemptId) return fail('TOPUP_TERMS_UNAVAILABLE');
+    const adapter=this.adapter(a.payment_provider,a.merchant_account_ref);
+    if (typeof adapter.cancel !== 'function') return fail('PAYMENT_DISCARD_UNAVAILABLE');
+    const r=await adapter.cancel(this.expected(a));
+    if (r?.status !== 'canceled') return fail('PAYMENT_DISCARD_UNCONFIRMED');
+    try { await this.db.rpc('mark_wallet_topup_failed',{p_attempt_id:attemptId,p_reason:'driver discarded unpaid attempt; provider payment cancelled'}); }
+    catch { return fail('PAYMENT_DISCARD_UNCONFIRMED'); }
+    return {attemptId, discarded:true};
+  }
+  private expected(a:{currency_code:string;merchant_account_ref:string;total:number;fee_exponent:number;provider_account_id?:string|null;id:string}) {
+    return {reference:a.id,merchantAccountRef:a.merchant_account_ref,currency:a.currency_code,amountMinor:a.total,exponent:a.fee_exponent,providerAccountId:a.provider_account_id??undefined};
   }
 }
