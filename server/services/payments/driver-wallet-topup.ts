@@ -149,7 +149,7 @@ export class DriverWalletTopupService {
   }
   /** Re-issues the original unpaid payment's client secret for its owner. Never creates a payment.
    * Same gates as checkout: kill switch, sandbox flag, reviewed scope and unchanged route. */
-  async resume(token: string, attemptId: string): Promise<{ attemptId: string; clientSecret: string }> {
+  async resume(token: string, attemptId: string): Promise<{ attemptId: string; clientSecret: string; nextAction: boolean }> {
     const user=await this.principal(token);
     if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
     if (!(await this.config.collectionEnabled()) || await this.db.rpc('driver_card_sandbox_enabled', {}) !== true) return fail('COLLECTION_DISABLED');
@@ -162,7 +162,7 @@ export class DriverWalletTopupService {
     if (typeof adapter.resume !== 'function') return fail('PAYMENT_RESUME_UNAVAILABLE');
     const r=await adapter.resume(this.expected(a));
     if (typeof r?.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return fail('PAYMENT_RESUME_UNAVAILABLE');
-    return {attemptId, clientSecret:r.clientSecret};
+    return {attemptId, clientSecret:r.clientSecret, nextAction:r.nextAction===true};
   }
   /** Discards an UNPAID attempt for its owner: the provider payment is cancelled
    * first (so no late success is possible), then the attempt is marked failed

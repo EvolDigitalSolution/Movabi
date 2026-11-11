@@ -5,7 +5,7 @@ import express from 'express';
 import { createDriverTopupRouter, flutterwaveAttemptStore } from '../../server/routes/driver-wallet-topup.routes';
 import { StripeDriverTopupSandbox } from '../../server/services/payments/stripe-driver-topup-sandbox';
 import type { DriverTopupConfig, DriverTopupDb } from '../../server/services/payments/driver-wallet-topup';
-import { verifyOutcome } from '../app/shared/utils/driver-topup-verify-outcome';
+import { resumeMode, verifyOutcome } from '../app/shared/utils/driver-topup-verify-outcome';
 
 // Regression for the develop Stripe in-app top-up: /verify returned 409
 // PAYMENT_RECONCILIATION_REQUIRED for every non-succeeded PaymentIntent, and the
@@ -131,7 +131,7 @@ describe('driver top-up verification states (Stripe in-app, develop binding)',()
     expect(new Set(burst.map(b=>b.body.creditedEventId)).size).toBe(1);expect(w.ledger).toHaveLength(1);
   });
   it.each([
-    ['processing',{},'PAYMENT_PENDING'],['requires_action',{},'PAYMENT_PENDING'],['requires_confirmation',{},'PAYMENT_PENDING'],
+    ['processing',{},'PAYMENT_PENDING'],['requires_action',{},'PAYMENT_ACTION_REQUIRED'],['requires_confirmation',{},'PAYMENT_PENDING'],
     ['requires_payment_method',{last_payment_error:{code:'card_declined'}},'PAYMENT_FAILED'],
     ['canceled',{},'PAYMENT_CANCELLED'],['requires_capture',{},'PAYMENT_RECONCILIATION_REQUIRED'],['some_future_status',{},'PAYMENT_RECONCILIATION_REQUIRED'],
   ])('%s maps to %s without credit',async(status,extra,code)=>{
@@ -204,12 +204,68 @@ describe('driver top-up verification states (Stripe in-app, develop binding)',()
   });
   it('UI maps only explicit server codes; unknown/network errors are "temporarily unavailable"',()=>{
     expect(verifyOutcome('PAYMENT_PENDING')[0]).toBe('pending');
+    expect(verifyOutcome('PAYMENT_ACTION_REQUIRED')[0]).toBe('action_required');
     expect(verifyOutcome('PAYMENT_NOT_COMPLETED')[0]).toBe('not_completed');
     expect(verifyOutcome('PAYMENT_FAILED')[0]).toBe('failed');
     expect(verifyOutcome('PAYMENT_CANCELLED')[0]).toBe('cancelled');
     expect(verifyOutcome('PAYMENT_RECEIVED_CREDIT_PENDING')[0]).toBe('credit_pending');
     expect(verifyOutcome('PAYMENT_RECONCILIATION_REQUIRED')[0]).toBe('review');
     expect(verifyOutcome(undefined)[0]).toBe('unavailable');expect(verifyOutcome('TOPUP_RESULT_UNCONFIRMED')[0]).toBe('unavailable');
+  });
+});
+
+// Regression: a PaymentIntent waiting for 3D Secure (requires_action) was reported as
+// PAYMENT_PENDING ("still processing"), so after a reload during the bank challenge the
+// app offered only "Check payment status" and the payment could never be finished.
+describe('3D Secure (requires_action) after a reload continues the SAME payment',()=>{
+  it('reports PAYMENT_ACTION_REQUIRED, resumes the original PaymentIntent for authentication, then credits exactly once',async()=>{
+    const w=await checkedOut();
+    // Card submitted, bank challenge shown, page reloaded before it was completed.
+    w.pay('requires_action',{next_action:{type:'use_stripe_sdk'}});
+    const v=await call(w.app,'/verify',{attemptId});
+    expect(v.status).toBe(409);expect(v.body.code).toBe('PAYMENT_ACTION_REQUIRED');
+    expect(w.ledger).toHaveLength(0);expect(w.attempt().status).toBe('provider_pending');
+    expect(verifyOutcome(v.body.code)[0]).toBe('action_required');
+    // Another driver gets nothing (no secret, no state change); unauthenticated is 401.
+    const foreign=await call(w.app,'/resume',{attemptId},'other-token');
+    expect(foreign.status).toBe(404);expect(JSON.stringify(foreign.body)).not.toContain('pi_');
+    expect((await call(w.app,'/resume',{attemptId},'bad-token')).status).toBe(401);
+    // Owner resumes: same PaymentIntent secret, flagged for authentication; no new payment.
+    const r=await call(w.app,'/resume',{attemptId});
+    expect(r.status).toBe(200);expect(r.body).toEqual({attemptId,clientSecret:'pi_synthetic_secret_abc',nextAction:true});
+    expect(resumeMode(r.body,attemptId)).toEqual({mode:'authenticate',clientSecret:'pi_synthetic_secret_abc'});
+    expect(w.creates()).toBe(1);expect(w.piStatus()).toBe('requires_action');
+    // Challenge completed on that PaymentIntent -> one credit of the wallet amount, idempotent under repeats.
+    w.pay('succeeded');
+    const burst=await Promise.all(Array.from({length:8},()=>call(w.app,'/verify',{attemptId})));
+    for(const b of burst){expect(b.status).toBe(200);expect(b.body.creditedEventId).toBe('cccccccc-cccc-4ccc-8ccc-cccccccccccc');}
+    expect(w.ledger).toEqual([{attempt:attemptId,amount:10000}]);expect(w.creates()).toBe(1);
+    expect((await call(w.app,'/resume',{attemptId})).body.code).toBe('TOPUP_ALREADY_CREDITED');
+  });
+  it.each([
+    ['amount',{amount:10600}],['currency',{currency:'eur'}],['live mode',{livemode:true}],
+    ['merchant',{metadata:{vaydu_driver_topup:attemptId,vaydu_account:'acct_synthetic',vaydu_merchant:'other-merchant',vaydu_total:'10500'}}],
+  ])('a requires_action PaymentIntent with mismatched %s is neither resumed nor reported as authentication',async(_n,extra)=>{
+    const w=await checkedOut();w.pay('requires_action',extra);
+    const r=await call(w.app,'/resume',{attemptId});expect(r.status).toBe(409);expect(r.body.code).toBe('PAYMENT_RECONCILIATION_REQUIRED');expect(r.body.clientSecret).toBeUndefined();
+    expect((await call(w.app,'/verify',{attemptId})).body.code).toBe('PAYMENT_RECONCILIATION_REQUIRED');
+    expect(w.ledger).toHaveLength(0);expect(w.creates()).toBe(1);
+  });
+  it('failed authentication falls back to the card form on the same PaymentIntent; discard cancels it',async()=>{
+    const w=await checkedOut();w.pay('requires_action');
+    w.pay('requires_payment_method',{last_payment_error:{code:'payment_intent_authentication_failure'}});
+    expect((await call(w.app,'/verify',{attemptId})).body.code).toBe('PAYMENT_FAILED');
+    const r=await call(w.app,'/resume',{attemptId});expect(r.body.nextAction).toBe(false);
+    expect(resumeMode(r.body,attemptId)?.mode).toBe('card');
+    const w2=await checkedOut();w2.pay('requires_action');
+    expect((await call(w2.app,'/discard',{attemptId})).status).toBe(200);
+    expect(w2.piStatus()).toBe('canceled');expect(w2.attempt().status).toBe('failed');expect(w2.creates()).toBe(1);expect(w2.ledger).toHaveLength(0);
+  });
+  it('the client accepts a resume response only for its own attempt',()=>{
+    expect(resumeMode({attemptId:'other',clientSecret:'pi_x_secret',nextAction:true},attemptId)).toBeNull();
+    expect(resumeMode({attemptId,clientSecret:'seti_x',nextAction:true},attemptId)).toBeNull();
+    expect(resumeMode(null,attemptId)).toBeNull();
+    expect(resumeMode({attemptId,clientSecret:'pi_x_secret'},attemptId)?.mode).toBe('card');
   });
 });
 

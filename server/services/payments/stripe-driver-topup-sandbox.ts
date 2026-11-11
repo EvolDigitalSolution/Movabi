@@ -8,7 +8,12 @@ const stop=():never=>{throw new PaymentLayerError('PAYMENT_RECONCILIATION_REQUIR
 /** Maps a verified-identity, non-succeeded PaymentIntent to an explicit no-credit state. */
 export function notSucceeded(pi:Pick<Stripe.PaymentIntent,'status'|'last_payment_error'>):never{
  switch(pi.status){
-  case 'processing':case 'requires_action':case 'requires_confirmation':
+  case 'requires_action':
+   // Customer authentication (3D Secure) is outstanding on THIS PaymentIntent. Not
+   // "processing": nothing will progress until the customer completes it, which
+   // they can do after a reload via /resume (same PaymentIntent, never a new one).
+   throw new PaymentLayerError('PAYMENT_ACTION_REQUIRED','Customer authentication is required to complete this payment');
+  case 'processing':case 'requires_confirmation':
    throw new PaymentLayerError('PAYMENT_PENDING','Payment is not final yet');
   case 'requires_payment_method':
    if(pi.last_payment_error)throw new PaymentLayerError('PAYMENT_FAILED','The card payment failed');
@@ -67,8 +72,10 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
   }
  }
  /** Returns the ORIGINAL PaymentIntent's client secret so an unpaid attempt can
-  * be completed after a reload. Read-only: never creates or confirms a payment. */
- async resume(input:DriverCardExpected):Promise<{clientSecret:string}>{
+  * be completed after a reload. Read-only: never creates or confirms a payment.
+  * nextAction=true means the PaymentIntent is waiting for customer authentication
+  * (3D Secure): the client must finish that action, not collect a new card. */
+ async resume(input:DriverCardExpected):Promise<{clientSecret:string;nextAction:boolean}>{
   const account=await this.account(input),stored=await this.storedAttempt(input,account);
   const id=stored.providerSessionId;
   if(typeof id!=='string'||!id.startsWith('pi_'))throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
@@ -76,7 +83,7 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
   const pi=await this.stripe.paymentIntents.retrieve(id);
   if(!this.piIdentity(pi,input,account,total))return stop();
   if(!['requires_payment_method','requires_confirmation','requires_action'].includes(pi.status)||!pi.client_secret)throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
-  return {clientSecret:pi.client_secret};
+  return {clientSecret:pi.client_secret,nextAction:pi.status==='requires_action'};
  }
  private sessionIdentity(session:Stripe.Checkout.Session,input:DriverCardExpected,account:string,total:number){
   return session.livemode===false&&session.mode==='payment'&&session.client_reference_id===input.reference

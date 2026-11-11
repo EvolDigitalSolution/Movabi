@@ -12,7 +12,7 @@ import { DriverCashCreditService } from '../../core/services/payments/driver-cas
 import { AuthService } from '../../core/services/auth/auth.service';
 import { driverTopupMinor, driverTopupMoney } from '../utils/driver-topup-money';
 import { formatCashCreditMinor } from '../utils/driver-cash-credit';
-import { verifyOutcome, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
+import { resumeMode, verifyOutcome, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
 import {environment} from '@env/environment';
 
 interface Quote { attemptId: string; walletAmountMinor: number; feeMinor: number; totalChargeMinor: number; currency: string; exponent: number; feePolicyVersion: string; feeLabel?:string; provider?:string; }
@@ -47,10 +47,10 @@ interface Saved { key: string; amountMinor: number; quote?: Quote; submitted?: b
       @if (attempt.submitted && !pi()) {
         <p class="text-sm my-3">Payment requires server verification. Returning from checkout does not confirm payment.</p>
         <button type="button" class="rounded-xl border p-3" [disabled]="busy() || payBusy()" (click)="verify()">Check payment status</button>
-        @if (outcome() === 'not_completed' || outcome() === 'failed') {
-          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy() || payBusy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : 'Continue payment'}}</button>
+        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'action_required') {
+          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy() || payBusy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : outcome() === 'action_required' ? 'Complete bank confirmation' : 'Continue payment'}}</button>
         }
-        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'cancelled') {
+        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'cancelled' || outcome() === 'action_required') {
           <button type="button" class="p-3 ml-2" [disabled]="busy() || payBusy()" (click)="discardAttempt()">Discard this unpaid attempt</button>
         }
       } @else if (!attempt.submitted) {
@@ -213,17 +213,35 @@ export class DriverWalletTopupComponent implements OnInit {
   async resumePayment() {
     const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote || !attempt.submitted) return;
     this.busy.set(true); this.message.set('');
+    let authenticate: string | null = null;
     try {
-      const result = await this.call('/resume',{attemptId:attempt.quote.attemptId});
-      if (result?.attemptId !== attempt.quote.attemptId || typeof result.clientSecret !== 'string' || !result.clientSecret.startsWith('pi_')) throw Error();
+      const resumed = resumeMode(await this.call('/resume',{attemptId:attempt.quote.attemptId}), attempt.quote.attemptId);
+      if (!resumed) throw Error();
       this.outcome.set(null);
-      this.pi.set(result.clientSecret);
-      setTimeout(()=>void this.mountCard(),0);
+      // 3D Secure pending on the same PaymentIntent: finish it; never collect a new card here.
+      if (resumed.mode === 'authenticate') authenticate = resumed.clientSecret;
+      else { this.pi.set(resumed.clientSecret); setTimeout(()=>void this.mountCard(),0); }
     } catch (error:any) {
       const code = error?.error?.code;
       if (code === 'TOPUP_ALREADY_CREDITED') { this.busy.set(false); await this.verify(); return; }
       this.message.set(code === 'PAYMENT_RESUME_UNAVAILABLE' ? 'This payment can no longer be continued. Check its status, or discard it if it was not paid.' : 'Could not reopen this payment. Check its status and try again.');
     } finally { this.busy.set(false); }
+    if (authenticate) await this.completeAuthentication(authenticate);
+  }
+  /** Completes the pending customer authentication of the ORIGINAL PaymentIntent
+   * (Stripe shows the bank's 3D Secure step). Confirms nothing new and creates no
+   * payment; whatever the result, credit is decided only by server verification. */
+  private async completeAuthentication(clientSecret: string) {
+    if (this.payBusy()) return;
+    this.payBusy.set(true); this.message.set('');
+    try {
+      this.stripe = this.stripe || await loadStripe((environment as any).stripePublicKey);
+      if (!this.stripe) throw Error();
+      const result = await this.stripe.handleNextAction({clientSecret});
+      if (result.error) this.message.set((result.error.message ? result.error.message + ' ' : '') + 'No credit has been added. Checking the payment status…');
+    } catch { /* fall through to server verification */ }
+    finally { this.payBusy.set(false); }
+    await this.verify();
   }
   /** Discards an unpaid attempt. The server cancels the provider payment first, so a
    * late success cannot be lost; local state is cleared only after it confirms. */

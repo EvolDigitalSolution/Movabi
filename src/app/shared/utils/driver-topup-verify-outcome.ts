@@ -1,4 +1,4 @@
-export type DriverTopupOutcome = 'pending'|'not_completed'|'failed'|'cancelled'|'review'|'credit_pending'|'unavailable';
+export type DriverTopupOutcome = 'pending'|'action_required'|'not_completed'|'failed'|'cancelled'|'review'|'credit_pending'|'unavailable';
 
 /**
  * Maps a server verification error code to a UI state and message.
@@ -9,6 +9,7 @@ export type DriverTopupOutcome = 'pending'|'not_completed'|'failed'|'cancelled'|
 export function verifyOutcome(code: unknown): [DriverTopupOutcome, string] {
   switch (code) {
     case 'PAYMENT_PENDING': return ['pending','Your payment is still processing. No credit has been added yet. Check again shortly.'];
+    case 'PAYMENT_ACTION_REQUIRED': return ['action_required','Your bank needs you to confirm this payment. No credit has been added yet. Continue to complete the confirmation, or discard it.'];
     case 'PAYMENT_NOT_COMPLETED': return ['not_completed','This payment has not been completed and nothing has been charged. Continue the payment, or discard it.'];
     case 'PAYMENT_FAILED': return ['failed','The card payment failed and no credit was added. Try the card again, or discard this attempt.'];
     case 'PAYMENT_CANCELLED': return ['cancelled','This payment was cancelled. No credit was added. Discard it to start a new top-up.'];
@@ -16,4 +17,16 @@ export function verifyOutcome(code: unknown): [DriverTopupOutcome, string] {
     case 'PAYMENT_RECONCILIATION_REQUIRED': case 'PAYMENT_RESPONSE_UNCONFIRMED': return ['review','This payment needs review before any credit. Do not pay again; check again later.'];
     default: return ['unavailable','Payment status is temporarily unavailable. Your attempt is saved; check again shortly. Do not pay again.'];
   }
+}
+
+/**
+ * Validates a /resume response for the saved attempt and decides how the SAME
+ * PaymentIntent continues: 'authenticate' finishes its pending customer
+ * authentication (3D Secure) without collecting a card; 'card' reopens the card
+ * form. null = response not provably for this attempt (do nothing).
+ */
+export function resumeMode(result: unknown, attemptId: string): {mode:'authenticate'|'card'; clientSecret:string}|null {
+  const r = result as {attemptId?:unknown; clientSecret?:unknown; nextAction?:unknown}|null;
+  if (!r || typeof r !== 'object' || r.attemptId !== attemptId || typeof r.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return null;
+  return {mode: r.nextAction === true ? 'authenticate' : 'card', clientSecret: r.clientSecret};
 }

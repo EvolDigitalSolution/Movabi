@@ -7,11 +7,11 @@ Base commit: `95d745b` (branch `develop`); fix on branch `fix/driver-topup-verif
 ## Files in the fix (review diff: `topup-verify-fix.diff`)
 
 Changed:
-- `server/routes/driver-wallet-topup.routes.ts` – status mapping for new codes; `POST /resume`, `POST /discard`.
+- `server/routes/driver-wallet-topup.routes.ts` – status mapping for new codes (incl. `PAYMENT_ACTION_REQUIRED`, 409); `POST /resume`, `POST /discard`.
 - `server/services/payments/driver-card-topup-contracts.ts` – optional `resume`/`cancel` on the adapter contract.
 - `server/services/payments/driver-wallet-topup.ts` – credit-pending code; `resume()`; `discard()`.
-- `server/services/payments/stripe-driver-topup-sandbox.ts` – explicit non-success states; `resume()`; `cancel()`.
-- `src/app/shared/ui/driver-wallet-topup.component.ts` – card form rendering, outcome-driven actions, server-side discard.
+- `server/services/payments/stripe-driver-topup-sandbox.ts` – explicit non-success states (`requires_action` → `PAYMENT_ACTION_REQUIRED`, not pending); `resume()` (returns `nextAction` for 3D Secure); `cancel()`.
+- `src/app/shared/ui/driver-wallet-topup.component.ts` – card form rendering, outcome-driven actions, server-side discard, 3D Secure completion after reload (`stripe.handleNextAction` on the same PaymentIntent).
 
 Added:
 - `src/app/shared/utils/driver-topup-verify-outcome.ts`
@@ -27,13 +27,14 @@ Added:
 
 | Check | Result |
 |---|---|
-| Focused top-up specs (7 files) | 80/80 passed, exit 0 |
+| Focused top-up specs (7 files) | 87/87 passed, exit 0 (3DS-refresh regression: 3 of these fail on the previous adapter) |
 | `npx tsc -p server/tsconfig.json --noEmit` | exit 0 |
 | `npm run build:mobile:develop` | exit 0 (pre-existing warnings: unused RouterLink, CSS budget) |
 | Full suite `npx vitest run`, patched | **exit 1**: 93 failed / 3,274 passed |
 | Full suite at baseline `95d745b` | **exit 1**: 94 failed / 3,244 passed |
 
-The full suite is **not green**. Every one of the 93 failures with the patch also fails at
+Full-suite rows are from the previous package (`1b60214`); the 3DS change was checked with the focused
+specs, server `tsc` and the develop build only. The full suite is **not green**. Every one of the 93 failures with the patch also fails at
 `95d745b` (same test, same multiplicity; in 27 files, e.g. place search, geofencing, driver
 eligibility/onboarding, wallet overlay). The patch introduces **0** failures and one baseline
 failure passes with it (`manifest-drift.spec.ts`). The 30 extra passing tests are the new spec.
@@ -151,7 +152,9 @@ enabled scope, the develop web app (hard refresh after the web step), and the St
 | 7 | Continue payment (from #6), pay with `4242…` | Same PaymentIntent id reopened; credits once |
 | 8 | New top-up, open form, refresh, **Discard this unpaid attempt** | "Unpaid attempt discarded. Nothing was charged."; Stripe PI `canceled` (reason `abandoned`); attempt `failed`; no credit |
 | 9 | New top-up, `4000 0027 6000 3184` (3DS), complete challenge | Credits once |
-| 10 | New top-up, `4000 0027 6000 3184`, refresh during the challenge | "still processing… No credit has been added"; no credit. **Known limit:** the app offers only "Check payment status" for this state (no continue/discard); the PI stays `requires_action` |
+| 10 | New top-up, `4000 0027 6000 3184`, refresh during the challenge | Auto status check → "Your bank needs you to confirm this payment. No credit has been added yet"; **Complete bank confirmation** and **Discard** shown; PI stays `requires_action`; no credit |
+| 10a | Complete bank confirmation (from #10), complete the challenge | Same PaymentIntent id (no second PI, no card form); credits once. Failing the challenge → "payment failed" + **Try card again** on the same PI |
+| 10b | Repeat #10, then **Discard this unpaid attempt** | Stripe PI `canceled`; attempt `failed`; no credit |
 | 11 | Stripe dashboard: resend `payment_intent.succeeded` for #2 | No extra credit (webhook has no top-up handling; credit only via server verify) |
 | 12 | API, no token: `POST /resume` and `/discard` with `{"attemptId":"probe"}` | 401 `AUTHENTICATION_REQUIRED` |
 

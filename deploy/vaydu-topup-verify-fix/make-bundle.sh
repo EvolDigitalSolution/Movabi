@@ -16,11 +16,13 @@ if [ -n "$(git status --porcelain -- "${PATHS[@]}")" ]; then
   echo "FATAL: uncommitted changes in shipped paths:"; git status --short -- "${PATHS[@]}"; exit 1; fi
 # 2. The fix must be in this commit.
 grep -q "async discard(" server/services/payments/driver-wallet-topup.ts || { echo "FATAL: fix not present in HEAD"; exit 1; }
+grep -q "PAYMENT_ACTION_REQUIRED" server/services/payments/stripe-driver-topup-sandbox.ts || { echo "FATAL: 3DS resume fix not present in HEAD"; exit 1; }
 # 3. Mobile build must exist and be newer than the commit.
 [ -f dist/mobile/browser/index.html ] || { echo "FATAL: run npm run build:mobile:develop first"; exit 1; }
 COMMIT_TS=$(git log -1 --format=%ct); BUILD_TS=$(stat -c %Y dist/mobile/browser/index.html)
 [ "$BUILD_TS" -ge "$COMMIT_TS" ] || { echo "FATAL: dist/mobile is older than HEAD; rebuild"; exit 1; }
 grep -rlq "Discard this unpaid attempt" dist/mobile/browser || { echo "FATAL: mobile build does not contain the fixed top-up component"; exit 1; }
+grep -rlq "Complete bank confirmation" dist/mobile/browser || { echo "FATAL: mobile build does not contain the 3DS resume UI"; exit 1; }
 
 rm -rf "$OUT"; mkdir -p "$OUT/mobile"
 # Exact committed bytes: core.autocrlf (default true on Windows) would otherwise make git archive

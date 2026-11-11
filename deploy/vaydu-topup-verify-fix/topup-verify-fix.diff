@@ -1,5 +1,5 @@
 diff --git a/server/routes/driver-wallet-topup.routes.ts b/server/routes/driver-wallet-topup.routes.ts
-index cb1e3fe..002e50f 100644
+index cb1e3fe..d4ce053 100644
 --- a/server/routes/driver-wallet-topup.routes.ts
 +++ b/server/routes/driver-wallet-topup.routes.ts
 @@ -23,7 +23,8 @@ export function createDriverTopupRouter(deps: DriverTopupDeps): Router {
@@ -7,7 +7,7 @@ index cb1e3fe..002e50f 100644
        const status = error.code === 'AUTHENTICATION_REQUIRED' ? 401
          : error.code === 'TOPUP_NOT_AVAILABLE' ? 404
 -        : ['COLLECTION_DISABLED','PAYMENT_RECONCILIATION_REQUIRED','TOPUP_QUOTE_MISMATCH'].includes(error.code) ? 409
-+        : ['COLLECTION_DISABLED','PAYMENT_RECONCILIATION_REQUIRED','TOPUP_QUOTE_MISMATCH','PAYMENT_PENDING','PAYMENT_NOT_COMPLETED','PAYMENT_FAILED','PAYMENT_CANCELLED','PAYMENT_RESUME_UNAVAILABLE','TOPUP_ALREADY_CREDITED','PAYMENT_NOT_DISCARDABLE','PAYMENT_DISCARD_UNAVAILABLE'].includes(error.code) ? 409
++        : ['COLLECTION_DISABLED','PAYMENT_RECONCILIATION_REQUIRED','TOPUP_QUOTE_MISMATCH','PAYMENT_PENDING','PAYMENT_ACTION_REQUIRED','PAYMENT_NOT_COMPLETED','PAYMENT_FAILED','PAYMENT_CANCELLED','PAYMENT_RESUME_UNAVAILABLE','TOPUP_ALREADY_CREDITED','PAYMENT_NOT_DISCARDABLE','PAYMENT_DISCARD_UNAVAILABLE'].includes(error.code) ? 409
 +        : ['PAYMENT_RECEIVED_CREDIT_PENDING','PAYMENT_DISCARD_UNCONFIRMED'].includes(error.code) ? 503
          : 400;
        return res.status(status).json({ code: error.code });
@@ -32,21 +32,22 @@ index cb1e3fe..002e50f 100644
  }
  
 diff --git a/server/services/payments/driver-card-topup-contracts.ts b/server/services/payments/driver-card-topup-contracts.ts
-index 4077e90..0d3a316 100644
+index 4077e90..0fe1f78 100644
 --- a/server/services/payments/driver-card-topup-contracts.ts
 +++ b/server/services/payments/driver-card-topup-contracts.ts
-@@ -7,5 +7,9 @@ export interface DriverCardTopupAdapter {
+@@ -7,5 +7,10 @@ export interface DriverCardTopupAdapter {
    preflight(input:DriverCardInput):Promise<void>;
    createCheckout(input: DriverCardInput): Promise<{providerReference:string;checkoutUrl?:string;clientSecret?:string}>;
    verify(input: DriverCardExpected): Promise<{reference:string;merchantAccountRef:string;currency:string;chargedAmountMinor:number;finalStatus:'succeeded'}>;
-+  /** Optional: re-issue the ORIGINAL unpaid in-app payment's client secret; must never create a payment. */
-+  resume?(input: DriverCardExpected): Promise<{clientSecret:string}>;
++  /** Optional: re-issue the ORIGINAL unpaid in-app payment's client secret; must never create a payment.
++   * nextAction=true: the payment awaits customer authentication (3D Secure) rather than a card. */
++  resume?(input: DriverCardExpected): Promise<{clientSecret:string;nextAction?:boolean}>;
 +  /** Optional: cancel the ORIGINAL unpaid payment at the provider so it can never succeed later. */
 +  cancel?(input: DriverCardExpected): Promise<{status:'canceled'}>;
  }
  export type DriverCardAdapterResolver = (provider:string,merchant:string)=>DriverCardTopupAdapter;
 diff --git a/server/services/payments/driver-wallet-topup.ts b/server/services/payments/driver-wallet-topup.ts
-index e81737a..088c5e0 100644
+index e81737a..32e7545 100644
 --- a/server/services/payments/driver-wallet-topup.ts
 +++ b/server/services/payments/driver-wallet-topup.ts
 @@ -136,9 +136,53 @@ export class DriverWalletTopupService {
@@ -69,7 +70,7 @@ index e81737a..088c5e0 100644
    }
 +  /** Re-issues the original unpaid payment's client secret for its owner. Never creates a payment.
 +   * Same gates as checkout: kill switch, sandbox flag, reviewed scope and unchanged route. */
-+  async resume(token: string, attemptId: string): Promise<{ attemptId: string; clientSecret: string }> {
++  async resume(token: string, attemptId: string): Promise<{ attemptId: string; clientSecret: string; nextAction: boolean }> {
 +    const user=await this.principal(token);
 +    if (!uuid(attemptId)) return fail('INVALID_PAYMENT_INPUT');
 +    if (!(await this.config.collectionEnabled()) || await this.db.rpc('driver_card_sandbox_enabled', {}) !== true) return fail('COLLECTION_DISABLED');
@@ -82,7 +83,7 @@ index e81737a..088c5e0 100644
 +    if (typeof adapter.resume !== 'function') return fail('PAYMENT_RESUME_UNAVAILABLE');
 +    const r=await adapter.resume(this.expected(a));
 +    if (typeof r?.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return fail('PAYMENT_RESUME_UNAVAILABLE');
-+    return {attemptId, clientSecret:r.clientSecret};
++    return {attemptId, clientSecret:r.clientSecret, nextAction:r.nextAction===true};
 +  }
 +  /** Discards an UNPAID attempt for its owner: the provider payment is cancelled
 +   * first (so no late success is possible), then the attempt is marked failed
@@ -107,17 +108,22 @@ index e81737a..088c5e0 100644
 +  }
  }
 diff --git a/server/services/payments/stripe-driver-topup-sandbox.ts b/server/services/payments/stripe-driver-topup-sandbox.ts
-index 3a61f90..54af6e8 100644
+index 3a61f90..91a4a33 100644
 --- a/server/services/payments/stripe-driver-topup-sandbox.ts
 +++ b/server/services/payments/stripe-driver-topup-sandbox.ts
-@@ -5,6 +5,20 @@ import {stripeApiAmountFromLedger} from './stripe-currency-amounts';
+@@ -5,6 +5,25 @@ import {stripeApiAmountFromLedger} from './stripe-currency-amounts';
  import type {DriverCardAttemptStore,DriverCardExpected,DriverCardInput,DriverCardTopupAdapter} from './driver-card-topup-contracts';
  
  const stop=():never=>{throw new PaymentLayerError('PAYMENT_RECONCILIATION_REQUIRED','Verify the original sandbox payment');};
 +/** Maps a verified-identity, non-succeeded PaymentIntent to an explicit no-credit state. */
 +export function notSucceeded(pi:Pick<Stripe.PaymentIntent,'status'|'last_payment_error'>):never{
 + switch(pi.status){
-+  case 'processing':case 'requires_action':case 'requires_confirmation':
++  case 'requires_action':
++   // Customer authentication (3D Secure) is outstanding on THIS PaymentIntent. Not
++   // "processing": nothing will progress until the customer completes it, which
++   // they can do after a reload via /resume (same PaymentIntent, never a new one).
++   throw new PaymentLayerError('PAYMENT_ACTION_REQUIRED','Customer authentication is required to complete this payment');
++  case 'processing':case 'requires_confirmation':
 +   throw new PaymentLayerError('PAYMENT_PENDING','Payment is not final yet');
 +  case 'requires_payment_method':
 +   if(pi.last_payment_error)throw new PaymentLayerError('PAYMENT_FAILED','The card payment failed');
@@ -131,13 +137,15 @@ index 3a61f90..54af6e8 100644
  /** Separate driver funding adapter. Existing checkout, saved cards and payouts are untouched. */
  export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
   readonly provider='stripe';
-@@ -52,6 +66,61 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
+@@ -52,6 +71,63 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
     await this.store.finish(input.reference,'unknown');return stop();
    }
   }
 + /** Returns the ORIGINAL PaymentIntent's client secret so an unpaid attempt can
-+  * be completed after a reload. Read-only: never creates or confirms a payment. */
-+ async resume(input:DriverCardExpected):Promise<{clientSecret:string}>{
++  * be completed after a reload. Read-only: never creates or confirms a payment.
++  * nextAction=true means the PaymentIntent is waiting for customer authentication
++  * (3D Secure): the client must finish that action, not collect a new card. */
++ async resume(input:DriverCardExpected):Promise<{clientSecret:string;nextAction:boolean}>{
 +  const account=await this.account(input),stored=await this.storedAttempt(input,account);
 +  const id=stored.providerSessionId;
 +  if(typeof id!=='string'||!id.startsWith('pi_'))throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
@@ -145,7 +153,7 @@ index 3a61f90..54af6e8 100644
 +  const pi=await this.stripe.paymentIntents.retrieve(id);
 +  if(!this.piIdentity(pi,input,account,total))return stop();
 +  if(!['requires_payment_method','requires_confirmation','requires_action'].includes(pi.status)||!pi.client_secret)throw new PaymentLayerError('PAYMENT_RESUME_UNAVAILABLE','This payment cannot be resumed');
-+  return {clientSecret:pi.client_secret};
++  return {clientSecret:pi.client_secret,nextAction:pi.status==='requires_action'};
 + }
 + private sessionIdentity(session:Stripe.Checkout.Session,input:DriverCardExpected,account:string,total:number){
 +  return session.livemode===false&&session.mode==='payment'&&session.client_reference_id===input.reference
@@ -193,7 +201,7 @@ index 3a61f90..54af6e8 100644
   async verify(input:DriverCardExpected){
    const account=await this.account(input),stored=await this.store.get(input.reference),req=stored?.request;
    if(!stored||!['started','submitted','unknown'].includes(stored.state)||!req||req.provider!=='stripe'||req.reference!==input.reference||req.merchantAccountRef!==this.merchant||req.providerAccountId!==account||req.currency!==input.currency||req.amountMinor!==input.amountMinor||req.exponent!==input.exponent||req.credentialFingerprint!==this.fingerprint)return stop();
-@@ -80,7 +149,13 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
+@@ -80,7 +156,13 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
    }else{
     session=await this.stripe.checkout.sessions.retrieve(sessionId!);
     const piId=typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent?.id;
@@ -208,7 +216,7 @@ index 3a61f90..54af6e8 100644
     pi=await this.stripe.paymentIntents.retrieve(piId,{expand:['latest_charge.balance_transaction']});
    }
    const charge=typeof pi.latest_charge==='object'?pi.latest_charge:null;
-@@ -90,8 +165,16 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
+@@ -90,8 +172,16 @@ export class StripeDriverTopupSandbox implements DriverCardTopupAdapter {
     chargedAmountApiMinor:charge?String(charge.amount):null,providerFeeApiMinor:balance?String(balance.fee):null,
     settlementNetApiMinor:balance?String(balance.net):null,settlementCurrency:balance?.currency.toUpperCase()??null,
     providerBalanceReference:balance?.id??null});
@@ -228,14 +236,14 @@ index 3a61f90..54af6e8 100644
    return {reference:input.reference,merchantAccountRef:this.merchant,currency:input.currency,chargedAmountMinor:input.amountMinor,finalStatus:'succeeded' as const};
   }
 diff --git a/src/app/shared/ui/driver-wallet-topup.component.ts b/src/app/shared/ui/driver-wallet-topup.component.ts
-index 4473a1e..4cac9eb 100644
+index 4473a1e..bc1e5a0 100644
 --- a/src/app/shared/ui/driver-wallet-topup.component.ts
 +++ b/src/app/shared/ui/driver-wallet-topup.component.ts
 @@ -12,6 +12,7 @@ import { DriverCashCreditService } from '../../core/services/payments/driver-cas
  import { AuthService } from '../../core/services/auth/auth.service';
  import { driverTopupMinor, driverTopupMoney } from '../utils/driver-topup-money';
  import { formatCashCreditMinor } from '../utils/driver-cash-credit';
-+import { verifyOutcome, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
++import { resumeMode, verifyOutcome, type DriverTopupOutcome } from '../utils/driver-topup-verify-outcome';
  import {environment} from '@env/environment';
  
  interface Quote { attemptId: string; walletAmountMinor: number; feeMinor: number; totalChargeMinor: number; currency: string; exponent: number; feePolicyVersion: string; feeLabel?:string; provider?:string; }
@@ -264,10 +272,10 @@ index 4473a1e..4cac9eb 100644
 -        <button type="button" class="rounded-xl border p-3" [disabled]="busy()" (click)="verify()">Check payment status</button>
 -      } @else {
 +        <button type="button" class="rounded-xl border p-3" [disabled]="busy() || payBusy()" (click)="verify()">Check payment status</button>
-+        @if (outcome() === 'not_completed' || outcome() === 'failed') {
-+          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy() || payBusy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : 'Continue payment'}}</button>
++        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'action_required') {
++          <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-3 ml-2" [disabled]="busy() || payBusy()" (click)="resumePayment()">{{outcome() === 'failed' ? 'Try card again' : outcome() === 'action_required' ? 'Complete bank confirmation' : 'Continue payment'}}</button>
 +        }
-+        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'cancelled') {
++        @if (outcome() === 'not_completed' || outcome() === 'failed' || outcome() === 'cancelled' || outcome() === 'action_required') {
 +          <button type="button" class="p-3 ml-2" [disabled]="busy() || payBusy()" (click)="discardAttempt()">Discard this unpaid attempt</button>
 +        }
 +      } @else if (!attempt.submitted) {
@@ -345,7 +353,7 @@ index 4473a1e..4cac9eb 100644
          this.pi.set(result.clientSecret);
          setTimeout(()=>void this.mountCard(),0);
          return;
-@@ -192,8 +209,40 @@ export class DriverWalletTopupComponent implements OnInit {
+@@ -192,8 +209,58 @@ export class DriverWalletTopupComponent implements OnInit {
      }
      finally { this.busy.set(false); }
    }
@@ -353,17 +361,35 @@ index 4473a1e..4cac9eb 100644
 +  async resumePayment() {
 +    const attempt = this.saved(); if (this.busy() || this.payBusy() || !attempt?.quote || !attempt.submitted) return;
 +    this.busy.set(true); this.message.set('');
++    let authenticate: string | null = null;
 +    try {
-+      const result = await this.call('/resume',{attemptId:attempt.quote.attemptId});
-+      if (result?.attemptId !== attempt.quote.attemptId || typeof result.clientSecret !== 'string' || !result.clientSecret.startsWith('pi_')) throw Error();
++      const resumed = resumeMode(await this.call('/resume',{attemptId:attempt.quote.attemptId}), attempt.quote.attemptId);
++      if (!resumed) throw Error();
 +      this.outcome.set(null);
-+      this.pi.set(result.clientSecret);
-+      setTimeout(()=>void this.mountCard(),0);
++      // 3D Secure pending on the same PaymentIntent: finish it; never collect a new card here.
++      if (resumed.mode === 'authenticate') authenticate = resumed.clientSecret;
++      else { this.pi.set(resumed.clientSecret); setTimeout(()=>void this.mountCard(),0); }
 +    } catch (error:any) {
 +      const code = error?.error?.code;
 +      if (code === 'TOPUP_ALREADY_CREDITED') { this.busy.set(false); await this.verify(); return; }
 +      this.message.set(code === 'PAYMENT_RESUME_UNAVAILABLE' ? 'This payment can no longer be continued. Check its status, or discard it if it was not paid.' : 'Could not reopen this payment. Check its status and try again.');
 +    } finally { this.busy.set(false); }
++    if (authenticate) await this.completeAuthentication(authenticate);
++  }
++  /** Completes the pending customer authentication of the ORIGINAL PaymentIntent
++   * (Stripe shows the bank's 3D Secure step). Confirms nothing new and creates no
++   * payment; whatever the result, credit is decided only by server verification. */
++  private async completeAuthentication(clientSecret: string) {
++    if (this.payBusy()) return;
++    this.payBusy.set(true); this.message.set('');
++    try {
++      this.stripe = this.stripe || await loadStripe((environment as any).stripePublicKey);
++      if (!this.stripe) throw Error();
++      const result = await this.stripe.handleNextAction({clientSecret});
++      if (result.error) this.message.set((result.error.message ? result.error.message + ' ' : '') + 'No credit has been added. Checking the payment status…');
++    } catch { /* fall through to server verification */ }
++    finally { this.payBusy.set(false); }
++    await this.verify();
 +  }
 +  /** Discards an unpaid attempt. The server cancels the provider payment first, so a
 +   * late success cannot be lost; local state is cleared only after it confirms. */
@@ -387,7 +413,7 @@ index 4473a1e..4cac9eb 100644
      this.busy.set(true);
      try {
        const result = await this.call('/verify',{attemptId:attempt.quote.attemptId});
-@@ -202,7 +251,10 @@ export class DriverWalletTopupComponent implements OnInit {
+@@ -202,7 +269,10 @@ export class DriverWalletTopupComponent implements OnInit {
        this.message.set('Payment verified. Wallet credit added.');
        try { await this.cash.refresh(true); }
        catch { this.message.set('Payment verified. Wallet credit added. Refresh the wallet to check its balance.'); }
@@ -401,11 +427,11 @@ index 4473a1e..4cac9eb 100644
  }
 diff --git a/src/app/shared/utils/driver-topup-verify-outcome.ts b/src/app/shared/utils/driver-topup-verify-outcome.ts
 new file mode 100644
-index 0000000..fb79ffb
+index 0000000..b1559f0
 --- /dev/null
 +++ b/src/app/shared/utils/driver-topup-verify-outcome.ts
-@@ -0,0 +1,19 @@
-+export type DriverTopupOutcome = 'pending'|'not_completed'|'failed'|'cancelled'|'review'|'credit_pending'|'unavailable';
+@@ -0,0 +1,32 @@
++export type DriverTopupOutcome = 'pending'|'action_required'|'not_completed'|'failed'|'cancelled'|'review'|'credit_pending'|'unavailable';
 +
 +/**
 + * Maps a server verification error code to a UI state and message.
@@ -416,6 +442,7 @@ index 0000000..fb79ffb
 +export function verifyOutcome(code: unknown): [DriverTopupOutcome, string] {
 +  switch (code) {
 +    case 'PAYMENT_PENDING': return ['pending','Your payment is still processing. No credit has been added yet. Check again shortly.'];
++    case 'PAYMENT_ACTION_REQUIRED': return ['action_required','Your bank needs you to confirm this payment. No credit has been added yet. Continue to complete the confirmation, or discard it.'];
 +    case 'PAYMENT_NOT_COMPLETED': return ['not_completed','This payment has not been completed and nothing has been charged. Continue the payment, or discard it.'];
 +    case 'PAYMENT_FAILED': return ['failed','The card payment failed and no credit was added. Try the card again, or discard this attempt.'];
 +    case 'PAYMENT_CANCELLED': return ['cancelled','This payment was cancelled. No credit was added. Discard it to start a new top-up.'];
@@ -424,12 +451,24 @@ index 0000000..fb79ffb
 +    default: return ['unavailable','Payment status is temporarily unavailable. Your attempt is saved; check again shortly. Do not pay again.'];
 +  }
 +}
++
++/**
++ * Validates a /resume response for the saved attempt and decides how the SAME
++ * PaymentIntent continues: 'authenticate' finishes its pending customer
++ * authentication (3D Secure) without collecting a card; 'card' reopens the card
++ * form. null = response not provably for this attempt (do nothing).
++ */
++export function resumeMode(result: unknown, attemptId: string): {mode:'authenticate'|'card'; clientSecret:string}|null {
++  const r = result as {attemptId?:unknown; clientSecret?:unknown; nextAction?:unknown}|null;
++  if (!r || typeof r !== 'object' || r.attemptId !== attemptId || typeof r.clientSecret !== 'string' || !r.clientSecret.startsWith('pi_')) return null;
++  return {mode: r.nextAction === true ? 'authenticate' : 'card', clientSecret: r.clientSecret};
++}
 diff --git a/src/testing/driver-topup-verify-states.spec.ts b/src/testing/driver-topup-verify-states.spec.ts
 new file mode 100644
-index 0000000..2db1414
+index 0000000..6cc6704
 --- /dev/null
 +++ b/src/testing/driver-topup-verify-states.spec.ts
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,296 @@
 +import { describe, expect, it } from 'vitest';
 +import http from 'node:http';
 +import { createHash } from 'node:crypto';
@@ -437,7 +476,7 @@ index 0000000..2db1414
 +import { createDriverTopupRouter, flutterwaveAttemptStore } from '../../server/routes/driver-wallet-topup.routes';
 +import { StripeDriverTopupSandbox } from '../../server/services/payments/stripe-driver-topup-sandbox';
 +import type { DriverTopupConfig, DriverTopupDb } from '../../server/services/payments/driver-wallet-topup';
-+import { verifyOutcome } from '../app/shared/utils/driver-topup-verify-outcome';
++import { resumeMode, verifyOutcome } from '../app/shared/utils/driver-topup-verify-outcome';
 +
 +// Regression for the develop Stripe in-app top-up: /verify returned 409
 +// PAYMENT_RECONCILIATION_REQUIRED for every non-succeeded PaymentIntent, and the
@@ -563,7 +602,7 @@ index 0000000..2db1414
 +    expect(new Set(burst.map(b=>b.body.creditedEventId)).size).toBe(1);expect(w.ledger).toHaveLength(1);
 +  });
 +  it.each([
-+    ['processing',{},'PAYMENT_PENDING'],['requires_action',{},'PAYMENT_PENDING'],['requires_confirmation',{},'PAYMENT_PENDING'],
++    ['processing',{},'PAYMENT_PENDING'],['requires_action',{},'PAYMENT_ACTION_REQUIRED'],['requires_confirmation',{},'PAYMENT_PENDING'],
 +    ['requires_payment_method',{last_payment_error:{code:'card_declined'}},'PAYMENT_FAILED'],
 +    ['canceled',{},'PAYMENT_CANCELLED'],['requires_capture',{},'PAYMENT_RECONCILIATION_REQUIRED'],['some_future_status',{},'PAYMENT_RECONCILIATION_REQUIRED'],
 +  ])('%s maps to %s without credit',async(status,extra,code)=>{
@@ -636,12 +675,68 @@ index 0000000..2db1414
 +  });
 +  it('UI maps only explicit server codes; unknown/network errors are "temporarily unavailable"',()=>{
 +    expect(verifyOutcome('PAYMENT_PENDING')[0]).toBe('pending');
++    expect(verifyOutcome('PAYMENT_ACTION_REQUIRED')[0]).toBe('action_required');
 +    expect(verifyOutcome('PAYMENT_NOT_COMPLETED')[0]).toBe('not_completed');
 +    expect(verifyOutcome('PAYMENT_FAILED')[0]).toBe('failed');
 +    expect(verifyOutcome('PAYMENT_CANCELLED')[0]).toBe('cancelled');
 +    expect(verifyOutcome('PAYMENT_RECEIVED_CREDIT_PENDING')[0]).toBe('credit_pending');
 +    expect(verifyOutcome('PAYMENT_RECONCILIATION_REQUIRED')[0]).toBe('review');
 +    expect(verifyOutcome(undefined)[0]).toBe('unavailable');expect(verifyOutcome('TOPUP_RESULT_UNCONFIRMED')[0]).toBe('unavailable');
++  });
++});
++
++// Regression: a PaymentIntent waiting for 3D Secure (requires_action) was reported as
++// PAYMENT_PENDING ("still processing"), so after a reload during the bank challenge the
++// app offered only "Check payment status" and the payment could never be finished.
++describe('3D Secure (requires_action) after a reload continues the SAME payment',()=>{
++  it('reports PAYMENT_ACTION_REQUIRED, resumes the original PaymentIntent for authentication, then credits exactly once',async()=>{
++    const w=await checkedOut();
++    // Card submitted, bank challenge shown, page reloaded before it was completed.
++    w.pay('requires_action',{next_action:{type:'use_stripe_sdk'}});
++    const v=await call(w.app,'/verify',{attemptId});
++    expect(v.status).toBe(409);expect(v.body.code).toBe('PAYMENT_ACTION_REQUIRED');
++    expect(w.ledger).toHaveLength(0);expect(w.attempt().status).toBe('provider_pending');
++    expect(verifyOutcome(v.body.code)[0]).toBe('action_required');
++    // Another driver gets nothing (no secret, no state change); unauthenticated is 401.
++    const foreign=await call(w.app,'/resume',{attemptId},'other-token');
++    expect(foreign.status).toBe(404);expect(JSON.stringify(foreign.body)).not.toContain('pi_');
++    expect((await call(w.app,'/resume',{attemptId},'bad-token')).status).toBe(401);
++    // Owner resumes: same PaymentIntent secret, flagged for authentication; no new payment.
++    const r=await call(w.app,'/resume',{attemptId});
++    expect(r.status).toBe(200);expect(r.body).toEqual({attemptId,clientSecret:'pi_synthetic_secret_abc',nextAction:true});
++    expect(resumeMode(r.body,attemptId)).toEqual({mode:'authenticate',clientSecret:'pi_synthetic_secret_abc'});
++    expect(w.creates()).toBe(1);expect(w.piStatus()).toBe('requires_action');
++    // Challenge completed on that PaymentIntent -> one credit of the wallet amount, idempotent under repeats.
++    w.pay('succeeded');
++    const burst=await Promise.all(Array.from({length:8},()=>call(w.app,'/verify',{attemptId})));
++    for(const b of burst){expect(b.status).toBe(200);expect(b.body.creditedEventId).toBe('cccccccc-cccc-4ccc-8ccc-cccccccccccc');}
++    expect(w.ledger).toEqual([{attempt:attemptId,amount:10000}]);expect(w.creates()).toBe(1);
++    expect((await call(w.app,'/resume',{attemptId})).body.code).toBe('TOPUP_ALREADY_CREDITED');
++  });
++  it.each([
++    ['amount',{amount:10600}],['currency',{currency:'eur'}],['live mode',{livemode:true}],
++    ['merchant',{metadata:{vaydu_driver_topup:attemptId,vaydu_account:'acct_synthetic',vaydu_merchant:'other-merchant',vaydu_total:'10500'}}],
++  ])('a requires_action PaymentIntent with mismatched %s is neither resumed nor reported as authentication',async(_n,extra)=>{
++    const w=await checkedOut();w.pay('requires_action',extra);
++    const r=await call(w.app,'/resume',{attemptId});expect(r.status).toBe(409);expect(r.body.code).toBe('PAYMENT_RECONCILIATION_REQUIRED');expect(r.body.clientSecret).toBeUndefined();
++    expect((await call(w.app,'/verify',{attemptId})).body.code).toBe('PAYMENT_RECONCILIATION_REQUIRED');
++    expect(w.ledger).toHaveLength(0);expect(w.creates()).toBe(1);
++  });
++  it('failed authentication falls back to the card form on the same PaymentIntent; discard cancels it',async()=>{
++    const w=await checkedOut();w.pay('requires_action');
++    w.pay('requires_payment_method',{last_payment_error:{code:'payment_intent_authentication_failure'}});
++    expect((await call(w.app,'/verify',{attemptId})).body.code).toBe('PAYMENT_FAILED');
++    const r=await call(w.app,'/resume',{attemptId});expect(r.body.nextAction).toBe(false);
++    expect(resumeMode(r.body,attemptId)?.mode).toBe('card');
++    const w2=await checkedOut();w2.pay('requires_action');
++    expect((await call(w2.app,'/discard',{attemptId})).status).toBe(200);
++    expect(w2.piStatus()).toBe('canceled');expect(w2.attempt().status).toBe('failed');expect(w2.creates()).toBe(1);expect(w2.ledger).toHaveLength(0);
++  });
++  it('the client accepts a resume response only for its own attempt',()=>{
++    expect(resumeMode({attemptId:'other',clientSecret:'pi_x_secret',nextAction:true},attemptId)).toBeNull();
++    expect(resumeMode({attemptId,clientSecret:'seti_x',nextAction:true},attemptId)).toBeNull();
++    expect(resumeMode(null,attemptId)).toBeNull();
++    expect(resumeMode({attemptId,clientSecret:'pi_x_secret'},attemptId)?.mode).toBe('card');
 +  });
 +});
 +
