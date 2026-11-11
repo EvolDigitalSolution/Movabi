@@ -105,11 +105,11 @@ chmod +x rollout-develop-52097ef.sh host-predeploy.sh host-rollback.sh
 `deploy/vaydu-payment-account-setup/api/`, `package.json`, `package-lock.json`). Expected: only the
 6 fix files. Anything else ships too — stop and review. Known possibilities from git:
 
-| Running API at | Extra API changes this release would ship |
+| `host-predeploy.sh` reports running content of | Extra API changes this release would ship |
 |---|---|
 | `95d745b` (develop) | none |
 | `6837e55` (`inspection-release` tip, 2026-11-10) | `server/routes/driver-onboarding.routes.ts`: inspection-photo 201 response uses `photoId` instead of undeclared `row` (fixes a ReferenceError → 500 after a successful registration) |
-| `52097ef` (last recorded API release) | 17 files incl. `package-lock.json` (~1,000 lines), `verification.routes.ts`, `market-safety.routes.ts`, inspection/requirements engines and wallet files — full review required |
+| `a898d7c` (`vaydu-develop-52097ef.tar.gz`, the archive `rollout-develop-52097ef.sh` pins; its SOURCE_SHA) | 55 paths: 13 server files (wallet top-up switches from hosted Checkout Sessions to in-app PaymentIntents, fee label "Vaydu fee" → "Card fee", inspection routes, CORS header `X-Inspection-Vehicle`), `package.json` adds `sharp` 0.34.5 (native; image build must install it), `package-lock.json`, and ~40 `src/app/shared` files that archive did not carry — full review required. Unlikely: the reported bug needs the in-app PaymentIntent flow, which `a898d7c` does not have |
 
 ```sh
 PRE=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); . "$PRE/previous.env"   # gives WEB_IMAGE
