@@ -34,4 +34,12 @@ echo "Expected (fix only): server/routes/driver-wallet-topup.routes.ts, server/s
 echo "  src/app/shared/ui/driver-wallet-topup.component.ts, src/app/shared/utils/driver-topup-verify-outcome.ts (ADDED)."
 echo "Fix base is the running release-2385da7 (2385da7). Anything else (including any ADDED deploy/vaydu-payment-account-setup/api file)"
 echo "  means the running API is not 2385da7: STOP and review before deploying."
+# Running web vs bundle (read-only): raw byte hashes of the served files. 50x.html comes from the
+# nginx base image, is not part of the app build and stays in the new image, so it is excluded.
+WLIST='find . -type f ! -path ./50x.html -exec sha256sum {} + | sed -E "s#^([0-9a-f]{64}) [ *]\./#\1  #" | sort -k2'
+docker exec $WEB sh -c "cd /usr/share/nginx/html && $WLIST" > "$DIR/running-web.sha"
+(cd "$DIR/bundle/$NAME/mobile/browser" && sh -c "$WLIST") > "$DIR/bundle-web.sha"
+echo "running web files hashed: $(wc -l < "$DIR/running-web.sha")   bundle web files: $(wc -l < "$DIR/bundle-web.sha")"
+join -1 2 -2 2 -a1 -a2 -e MISSING -o 0,1.1,2.1 "$DIR/running-web.sha" "$DIR/bundle-web.sha" | awk '$2!=$3{print $1, ($2=="MISSING"?"ADDED":($3=="MISSING"?"REMOVED":"CHANGED"))}' > "$DIR/web-changes.txt"
+echo "== web files that would change ($DIR/web-changes.txt):"; cat "$DIR/web-changes.txt"
 echo "Saved to $DIR"

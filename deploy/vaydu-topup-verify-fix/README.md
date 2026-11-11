@@ -4,6 +4,30 @@ Base commit: `95d745b` (branch `develop`); fix on branch `fix/driver-topup-verif
 **Not deployed.** No schema migration, no provider change, no live keys. Bank-account setup
 (`PAYMENT_ACCOUNT_SETUP_FAILED`) is a separate issue and is not touched here.
 
+## Release on the running release-2385da7 (branch `release/topup-3ds-on-2385da7`)
+
+Host predeploy (2026-11-11T20:37:57Z) showed develop API and web both run `release-2385da7`
+(SOURCE_SHA `2385da727d45d05dea0bedd160b220de92a36157`, `origin/develop`). That is 95d745b plus nine
+inspection commits. The `13bf1bb` package was built on 95d745b, so it would have **reverted**
+`admin.routes.ts`, `driver-onboarding.routes.ts` and `verification.routes.ts`. It would also have
+**added** the seven `deploy/vaydu-payment-account-setup/api/` files, which the running image does not
+contain. `server/routes/driver-payment-account-develop.routes.ts` loads them only when
+`VAYDU_PAYMENT_ACCOUNT_SETUP` is set, so adding them could change payment-account behaviour.
+
+This branch is 2385da7 + the top-up commits, cherry-picked without conflicts (fix files byte-identical
+to `13bf1bb`). `make-bundle.sh` ships `server/`, `src/app/shared/`, `package*.json`, `tsconfig.json` and
+`.dockerignore`, as the inspection API bundles did, and leaves out `deploy/vaydu-payment-account-setup/api/`.
+`host-predeploy.sh` also compares the running web files with the bundle (`web-changes.txt`).
+
+Source diff vs 2385da7: the six top-up files and the regression spec, nothing else. Web source differs
+only in `driver-wallet-topup.component.ts` and `driver-topup-verify-outcome.ts`.
+
+Checks on this branch (Windows, real tools): top-up and inspection specs (11 files) 95 passed, 1 skipped
+(DB integration, needs `SUPABASE_*`), exit 0; `npx tsc -p server/tsconfig.json --noEmit` exit 0;
+`npm run build:mobile:develop` exit 0 (pre-existing warnings only). Full suite not run on this branch.
+
+Expected predeploy result and commands: `NEXT-STEPS.txt`.
+
 ## Files in the fix (review diff: `topup-verify-fix.diff`)
 
 Changed:
