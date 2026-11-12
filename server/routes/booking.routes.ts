@@ -2273,14 +2273,18 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
             }
             const driverVehicle = (driverVehicles || [])[0] || null;
 
-            if (!isDriverEligibleForService(driverProfile, driverVehicle, canonicalService)) {
+            // Payout readiness is checked just below by requirePayoutEligible (provider-verified).
+            if (!isDriverEligibleForService(driverProfile, driverVehicle, canonicalService, 'verified_at_acquisition')) {
                 return res.status(409).json({ error: 'The selected driver is no longer eligible for this service.', code: 'DRIVER_NO_LONGER_ELIGIBLE' });
             }
         }
 
-        if (fullJob.payment_method === 'cash') {
-            const cashJob = await getJob(negotiation.job_id);
-            if (isCashRide(cashJob) && !(await requirePayoutEligible(acceptedDriverId,res,cashJob))) return;
+        // The customer accepting a driver's bid is an ACQUISITION: the driver must be able to be paid (or be
+        // in an approved cash-ride cohort), exactly as on /accept and /driver-accept. Previously only cash
+        // rides were checked here, so a driver who could not be paid could win a card job through a bid.
+        {
+            const acquisitionJob = await getJob(negotiation.job_id);
+            if (!(await requirePayoutEligible(acceptedDriverId, res, acquisitionJob))) return;
         }
 
         const { data: accepted, error: acceptError } = await supabaseAdmin.rpc('accept_driver_offer', {

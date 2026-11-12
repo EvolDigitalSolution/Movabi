@@ -11,7 +11,10 @@ const acceptSegment = route.slice(
 describe('booking acceptance eligibility re-check (defence in depth)', () => {
     it('reuses the canonical service-scoped helper immediately before the RPC', () => {
         expect(route).toContain("import { isDriverEligibleForService, toCanonicalDriverService }");
-        expect(acceptSegment).toContain('isDriverEligibleForService(driverProfile, driverVehicle, canonicalService)');
+        expect(acceptSegment).toContain("isDriverEligibleForService(driverProfile, driverVehicle, canonicalService, 'verified_at_acquisition')");
+        // ...because payout readiness is enforced for EVERY payment method right after (not only cash rides).
+        expect(acceptSegment).toContain('if (!(await requirePayoutEligible(acceptedDriverId, res, acquisitionJob))) return;');
+        expect(acceptSegment).not.toMatch(/isCashRide\(cashJob\) && !\(await requirePayoutEligible/);
         expect(acceptSegment).toContain('toCanonicalDriverService(fullJob.service_slug)');
     });
 

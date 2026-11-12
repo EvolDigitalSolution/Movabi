@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { assertMarketFareConfigured } from '../../server/services/market-fare-guard';
 function harness(fail = false) {
  const s = readFileSync('server/services/pricing.service.ts','utf8');
  const method = s.slice(s.indexOf('    static async resolvePrice('),s.indexOf('    private static async resolveUnprotectedPrice('));
  const updates: object[] = [];
  const c = { exports: {} as { P: { resolvePrice: (o: object) => Promise<unknown> } },
  PaymentMarginService: { policy:()=>({}),protect:()=>({customerCharge:3.79,adjustment:0.34,paymentCost:0.32,contribution:0.5}) },
+ // resolvePrice now calls the market fare guard; the REAL guard is injected (not a stub).
+ assertMarketFareConfigured,
  MarketplaceConfigService:{canonicalServiceSlug:(s:string)=>s}, FareSplitService:{POLICY_VERSION:'test'},process:{env:{}},
  supabaseAdmin:{from:()=>({update:(v:object)=>{updates.push(v);return {eq:()=>({select:()=>({single:async()=>fail?{data:null,error:{message:'failed'}}:{data:{quote_reference:'q1'},error:null}})})};}})} };
  const code = `class PricingService { ${method}

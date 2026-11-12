@@ -16,7 +16,11 @@ describe('authoritative driver requirement resolution', () => {
   it('does not require car fields or motor insurance for a bicycle courier', () => {
     const codes = resolve().automaticRequirements.map(item => item.code);
     expect(codes).toContain('vehicle.bicycle_declaration');
-    expect(codes).not.toContain('vehicle.make');
+    // Make/model/colour/year ARE required for every saved vehicle, pedal bikes included
+    // (parseDriverVehicleInput), so the requirement engine lists them. What a pedal bicycle must never
+    // need are the motor-vehicle items: registration, driving licence and motor insurance.
+    expect(codes).not.toContain('vehicle.registration');
+    expect(codes).not.toContain('document.driving_licence');
     expect(codes).not.toContain('document.insurance');
   });
 

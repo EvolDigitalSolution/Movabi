@@ -109,7 +109,10 @@ describe('UK-only payout scope', () => {
   it('onboarding verifies eligibility and the actual account country on reuse', () => {
     expect(CONNECT).toContain('PayoutEligibilityService.evaluateDriver(userId, null)');
     expect(CONNECT).toContain('PayoutEligibilityService.isSupportedCountry(account.country)');
-    expect(CONNECT).toContain('country: SUPPORTED_PAYOUT_COUNTRIES[0]');
+    // Multi-region: the new account's country is the driver's own registered market (not the first
+    // supported country), and a reused account must match that market exactly.
+    expect(CONNECT).toContain("country: String((req as any).connectOwnerProfile.registration_country_code || (req as any).connectOwnerProfile.country_code).toUpperCase(),");
+    expect(CONNECT).toContain("String(account.country).toUpperCase()!==country");
     // The hard-coded 'GB' account country is gone.
     expect(CONNECT).not.toContain("country: 'GB'");
   });
@@ -208,7 +211,9 @@ describe('earnings labels', () => {
     expect(recordedPayoutLabel({ status: 'paid' })).toBe('Paid (recorded)');
     expect(recordedPayoutLabel({ status: 'failed', stripe_transfer_id: 'tr_example' }))
       .toBe('Payout failed');
-    expect(recordedPayoutLabel({ status: 'unknown' })).toBe('Payout status unavailable');
+    // Ambiguous provider outcomes are flagged for reconciliation; unrecognised statuses stay "unavailable".
+    expect(recordedPayoutLabel({ status: 'unknown' })).toBe('Payout needs reconciliation');
+    expect(recordedPayoutLabel({ status: 'not_a_status' })).toBe('Payout status unavailable');
     // Never label a transfer as a bank payment, including paid ledger records.
     for (const row of [
       { status: 'paid', stripe_transfer_id: 'tr_example' },
@@ -228,17 +233,18 @@ describe('fare lifecycle', () => {
 
 describe('acquisition eligibility (claim/accept bypass)', () => {
   it('driver job acceptance enforces payout eligibility', () => {
-    expect(BOOKING).toContain('requirePayoutEligible(driverId, res)');
+    expect(BOOKING).toContain('if (!(await requirePayoutEligible(driverId, res, job))) return;');
     expect(BOOKING).toContain('PayoutEligibilityService.assertEligible');
     expect(BOOKING).toContain("code: error?.code || 'PAYOUT_INELIGIBLE'");
   });
 
   it('driver negotiation acceptance enforces payout eligibility', () => {
-    expect(BOOKING).toContain('requirePayoutEligible(userId, res)');
+    expect(BOOKING).toContain('if (!(await requirePayoutEligible(userId, res, job))) return;');
+    expect(BOOKING).toContain('if (!(await requirePayoutEligible(acceptedDriverId, res, acquisitionJob))) return;');
   });
 
   it('does not touch login/registration — only job acquisition', () => {
     // The eligibility check is scoped to the accept endpoints, not auth.
-    expect(BOOKING).toContain('This does NOT affect login — only job acquisition.');
+    expect(BOOKING).toContain('This never changes login.');
   });
 });

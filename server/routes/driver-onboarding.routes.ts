@@ -1,4 +1,5 @@
 import { GbMotMonitorService } from '../services/gb-mot-monitor.service';
+import { verifiedPaymentAccount } from '../services/driver-payment-account-status';
 import { rateLimit } from 'express-rate-limit';
 import { GbMotService } from '../services/gb-mot.service';
 import { Request, Response, Router } from 'express';
@@ -15,18 +16,19 @@ import { evaluateDriverServiceEligibility } from '../services/driver-eligibility
 
 const router = Router();
 
-function parseOnboardingItems(input:unknown):Record<string,unknown>{
+// Exported for the verification driver-submission path, which must use the same definitions.
+export function parseOnboardingItems(input:unknown):Record<string,unknown>{
   if(!input)return{};
   if(typeof input==='string'){try{return parseOnboardingItems(JSON.parse(input));}catch{return{};}}
   if(Array.isArray(input))return input.reduce<Record<string,unknown>>((items,entry)=>{if(!entry||typeof entry!=='object')return items;const row=entry as Record<string,unknown>;const key=String(row.key||row.name||'').trim();if(key)items[key]=row.value;return items;},{});
   return typeof input==='object'?input as Record<string,unknown>:{};
 }
 
-function serializeOnboardingItems(items:Record<string,unknown>):Array<{key:string;value:string}>{
+export function serializeOnboardingItems(items:Record<string,unknown>):Array<{key:string;value:string}>{
   return Object.entries(items).filter(([key])=>key.trim().length>0).map(([key,value])=>({key,value:typeof value==='string'?value:JSON.stringify(value)}));
 }
 
-const BIKE_INSPECTION_SLOTS = ['front','rear','side'];
+export const BIKE_INSPECTION_SLOTS = ['front','rear','side'];
 
 async function currentVehicle(driverId:string):Promise<DriverVehicleRow|null>{
   const{data,error}=await supabaseAdmin.from('vehicles').select('*').eq('user_id',driverId).order('created_at',{ascending:false});
@@ -490,25 +492,5 @@ function logSubmitReviewDbError(boundary: string, error: unknown): void {
   });
 }
 
-/**
- * Server-verified payment-account state for the driver's configured market.
- * Never trusts a client flag. GB is evaluated by the existing Stripe authority;
- * every other market is evaluated by the configured payout provider. A missing
- * provider, table or configuration fails closed as `unavailable`.
- */
-async function verifiedPaymentAccount(driverId: string, setup?: {status:(id:string)=>Promise<any>}) {
-  try {
-    if(setup){const verified=await setup.status(driverId);if(verified.provider!=='stripe')return {...verified,reason:null};}
-    const profile=await supabaseAdmin.from('profiles').select('role,registration_country_code,country_code').eq('id',driverId).single();
-    if(profile.error||profile.data?.role!=='driver'||String(profile.data.registration_country_code||profile.data.country_code).toUpperCase()!=='GB')return {provider:null,state:'unavailable' as const,available:false,reason:null};
-    // Reuse the deployed Stripe authority, not a new Connect implementation or
-    // the Flutterwave sandbox runtime. It verifies actual charges/payouts flags.
-    const {PayoutEligibilityService}=await import('../services/payout-eligibility.service');
-    const eligibility=await PayoutEligibilityService.evaluateDriver(driverId);
-    return {provider:'stripe',state:eligibility.eligible?'completed':eligibility.code==='NO_STRIPE_ACCOUNT'?'not_started':'action_required',available:true,reason:null};
-  } catch {
-    return { provider: null, state: 'unavailable' as const, available: false, reason: null };
-  }
-}
 
 export default router;

@@ -170,6 +170,7 @@ Scope of each, so neither is read as the other:
 | D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
 | ~~D10~~ | **Resolved 2026-11-12 by the user: "Keep them off".** Courier (delivery/errand) cash stays off in every market, including cash-pilot markets; cash applies to Rides only, with a card hold. Already enforced by `20261269000000`: `courier_enabled` defaults to false; no migration, API route or runbook sets it (only disposable test fixtures do); the markets table is writable by the database owner only, so the API cannot switch it on. Turning it on later needs a new decision and an owner-level change. |
 | ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff after acceptance counts as driver-initiated — confirmed by the user ("Yes, count handoffs"). |
+| D11 | Address search provider of record on develop/production: confirm `VAYDU_MAPBOX_GEOCODING_V23` is enabled (server search depends on it; with it off address search returns nothing), or name the intended provider. Then the 52 place-search tests are rewritten against the server pipeline or the dead client pipeline is removed. |
 | D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
 
 Approved and recorded: driver card top-up fee 5% (`vaydu-driver-card-5pct-wallet-v1`), promo 5%,
@@ -193,7 +194,7 @@ fee hold / immediate-only / fixed-fare decisions (`CASH-BOOKING-PLAN.md`).
   already built); the tested chain has since grown (20261267/68, cash chain, merge). Its checksum test
   already failed at baseline. Not updated on purpose: re-cutting the bundle is release packaging, which
   is not authorised. It must be regenerated when a new validation bundle is authorised.
-- **Fixed by this work:** none of the baseline failures (none targeted).
+- **Fixed by this work:** none at `fbab3fb`; see the triage below (36 fixed, 5 real defects).
 - **Pre-existing (108, unchanged):** spread over 28 files — e.g. place search (business/heigit/
   local-shop/named-landmark/geofence: 52), deployed wallet payout regression (20), driver onboarding/
   eligibility/requirements (~15), settlement remediation (5), wallet booking lifecycle (4), and single
@@ -201,6 +202,54 @@ fee hold / immediate-only / fixed-fare decisions (`CASH-BOOKING-PLAN.md`).
   authority, protected quote audit, wallet metadata/overlay. **These are go-live blockers in their own
   right** (mandatory areas include matching, onboarding, wallet and market readiness); each needs
   triage against its own history — none was weakened here.
+
+
+### Triage of the pre-existing failures (2026-11-12, user: "Yes, triage them")
+
+After triage: **73 distinct failing tests (75 reported) in 9 files, 3,368 passing**. Before: 109 in 29 files.
+**No new failures** (`docs/roadmap-evidence/full-suite-failures-after-triage.txt`, compared by exact name).
+No assertion was removed without replacing it with the current, equally strict guarantee.
+
+**Real defects found and fixed (code changes):**
+
+| # | Defect | Since | Fix |
+|---|---|---|---|
+| 1 | Negotiation accept (`/negotiation/:id/accept`) skipped the payout/market acquisition gate for some methods | `95d745b` | `requirePayoutEligible(acceptedDriverId, res, acquisitionJob)` on every path; test M strengthened |
+| 2 | `isDriverEligibleForService` evaluated requirements **without** the payment account, so `payout.payment_account` blocked every driver: dispatch, go-online and admin manual approval refused all drivers | `95d745b` (deployed in `f6e8c00`) | Payment-account state passed explicitly (`verifiedPaymentAccount`, moved to `server/services/driver-payment-account-status.ts`); dispatch passes `'verified_at_acquisition'` (payout re-checked at acquisition) |
+| 3 | The app submits through `/api/verification/driver-submission` (since `e54e2a7`), which skipped the canonical submit-review steps: GB MOT re-check, `DriverRequirementService` gate + `driver_requirement_audit` row, server-owned `bike_inspection_approved` (so bike approvals then failed), identity-correction permission consumption and missing-info resolution | `e54e2a7` | Same steps now run in `driver-submission` before/after the atomic `submit_driver_with_current_inspection` RPC; helpers exported from `driver-onboarding.routes` (one definition) |
+| 4 | Card authorisation ignored a `job_remaining_payable_minor` RPC error and fell back to the full total, silently dropping discount/reserved credit | reward-credit work | Fails closed (`500 PAYABLE_UNRESOLVED`); null result (no breakdown) still falls back |
+| 5 | Three onboarding screens showed raw `error.message` (MOT lookup, vehicle save, payout setup) | `95d745b` | `userFacingError` |
+
+**Stale assertions brought up to the current contract (same strength):** bicycle requirements (make/model/
+colour/year are required for every saved vehicle by `parseDriverVehicleInput`; a pedal bike must still
+never need registration, licence or motor insurance — now asserted explicitly), onboarding-stage bicycle
+fixture (subtype + inspection since `95d745b`), submission path, payout label for `unknown` status
+(reconciliation) plus an unrecognised-status case, connect account country = driver's own market,
+`requirePayoutEligible(..., job)` call sites, quote dedupe (whitespace-insensitive), Batch 1A "no
+collect" scoped to its own migration (`collect` arrived with the top-up batches), cash-credit 1G
+placement/actions as durable invariants (the hash-of-whole-file scripts stay as historical evidence).
+
+**Harness fixes:** inspection-photo route stub lacked the tenant lookup (`p_tenant` now asserted);
+market-feed harness lacked `MarketSafetyService` (stubbed, plus a new non-Stripe-market case: 9 cases);
+wallet booking lifecycle and protected quote audit stubs.
+
+**Remaining 73 — not code defects, cannot pass here honestly:**
+
+| Group | Tests | Reason | Needed |
+|---|---|---|---|
+| Place search (business, heigit, local-shop, named-landmark, local-place-geofence) | 52 | Tests drive the legacy client pipeline (`legacySearchPlaces`), which is dead code: the app searches only through the server (`RemoteMapsService`), and with `VAYDU_MAPBOX_GEOCODING_V23` off server search returns nothing | **D11** |
+| Deployed wallet payout regression | 17 | Reads untracked `.temp/` deployment artefacts | Run against the deployment artefacts |
+| Wallet minimal overlay | 1 | Same (`.temp/`) | Same |
+| Bike assignment trigger (real PG) | 1 | Needs container `vaydu-pg-fresh` | Run with the container |
+| Manifest drift | 2 | Frozen `35b2590` validation bundle (see above) | Bundle re-cut when packaging is authorised |
+
+**Open item found during triage:** `supabase/migrations/20261248000000_driver_cash_credit_batch1e.sql` is
+**not committed on any branch**. It exists only as an untracked file in this worktree, yet
+`driver-cash-credit-batch1e.spec.ts` and `scripts/check-driver-cash-credit-batch1e.cjs` read it, so that
+spec passes only locally. The cash-pilot migrations (`20261266*`) are generated from the deployed schema, which
+already contains the v1e functions. That suggests the file matches what develop runs, but this is not verified.
+Committing it adds a migration to the tested chain, so it is left out of the triage commit. It needs a
+check against the develop schema export before being versioned.
 
 ## Dependencies
 

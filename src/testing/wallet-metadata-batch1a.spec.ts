@@ -72,7 +72,9 @@ describe('Batch 1A wallet metadata migration (source contract)', () => {
     expect(registry).toContain('fincra');
   });
 
+  // 'collect' was added later by the wallet top-up batches (customer/driver top-up readiness), so the
+  // shared contract file now legitimately lists it. Batch 1A's own claim is about its migration.
   it('does not add a collect capability in this metadata batch', () => {
-    expect(contracts).not.toContain("'collect'");
+    expect(migration).not.toMatch(/collect/i);
   });
 });

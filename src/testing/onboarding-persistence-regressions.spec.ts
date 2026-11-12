@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { parseDriverPhone } from '../../server/models/driver-profile.model';
 import { DriverRequirementService } from '../../server/services/driver-requirement.service';
+// A complete GB driver has a verified Stripe payment account (the routes supply it via verifiedPaymentAccount).
 
 const read = (p: string) => readFileSync(resolvePath(process.cwd(), p), 'utf8');
 const route = read('server/routes/driver-onboarding.routes.ts');
@@ -40,7 +41,7 @@ const car = {
 const resolve = (profile: Record<string, unknown>, vehicle = car) =>
     DriverRequirementService.resolve({
         profile, vehicle, authEmailConfirmed: true,
-        countryCode: String(profile['country_code'] || 'GB'), now: NOW
+        countryCode: String(profile['country_code'] || 'GB'), now: NOW, paymentAccount: {provider:'stripe',state:'completed',available:true,reason:null}
     } as any);
 
 const find = (profile: Record<string, unknown>, code: string, vehicle = car) =>
@@ -204,9 +205,13 @@ describe('M/N/O admin approval and successful submission', () => {
     it('M. admin approval re-evaluates canonical requirements and refuses while blockers remain', () => {
         const approve = verification.slice(verification.indexOf("router.post('/drivers/:driverId/manual-approve'"));
         const gate = approve.indexOf('DriverRequirementService.resolve');
-        const update = approve.indexOf(".from('profiles')", approve.indexOf('const { error } = await supabase'));
+        // No write of any kind before the requirement gate; the approval write comes after it.
+        // (Anchored on .update( itself — the earlier text anchor no longer existed, so indexOf returned -1.)
         expect(gate).toBeGreaterThan(-1);
+        expect(approve.slice(0, gate)).not.toContain('.update(');
+        const update = approve.indexOf('.update(', gate);
         expect(update).toBeGreaterThan(gate);
+        expect(approve.slice(gate, update)).toContain('if (approvalBlockers.length)');
         expect(approve).toContain('DRIVER_REQUIREMENTS_INCOMPLETE');
         expect(approve).toContain('if (approvalBlockers.length)');
     });

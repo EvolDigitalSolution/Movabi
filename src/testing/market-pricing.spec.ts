@@ -540,7 +540,7 @@ describe('GB Ride launch calibration migration', () => {
     const bookingPage = readFileSync(resolve(process.cwd(), 'src/app/apps/mobile/features/customer/booking-request/booking-request.page.ts'), 'utf8');
     expect(quoteClient).toContain('private pending = new Map');
     expect(quoteClient).toContain('private recent = new Map');
-    expect(quoteClient).toContain('if (existing) return existing');
+    expect(quoteClient.replace(/\s+/g, '')).toContain('if(existing)returnexisting');
     expect(bookingPage).toContain("result.label + '|' + result.lat + '|' + result.lng + '|' + $index");
   });
 });

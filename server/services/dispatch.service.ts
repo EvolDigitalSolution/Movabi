@@ -819,7 +819,9 @@ export class DispatchService {
                 const profile = profilesById.get(driver.id);
                 if (!profile) return false;
                 const vehicle = vehicleRowsByUser.get(driver.id) || null;
-                return isDriverEligibleForService(profile, vehicle, canonicalService);
+                // Payout readiness is verified with the provider when the job is acquired (requirePayoutEligible),
+                // not per candidate here (that would be one Stripe call per candidate per job).
+                return isDriverEligibleForService(profile, vehicle, canonicalService, 'verified_at_acquisition');
             })
             : compatibleDrivers.filter(driver => profilesById.has(driver.id));
 

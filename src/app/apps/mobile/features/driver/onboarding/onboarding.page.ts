@@ -2322,7 +2322,7 @@ export class OnboardingPage implements OnInit {
             if(vehicle.colour)values['color']=vehicle.colour;if(vehicle.year)values['year']=vehicle.year;
             this.onboardingForm.patchValue(values);
             await this.showToast('Vehicle details retrieved. Check the MOT result and complete any missing fields.', 'success');
-        } catch(error) { this.motLookupError.set(error instanceof Error ? error.message : 'Vehicle lookup unavailable. Please retry.'); }
+        } catch(error) { this.motLookupError.set(userFacingError(error, 'Vehicle lookup unavailable. Please retry.')); }
         finally { this.motLookupBusy.set(false); }
     }
 
@@ -2607,7 +2607,7 @@ export class OnboardingPage implements OnInit {
             await this.driverService.updateVehicle(draft);
             await this.loadInspectionPhotos();
         } catch (error) {
-            this.inspectionError.set(error instanceof Error ? error.message : 'Could not save vehicle.');
+            this.inspectionError.set(userFacingError(error, 'Could not save vehicle.'));
         } finally { this.inspectionBusy.set(false); }
     }
 
@@ -2805,7 +2805,7 @@ export class OnboardingPage implements OnInit {
     }
 
     async setupPayouts() {
-        try{await this.payoutContext.requireStripePayoutMarket();}catch(error:any){await this.showToast(error?.message || 'Payout setup unavailable.','warning');return;}
+        try{await this.payoutContext.requireStripePayoutMarket();}catch(error){await this.showToast(userFacingError(error,'Payout setup unavailable.'),'warning');return;}
         if (this.isReadOnly()) {
             await this.showToast('Payout setup is locked while verification is in progress.', 'warning');
             return;

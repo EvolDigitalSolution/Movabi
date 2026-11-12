@@ -3,13 +3,14 @@ import {DriverOnlineEligibilityService} from '../../server/services/driver-onlin
 import {DriverRequirementService} from '../../server/services/driver-requirement.service';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+// A complete GB driver has a verified Stripe payment account (the routes supply it via verifiedPaymentAccount).
 const client=readFileSync(resolve(process.cwd(),'src/app/core/services/market-availability.service.ts'),'utf8');
 const route=readFileSync(resolve(process.cwd(),'server/routes/market-availability.routes.ts'),'utf8');
 const dashboard=readFileSync(resolve(process.cwd(),'src/app/apps/mobile/features/driver/dashboard/dashboard.page.ts'),'utf8');
 
 const vehicle={id:'vehicle-1',userId:'driver-1',type:'car',make:'Ford',model:'Fiesta',colour:'Green',year:2026,registrationNumber:'NH1 4G',capacity:'standard',serviceEligibility:['delivery'],status:'saved'};
 const profile=(extra:{[key:string]:unknown}={})=>({full_name:'Alex Driver',phone:'07000000000',current_address:'1 High Street',date_of_birth:'1990-01-01',accepted_driver_agreement_at:'2026-01-01',country_code:'GB',right_to_work_url:'right.pdf',driver_service_types:['delivery'],driver_license_url:'lic.pdf',insurance_url:'ins.pdf',verification_status:'approved',is_verified:true,service_approval_statuses:{delivery:'approved'},stripe_connect_status:'connected',...extra});
-const evaluate=(extra:{[key:string]:unknown}={},market={allowed:true,code:null as string|null},vehiclePresent=true)=>{const p=profile(extra);const requirements=DriverRequirementService.resolve({profile:p,vehicle:vehiclePresent?vehicle:null,authEmailConfirmed:true,now:new Date('2026-08-06')});return DriverOnlineEligibilityService.evaluate({profile:p,market,requirements,vehiclePresent});};
+const evaluate=(extra:{[key:string]:unknown}={},market={allowed:true,code:null as string|null},vehiclePresent=true)=>{const p=profile(extra);const requirements=DriverRequirementService.resolve({profile:p,vehicle:vehiclePresent?vehicle:null,authEmailConfirmed:true,now:new Date('2026-08-06'),paymentAccount:{provider:'stripe',state:'completed',available:true,reason:null}});return DriverOnlineEligibilityService.evaluate({profile:p,market,requirements,vehiclePresent});};
 
 describe('authoritative Go Online eligibility',()=>{
  it('returns onboarding incomplete in a live GB market',()=>expect(evaluate({is_verified:false,verification_status:'incomplete',accepted_driver_agreement_at:null}).code).toBe('DRIVER_ONBOARDING_INCOMPLETE'));

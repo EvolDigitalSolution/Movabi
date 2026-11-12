@@ -1,0 +1,73 @@
+ FAIL  src/testing/bike-assignment-trigger-pg.spec.ts > Bike assignment trigger (real PostgreSQL) > enforces bike-only assignment across insert, accept, reassign and admin paths
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > does not let proximity override an explicitly typed town
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > does not show unrelated locations returned by a provider
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > isolates failed providers and does not indefinitely cache empty responses
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > keeps ORS venue names rather than displaying just the country/street
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > keeps business names when the provider label contains only the street address
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > keeps street searches broad and postcode lookup independent of the current position
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > places the nearer matching business before a distant branch without requiring near me
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > rejects invalid coordinates instead of sorting by NaN
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > retains a small spelling variation in a provider result
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > searches dedicated venues/POIs using the typed name and local coordinates
+ FAIL  src/testing/business-place-search.spec.ts > business and point-of-interest search > uses each onboarding country instead of hard-coded UK search limits
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > allows a fresh attempt only after definitive balance rejection
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks a mismatched existing transfer
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks a refunded charge with insufficient remaining value
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks ambiguous retries outside the safe key window
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks an unsafe customer payment source
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > does not create a fresh key when eligibility blocks an ambiguous attempt
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > does not fall back to wallet funds when the card source lookup fails
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > does nothing without a database lease
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > keeps earnings pending when Stripe funds are unavailable
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > keeps old ambiguous attempts balance-funded without changing their parameters
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > never submits a transfer if its charge source cannot be persisted
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > preserves a frozen charge on an ambiguous retry
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > reconciles a successful transfer without transferring again
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > reports a local commit failure for reconciliation
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > retains the same key after an ambiguous failure
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > sends only driver earnings from the captured card charge with zero available balance
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > uses the persisted attempt as the idempotency key
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > does not guess a radius for country-wide scope
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > does not run local listing searches for 10 High Street
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > does not run local listing searches for BL1 1AA
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > does not run local listing searches for Spices, London
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > does not substitute distant or unrelated businesses
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > keeps normal typing on MapTiler
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > moves routing to the official replacement endpoint without changing the route payload
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > only requests the additional provider when explicitly selected
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > preserves the distinction between provider failure and no match
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > requires evidence of both restaurant category and cuisine
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > retains explicit 25 km scope and configured country
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > shares identical in-flight listing requests and caches positive matches
+ FAIL  src/testing/heigit-place-search.spec.ts > explicit additional listings on current HeiGIT endpoint > uses the same current endpoint for navigation geometry
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > distinguishes all-provider failure from a real empty result
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > does not disguise missing API configuration as no local restaurants
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > does not silently broaden after a valid empty response
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > keeps CA postcode H3A 1B2 outside the business radius
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > keeps IE postcode D02 X285 outside the business radius
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > keeps NG postcode 100001 outside the business radius
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > keeps NL postcode 1012 AB outside the business radius
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > keeps US postcode 10001 outside the business radius
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > keeps local 10 km and explicit 25 km/country search caches separate
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > merges the same venue from two providers without losing cuisine metadata
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > never manufactures a house number or suggests a different explicit house number
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > preserves full postcode queries without any locality boundary
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > preserves international country restrictions alongside the same radius
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > retains local matches from a healthy provider if another fails
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > returns a location-required error before making any provider call
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > sends real provider boundaries and discards out-of-circle returned candidates
+ FAIL  src/testing/local-place-geofence.spec.ts > strict local provider requests and returned results > turns all-provider timeouts into a retryable error within the request deadline
+ FAIL  src/testing/local-shop-search.spec.ts > biases MapTiler toward the customer location without calling ORS
+ FAIL  src/testing/local-shop-search.spec.ts > does not reuse the same cache in another town
+ FAIL  src/testing/local-shop-search.spec.ts > keeps existing default behaviour for callers without an origin
+ FAIL  src/testing/local-shop-search.spec.ts > preserves postcode lookup without proximity bias
+ FAIL  src/testing/manifest-drift.spec.ts > manifest drift guard > packaged ORDER.txt matches the executed list exactly
+ FAIL  src/testing/manifest-drift.spec.ts > manifest drift guard > packaged SHA256SUMS migration entries match the executed files
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > does not confuse T2 with T20
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > does not substitute a different terminal when the requested terminal is absent
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > finds and prioritizes Terminal 2 beyond the customer radius instead of the closer airport parent
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > keeps national landmark and local results in separate caches
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > rejects Terminal 2 at a distant airport when the exact Manchester airport parent is available
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > retains the onboarding country restriction for other markets
+ FAIL  src/testing/named-landmark-search.spec.ts > terminal search integration > still excludes distant terminals when near-me is explicitly requested
+ FAIL  src/testing/wallet-minimal-overlay.spec.ts

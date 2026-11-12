@@ -85,12 +85,17 @@ describe('wallet API activation', () => {
       rpcCalls.push({ name, args }); return { data, error };
     }, from: () => { const chain: any = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: job, error: null }) }; return chain; } };
     const dependencies = {
-      express: { Router: () => ({ get() {}, post: (path: string, fn: any) => routes[path] = fn }) },
+      express: { Router: () => ({ get() {}, use() {}, post: (path: string, ...fns: any[]) => routes[path] = fns[fns.length - 1] }) },
       '../services/supabase.service': { supabaseAdmin: db },
       '../services/payment-authority.service': { PaymentAuthorityService: { resolve: async () => ({ totalAuthorisationMajor: 30 }) } },
       '../services/issuing-capacity.service': { IssuingCapacityService: { assertAvailable: async () => {} } },
       '../services/dispatch.service': { dispatchService: { notifyNearbyDrivers: async (...args: any[]) => notifications.push(args) } },
-      '../services/market-availability.service': { MarketAvailabilityService: { requireCapability: async () => {} }, MarketAvailabilityError: class extends Error {} }
+      '../services/market-availability.service': { MarketAvailabilityService: { requireCapability: async () => {} }, MarketAvailabilityError: class extends Error {} },
+      // wallet.routes imports the sandbox module at load; /pay-job does not use it (inert stub, no behaviour).
+      '../services/payments/customer-wallet-sandbox': { CustomerWalletSandbox: class {}, WalletSandboxError: class extends Error {} },
+      '../services/customer-wallet-topup-readiness': { customerWalletTopupReadiness: async () => ({}), WalletTopupReadinessError: class extends Error {} },
+      '../services/customer-wallet-setup': { ensureCustomerWallet: async () => ({}), customerWalletSetupError: () => null },
+      'express-rate-limit': { rateLimit: () => (_q: any, _s: any, n: any) => n() }
     };
     loadModule('server/routes/wallet.routes.ts', dependencies);
     const response: any = { code: 200, body: null, status(code: number) { this.code = code; return this; }, json(body: any) { this.body = body; return this; } };

@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { verifiedPaymentAccount } from '../services/driver-payment-account-status';
+import { BIKE_INSPECTION_SLOTS, parseOnboardingItems, serializeOnboardingItems } from './driver-onboarding.routes';
+import { GbMotService } from '../services/gb-mot.service';
+import { GbMotMonitorService } from '../services/gb-mot-monitor.service';
 import sharp from 'sharp';
 import { canReviewInspection, inspectionSlots } from '../shared/driver-inspection';
 import { NextFunction, Request, Response, Router, raw } from 'express';
@@ -314,10 +318,56 @@ router.post('/driver-submission', async (req, res) => {
       error:`Inspection photos still need approval: ${missing.map(slot => slot.replace(/_/g,' ')).join(', ')}.`,
       missing:missing.map(slot => 'inspection.'+slot)
     });
+    // Canonical submission authority (the same steps as /api/driver-onboarding/submit-review, which this
+    // endpoint replaced in the app at e54e2a7 without carrying them over): GB MOT re-check, the
+    // DriverRequirementService gate with its audit row, and the server-owned bike-inspection item.
+    if (vehicle.type !== 'motorcycle' && GbMotService.enabled(profile.country_code)) {
+      const mot = await GbMotService.lookup(vehicle.license_plate);
+      await GbMotMonitorService.record(vehicle.id, mot);
+      if (['expired','dangerous_failure'].includes(mot.motStatus)) return res.status(422).json({error:'Vehicle MOT is expired or has a dangerous failure. Update the MOT before submission.'});
+      if ((mot.make && mot.make.toLowerCase() !== String(vehicle.make || '').toLowerCase()) || (mot.model && mot.model.toLowerCase() !== String(vehicle.model || '').toLowerCase()))
+        return res.status(422).json({error:'Vehicle registration details changed. Look up and save the vehicle again.'});
+    }
+    const vehicleInput = mapDriverVehicleRow(vehicle);
+    const serverOwnedItems: Record<string, unknown> = ['pedal_bicycle','e_bike','motorcycle','moped'].includes(String(vehicleInput.subtype || '').toLowerCase())
+      ? { bike_inspection_approved: BIKE_INSPECTION_SLOTS.every(slot => photos.some(photo => photo.slot === slot && photo.status === 'approved')) }
+      : {};
+    const submissionItems = serializeOnboardingItems({ ...parseOnboardingItems(profile.verification_items), ...serverOwnedItems });
+    const submissionProfile = { ...profile, verification_items: submissionItems };
+    const canonicalProfile = mapDriverProfile(submissionProfile, !!user.email_confirmed_at);
+    const resolution = DriverRequirementService.resolve({
+      profile: submissionProfile, canonicalProfile, vehicle: vehicleInput,
+      authEmailConfirmed: canonicalProfile.emailConfirmed,
+      countryCode: submissionProfile.country_code,
+      marketCity: submissionProfile.market_city || submissionProfile.city,
+      paymentAccount: await verifiedPaymentAccount(user.id, req.app.locals.vayduPaymentAccountSetup)
+    });
+    const resubmission = [profile.driver_review_status, profile.verification_status].includes('action_required');
+    const { error: auditError } = await supabase.from('driver_requirement_audit').insert({
+      driver_id: user.id, event_type: resubmission ? 'resubmission_validated' : 'submission_validated',
+      selected_services: resolution.selectedServices, requirement_codes: resolution.automaticRequirements.map(item => item.code)
+    });
+    if (auditError) return res.status(500).json({ error: 'Could not submit your application.' });
+    const canonicalBlockers = resolution.automaticRequirements.filter(item => item.blockingForSubmission);
+    if (canonicalBlockers.length) return res.status(422).json({
+      error: canonicalBlockers[0].reason, code: 'DRIVER_REQUIREMENTS_INCOMPLETE', requirements: canonicalBlockers, progress: resolution.progress
+    });
+    if (Object.keys(serverOwnedItems).length) {
+      const { error: itemsError } = await supabase.from('profiles').update({ verification_items: submissionItems }).eq('id', user.id);
+      if (itemsError) return res.status(500).json({ error: 'Could not submit your application.' });
+    }
     const {error,data} = await supabase.rpc('submit_driver_with_current_inspection',{
       p_driver:user.id,p_tenant:profile.tenant_id,p_vehicle:vehicle.id,p_revision:vehicle.inspection_revision,p_slots:slots,p_market:profile.inspection_market_code,p_services:vehicle.service_eligibility ?? null
     });
     if (error || !data) return res.status(409).json({error:'Vehicle, inspection or review state changed. Reload before submitting.'});
+    // Same post-submission bookkeeping as submit-review: an approved identity-correction permission is
+    // single-use, and outstanding missing-info requests are answered by this submission.
+    const submittedAt = new Date().toISOString();
+    const { error: consumeError } = await supabase.from('driver_onboarding_requests').update({permission_consumed_at:submittedAt,updated_at:submittedAt})
+      .eq('driver_id',user.id).eq('request_type','identity_correction').eq('status','approved').is('permission_consumed_at',null);
+    const { error: resolveError } = await supabase.from('driver_onboarding_requests').update({status:'approved',resolved_at:submittedAt,updated_at:submittedAt})
+      .eq('driver_id',user.id).eq('request_type','missing_info').in('status',['pending','rejected']);
+    if (consumeError || resolveError) console.error('[DriverSubmission] request bookkeeping failed', { userId: user.id, consume: consumeError?.message, resolve: resolveError?.message });
     return res.json({ status:'under_review' });
   } catch {
     return res.status(500).json({ error: 'Could not submit your application.' });
@@ -386,7 +436,9 @@ router.post('/drivers/:driverId/preverify', async (req, res) => {
       canonicalProfile: mapDriverProfile(profile,!!authUser?.user?.email_confirmed_at),
       vehicle: vehicle ? mapDriverVehicleRow(vehicle) : null,
       authEmailConfirmed: !!authUser?.user?.email_confirmed_at,
-      countryCode: profile.country_code || profile.country || vehicle?.country_code
+      countryCode: profile.country_code || profile.country || vehicle?.country_code,
+      // Same payment-account authority as onboarding (missing it blocked every driver's review).
+      paymentAccount: await verifiedPaymentAccount(driverId, req.app.locals.vayduPaymentAccountSetup)
     });
     const blockingRequirements = getBlockingRequirements(requirementsInput);
     // Release closure: the CANONICAL resolution (DriverRequirementService) is the
@@ -670,7 +722,9 @@ router.post('/drivers/:driverId/manual-approve', async (req, res) => {
       vehicle: approvalVehicleRow ? mapDriverVehicleRow(approvalVehicleRow) : null,
       authEmailConfirmed: approvalCanonicalProfile.emailConfirmed,
       countryCode: approvalProfile.country_code,
-      marketCity: approvalProfile.market_city || approvalProfile.city
+      marketCity: approvalProfile.market_city || approvalProfile.city,
+      // Same payment-account authority as onboarding (missing it made every approval refuse).
+      paymentAccount: await verifiedPaymentAccount(driverId, req.app.locals.vayduPaymentAccountSetup)
     });
 
     const approvalBlockers = approvalResolution.automaticRequirements.filter((item) => item.blockingForSubmission);

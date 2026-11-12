@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DriverRequirementService, type DriverVehicleValidation } from '../../server/services/driver-requirement.service';
 import { DriverOnlineEligibilityService } from '../../server/services/driver-online-eligibility.service';
 import { mapDriverProfile } from '../../server/models/driver-profile.model';
+// A complete GB driver has a verified Stripe payment account (the routes supply it via verifiedPaymentAccount).
 
 const NOW = new Date('2026-08-04');
 
@@ -30,7 +31,7 @@ const car: DriverVehicleValidation = {
 };
 
 const resolve = (p = profile(), v: DriverVehicleValidation | null = car) =>
-    DriverRequirementService.resolve({ profile: p, vehicle: v, authEmailConfirmed: true, now: NOW });
+    DriverRequirementService.resolve({ profile: p, vehicle: v, authEmailConfirmed: true, now: NOW, paymentAccount: {provider:'stripe',state:'completed',available:true,reason:null} });
 
 const find = (p: ReturnType<typeof resolve>, code: string) =>
     p.automaticRequirements.find((requirement) => requirement.code === code);

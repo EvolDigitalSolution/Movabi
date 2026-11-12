@@ -1,5 +1,6 @@
 import { DriverRequirementService, type CanonicalDriverService } from './driver-requirement.service';
 import { mapDriverVehicleRow } from '../models/driver-vehicle.model';
+import type { DriverPaymentAccountStatus } from './driver-payment-account-status';
 
 /**
  * Map a job service slug to the frozen internal taxonomy (ride / errand /
@@ -28,19 +29,31 @@ export function toCanonicalDriverService(raw: string | null | undefined): Canoni
  * Blocking-for-online covers missing / invalid / expired / under_review.
  * `expiringSoon` is NOT blocking.
  */
+/**
+ * paymentAccount is REQUIRED so no caller can silently omit it (omitting it made payout.payment_account
+ * "unavailable" for every driver, so dispatch, go-online and approval refused everyone — 95d745b):
+ *  - a verified DriverPaymentAccountStatus (verifiedPaymentAccount) evaluates it like onboarding does;
+ *  - 'verified_at_acquisition' (bulk candidate filtering, e.g. dispatch) excludes ONLY that requirement,
+ *    because acquiring the job runs requirePayoutEligible against the payout provider.
+ */
+export type PaymentAccountGate = DriverPaymentAccountStatus | 'verified_at_acquisition';
+
 export function isDriverEligibleForService(
     profile: Record<string, any>,
     vehicle: Record<string, any> | null,
     service: CanonicalDriverService,
+    paymentAccount: PaymentAccountGate,
     authEmailConfirmed = true,
     now?: Date
 ): boolean {
+    const deferPayout = paymentAccount === 'verified_at_acquisition';
     const resolution = DriverRequirementService.resolve({
         profile: profile || {},
         vehicle: vehicle ? mapDriverVehicleRow(vehicle as any) : null,
         authEmailConfirmed,
         adminRequests: [],
         countryCode: profile?.country_code || profile?.country || null,
+        paymentAccount: deferPayout || !paymentAccount || typeof paymentAccount !== 'object' ? undefined : paymentAccount,
         now
     });
 
@@ -56,7 +69,8 @@ export function isDriverEligibleForService(
 
     const blockingForService = resolution.automaticRequirements.filter((requirement) =>
         (requirement.services.length === 0 || requirement.services.includes(service)) &&
-        requirement.blockingForOnline
+        requirement.blockingForOnline &&
+        !(deferPayout && requirement.code === 'payout.payment_account')
     );
 
     return blockingForService.length === 0;

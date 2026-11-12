@@ -47,7 +47,12 @@ describe('A/B. displayed payment amount uses the authoritative negotiated fare',
     expect(AUTHORITY).toContain('const agreed = money(job.agreed_fare);');
     expect(AUTHORITY).toContain('totalAuthorisationMajor: Number((serviceFareMajor + itemBudgetMajor).toFixed(2))');
     expect(PAY_ROUTE).toContain('const payable = await PaymentAuthorityService.resolve(job);');
-    expect(PAY_ROUTE).toContain('amount: Math.round(totalAuthorisation * 100),');
+    // Since the reward-credit work the Stripe amount is the remaining payable (authority total minus
+    // discount and reserved credit) from job_remaining_payable_minor, falling back to the authority total.
+    expect(PAY_ROUTE).toContain("supabaseAdmin.rpc('job_remaining_payable_minor', { p_job: job.id })");
+    expect(PAY_ROUTE).toContain('const remaining = Number(remainingMinor ?? Math.round(totalAuthorisation * 100));');
+    expect(PAY_ROUTE).toContain("if (remainingError) return res.status(500)");
+    expect(PAY_ROUTE).toContain('amount: Number(remaining),');
   });
 
   it('D. a client-supplied amount is never authoritative', () => {

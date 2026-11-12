@@ -28,6 +28,11 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
  actor={id:'ng-driver'};profile={...profile,id:actor.id};effects.forEach(f=>f());pending=null;rows=[{driver_id:actor.id,currency_code:'NGN',amount:100,status:'pending'}];await driver.fetchEarnings();resolveOld({data:[{driver_id:'gb-driver',currency_code:'GBP',amount:999}],error:null});await old;
  assert.equal(driver.earnings()[0].driver_id,'ng-driver');cases++;
  fail=Error('ledger unavailable');await assert.rejects(driver.fetchEarnings());assert.equal(driver.earnings().length,0);assert.match(driver.earningsError(),/could not be loaded/);assert.equal(driver.earningsLoading(),false);fail=null;cases++;
+ // fetchStripeAccount first asks MarketSafetyService for the market wallet (multi-market payouts).
+ // A non-Stripe market never reaches Stripe Connect; a Stripe market with unverified settings stays null.
+ let connectCalls=0;driver.marketSafety={refreshWallet:async()=>({provider:'flutterwave'})};driver.connectService={getPayoutSettings:async()=>{connectCalls++;return {};}};
+ assert.equal(await driver.fetchStripeAccount(),null);assert.equal(connectCalls,0);assert.equal(driver.stripeAccount(),null);cases++;
+ driver.marketSafety={refreshWallet:async()=>({provider:'stripe'})};
  driver.connectService={getPayoutSettings:async()=>{throw Error('unverified');}};queryCount=0;assert.equal(await driver.fetchStripeAccount(),null);assert.equal(queryCount,0);assert.equal(driver.stripeAccount(),null);cases++;
  actor=null;effects.forEach(f=>f());assert.equal(driver.earnings().length,0);assert.equal(driver.availableJobs().length,0);cases++;
  console.log('ACTUAL_DRIVER_FEED_AND_WALLET_CASES='+cases+'_PASSED');

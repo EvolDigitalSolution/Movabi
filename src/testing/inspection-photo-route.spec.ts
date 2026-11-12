@@ -10,7 +10,8 @@ vi.mock('../../server/services/supabase.service', () => ({
             upload: async () => ({ data: {}, error: null })
         }) },
         rpc: async (_fn: string, args: any) => { state.lastRpc = args; return { data: { id: 'p1', status: 'under_review' }, error: null }; },
-        from: () => ({ select: () => ({ eq: () => ({ order: async () => ({ data: [], error: null }) }) }) }),
+        // vehicles: .select().eq().order(); profiles tenant lookup (95d745b): .select().eq().maybeSingle()
+        from: () => ({ select: () => ({ eq: () => ({ order: async () => ({ data: [], error: null }), maybeSingle: async () => ({ data: { tenant_id: 'tenant-1' }, error: null }) }) }) }),
         auth: { getUser: async () => ({ data: { user: { id: 'drv-1' } }, error: null }) },
     },
 }));
@@ -60,5 +61,6 @@ describe('POST /inspection-photo', () => {
         expect(r.status).toBe(201);
         expect(state.lastRpc.p_slot).toBe('front');
         expect(state.lastRpc.p_ctype).toBe('image/jpeg');
+        expect(state.lastRpc.p_tenant).toBe('tenant-1');
     });
 });

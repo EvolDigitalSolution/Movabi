@@ -30,10 +30,13 @@ const car = (services: string[]) => ({
     year: 2020, registrationNumber: 'AB12 CDE', capacity: '4 seats', serviceEligibility: services, status: 'active'
 });
 
+// A fully saved pedal bicycle. Since 95d745b every bike needs a subtype, and every saved vehicle
+// carries make/model/colour/year (parseDriverVehicleInput); none of that is a motor-vehicle item.
 const bicycle = () => ({
-    id: 'v2', userId: 'u1', type: 'bicycle', make: null, model: null, colour: null, year: null,
+    id: 'v2', userId: 'u1', type: 'bicycle', subtype: 'pedal_bicycle', make: 'Trek', model: 'FX 2', colour: 'Black', year: 2022,
     registrationNumber: null, capacity: 'bicycle', serviceEligibility: ['delivery'], status: 'active'
 });
+const inspected = { key: 'bike_inspection_approved', value: 'true' };
 
 // Document/vehicle cases explicitly assume an independently verified account.
 const resolveFor = (profile: Record<string, unknown>, vehicle: any, paymentAccount:unknown={provider:'stripe',state:'completed',available:true}) =>
@@ -244,7 +247,11 @@ describe('canonical eligibility is unchanged by the redesign (presentation only)
     });
 
     it('bicycle: declaration follows the vehicle type, equipment must be confirmed, no registration needed', () => {
-        const profile = baseProfile({ driver_service_types: ['delivery'] });
+        const profile = baseProfile({ driver_service_types: ['delivery'], verification_items: [inspected] });
+
+        // A pedal bicycle never needs registration, a driving licence or motor insurance.
+        const all = resolveFor(profile, bicycle()).automaticRequirements.map(r => r.code);
+        for (const code of ['vehicle.registration', 'document.driving_licence', 'document.insurance']) expect(all).not.toContain(code);
 
         // No persisted vehicle type -> declaration and equipment both outstanding.
         expect(blockingCodes(profile, { ...bicycle(), type: '' })).toEqual(['vehicle.bicycle_declaration', 'vehicle.delivery_equipment']);
@@ -254,7 +261,7 @@ describe('canonical eligibility is unchanged by the redesign (presentation only)
 
         const confirmed = baseProfile({
             driver_service_types: ['delivery'],
-            verification_items: [{ key: 'delivery_equipment_confirmed', value: 'true' }]
+            verification_items: [inspected, { key: 'delivery_equipment_confirmed', value: 'true' }]
         });
         expect(blockingCodes(confirmed, bicycle())).toEqual([]);
     });
@@ -311,9 +318,23 @@ describe('vehicle re-save is idempotent for an existing vehicle', () => {
 });
 
 describe('submission semantics stay server-owned', () => {
-    it('submission still goes through the canonical submit-review endpoint', () => {
-        expect(page).toContain('await this.onboardingStatus.submitForReview(');
-        expect(statusService).toContain("'/api/driver-onboarding/submit-review',{profile},true");
+    // Since e54e2a7 the app submits through the inspection-aware /api/verification/driver-submission
+    // (atomic submit_driver_with_current_inspection). That endpoint must apply the same canonical
+    // requirement gate as submit-review before the RPC, or a direct API call could skip it.
+    it('submission goes through the server-owned driver-submission endpoint, gated by the canonical requirements', () => {
+        const driverService = read('src/app/core/services/driver/driver.service.ts');
+        const verification = read('server/routes/verification.routes.ts');
+        expect(page).toContain('await this.driverService.submitApplication();');
+        expect(driverService).toContain("'/api/verification/driver-submission'");
+        const endpoint = verification.slice(verification.indexOf("router.post('/driver-submission'"), verification.indexOf('router.use(requireAdmin);'));
+        const gate = endpoint.indexOf('DriverRequirementService.resolve(');
+        const blockers = endpoint.indexOf('item => item.blockingForSubmission');
+        const rpc = endpoint.indexOf("supabase.rpc('submit_driver_with_current_inspection'");
+        expect(gate).toBeGreaterThan(0);
+        expect(blockers).toBeGreaterThan(gate);
+        expect(rpc).toBeGreaterThan(blockers);
+        expect(endpoint).toContain("from('driver_requirement_audit').insert(");
+        expect(endpoint.slice(rpc)).toContain(".eq('request_type','identity_correction')");
     });
 
     it('submission stays blocked while canonical blockers remain', () => {

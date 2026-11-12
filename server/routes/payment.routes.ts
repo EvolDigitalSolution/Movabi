@@ -418,7 +418,10 @@ router.post('/create-intent', async (req: Request, res: Response) => {
     // reward credit, persisted in job_funding_breakdown at booking create.
     // Zero-payable â†’ no payment intent; an explicit funded state is returned,
     // never a fabricated Stripe success or a raw-total charge.
-    const { data: remainingMinor } = await supabaseAdmin.rpc('job_remaining_payable_minor', { p_job: job.id });
+    const { data: remainingMinor, error: remainingError } = await supabaseAdmin.rpc('job_remaining_payable_minor', { p_job: job.id });
+    // Fail closed: on an RPC error the fallback below would authorise the full total and silently drop
+    // the customer's discount and reserved credit. A null result (no funding breakdown) still falls back.
+    if (remainingError) return res.status(500).json({ error: 'Could not resolve the payable amount.', code: 'PAYABLE_UNRESOLVED' });
     const remaining = Number(remainingMinor ?? Math.round(totalAuthorisation * 100));
     if (Number.isFinite(remainingMinor) && remaining === 0) {
         // A calculated zero is not funding. One atomic RPC validates the REAL

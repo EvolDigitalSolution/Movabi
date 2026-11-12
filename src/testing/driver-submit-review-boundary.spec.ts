@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DriverRequirementService } from '../../server/services/driver-requirement.service';
+// A complete GB driver has a verified Stripe payment account (the routes supply it via verifiedPaymentAccount).
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const notifications = read('server/services/driver-onboarding-notification.service.ts');
@@ -18,7 +19,7 @@ const profile = (extra: Record<string, unknown> = {}) => ({
 });
 const car = { id: 'v1', userId: 'u1', type: 'car', make: 'Toyota', model: 'Prius', colour: 'Silver', year: 2020, registrationNumber: 'AB12 CDE', capacity: '4 seats', serviceEligibility: ['delivery'], status: 'active' };
 const resolveFor = (p: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
-  DriverRequirementService.resolve({ profile: p, vehicle: car, authEmailConfirmed: true, countryCode: 'GB', now: NOW, ...extra } as any);
+  DriverRequirementService.resolve({ profile: p, vehicle: car, authEmailConfirmed: true, countryCode: 'GB', now: NOW, paymentAccount: {provider:'stripe',state:'completed',available:true,reason:null}, ...extra } as any);
 
 describe('submit-review 42703 root cause: named non-existent profile columns', () => {
   it('the notification service no longer names profiles.first_name in a select', () => {
