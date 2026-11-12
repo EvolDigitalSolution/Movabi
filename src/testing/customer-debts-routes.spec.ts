@@ -182,23 +182,10 @@ describe('customer debts routes (real router)', () => {
         expect(createdIntent).toBeNull();
     });
 
-    it('GET /:jobId/cancel-preview returns the job fee before policy fee', async () => {
-        jobRow = { id: 'j1', customer_id: USER, driver_id: 'd1', tenant_id: 't', country_code: 'GB', currency_code: 'GBP', cancellation_fee: 5, price: 20, total_price: 20 };
-        policy = { enabled: true, fee_minor: 750, grace_seconds: 300, version: 2 };
-        const r = await call('/j1/cancel-preview');
-        expect(r.status).toBe(200);
-        expect(r.body.feeMinor).toBe(500);
-        expect(r.body.source).toBe('booking');
-        expect(r.body.policyVersion).toBe(2);
-    });
-
-    it('GET /:jobId/cancel-preview falls back to the enabled policy fee', async () => {
-        jobRow = { id: 'j2', customer_id: USER, driver_id: null, tenant_id: 't', country_code: 'GB', currency_code: 'GBP', cancellation_fee: 0 };
-        policy = { enabled: true, fee_minor: 750, fee_cap_minor: 600, grace_seconds: 300, version: 2 };
-        const r = await call('/j2/cancel-preview');
-        expect(r.body.feeMinor).toBe(600);
-        expect(r.body.source).toBe('policy');
-    });
+    // The two cancel-preview tests that were here asserted a "job fee" read from jobs.cancellation_fee —
+    // a column the deployed jobs table does not have — and a policy fee quoted with no driver assigned.
+    // Replaced (2026-11-12) by the stricter server-quote contract in cancellation-fee-routes.spec.ts,
+    // the real-PostgreSQL rules in scripts/cancellation-fee, and real routes in the upgraded-clone rehearsal.
 
     it('POST /create returns 409 OUTSTANDING_DEBT when open debt meets the enabled threshold', async () => {
         policy = { enabled: true, debt_threshold_minor: 1000, fee_minor: 0 };

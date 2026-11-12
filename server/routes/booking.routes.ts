@@ -24,6 +24,7 @@ import { NoShowService, NO_SHOW_ARRIVAL_MAX_DISTANCE_M, NO_SHOW_ARRIVAL_MAX_LOCA
 import { cashRideBooking } from '../services/payments/cash-ride-booking.instance';
 import { PaymentLayerError } from '../services/payments/payment-contracts';
 import { FareSplitService } from '../services/fare-split.service';
+import { stripeApiAmountFromLedger } from '../services/payments/stripe-currency-amounts';
 import { dispatchService } from '../services/dispatch.service';
 
 const router = Router();
@@ -114,26 +115,23 @@ router.get('/:jobId/traffic', rateLimit({windowMs:60000,limit:15}), async (req: 
 
 /**
  * Cancellation-fee preview: the applicable fee BEFORE the customer confirms.
- * Job-recorded fee wins; otherwise the active market policy supplies it.
+ * Same server-side quote the cancellation itself freezes (cancellation_fee_quote), for the caller's
+ * role: a driver's own cancellation never charges the customer.
  */
 router.get('/:jobId/cancel-preview', async (req: Request, res: Response) => {
     try {
+        res.setHeader('Cache-Control', 'no-store');
         const userId = await requireAuthenticatedUser(req, res);
         if (!userId) return;
-        const { data: job } = await supabaseAdmin.from('jobs').select('id,customer_id,driver_id,tenant_id,country_code,currency_code,cancellation_fee,price,total_price').eq('id', req.params.jobId).maybeSingle();
-        if (!job || (job.customer_id !== userId && job.driver_id !== userId)) return res.status(404).json({ error: 'Job not found.' });
-        const jobFeeMajor = Number(job.cancellation_fee || 0);
-        const { data: policy } = await supabaseAdmin.rpc('active_cancellation_policy', { p_tenant: job.tenant_id, p_market: String(job.country_code || '') });
-        const policyFeeMinor = (policy as any)?.enabled ? Number((policy as any).fee_minor || 0) : 0;
-        const capped = (policy as any)?.fee_cap_minor != null ? Math.min(policyFeeMinor, Number((policy as any).fee_cap_minor)) : policyFeeMinor;
-        return res.json({
-            feeMinor: jobFeeMajor > 0 ? Math.round(jobFeeMajor * 100) : capped,
-            source: jobFeeMajor > 0 ? 'booking' : (policy ? 'policy' : 'none'),
-            policyVersion: (policy as any)?.version ?? null,
-            graceSeconds: (policy as any)?.grace_seconds ?? null,
-            driverAssigned: !!job.driver_id,
-            currency: job.currency_code
-        });
+        const { data: job, error: jobError } = await supabaseAdmin.from('jobs').select('id,customer_id,driver_id,accepted_driver_id').eq('id', req.params.jobId).maybeSingle();
+        if (jobError) return res.status(500).json({ error: 'Could not preview the cancellation.' });
+        const role = job && job.customer_id === userId ? 'customer'
+            : job && (job.driver_id === userId || (job as any).accepted_driver_id === userId) ? 'driver' : null;
+        if (!job || !role) return res.status(404).json({ error: 'Job not found.' });
+        const { data: raw, error: quoteError } = await supabaseAdmin.rpc('cancellation_fee_quote', { p_job: job.id, p_actor_role: role });
+        if (quoteError) return res.status(500).json({ error: 'Could not preview the cancellation.', code: 'FEE_QUOTE_UNAVAILABLE' });
+        const quote = normaliseCancellationFeeQuote(raw);
+        return res.json({ ...quote, source: quote.due ? 'policy' : 'none' });
     } catch (error: any) {
         return res.status(500).json({ error: error.message || 'Could not preview the cancellation.' });
     }
@@ -451,6 +449,34 @@ async function isAdminUser(userId: string | null): Promise<boolean> {
  * Batch 2C Phase B.1 — true when the authenticated user is a participant in the
  * job: its customer, its assigned driver, or the driver who confirmed it.
  */
+/** Cancellation fee quote from cancellation_fee_quote (20261268000000). */
+export interface CancellationFeeQuote {
+    due: boolean; reasonCode: string; feeMinor: number; currency: string; exponent: number | null;
+    policyVersion: number | null; graceSeconds: number | null; graceUntil: string | null; driverAssigned: boolean;
+}
+/** Normalises a quote; anything malformed means "no fee" (fail closed — a customer is never charged on doubt). */
+export function normaliseCancellationFeeQuote(raw: any): CancellationFeeQuote {
+    const fee = Number(raw?.feeMinor);
+    const exp = raw?.exponent === null || raw?.exponent === undefined ? null : Number(raw.exponent);
+    const valid = raw && typeof raw === 'object' && Number.isSafeInteger(fee) && fee >= 0
+        && (exp === null || (Number.isInteger(exp) && exp >= 0 && exp <= 4)) && typeof raw.currency === 'string';
+    const due = !!(valid && raw.due === true && fee > 0 && exp !== null);
+    return {
+        due, reasonCode: valid ? String(raw.reasonCode || 'unknown') : 'quote_unavailable', feeMinor: due ? fee : 0,
+        currency: valid ? String(raw.currency).toUpperCase() : '', exponent: valid ? exp : null,
+        policyVersion: valid && raw.policyVersion != null ? Number(raw.policyVersion) : null,
+        graceSeconds: valid && raw.graceSeconds != null ? Number(raw.graceSeconds) : null,
+        graceUntil: valid && raw.graceUntil ? String(raw.graceUntil) : null,
+        driverAssigned: !!(valid && raw.driverAssigned),
+    };
+}
+/** The quote frozen with the cancellation (metadata.cancellation_fee_quote). */
+async function frozenCancellationFeeQuote(jobId: string): Promise<CancellationFeeQuote> {
+    const { data, error } = await supabaseAdmin.from('jobs').select('metadata').eq('id', jobId).maybeSingle();
+    if (error) console.error('[BookingRoutes] frozen fee quote read failed:', error.message);
+    return normaliseCancellationFeeQuote((data as any)?.metadata?.cancellation_fee_quote);
+}
+
 function isJobParticipant(job: any, userId: string): boolean {
     const id = String(userId || '');
     if (!id) return false;
@@ -1508,15 +1534,23 @@ router.post('/cancel', async (req: Request, res: Response) => {
             await FraudService.trackCancellation(job.customer_id);
         }
 
-        // A cancellation fee that could not be charged through the payment
-        // intent (cash jobs, no intent, or authorisation already released)
-        // becomes an explicit receivable — never faked as payment success.
-        // Idempotent per (job, reason); duplicate cancels reuse the row.
+        // The fee was quoted from the published policy under the row lock and frozen with the
+        // cancellation (metadata.cancellation_fee_quote, 20261268000000). Every follow-up below
+        // (hold capture, card capture, receivable) uses that frozen quote and is idempotent.
+        const feeQuote = await frozenCancellationFeeQuote(jobId);
+        const quotedFeeMinor = feeQuote.due ? feeQuote.feeMinor : 0;
+        const recordCardFeeReceivable = async () => {
+            if (quotedFeeMinor <= 0 || !job.customer_id) return;
+            const { error: receivableError } = await supabaseAdmin.rpc('record_customer_receivable', {
+                p_tenant: job.tenant_id, p_customer: job.customer_id, p_job: jobId, p_currency: feeQuote.currency,
+                p_amount: quotedFeeMinor, p_reason: 'cancellation_fee', p_policy_version: feeQuote.policyVersion });
+            if (receivableError) console.warn('[BookingRoutes] card fee receivable failed (cancel still succeeded):', receivableError.message);
+        };
         const isCashRideJob = job.payment_method === 'cash' && job.metadata?.cash_collection_mode === 'full_customer_charge';
         let cashUncoveredFeeMinor = 0;
         if (isCashRideJob) {
             try {
-                const feeMinor = FareSplitService.toMinor(Number(job.cancellation_fee || 0), String(job.currency_code || 'GBP').toUpperCase());
+                const feeMinor = quotedFeeMinor;
                 const { data: hold } = await supabaseAdmin.from('cash_ride_fee_holds_v1e').select('status,amount_minor').eq('job_id', jobId).maybeSingle();
                 if (job.driver_id && feeMinor > 0 && hold?.status === 'authorized') {
                     const fromHold = Math.min(feeMinor, Number(hold.amount_minor));
@@ -1533,19 +1567,20 @@ router.post('/cancel', async (req: Request, res: Response) => {
             }
         }
 
+        // A fee that cannot be taken from a card authorisation (cash ride remainder, wallet/other
+        // jobs without a PaymentIntent) becomes an explicit receivable — never faked as payment.
+        // Idempotent per (job, reason); the policy version is the one frozen in the quote.
         try {
-            const feeMajor = isCashRideJob ? cashUncoveredFeeMinor / 100 : Number(job.cancellation_fee || 0);
+            const receivableMinor = isCashRideJob ? cashUncoveredFeeMinor : quotedFeeMinor;
             const canChargeCard = job.payment_method === 'card' && job.payment_intent_id;
-            if (feeMajor > 0 && job.customer_id && !canChargeCard) {
-                const { data: policy } = await supabaseAdmin.rpc('active_cancellation_policy', {
-                    p_tenant: job.tenant_id, p_market: String(job.country_code || '')
-                });
-                await supabaseAdmin.rpc('record_customer_receivable', {
+            if (receivableMinor > 0 && job.customer_id && (isCashRideJob || !canChargeCard)) {
+                const { error: receivableError } = await supabaseAdmin.rpc('record_customer_receivable', {
                     p_tenant: job.tenant_id, p_customer: job.customer_id, p_job: jobId,
-                    p_currency: String(job.currency_code || 'GBP').toUpperCase(),
-                    p_amount: isCashRideJob ? cashUncoveredFeeMinor : Math.round(feeMajor * 100), p_reason: 'cancellation_fee',
-                    p_policy_version: (policy as any)?.version ?? null
+                    p_currency: feeQuote.currency,
+                    p_amount: receivableMinor, p_reason: 'cancellation_fee',
+                    p_policy_version: feeQuote.policyVersion
                 });
+                if (receivableError) throw receivableError;
             }
         } catch (debtErr) {
             console.warn('[BookingRoutes] receivable recording failed (cancel still succeeded):', (debtErr as Error)?.message);
@@ -1561,18 +1596,16 @@ router.post('/cancel', async (req: Request, res: Response) => {
                         .update({ payment_status: 'requires_refund' })
                         .eq('id', jobId);
                 } else if (pi.status === 'requires_capture') {
-                    const driverAssigned = !!job.driver_id;
-                    const cancellationFeeMajor = Number(job.cancellation_fee || 0);
-                    const totalMajor = Number(job.price || job.total_price || 0);
-                    const amountToCapture = Math.min(
-                        Math.round(cancellationFeeMajor * 100),
-                        Math.round(totalMajor * 100)
-                    );
+                    // Frozen quote (policy, currency, grace, assigned driver already decided in the DB).
+                    // Ledger minor -> Stripe API amount via the currency rule; never more than authorised.
+                    const amountToCapture = quotedFeeMinor > 0 && feeQuote.exponent !== null
+                        ? Math.min(stripeApiAmountFromLedger(quotedFeeMinor, feeQuote.currency, feeQuote.exponent), Number(pi.amount_capturable || 0))
+                        : 0;
 
-                    if (driverAssigned && amountToCapture > 0) {
+                    if (amountToCapture > 0) {
                         await stripe.paymentIntents.capture(job.payment_intent_id, {
                             amount_to_capture: amountToCapture
-                        });
+                        }, { idempotencyKey: `vaydu-cancel-fee:${jobId}` });
 
                         await supabaseAdmin
                             .from('jobs')
@@ -1593,11 +1626,14 @@ router.post('/cancel', async (req: Request, res: Response) => {
                         .from('jobs')
                         .update({ payment_status: 'cancelled' })
                         .eq('id', jobId);
+                    // Nothing was authorised to take a due fee from: it becomes debt, never dropped.
+                    await recordCardFeeReceivable();
                 } else {
                     await supabaseAdmin
                         .from('jobs')
                         .update({ payment_status: pi.status === 'canceled' ? 'cancelled' : 'requires_review' })
                         .eq('id', jobId);
+                    if (pi.status === 'canceled') await recordCardFeeReceivable();
                 }
             } catch (stripeError: any) {
                 console.error('Stripe cancel/capture error:', stripeError);

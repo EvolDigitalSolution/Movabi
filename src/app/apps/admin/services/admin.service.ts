@@ -1118,8 +1118,21 @@ export class AdminService {
   async listCancellationPolicies(tenantId: string, market: string): Promise<any[]> {
     const headers = await this.getAuthenticatedApiHeaders();
     const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/policies/cancellation?tenantId=${encodeURIComponent(tenantId)}&market=${encodeURIComponent(market)}`, { headers, signal: AbortSignal.timeout(15000) });
-    if (!response.ok) return [];
-    return (await response.json()).policies || [];
+    const body = await response.json().catch(() => ({}));
+    // Report failures instead of showing an empty list (an empty list hid a broken query before).
+    if (!response.ok) throw new Error(body.error || 'Could not list policies.');
+    return body.policies || [];
+  }
+
+  /** Enable/disable one published cancellation policy version (audited, tenant-scoped on the server). */
+  async setCancellationPolicyEnabled(policyId: string, tenantId: string, enabled: boolean): Promise<any> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/policies/cancellation/${encodeURIComponent(policyId)}/enabled`, {
+      method: 'POST', headers, body: JSON.stringify({ tenantId, enabled }), signal: AbortSignal.timeout(15000)
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not change the policy.');
+    return body.policy;
   }
 
   async policyAudit(): Promise<any[]> {

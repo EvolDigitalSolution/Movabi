@@ -1,0 +1,37 @@
+APPLIED 20261101000000_driver_offer_events
+APPLIED 20261104000000_cancellation_debt
+APPLIED 20261267000000_driver_cancellation_attribution
+APPLIED 20261268000000_cancellation_fee_quote
+   1 | amount = least(fee 500, cap 400) = 400 GBP minor, version 1, exponent 2 | PASS | {"due": true, "currency": "GBP", "exponent": 2, "feeMinor": 400, "quotedAt": "2026-11-12T1
+   1 | enabled for its tenant: after grace the fee is due | PASS | {"due": true, "currency": "GBP", "exponent": 2, "feeMinor": 400, "quotedAt": "2026-11-12T1
+   1 | enabling with another tenant is refused (P0002), nothing changes | PASS | P0002
+   1 | no policy: not due (no_active_policy) | PASS | {"due": false, "currency": "GBP", "exponent": 2, "feeMinor": 0, "quotedAt": "2026-11-12T14
+   1 | published, not enabled: still not due | PASS | no_active_policy
+   2 | accepted 1 min ago, grace 300 s: within_grace, graceUntil = accepted + 300 s | PASS | {"due": false, "currency": "GBP", "exponent": 2, "feeMinor": 0, "quotedAt": "2026-11-12T14
+   2 | admin cancelling never charges the customer (not_customer) | PASS | not_customer
+   2 | driver but no acceptance time: not due (no_acceptance_time) | PASS | no_acceptance_time
+   2 | driver cancelling never charges the customer (not_customer) | PASS | not_customer
+   2 | no driver assigned: not due (no_driver) | PASS | no_driver
+   3 | booking currency differs from the market currency: no fee (currency_mismatch) | PASS | currency_mismatch
+   3 | fee never exceeds the fare (GBP 3.00 -> 300) | PASS | 300
+   3 | JPY (0 decimals): 500 yen due, exponent 0 | PASS | {"due": true, "currency": "JPY", "exponent": 0, "feeMinor": 500, "quotedAt": "2026-11-12T1
+   3 | KWD (3 decimals): fee 1500 capped by fare 1.000 -> 1000, exponent 3 | PASS | {"due": true, "currency": "KWD", "exponent": 3, "feeMinor": 1000, "quotedAt": "2026-11-12T
+   4 | all GB versions disabled: fees off (no_active_policy) | PASS | no_active_policy
+   4 | v2 enabled: v2 applies (350) | PASS | {"due": true, "currency": "GBP", "exponent": 2, "feeMinor": 350, "quotedAt": "2026-11-12T1
+   4 | v2 published but disabled: v1 still applies | PASS | 1
+   5 | customer cancels after grace | PASS | 
+   5 | driver cancels after grace: frozen quote not due (not_customer) | PASS | {"due": false, "currency": "GBP", "exponent": 2, "feeMinor": 0, "quotedAt": "2026-11-12T14
+   5 | frozen quote: due, 350, v2, with the cancellation | PASS | {"due": true, "currency": "GBP", "exponent": 2, "feeMinor": 350, "quotedAt": "2026-11-12T1
+   5 | policy disabled + retry afterwards: frozen quote unchanged | PASS | 350
+   6 | cancellation_fee_quote and set_cancellation_policy_enabled: service_role only | PASS | 
+   failures | checks = 0 | 22
+RE-APPLIED 20261268000000
+PASS: re-applying the migration is idempotent (schema unchanged)
+ROLLED BACK 20261268000000
+PASS: schema after rollback identical to before the migration
+PASS: after rollback the quote function is absent (preview fails closed)
+PASS: after rollback the restored cancel_job_with_actor cancels and freezes no fee quote
+PASS: after rollback the job is unchanged outside the probe
+RE-APPLIED after rollback
+PASS: re-apply after rollback restores the migrated schema
+ALL CANCELLATION-FEE REAL-POSTGRES CHECKS PASSED

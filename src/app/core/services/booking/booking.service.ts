@@ -18,6 +18,7 @@ import { JobEventService } from '../job/job-event.service';
 import { EmailService } from '../notification/email.service';
 import { ApiUrlService } from '../api-url.service';
 import { MarketplaceConfigService } from '../marketplace/marketplace-config.service';
+import type { CancellationFeePreview } from '@shared/utils/cancellation-fee-preview';
 
 export type BookingLifecycleState =
     | 'draft'
@@ -1281,6 +1282,18 @@ export class BookingService {
                 { headers: await this.authHeaders() }
             )
         );
+    }
+
+    /** The server's cancellation fee quote for the caller (null when it cannot be checked). */
+    async getCancellationFeePreview(bookingId: string): Promise<CancellationFeePreview | null> {
+        try {
+            return await firstValueFrom(this.http.get<CancellationFeePreview>(
+                this.apiUrlService.getApiUrl(`/api/booking/${encodeURIComponent(bookingId)}/cancel-preview`),
+                { headers: await this.authHeaders() }));
+        } catch (error) {
+            console.warn('[BookingService] cancellation fee preview unavailable', error);
+            return null;
+        }
     }
 
     async cancelBooking(bookingId: string, reason: string): Promise<any> {

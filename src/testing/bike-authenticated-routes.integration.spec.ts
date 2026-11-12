@@ -185,6 +185,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       '20261264800000_profiles_moderation_audit.sql',
       '20261264900000_profiles_market_trigger_definer.sql',
       '20261267000000_driver_cancellation_attribution.sql',
+      '20261268000000_cancellation_fee_quote.sql',
     ]) {
       const source = migration.startsWith('candidate/')
         ? join(process.cwd(), 'supabase', 'baseline', migration)
@@ -889,6 +890,47 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect((await adminMetrics(d9Driver.access_token, d9Driver.user.id)).status, 'a driver cannot use the admin route').toBe(403);
     expect((await adminMetrics(adminUser.access_token, bikeB.user.id)).status, 'driver of another tenant is not found').toBe(404);
     expect((await adminMetrics(adminUser.access_token, customer.user.id)).status, 'a non-driver is not found').toBe(404);
+
+    // Area 6: cancellation fee from the published policy, through the real admin and booking routes.
+    const adminPost = (path: string, body: any, token = adminUser.access_token) => fetch(base + '/api/admin' + path, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
+    const policyInput = { tenantId, market: 'GB', referenceFareMinor: 1000, debtThresholdBps: 5000, graceSeconds: 300, feeMinor: 500, feeCapMinor: 400, compensationPercent: 80 };
+    expect((await adminPost('/policies/cancellation/publish', { ...policyInput, tenantId: tenantB })).status, 'publish for another tenant refused').toBe(403);
+    const published = await adminPost('/policies/cancellation/publish', policyInput);
+    const publishedBody: any = await published.json();
+    expect(published.status, 'publish: ' + JSON.stringify(publishedBody)).toBe(200);
+    expect(publishedBody.policy.enabled, 'a published version starts disabled').toBe(false);
+    const listRes = await fetch(base + `/api/admin/policies/cancellation?tenantId=${tenantId}&market=GB`, { headers: { Authorization: 'Bearer ' + adminUser.access_token } });
+    const listBody: any = await listRes.json();
+    expect(listRes.status, 'policy list (previously selected non-existent columns): ' + JSON.stringify(listBody)).toBe(200);
+    expect(listBody.policies[0], 'list shows the version with UI field names').toMatchObject({ version: publishedBody.policy.version, market: 'GB', cancellation_fee_minor: 500, fee_cap_minor: 400, grace_seconds: 300, enabled: false });
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId: tenantB, enabled: true })).status, 'enable for another tenant refused').toBe(403);
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: true }, d9Driver.access_token)).status, 'a driver cannot enable').toBe(403);
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: true })).status, 'admin enables the version').toBe(200);
+    const feeJob = (id: string, acceptedMinsAgo: number) => sql(`SET session_replication_role = replica; INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,currency_code,driver_id,accepted_driver_id,status,payment_method,payment_status,pickup_address,dropoff_address,scheduled_time,price,total_price,accepted_at)
+      VALUES('${id}','${tenantId}','${customer.user.id}','GB','GBP','${d9Driver.user.id}','${d9Driver.user.id}','assigned','card','authorized','Fee A','Fee B',now(),12.00,12.00,now()-interval '${acceptedMinsAgo} minutes');`);
+    const preview = async (token: string, id: string) => { const r = await fetch(base + `/api/jobs/${id}/cancel-preview`, { headers: { Authorization: 'Bearer ' + token } }); return { status: r.status, body: await r.json() as any }; };
+    const receivables = (id: string) => sql(`SELECT count(*)||'|'||coalesce(max(amount_minor),0)||'|'||coalesce(max(policy_version),0)||'|'||coalesce(max(currency_code),'') FROM public.customer_receivables WHERE job_id='${id}' AND reason='cancellation_fee';`);
+    const feeLate = 'fee00000-0000-4000-8000-00000000000a', feeEarly = 'fee00000-0000-4000-8000-00000000000b', feeDriver = 'fee00000-0000-4000-8000-00000000000c';
+    feeJob(feeEarly, 1);
+    const earlyPreview = await preview(customer.access_token, feeEarly);
+    expect(earlyPreview, 'within the grace period: no fee').toMatchObject({ status: 200, body: { due: false, reasonCode: 'within_grace', feeMinor: 0 } });
+    expect((await cancelJob(customer.access_token, feeEarly, 'early')).status).toBe(200);
+    expect(receivables(feeEarly), 'early cancellation records no debt').toBe('0|0|0|');
+    feeJob(feeLate, 10);
+    const latePreview = await preview(customer.access_token, feeLate);
+    expect(latePreview, 'late: fee = least(500, cap 400, fare 1200) = 400').toMatchObject({ status: 200, body: { due: true, reasonCode: 'due', feeMinor: 400, currency: 'GBP', exponent: 2, policyVersion: publishedBody.policy.version } });
+    expect((await preview(d9Driver.access_token, feeLate)).body, 'driver view: the driver cancelling never charges the customer').toMatchObject({ due: false, reasonCode: 'not_customer' });
+    expect((await preview(d9Other.access_token, feeLate)).status, 'a non-participant cannot preview').toBe(404);
+    expect((await cancelJob(customer.access_token, feeLate, 'changed plans')).status, 'customer cancels late').toBe(200);
+    expect(receivables(feeLate), 'one receivable: frozen amount, policy version, currency').toBe(`1|400|${publishedBody.policy.version}|GBP`);
+    expect((await cancelJob(customer.access_token, feeLate, 'retry')).status, 'retry accepted').toBe(200);
+    expect(receivables(feeLate), 'a retry never adds a second receivable').toBe(`1|400|${publishedBody.policy.version}|GBP`);
+    feeJob(feeDriver, 10);
+    expect((await cancelJob(d9Driver.access_token, feeDriver, 'cannot make it')).status).toBe(200);
+    expect(receivables(feeDriver), 'a driver cancelling late never creates customer debt').toBe('0|0|0|');
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: false })).status, 'admin disables the version').toBe(200);
+    expect((await preview(customer.access_token, feeDriver)).body.reasonCode, 'no enabled version: fees off').toBe('no_active_policy');
 
     // Extracted-API runtime (authenticated) against live fixture GoTrue + PostgREST.
     // Separate API process from the CURRENT source by default. Set VAYDU_EXTRACTED_API_ROOT to an

@@ -96,20 +96,24 @@ interface PolicyRow {
           <h3 class="text-sm font-bold text-slate-800 mb-2">Versions ({{ form.market }})</h3>
           <table class="w-full text-xs">
             <thead><tr class="text-left text-slate-500">
-              <th class="pb-1">v</th><th class="pb-1">Ref fare</th><th class="pb-1">Threshold</th><th class="pb-1">Fee</th><th class="pb-1">Comp %</th><th class="pb-1">On</th></tr></thead>
+              <th class="pb-1">v</th><th class="pb-1">Ref fare</th><th class="pb-1">Threshold</th><th class="pb-1">Fee</th><th class="pb-1">Cap</th><th class="pb-1">Grace (s)</th><th class="pb-1">Comp %</th><th class="pb-1">On</th><th></th></tr></thead>
             <tbody>
               @for (p of policies(); track p.id) {
-                <tr class="border-t border-slate-100">
+                <tr class="border-t border-slate-100" [attr.data-testid]="'policy-row-' + p.version">
                   <td class="py-1.5 font-bold">{{ p.version }}</td>
                   <td>{{ p.reference_fare_minor }}</td>
                   <td>{{ p.debt_threshold_minor }}</td>
                   <td>{{ p.cancellation_fee_minor }}</td>
+                  <td>{{ p.fee_cap_minor ?? '—' }}</td>
+                  <td>{{ p.grace_seconds }}</td>
                   <td>{{ p.driver_compensation_percent }}%</td>
                   <td>{{ p.enabled ? 'yes' : 'no' }}</td>
+                  <td><button type="button" class="underline" [disabled]="busy()" (click)="toggleEnabled(p)">{{ p.enabled ? 'Disable' : 'Enable' }}</button></td>
                 </tr>
               }
             </tbody>
           </table>
+          <p class="text-xs text-slate-500 mt-2">The highest enabled version applies. A fee is charged only when the customer cancels after a driver accepted and the grace period has passed.</p>
         </div>
       }
       @if (audit().length) {
@@ -184,6 +188,22 @@ export class AdminPolicyPublishComponent implements OnInit {
         finally { this.previewBusy.set(false); }
     }
 
-    async loadPolicies() { this.policies.set(await this.admin.listCancellationPolicies(this.form.tenantId, this.form.market)); }
+    async loadPolicies() {
+        this.error.set('');
+        try { this.policies.set(await this.admin.listCancellationPolicies(this.form.tenantId, this.form.market)); }
+        catch (e: any) { this.policies.set([]); this.error.set(e?.message || 'Could not list policies.'); }
+    }
+
+    async toggleEnabled(p: PolicyRow) {
+        const next = !p.enabled;
+        if (next && !confirm(`Enable version ${p.version} for ${this.form.market}? Customers who cancel late will be charged under it.`)) return;
+        this.busy.set(true); this.error.set('');
+        try {
+            await this.admin.setCancellationPolicyEnabled(p.id, this.form.tenantId, next);
+            await this.loadPolicies();
+            await this.loadAudit();
+        } catch (e: any) { this.error.set(e?.message || 'Could not change the policy.'); }
+        finally { this.busy.set(false); }
+    }
     async loadAudit() { this.audit.set(await this.admin.policyAudit()); }
 }

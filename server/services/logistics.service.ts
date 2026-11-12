@@ -131,7 +131,12 @@ export class LogisticsService {
       'in_progress': ['completed'],
       'completed': [],
       'cancelled': [],
-      'no_driver_found': ['searching', 'cancelled']
+      'no_driver_found': ['searching', 'cancelled'],
+      // Statuses cancel_job_safely already allows; previously absent here, so the API refused to
+      // cancel them at all. Only the cancellation transition is added.
+      'accepted': ['cancelled'],
+      'heading_to_pickup': ['cancelled'],
+      'driver_en_route': ['cancelled']
     };
 
     return transitions[current]?.includes(next) || false;

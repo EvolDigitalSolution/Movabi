@@ -2150,6 +2150,18 @@ router.post('/policies/cancellation/publish', requireAdmin, async (req: Request,
     if (!tenantId || !market || !Number.isFinite(Number(referenceFareMinor)) || !Number.isFinite(Number(debtThresholdBps))) {
         return res.status(400).json({ error: 'tenantId, market, referenceFareMinor and debtThresholdBps are required' });
     }
+    // Tenant-scoped admins may only publish for their own tenant (global admins: any).
+    const publishScope = await adminTenant(req);
+    if (publishScope.error) return res.status(500).json({ error: publishScope.error });
+    if (publishScope.tenant !== null && String(tenantId) !== publishScope.tenant) {
+        return res.status(403).json({ error: 'You can only manage policies for your own tenant.', code: 'TENANT_SCOPE' });
+    }
+    for (const [name, value] of [['feeMinor', feeMinor ?? 0], ['graceSeconds', graceSeconds ?? 300]] as const) {
+        if (!Number.isSafeInteger(Number(value)) || Number(value) < 0) return res.status(400).json({ error: `${name} must be a whole number of at least 0` });
+    }
+    if (feeCapMinor != null && (!Number.isSafeInteger(Number(feeCapMinor)) || Number(feeCapMinor) < 0)) {
+        return res.status(400).json({ error: 'feeCapMinor must be empty or a whole number of at least 0' });
+    }
     const { data, error } = await supabaseAdmin.rpc('publish_cancellation_policy', {
         p_tenant: String(tenantId), p_market: String(market),
         p_reference_fare_minor: Math.round(Number(referenceFareMinor)),
@@ -2167,15 +2179,43 @@ router.post('/policies/cancellation/publish', requireAdmin, async (req: Request,
 
 /** Versioned policy list + audit history for the publish UI. */
 router.get('/policies/cancellation', requireAdmin, async (req: Request, res: Response) => {
+    const scope = await adminTenant(req);
+    if (scope.error) return res.status(500).json({ error: scope.error });
+    const tenantId = String(req.query.tenantId || '');
+    if (scope.tenant !== null && tenantId !== scope.tenant) {
+        return res.status(403).json({ error: 'You can only view policies for your own tenant.', code: 'TENANT_SCOPE' });
+    }
+    // Columns are market_code / fee_minor; aliased to the names the admin UI uses.
     const { data, error } = await supabaseAdmin
         .from('cancellation_policies')
-        .select('id,tenant_id,market,version,reference_fare_minor,debt_threshold_minor,grace_seconds,cancellation_fee_minor,fee_cap_minor,driver_compensation_percent,compensation_funding,enabled,created_at')
-        .eq('tenant_id', String(req.query.tenantId || ''))
-        .eq('market', String(req.query.market || ''))
+        .select('id,tenant_id,market:market_code,version,reference_fare_minor,debt_threshold_minor,grace_seconds,cancellation_fee_minor:fee_minor,fee_cap_minor,driver_compensation_percent,compensation_funding,enabled,effective_from,created_at')
+        .eq('tenant_id', tenantId)
+        .eq('market_code', String(req.query.market || ''))
         .order('version', { ascending: false })
         .limit(20);
     if (error) return res.status(500).json({ error: 'Could not list policies.' });
     return res.json({ policies: data || [] });
+});
+
+/** Enable or disable one published version. The active policy is the highest enabled version
+ *  in effect; disabling every version turns cancellation fees off for the market. Audited. */
+router.post('/policies/cancellation/:id/enabled', requireAdmin, async (req: Request, res: Response) => {
+    const adminId = (req as any).adminUserId || (req as any).adminId || (req as any).user?.id;
+    const { tenantId, enabled } = req.body || {};
+    if (!tenantId || typeof enabled !== 'boolean') return res.status(400).json({ error: 'tenantId and enabled (true/false) are required' });
+    const scope = await adminTenant(req);
+    if (scope.error) return res.status(500).json({ error: scope.error });
+    if (scope.tenant !== null && String(tenantId) !== scope.tenant) {
+        return res.status(403).json({ error: 'You can only manage policies for your own tenant.', code: 'TENANT_SCOPE' });
+    }
+    const { data, error } = await supabaseAdmin.rpc('set_cancellation_policy_enabled', { p_policy: String(req.params.id), p_tenant: String(tenantId), p_enabled: enabled });
+    if (error) {
+        const notFound = String(error.code || '') === 'P0002' || /not found/i.test(String(error.message || ''));
+        return res.status(notFound ? 404 : 500).json({ error: notFound ? 'Policy not found.' : 'Could not change the policy.', code: notFound ? 'POLICY_NOT_FOUND' : 'POLICY_UPDATE_FAILED' });
+    }
+    await AuditService.logAdminAction(adminId, enabled ? 'policy_enable' : 'policy_disable', 'cancellation_policy', String(req.params.id),
+        { tenantId: String(tenantId), market: (data as any)?.market_code, version: (data as any)?.version });
+    return res.json({ success: true, policy: { ...(data as any), market: (data as any)?.market_code, cancellation_fee_minor: (data as any)?.fee_minor } });
 });
 
 router.get('/policies/audit', requireAdmin, async (req: Request, res: Response) => {

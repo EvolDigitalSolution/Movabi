@@ -90,6 +90,7 @@ import {
 import { CommunicationPanelComponent } from '../../../../../shared/ui/communication-panel';
 import { MapComponent } from '../../../../../shared/components/map/map.component';
 import { MapUxHelpers, MapCoordinates, VehicleMarker } from '../../../../../shared/utils/map-ux-helpers';
+import { cancellationFeeMessage } from '@shared/utils/cancellation-fee-preview';
 
 const DRIVER_SEARCH_WINDOW_SECONDS = 300;
 type ErrandMode = 'collect_deliver' | 'quick_buy' | 'shop_deliver';
@@ -3005,9 +3006,12 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         const b = this.booking();
         if (!b) return;
 
+        // The server's fee quote, shown before the customer confirms (the server re-quotes and
+        // freezes it at the moment of cancellation).
+        const feePreview = await this.bookingService.getCancellationFeePreview(b.id);
         const alert = await this.alertCtrl.create({
             header: 'Cancel Booking',
-            message: 'Are you sure you want to cancel this booking?',
+            message: `${cancellationFeeMessage(feePreview)} Are you sure you want to cancel this booking?`,
             inputs: [
                 {
                     name: 'reason',
