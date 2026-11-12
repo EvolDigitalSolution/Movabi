@@ -1,0 +1,2 @@
+ FAIL  src/testing/bike-assignment-trigger-pg.spec.ts > Bike assignment trigger (real PostgreSQL) > enforces bike-only assignment across insert, accept, reassign and admin paths
+ FAIL  src/testing/wallet-minimal-overlay.spec.ts
