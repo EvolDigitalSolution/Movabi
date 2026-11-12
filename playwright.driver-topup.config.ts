@@ -2,7 +2,7 @@ import {defineConfig,devices} from '@playwright/test';
 // Driver top-up browser regression with REAL Stripe.js. Own dev server and port, so it never
 // reuses an unrelated server on :3000 that may be serving a different checkout.
 export default defineConfig({
-  testDir:'./e2e',testMatch:'driver-topup-continue-payment.spec.ts',workers:1,timeout:120_000,
+  testDir:'./e2e',testMatch:/driver-topup-(continue-payment|lifecycle).spec.ts/,workers:1,timeout:120_000,
   expect:{timeout:15_000},reporter:'list',
   // test-results/ holds tracked files in this repo; keep this run's output out of it.
   outputDir:'.temp/playwright-driver-topup',

@@ -27,7 +27,7 @@ await test('invalid or negative values do not become zero',()=>{for(const v of [
 await test('wrong currency code has no invented fallback',()=>assert.equal(utils.formatCashCreditMinor('100','gbp'),'Amount unavailable'));
 await test('disabled status is honest',()=>assert.match(utils.cashCreditStatusMessage(data()),/not enabled/));
 await test('unapproved account is explicit',()=>{const s=data();s.pilotEnabled=true;assert.match(utils.cashCreditStatusMessage(s),/not approved/);});
-await test('enrolment does not promise job acceptance or top-up',()=>{const s=data();s.pilotEnabled=s.enrolled=true;assert.match(utils.cashCreditStatusMessage(s),/checked for each ride/);assert.match(utils.cashCreditStatusMessage(s),/Top-ups are unavailable/);});
+await test('enrolment does not promise job acceptance or top-up',()=>{const s=data();s.pilotEnabled=s.enrolled=true;assert.match(utils.cashCreditStatusMessage(s),/checked for each ride/);assert.doesNotMatch(utils.cashCreditStatusMessage(s),/top-?up/i);assert.doesNotMatch(utils.cashCreditStatusMessage(s),/accept/i);});
 await test('deficit and inconsistency override readiness',()=>{const s=data();s.balance.deficitMinor='1';assert.ok(utils.cashCreditNeedsReview(s));assert.match(utils.cashCreditStatusMessage(s),/needs review/);s.balance.deficitMinor='0';s.balance.consistent=false;assert.ok(utils.cashCreditNeedsReview(s));});
 await test('validator rejects owner substitution',()=>assert.throws(()=>utils.parseDriverCashCredit(data(B),A)));
 await test('validator rejects rounded numeric money',()=>{const s=data();s.balance.availableMinor=123456;assert.throws(()=>utils.parseDriverCashCredit(s,A));});

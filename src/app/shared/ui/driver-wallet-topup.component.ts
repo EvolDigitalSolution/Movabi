@@ -1,4 +1,4 @@
-import { Component, DestroyRef, Input, OnInit, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, EventEmitter, Input, OnInit, Output, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
@@ -93,6 +93,10 @@ export class DriverWalletTopupComponent implements OnInit {
   readonly outcome = signal<DriverTopupOutcome|null>(null);
   @Input() set hideTrigger(v:boolean){this.embedded.set(!!v);}
   readonly message = signal('Checking top-up availability…');
+  /** Emitted once the server confirmed the wallet credit, so the page can refresh balance and history. */
+  @Output() readonly credited = new EventEmitter<void>();
+  /** The server's own top-up decision (/availability), independent of cash-ride enablement. */
+  readonly topupCheck = signal<'checking'|'available'|'unavailable'>('checking');
   amount = ''; agreed = false;
   private owner = ''; private storageKey = '';
   constructor() {
@@ -113,8 +117,9 @@ export class DriverWalletTopupComponent implements OnInit {
       if (stored) this.saved.set(JSON.parse(stored));
       void this.cash.refresh(true).catch(()=>{});
       this.available.set(await this.call('/availability'));
+      this.topupCheck.set('available');
       this.message.set('');
-    } catch { this.message.set('Top-up is currently unavailable. Saved payments can still be checked.'); }
+    } catch { this.topupCheck.set('unavailable'); this.message.set('Top-up is currently unavailable. Saved payments can still be checked.'); }
     // Auto-check on return/focus only while no provider payment UI is open.
     const resume = () => { if (this.saved()?.submitted && !this.active()) void this.verify(); };
     window.addEventListener('focus', resume);
@@ -135,13 +140,16 @@ export class DriverWalletTopupComponent implements OnInit {
     return result;
   }
   private persist(attempt:Saved) { localStorage.setItem(this.storageKey,JSON.stringify(attempt)); this.saved.set(attempt); }
-  clear() { localStorage.removeItem(this.storageKey); this.saved.set(null); this.agreed=false; this.active.set(null); this.outcome.set(null); }
+  /** Forgets the saved attempt and resets the form (amount, agreement, provider UI, outcome). */
+  clear() { localStorage.removeItem(this.storageKey); this.saved.set(null); this.amount=''; this.agreed=false; this.active.set(null); this.outcome.set(null); }
   close() { this.open.set(false); this.amount=''; this.agreed=false; this.active.set(null); }
-  /** The provider UI finished. Credit is decided only by server verification. */
+  /** The provider UI finished. Its SDK is torn down when it leaves the DOM; credit is decided
+   * only by server verification. A paid attempt stays saved until the credit is confirmed. */
   async providerDone(result: DriverTopupProviderResult) {
     const attempt = this.saved(); if (!attempt) return;
     this.persist({...attempt,submitted:true});
     this.active.set(null);
+    if (result.next === 'verify') this.message.set('Confirming your wallet credit…');
     await this.verify(result.next === 'verify' ? result.detail : undefined);
   }
   readonly credit = this.cash.status;
@@ -225,9 +233,12 @@ export class DriverWalletTopupComponent implements OnInit {
     this.busy.set(true);
     try {
       const result = await this.call('/verify',{attemptId:attempt.quote.attemptId});
+      // Completion only on the server's confirmed ledger credit (its credited event id).
       if (typeof result.creditedEventId !== 'string' || !/^[0-9a-f-]{36}$/i.test(result.creditedEventId)) throw Error();
-      this.clear();
+      // Done: forget the completed attempt (and with it any provider secret), reset and close the form.
+      this.clear(); this.open.set(false);
       this.message.set('Payment verified. Wallet credit added.');
+      this.credited.emit();
       try { await this.cash.refresh(true); }
       catch { this.message.set('Payment verified. Wallet credit added. Refresh the wallet to check its balance.'); }
     } catch (error:any) {

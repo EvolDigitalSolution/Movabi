@@ -34,9 +34,18 @@ export function formatCashCreditMinor(value:string,currency:string):string {
 export function cashCreditNeedsReview(s:DriverCashCreditStatus):boolean {
  return !s.balance.consistent||s.balance.deficitMinor!=='0';
 }
+/**
+ * Cash-RIDE state only, from the server's cash-credit status (pilot switch, this driver's
+ * enrolment for the market, balance consistency). Whether a top-up is possible is a separate
+ * server decision (the top-up /availability endpoint) and is never claimed here.
+ */
 export function cashCreditStatusMessage(s:DriverCashCreditStatus):string {
- if(cashCreditNeedsReview(s))return 'Cash credit needs review before another cash ride. Top-ups are unavailable.';
- if(!s.pilotEnabled)return 'Cash rides are not enabled yet. Top-ups are unavailable.';
- if(!s.enrolled)return 'Cash rides are not approved for this account. Top-ups are unavailable.';
- return 'Cash-ride enrolment verified. Credit is checked for each ride. Top-ups are unavailable.';
+ if(cashCreditNeedsReview(s))return 'Cash credit needs review before another cash ride.';
+ if(!s.pilotEnabled)return 'Cash rides are not enabled in '+s.country+' yet. Your credit is kept for when they are.';
+ if(!s.enrolled)return 'Cash rides are not approved for this account in '+s.country+' yet. Your credit is kept.';
+ return 'Cash rides are enabled for you in '+s.country+'. Credit is checked for each ride.';
+}
+/** Top-up line from the top-up service's own decision; independent of cash-ride enablement. */
+export function topupAvailabilityMessage(check:'checking'|'available'|'unavailable'):string {
+ return check==='checking'?'Checking top-up availability…':check==='available'?'':'Top-ups are unavailable right now.';
 }

@@ -11,7 +11,7 @@ import {receiptOutline} from 'ionicons/icons';
 import {RouterLink} from '@angular/router';
 import {DriverWalletTopupComponent} from '@shared/ui/driver-wallet-topup.component';
 import {DriverCashCreditService} from '@core/services/payments/driver-cash-credit.service';
-import {formatCashCreditMinor} from '@shared/utils/driver-cash-credit';
+import {formatCashCreditMinor,cashCreditStatusMessage,cashCreditNeedsReview,topupAvailabilityMessage} from '@shared/utils/driver-cash-credit';
 
 interface CashCreditAttempt {id:string;status:string;amount_minor:number;currency_code:string;created_at:string;credited_event_id:string|null;state:string;}
 
@@ -37,18 +37,21 @@ interface CashCreditAttempt {id:string;status:string;amount_minor:number;currenc
 
     <div class="relative mb-6 overflow-hidden rounded-[2rem] bg-white px-6 py-8 text-center shadow-lg shadow-slate-900/10 border border-slate-200">
       <div class="absolute inset-x-0 top-0 h-1.5 bg-blue-600"></div>
-      <p class="relative text-slate-600 text-sm font-black mb-3">Cash-ride credit</p>
+      <p class="relative text-slate-600 text-sm font-black mb-3">Available cash-ride credit</p>
       @if (credit(); as c) {
         <h1 class="relative text-slate-950 font-display font-black tracking-tight break-words text-5xl">{{amount(c.balance.availableMinor,c.currency)}}</h1>
-        <p class="mt-2 text-xs font-semibold text-slate-500">{{c.currency}} · usable for cash rides · Held: {{amount(c.balance.heldMinor,c.currency)}}</p>
+        <p class="mt-2 text-xs font-semibold text-slate-500">Reserved for cash rides: {{amount(c.balance.heldMinor,c.currency)}}</p>
+        <p class="mt-3 text-sm text-slate-600" role="status" [class.text-amber-800]="needsReview(c)">{{cashMessage(c)}}</p>
+        <p class="mt-1 text-xs text-slate-500">Covers cash-ride fees and commission. Separate from your earnings and bank payouts.</p>
       } @else {
         <h1 class="relative text-slate-950 font-display font-black tracking-tight break-words text-lg">{{creditLabel()}}</h1>
       }
       <div class="relative mt-4 flex justify-center gap-3">
         <button type="button" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold" [disabled]="cash.loading()" (click)="refreshCredit()">Refresh</button>
-        <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-2 text-sm font-bold" [disabled]="!credit()" (click)="topupRef.open.set(true)">Top up</button>
+        <button type="button" class="rounded-xl bg-slate-950 text-white px-4 py-2 text-sm font-bold" [disabled]="!credit() || topupRef.topupCheck() !== 'available'" (click)="topupRef.open.set(true)">Top up</button>
       </div>
-      <app-driver-wallet-topup #topupRef [hideTrigger]="true" />
+      @if(topupMessage(topupRef.topupCheck()); as t){<p class="relative mt-2 text-sm text-slate-600">{{t}}</p>}
+      <app-driver-wallet-topup #topupRef [hideTrigger]="true" (credited)="refreshCredit()" />
     </div>
 
     <div class="space-y-6">
@@ -120,6 +123,9 @@ export class DriverWalletPage implements OnInit {
     }catch{ this.storedTx.set([]);this.txError.set('Activity could not be loaded. Pull to refresh.'); }
     finally{this.txLoading.set(false);}
   }
+  readonly cashMessage=cashCreditStatusMessage;
+  readonly needsReview=cashCreditNeedsReview;
+  readonly topupMessage=topupAvailabilityMessage;
   refreshCredit(){void Promise.all([this.cash.refresh(true),this.refresh()]).catch(()=>{});}
   async handleRefresh(ev:any){try{await Promise.all([this.cash.refresh(true),this.refresh()]);}catch{}ev?.target?.complete?.();}
   txId(tx:Record<string,unknown>):string{return String(tx['id']);}

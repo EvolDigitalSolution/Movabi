@@ -1,0 +1,70 @@
+Develop read-only checks: top-up ledger evidence and cash-ride configuration
+Run on the develop host as edsadmin. Every query runs inside BEGIN READ ONLY ... ROLLBACK:
+nothing is written. Output contains ids and amounts only (no keys, no client secrets).
+
+1) Ledger evidence for recent driver top-ups (exactly one credit per credited attempt)
+
+docker exec -i movabi-develop-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off' <<'SQL'
+BEGIN READ ONLY;
+-- Every driver cash-credit top-up attempt of the last 3 days, with its credit evidence.
+SELECT a.id AS attempt, a.owner_id, a.status, a.country_code, a.currency_code, a.payment_provider, a.merchant_account_ref,
+       a.amount_minor AS wallet_credit_minor, a.provider_fee_minor, a.total_charge_minor, a.created_at,
+       (SELECT count(*) FROM public.wallet_business_events e WHERE e.event_key='wallet-topup:'||a.id::text) AS credit_events,
+       (SELECT count(*) FROM public.wallet_movements m WHERE m.event_id=a.credited_event_id) AS ledger_rows,
+       (SELECT string_agg(ac.balance_purpose||' '||m.amount_minor, ', ' ORDER BY ac.balance_purpose)
+          FROM public.wallet_movements m JOIN public.wallet_accounts ac ON ac.id=m.account_id WHERE m.event_id=a.credited_event_id) AS movements,
+       (SELECT o.evidence->>'status' FROM public.wallet_topup_provider_observations o WHERE o.attempt_id=a.id ORDER BY o.observed_at DESC LIMIT 1) AS last_provider_status,
+       (SELECT o.evidence->>'chargedAmountApiMinor' FROM public.wallet_topup_provider_observations o WHERE o.attempt_id=a.id AND o.evidence->>'status'='succeeded' ORDER BY o.observed_at DESC LIMIT 1) AS charged_api_minor
+FROM public.wallet_topup_attempts a
+WHERE a.destination_account_purpose='driver_cash_credit' AND a.created_at > now()-interval '3 days'
+ORDER BY a.created_at DESC;
+-- Must return NO rows: a credited attempt with other than exactly one credit event.
+SELECT a.id, a.status, count(e.id) AS credit_events
+FROM public.wallet_topup_attempts a LEFT JOIN public.wallet_business_events e ON e.event_key='wallet-topup:'||a.id::text
+WHERE a.destination_account_purpose='driver_cash_credit' AND (a.status='credited' OR e.id IS NOT NULL)
+GROUP BY a.id, a.status HAVING count(e.id)<>1 OR a.status<>'credited';
+-- Displayed balance vs credited deposits for each driver who topped up recently.
+SELECT d.owner_id, d.tenant_id, d.currency_code,
+       count(*) FILTER (WHERE a.status='credited') AS credited_attempts,
+       coalesce(sum(a.amount_minor) FILTER (WHERE a.status='credited'),0) AS credited_minor,
+       public.driver_cash_credit_balance_v1e(d.tenant_id,d.owner_id,d.currency_code) AS balance
+FROM (SELECT DISTINCT owner_id, tenant_id, currency_code FROM public.wallet_topup_attempts
+      WHERE destination_account_purpose='driver_cash_credit' AND created_at > now()-interval '3 days') d
+JOIN public.wallet_topup_attempts a ON a.owner_id=d.owner_id AND a.tenant_id=d.tenant_id AND a.currency_code=d.currency_code
+     AND a.destination_account_purpose='driver_cash_credit'
+GROUP BY d.owner_id, d.tenant_id, d.currency_code;
+ROLLBACK;
+SQL
+
+   Expected for the new successful top-up: status credited; credit_events 1; ledger_rows 2 with
+   movements "driver_cash_credit <wallet credit>, platform_funding -<wallet credit>";
+   last_provider_status succeeded; charged_api_minor = total_charge_minor. The second query
+   returns no rows. In the third query, balance.eligibleDepositsMinor = credited_minor and
+   balance.availableMinor is what the app shows (GBP 11.00 = 1100 only if that holds).
+
+2) Cash-ride configuration as it is now (read-only)
+
+docker exec -i movabi-develop-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -U supabase_admin -d movabi_develop -v ON_ERROR_STOP=1 -P pager=off' <<'SQL'
+BEGIN READ ONLY;
+SELECT key, enabled FROM public.driver_cash_credit_config_v1e;                       -- global pilot switch (absent = off)
+SELECT country_code, currency_code, enabled, count(*) FROM public.driver_cash_credit_enrolments_v1e GROUP BY 1,2,3 ORDER BY 1,2,3;
+SELECT tenant_id, value->'cashEnabled' AS cash_enabled FROM public.marketplace_settings WHERE key='payment_rules';  -- tenant-wide
+SELECT j.country_code, j.status, j.metadata->>'cash_collection_mode' AS cash_collection_mode, count(*)
+FROM public.jobs j JOIN public.service_types s ON s.id=j.service_type_id AND s.slug='ride'
+WHERE j.payment_method='cash' GROUP BY 1,2,3 ORDER BY 1,2,3;
+SELECT country_code, upper(supported_currency) AS currency FROM public.market_availability ORDER BY 1;
+ROLLBACK;
+SQL
+
+What the code requires before cash rides can work for one market/cohort (found 2026-11-12):
+  - The pilot switch driver_cash_credit_config_v1e.ride_cash_credit is GLOBAL. When on, the jobs
+    trigger enforce_ride_cash_credit_v1e reserves credit for EVERY cash Ride assignment on the
+    database, and cashRideAcquisitionApproved() rejects (CE002) any non-enrolled driver, in all markets.
+  - reserve_cash_job_credit_v1e requires job.metadata.cash_collection_mode='full_customer_charge'
+    and no PaymentIntent. No code in this repository writes that metadata, so with the switch on
+    every cash Ride acceptance fails, including the enrolled cohort's.
+  - Customer cash payment is marketplace_settings.payment_rules.cashEnabled: tenant-wide, default off.
+  Therefore no configuration-only change enables cash rides for the GB develop cohort without also
+  changing other develop markets, and turning the switch on now would break cash-ride acceptance.
+  Needed first (code + reviewed migration): a market-scoped pilot switch (country, currency), and a
+  booking path that creates cash Ride jobs with cash_collection_mode and frozen commission terms.

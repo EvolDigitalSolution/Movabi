@@ -1,7 +1,7 @@
 import { DriverWalletTopupComponent } from '../../../../../shared/ui/driver-wallet-topup.component';
 import { ReferralPanelComponent } from '../../../../../shared/ui/referral-panel.component';
 import {DriverCashCreditService} from '../../../../../core/services/payments/driver-cash-credit.service';
-import {formatCashCreditMinor,cashCreditStatusMessage,cashCreditNeedsReview} from '../../../../../shared/utils/driver-cash-credit';
+import {formatCashCreditMinor,cashCreditStatusMessage,cashCreditNeedsReview,topupAvailabilityMessage} from '../../../../../shared/utils/driver-cash-credit';
 import {MarketSafetyService} from '../../../../../core/services/payments/market-safety.service';
 import { earningsSummary, recordedEarningAmount, recordedPayoutLabel, type EarningsMetric } from '@shared/utils/earnings-currency';
 import { DriverEarningsPreviewComponent } from '@shared/ui/driver-earnings-preview.component';
@@ -838,7 +838,7 @@ type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
             <div class="flex items-center gap-3">
               <button type="button" (click)="refreshCashCredit()" [disabled]="cashCredit.loading()"
                 class="text-sm font-bold text-amber-700 disabled:opacity-70" aria-label="Refresh cash-ride credit">Refresh</button>
-              @if(cashCredit.status()) {
+              @if(cashCredit.status() && topupRef.topupCheck() === 'available') {
                 <button type="button" (click)="topupRef.open.set(true)"
                   class="text-sm font-bold text-amber-700 disabled:opacity-70">Top up</button>
               }
@@ -850,9 +850,10 @@ type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
             <p role="alert" class="mt-3 text-sm text-red-700">{{cashCredit.error()}}</p>
           } @else if(cashCredit.status(); as credit) {
             @if(cashMessage(credit)){<p role="status" class="mt-3 text-sm text-slate-600" [class.text-amber-800]="cashNeedsReview(credit)">{{cashMessage(credit)}}</p>}
+            @if(topupMessage(topupRef.topupCheck()); as t){<p class="mt-2 text-sm text-slate-600">{{t}}</p>}
             <dl class="mt-3 space-y-2 text-sm">
-              <div class="flex flex-wrap justify-between gap-2"><dt>Unreserved credit</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.availableMinor,credit.currency)}}</dd></div>
-              <div class="flex flex-wrap justify-between gap-2"><dt>Held for cash rides</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.heldMinor,credit.currency)}}</dd></div>
+              <div class="flex flex-wrap justify-between gap-2"><dt>Available cash-ride credit</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.availableMinor,credit.currency)}}</dd></div>
+              <div class="flex flex-wrap justify-between gap-2"><dt>Reserved for cash rides</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.heldMinor,credit.currency)}}</dd></div>
               @if(credit.balance.deficitMinor !== '0') {
                 <div class="flex flex-wrap justify-between gap-2 text-amber-800"><dt>Amount needing review</dt><dd class="font-bold break-all">{{cashAmount(credit.balance.deficitMinor,credit.currency)}}</dd></div>
               }
@@ -861,7 +862,7 @@ type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
           } @else {
             <p role="status" class="mt-3 text-sm text-slate-600">Cash credit has not been checked. Select Refresh.</p>
           }
-          <app-driver-wallet-topup #topupRef [hideTrigger]="true" />
+          <app-driver-wallet-topup #topupRef [hideTrigger]="true" (credited)="onTopupCredited()" />
         </app-card>
 
               <app-card class="p-4">
@@ -1061,8 +1062,11 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
     readonly cashCredit=inject(DriverCashCreditService);
     readonly cashAmount=formatCashCreditMinor;
     readonly cashMessage=cashCreditStatusMessage;
+    readonly topupMessage=topupAvailabilityMessage;
     readonly cashNeedsReview=cashCreditNeedsReview;
     refreshCashCredit():void {void this.cashCredit.refresh(true).catch(()=>{});}
+    /** Server confirmed a top-up credit: refresh the cash-ride balance and the wallet tab now. */
+    onTopupCredited():void {this.refreshCashCredit();void this.loadWalletEarnings().catch(()=>{});}
 
     compactPayoutMessage():string {
         const error=this.payoutContext.walletError();
