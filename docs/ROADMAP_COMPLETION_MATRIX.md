@@ -170,7 +170,7 @@ Scope of each, so neither is read as the other:
 | D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
 | ~~D10~~ | **Resolved 2026-11-12 by the user: "Keep them off".** Courier (delivery/errand) cash stays off in every market, including cash-pilot markets; cash applies to Rides only, with a card hold. Already enforced by `20261269000000`: `courier_enabled` defaults to false; no migration, API route or runbook sets it (only disposable test fixtures do); the markets table is writable by the database owner only, so the API cannot switch it on. Turning it on later needs a new decision and an owner-level change. |
 | ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff after acceptance counts as driver-initiated — confirmed by the user ("Yes, count handoffs"). |
-| D11 | ~~Address search provider configuration on develop~~ — **configuration readiness confirmed 2026-11-12** from host evidence supplied by the user (`VAYDU_MAPBOX_GEOCODING_V23=true`, Mapbox token set, TomTom key set; values not seen). **Address search is NOT verified**: that needs the actual-request check (`scripts/verify-server-place-search.cjs`, see "Address search (D11)"). Open sub-decision **D11b**: whether named landmarks, businesses and categories should go to TomTom first (Mapbox Geocoding v6 has no POI layer). That changes provider spend, so it is not changed here. |
+| D11 | ~~Address search provider configuration on develop~~ — configuration ready (host evidence). The develop host check of 2026-11-12 **passed** for connectivity, country filtering, basic address/postcode, reverse, failure fallback and `permanent=false`. **Landmark, business and category search are NOT verified**; see "Address search (D11)". ~~D11b~~ resolved by the user: implement intent-aware POI/category routing using supported provider capabilities (done; not deployed). |
 | D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
 
 Approved and recorded: driver card top-up fee 5% (`vaydu-driver-card-5pct-wallet-v1`), promo 5%,
@@ -315,6 +315,49 @@ search, TomTom fallback (Mapbox blocked locally), reverse geocoding, and `perman
 Mapbox geocoding request. For landmark, business and category queries it only records the results;
 those are the D11b evidence. Note: it exercises the **deployed** adapter (`f6e8c00`), which lacks the
 categories/postcode passthrough above.
+
+**Develop host check, 2026-11-12 (user-run, deployed `f6e8c00` adapter, credentials redacted):**
+
+| Check | Result |
+|---|---|
+| Provider connectivity (Mapbox, TomTom) | PASS |
+| Country filtering (GB-only; configured GB,NG) | PASS |
+| Address and postcode search | PASS |
+| Reverse geocoding | PASS |
+| TomTom fallback when Mapbox fails | PASS |
+| Every Mapbox geocoding request `permanent=false`; none `true` | PASS |
+| Landmark "Manchester Airport Terminal 2" | **Unsuitable**: roads and neighbourhoods |
+| Business "Tesco Extra" | **Unsuitable**: a street |
+| Category "restaurant" | **Unsuitable**: "Restaurant Terrace" |
+
+**Intent-aware landmark, business and category search (implemented on this branch, not deployed):**
+- The client sends the intent it already derives (`address`, `postcode`, `place`, `landmark` or
+  `category`) and, for nearby searches, the radius. Older clients send no intent and keep the original
+  address path unchanged.
+- **Landmark:** TomTom `poiSearch`. **Category:** TomTom `categorySearch`, with lat/lon and `radius`.
+  **Place:** Mapbox first, where only a matching town or locality counts, then TomTom `poiSearch`.
+  Mapbox is not called for landmark or category queries: it has no POI layer, so it cannot fulfil them.
+- `server/services/place-search-intent.ts` judges every answer, using the app's own helpers:
+  - results must be real POIs;
+  - the terminal must be exact (T2 ≠ T20 ≠ Terminal 1), and a terminal with no airport name must lie
+    within 15 km of the named parent;
+  - a business name must contain every distinctive word (one-letter variations allowed);
+  - category and cuisine evidence must come from the provider's category or classification data,
+    never from a street label;
+  - results must fall inside the radius and the configured markets.
+- A provider HTTP 200 with unsuitable results returns `fulfilled:false` and no results. A provider
+  failure stays `MAP_PROVIDER_UNAVAILABLE`.
+- **Mapbox permanent geocoding:** unchanged. `mapbox()` is still the only Mapbox geocoding URL
+  builder, and it sets `permanent=false` exactly once. Regression tests reject `permanent=true` in
+  three ways: on every request across all intents and reverse; through a source guard over `server/`
+  and `src/app`; and through the host script's check. Forcing `permanent=true` fails three tests.
+- **Coverage:** `src/testing/place-intent-search.spec.ts` has 38 tests; 14 fail on the previous
+  adapter. The host script's former observe-only cases are now pass/fail checks on fulfilment,
+  POI type, exact Terminal 2, a "Tesco Extra" name, restaurant category data, the 10 km radius and GB.
+  Locally, with fake providers, the script passes on this branch and reproduces the three host
+  findings as 8 FAILs on the `f6e8c00` adapter.
+- **To verify:** landmark, business and category search can only be verified with real requests
+  after this API is deployed to develop, which is not authorised. Then rerun the same host script.
 
 **Follow-up (not done):** delete the unreachable client pipeline (`legacySearchPlaces`, MapTiler/HeiGIT
 helpers, ORS routing in `RoutingService`) once the server path is verified with real requests.

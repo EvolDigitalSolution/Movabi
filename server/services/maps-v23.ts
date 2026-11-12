@@ -1,4 +1,15 @@
+import {SEARCH_INTENTS,suitableResults} from './place-search-intent';
+import type {SearchIntent} from './place-search-intent';
+import {placeCategory} from '../../src/app/shared/utils/local-place-search';
 export interface MapPoint {lat:number;lng:number;}
+/** TomTom category names for the app's category kinds (free-text categorySearch). */
+const TOMTOM_CATEGORY:Record<string,string>={restaurant:'restaurant',cafe:'cafe',supermarket:'supermarket',pharmacy:'pharmacy',fuel:'petrol station',hospital:'hospital',shop:'shop'};
+/** Provider category evidence: TomTom categories plus classification codes and names, bounded. */
+function poiCategories(poi:any):{categories?:string[]}{
+ const values=[...(Array.isArray(poi?.categories)?poi.categories:[]),...(Array.isArray(poi?.classifications)?poi.classifications.flatMap((c:any)=>[c?.code,...(Array.isArray(c?.names)?c.names.map((n:any)=>n?.name):[])]):[])]
+  .filter((v:any)=>typeof v==='string'&&v.trim()).map((v:string)=>v.toLowerCase().slice(0,80));
+ const unique=[...new Set(values)].slice(0,20);return unique.length?{categories:unique}:{};
+}
 export function mapPoint(value:any):MapPoint {
  if(!value||typeof value.lat!=='number'||typeof value.lng!=='number'||!Number.isFinite(value.lat)||!Number.isFinite(value.lng)||Math.abs(value.lat)>90||Math.abs(value.lng)>180)throw Error('INVALID_MAP_POINT');
  return {lat:value.lat,lng:value.lng};
@@ -32,13 +43,50 @@ export class MapsV23 {
   const promise=run();if(this.lookups.size>=200)this.lookups.delete(this.lookups.keys().next().value!);
   this.lookups.set(key,{until:Date.now()+60000,promise});try{return await promise;}catch(e){this.lookups.delete(key);throw e;}
  }
- async search(query:string,code:string,origin?:MapPoint){
+ /**
+  * Address/place search. Without an intent (older clients) this is the original address path.
+  * With an intent, landmark/category use TomTom POI data (Mapbox Geocoding v6 has no POI layer), and
+  * place tries Mapbox for towns first, then TomTom POIs; every answer is checked for suitability, so a
+  * provider HTTP 200 with unsuitable results is returned as `fulfilled:false`, never as a match.
+  * Mapbox requests are built only by mapbox(), which always sends permanent=false.
+  */
+ async search(query:string,code:string,origin?:MapPoint,options:{intent?:unknown;radiusKm?:unknown}={}){
   const allowed=searchCountries(code);code=allowed.join(',');if(typeof query!=='string'||query.trim().length<3||query.length>256||query.includes(';')||query.trim().split(/\s+/).length>20)throw Error('INVALID_MAP_QUERY');
-  if(origin)origin=mapPoint(origin);if(!this.configuration().search)throw Error('MAP_SEARCH_DISABLED');
-  return this.memo(JSON.stringify(['search',code,query.trim().toLowerCase(),origin?[Number(origin.lat.toFixed(3)),Number(origin.lng.toFixed(3))]:null]),async()=>{
-   try{const result=await this.mapboxSearch(query,code,origin);if(result.results.length||!this.env.TOMTOM_API_KEY)return result;}catch{if(!this.env.TOMTOM_API_KEY)throw Error('MAP_PROVIDER_UNAVAILABLE');}
-   return this.tomtomSearch(query,code,origin);
+  if(origin)origin=mapPoint(origin);
+  const intent=options.intent===undefined||options.intent===null?undefined:options.intent;
+  if(intent!==undefined&&!SEARCH_INTENTS.includes(intent as SearchIntent))throw Error('INVALID_MAP_QUERY');
+  const radiusKm=options.radiusKm===undefined||options.radiusKm===null?null:options.radiusKm;
+  if(radiusKm!==null&&(typeof radiusKm!=='number'||!Number.isFinite(radiusKm)||radiusKm<1||radiusKm>50||!origin))throw Error('INVALID_MAP_QUERY');
+  if(!this.configuration().search)throw Error('MAP_SEARCH_DISABLED');
+  return this.memo(JSON.stringify(['search',code,query.trim().toLowerCase(),origin?[Number(origin.lat.toFixed(3)),Number(origin.lng.toFixed(3))]:null,intent??null,radiusKm]),async()=>{
+   if(intent==='place'||intent==='landmark'||intent==='category')return this.poiIntentSearch(query,code,intent,origin,radiusKm as number|null);
+   const result=await this.addressSearch(query,code,origin);
+   if(!intent)return result;
+   const s=suitableResults(result.results,{query,intent:intent as SearchIntent,origin,radiusKm:radiusKm as number|null});
+   return {...result,results:s.results,intent,fulfilled:s.fulfilled};
   });
+ }
+ private async addressSearch(query:string,code:string,origin?:MapPoint){
+  try{const result=await this.mapboxSearch(query,code,origin);if(result.results.length||!this.env.TOMTOM_API_KEY)return result;}catch{if(!this.env.TOMTOM_API_KEY)throw Error('MAP_PROVIDER_UNAVAILABLE');}
+  return this.tomtomSearch(query,code,origin,'search',null);
+ }
+ private async poiIntentSearch(query:string,code:string,intent:'place'|'landmark'|'category',origin:MapPoint|undefined,radiusKm:number|null){
+  const input={query,intent,origin,radiusKm};
+  const judged=(r:{results:any[];attribution:string})=>{const s=suitableResults(r.results,input);return {...r,results:s.results,intent,fulfilled:s.fulfilled};};
+  if(intent==='place'){
+   // A town or locality is a valid place answer and Mapbox has it; a street never fulfils a place query.
+   try{const m=judged(await this.mapboxSearch(query,code,origin));if(m.fulfilled||!this.env.TOMTOM_API_KEY)return m;}
+   catch{if(!this.env.TOMTOM_API_KEY)throw Error('MAP_PROVIDER_UNAVAILABLE');}
+   return judged(await this.tomtomSearch(query,code,origin,'poi',radiusKm));
+  }
+  // Landmarks and categories need POI data, which only TomTom has here. Mapbox cannot fulfil them, so
+  // it is not called (no spend on an answer that cannot be suitable).
+  if(!this.env.TOMTOM_API_KEY)throw Error('MAP_PROVIDER_UNAVAILABLE');
+  if(intent==='category'){
+   const category=placeCategory(query);if(!category)throw Error('INVALID_MAP_QUERY');
+   return judged(await this.tomtomSearch(TOMTOM_CATEGORY[category.kind]||category.kind,code,origin,'category',radiusKm));
+  }
+  return judged(await this.tomtomSearch(query,code,origin,'poi',radiusKm));
  }
  private async mapboxSearch(query:string,code:string,origin?:MapPoint){
   const allowed=searchCountries(code);code=allowed.join(',');if(typeof query!=='string'||query.trim().length<3||query.length>256||query.includes(';')||query.trim().split(/\s+/).length>20)throw Error('INVALID_MAP_QUERY');
@@ -60,14 +108,16 @@ export class MapsV23 {
    if(!address?.freeformAddress)throw Error('MAP_COUNTRY_UNRESOLVED');return {label:String(address.freeformAddress).slice(0,600),countryCode:code};
   });
  }
- private async tomtomSearch(query:string,code:string,origin?:MapPoint){
-  const u=new URL(`https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json`);
-  u.searchParams.set('key',this.env.TOMTOM_API_KEY!);u.searchParams.set('countrySet',code);u.searchParams.set('typeahead','true');u.searchParams.set('limit','8');
+ private async tomtomSearch(query:string,code:string,origin:MapPoint|undefined,mode:'search'|'poi'|'category',radiusKm:number|null){
+  const endpoint=mode==='poi'?'poiSearch':mode==='category'?'categorySearch':'search';
+  const u=new URL(`https://api.tomtom.com/search/2/${endpoint}/${encodeURIComponent(query)}.json`);
+  u.searchParams.set('key',this.env.TOMTOM_API_KEY!);u.searchParams.set('countrySet',code);u.searchParams.set('typeahead',mode==='category'?'false':'true');u.searchParams.set('limit',mode==='search'?'8':'20');
   if(origin){u.searchParams.set('lat',String(origin.lat));u.searchParams.set('lon',String(origin.lng));}
+  if(origin&&radiusKm)u.searchParams.set('radius',String(Math.round(radiusKm*1000)));
   const data=await this.json(u);if(!Array.isArray(data.results))throw Error('MAP_PROVIDER_RESPONSE_INVALID');
   const results=data.results.flatMap((r:any)=>{const actualCountry=String(r.address?.countryCode||'').toUpperCase();if(!searchCountries(code).includes(actualCountry))return [];let p:MapPoint;try{p=mapPoint({lat:r.position?.lat,lng:r.position?.lon});}catch{return [];}
    const label=[r.poi?.name,r.address?.freeformAddress].filter(Boolean).join(', ');if(!label)return [];
-   return [{...p,label:label.slice(0,600),primaryText:String(r.poi?.name||r.address.freeformAddress).slice(0,300),secondaryText:String(r.address.freeformAddress).slice(0,300),countryCode:actualCountry,placeType:r.type==='POI'?'poi':'address',...(Array.isArray(r.poi?.categories)?{categories:r.poi.categories.slice(0,10).map((c:any)=>String(c).slice(0,80))}:{}),...(r.address?.postalCode?{postalCode:String(r.address.postalCode).slice(0,20)}:{})}];});
+   return [{...p,label:label.slice(0,600),primaryText:String(r.poi?.name||r.address.freeformAddress).slice(0,300),secondaryText:String(r.address.freeformAddress).slice(0,300),countryCode:actualCountry,placeType:r.type==='POI'?'poi':'address',...poiCategories(r.poi),...(r.address?.postalCode?{postalCode:String(r.address.postalCode).slice(0,20)}:{})}];});
   return {results,attribution:'© TomTom'};
  }
  private async mapboxReverse(point:MapPoint){

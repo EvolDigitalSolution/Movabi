@@ -21,7 +21,7 @@ router.post('/:operation',async(req,res)=>{
    const codes=[...new Set(data.map((c:any)=>String(c.country_code)))];
    if(!codes.length||codes.length>250||codes.some(c=>!/^[A-Z]{2}$/.test(c)))return res.status(503).json({error:'Country settings unavailable.'});
    if(b.global!==true&&!codes.includes(b.country))return res.status(400).json({error:'Choose a configured service country.'});
-   return res.json(await mapsV23.search(b.query,b.global===true?codes.join(','):b.country,b.origin));
+   return res.json(await mapsV23.search(b.query,b.global===true?codes.join(','):b.country,b.origin,{intent:b.intent,radiusKm:b.radiusKm}));
   }
   if(op==='reverse')return res.json(await mapsV23.reverse(mapPoint(b.point)));
   return res.json(await mapsV23.route(mapPoint(b.start),mapPoint(b.end)));

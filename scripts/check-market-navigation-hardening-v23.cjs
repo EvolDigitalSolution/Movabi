@@ -36,7 +36,10 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
  assert.equal(recordedPayoutLabel({status:'unknown'}),'Payout needs reconciliation');cases++;
  assert.equal(recordedPayoutLabel({status:'paid',stripe_transfer_id:'tr_original'}),'Transferred to Stripe account');cases++;
  assert.match(earningsSummary([{currency_code:'NGN',status:'unknown',amount:'1200'}],'review'),/1,200/);cases++;
- const {MapsV23}=await load('server/services/maps-v23.ts');
+ // maps-v23 depends on the real place-search intent rules and the app's shared search helpers.
+ const localSearch=await load('src/app/shared/utils/local-place-search.ts');
+ const intentRules=await load('server/services/place-search-intent.ts',{'../../src/app/shared/utils/local-place-search':localSearch});
+ const {MapsV23}=await load('server/services/maps-v23.ts',{'./place-search-intent':intentRules,'../../src/app/shared/utils/local-place-search':localSearch});
  const env={VAYDU_MAPBOX_GEOCODING_V23:'true',VAYDU_TOMTOM_ROUTING_V23:'true',MAPBOX_GEOCODING_TOKEN:'test-only',TOMTOM_API_KEY:'test-only'};
  const start={lat:7.325884,lng:5.163355},end={lat:7.251028,lng:5.170483},hosts=[];
  const response=data=>({ok:true,text:async()=>JSON.stringify(data)});

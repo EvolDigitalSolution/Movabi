@@ -78,7 +78,10 @@ export class GeocodingService {
             if(!normalized||normalized.length<3)return of([]);
             return this.remoteMaps.configuration().pipe(switchMap(config=>{
                 if(!config.search)throw Object.assign(new Error('Address search is unavailable. Please sign in and retry.'),{code:'provider_unavailable'});
-                return this.remoteMaps.search(normalized,postcode?undefined:plan.origin).pipe(catchError(error=>throwError(()=>this.remoteSearchError(error))));
+                // Intent lets the server use POI/category data for landmarks, businesses and categories and
+                // reject unsuitable provider answers; the radius bounds nearby searches at the provider.
+                const intent=postcode?'postcode':isNamedLandmark(normalized)?'landmark':placeCategory(normalized)?'category':this.isPlaceQuery(normalized)?'place':'address';
+                return this.remoteMaps.search(normalized,postcode?undefined:plan.origin,intent,plan.radiusKm).pipe(catchError(error=>throwError(()=>this.remoteSearchError(error))));
             }),map(results=>{
                 const valid=(Array.isArray(results)?results:[]).filter(result=>!!validSearchPoint(result));
                 const bounded=valid.filter(result=>!plan.radiusKm||!plan.origin||searchDistanceKm(plan.origin,result)<=plan.radiusKm);

@@ -25,7 +25,8 @@ export class RemoteMapsService {
   }),shareReplay({bufferSize:1,refCount:false}));
   this.configurationCache={until:Date.now()+30000,value};return value;
  }
- search(query:string,origin?:Point):Observable<AutocompleteResult[]>{return this.request<{results:AutocompleteResult[];attribution:string}>('search',{query,global:true,origin}).pipe(map(r=>{this.searchAttribution.set(r.attribution||'© Mapbox');return r.results;}));}
+ /** `intent`/`radiusKm` let the server route POI/category searches and judge suitability. */
+ search(query:string,origin?:Point,intent?:string,radiusKm?:number|null):Observable<AutocompleteResult[]>{return this.request<{results:AutocompleteResult[];attribution:string}>('search',{query,global:true,origin,...(intent?{intent}:{}),...(radiusKm&&origin?{radiusKm}:{})}).pipe(map(r=>{this.searchAttribution.set(r.attribution||'© Mapbox');return r.results;}));}
  reverseContext(point:Point):Observable<{label:string;countryCode:string}>{return this.request<{label:string;countryCode:string}>('reverse',{point});}
  reverse(point:Point):Observable<string>{return this.request<{label:string}>('reverse',{point}).pipe(map(r=>r.label));}
  route(start:Point,end:Point):Observable<NavigationRoute&{geometry:any;bounds:[[number,number],[number,number]]}>{return this.request<any>('route',{start,end});}

@@ -2,7 +2,7 @@
 /*
  * Actual-request verification of the DEPLOYED server address search (MapsV23), run inside the API
  * container so it uses the container's own provider configuration. Read-only: no database access,
- * no configuration change. Makes about 12 provider requests (one per case; no retries).
+ * no configuration change. Makes about 13 provider requests (one per case; no retries).
  *
  *   docker cp scripts/verify-server-place-search.cjs movabi-develop-api:/tmp/verify-server-place-search.cjs
  *   docker exec -e TS_NODE_PROJECT=server/tsconfig.json -w /app movabi-develop-api \
@@ -36,10 +36,10 @@ const recording=(block)=>async(url,init)=>{
 };
 const summary=r=>(r.results||[]).slice(0,3).map(x=>`${x.primaryText} [${x.countryCode}${x.placeType?'/'+x.placeType:''}]`).join(' | ')||'(no results)';
 
-async function run(label,maps,query,code,origin,expect){
+async function run(label,maps,query,code,origin,expect,options){
  const before=requests.length;
  try{
-  const r=await maps.search(query,code,origin);
+  const r=options?await maps.search(query,code,origin,options):await maps.search(query,code,origin);
   const used=requests.slice(before).map(e=>`${e.host}:${e.status}:${e.ms}ms`).join(', ');
   out(`      ${label}: "${query}" in ${code} -> ${r.results.length} result(s), attribution ${r.attribution}; ${summary(r)}; requests ${used||'cached'}`);
   if(expect)expect(r);
@@ -64,10 +64,26 @@ async function run(label,maps,query,code,origin,expect){
  await run('street+origin',live,'High Street','GB',bolton,r=>check(r.results.length>0&&r.results.every(x=>x.countryCode==='GB'),'street search with origin stays in GB',summary(r)));
  await run('isolation',live,'Victoria Island Lagos','GB',undefined,r=>check(r.results.every(x=>x.countryCode==='GB'),'a GB-only search never returns another country',summary(r)));
  await run('configured countries',live,'Victoria Island',codes.join(','),undefined,r=>check(r.results.every(x=>codes.includes(x.countryCode)),'global search returns only configured countries',summary(r)));
- // Recorded, not asserted: Mapbox Geocoding v6 has no POI layer, so these show what customers get.
- await run('landmark (observe)',live,'Manchester Airport Terminal 2','GB',bolton);
- await run('business (observe)',live,'Tesco Extra','GB',bolton);
- await run('category (observe)',live,'restaurant','GB',bolton);
+ // Landmark, business and category searches must FULFIL the request, not just return HTTP 200:
+ // real POIs, the exact terminal, the full business name, provider category data, inside the radius
+ // and the market. A build without intent routing fails these checks (that is the correct outcome).
+ const km=(a,b)=>{const r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lng-a.lng)*r,x=Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)**2;return 6371*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));};
+ const nameOf=x=>String(x.primaryText||x.label||'');
+ const terminalOf=t=>{const m=String(t).match(/\bterminal\s*(\d{1,2}[a-z]?)\b|\bt\s*(\d{1,2}[a-z]?)\b/i);return m?(m[1]||m[2]).toLowerCase():undefined;};
+ await run('landmark',live,'Manchester Airport Terminal 2','GB',bolton,r=>{
+  check(r.fulfilled===true,'landmark search is fulfilled (intent routing present)',`fulfilled=${r.fulfilled}`);
+  check(r.results.length>0&&r.results.every(x=>x.placeType==='poi'&&x.countryCode==='GB'),'landmark results are GB POIs, not roads or areas',summary(r));
+  check(r.results.some(x=>terminalOf(nameOf(x))==='2')&&!r.results.some(x=>{const t=terminalOf(nameOf(x));return t&&t!=='2';}),'exact Terminal 2, no other terminal',summary(r));
+ },{intent:'landmark'});
+ await run('business',live,'Tesco Extra','GB',bolton,r=>{
+  check(r.fulfilled===true,'business search is fulfilled',`fulfilled=${r.fulfilled}`);
+  check(r.results.length>0&&r.results.every(x=>x.placeType==='poi'&&x.countryCode==='GB'&&/tesco/i.test(nameOf(x))&&/extra/i.test(nameOf(x))),'business results are GB POIs named Tesco Extra (no streets)',summary(r));
+ },{intent:'place'});
+ await run('category',live,'restaurant','GB',bolton,r=>{
+  check(r.fulfilled===true,'category search is fulfilled',`fulfilled=${r.fulfilled}`);
+  check(r.results.length>0&&r.results.every(x=>x.placeType==='poi'&&x.countryCode==='GB'&&(x.categories||[]).some(c=>/restaurant|food|cuisine|takeaway/i.test(c))),'category results are GB POIs with restaurant category data (no "Restaurant Terrace")',summary(r));
+  check(r.results.every(x=>km(bolton,x)<=10),'category results lie inside the 10 km radius',r.results.map(x=>km(bolton,x).toFixed(1)+'km').join(' '));
+ },{intent:'category',radiusKm:10});
 
  // TomTom fallback with Mapbox unavailable (Mapbox is blocked locally, never called with a bad token).
  if(process.env.TOMTOM_API_KEY){
