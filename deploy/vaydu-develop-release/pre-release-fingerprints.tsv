@@ -1,0 +1,4 @@
+public.driver_cash_credit_status_v1f(p_driver_id uuid)	064ec2d40d9339a1b685571abaab9262
+public.enforce_job_payment_eligibility()	54905ee2c1c71638c176efed1569e27a
+public.enforce_ride_cash_credit_v1e()	28a630e2c5cfe42b859125b8f75cfd5e
+public.reserve_cash_job_credit_v1e(p_job_id uuid, p_driver_id uuid)	94ca1388576d2028e990d662def53498

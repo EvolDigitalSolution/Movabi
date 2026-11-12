@@ -1,0 +1,6 @@
+# Byte-exact schema snapshot of develop (function bodies contain CR bytes); never convert line endings.
+supabase/baseline/develop_live_public_schema_*.sql -text
+# Release SQL carries develop's exact function bodies (CR bytes included) and is checksummed: keep bytes.
+deploy/vaydu-develop-release/*.sql -text
+deploy/vaydu-develop-release/*.sha256 -text
+deploy/vaydu-develop-release/*.tsv -text

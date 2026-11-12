@@ -36,7 +36,16 @@ const network = `${dbName}-net`;
 const authName = `${dbName}-auth`;
 const restName = `${dbName}-rest`;
 const testDb = 'movabi_batch2a_test';
-const schemaFile = join(process.cwd(), 'supabase', 'baseline', 'deployed_public_schema.sql');
+// Release rehearsal overrides (all optional; defaults unchanged): restore another committed schema
+// snapshot (e.g. develop's live schema), use develop's PostgreSQL image, and apply a release migration
+// list instead of the reviewed roadmap chain.
+const schemaFile = process.env['VAYDU_REHEARSAL_SCHEMA']
+  ? join(process.cwd(), process.env['VAYDU_REHEARSAL_SCHEMA'])
+  : join(process.cwd(), 'supabase', 'baseline', 'deployed_public_schema.sql');
+const pgImage = process.env['VAYDU_REHEARSAL_PG_IMAGE'] || 'postgres:16.15';
+const releaseChain = process.env['VAYDU_REHEARSAL_CHAIN']
+  ? readFileSync(join(process.cwd(), process.env['VAYDU_REHEARSAL_CHAIN']), 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'))
+  : null;
 const secret = 'synthetic-disposable-jwt-secret-minimum-40-characters';
 const jwt = (role: string) => {
   const h = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -77,7 +86,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
   try {
     expect(existsSync(schemaFile), 'committed schema snapshot required').toBe(true);
     docker('network', 'create', network);
-    docker('run', '-d', '--rm', '--name', dbName, '-e', 'POSTGRES_PASSWORD=isolated-test', '-e', `POSTGRES_DB=${testDb}`, 'postgres:16.15');
+    docker('run', '-d', '--rm', '--name', dbName, '-e', 'POSTGRES_PASSWORD=isolated-test', '-e', `POSTGRES_DB=${testDb}`, pgImage);
     docker('network', 'connect', network, dbName);
     for (let i = 0; i < 60; i++) {
       try {
@@ -124,6 +133,8 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       ), '')::uuid;
     $$;`);
 
+    // Supabase storage shim (buckets/objects) for snapshots whose migrations register storage objects.
+    if (process.env['VAYDU_REHEARSAL_SCHEMA']) sql(`CREATE SCHEMA IF NOT EXISTS storage; CREATE TABLE IF NOT EXISTS storage.buckets (id text PRIMARY KEY, name text NOT NULL, public boolean DEFAULT false, file_size_limit bigint, allowed_mime_types text[], owner uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()); CREATE TABLE IF NOT EXISTS storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text REFERENCES storage.buckets(id), name text, owner uuid, metadata jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), last_accessed_at timestamptz DEFAULT now()); ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;`);
     // Restore the committed, reviewed public schema snapshot (schema only).
     docker('cp', schemaFile, `${dbName}:/tmp/schema.sql`);
     docker('exec', dbName, 'sh', '-c',
@@ -132,6 +143,13 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     docker('cp', join(process.cwd(), 'supabase', 'baseline', 'candidate', '001_tenants.sql'), `${dbName}:/tmp/candidate-001.sql`);
     docker('exec', dbName, 'sh', '-c',
       `PGPASSWORD=isolated-test psql -U postgres -d ${testDb} -v ON_ERROR_STOP=1 -q -f /tmp/candidate-001.sql`);
+    // Reference rows already-applied migrations seeded on the snapshot's database (schema-only snapshots
+    // carry none): scripts/release/extract-reference-seed.cjs.
+    if (process.env['VAYDU_REHEARSAL_SEED']) {
+      docker('cp', join(process.cwd(), process.env['VAYDU_REHEARSAL_SEED']), `${dbName}:/tmp/reference-seed.sql`);
+      docker('exec', dbName, 'sh', '-c',
+        `PGPASSWORD=isolated-test psql -U postgres -d ${testDb} -v ON_ERROR_STOP=1 -q -f /tmp/reference-seed.sql`);
+    }
     // Saved countries config required by the market-payment-route validator.
     sql(`INSERT INTO public.system_configs(key,value) VALUES('countries','[{"code":"GB","currency":"GBP"},{"code":"NG","currency":"NGN"}]'::jsonb) ON CONFLICT DO NOTHING;`);
     // Synthetic pre-upgrade history: legacy service type (no FK) plus the Kora route.
@@ -144,7 +162,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     // Reviewed provider-neutral upgrade path: 539 (enum widen), 540 minus its
     // NG/NGN/card Flutterwave route insert (candidate overlay), 541-545, then the
     // Bike/cash candidates. Existing provider routes and settings are untouched.
-    for (const migration of [
+    for (const migration of releaseChain ?? [
       '20261101000000_driver_offer_events.sql',
       '20261102000000_driver_vehicle_inspection.sql',
       '20261103000000_completion_pin_policy.sql',
@@ -195,6 +213,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     ]) {
       const source = migration.startsWith('candidate/')
         ? join(process.cwd(), 'supabase', 'baseline', migration)
+        : migration.includes('/') ? join(process.cwd(), migration)
         : join(process.cwd(), 'supabase', 'migrations', migration);
       const target = migration.split('/').pop()!;
       docker('cp', source, `${dbName}:/tmp/${target}`);

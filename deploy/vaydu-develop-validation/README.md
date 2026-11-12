@@ -1,3 +1,9 @@
+> **SUPERSEDED (2026-11-12). Do not use this package.** It applies the whole roadmap chain to develop.
+> Reconciling against develop's live schema (`scripts/release/reconcile-live-schema.sh`, inventory
+> `20261112T203946Z`) showed develop already has 42 of those migrations; only 7 are pending. The
+> develop release is `deploy/vaydu-develop-release/` (one transaction, an exact rollback, and a
+> rehearsal on the live schema). This directory is kept as history only.
+
 # Vaydu develop validation bundle
 
 Candidate SHA: `35b2590` (frozen). Branch `v2.3`. No deployment, activation or

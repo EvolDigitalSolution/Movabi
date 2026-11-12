@@ -1,0 +1,1 @@
+deploy/vaydu-develop-release/release-up.sql

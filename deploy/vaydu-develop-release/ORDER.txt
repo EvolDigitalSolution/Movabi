@@ -1,0 +1,2 @@
+# Not used by the API/web rollout (--deploy-api-only / --deploy-web-only never migrate).
+# The database release is release-up.sql, applied by host-db-release.sh apply.
