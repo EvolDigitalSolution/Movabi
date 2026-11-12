@@ -80,6 +80,12 @@ States below are from repository records unless marked **this session**. `prior`
 | D8 | Develop cash-ride cohort: driver id, tenant id, accepted terms version (runbook step 4). |
 | D-AF | Africa payment providers: **explicitly deferred** (branch `africa/deferred-2026-11-01`); architecture retained. |
 
+## Open verification failures
+
+| Check | Result this session | Next step |
+|---|---|---|
+| Upgraded-clone rehearsal `src/testing/bike-authenticated-routes.integration.spec.ts` (deployed schema + roadmap migrations 20261101…20261264900000, real GoTrue/PostgREST, real admin/booking routers) | **Fails, reproducibly (2/2)** at line 708: the two *concurrent* `/api/admin/cash-jobs/:id/reassign` calls — the in-process `requireAdmin` → `supabaseAdmin.auth.getUser` gets `ECONNREFUSED` to the disposable stack and the client sees `ECONNRESET`. All earlier steps (migration chain, bike guards, feed visibility, suspension, single reassignments, hold ACL/RLS) passed. GoTrue container was still up with no errors. Records say this passed at `v2.3`. | Re-run the same spec on a `v2.3` checkout in this environment to separate an environment (Docker Desktop port proxy under concurrency) failure from a regression; if environmental, fix the harness without weakening the concurrency assertion. Also: `requireAdmin` lets an auth-transport rejection escape as an unhandled promise (crashing the request instead of a 5xx) — a real robustness defect to fix regardless. |
+
 ## Access / authorisation blockers
 
 - Shared develop: deploying `635a285` + migrations, and enabling GB/GBP, requires explicit authorisation **and** someone with host access to run the runbooks (agent has no SSH).
