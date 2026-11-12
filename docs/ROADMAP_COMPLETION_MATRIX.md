@@ -55,6 +55,8 @@ code those verifications exercise.
 | `cc3b909` | Area 6: cancellation fee quote (migration 20261268000000), route/preview/admin fixes, tests, rehearsal | No — **not** in 635a285 |
 | `87ed19b` | Matrix: area 6a evidence; 6b gap | No |
 | `46eafb8` | 6b: captured cancellation fee booked as a collection (receivable + driver compensation), route + webhook, retry fix, tests | No — **not** in 635a285 |
+| `29c4a75`, `6067f30` | 6b cash rides + matrix (conflict found) | No |
+| `fbab3fb` | Merge migration 20261269000000 (cash pilot + roadmap cash), restored disabled gate, rehearsal with both chains, fixture fix | No — **not** in 635a285 |
 | `54d182e` | Matrix: 6b evidence | No |
 | `29c4a75` | 6b cash rides: fee from the ride hold booked as a collection; migration conflict found | No — **not** in 635a285 |
 
@@ -143,7 +145,7 @@ Scope of each, so neither is read as the other:
 | 4b | Traffic-aware pricing + surge | ~ | ~ | prior | ? | ✗ | `maxSurge` default 1 (off). Needs D1. |
 | 4c | Approved map styling | ? | ? | ✗ | ? | ✗ | Needs D2. |
 | 5a | Driver cash wallet + verified top-ups | ✓ | ✓ | ✓ (row 0) | ~ (f6e8c00 lacks the reset/message fixes) | ~ GB sandbox scope | Africa providers deferred (D-AF). |
-| 5b | Cash-job accounting | ✓ | ✓ | ✓ book/activate/complete/cancel/no-show (real-PG); reassign incl. concurrency (rehearsal); early-stop prior | ✗ | ✗ | |
+| 5b | Cash-job accounting | ✓ | ✓ (both chains reconciled by `20261269000000`) | ✓ book/activate/complete/cancel/no-show (real-PG, 59/59 also on the merged schema); reassign incl. concurrency (rehearsal with both chains + merge); restored disabled-acquisition gate (merge test); early-stop prior | ✗ | ✗ | Courier cash off by default (D10). |
 | 6a | Cancellation fees + policy publish/enable + customer preview | ✓ | ✓ | ✓ at `cc3b909`: real-PG **22/22** + 6 lifecycle checks (`bash scripts/cancellation-fee/run-realdb-tests.sh`, `docs/roadmap-evidence/cancellation-fee-realdb.log`); route spec 11/11 with **mock** Stripe (`src/testing/cancellation-fee-routes.spec.ts`; 8 of 11 fail on the previous route); upgraded-clone rehearsal checks 1 + 2 through real admin/booking routes; `cancellation-fee-preview` 4/4; mobile + admin builds | ✗ | ✗ (no policy enabled anywhere; amounts are D6) | **Fixed (were broken, proven):** fee read from `jobs.cancellation_fee`, a column the deployed `jobs` lacks (preview always 404, no fee ever captured or recorded); a published version could never be enabled; admin policy list selected non-existent columns (always 500, hidden by the UI as an empty list); publish/list not tenant-scoped; card capture used `fee×100` regardless of currency; `accepted`/`heading_to_pickup`/`driver_en_route` could not be cancelled through the API. **Now:** `20261268000000` — `cancellation_fee_quote`: due only when the customer cancels, an enabled policy exists for the booking's tenant+market, the market currency equals the booking currency (else fail closed), and a driver accepted more than `grace_seconds` ago; amount `least(fee_minor, fee_cap_minor, fare)` in the booking currency's minor units (0/2/3 decimals proven); highest enabled version applies. The quote is frozen into `metadata.cancellation_fee_quote` in the cancelling transaction; later policy changes and retries never re-price it. `/cancel` acts only on the frozen quote: card capture via the Stripe currency rule, capped at `amount_capturable`, idempotency key `vaydu-cancel-fee:<job>`; a receivable (frozen version) when nothing can be captured or there is no PaymentIntent; one receivable on retry; driver/admin cancellations never create customer debt. Customer sees the same server quote in the cancel confirmation. Admin: audited enable/disable with confirmation, tenant-scoped publish/list/enable. Rollback restores the `20261267` function, keeps frozen history; the API then charges nothing. **Interpretation recorded (from the recorded design, not a new value):** the grace period runs from the driver's acceptance (`jobs.accepted_at`). **Open:** `exempt_reasons` are not applied (matching the customer's free text would let anyone avoid the fee; needs structured reasons); `/policies/audit` lists all tenants' policy audit entries; no browser test of the cancel confirmation or the admin enable control yet. |
 | 6b | Driver compensation 80% of collected | ✓ | ✓ card bookings and cash-ride holds (code); cash-ride DB path blocked by the migration conflict below | ✓ card at `46eafb8`; cash at `29c4a75`: rehearsal checks 1 + 2 book a fee from a captured cash-ride HOLD over real PostgREST/PostgreSQL (hold table only, as a documented stand-in — see the conflict below): only the hold intent counts, merchant taken from the hold row (never the caller), 320/80 split, replay converges; route spec +3 cash cases and webhook spec +2 cash cases (**mock** Stripe), `cash-ride-booking` 25/25 incl. read-only `capturedFeeIntent`. Earlier card evidence at `46eafb8`: upgraded-clone rehearsal (real service code over real PostgREST/PostgreSQL, **mock** captured PaymentIntent object) checks 1 + 2; route spec 15/15 and webhook spec 6/6 with **mock** Stripe; existing debt-repayment webhook spec 7/7; `stripe-ledger-inverse` 2/2; 179/179 in the affected set; earlier PG 14 + webhook 7 for the settlement RPCs (prior) | ✗ | ✗ | Approved 80/20, on collection. **Linked (2026-11-12):** a cancellation fee captured from the booking's own authorisation is now booked as a collection. `server/services/cancellation-fee-collection.ts`: receivable (idempotent per job + reason, frozen policy version, amount actually collected, converted back from Stripe units exactly — never rounded) → existing `settle_cancellation_compensation` (frozen version, deduped on provider + merchant + environment + PaymentIntent id). Called by `/cancel` right after capture and by the Stripe webhook for the same PaymentIntent (storage failure → 500, Stripe re-delivers), so a crash between capture and settlement converges exactly once. **Proven on real PG:** policy disabled before collection → frozen version still applies; receivable paid 400 → driver 320 / platform 80, earnings row `cancellation_compensation` 3.2000/0.8000; replay → `already_settled`, one event, one receivable; another PaymentIntent → not applicable; more than the fee (charged before cancelling) → nothing booked; a confirmed full refund reverses the compensation to 0 (existing reversal authority, which finds the receivable by this PaymentIntent). **Fixed in passing:** a retried cancel after the fee was captured used to mark the booking `requires_refund`; it now settles idempotently and stays `paid` (an earlier full charge still goes to refund; an unreadable state goes to `requires_review`). The webhook never re-activates a cancelled booking. A currency with no configured Stripe route (e.g. KWD) is refused, so the card path fails closed. **Cash rides (added):** when the hold covers the whole frozen fee, `/cancel` captures it once and books it through the same service against the HOLD intent (`capturedFeeIntent`, read-only, provider-verified) under the hold row's merchant; the webhook resolves hold intents by `vaydu_cash_fee_hold` and settles the same event. No-show fees from the hold were already compensated by the no-show path. **Rare case kept explicit:** if the fee now exceeds the hold disclosed at booking (policy raised after booking), the remainder stays the customer's debt as designed, the hold part is captured but NOT auto-compensated (one receivable per job+reason cannot be both paid and open), and the booking goes to `requires_review`. **Open:** that partial-cover compensation needs a partial-collection receivable model; no real Stripe sandbox capture observed by the agent. |
 | 6c | Customer debt + repayment | ✓ | ✓ | ✓ authenticated `/debts` returns a seeded receivable on the upgraded clone (both checks); repayment prior | ✗ | ✗ | Real Stripe repayment return unverified; overdue terms D6. |
@@ -166,6 +168,7 @@ Scope of each, so neither is read as the other:
 | D6 | Per market+currency money values: promo cap + min fare, referral caps + min fare, funded campaign budgets, overdue-debt terms. |
 | D7 | Driver bonus rules and amounts. |
 | D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
+| D10 | Courier cash: should delivery/errand jobs paid in cash (cash credit only, **no card hold**, roadmap design) be allowed in a cash-pilot market, or stay blocked as the cash-ride plan implies (Rides only, with a card hold)? Implemented as a per-market `courier_enabled` switch, **off by default**; enabling a market for D8 enables Rides only. |
 | ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff after acceptance counts as driver-initiated — confirmed by the user ("Yes, count handoffs"). |
 | D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
 
@@ -174,12 +177,30 @@ customer referral 5% (90-day credit, ≤5/month), driver referral 5% × 20 jobs/
 7-day review), debt threshold 50% of market minimum fare, compensation 80/20 on collection, cash-ride
 fee hold / immediate-only / fixed-fare decisions (`CASH-BOOKING-PLAN.md`).
 
-## Pre-existing test failures (not caused by this work)
+## Full unit/route suite vs baseline (2026-11-12)
 
-Fail identically at the committed baseline with the working changes stashed (2026-11-12): 5 in
-`src/testing/driver-settlement-remediation.spec.ts` (UK payout scope, earnings label, acquisition
-payout eligibility ×3) and 1 in `src/testing/payment-agreement-authority.spec.ts` (server amount
-source). They need investigation against their own baseline before go-live; not weakened.
+`npx vitest run src/testing --exclude "**/*.integration.spec.ts"` at the deployment source `635a285`
+(clean checkout) and at `fbab3fb`, failing tests compared by exact name
+(`docs/roadmap-evidence/full-suite-failures-635a285.txt`, `...-current.txt`):
+
+| | Failing tests | Failing files | Passing tests |
+|---|---|---|---|
+| `635a285` (baseline) | 108 distinct (110 reported) | 29 | 3,293 |
+| `fbab3fb` (now) | 109 distinct (111 reported) | 29 | 3,329 |
+
+- **New since baseline: exactly one** — `manifest-drift` "packaged ORDER.txt matches the executed
+  list". `deploy/vaydu-develop-validation/` is the **frozen** `35b2590` validation bundle (archive
+  already built); the tested chain has since grown (20261267/68, cash chain, merge). Its checksum test
+  already failed at baseline. Not updated on purpose: re-cutting the bundle is release packaging, which
+  is not authorised. It must be regenerated when a new validation bundle is authorised.
+- **Fixed by this work:** none of the baseline failures (none targeted).
+- **Pre-existing (108, unchanged):** spread over 28 files — e.g. place search (business/heigit/
+  local-shop/named-landmark/geofence: 52), deployed wallet payout regression (20), driver onboarding/
+  eligibility/requirements (~15), settlement remediation (5), wallet booking lifecycle (4), and single
+  failures in cash-credit 1E/1G/placement, inspection route, market pricing, payment agreement
+  authority, protected quote audit, wallet metadata/overlay. **These are go-live blockers in their own
+  right** (mandatory areas include matching, onboarding, wallet and market readiness); each needs
+  triage against its own history — none was weakened here.
 
 ## Dependencies
 
@@ -194,6 +215,22 @@ source). They need investigation against their own baseline before go-live; not 
   roadmap chain. The authorised 635a285 develop step is consistent on its own (its prechecks pin the
   deployed fingerprints), but no later rollout may apply both chains until the function bodies are
   merged, regenerated and re-proven (cash real-PG suite + upgraded-clone rehearsal with both chains).
+  **RESOLVED at `fbab3fb` by `20261269000000_merge_cash_pilot_with_roadmap_cash`** (generated by
+  `scripts/migration-merge/generate-cash-roadmap-merge.cjs` from the verbatim final bodies with asserted
+  single edits; `src/testing/cash-roadmap-merge-migration.spec.ts` pins output to generator). It runs
+  after both chains in either order. Evidence (`bash scripts/migration-merge/verify-merge.sh`,
+  `docs/roadmap-evidence/merge-verify.log`): roadmap→cash→merge and cash→roadmap→merge give the
+  **identical** public schema; the conflict was real before the merge; merge behaviour 21/21 in each
+  order; the four existing cash-ride suites 59/59 on the merged schema; re-apply idempotent; rollback
+  restores the roadmap-final bodies exactly. The upgraded-clone rehearsal now applies the roadmap chain,
+  the cash chain and the merge, and passes in both checks (current source and the 635a285 package).
+  **Also found and fixed:** inside the roadmap chain, `20261255700000` dropped the disabled-acquisition
+  gate that `20261255600000` added (a cash job could acquire a driver with no credit reservation while
+  disabled); the merge restores it, market-scoped (INSERT with a driver where cash is off → CE001).
+  **Merged rule:** rides follow the cash-ride plan (enabled market + authorised card hold); courier
+  (delivery/errand) cash keeps the roadmap behaviour but only where `courier_enabled` is set (off by
+  default) — decision **D10**. **Release order:** any release carrying the roadmap chain onto a database
+  that has the cash chain must apply `20261269000000` last, before any API that relies on either.
 - Develop deployment of 635a285: authorised, pending host execution (agent has no SSH).
 - Roadmap schemas on develop (areas 1, 3, 6, 7): they apply cleanly to the deployed schema in the
   rehearsal, but a reviewed develop rollout for them has **not** been prepared or authorised.
