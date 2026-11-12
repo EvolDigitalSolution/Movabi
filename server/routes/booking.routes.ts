@@ -25,6 +25,7 @@ import { cashRideBooking } from '../services/payments/cash-ride-booking.instance
 import { PaymentLayerError } from '../services/payments/payment-contracts';
 import { FareSplitService } from '../services/fare-split.service';
 import { stripeApiAmountFromLedger } from '../services/payments/stripe-currency-amounts';
+import { normaliseCancellationFeeQuote, settleCapturedCancellationFee, type CancellationFeeQuote } from '../services/cancellation-fee-collection';
 import { dispatchService } from '../services/dispatch.service';
 
 const router = Router();
@@ -449,27 +450,7 @@ async function isAdminUser(userId: string | null): Promise<boolean> {
  * Batch 2C Phase B.1 — true when the authenticated user is a participant in the
  * job: its customer, its assigned driver, or the driver who confirmed it.
  */
-/** Cancellation fee quote from cancellation_fee_quote (20261268000000). */
-export interface CancellationFeeQuote {
-    due: boolean; reasonCode: string; feeMinor: number; currency: string; exponent: number | null;
-    policyVersion: number | null; graceSeconds: number | null; graceUntil: string | null; driverAssigned: boolean;
-}
-/** Normalises a quote; anything malformed means "no fee" (fail closed — a customer is never charged on doubt). */
-export function normaliseCancellationFeeQuote(raw: any): CancellationFeeQuote {
-    const fee = Number(raw?.feeMinor);
-    const exp = raw?.exponent === null || raw?.exponent === undefined ? null : Number(raw.exponent);
-    const valid = raw && typeof raw === 'object' && Number.isSafeInteger(fee) && fee >= 0
-        && (exp === null || (Number.isInteger(exp) && exp >= 0 && exp <= 4)) && typeof raw.currency === 'string';
-    const due = !!(valid && raw.due === true && fee > 0 && exp !== null);
-    return {
-        due, reasonCode: valid ? String(raw.reasonCode || 'unknown') : 'quote_unavailable', feeMinor: due ? fee : 0,
-        currency: valid ? String(raw.currency).toUpperCase() : '', exponent: valid ? exp : null,
-        policyVersion: valid && raw.policyVersion != null ? Number(raw.policyVersion) : null,
-        graceSeconds: valid && raw.graceSeconds != null ? Number(raw.graceSeconds) : null,
-        graceUntil: valid && raw.graceUntil ? String(raw.graceUntil) : null,
-        driverAssigned: !!(valid && raw.driverAssigned),
-    };
-}
+export { normaliseCancellationFeeQuote, type CancellationFeeQuote };
 /** The quote frozen with the cancellation (metadata.cancellation_fee_quote). */
 async function frozenCancellationFeeQuote(jobId: string): Promise<CancellationFeeQuote> {
     const { data, error } = await supabaseAdmin.from('jobs').select('metadata').eq('id', jobId).maybeSingle();
@@ -1591,9 +1572,23 @@ router.post('/cancel', async (req: Request, res: Response) => {
                 const pi = await stripe.paymentIntents.retrieve(job.payment_intent_id);
 
                 if (pi.status === 'succeeded') {
+                    // Either this route already captured the frozen fee (a retry: settle idempotently, keep
+                    // it), or the booking was charged before cancelling (more than the fee: needs a refund).
+                    let nextPaymentStatus = 'requires_refund';
+                    if (quotedFeeMinor > 0) {
+                        try {
+                            const outcome = await settleCapturedCancellationFee(supabaseAdmin, jobId, pi);
+                            if (outcome.status !== 'not_applicable') nextPaymentStatus = 'paid';
+                        } catch (collectionError) {
+                            // Storage failure: cannot tell a collected fee from an earlier charge — review it
+                            // (the webhook still converges the settlement if it is the fee).
+                            console.error('[BookingRoutes] cancellation fee settlement check failed:', (collectionError as Error)?.message);
+                            nextPaymentStatus = 'requires_review';
+                        }
+                    }
                     await supabaseAdmin
                         .from('jobs')
-                        .update({ payment_status: 'requires_refund' })
+                        .update({ payment_status: nextPaymentStatus })
                         .eq('id', jobId);
                 } else if (pi.status === 'requires_capture') {
                     // Frozen quote (policy, currency, grace, assigned driver already decided in the DB).
@@ -1603,7 +1598,7 @@ router.post('/cancel', async (req: Request, res: Response) => {
                         : 0;
 
                     if (amountToCapture > 0) {
-                        await stripe.paymentIntents.capture(job.payment_intent_id, {
+                        const captured = await stripe.paymentIntents.capture(job.payment_intent_id, {
                             amount_to_capture: amountToCapture
                         }, { idempotencyKey: `vaydu-cancel-fee:${jobId}` });
 
@@ -1611,6 +1606,14 @@ router.post('/cancel', async (req: Request, res: Response) => {
                             .from('jobs')
                             .update({ payment_status: 'paid' })
                             .eq('id', jobId);
+                        // Book the provider-confirmed collection: receivable + driver compensation (80/20 under
+                        // the frozen policy). The Stripe webhook settles the same event if this fails here.
+                        try {
+                            const outcome = await settleCapturedCancellationFee(supabaseAdmin, jobId, captured);
+                            if (outcome.status === 'review_required') console.warn('[BookingRoutes] captured cancellation fee routed to review:', jobId);
+                        } catch (collectionError) {
+                            console.error('[BookingRoutes] captured cancellation fee not yet settled (webhook will retry):', (collectionError as Error)?.message);
+                        }
                     } else {
                         await stripe.paymentIntents.cancel(job.payment_intent_id);
 

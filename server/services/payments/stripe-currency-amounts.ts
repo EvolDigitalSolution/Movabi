@@ -24,3 +24,17 @@ export function stripeApiAmountFromLedger(minor:number,currency:string,ledgerExp
  const decimal=ledgerExponent?digits.slice(0,-ledgerExponent)+'.'+digits.slice(-ledgerExponent):digits;
  return stripeApiAmount(decimal,currency,operation);
 }
+/** Inverse of stripeApiAmountFromLedger: Stripe API units back to ledger minor units. Exact or throws
+ *  (never rounds money); used to book a provider-confirmed collected amount into the ledger. */
+export function ledgerMinorFromStripeApi(apiAmount:number,currency:string,ledgerExponent:number,operation:StripeMoneyOperation='charge'):number{
+ const rule=stripeAmountRule(currency,operation);
+ if(!Number.isSafeInteger(apiAmount)||apiAmount<0||!Number.isInteger(ledgerExponent)||ledgerExponent<0||ledgerExponent>3)throw Error('INVALID_STRIPE_AMOUNT');
+ const scaled=BigInt(apiAmount)*10n**BigInt(ledgerExponent);
+ const divisor=10n**BigInt(rule.apiExponent);
+ if(scaled%divisor!==0n)throw Error('STRIPE_AMOUNT_PRECISION_REQUIRES_REVIEW');
+ const minor=scaled/divisor;
+ if(minor>BigInt(Number.MAX_SAFE_INTEGER))throw Error('UNSAFE_STRIPE_AMOUNT');
+ // Round-trip guard: the ledger amount must map back to exactly the API amount.
+ if(stripeApiAmountFromLedger(Number(minor),currency,ledgerExponent,operation)!==apiAmount)throw Error('STRIPE_AMOUNT_PRECISION_REQUIRES_REVIEW');
+ return Number(minor);
+}

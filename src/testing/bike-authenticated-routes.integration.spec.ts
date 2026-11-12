@@ -932,6 +932,41 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: false })).status, 'admin disables the version').toBe(200);
     expect((await preview(customer.access_token, feeDriver)).body.reasonCode, 'no enabled version: fees off').toBe('no_active_policy');
 
+    // Area 6b: a fee captured from the booking's own authorisation -> receivable + driver compensation.
+    // Real service code over real PostgREST/PostgreSQL; the PaymentIntent object is a MOCK of what Stripe
+    // returns after capture (no provider call here).
+    const { settleCapturedCancellationFee } = await import('../../server/services/cancellation-fee-collection');
+    const cardFeeJob = (id: string, pi: string) => sql(`SET session_replication_role = replica; INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,currency_code,driver_id,accepted_driver_id,status,payment_method,payment_status,payment_intent_id,pickup_address,dropoff_address,scheduled_time,price,total_price,accepted_at)
+      VALUES('${id}','${tenantId}','${customer.user.id}','GB','GBP','${d9Driver.user.id}','${d9Driver.user.id}','assigned','card','authorized','${pi}','Fee A','Fee B',now(),12.00,12.00,now()-interval '10 minutes');`);
+    const capturedPi = (id: string, received: number) => ({ id, status: 'succeeded', currency: 'gbp', amount_received: received, livemode: false });
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: true })).status).toBe(200);
+    const comp1 = 'fee00000-0000-4000-8000-0000000000b1', comp2 = 'fee00000-0000-4000-8000-0000000000b2';
+    cardFeeJob(comp1, 'pi_rehearsal_fee_1');
+    expect(sql(`SELECT public.cancel_job_with_actor('${comp1}','changed plans','${customer.user.id}','customer');`)).toBe('t');
+    // Disable before collecting: compensation must still use the FROZEN version.
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: false })).status).toBe(200);
+    const settled = await settleCapturedCancellationFee(client, comp1, capturedPi('pi_rehearsal_fee_1', 400));
+    expect(settled, 'captured fee booked and settled').toMatchObject({ status: 'settled', collectedMinor: 400 });
+    expect(sql(`SELECT status||'|'||collected_minor||'|'||compensation_minor||'|'||platform_share_minor||'|'||payment_reference||'|'||policy_version||'|'||driver_id FROM public.customer_receivables WHERE job_id='${comp1}' AND reason='cancellation_fee';`),
+      'receivable paid: 400 collected, 80% (320) to the driver, 20% (80) platform, frozen version').toBe(`paid|400|320|80|pi_rehearsal_fee_1|${publishedBody.policy.version}|${d9Driver.user.id}`);
+    expect(sql(`SELECT driver_id||'|'||amount||'|'||platform_fee||'|'||gross_amount||'|'||settlement_purpose||'|'||status FROM public.driver_earnings WHERE job_id='${comp1}';`),
+      'driver earnings row for the compensation').toBe(`${d9Driver.user.id}|3.2000|0.8000|4.0000|cancellation_compensation|pending`); // numeric(18,4) since 20261264200000
+    expect(await settleCapturedCancellationFee(client, comp1, capturedPi('pi_rehearsal_fee_1', 400)), 'webhook/retry replay converges').toMatchObject({ status: 'already_settled' });
+    expect(sql(`SELECT count(*)::text FROM public.cancellation_compensation_events e JOIN public.customer_receivables r ON r.id=e.receivable_id WHERE r.job_id='${comp1}';`), 'one collection event').toBe('1');
+    expect(sql(`SELECT count(*)::text FROM public.customer_receivables WHERE job_id='${comp1}';`), 'one receivable').toBe('1');
+    expect(await settleCapturedCancellationFee(client, comp1, capturedPi('pi_someone_else', 400)), 'another intent is not this fee').toMatchObject({ status: 'not_applicable', reason: 'other_payment_intent' });
+    // Charged before cancelling (more than the fee): a refund case, nothing booked as a fee.
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: true })).status).toBe(200);
+    cardFeeJob(comp2, 'pi_rehearsal_fee_2');
+    expect(sql(`SELECT public.cancel_job_with_actor('${comp2}','changed plans','${customer.user.id}','customer');`)).toBe('t');
+    expect(await settleCapturedCancellationFee(client, comp2, capturedPi('pi_rehearsal_fee_2', 1200)), 'more than the fee was collected').toMatchObject({ status: 'not_applicable', reason: 'exceeds_fee' });
+    expect(sql(`SELECT count(*)::text FROM public.customer_receivables WHERE job_id='${comp2}';`), 'nothing booked as a fee').toBe('0');
+    // A confirmed refund of the captured fee reverses the compensation (existing reversal authority).
+    expect(sql(`SELECT public.reverse_cancellation_compensation((SELECT id FROM public.customer_receivables WHERE job_id='${comp1}' AND reason='cancellation_fee'),400,'re_rehearsal_1','stripe','stripe-platform','test')->>'status';`)).toBeTruthy();
+    expect(sql(`SELECT refunded_minor||'|'||compensation_minor||'|'||platform_share_minor FROM public.customer_receivables WHERE job_id='${comp1}' AND reason='cancellation_fee';`),
+      'full refund reverses the compensation').toBe('400|0|0');
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: false })).status).toBe(200);
+
     // Extracted-API runtime (authenticated) against live fixture GoTrue + PostgREST.
     // Separate API process from the CURRENT source by default. Set VAYDU_EXTRACTED_API_ROOT to an
     // extracted release bundle (with node_modules) to run that archive instead. (This previously

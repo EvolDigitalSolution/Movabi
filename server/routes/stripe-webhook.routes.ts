@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { IssuingService } from '../services/issuing.service';
 import { PaymentAuthorityService } from '../services/payment-authority.service';
+import { settleCapturedCancellationFee, PLATFORM_MERCHANT } from '../services/cancellation-fee-collection';
 
 const router = Router();
 
@@ -337,6 +338,27 @@ router.post('/', async (req: Request, res: Response) => {
             console.warn('[Webhook] debt_repayment compensation routed to review (no frozen policy version):', receivableId);
           }
           return res.json({ received: true });
+        }
+        // Cancellation fee captured from a cancelled booking's own authorisation: book the collection
+        // (receivable + driver compensation) idempotently — the same event /cancel settles, so a crash
+        // there still converges. Facts that make it "not a fee" fall through to the normal path (which
+        // never re-activates a cancelled booking); a storage failure answers 500 so Stripe re-delivers.
+        const feeJobId = String(paymentIntent.metadata?.jobId || '');
+        if (feeJobId && paymentIntent.metadata?.purpose !== 'shopping_budget_reauthorization') {
+          try {
+            const outcome = await settleCapturedCancellationFee(supabase, feeJobId, paymentIntent, String((event as any).account || PLATFORM_MERCHANT));
+            if (outcome.status !== 'not_applicable') {
+              const { error: feeEventErr } = await supabase.from('stripe_events').upsert(
+                { id: event.id, type: event.type, status: 'processed', created_at: new Date().toISOString(), processed_at: new Date().toISOString() },
+                { onConflict: 'id' });
+              if (feeEventErr) console.warn('[Webhook] stripe_events observability write failed:', feeEventErr.message);
+              if (outcome.status === 'review_required') console.warn('[Webhook] cancellation fee compensation routed to review:', feeJobId);
+              return res.json({ received: true });
+            }
+          } catch (feeError) {
+            console.error('[Webhook] cancellation fee settlement failed:', (feeError as Error)?.message);
+            return res.status(500).json({ received: false, error: 'cancellation fee settlement failed; retry' });
+          }
         }
         const jobId = await verifyJobPaymentIntent(event);
         if (jobId) {

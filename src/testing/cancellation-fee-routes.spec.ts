@@ -17,12 +17,16 @@ let pi: Record<string, any> = {};
 let caller = CUSTOMER;
 const rpcCalls: Array<{ fn: string; args: Record<string, any> }> = [];
 const stripeCalls: Array<{ op: string; args: any[] }> = [];
+const jobUpdates: Array<Record<string, any>> = [];
+let settleResult: any = { status: 'settled' };
+let settleError: any = null;
 
 // Any query chain resolves to the job row (single/maybeSingle/await).
 const chain = (): any => new Proxy({}, {
     get(_t, prop) {
         if (prop === 'then') return (res: any) => Promise.resolve({ data: jobRow, error: null }).then(res);
         if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: jobRow, error: null });
+        if (prop === 'update') return (payload: Record<string, any>) => { jobUpdates.push(payload); return chain(); };
         return () => chain();
     }
 });
@@ -36,7 +40,9 @@ vi.mock('../../server/services/supabase.service', () => ({
             : chain(),
         rpc: async (fn: string, args: Record<string, any>) => {
             rpcCalls.push({ fn, args });
-            if (fn === 'cancel_job_with_actor') return { data: true, error: null };
+            if (fn === 'cancel_job_with_actor') { jobRow = { ...jobRow, status: 'cancelled' }; return { data: true, error: null }; }
+            if (fn === 'record_customer_receivable') return { data: { id: 'rec-1' }, error: null };
+            if (fn === 'settle_cancellation_compensation') return { data: settleResult, error: settleError };
             if (fn === 'cancellation_fee_quote') return quoteRpc;
             return { data: null, error: null };
         }
@@ -47,7 +53,7 @@ vi.mock('../../server/services/stripe.service', () => ({
     stripe: {
         paymentIntents: {
             retrieve: async (...args: any[]) => { stripeCalls.push({ op: 'retrieve', args }); return pi; },
-            capture: async (...args: any[]) => { stripeCalls.push({ op: 'capture', args }); return { ...pi, status: 'succeeded' }; },
+            capture: async (...args: any[]) => { stripeCalls.push({ op: 'capture', args }); return { ...pi, status: 'succeeded', amount_received: args[1]?.amount_to_capture, livemode: false }; },
             cancel: async (...args: any[]) => { stripeCalls.push({ op: 'cancel', args }); return { ...pi, status: 'canceled' }; }
         }
     }
@@ -80,7 +86,7 @@ const cardJob = (frozen: Record<string, unknown> | undefined, over: Record<strin
 const receivableCall = () => rpcCalls.find(c => c.fn === 'record_customer_receivable');
 
 describe('cancellation fee on the real booking router', () => {
-    beforeEach(() => { rpcCalls.length = 0; stripeCalls.length = 0; caller = CUSTOMER; quoteRpc = { data: null, error: null }; });
+    beforeEach(() => { rpcCalls.length = 0; stripeCalls.length = 0; jobUpdates.length = 0; caller = CUSTOMER; quoteRpc = { data: null, error: null }; settleResult = { status: 'settled' }; settleError = null; });
 
     it('card: captures exactly the frozen fee (GBP 400), with an idempotency key, never re-quoting', async () => {
         jobRow = cardJob(quote());
@@ -92,7 +98,11 @@ describe('cancellation fee on the real booking router', () => {
         const capture = stripeCalls.find(c => c.op === 'capture');
         expect(capture?.args[1]).toEqual({ amount_to_capture: 400 });
         expect(capture?.args[2]).toEqual({ idempotencyKey: `vaydu-cancel-fee:${JOB}` });
-        expect(receivableCall(), 'captured fees are not also recorded as debt').toBeUndefined();
+        // 6b: the captured fee is booked as a collected receivable and settled (driver compensation).
+        expect(receivableCall()?.args).toMatchObject({ p_job: JOB, p_amount: 400, p_reason: 'cancellation_fee', p_policy_version: 3, p_currency: 'GBP' });
+        expect(rpcCalls.find(c => c.fn === 'settle_cancellation_compensation')?.args).toEqual({ p_receivable: 'rec-1', p_collected_minor: 400,
+            p_payment_reference: 'pi_card', p_provider: 'stripe', p_merchant_account_ref: 'stripe-platform', p_environment: 'test' });
+        expect(jobUpdates.at(-1)).toEqual({ payment_status: 'paid' });
     });
 
     it('card: JPY (0 decimals) captures 500, not 50000', async () => {
@@ -180,5 +190,41 @@ describe('cancellation fee on the real booking router', () => {
         expect(normaliseCancellationFeeQuote(quote({ exponent: null })).due).toBe(false);
         expect(normaliseCancellationFeeQuote(quote({ feeMinor: -1 })).feeMinor).toBe(0);
         expect(normaliseCancellationFeeQuote(null)).toMatchObject({ due: false, reasonCode: 'quote_unavailable', feeMinor: 0 });
+    });
+
+    it('6b retry: an already-captured fee settles idempotently and stays paid (never flagged for refund)', async () => {
+        jobRow = cardJob(quote());
+        pi = { id: 'pi_card', status: 'succeeded', amount_received: 400, currency: 'gbp', livemode: false };
+        settleResult = { status: 'already_settled' };
+        await call('/cancel', 'POST', { jobId: JOB, reason: 'retry' });
+        expect(stripeCalls.some(c => c.op === 'capture')).toBe(false);
+        expect(rpcCalls.find(c => c.fn === 'settle_cancellation_compensation')?.args.p_payment_reference).toBe('pi_card');
+        expect(jobUpdates.at(-1)).toEqual({ payment_status: 'paid' });
+    });
+
+    it('6b: charged before cancelling (more than the fee) is a refund case, not a fee', async () => {
+        jobRow = cardJob(quote());
+        pi = { id: 'pi_card', status: 'succeeded', amount_received: 1200, currency: 'gbp', livemode: false };
+        await call('/cancel', 'POST', { jobId: JOB, reason: 'x' });
+        expect(rpcCalls.some(c => c.fn === 'settle_cancellation_compensation')).toBe(false);
+        expect(jobUpdates.at(-1)).toEqual({ payment_status: 'requires_refund' });
+    });
+
+    it('6b: a settlement storage failure after capture keeps the capture, logs, and leaves it to the webhook', async () => {
+        jobRow = cardJob(quote());
+        pi = { id: 'pi_card', status: 'requires_capture', amount_capturable: 1200, currency: 'gbp' };
+        settleError = { message: 'connection reset' };
+        const r = await call('/cancel', 'POST', { jobId: JOB, reason: 'x' });
+        expect(r.status).toBe(200);
+        expect(stripeCalls.filter(c => c.op === 'capture')).toHaveLength(1);
+        expect(jobUpdates.some(u => u.payment_status === 'paid')).toBe(true);
+    });
+
+    it('6b: on a retry whose settlement check cannot reach storage, the booking goes to review (neither paid nor refund)', async () => {
+        jobRow = cardJob(quote());
+        pi = { id: 'pi_card', status: 'succeeded', amount_received: 400, currency: 'gbp', livemode: false };
+        settleError = { message: 'connection reset' };
+        await call('/cancel', 'POST', { jobId: JOB, reason: 'retry' });
+        expect(jobUpdates.at(-1)).toEqual({ payment_status: 'requires_review' });
     });
 });
