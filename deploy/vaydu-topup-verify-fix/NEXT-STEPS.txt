@@ -1,0 +1,95 @@
+SUPERSEDED for steps 1-4 by DEVELOP-DEPLOY-635a285.md (authorised 2026-11-12; adds backup, flag and cash-job prechecks). Step 5 below still needs separate approval.
+
+Release 635a285 (topup-linux) - driver top-up fixes + market-scoped cash-ride pilot + customer cash rides
+NOT YET RUN. Nothing below has been executed on the host. Run only when approved.
+
+Currently deployed on develop: API movabi-api:release-f6e8c00-topup, web movabi-web:release-f6e8c00-topup-linux.
+
+What this release contains (branch release/topup-3ds-on-2385da7, worktree C:\Users\fedri\source\repos\Movabi-topup-on-2385da7):
+  - Driver top-up: provider-bound resume; Stripe card form that shows Stripe's own result (no silent
+    Continue-payment loop); panel closes and resets after confirmed credit; cash-ride vs top-up
+    messages from their own server decisions; labels "Available cash-ride credit" / "Reserved for cash rides".
+  - Cash rides (pilot markets only): market-scoped pilot switch, card fee hold, activation, cash
+    completion, no-show / cancellation fees from the hold, customer cash option, driver cash views.
+  - Database: 4 migrations (applied separately, see section 2). They enable no market.
+  - Cash booking stays OFF unless VAYDU_CASH_RIDE_BOOKING=true on the API AND the market is enabled.
+
+Package:  release\vaydu-develop-635a285-topup-linux.tar.gz
+SHA-256:  cbd60346fbc52db7ac99fd56c2f8226c7249185dfa204456cbb8862a7f8e14a6
+Web built on Linux (node:22-alpine, clean npm ci) from the committed sources of 635a285.
+Host scripts are unchanged (already on the host).
+
+Release order: 1) predeploy (read-only)  2) migrations 1-4  3) API  4) web  5) [separate decision] enable GB.
+The migrations are backward compatible with the running API/web (they only widen states and add objects),
+so applying them first is safe; the new API needs them for cash paths.
+
+--- 1) Upload (Windows PowerShell, one line) ---
+
+scp "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-635a285-topup-linux.tar.gz" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\release\vaydu-develop-635a285-topup-linux.tar.gz.sha256" edsadmin@87.106.64.25:~/
+
+--- 1b) Host: predeploy only (read-only toward running services) ---
+
+cd ~ && bash host-predeploy.sh vaydu-develop-635a285-topup-linux.tar.gz
+
+PRE=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1)
+echo "$PRE"
+echo "SOURCE_SHA: $(cat "$PRE/running-source-sha.txt")"
+cat "$PRE/api-changes.txt"
+cat "$PRE/web-changes.txt"
+
+Expected SOURCE_SHA: f6e8c00
+
+Expected api-changes.txt (running 253 / bundle 256 API files; identical to git diff f6e8c00..635a285 on API paths):
+server/routes/booking.routes.ts CHANGED
+server/services/dispatch.service.ts CHANGED
+server/services/logistics.service.ts CHANGED
+server/services/no-show.service.ts CHANGED
+server/services/payments/cash-ride-booking.instance.ts ADDED
+server/services/payments/cash-ride-booking.ts ADDED
+server/services/payments/driver-wallet-topup.ts CHANGED
+server/services/payments/stripe-driver-topup-sandbox.ts CHANGED
+src/app/shared/ui/driver-topup-stripe-card.component.ts ADDED
+src/app/shared/ui/driver-wallet-topup.component.ts CHANGED
+src/app/shared/utils/driver-cash-credit.ts CHANGED
+src/app/shared/utils/driver-topup-verify-outcome.ts CHANGED
+src/app/shared/utils/earnings-currency.ts CHANGED
+
+Expected web-changes.txt: 91 lines (44 ADDED, 45 REMOVED, 2 CHANGED); exact list in
+release\expected-web-changes-635a285.txt. Running 368 / bundle 367 web files. The web source changes
+since f6e8c00 are 11 files (booking request/tracking, driver dashboard/wallet/job details, PaymentService,
+top-up components and utils); because PaymentService and the top-up component are shared, esbuild
+re-splits the chunks that import them, so many chunk names and contents change.
+Any API path beyond the 13, or a different web list: STOP and review.
+
+--- 2) Database migrations (only after 1b passed) ---
+
+Follow deploy\vaydu-cash-ride-market-pilot\README.md exactly:
+  - "Develop runbook" steps 1-3 for migration 20261266000000 (precheck fingerprints, apply, verify).
+  - "Cash-ride booking migrations (2-4)": BEFORE fingerprints, apply 20261266100000, 20261266200000,
+    20261266300000 in order, AFTER fingerprints.
+  Do NOT run "step 4" (enable GB) here.
+
+--- 3) API and 4) web deployment ---
+
+Use the deployment section of this file's previous version (rollout-develop-52097ef.sh, API first,
+then web) with these values:
+  ARCHIVE=vaydu-develop-635a285-topup-linux.tar.gz
+  BUNDLE_DIR=vaydu-develop-635a285-topup-linux
+  EXPECTED_SOURCE_SHA=635a285
+  NEW_API_TAG=release-635a285-topup
+  NEW_WEB_TAG=release-635a285-topup-linux
+  CUR_WEB_TAG=release-f6e8c00-topup-linux        (web tag during the API step)
+  PRE=<the predeploy folder printed in 1b>        (rollback record)
+  previous.env must name movabi-api:release-f6e8c00-topup and movabi-web:release-f6e8c00-topup-linux.
+Leave VAYDU_CASH_RIDE_BOOKING unset for this deployment: card/wallet and driver top-up behaviour is
+then the only visible change. Cash rides need step 5.
+
+--- 5) Separate decision: enable cash rides for the GB develop cohort ---
+
+  a) README "Develop runbook" step 4 (GB/GBP market row, test-driver enrolment, global switch).
+  b) Add VAYDU_CASH_RIDE_BOOKING: "true" to the wallet override and recreate the API.
+  Disable: market row enabled=false and/or the flag off. Not verified in any non-GB market.
+
+--- Rollback ---
+  App: bash host-rollback.sh "$PRE" api|web|both (restores release-f6e8c00 images).
+  DB: README rollback sections, newest migration first; holds must be released first.

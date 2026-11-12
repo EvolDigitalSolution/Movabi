@@ -88,7 +88,7 @@ States below are from repository records unless marked **this session**. `prior`
 
 ## Access / authorisation blockers
 
-- Shared develop: deploying `635a285` + migrations, and enabling GB/GBP, requires explicit authorisation **and** someone with host access to run the runbooks (agent has no SSH).
+- Shared develop: deploying `635a285` + cash-ride migrations 1–4 with cash rides **off** was **authorised by the user on 2026-11-12**. Runbook: `deploy/vaydu-topup-verify-fix/DEVELOP-DEPLOY-635a285.md`. Waiting on someone with host access to run it (agent has no SSH). Enabling GB/GBP cash rides is **not** authorised yet and also needs D8.
 - Develop DB is missing the roadmap schemas (areas 1, 3, 6, 7): a reviewed migration chain against the current deployed schema is needed before those features can be verified on develop.
 
 ## Reproduce this session's evidence (release worktree)
