@@ -186,6 +186,12 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       '20261264900000_profiles_market_trigger_definer.sql',
       '20261267000000_driver_cancellation_attribution.sql',
       '20261268000000_cancellation_fee_quote.sql',
+      // Cash-ride chain (635a285) + the merge that reconciles it with the roadmap cash functions.
+      '20261266000000_driver_cash_credit_market_pilot.sql',
+      '20261266100000_cash_ride_booking_fee_hold.sql',
+      '20261266200000_cash_ride_activation.sql',
+      '20261266300000_cash_ride_completion.sql',
+      '20261269000000_merge_cash_pilot_with_roadmap_cash.sql',
     ]) {
       const source = migration.startsWith('candidate/')
         ? join(process.cwd(), 'supabase', 'baseline', migration)
@@ -615,6 +621,9 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
 
     // CASH-MATRIX: funded Bike courier reassignment, rollback and refusals.
     sql(`INSERT INTO public.driver_cash_credit_config_v1e(key,enabled) VALUES('ride_cash_credit',true) ON CONFLICT (key) DO UPDATE SET enabled=true;`);
+    // Merged rule (20261269000000): cash is market-scoped; courier (delivery/errand) cash also needs courier_enabled.
+    // This fixture exercises the roadmap courier-cash paths, so it enables both for GB (a test market, not a decision).
+    sql(`INSERT INTO public.driver_cash_credit_markets_v1e(country_code,currency_code,enabled,courier_enabled,note) VALUES('GB','GBP',true,true,'rehearsal fixture') ON CONFLICT (country_code,currency_code) DO UPDATE SET enabled=true, courier_enabled=true;`);
     const deliveryType = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
     sql(`INSERT INTO public.service_types(id,slug,name) VALUES('${deliveryType}','delivery','Delivery') ON CONFLICT DO NOTHING;`);
     const mkCashDriver = async (email: string, plate: string) => {
@@ -967,16 +976,10 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       'full refund reverses the compensation').toBe('400|0|0');
 
     // 6b, cash rides: the fee captured from the ride's card HOLD -> receivable + driver compensation.
-    // STAND-IN (documented): only the hold TABLE from 20261266100000 is created here (its exact DDL, read
-    // from the migration). The cash migrations' FUNCTION replacements conflict with this roadmap chain and
-    // await a merge, so they are deliberately not applied (nor its cash_due payment state: the row uses 'pending';
-    // the collection service does not read payment_status).
-    const holdDdl = /CREATE TABLE public\.cash_ride_fee_holds_v1e \([\s\S]*?\n\);/.exec(readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261266100000_cash_ride_booking_fee_hold.sql'), 'utf8'))?.[0];
-    expect(holdDdl, 'hold table DDL found in the migration').toBeTruthy();
-    sql(`${holdDdl} GRANT SELECT, INSERT, UPDATE ON public.cash_ride_fee_holds_v1e TO service_role;`);
+    // The hold table, cash_due state and functions come from the real cash-ride migrations (merged, 20261269000000).
     const cashFee = 'fee00000-0000-4000-8000-0000000000c1';
     sql(`SET session_replication_role = replica; INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,currency_code,driver_id,accepted_driver_id,status,payment_method,payment_status,pickup_address,dropoff_address,scheduled_time,price,total_price,accepted_at,metadata)
-      VALUES('${cashFee}','${tenantId}','${customer.user.id}','GB','GBP','${d9Driver.user.id}','${d9Driver.user.id}','assigned','cash','pending','Cash A','Cash B',now(),12.00,12.00,now()-interval '10 minutes','{"cash_collection_mode":"full_customer_charge"}'::jsonb);
+      VALUES('${cashFee}','${tenantId}','${customer.user.id}','GB','GBP','${d9Driver.user.id}','${d9Driver.user.id}','assigned','cash','cash_due','Cash A','Cash B',now(),12.00,12.00,now()-interval '10 minutes','{"cash_collection_mode":"full_customer_charge"}'::jsonb);
       INSERT INTO public.cash_ride_fee_holds_v1e(job_id,tenant_id,customer_id,provider,merchant_account_ref,provider_payment_reference,amount_minor,currency_code,fee_terms,status,captured_minor)
       VALUES('${cashFee}','${tenantId}','${customer.user.id}','stripe','stripe-cash-hold-merchant','pi_rehearsal_hold_1',500,'GBP','{}'::jsonb,'captured',400);`);
     expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: true })).status).toBe(200);

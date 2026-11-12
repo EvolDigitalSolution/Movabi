@@ -11,7 +11,10 @@ vi.mock('../../server/services/supabase.service', () => ({
         auth: { getUser: async () => ({ data: { user: { id: 'admin-1' } }, error: null }) },
         from: (table: string) => {
             if (table === 'profiles') return {
-                select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { role }, error: null }) }) })
+                // The admin's own profile: role, and (since policy routes are tenant-scoped) tenant 't'.
+                select: () => ({ eq: () => ({
+                    maybeSingle: async () => ({ data: { role, tenant_id: 't' }, error: null }),
+                    single: async () => ({ data: { role, tenant_id: 't' }, error: null }) }) })
             };
             const chain: any = { maybeSingle: async () => ({ data: null, error: null }) };
             chain.eq = () => chain; chain.neq = () => chain; chain.in = () => chain;
@@ -107,6 +110,16 @@ describe('admin cash-operator routes — authorisation + failure mapping', () =>
         expect(r.status).toBe(200);
         expect(rpcCalls[0]?.name).toBe('publish_cancellation_policy');
         expect(auditLogged[0]?.meta?.version).toBe(3);
+    });
+
+    it('a tenant admin cannot publish a policy for another tenant (403, nothing written)', async () => {
+        rpcResult = { data: { id: 'p1', version: 3 }, error: null };
+        const r = await post('/policies/cancellation/publish', {
+            tenantId: 'other-tenant', market: 'GB', referenceFareMinor: 20000, debtThresholdBps: 5000, feeMinor: 1500
+        });
+        expect(r.status).toBe(403);
+        expect(r.body.code).toBe('TENANT_SCOPE');
+        expect(rpcCalls.some(c => c.name === 'publish_cancellation_policy')).toBe(false);
     });
 
     it('margin preview is read-only RPC pass-through', async () => {

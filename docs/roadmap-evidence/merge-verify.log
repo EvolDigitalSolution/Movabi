@@ -1,0 +1,130 @@
+A: roadmap chain applied
+A: cash chain applied
+A: merge applied
+B: cash chain applied
+B: roadmap chain applied
+B: merge applied
+PASS: both orders converge to the identical public schema
+PASS: before the merge, order A (cash last) had different bodies than the merged result (the conflict is real)
+== merge behaviour (order A)
+   1 | delivery GB: courier cash off by default | PASS | 
+   1 | driver status: GB pilot on, NG off | PASS | 
+   1 | ride GB (pilot market) enabled | PASS | 
+   1 | ride NG (no market row) not enabled | PASS | 
+   1 | unknown service never enabled | PASS | 
+   2 | INSERT cash delivery with driver, courier off (GB) -> CE001 | PASS | CE001
+   2 | INSERT cash ride with driver in a non-pilot market (NG) -> CE001 | PASS | CE001
+   3 | GB cash ride WITH an authorised hold: enrolled driver acquires it | PASS | ok
+   3 | GB cash ride with NO card hold cannot acquire a driver (MB003) | PASS | MB003
+   3 | merged reserve held the credit (250) on the ride | PASS | 1
+   3 | refused acquisition left the job unassigned | PASS | searching
+   4 | courier cash needs full custody: the same delivery with a PaymentIntent is not cash-acquirable | PASS | true
+   4 | courier enabled for GB: delivery and errand enabled | PASS | 
+   4 | delivery, courier off: acquisition refused (MB003) | PASS | MB003
+   4 | delivery, courier on: driver B acquires it | PASS | ok
+   4 | old hold reassigned, one live hold for F | PASS | reassigned:bbbb,held:ffff
+   4 | roadmap reassignment through the merged reserve: B -> F (a free, enrolled driver) | PASS | ok
+   5 | GB market disabled: ride not enabled, driver status off | PASS | 
+   5 | global kill switch off: everything off despite the market row | PASS | 
+   5 | reserve for an NG cash job stops at the market gate (CE001) | PASS | CE001
+   6 | merge helpers: service_role only | PASS | 
+   failures | checks = 0 | 21
+== merge behaviour (order B)
+   1 | delivery GB: courier cash off by default | PASS | 
+   1 | driver status: GB pilot on, NG off | PASS | 
+   1 | ride GB (pilot market) enabled | PASS | 
+   1 | ride NG (no market row) not enabled | PASS | 
+   1 | unknown service never enabled | PASS | 
+   2 | INSERT cash delivery with driver, courier off (GB) -> CE001 | PASS | CE001
+   2 | INSERT cash ride with driver in a non-pilot market (NG) -> CE001 | PASS | CE001
+   3 | GB cash ride WITH an authorised hold: enrolled driver acquires it | PASS | ok
+   3 | GB cash ride with NO card hold cannot acquire a driver (MB003) | PASS | MB003
+   3 | merged reserve held the credit (250) on the ride | PASS | 1
+   3 | refused acquisition left the job unassigned | PASS | searching
+   4 | courier cash needs full custody: the same delivery with a PaymentIntent is not cash-acquirable | PASS | true
+   4 | courier enabled for GB: delivery and errand enabled | PASS | 
+   4 | delivery, courier off: acquisition refused (MB003) | PASS | MB003
+   4 | delivery, courier on: driver B acquires it | PASS | ok
+   4 | old hold reassigned, one live hold for F | PASS | reassigned:bbbb,held:ffff
+   4 | roadmap reassignment through the merged reserve: B -> F (a free, enrolled driver) | PASS | ok
+   5 | GB market disabled: ride not enabled, driver status off | PASS | 
+   5 | global kill switch off: everything off despite the market row | PASS | 
+   5 | reserve for an NG cash job stops at the market gate (CE001) | PASS | CE001
+   6 | merge helpers: service_role only | PASS | 
+   failures | checks = 0 | 21
+== cash-ride suite on the merged schema: realdb-market-pilot-test.sql
+   1 | all off: GB driver pilot off | PASS | 
+   1 | all off: NG driver pilot off | PASS | 
+   2 | global on, no market: GB off | PASS | 
+   2 | global on, no market: NG off | PASS | 
+   3 | GB market on: GB driver on | PASS | 
+   3 | GB market on: NG driver off | PASS | 
+   3 | market check GB/EUR false (currency must match) | PASS | 
+   3 | market check GB/GBP true | PASS | 
+   3 | market check NULL false | PASS | 
+   4 | NG/USD row ignored (NG is NGN) | PASS | 
+   5 | kill switch off: GB off | PASS | 
+   6 | GB job: passes market gate, then existing gates apply (not CE001) | PASS | CE002 Driver cash credit is not approved for this tenant/market
+   6 | NG job: reserve stops at market gate (CE001) | PASS | CE001 Cash credit pilot disabled for this service in this market
+   7 | GB cash ride update: cash-credit enforcement runs (CE00x) | PASS | CE002 Driver cash credit is not approved for this tenant/market
+   7 | NG cash ride update: no cash-credit error (CE00x) | PASS | none 
+   failures | checks = 0 | 15
+== cash-ride suite on the merged schema: realdb-cash-booking-acquisition-test.sql
+   1 | paid card ride can be acquired (unchanged) | PASS | ok
+   1 | unpaid card ride cannot be acquired (MB003, unchanged) | PASS | MB003
+   2 | cash ride, market not enabled: blocked | PASS | MB003
+   3 | cash ride, GB enabled, authorised hold: acquirable | PASS | ok
+   4 | hold for another customer: blocked | PASS | MB003
+   4 | hold in another currency: blocked | PASS | MB003
+   4 | hold not authorised yet: blocked | PASS | MB003
+   4 | hold released: blocked | PASS | MB003
+   4 | no fee hold: blocked | PASS | MB003
+   5 | cash delivery (not Ride): blocked | PASS | MB003
+   5 | cash job carrying a PaymentIntent: blocked | PASS | MB003
+   5 | cash job not cash_due: blocked | PASS | MB003
+   5 | no full cash collection mode: blocked | PASS | MB003
+   6 | cash ride in NG (market not enabled): blocked | PASS | MB003
+   7 | authorised hold without provider reference rejected | PASS | 23514
+   7 | capture above the hold rejected | PASS | 23514
+   failures | checks = 0 | 16
+== cash-ride suite on the merged schema: realdb-cash-booking-chain-test.sql
+   1 | another customer: refused | PASS | 
+   1 | no hold: refused | PASS | no_hold
+   1 | other amount: refused | PASS | 
+   1 | other provider reference: refused | PASS | 
+   1 | other provider: refused | PASS | 
+   1 | refusals leave the job requested | PASS | requested
+   2 | matching hold: activated, job searching, hold authorised | PASS | activated searching
+   2 | repeat activation is idempotent | PASS | 
+   3 | market disabled: not activatable | PASS | 
+   3 | scheduled cash ride: not activatable | PASS | 
+   4 | 1E reserved commission + fee from cash-ride credit (250) | PASS | 250
+   4 | credit balance: 100.00 -> 97.50 available, 2.50 reserved, consistent | PASS | {"currency": "GBP", "heldMinor": "250", "consistent": true, "deficitMinor": "0", "availabl
+   4 | driver accepts the activated cash ride | PASS | ok
+   failures | checks = 0 | 13
+== cash-ride suite on the merged schema: realdb-cash-ride-lifecycle-test.sql
+   1 | 1E settled the hold: 97.50 available, nothing reserved, consistent | PASS | settled {"currency": "GBP", "heldMinor": "0", "consistent": true, "deficitMinor"
+   1 | after acceptance: 97.50 available, 2.50 reserved | PASS | {"currency": "GBP", "heldMinor": "250", "consistent": true, "deficitMinor": "0",
+   1 | another driver: refused | PASS | P0001 Only the assigned driver can complete this request
+   1 | assigned driver completes | PASS | ok
+   1 | earnings: cash ride, paid, gross 11.00, fee 1.00, net 8.50, no transfer | PASS | cash_ride 8.5000
+   1 | job completed, cash_collected, GBP 11.00 collected in cash | PASS | 
+   1 | no payout queued | PASS | 
+   1 | not in progress yet: refused | PASS | P0001 Request is not ready for completion
+   1 | no verified completion evidence: refused | PASS | P0001 Verified completion evidence missing
+   1 | repeat completion is a no-op (one earnings row, balance unchanged) | PASS | ok
+   2 | a cancelled cash ride cannot be completed | PASS | 
+   2 | accepted: 2.50 reserved | PASS | 
+   2 | cancelled: reservation released, 97.50 available | PASS | {"currency": "GBP", "heldMinor": "0", "consistent": true, "deficitMinor": "0", "
+   3 | no-show: job cancelled with no_show_status pending (fee then taken from the card hold by the server) | PASS | 
+   3 | no-show: reservation released, 97.50 available | PASS | {"currency": "GBP", "heldMinor": "0", "consistent": true, "deficitMinor": "0", "
+   failures | checks = 0 | 15
+B: merge re-applied
+PASS: re-applying the merge is idempotent
+B: merge rolled back
+PASS: rollback restores the roadmap-final enforce_ride_cash_credit_v1e exactly
+PASS: rollback restores the roadmap-final reserve_cash_job_credit_v1e exactly
+PASS: rollback restores the roadmap-final enforce_job_payment_eligibility exactly
+PASS: rollback removes the merge helpers and courier_enabled
+ALL MERGE CHECKS PASSED
+exit=0

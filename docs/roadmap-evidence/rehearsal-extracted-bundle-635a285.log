@@ -3,7 +3,7 @@
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 GB_ROUTE=stripe|stripe-platform
-ATTEMPT=62db275b-670a-4f79-ab88-6540a7d03a6b
+ATTEMPT=16cb76e7-6098-4d56-8144-503aa015c923
 FUNDED={"currency":"GBP","heldMinor":"0","consistent":true,"deficitMinor":"0","availableMinor":"5000","eligibleDepositsMinor":"5000"}
 
 stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
@@ -11,11 +11,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [StripeService] STRIPE_WEBHOOK_SECRET is missing.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-◇ injecting env (0) from .env // tip: ⌘ override existing { override: true }
+◇ injecting env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Update',
   body: 'Your booking status is now: assigned',
   type: 'booking_update',
@@ -27,11 +27,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Update | Body: Your booking status is now: assigned
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Update | Body: Your booking status is now: assigned
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Update',
   body: 'Your booking status is now: assigned',
   type: 'booking_update',
@@ -43,11 +43,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Update | Body: Your booking status is now: assigned
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Update | Body: Your booking status is now: assigned
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Update',
   body: 'Your booking status is now: assigned',
   type: 'booking_update',
@@ -59,11 +59,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Update | Body: Your booking status is now: assigned
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Update | Body: Your booking status is now: assigned
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Pricing] resolved components {
-  pricingConfigId: '4d8899d4-ce70-4167-91b5-b32631f0439d',
+  pricingConfigId: '1f9ff400-a45e-4c7a-ad06-d592cf519c69',
   countryCode: 'GB',
   serviceSlug: 'ride',
   dbBaseFare: 2.5,
@@ -111,7 +111,7 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] BEGIN evaluate {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   jobId: null,
   bookingId: null,
   persist: true
@@ -119,7 +119,7 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] settings loaded {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   marketPricingEnabled: true,
   shadowMode: true,
   auditEnabled: true,
@@ -128,19 +128,19 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] strategy resolved {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   strategyId: null,
   strategyType: null
 }
 [MarketPricing] benchmarks resolved {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   count: 0,
   reason: 'no_matching_benchmark'
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] about to write audit {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   jobId: null,
   bookingId: null,
   fallbackReason: 'no_market_strategy'
@@ -148,14 +148,14 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] audit write success {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   jobId: null,
   bookingId: null
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] evaluation {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   countryCode: 'GB',
   marketCity: null,
   serviceType: 'ride',
@@ -181,7 +181,7 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
   version: 'market-v1'
 }
 [MarketPricing] END evaluate {
-  quoteReference: 'f7ce5e4a-91fa-473f-8699-38da5360d1c4',
+  quoteReference: '0611f656-5b75-4a8c-85c6-bf458c759d0c',
   outcome: 'success',
   fallbackReason: 'no_market_strategy'
 }
@@ -202,18 +202,18 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-QUOTE=200|{"quoteReference":"f7ce5e4a-91fa-473f-8699-38da5360d1c4","market":{"countryCode":"GB","currency":"GBP","city":null,"zoneId":null},"price":{"baseFareMinor":250,"distanceFareMinor":144,"durationFareMinor":120,"waitingAllowanceMinor":0,"surgeAmountMinor":0,"serviceChargesMinor":50,"feesMinor":0,"taxMinor":0,"tollParkingEstimateMinor":0,"platformFeeMinor":102,"commissionMinor":0,"driverGrossEarningsMinor":666,"driverNetEarningsMinor":564,"totalMinor":666},"ai":{"recommendedTotalMinor":666,"finalTotalMinor":666,"confidence":0,"multiplier":1,"reasons":["Deterministic pricing fallback used"],"modelVersion":"global-pricing-v1","configurationVersion":0,"shadowMode":true,"livePricingEnabled":false},"guardrails":{"minimumMinor":666,"maximumMinor":666,"wasCapped":false,"capReason":null},"priceLockedUntil":"2026-11-12T15:21:29.660Z","fallback":{"used":true,"reason":"No enabled pricing market configur
+QUOTE=200|{"quoteReference":"0611f656-5b75-4a8c-85c6-bf458c759d0c","market":{"countryCode":"GB","currency":"GBP","city":null,"zoneId":null},"price":{"baseFareMinor":250,"distanceFareMinor":144,"durationFareMinor":120,"waitingAllowanceMinor":0,"surgeAmountMinor":0,"serviceChargesMinor":50,"feesMinor":0,"taxMinor":0,"tollParkingEstimateMinor":0,"platformFeeMinor":102,"commissionMinor":0,"driverGrossEarningsMinor":666,"driverNetEarningsMinor":564,"totalMinor":666},"ai":{"recommendedTotalMinor":666,"finalTotalMinor":666,"confidence":0,"multiplier":1,"reasons":["Deterministic pricing fallback used"],"modelVersion":"global-pricing-v1","configurationVersion":0,"shadowMode":true,"livePricingEnabled":false},"guardrails":{"minimumMinor":666,"maximumMinor":666,"wasCapped":false,"capReason":null},"priceLockedUntil":"2026-11-12T15:59:21.267Z","fallback":{"used":true,"reason":"No enabled pricing market configur
 AUDIT=6.6600|bike
 
 stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [BookingRoutes] booking create dropped non-creatable fields {
-  userId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  userId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   droppedFields: [ 'fulfilment_snapshot' ]
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Pricing] resolved components {
-  pricingConfigId: '4d8899d4-ce70-4167-91b5-b32631f0439d',
+  pricingConfigId: '1f9ff400-a45e-4c7a-ad06-d592cf519c69',
   countryCode: 'GB',
   serviceSlug: 'ride',
   dbBaseFare: 2.5,
@@ -261,7 +261,7 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] BEGIN evaluate {
-  quoteReference: 'd7b1dcca-9642-4cf1-8ac5-c0f1b6493ced',
+  quoteReference: 'd48c856c-dfce-4dbb-b40e-026a55840e12',
   jobId: null,
   bookingId: null,
   persist: true
@@ -269,7 +269,7 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] settings loaded {
-  quoteReference: 'd7b1dcca-9642-4cf1-8ac5-c0f1b6493ced',
+  quoteReference: 'd48c856c-dfce-4dbb-b40e-026a55840e12',
   marketPricingEnabled: true,
   shadowMode: true,
   auditEnabled: false,
@@ -278,19 +278,19 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] strategy resolved {
-  quoteReference: 'd7b1dcca-9642-4cf1-8ac5-c0f1b6493ced',
+  quoteReference: 'd48c856c-dfce-4dbb-b40e-026a55840e12',
   strategyId: null,
   strategyType: null
 }
 [MarketPricing] benchmarks resolved {
-  quoteReference: 'd7b1dcca-9642-4cf1-8ac5-c0f1b6493ced',
+  quoteReference: 'd48c856c-dfce-4dbb-b40e-026a55840e12',
   count: 0,
   reason: 'no_matching_benchmark'
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] evaluation {
-  quoteReference: 'd7b1dcca-9642-4cf1-8ac5-c0f1b6493ced',
+  quoteReference: 'd48c856c-dfce-4dbb-b40e-026a55840e12',
   countryCode: 'GB',
   marketCity: null,
   serviceType: 'ride',
@@ -316,7 +316,7 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
   version: 'market-v1'
 }
 [MarketPricing] END evaluate {
-  quoteReference: 'd7b1dcca-9642-4cf1-8ac5-c0f1b6493ced',
+  quoteReference: 'd48c856c-dfce-4dbb-b40e-026a55840e12',
   outcome: 'success',
   fallbackReason: 'no_market_strategy'
 }
@@ -345,7 +345,7 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Pricing] resolved components {
-  pricingConfigId: '4d8899d4-ce70-4167-91b5-b32631f0439d',
+  pricingConfigId: '1f9ff400-a45e-4c7a-ad06-d592cf519c69',
   countryCode: 'GB',
   serviceSlug: 'ride',
   dbBaseFare: 2.5,
@@ -393,7 +393,7 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] BEGIN evaluate {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   jobId: null,
   bookingId: null,
   persist: true
@@ -401,7 +401,7 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] settings loaded {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   marketPricingEnabled: false,
   shadowMode: true,
   auditEnabled: true,
@@ -410,19 +410,19 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] strategy resolved {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   strategyId: null,
   strategyType: null
 }
 [MarketPricing] benchmarks resolved {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   count: 0,
   reason: 'no_matching_benchmark'
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] about to write audit {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   jobId: null,
   bookingId: null,
   fallbackReason: 'no_market_strategy'
@@ -430,14 +430,14 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] audit write success {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   jobId: null,
   bookingId: null
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [MarketPricing] evaluation {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   countryCode: 'GB',
   marketCity: null,
   serviceType: 'ride',
@@ -463,7 +463,7 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
   version: 'market-v1'
 }
 [MarketPricing] END evaluate {
-  quoteReference: 'd28a34e7-1425-4635-b738-4b9500667a24',
+  quoteReference: '582497ac-7280-40aa-bb94-8c8fe432c6d9',
   outcome: 'success',
   fallbackReason: 'no_market_strategy'
 }
@@ -485,15 +485,15 @@ stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 
 stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [BookingRoutes] booking create dropped non-creatable fields {
-  userId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  userId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   droppedFields: [ 'fulfilment_snapshot' ]
 }
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-CTX_BIKE={"uid":"6f132a2c-9448-4f61-b71f-d6b13f4448c6","claim_sub":"6f132a2c-9448-4f61-b71f-d6b13f4448c6","claims_role":"authenticated"}
+CTX_BIKE={"uid":"f6ab270c-0775-4e76-a948-8a3a5ee6b807","claim_sub":"f6ab270c-0775-4e76-a948-8a3a5ee6b807","claims_role":"authenticated"}
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-CTX_CAR={"uid":"ab612280-8726-4ec2-856a-28c95765f945","claim_sub":"ab612280-8726-4ec2-856a-28c95765f945","claims_role":"authenticated"}
+CTX_CAR={"uid":"e9693080-e7a0-45ae-9203-04a5b8615546","claim_sub":"e9693080-e7a0-45ae-9203-04a5b8615546","claims_role":"authenticated"}
 PG_BIKE=1 PG_CAR=0
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
@@ -501,18 +501,18 @@ FEED_BIKE=[{"id":"88888888-8888-8888-8888-888888888888","fulfilment_category":"b
 FEED_CAR=[]
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-PROXY_PORT=51838
+PROXY_PORT=64006
 
 CHILD_HEALTH=200
-◇ injecting env (0) from .env // tip: ⌘ enable debugging { debug: true }
+◇ injecting env (0) from .env // tip: ⌘ suppress logs { quiet: true }
 {
- "scannedAt": "2026-11-12T15:17:18.204Z",
+ "scannedAt": "2026-11-12T15:55:06.872Z",
  "unresolved": [],
  "counts": {}
 }
-◇ injecting env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+◇ injecting env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
 {
- "scannedAt": "2026-11-12T15:17:19.134Z",
+ "scannedAt": "2026-11-12T15:55:07.824Z",
  "unresolved": [
   {
    "jobId": "aaaaaaaa-0000-0000-0000-00000000000c",
@@ -527,14 +527,14 @@ CHILD_HEALTH=200
   "payment_status_requires_refund": 1
  }
 }
-◇ injecting env (0) from .env // tip: ⌘ override existing { override: true }
+◇ injecting env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
 {"error":"query_failed","detail":"TypeError: fetch failed"}
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 PROXY_CLOSED
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -546,11 +546,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -562,11 +562,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -578,11 +578,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -594,11 +594,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -610,11 +610,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -626,11 +626,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Update',
   body: 'Your booking status is now: searching',
   type: 'booking_update',
@@ -642,11 +642,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Update | Body: Your booking status is now: searching
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Update | Body: Your booking status is now: searching
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -658,11 +658,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -674,11 +674,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -690,11 +690,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -706,11 +706,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -722,11 +722,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -738,11 +738,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '9f100995-e513-44e2-8684-d73df05a0d00',
+  targetUserId: '4adc1ca7-168b-46eb-9f8a-968a24e09792',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -754,11 +754,11 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 9f100995-e513-44e2-8684-d73df05a0d00 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: 4adc1ca7-168b-46eb-9f8a-968a24e09792 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 [Notification] Preparing OneSignal push: {
-  targetUserId: '55fc92c5-9637-42ea-a5af-e801eeb1cd64',
+  targetUserId: 'a4ececbf-0243-4970-8999-fb1993b88d64',
   title: 'Booking Cancelled',
   body: 'Your booking has been cancelled.',
   type: 'booking_update',
@@ -770,16 +770,15 @@ stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authen
 [OneSignal] REST API key missing; push skipped.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
-[Notification] To: 55fc92c5-9637-42ea-a5af-e801eeb1cd64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
+[Notification] To: a4ececbf-0243-4970-8999-fb1993b88d64 | Title: Booking Cancelled | Body: Your booking has been cancelled.
 
 stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
 API_STARTUP_CHECK mode=extracted-bundle source=635a285 root=C:/Users/fedri/AppData/Local/Temp/claude/43955edaf4a5e6d3/952b63a1-0d6f-4136-b5cb-1d2cf637158e/scratchpad/bundle-635a285/vaydu-develop-635a285-topup-linux
 
- ✓ src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds 208368ms
+ ✓ src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds 206924ms
 
  Test Files  1 passed (1)
       Tests  1 passed (1)
-   Start at  15:14:33
-   Duration  209.40s (transform 1.69s, setup 0ms, import 650ms, tests 208.37s, environment 0ms)
+   Start at  15:52:26
+   Duration  207.83s (transform 1.41s, setup 0ms, import 549ms, tests 206.93s, environment 0ms)
 
-exit=0
