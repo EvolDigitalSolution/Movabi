@@ -1,0 +1,545 @@
+
+ RUN  v4.1.2 C:/Users/fedri/source/repos/Movabi-topup-on-2385da7
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+GB_ROUTE=stripe|stripe-platform
+ATTEMPT=07bd505a-b25a-4e76-bd05-56f2291395c4
+FUNDED={"currency":"GBP","heldMinor":"0","consistent":true,"deficitMinor":"0","availableMinor":"5000","eligibleDepositsMinor":"5000"}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[StripeService] STRIPE_SECRET_KEY is missing.
+[StripeService] STRIPE_WEBHOOK_SECRET is missing.
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+◇ injecting env (0) from .env // tip: ⌘ override existing { override: true }
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Notification] Preparing OneSignal push: {
+  targetUserId: 'db82f0fa-4daf-408e-8d87-7c0017f9db79',
+  title: 'Booking Update',
+  body: 'Your booking status is now: assigned',
+  type: 'booking_update',
+  hasApiKey: false,
+  appId: '952c6d19-656c-4dab-90f3-6e253e2c9151'
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[OneSignal] REST API key missing; push skipped.
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Notification] To: db82f0fa-4daf-408e-8d87-7c0017f9db79 | Title: Booking Update | Body: Your booking status is now: assigned
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Notification] Preparing OneSignal push: {
+  targetUserId: 'db82f0fa-4daf-408e-8d87-7c0017f9db79',
+  title: 'Booking Update',
+  body: 'Your booking status is now: assigned',
+  type: 'booking_update',
+  hasApiKey: false,
+  appId: '952c6d19-656c-4dab-90f3-6e253e2c9151'
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[OneSignal] REST API key missing; push skipped.
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Notification] To: db82f0fa-4daf-408e-8d87-7c0017f9db79 | Title: Booking Update | Body: Your booking status is now: assigned
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Notification] Preparing OneSignal push: {
+  targetUserId: 'db82f0fa-4daf-408e-8d87-7c0017f9db79',
+  title: 'Booking Update',
+  body: 'Your booking status is now: assigned',
+  type: 'booking_update',
+  hasApiKey: false,
+  appId: '952c6d19-656c-4dab-90f3-6e253e2c9151'
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[OneSignal] REST API key missing; push skipped.
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Notification] To: db82f0fa-4daf-408e-8d87-7c0017f9db79 | Title: Booking Update | Body: Your booking status is now: assigned
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Pricing] resolved components {
+  pricingConfigId: 'c0154ffa-5aec-45f9-b873-1731c166693d',
+  countryCode: 'GB',
+  serviceSlug: 'ride',
+  dbBaseFare: 2.5,
+  dbServiceFee: 0.5,
+  fixedFareInput: 0,
+  serviceOptionSurcharge: 0,
+  itemCharges: 0,
+  baseFareApplied: 2.5,
+  serviceExtrasApplied: 0.5
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] commission fallback used: safe_zero_default {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  enabled: false,
+  percent: 0,
+  minFee: 0,
+  maxFee: null,
+  platformFeePercent: 0,
+  source: 'safe_zero_default',
+  configVersion: null
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] no active commission overrides, using base commission from marketplace_settings: 0
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] commission fallback used: safe_zero_default {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  enabled: false,
+  percent: 0,
+  minFee: 0,
+  maxFee: null,
+  platformFeePercent: 0,
+  source: 'safe_zero_default',
+  configVersion: null
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] platform_fee missing; using safe zero-impact platform fee fallback {
+  serviceSlug: 'ride',
+  canonical: 'ride',
+  tenantId: '11111111-1111-1111-1111-111111111111'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] BEGIN evaluate {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  jobId: null,
+  bookingId: null,
+  persist: true
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] settings loaded {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  marketPricingEnabled: true,
+  shadowMode: true,
+  auditEnabled: true,
+  competitorBenchmarksEnabled: false
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] strategy resolved {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  strategyId: null,
+  strategyType: null
+}
+[MarketPricing] benchmarks resolved {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  count: 0,
+  reason: 'no_matching_benchmark'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] about to write audit {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  jobId: null,
+  bookingId: null,
+  fallbackReason: 'no_market_strategy'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] audit write success {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  jobId: null,
+  bookingId: null
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] evaluation {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  countryCode: 'GB',
+  marketCity: null,
+  serviceType: 'ride',
+  vehicleClass: 'bike',
+  baseServiceFare: 5.64,
+  marketReferenceFare: null,
+  strategy: null,
+  targetDifferencePercent: null,
+  requestedTargetFare: null,
+  driverProtectionFloor: 0,
+  platformMarginFloor: 0,
+  adjustedServiceFare: 5.64,
+  marketAdjustment: 0,
+  platformFeePercent: 0,
+  platformFeeAmount: 0,
+  customerTotal: 5.64,
+  driverCommissionPercent: 0,
+  driverCommissionAmount: 0,
+  driverPayout: 5.64,
+  shadowMode: true,
+  adjustmentApplied: false,
+  fallbackReason: 'no_market_strategy',
+  version: 'market-v1'
+}
+[MarketPricing] END evaluate {
+  quoteReference: 'bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d',
+  outcome: 'success',
+  fallbackReason: 'no_market_strategy'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[PricingService] Price resolved: £5.64 (base 5.64, multiplier 1, commission 0%) via pricing_config for ride in GB
+[MarketplaceCommissionAudit] {
+  source: 'pricing_config',
+  serviceSlug: 'ride',
+  commissionSource: 'safe_zero_default',
+  commissionPercent: 0,
+  platformFeeSource: 'safe_zero_default',
+  platformFee: 0,
+  serviceFare: 5.64,
+  serviceFareBeforePlatformFee: 5.64,
+  commissionAmount: 0,
+  driverPayout: 5.64
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+QUOTE=200|{"quoteReference":"bd2e370d-32e5-4ac0-840e-96f5eb1ebe8d","market":{"countryCode":"GB","currency":"GBP","city":null,"zoneId":null},"price":{"baseFareMinor":250,"distanceFareMinor":144,"durationFareMinor":120,"waitingAllowanceMinor":0,"surgeAmountMinor":0,"serviceChargesMinor":50,"feesMinor":0,"taxMinor":0,"tollParkingEstimateMinor":0,"platformFeeMinor":102,"commissionMinor":0,"driverGrossEarningsMinor":666,"driverNetEarningsMinor":564,"totalMinor":666},"ai":{"recommendedTotalMinor":666,"finalTotalMinor":666,"confidence":0,"multiplier":1,"reasons":["Deterministic pricing fallback used"],"modelVersion":"global-pricing-v1","configurationVersion":0,"shadowMode":true,"livePricingEnabled":false},"guardrails":{"minimumMinor":666,"maximumMinor":666,"wasCapped":false,"capReason":null},"priceLockedUntil":"2026-11-12T10:00:42.318Z","fallback":{"used":true,"reason":"No enabled pricing market configur
+AUDIT=6.6600|bike
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[BookingRoutes] booking create dropped non-creatable fields {
+  userId: 'db82f0fa-4daf-408e-8d87-7c0017f9db79',
+  droppedFields: [ 'fulfilment_snapshot' ]
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Pricing] resolved components {
+  pricingConfigId: 'c0154ffa-5aec-45f9-b873-1731c166693d',
+  countryCode: 'GB',
+  serviceSlug: 'ride',
+  dbBaseFare: 2.5,
+  dbServiceFee: 0.5,
+  fixedFareInput: 0,
+  serviceOptionSurcharge: 0,
+  itemCharges: 0,
+  baseFareApplied: 2.5,
+  serviceExtrasApplied: 0.5
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] commission fallback used: safe_zero_default {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  enabled: false,
+  percent: 0,
+  minFee: 0,
+  maxFee: null,
+  platformFeePercent: 0,
+  source: 'safe_zero_default',
+  configVersion: null
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] no active commission overrides, using base commission from marketplace_settings: 0
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] commission fallback used: safe_zero_default {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  enabled: false,
+  percent: 0,
+  minFee: 0,
+  maxFee: null,
+  platformFeePercent: 0,
+  source: 'safe_zero_default',
+  configVersion: null
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] platform_fee missing; using safe zero-impact platform fee fallback {
+  serviceSlug: 'ride',
+  canonical: 'ride',
+  tenantId: '11111111-1111-1111-1111-111111111111'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] BEGIN evaluate {
+  quoteReference: 'c5ecf11d-ec07-40ae-9e6d-bc76921dc98c',
+  jobId: null,
+  bookingId: null,
+  persist: true
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] settings loaded {
+  quoteReference: 'c5ecf11d-ec07-40ae-9e6d-bc76921dc98c',
+  marketPricingEnabled: true,
+  shadowMode: true,
+  auditEnabled: false,
+  competitorBenchmarksEnabled: false
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] strategy resolved {
+  quoteReference: 'c5ecf11d-ec07-40ae-9e6d-bc76921dc98c',
+  strategyId: null,
+  strategyType: null
+}
+[MarketPricing] benchmarks resolved {
+  quoteReference: 'c5ecf11d-ec07-40ae-9e6d-bc76921dc98c',
+  count: 0,
+  reason: 'no_matching_benchmark'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] evaluation {
+  quoteReference: 'c5ecf11d-ec07-40ae-9e6d-bc76921dc98c',
+  countryCode: 'GB',
+  marketCity: null,
+  serviceType: 'ride',
+  vehicleClass: 'bike',
+  baseServiceFare: 5.64,
+  marketReferenceFare: null,
+  strategy: null,
+  targetDifferencePercent: null,
+  requestedTargetFare: null,
+  driverProtectionFloor: 0,
+  platformMarginFloor: 0,
+  adjustedServiceFare: 5.64,
+  marketAdjustment: 0,
+  platformFeePercent: 0,
+  platformFeeAmount: 0,
+  customerTotal: 5.64,
+  driverCommissionPercent: 0,
+  driverCommissionAmount: 0,
+  driverPayout: 5.64,
+  shadowMode: true,
+  adjustmentApplied: false,
+  fallbackReason: 'no_market_strategy',
+  version: 'market-v1'
+}
+[MarketPricing] END evaluate {
+  quoteReference: 'c5ecf11d-ec07-40ae-9e6d-bc76921dc98c',
+  outcome: 'success',
+  fallbackReason: 'no_market_strategy'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[PricingService] Price resolved: £5.64 (base 5.64, multiplier 1, commission 0%) via pricing_config for ride in GB
+[MarketplaceCommissionAudit] {
+  source: 'pricing_config',
+  serviceSlug: 'ride',
+  commissionSource: 'safe_zero_default',
+  commissionPercent: 0,
+  platformFeeSource: 'safe_zero_default',
+  platformFee: 0,
+  serviceFare: 5.64,
+  serviceFareBeforePlatformFee: 5.64,
+  commissionAmount: 0,
+  driverPayout: 5.64
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[GlobalAiPricingRoutes] quote failed: Error: Final protected quote could not be verified. Please try again.
+    at PricingService.resolvePrice (C:/Users/fedri/source/repos/Movabi-topup-on-2385da7/server/services/pricing.service.ts:199:45)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at GlobalAiPricingService.resolveQuote (C:/Users/fedri/source/repos/Movabi-topup-on-2385da7/server/services/global-ai-pricing.service.ts:126:27)
+    at C:/Users/fedri/source/repos/Movabi-topup-on-2385da7/server/routes/global-ai-pricing.routes.ts:51:38
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[Pricing] resolved components {
+  pricingConfigId: 'c0154ffa-5aec-45f9-b873-1731c166693d',
+  countryCode: 'GB',
+  serviceSlug: 'ride',
+  dbBaseFare: 2.5,
+  dbServiceFee: 0.5,
+  fixedFareInput: 0,
+  serviceOptionSurcharge: 0,
+  itemCharges: 0,
+  baseFareApplied: 2.5,
+  serviceExtrasApplied: 0.5
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] commission fallback used: safe_zero_default {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  enabled: false,
+  percent: 0,
+  minFee: 0,
+  maxFee: null,
+  platformFeePercent: 0,
+  source: 'safe_zero_default',
+  configVersion: null
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] no active commission overrides, using base commission from marketplace_settings: 0
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] commission fallback used: safe_zero_default {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  enabled: false,
+  percent: 0,
+  minFee: 0,
+  maxFee: null,
+  platformFeePercent: 0,
+  source: 'safe_zero_default',
+  configVersion: null
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketplaceConfig] platform_fee missing; using safe zero-impact platform fee fallback {
+  serviceSlug: 'ride',
+  canonical: 'ride',
+  tenantId: '11111111-1111-1111-1111-111111111111'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] BEGIN evaluate {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  jobId: null,
+  bookingId: null,
+  persist: true
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] settings loaded {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  marketPricingEnabled: false,
+  shadowMode: true,
+  auditEnabled: true,
+  competitorBenchmarksEnabled: false
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] strategy resolved {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  strategyId: null,
+  strategyType: null
+}
+[MarketPricing] benchmarks resolved {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  count: 0,
+  reason: 'no_matching_benchmark'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] about to write audit {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  jobId: null,
+  bookingId: null,
+  fallbackReason: 'no_market_strategy'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] audit write success {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  jobId: null,
+  bookingId: null
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[MarketPricing] evaluation {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  countryCode: 'GB',
+  marketCity: null,
+  serviceType: 'ride',
+  vehicleClass: 'bike',
+  baseServiceFare: 5.64,
+  marketReferenceFare: null,
+  strategy: null,
+  targetDifferencePercent: null,
+  requestedTargetFare: null,
+  driverProtectionFloor: 0,
+  platformMarginFloor: 0,
+  adjustedServiceFare: 5.64,
+  marketAdjustment: 0,
+  platformFeePercent: 0,
+  platformFeeAmount: 0,
+  customerTotal: 5.64,
+  driverCommissionPercent: 0,
+  driverCommissionAmount: 0,
+  driverPayout: 5.64,
+  shadowMode: true,
+  adjustmentApplied: false,
+  fallbackReason: 'no_market_strategy',
+  version: 'market-v1'
+}
+[MarketPricing] END evaluate {
+  quoteReference: '0f9d0073-31cc-4a83-8825-eb594427b0ab',
+  outcome: 'success',
+  fallbackReason: 'no_market_strategy'
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[PricingService] Price resolved: £5.64 (base 5.64, multiplier 1, commission 0%) via pricing_config for ride in GB
+[MarketplaceCommissionAudit] {
+  source: 'pricing_config',
+  serviceSlug: 'ride',
+  commissionSource: 'safe_zero_default',
+  commissionPercent: 0,
+  platformFeeSource: 'safe_zero_default',
+  platformFee: 0,
+  serviceFare: 5.64,
+  serviceFareBeforePlatformFee: 5.64,
+  commissionAmount: 0,
+  driverPayout: 5.64
+}
+
+stderr | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+[BookingRoutes] booking create dropped non-creatable fields {
+  userId: 'db82f0fa-4daf-408e-8d87-7c0017f9db79',
+  droppedFields: [ 'fulfilment_snapshot' ]
+}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+CTX_BIKE={"uid":"074f872d-5fdb-4474-afa6-624400f75c80","claim_sub":"074f872d-5fdb-4474-afa6-624400f75c80","claims_role":"authenticated"}
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+CTX_CAR={"uid":"a6bb2f55-8d41-4224-873d-e1f4f2d58ad6","claim_sub":"a6bb2f55-8d41-4224-873d-e1f4f2d58ad6","claims_role":"authenticated"}
+PG_BIKE=1 PG_CAR=0
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+FEED_BIKE=[{"id":"88888888-8888-8888-8888-888888888888","fulfilment_category":"bike"}]
+FEED_CAR=[]
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+PROXY_PORT=60517
+
+CHILD_HEALTH=200
+◇ injecting env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+{
+ "scannedAt": "2026-11-12T09:56:29.959Z",
+ "unresolved": [],
+ "counts": {}
+}
+◇ injecting env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+{
+ "scannedAt": "2026-11-12T09:56:30.993Z",
+ "unresolved": [
+  {
+   "jobId": "aaaaaaaa-0000-0000-0000-00000000000c",
+   "paymentStatus": "requires_refund",
+   "jobStatus": "searching",
+   "paymentIntentId": "pi_unresolved",
+   "ageMinutes": 0,
+   "reason": "payment_status_requires_refund"
+  }
+ ],
+ "counts": {
+  "payment_status_requires_refund": 1
+ }
+}
+◇ injecting env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+{"error":"query_failed","detail":"TypeError: fetch failed"}
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+PROXY_CLOSED
+
+stdout | src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds
+API_STARTUP_CHECK mode=current-source source=current-source root=C:\Users\fedri\source\repos\Movabi-topup-on-2385da7
+
+ ✓ src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds 189652ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:53:47
+   Duration  190.94s (transform 1.31s, setup 0ms, import 700ms, tests 189.65s, environment 0ms)
+
+exit=0

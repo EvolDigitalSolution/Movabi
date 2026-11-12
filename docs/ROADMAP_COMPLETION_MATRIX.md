@@ -1,101 +1,172 @@
 # Vaydu go-live roadmap — completion matrix
 
 Single source of truth for the nine mandatory roadmap areas. Supersedes the status tables in
-`LAUNCH-ROADMAP-HANDOFF.md` and `BIKE_COMPLETION_MATRIX.md` (those remain as history).
-Update this file in the same commit as any change that moves a state.
+`LAUNCH-ROADMAP-HANDOFF.md` and `BIKE_COMPLETION_MATRIX.md` (kept as history). Update this file in
+the same commit as any change that moves a state. Last updated 2026-11-12.
 
-## How to read the states
+**Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
+Implemented, Integrated and Verified and every decision below is resolved. Not met.
+
+## States
 
 | State | Meaning (all must hold) |
 |---|---|
-| **Impl** | Code/migration exists for the agreed behaviour (server + DB + every needed UI). |
-| **Integ** | Present in the release line (`release/topup-3ds-on-2385da7`) and wired into the real user journey, not only a helper. |
-| **Verif-L** | Re-verified **this session** by a real-DB / real-browser / route test at the cited commit. `prior` = only a previous record claims it; not re-run here. |
-| **Dev** | Deployed to shared develop (API/web image *and* DB objects). |
-| **On** | Enabled for the approved develop test scope only (market/cohort/flags). Never global, never production. |
+| **Implemented** | Code/migration for the agreed behaviour exists: server + DB + every needed UI. |
+| **Integrated** | In the release line (`release/topup-3ds-on-2385da7`) and wired into the real user journey, not only a helper. |
+| **Verified** | Re-run **this session** by a real-DB, real-browser or real-route test at the cited commit. `prior` = only an earlier record claims it (to re-run; not proof). |
+| **Deployed** | On shared develop (API/web image *and* DB objects). Observed, not assumed. |
+| **Enabled** | Switched on for the approved develop test scope only. Never global, never production. |
 
-`✓` yes · `✗` no · `~` partial · `?` unverifiable without develop host access · `n/a`.
-Mocked provider ≠ sandbox: provider evidence is labelled **mock** or **sandbox**.
+`✓` yes · `✗` no · `~` partial · `?` cannot be established without develop host access · `n/a`.
+Provider evidence is labelled **mock** (simulated provider) or **sandbox** (real provider test mode).
 
-## Baseline (established 2026-11-12)
+## Baseline and deployment source
 
 | Item | Finding | How established |
 |---|---|---|
-| Release line | `release/topup-3ds-on-2385da7`, worktree `Movabi-topup-on-2385da7`. HEAD before this session `635a285`. | `git worktree list`, graph |
-| v2.3 roadmap code | Present in the release line by content (squash-merged; commits are not ancestors). | file presence of every roadmap migration/service/spec at HEAD |
-| Deployed web (develop) | **`f6e8c00`** (`release-f6e8c00-topup-linux`): all 12 entry assets byte-identical to the bundle. | sha256 of live `movabi-develop.apps.evolsolution.com` assets vs `release/vaydu-develop-f6e8c00-topup-linux` |
-| Deployed API (develop) | Up (`/health` 200; `/api/payment/driver-topup/availability` 401 = route mounted). Revision **not** fingerprinted: no host access (SSH is password-only, not available to the agent). Prior record: `release-f6e8c00-topup`. | public HTTP |
-| Develop DB | Last committed schema export (`supabase/baseline/deployed_public_schema.sql`, commit `95d745b`, 10 Nov) contains cash-credit 1E, wallet top-up attempts, ranking RPC — and **none** of: `driver_offer_events`, `driver_pin_policies`, `cancellation_policies`, `customer_receivables`, `campaigns`, `referrals`, `reward_credit_spends`, `job_funding_breakdown`, compensation RPCs. Later deployments (inspection photos, card sandbox scopes) post-date that export. Current DB state is **?**. | grep of the export |
-| Prepared, not deployed | `release/vaydu-develop-635a285-topup-linux.tar.gz` (sha256 `cbd60346…14a6`) + cash-ride migrations 1–4; `deploy/vaydu-topup-verify-fix/NEXT-STEPS.txt` says "NOT YET RUN". | file + note |
-| Other lines | `origin/develop` (`e596989`) has 33 divergent commits incl. a separate top-up `recover()` line and admin market badges — **not** in the release line; must be reconciled before go-live. | `git rev-list` |
+| Release line | `release/topup-3ds-on-2385da7`, worktree `Movabi-topup-on-2385da7`. | `git worktree list` |
+| Roadmap code | v2.3 roadmap content is in the release line (squash-merged; v2.3 commits are not ancestors). | presence of every roadmap migration/service/spec at HEAD |
+| Develop web | **`f6e8c00`** at 2026-11-12 09:45 UTC: 12/12 entry assets byte-identical to `release/vaydu-develop-f6e8c00-topup-linux`; 5/12 differ from the 635a285 bundle. | sha256 of live assets |
+| Develop API | Up (`/health` 200; top-up route mounted). Revision **?** (no host access; prior record: `release-f6e8c00-topup`). | public HTTP |
+| Develop DB | Last committed export (`supabase/baseline/deployed_public_schema.sql`, `95d745b`, 10 Nov) lacks `driver_offer_events`, `driver_pin_policies`, `cancellation_policies`, `customer_receivables`, `campaigns`, `referrals`, `reward_credit_spends`, `job_funding_breakdown`, compensation RPCs. Current state **?**. | grep of the export |
+| Other line | `origin/develop` (`e596989`) has 33 commits not in the release line (separate top-up `recover()` work, admin market badges). Must be reconciled before go-live. | `git rev-list` |
 
-## 0. Current unfinished work (started first)
+### Deployment source: `635a285`, not the current branch tip
 
-| Sub-requirement | Impl | Integ | Verif-L | Dev | On | Evidence / gap |
+The intended develop deployment source is **`635a285`**, packaged as
+`release/vaydu-develop-635a285-topup-linux.tar.gz` (sha256 `cbd60346fbc52db7ac99fd56c2f8226c7249185dfa204456cbb8862a7f8e14a6`,
+`SOURCE_SHA` 635a285). Commits after it are **verification, evidence and runbook changes only**. None
+of their files is in the package (each path checked against the extracted bundle: no overlap). The
+package therefore contains **none** of the verification changes below; it contains the same API/web
+code those verifications exercise.
+
+| Commit | Change | In the 635a285 package? |
+|---|---|---|
+| `2217bd2` | Matrix created; top-up DB integration mock moved to PaymentIntents; `test-driver-topup-db.ps1` PS 5.1 fix; versioned 2 older migrations (`20261246000000`, `20261254000000`) + 3 SQL check fixtures that existed only as ignored files; `scripts/cash-ride/run-realdb-tests.sh` | No |
+| `9e28620` | Matrix: rehearsal failure recorded | No |
+| `c9d10a1` | `DEVELOP-DEPLOY-635a285.md` runbook; `NEXT-STEPS.txt` versioned with a superseded note | No |
+| `18aaf2b` | Rehearsal harness: test-server keep-alive; extracted-API root no longer the untracked old 9abfd8f extract | No |
+| `a421583` | Rehearsal: API started with the image entry (`--project server/tsconfig.json`); startup-mode label | No |
+| (this commit) | Matrix rewrite + rehearsal evidence logs | No |
+
+The two migrations versioned in `2217bd2` are older wallet migrations used by the disposable top-up
+test. They are not deployment content, and the runbook does not apply them.
+
+### Develop deployment authorisation (explicit, scoped)
+
+- **Authorised:** on 2026-11-12, I asked "Do you authorise deploying 635a285 and its 4 migrations to
+  shared develop, with GB cash rides staying off?" and the user replied **"Authorise, prepare steps"**.
+  The scope is the API/web `635a285` package plus cash-ride migrations `20261266000000`–`20261266300000`,
+  with no market enabled and no `VAYDU_CASH_RIDE_BOOKING`. Runbook:
+  `deploy/vaydu-topup-verify-fix/DEVELOP-DEPLOY-635a285.md`.
+- **Status: pending.** The user said they would run it, but no host output has been received and develop
+  web still serves f6e8c00 (09:45 UTC). The agent has no host access and has not deployed anything.
+- **Not authorised:** enabling GB/GBP (or any) cash rides, the API cash flag, other markets/cohorts,
+  production, packaging for go-live.
+
+## Rehearsal: upgraded database clone (PASSING)
+
+`src/testing/bike-authenticated-routes.integration.spec.ts` builds a disposable stack: `postgres:16.15`,
+the committed deployed develop schema, the reviewed roadmap migration chain
+(`20261101000000` … `20261264900000`, incl. offer events, inspection, PIN, cancellation debt,
+campaigns/referrals, cash 1E/1F, reward credits, refunds, bike, compensation, referral lifecycle),
+real GoTrue `v2.132.3` and PostgREST `v10.1.2`. The real booking/pricing/admin routers run in-process.
+
+| Check | Command (release worktree) | Commit | Result | Evidence |
+|---|---|---|---|---|
+| **1. Current-source API** — in-process routers + a separately spawned API from the current source against the upgraded clone | `npx vitest run src/testing/bike-authenticated-routes.integration.spec.ts --silent=false --reporter=verbose` | `a421583` | **Pass** (1/1) | `docs/roadmap-evidence/rehearsal-current-source.log` (`API_STARTUP_CHECK mode=current-source`) |
+| **2. Extracted release bundle** — the spawned API is the extracted `635a285` package (checksums verified, `SOURCE_SHA` 635a285, own `npm install --legacy-peer-deps --include=dev`) | as above with `VAYDU_EXTRACTED_API_ROOT=<extract>/vaydu-develop-635a285-topup-linux` | `a421583` | **Pass** (1/1) | `docs/roadmap-evidence/rehearsal-extracted-bundle-635a285.log` (`API_STARTUP_CHECK mode=extracted-bundle source=635a285`) |
+
+Scope of each, so neither is read as the other:
+- Check 1 does **not** show that the package starts. Check 2 does **not** re-test the in-process steps
+  against the package: in both checks those steps (bike acceptance guards, driver feed, admin assignment,
+  cash reassignment incl. the concurrent one, holds RLS, ledger currency isolation) run the **current
+  source**. In check 2 only the spawned API is the package. Its assertions are `/health`, authenticated
+  `/api/payment/cards`, `/api/booking/debts` with a seeded receivable, the DB guard on contradictory
+  metadata, and suspension (same access token denied, refresh denied, other user unaffected).
+- Check 2 ran the package with Windows Node 22 and a Windows `npm install`. The develop image is
+  `node:22-alpine` built by `server/Dockerfile`. Image build and startup on Linux is proven only by the
+  host deployment itself (runbook step 4).
+- Harness changes (no assertion weakened): the longer keep-alive is set on the **test's own**
+  `http.createServer` only (`server.keepAliveTimeout`). No server or API code was changed. Root cause,
+  proven by instrumentation: about 5.09 s of idle time while synchronous `docker exec`/psql blocked the
+  event loop. `fetch` reused a pooled socket in the same tick the overdue 5 s keep-alive destroyed it,
+  giving `ECONNRESET`. The failure was identical on `v2.3`, so it is not a regression. The concurrent
+  reassignment assertions are unchanged: exactly one 200, one 409, the winner assigned, no duplicate
+  wallet events.
+- Correction to an earlier note: `requireAdmin`'s unguarded `getUser` is not a crash defect. Express
+  5.2.1 forwards async rejections to the error handler (`server/index.ts:218`), so the client gets a 500.
+
+## 0. Unfinished work started first
+
+| Sub-requirement | Implemented | Integrated | Verified | Deployed | Enabled | Evidence / gap |
 |---|---|---|---|---|---|---|
-| Top-up form closes/resets after **server-confirmed** credit; balance + history refresh | ✓ | ✓ | ✓ | ✗ | n/a | `3734ddd`. Playwright (real Chromium, real Angular; Stripe.js stub that succeeds; API mocked) `e2e/driver-topup-lifecycle.spec.ts` 3/3 + `driver-topup-continue-payment.spec.ts` 2/2 (real Stripe.js, develop **test** publishable key) — 5/5 this session at `635a285`. Card element destroyed, storage cleared, reopen clean, reload/focus never re-verify. Gap: only Driver Hub tab is browser-tested; `/driver/wallet` page relies on the same component (unit-level only). Deployed web is `f6e8c00`, which does **not** have this fix. |
-| Cash-ride message vs Top up action not contradictory; from actual server decisions | ✓ | ✓ | ✓ | ✗ | n/a | Message = `driver_cash_credit_status_v1f` (pilot/enrolment/consistency); Top up = `/driver-topup/availability`. Browser: both directions (cash off + top-up on; cash on + top-up off). Server side: real-PG `realdb-market-pilot-test.sql` 15/15 proves `pilotEnabled` equals the acquisition gate (CE001/CE002) per market. |
-| Exactly one correct ledger credit per successful payment (GB Stripe path) | ✓ | ✓ | ✓ (mock provider) | ? | ~ | **Fixed this session:** the disposable Auth+PostgREST+PostgreSQL integration still mocked Stripe *Checkout Sessions* while the adapter creates *PaymentIntents* — it failed (`409 PAYMENT_RECONCILIATION_REQUIRED`) and so proved nothing for the deployed path. Now: concurrent submissions → 1 PaymentIntent; unpaid verify → `PAYMENT_NOT_COMPLETED`, ledger `0:0`; two concurrent paid verifies → same event, ledger exactly `1:10000` on a 10500 charge; provider fee 700 recorded; cross-owner 404; collection shutdown still reconciles. `scripts/test-driver-topup-db.ps1 -Integration` exit 0. Real develop ledger: read-only SQL in `deploy/vaydu-topup-verify-fix/DEVELOP-LEDGER-AND-CASH-RIDE-CHECKS.txt` — **not yet run** (needs host). Real Stripe sandbox payment → credit on develop: claimed by user report only, unverified here. |
-| Develop test cohort enablement (cash rides, GB/GBP) | ✓ | ✓ | ✓ | ✗ | ✗ | Market-scoped pilot (`20261266000000`) + cash booking (`20261266100000..300000`) + API (`VAYDU_CASH_RIDE_BOOKING`) + customer/driver UI. Real-PG this session: pilot 15/15, acquisition 16/16, chain 13/13, lifecycle 15/15; full rollback restores the deployed schema byte-identically (`bash scripts/cash-ride/run-realdb-tests.sh`). Browser: `e2e/customer-cash-booking.spec.ts` (prior). **Blocked:** deploy to shared develop + enable needs explicit authorisation and host execution; step 4 needs driver id, tenant id, accepted terms version. |
-| Bank-account (payout) setup failure — kept visible | ~ | ~ | ✗ | ? | ✗ | Separate from top-up and cash rides. Repository records: NG Flutterwave driver payment-account (subaccount) first creation not demonstrated; empty-list HTTP 400 normalised (`NG_SUBACCOUNT_FIRST_ONBOARDING_TEST.md`); app-DB binding for the co-hosted service unresolved. **Current failure as last observed by the user must be confirmed** — not reproduced here. Distinct readiness: *collection* (top-up) ≠ *payout* (bank account) ≠ *cash-ride eligibility*. |
+| Top-up form closes/resets after **server-confirmed** credit; balance + history refresh | ✓ | ✓ | ✓ browser (mock API, Stripe.js stub) | ✗ (in 635a285, not deployed) | n/a | `3734ddd`. `npx playwright test -c playwright.driver-topup.config.ts` 5/5 at 635a285 (2 with real Stripe.js + test key). Gap: `/driver/wallet` page not browser-tested (shares the component). |
+| Cash-ride message vs Top up action from separate server decisions | ✓ | ✓ | ✓ browser + real-PG | ✗ | n/a | Both directions in the browser; `realdb-market-pilot-test.sql` 15/15: `pilotEnabled` equals the acquisition gate per market. |
+| Exactly one ledger credit per successful payment (GB Stripe) | ✓ | ✓ | ✓ real Auth/PostgREST/PG, **mock** Stripe | ? | ~ (GB sandbox scope, prior record) | `scripts/test-driver-topup-db.ps1 -Integration` exit 0: 1 PaymentIntent for 2 concurrent submissions; unpaid verify writes nothing; concurrent paid verifies → one event, ledger `1:10000` on 10500. Develop ledger check pending (runbook step 6). Real **sandbox** payment → credit: not observed by the agent. |
+| Develop test cohort (cash rides GB/GBP) | ✓ | ✓ | ✓ real-PG 59/59 + rollback identity; browser cash booking `prior` | ✗ | ✗ | `bash scripts/cash-ride/run-realdb-tests.sh`. Deploy authorised + pending; enablement **not** authorised; needs D8. |
+| Bank-account (payout) setup failure | ~ | ~ | ✗ | ? | ✗ | Separate from collection and cash-ride eligibility. NG Flutterwave subaccount first creation not demonstrated; app-DB binding for the co-hosted service unresolved. The user's last observed failure is still to be recorded (not reproduced here). |
 
 ## 1–9. Mandatory areas
 
-States below are from repository records unless marked **this session**. `prior` evidence is a claim to re-run, not proof.
-
-| # | Area / sub-requirement | Impl | Integ | Verif-L | Dev | On | Evidence / missing work |
+| # | Feature | Implemented | Integrated | Verified | Deployed | Enabled | Evidence / missing work |
 |---|---|---|---|---|---|---|---|
-| 1a | Driver offer events + acceptance/cancellation metrics | ✓ | ✓ | migrations apply on deployed schema (rehearsal, this session); metrics not re-checked | ✗ (not in export) | ✗ | `20261101000000_driver_offer_events.sql`, `driver-offer-metrics.service.ts`; ack-only denominator. Need: metrics reconciled against recorded events on real PG. |
-| 1b | Location-aware matching using reliability | ✓ | ✓ | prior | ? | ✗ | `rankEligibleDrivers` weights default 0 → reliability **off**. Decision D3. |
-| 1c | Accurate availability messages = server decision | ~ | ✓ | prior | ? | n/a | `no_driver_reason` messages; cash-ride/top-up split done (row 0). Need browser test binding customer "no driver" text to server reason. |
-| 2a | Six-slot vehicle inspection | ✓ | ✓ | prior | ~ (inspection release deployed per records) | ? | Vehicle-scoped slots, signed URLs, admin review. On-device upload: unverified. |
-| 2b | Account-sharing protections / suspension revocation | ✓ | ✓ | prior | ? | n/a | Real GoTrue suspension test in `bike-authenticated-routes.integration.spec.ts`. Need: device/session-binding policy beyond suspension (what "sharing" detection is agreed?) — D4. |
-| 3 | Backend per-driver completion PIN policy | ✓ | ✓ | prior | ✗ | ✗ | `driver_pin_policies` driver>market>default, 5×15-min lock. Need default per market — D5. |
-| 4a | Traffic indicators | ✓ | ✓ | prior | ? | ? | `/:jobId/traffic` green/amber/red, read-only (`traffic-route.spec.ts`). Live TomTom key unverified. |
-| 4b | Traffic-aware pricing + surge | ~ | ~ | prior | ? | ✗ | Surge capped by `maxSurge` (default 1 = off), frozen in fare snapshot. No approved surge cap or traffic-pricing rule — D1. |
-| 4c | Approved map styling | ? | ? | ✗ | ? | ✗ | No approved style recorded — D2. |
-| 5a | Driver cash wallet + verified top-ups | ✓ | ✓ | ✓ **this session** | ~ (`f6e8c00`) | ~ | See row 0. GB Stripe card 5% fee (`vaydu-driver-card-5pct-wallet-v1`, approved). Africa providers: **deferred** (D-AF). |
-| 5b | Complete cash-job accounting (reserve, settle, release, reassign, early-stop, no-show) | ✓ | ✓ | ✓ **this session** (booking/complete/cancel/no-show) / prior (reassign, early-stop) | ✗ | ✗ | Real-PG 59/59 this session. Reassign/early-stop RPCs exist on v2.3 content; not re-run here. |
-| 6a | Cancellation fees + policy publish | ✓ | ✓ | prior | ✗ | ✗ | `cancellation_policies` versioned, disabled; admin `/policies` UI. |
-| 6b | Driver compensation 80% of collected | ✓ | ✓ | prior | ✗ | ✗ | Approved 80/20, `on_collection`. |
-| 6c | Customer debt + repayment | ✓ | ✓ | prior | ✗ | ✗ | Threshold 50% market min fare (approved). Overdue terms missing — D6. Real Stripe repayment return path unverified. |
-| 7a | Customer promotion (5% first booking, platform-funded) | ✓ | ✓ | prior | ✗ | ✗ | Approved rate. Caps/min fare/budget missing — D6. |
-| 7b | Referrals (customer 5% / driver 5% × 20 jobs) | ✓ | ✓ | prior | ✗ | ✗ | Real-PG referral lifecycle 14/14 (prior). |
-| 7c | Driver bonuses | ~ | ~ | ✗ | ✗ | ✗ | Campaign kind exists; no approved bonus rule/amount — D7. |
-| 8 | Ride-market readiness validation | ~ | ✓ | prior | ? | n/a | `GET /admin/market-readiness` read-only. Must also report cash-ride eligibility, payout readiness and collection readiness separately. |
-| 9a | Operational reporting + monitoring | ~ | ~ | prior | ? | ✗ | `report-unresolved-payment-ops.cjs` exit 0/2/3; no scheduled consumer/alert target. |
-| 9b | Backup restoration + recovery drill | ~ | n/a | ✗ | ~ | n/a | 27 Oct isolated restore of develop archive passed (prior record). Need a fresh drill covering the current schema (incl. top-up ledger) in isolation. |
+| 1a | Driver acceptance/cancellation metrics from offer events | ~ | ✓ | ~ migrations apply on the upgraded clone (this session); metric values vs recorded events **not** verified | ✗ (absent from export) | ✗ | Code review of `server/services/driver-offer-metrics.service.ts` (not yet test-proven): (i) driver-cancellation attribution = the cancelling client's free-text `reason` containing "driver" (`booking.routes.ts:1486` → `cancel_job_safely` writes it to `metadata.cancellation_reason`); the cancelling actor is not recorded and the driver app has no cancel action — needs **D9**; (ii) cancellation denominator = jobs *currently* assigned to the driver with `updated_at` in the window, not accepted-offer events (reassigned jobs drop out); (iii) acknowledgements keyed by job, not offer; (iv) both reads unbounded — subject to the PostgREST row limit. Next: real-PG/PostgREST test of these cases, then fix (ii)–(iv), which need no policy. |
+| 1b | Location-aware matching using reliability | ✓ | ✓ | prior (unit 81/81) | ? | ✗ | Weights default 0 → reliability off until D3. |
+| 1c | Availability messages = server decision | ~ | ✓ | prior | ? | n/a | Customer "no driver" text not browser-bound to the server reason yet. |
+| 2a | Six-slot vehicle inspection | ✓ | ✓ | prior | ~ (inspection release per records) | ? | On-device upload unverified. |
+| 2b | Account-sharing protections | ~ | ✓ | ✓ suspension revokes the same token + refresh (rehearsal, both checks) | ? | n/a | Only suspension/revocation exists; the sharing policy itself is undefined (D4). |
+| 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ~ migration applies (rehearsal); PIN flow prior (7/7) | ✗ | ✗ | Needs D5. |
+| 4a | Traffic indicators | ✓ | ✓ | prior (`traffic-route.spec.ts`) | ? | ? | Live TomTom key unverified. |
+| 4b | Traffic-aware pricing + surge | ~ | ~ | prior | ? | ✗ | `maxSurge` default 1 (off). Needs D1. |
+| 4c | Approved map styling | ? | ? | ✗ | ? | ✗ | Needs D2. |
+| 5a | Driver cash wallet + verified top-ups | ✓ | ✓ | ✓ (row 0) | ~ (f6e8c00 lacks the reset/message fixes) | ~ GB sandbox scope | Africa providers deferred (D-AF). |
+| 5b | Cash-job accounting | ✓ | ✓ | ✓ book/activate/complete/cancel/no-show (real-PG); reassign incl. concurrency (rehearsal); early-stop prior | ✗ | ✗ | |
+| 6a | Cancellation fees + policy publish | ✓ | ✓ | ~ migrations apply (rehearsal); flows prior | ✗ | ✗ | |
+| 6b | Driver compensation 80% of collected | ✓ | ✓ | prior (PG 14 + webhook 7) | ✗ | ✗ | Approved 80/20 on collection. |
+| 6c | Customer debt + repayment | ✓ | ✓ | ✓ authenticated `/debts` returns a seeded receivable on the upgraded clone (both checks); repayment prior | ✗ | ✗ | Real Stripe repayment return unverified; overdue terms D6. |
+| 7a | Customer promotion (5% first booking) | ✓ | ✓ | prior | ✗ | ✗ | Caps/min fare/budget D6. |
+| 7b | Referrals (5% customer / 5% × 20 jobs driver) | ✓ | ✓ | ~ migrations apply (rehearsal); lifecycle prior (14/14) | ✗ | ✗ | |
+| 7c | Driver bonuses | ~ | ~ | ✗ | ✗ | ✗ | Needs D7. |
+| 8 | Ride-market readiness validation | ~ | ✓ | prior | ? | n/a | Must report collection, payout and cash-ride readiness as separate states. |
+| 9a | Operational reporting + monitoring | ~ | ~ | ✓ `report-unresolved-payment-ops.cjs` exit 0 / 2 / 3 against the upgraded clone (rehearsal) | ? | ✗ | No scheduled consumer or alert target. |
+| 9b | Backup restoration + recovery | ~ | n/a | ✗ | ~ | n/a | Fresh isolated restore drill of a current develop backup outstanding (runbook step 2 creates one). |
 
-## Business decisions required (cannot be invented)
+## Unresolved policies (cannot be invented)
 
 | ID | Decision needed |
 |---|---|
-| D1 | Surge: maximum multiplier per market, trigger rule, and whether traffic delay changes the fare (and how), or stays display-only. |
-| D2 | Approved map style (provider + style id / spec) per platform. |
-| D3 | Matching weights for acceptance and cancellation rate, and new-driver exposure; or confirm they stay 0. |
-| D4 | What counts as account sharing (concurrent devices? device binding? face check?) and the action taken. |
-| D5 | Default PIN mode per market (optional / required / disabled). |
-| D6 | Monetary values per market+currency: promo max discount + min qualifying fare, referral caps + min fare, funded campaign budgets, overdue-debt terms. |
+| D1 | Surge maximum per market, trigger rule, and whether traffic changes the fare or is display-only. |
+| D2 | Approved map style (provider + style id) per platform. |
+| D3 | Matching weights for acceptance/cancellation rate and new-driver exposure, or confirm 0. |
+| D4 | What counts as account sharing, and the action taken. |
+| D5 | Default PIN mode per market. |
+| D6 | Per market+currency money values: promo cap + min fare, referral caps + min fare, funded campaign budgets, overdue-debt terms. |
 | D7 | Driver bonus rules and amounts. |
-| D8 | Develop cash-ride cohort: driver id, tenant id, accepted terms version (runbook step 4). |
-| D-AF | Africa payment providers: **explicitly deferred** (branch `africa/deferred-2026-11-01`); architecture retained. |
+| D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
+| D9 | Definition of a driver-attributable cancellation: driver-initiated only (requires a driver cancel action and recording the actor), and/or customer cancellations for a stated driver reason, driver no-show, or driver unassign — and whether the customer's free-text reason may ever decide it. |
+| D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
 
-## Open verification failures
+Approved and recorded: driver card top-up fee 5% (`vaydu-driver-card-5pct-wallet-v1`), promo 5%,
+customer referral 5% (90-day credit, ≤5/month), driver referral 5% × 20 jobs/30 days (≤3/month,
+7-day review), debt threshold 50% of market minimum fare, compensation 80/20 on collection, cash-ride
+fee hold / immediate-only / fixed-fare decisions (`CASH-BOOKING-PLAN.md`).
 
-| Check | Result this session | Next step |
-|---|---|---|
-| Upgraded-clone rehearsal `src/testing/bike-authenticated-routes.integration.spec.ts` (deployed schema + roadmap migrations 20261101…20261264900000, real GoTrue/PostgREST, real admin/booking routers) | **RESOLVED — passes at the release line after two harness fixes.** (1) Root cause proven by instrumentation: 5.09 s idle (event loop blocked by synchronous docker/psql) let `fetch` reuse a pooled socket in the same tick Node's overdue 5 s keep-alive destroyed it → `ECONNRESET`; the GoTrue `ECONNREFUSED` was a request finishing after cleanup. Identical failure on `v2.3` (not a regression). Fix: test server `keepAliveTimeout` 10 min; concurrency assertions unchanged. (2) The extracted-API step hard-coded an untracked extract of the old `9abfd8f` release; it now runs the current source as a separate process (or `VAYDU_EXTRACTED_API_ROOT`). Original record follows. ~~Fails, reproducibly (2/2)~~ at line 708: the two *concurrent* `/api/admin/cash-jobs/:id/reassign` calls — the in-process `requireAdmin` → `supabaseAdmin.auth.getUser` gets `ECONNREFUSED` to the disposable stack and the client sees `ECONNRESET`. All earlier steps (migration chain, bike guards, feed visibility, suspension, single reassignments, hold ACL/RLS) passed. GoTrue container was still up with no errors. Records say this passed at `v2.3`. | Re-run the same spec on a `v2.3` checkout in this environment to separate an environment (Docker Desktop port proxy under concurrency) failure from a regression; if environmental, fix the harness without weakening the concurrency assertion. (Correction: an earlier note called `requireAdmin`'s unguarded `getUser` a crash defect. Express is 5.2.1, which forwards async rejections to the error handler at `server/index.ts:218`, so an auth outage returns 500 — not a defect.) |
+## Dependencies
 
-## Access / authorisation blockers
-
-- Shared develop: deploying `635a285` + cash-ride migrations 1–4 with cash rides **off** was **authorised by the user on 2026-11-12**. Runbook: `deploy/vaydu-topup-verify-fix/DEVELOP-DEPLOY-635a285.md`. Waiting on someone with host access to run it (agent has no SSH). Enabling GB/GBP cash rides is **not** authorised yet and also needs D8.
-- Develop DB is missing the roadmap schemas (areas 1, 3, 6, 7): a reviewed migration chain against the current deployed schema is needed before those features can be verified on develop.
+- Develop deployment of 635a285: authorised, pending host execution (agent has no SSH).
+- Roadmap schemas on develop (areas 1, 3, 6, 7): they apply cleanly to the deployed schema in the
+  rehearsal, but a reviewed develop rollout for them has **not** been prepared or authorised.
+- `origin/develop` reconciliation (33 commits).
+- Bank-account setup: user's last observed failure; app-DB binding for the co-hosted service.
 
 ## Reproduce this session's evidence (release worktree)
 
 ```
-npx vitest run src/testing/driver-topup-verify-states.spec.ts src/testing/stripe-driver-topup-sandbox.spec.ts src/testing/driver-wallet-topup-http.spec.ts src/testing/driver-card-approved-policy.spec.ts src/testing/cash-ride-booking.spec.ts src/testing/cash-ride-booking-migration.spec.ts src/testing/cash-ride-activation-migration.spec.ts src/testing/driver-cash-credit-market-pilot.spec.ts src/testing/cash-ride-earnings-label.spec.ts   # 109/109
-npx playwright test -c playwright.driver-topup.config.ts                 # 5/5
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-driver-topup-db.ps1 -Integration   # exit 0
-bash scripts/cash-ride/run-realdb-tests.sh                               # 59/59 + rollback identical
+npx vitest run src/testing/driver-topup-verify-states.spec.ts src/testing/stripe-driver-topup-sandbox.spec.ts src/testing/driver-wallet-topup-http.spec.ts src/testing/driver-card-approved-policy.spec.ts src/testing/cash-ride-booking.spec.ts src/testing/cash-ride-booking-migration.spec.ts src/testing/cash-ride-activation-migration.spec.ts src/testing/driver-cash-credit-market-pilot.spec.ts src/testing/cash-ride-earnings-label.spec.ts   # 109/109 (635a285)
+npx playwright test -c playwright.driver-topup.config.ts                                  # 5/5 (635a285)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-driver-topup-db.ps1 -Integration   # exit 0 (2217bd2)
+bash scripts/cash-ride/run-realdb-tests.sh                                                # 59/59 + rollback identical (2217bd2)
+npx vitest run src/testing/bike-authenticated-routes.integration.spec.ts --silent=false --reporter=verbose   # check 1 (a421583)
+VAYDU_EXTRACTED_API_ROOT=<extract> npx vitest run src/testing/bike-authenticated-routes.integration.spec.ts --silent=false --reporter=verbose   # check 2 (a421583)
 ```
