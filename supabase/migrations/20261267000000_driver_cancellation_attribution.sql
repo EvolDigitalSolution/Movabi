@@ -1,12 +1,18 @@
 -- Driver cancellation attribution + offer metrics from recorded events.
 --
--- Policy D9 (user decision, 2026-11-12): a driver-attributable cancellation is DRIVER-INITIATED
--- ONLY. It is decided by the server-verified actor, never by free-text reasons. Two driver-initiated
--- actions exist and are counted separately:
+-- Policy D9 (user decisions, 2026-11-12): a driver-attributable cancellation is DRIVER-INITIATED
+-- ONLY, decided by the server-verified actor, never by free text. Two driver-initiated actions:
 --   * the ASSIGNED driver cancels the booking (POST /api/booking/cancel by the session driver);
---   * the driver hands an ACCEPTED offer back (POST /api/booking/driver-unable), recorded as a
---     'declined' offer event after that offer's 'accepted' event (close_driver_offer).
--- Customer and admin cancellations, and legacy cancellations with no recorded actor, never count.
+--   * the driver voluntarily hands back an ACCEPTED assignment (POST /api/booking/driver-unable),
+--     recorded as a 'declined' offer event after that offer's 'accepted' event (close_driver_offer).
+--     A handback counts once as a driver cancellation and is also reported as driverHandoffs.
+-- Customer, admin and system removals (incl. no-shows) never count; historical cancellations with no
+-- recorded actor are reported separately as unattributed.
+--
+-- Metric identity and window: one ASSIGNMENT = (driver, job) accepted by this driver, counted once
+-- however many offers or re-acceptances it took. The denominator is the driver's assignments whose
+-- acceptance falls in the window; every numerator/exclusion class is a subset of exactly those
+-- assignments and each assignment is classified once.
 --
 -- Additive: cancel_job_safely is unchanged and still callable; nothing is enabled.
 
@@ -40,9 +46,25 @@ end $$;
 revoke all on function public.cancel_job_with_actor(uuid,text,uuid,text) from public, anon, authenticated;
 grant execute on function public.cancel_job_with_actor(uuid,text,uuid,text) to service_role;
 
--- 2) Offer metrics computed in the database from recorded events (bounded, no row limits).
---    Per OFFER (job_id, offer_key), not per job. Denominator for cancellations = jobs this driver
---    ACCEPTED in the window (from 'accepted' events), so later reassignment never hides them.
+-- 2) Negotiated acceptances (customer accepts a driver's bid / driver accepts a counter-offer) do not
+--    pass through dispatch offers. Record them as an accepted assignment so they enter the same
+--    denominator. Only when the driver actually owns the job now; idempotent (one 'negotiation' offer).
+create or replace function public.record_negotiated_assignment(p_job uuid, p_driver uuid)
+returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
+declare j public.jobs%rowtype;
+begin
+  select * into j from public.jobs where id = p_job;
+  if not found or p_driver is null or (j.driver_id is distinct from p_driver and j.accepted_driver_id is distinct from p_driver) then
+    return false;
+  end if;
+  perform public.record_driver_offer_event(j.tenant_id, p_job, p_driver, 'negotiation', e, p_driver, jsonb_build_object('via','negotiation'))
+     from unnest(array['created','acknowledged','accepted']) e;
+  return true;
+end $$;
+revoke all on function public.record_negotiated_assignment(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.record_negotiated_assignment(uuid,uuid) to service_role;
+
+-- 3) Metrics computed in the database from recorded events (bounded, no row limits).
 create or replace function public.driver_offer_metrics_v2(p_driver uuid, p_since timestamptz)
 returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
   with ev as (
@@ -56,18 +78,23 @@ returns jsonb language sql stable security definer set search_path = public, pg_
            max(event_at) filter (where event = 'declined') as declined_at,
            bool_or(event = 'expired')             as expired
       from ev group by job_id, offer_key
-  ), accepted_jobs as (
-    select distinct job_id from offers where ack and accepted_at is not null
-  ), handoffs as (
-    select distinct job_id from offers where ack and accepted_at is not null and declined_at > accepted_at
-  ), driver_cancels as (
-    select a.job_id from accepted_jobs a join public.jobs j on j.id = a.job_id
-     where j.status in ('cancelled','canceled')
-       and j.metadata->>'cancelled_by_role' = 'driver'
-       and j.metadata->>'cancelled_by' = p_driver::text
-  ), unattributed as (
-    select a.job_id from accepted_jobs a join public.jobs j on j.id = a.job_id
-     where j.status in ('cancelled','canceled') and j.metadata->>'cancelled_by_role' is null
+  ), assignments as (                       -- identity: (driver, job), acceptance in the window
+    select job_id, bool_or(declined_at > accepted_at) as handed_back
+      from offers where ack and accepted_at is not null group by job_id
+  ), classified as (                        -- exactly one class per assignment
+    select a.job_id,
+      case
+        when j.status in ('cancelled','canceled') and j.metadata->>'cancelled_by_role' = 'driver'
+             and j.metadata->>'cancelled_by' = p_driver::text then 'driver_cancelled'
+        when a.handed_back then 'driver_handoff'
+        when j.status not in ('cancelled','canceled') or j.id is null then 'not_cancelled'
+        when j.metadata->>'cancelled_by_role' = 'customer' then 'customer'
+        when j.metadata->>'cancelled_by_role' = 'admin' then 'admin'
+        when j.metadata->>'cancelled_by_role' = 'driver' then 'other_driver'
+        when j.no_show_status is not null then 'customer_no_show'
+        else 'unattributed'
+      end as class
+    from assignments a left join public.jobs j on j.id = a.job_id
   )
   select jsonb_build_object(
     'acknowledgedOffers', (select count(*) from offers where ack),
@@ -75,10 +102,14 @@ returns jsonb language sql stable security definer set search_path = public, pg_
     'acceptedOffers',     (select count(*) from offers where ack and accepted_at is not null),
     'declinedOffers',     (select count(*) from offers where ack and declined_at is not null and accepted_at is null),
     'expiredOffers',      (select count(*) from offers where ack and expired and accepted_at is null),
-    'acceptedBookings',   (select count(*) from accepted_jobs),
-    'driverCancelledBookings', (select count(*) from driver_cancels),
-    'driverHandoffs',     (select count(*) from handoffs h where not exists (select 1 from driver_cancels c where c.job_id = h.job_id)),
-    'unattributedCancellations', (select count(*) from unattributed));
+    'acceptedBookings',   (select count(*) from assignments),
+    'driverCancelledBookings', (select count(*) from classified where class = 'driver_cancelled'),
+    'driverHandoffs',     (select count(*) from classified where class = 'driver_handoff'),
+    'customerCancellations', (select count(*) from classified where class = 'customer'),
+    'adminCancellations', (select count(*) from classified where class = 'admin'),
+    'otherDriverCancellations', (select count(*) from classified where class = 'other_driver'),
+    'customerNoShows',    (select count(*) from classified where class = 'customer_no_show'),
+    'unattributedCancellations', (select count(*) from classified where class = 'unattributed'));
 $$;
 revoke all on function public.driver_offer_metrics_v2(uuid,timestamptz) from public, anon, authenticated;
 grant execute on function public.driver_offer_metrics_v2(uuid,timestamptz) to service_role;

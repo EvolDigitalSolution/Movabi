@@ -1,5 +1,6 @@
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
+import { type DriverOfferMetricsView, driverCancellationSummary, excludedCancellationSummary } from '../../../../shared/models/driver-offer-metrics';
 import { DriverProfile, Vehicle } from '../../../../shared/models/booking.model';
 import { CommonModule } from '@angular/common';
 import { IonicModule } from '@ionic/angular';
@@ -407,6 +408,27 @@ type AdminDriver = DriverProfile & {
               } @else {
                 <p class="text-sm text-rose-500 font-semibold mt-2">No vehicle details found.</p>
               }
+            </div>
+
+            <div class="detail-card" data-testid="admin-driver-reliability">
+              <p class="detail-label">Reliability · last 30 days</p>
+              @if (offerMetricsError()) { <p role="alert" class="text-sm text-rose-600">{{ offerMetricsError() }}</p> }
+              @else if (offerMetrics(); as om) {
+                <div class="grid grid-cols-2 gap-3 mt-2 text-sm">
+                  <div>
+                    <p class="font-semibold">Acceptance</p>
+                    <p>{{ om.insufficientData.offers ? 'Not enough offers yet' : (om.acceptanceRate! * 100 | number:'1.0-0') + '%' }}</p>
+                    <p class="text-xs text-slate-500">{{ om.acceptedOffers }} of {{ om.acknowledgedOffers }} offers</p>
+                  </div>
+                  <div>
+                    <p class="font-semibold">Driver cancellations</p>
+                    <p>{{ om.insufficientData.cancellations ? 'Not enough bookings yet' : (om.cancellationRate! * 100 | number:'1.0-0') + '%' }}</p>
+                    <p class="text-xs text-slate-500" data-testid="admin-driver-cancellation-summary">{{ cancellationSummary(om) }}</p>
+                  </div>
+                </div>
+                @if (excludedSummary(om); as excluded) { <p class="text-xs text-slate-500 mt-2" data-testid="admin-driver-cancellation-excluded">{{ excluded }}</p> }
+                <p class="text-xs text-slate-400 mt-1">Only cancellations the driver started count, including handing back an accepted booking.</p>
+              } @else { <p class="text-sm text-slate-500">Loading…</p> }
             </div>
 
             <div class="detail-card">
@@ -1518,6 +1540,29 @@ export class DriverListComponent implements OnInit {
         }
     }
 
+    readonly offerMetrics = signal<DriverOfferMetricsView | null>(null);
+    readonly offerMetricsError = signal('');
+    readonly cancellationSummary = driverCancellationSummary;
+    readonly excludedSummary = excludedCancellationSummary;
+    private offerMetricsRequest = 0;
+
+    /** Loaded per opened driver only (never one request per list row); stale responses are ignored. */
+    async loadOfferMetrics() {
+        const id = this.selectedDriver()?.id;
+        if (!id) return;
+        const request = ++this.offerMetricsRequest;
+        this.offerMetrics.set(null);
+        this.offerMetricsError.set('');
+        try {
+            const result = await this.adminService.driverOfferMetrics(id, 30);
+            if (request === this.offerMetricsRequest && this.selectedDriver()?.id === id) this.offerMetrics.set(result);
+        } catch (error) {
+            if (request === this.offerMetricsRequest && this.selectedDriver()?.id === id) {
+                this.offerMetricsError.set(error instanceof Error ? error.message : 'Could not load driver metrics.');
+            }
+        }
+    }
+
     async reviewInspection(id:string,status:'approved'|'rejected',reason?:string) {
         const driverId = this.selectedDriver()?.id;
         try {
@@ -1539,10 +1584,14 @@ export class DriverListComponent implements OnInit {
         this.selectedReviewBlockers.set(this.getReviewFeedbackOptions(driver));
         this.selectedDriver.set(driver);
         void this.loadInspectionPhotos();
+        void this.loadOfferMetrics();
     }
 
     closeDriverModal() {
         ++this.inspectionRequest;
+        ++this.offerMetricsRequest;
+        this.offerMetrics.set(null);
+        this.offerMetricsError.set('');
         this.inspection.set(null);
         this.selectedDriver.set(null);
         this.driverMessageDraft.set('');

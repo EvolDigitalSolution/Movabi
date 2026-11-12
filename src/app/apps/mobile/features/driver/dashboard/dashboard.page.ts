@@ -5,6 +5,7 @@ import {formatCashCreditMinor,cashCreditStatusMessage,cashCreditNeedsReview,topu
 import {MarketSafetyService} from '../../../../../core/services/payments/market-safety.service';
 import { earningsSummary, recordedEarningAmount, recordedPayoutLabel, type EarningsMetric } from '@shared/utils/earnings-currency';
 import { DriverEarningsPreviewComponent } from '@shared/ui/driver-earnings-preview.component';
+import { type DriverOfferMetricsView, driverCancellationSummary, excludedCancellationSummary } from '@shared/models/driver-offer-metrics';
 import { driverMoneyView } from '@shared/utils/driver-money-view';
 import { DriverInboxComponent } from '../inbox/driver-inbox.component';
 import { DriverInboxService } from '../../../../../core/services/driver/driver-inbox.service';
@@ -333,7 +334,8 @@ type DriverHubTab = 'requests' | 'inbox' | 'trips' | 'wallet' | 'profile';
                           <div class="bg-slate-50 border border-slate-100 rounded-xl p-3">
                             <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Cancellations · {{ om.periodDays }}d</p>
                             <p class="text-sm font-bold text-slate-900">{{ om.insufficientData.cancellations ? 'Not enough trips yet' : (om.cancellationRate! * 100 | number:'1.0-0') + '%' }}</p>
-                            <p class="text-[9px] text-slate-400">{{ om.driverCancellations }} of {{ om.acceptedBookings }} bookings</p>
+                            <p class="text-[9px] text-slate-400" data-testid="driver-cancellation-summary">{{ cancellationSummary(om) }}</p>
+                            @if (excludedSummary(om); as excluded) { <p class="text-[9px] text-slate-400" data-testid="driver-cancellation-excluded">{{ excluded }}</p> }
                           </div>
                         </div>
                       }
@@ -1465,12 +1467,9 @@ export class DriverDashboardPage implements OnInit, OnDestroy {
         });
     }
 
-    offerMetrics = signal<{
-        acceptanceRate:number|null; cancellationRate:number|null;
-        acknowledgedOffers:number; acceptedOffers:number; driverCancellations:number;
-        acceptedBookings:number; periodDays:number;
-        insufficientData:{offers:boolean;cancellations:boolean};
-    }|null>(null);
+    offerMetrics = signal<DriverOfferMetricsView|null>(null);
+    readonly cancellationSummary = driverCancellationSummary;
+    readonly excludedSummary = excludedCancellationSummary;
 
     async ngOnInit() {
         this.dashboardMessages.initialize();

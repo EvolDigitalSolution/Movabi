@@ -50,7 +50,24 @@ echo "$out" | grep -E '\| (PASS|FAIL) \|' | sed 's/^/   /'
 summary="$(echo "$out" | tail -1)"; echo "   failures | checks = $summary"
 [ "${summary%% *}" = 0 ] || fail=1
 
+check(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; else echo "FAIL: $1 (got '$2', expected '$3')"; fail=1; fi; }
+after="$(mktemp)"; dump > "$after"
+q < "$root/supabase/migrations/20261267000000_driver_cancellation_attribution.sql" >/dev/null && echo "RE-APPLIED 20261267000000"
+check "re-applying the migration is idempotent (schema unchanged)" "$(diff -q "$after" <(dump) >/dev/null && echo same || echo differs)" same
+
 q < "$root/scripts/driver-metrics/20261267000000_driver_cancellation_attribution.down.sql" >/dev/null && echo "ROLLED BACK 20261267000000"
 if diff -q "$before" <(dump) >/dev/null; then echo "PASS: schema after rollback identical to before the migration"; else echo "FAIL: schema differs after rollback"; diff "$before" <(dump) | head -30; fail=1; fi
-rm -f "$before"
+
+# After rollback: an API that calls cancel_job_with_actor fails closed and changes nothing; the
+# previous API path (cancel_job_safely) keeps working. Committed job, then probes in rolled-back txns.
+q -c "SET session_replication_role = replica; INSERT INTO public.tenants(id,name,slug) VALUES ('22222222-2222-4222-8222-222222222222','r','r'); INSERT INTO auth.users(id) VALUES ('c1000000-0000-4000-8000-0000000000c1'); INSERT INTO public.profiles(id,tenant_id,role) VALUES ('c1000000-0000-4000-8000-0000000000c1','22222222-2222-4222-8222-222222222222','customer'); INSERT INTO public.jobs(id,tenant_id,customer_id,pickup_address,dropoff_address,scheduled_time,payment_method,payment_status,country_code,currency_code,status) VALUES ('00000000-0000-4000-8000-0000000000ff','22222222-2222-4222-8222-222222222222','c1000000-0000-4000-8000-0000000000c1','a','b',now(),'card','authorized','GB','GBP','searching');" >/dev/null
+st="$(docker exec -i -e PGPASSWORD=isolated-test "$db" psql -X -U postgres -d "$name" -qAt -c "SELECT public.cancel_job_with_actor('00000000-0000-4000-8000-0000000000ff','x','c1000000-0000-4000-8000-0000000000c1','customer')" 2>&1 | grep -o 'function public.cancel_job_with_actor(.*) does not exist' | head -1 || true)"
+check "after rollback the new cancel function is absent (API calling it is refused)" "${st:+absent}" absent
+check "after rollback the refused call left the job unchanged" "$(q -c "select status||'|'||coalesce(metadata->>'cancelled_by','none') from public.jobs where id='00000000-0000-4000-8000-0000000000ff'")" "searching|none"
+check "after rollback the previous API path (cancel_job_safely) still cancels" "$(q -c "begin; select public.cancel_job_safely('00000000-0000-4000-8000-0000000000ff','x'); rollback;")" "t"
+q < "$root/supabase/migrations/20261267000000_driver_cancellation_attribution.sql" >/dev/null && echo "RE-APPLIED after rollback"
+reapplied="$(mktemp)"; dump > "$reapplied"
+check "re-apply after rollback restores the migrated schema" "$(diff -q "$after" "$reapplied" >/dev/null && echo same || echo differs)" same
+diff "$after" "$reapplied" | head -40 || true; rm -f "$reapplied"
+rm -f "$before" "$after"
 [ $fail = 0 ] && echo "ALL DRIVER-METRICS REAL-POSTGRES CHECKS PASSED" || { echo "DRIVER-METRICS REAL-POSTGRES CHECKS FAILED"; exit 1; }

@@ -1,5 +1,6 @@
 import {driverMatchesJobMarket} from '@shared/utils/driver-market-scope';
 import { pollRetryDelay } from '@shared/utils/poll-retry-delay';
+import type { DriverOfferMetricsView } from '@shared/models/driver-offer-metrics';
 import { DriverRequestStateService } from './driver-request-state.service';
 import { approvedErrandBudget } from '@shared/utils/errand-budget';
 import { Injectable, inject, signal, effect } from '@angular/core';
@@ -304,11 +305,8 @@ export class DriverService {
     }
 
     async getOfferMetrics(periodDays = 30) {
-        const result = await firstValueFrom(this.http.get<{
-            acknowledgedOffers:number; deliveredAttempts:number; acceptedOffers:number; declinedOffers:number; expiredOffers:number;
-            acceptanceRate:number|null; acceptedBookings:number; driverCancellations:number;
-            cancellationRate:number|null; periodDays:number; insufficientData:{offers:boolean;cancellations:boolean};
-        }>(this.apiUrlService.getApiUrl(`/api/booking/offer-metrics?days=${periodDays}`), {headers:await this.authHeaders()}));
+        const result = await firstValueFrom(this.http.get<DriverOfferMetricsView>(
+            this.apiUrlService.getApiUrl(`/api/booking/offer-metrics?days=${periodDays}`), {headers:await this.authHeaders()}));
         return result;
     }
 

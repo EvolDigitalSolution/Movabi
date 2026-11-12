@@ -2269,6 +2269,8 @@ router.post('/negotiation/:id/accept', async (req: Request, res: Response) => {
         // a pricing or notification problem must never report the committed
         // acceptance as failed, and must never write ownership again.
         // ------------------------------------------------------------------
+        // Driver metrics: record this accepted assignment (DB verifies the driver now owns the job).
+        try { await supabaseAdmin.rpc('record_negotiated_assignment', { p_job: negotiation.job_id, p_driver: acceptedDriverId }); } catch { /* event recording must not break acceptance */ }
         const agreedFare = Number((accepted as any)?.agreed_fare ?? negotiation.amount);
         let pricingPending = false;
         try {
@@ -2408,6 +2410,8 @@ router.post('/negotiation/:jobId/driver-accept', async (req: Request, res: Respo
 
         // The RPC returns the negotiation row and the agreed fare. Ownership and
         // status are ALREADY COMMITTED at this point.
+        // Driver metrics: record this accepted assignment (DB verifies the driver now owns the job).
+        try { await supabaseAdmin.rpc('record_negotiated_assignment', { p_job: jobId, p_driver: userId }); } catch { /* event recording must not break acceptance */ }
         const result = (acceptResult || {}) as {
             agreed_fare?: number | string;
             negotiation?: Record<string, unknown>;

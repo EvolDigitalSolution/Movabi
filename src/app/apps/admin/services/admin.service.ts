@@ -1,3 +1,4 @@
+import type { DriverOfferMetricsView } from '@shared/models/driver-offer-metrics';
 import type { FinanceReport } from '@shared/models/admin-finance.model';
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -1196,6 +1197,16 @@ export class AdminService {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Could not update the campaign status.');
     return body.campaign;
+  }
+
+  /** Driver acceptance/cancellation metrics (D9: driver-initiated only). Tenant-scoped on the server. */
+  async driverOfferMetrics(driverId: string, days = 30): Promise<DriverOfferMetricsView> {
+    const headers = await this.getAuthenticatedApiHeaders();
+    const response = await fetch(`${this.apiUrlService.getBaseUrl()}/api/admin/drivers/${encodeURIComponent(driverId)}/offer-metrics?days=${days}`,
+      { headers, signal: AbortSignal.timeout(15000) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not load driver metrics.');
+    return body as DriverOfferMetricsView;
   }
 
   async campaignAudit(): Promise<any[]> {

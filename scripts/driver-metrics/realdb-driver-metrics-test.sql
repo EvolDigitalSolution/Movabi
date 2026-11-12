@@ -4,11 +4,8 @@
 -- One transaction, rolled back.
 \set ON_ERROR_STOP on
 BEGIN;
--- Setup inserts bypass unrelated jobs triggers; they are re-enabled before any cancellation, so the
--- real cancel path (cancel_job_safely + the actor update) runs with every jobs trigger active.
-DO $d$ DECLARE t text; BEGIN
- FOR t IN SELECT tgname FROM pg_trigger tr JOIN pg_class c ON c.oid=tr.tgrelid WHERE c.relname='jobs' AND NOT tgisinternal
- LOOP EXECUTE format('ALTER TABLE public.jobs DISABLE TRIGGER %I', t); END LOOP; END $d$;
+-- Setup inserts use session_replication_role=replica (skips triggers WITHOUT changing any trigger's
+-- state); every cancellation and metric runs with the deployed trigger configuration unchanged.
 INSERT INTO public.tenants(id,name,slug) VALUES ('11111111-1111-4111-8111-111111111111','m','m');
 INSERT INTO auth.users(id) VALUES
  ('d0000000-0000-4000-8000-00000000000d'),('e0000000-0000-4000-8000-00000000000e'),('f0000000-0000-4000-8000-00000000000f'),
@@ -27,10 +24,10 @@ CREATE TEMP TABLE results(n int, name text, ok boolean, detail text);
 -- before it is acted on.
 CREATE FUNCTION pg_temp.job(p_id uuid, p_driver uuid, p_status text DEFAULT 'accepted') RETURNS uuid LANGUAGE plpgsql AS $f$
 BEGIN
- ALTER TABLE public.jobs DISABLE TRIGGER USER;
+ SET LOCAL session_replication_role = replica;
  INSERT INTO public.jobs(id,tenant_id,customer_id,driver_id,accepted_driver_id,pickup_address,dropoff_address,scheduled_time,payment_method,payment_status,country_code,currency_code,status)
  VALUES (p_id,'11111111-1111-4111-8111-111111111111','c0000000-0000-4000-8000-00000000000c',p_driver,p_driver,'a','b',now(),'card','authorized','GB','GBP',p_status);
- ALTER TABLE public.jobs ENABLE TRIGGER USER;
+ SET LOCAL session_replication_role = origin;
  RETURN p_id;
 END $f$;
 -- Recorded offer lifecycle; events spaced one second apart in the given order.
@@ -116,11 +113,11 @@ INSERT INTO results SELECT 3,'contrast: old free-text rule gives 3 wrong attribu
 
 -- 4. Per offer, not per job; window; attempted-only never counts.
 DO $o$ BEGIN
- ALTER TABLE public.jobs DISABLE TRIGGER USER;
+ SET LOCAL session_replication_role = replica;
  PERFORM pg_temp.job('00000000-0000-4000-8000-000000000021',NULL,'searching');
  PERFORM pg_temp.job('00000000-0000-4000-8000-000000000022',NULL,'searching');
  PERFORM pg_temp.job('00000000-0000-4000-8000-000000000023',NULL,'searching');
- ALTER TABLE public.jobs ENABLE TRIGGER USER;
+ SET LOCAL session_replication_role = origin;
  PERFORM pg_temp.offer('00000000-0000-4000-8000-000000000021','f0000000-0000-4000-8000-00000000000f','a',ARRAY['created','acknowledged','declined'],now()-interval '3 hours');
  PERFORM pg_temp.offer('00000000-0000-4000-8000-000000000021','f0000000-0000-4000-8000-00000000000f','b',ARRAY['created','acknowledged','accepted'],now()-interval '2 hours');
  PERFORM pg_temp.offer('00000000-0000-4000-8000-000000000022','f0000000-0000-4000-8000-00000000000f','c',ARRAY['created','delivery_attempted'],now()-interval '2 hours');
@@ -132,14 +129,76 @@ INSERT INTO results SELECT 4,'attempted-only offer: delivered 1, never acknowled
 INSERT INTO results SELECT 4,'event older than the window excluded (1 accepted booking, not 2)',(m->>'acceptedBookings')::int=1,m->>'acceptedBookings' FROM (SELECT pg_temp.m('f0000000-0000-4000-8000-00000000000f') m) s;
 
 -- 5. Volume: 1500 accepted offers are counted exactly (no row limit in the aggregate).
-ALTER TABLE public.jobs DISABLE TRIGGER USER;
+SET LOCAL session_replication_role = replica;
 INSERT INTO public.jobs(id,tenant_id,customer_id,driver_id,pickup_address,dropoff_address,scheduled_time,payment_method,payment_status,country_code,currency_code,status)
  SELECT gen_random_uuid(),'11111111-1111-4111-8111-111111111111','c0000000-0000-4000-8000-00000000000c','90000000-0000-4000-8000-000000000009','a','b',now(),'card','authorized','GB','GBP','completed' FROM generate_series(1,1500);
-ALTER TABLE public.jobs ENABLE TRIGGER USER;
+SET LOCAL session_replication_role = origin;
 SELECT pg_temp.offer(id,'90000000-0000-4000-8000-000000000009','v',ARRAY['created','acknowledged','accepted']) FROM public.jobs WHERE driver_id='90000000-0000-4000-8000-000000000009';
 INSERT INTO results SELECT 5,'1500 accepted offers counted exactly',(m->>'acceptedOffers')::int=1500 AND (m->>'acceptedBookings')::int=1500,m::text FROM (SELECT pg_temp.m('90000000-0000-4000-8000-000000000009') m) s;
 
+-- 7. Assignment identity, window, duplicates and exclusions for driver X.
+INSERT INTO auth.users(id) VALUES ('71000000-0000-4000-8000-000000000071'),('72000000-0000-4000-8000-000000000072');
+INSERT INTO public.profiles(id,tenant_id,role,country_code) VALUES
+ ('71000000-0000-4000-8000-000000000071','11111111-1111-4111-8111-111111111111','driver','GB'),
+ ('72000000-0000-4000-8000-000000000072','11111111-1111-4111-8111-111111111111','driver','GB');
+-- J31: offered three times (declined, accepted, handed back, accepted again), then X cancels: ONE assignment, counted once.
+SELECT pg_temp.job('00000000-0000-4000-8000-000000000031','71000000-0000-4000-8000-000000000071');
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000031','71000000-0000-4000-8000-000000000071','a',ARRAY['created','acknowledged','declined'],now()-interval '3 hours');
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000031','71000000-0000-4000-8000-000000000071','b',ARRAY['created','acknowledged','accepted','declined'],now()-interval '2 hours');
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000031','71000000-0000-4000-8000-000000000071','c',ARRAY['created','acknowledged','accepted'],now()-interval '1 hour');
+INSERT INTO results SELECT 7,'J31 X cancels after re-acceptance',public.cancel_job_with_actor('00000000-0000-4000-8000-000000000031','x','71000000-0000-4000-8000-000000000071','driver'),'';
+-- J32: accepted, handed back; the handback is recorded twice (retry) -> one event row, one handoff.
+SELECT pg_temp.job('00000000-0000-4000-8000-000000000032',NULL,'searching');
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000032','71000000-0000-4000-8000-000000000071','k',ARRAY['created','acknowledged','accepted','declined']);
+SELECT public.record_driver_offer_event('11111111-1111-4111-8111-111111111111','00000000-0000-4000-8000-000000000032','71000000-0000-4000-8000-000000000071','k','declined');
+INSERT INTO results SELECT 7,'duplicate handback recorded once',count(*)=1,count(*)::text FROM public.driver_offer_events
+ WHERE job_id='00000000-0000-4000-8000-000000000032' AND event='declined';
+-- J33: negotiated acceptance recorded (owner only, idempotent); the customer then cancels.
+SELECT pg_temp.job('00000000-0000-4000-8000-000000000033','71000000-0000-4000-8000-000000000071');
+INSERT INTO results SELECT 7,'negotiated assignment: owner recorded (twice = idempotent), non-owner refused',
+  public.record_negotiated_assignment('00000000-0000-4000-8000-000000000033','71000000-0000-4000-8000-000000000071')
+  AND public.record_negotiated_assignment('00000000-0000-4000-8000-000000000033','71000000-0000-4000-8000-000000000071')
+  AND NOT public.record_negotiated_assignment('00000000-0000-4000-8000-000000000033','72000000-0000-4000-8000-000000000072'),'';
+INSERT INTO results SELECT 7,'negotiated assignment: 3 events for X, none for the non-owner',
+  count(*) FILTER (WHERE driver_id='71000000-0000-4000-8000-000000000071')=3 AND count(*) FILTER (WHERE driver_id='72000000-0000-4000-8000-000000000072')=0,count(*)::text
+  FROM public.driver_offer_events WHERE job_id='00000000-0000-4000-8000-000000000033';
+SELECT public.cancel_job_with_actor('00000000-0000-4000-8000-000000000033','changed plans','c0000000-0000-4000-8000-00000000000c','customer');
+-- J34: customer no-show (system cancellation, no actor) — excluded, not "unattributed".
+SELECT pg_temp.job('00000000-0000-4000-8000-000000000034','71000000-0000-4000-8000-000000000071','completed');
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000034','71000000-0000-4000-8000-000000000071','k',ARRAY['created','acknowledged','accepted']);
+SET LOCAL session_replication_role = replica;
+UPDATE public.jobs SET status='cancelled',no_show_status='pending' WHERE id='00000000-0000-4000-8000-000000000034';
+-- J35: admin removal (as the admin dispute-refund route records it).
+INSERT INTO public.jobs(id,tenant_id,customer_id,driver_id,pickup_address,dropoff_address,scheduled_time,payment_method,payment_status,country_code,currency_code,status,metadata)
+ VALUES ('00000000-0000-4000-8000-000000000035','11111111-1111-4111-8111-111111111111','c0000000-0000-4000-8000-00000000000c','71000000-0000-4000-8000-000000000071','a','b',now(),'card','refunded','GB','GBP','cancelled',
+  '{"cancelled_by":"a0000000-0000-4000-8000-00000000000a","cancelled_by_role":"admin"}');
+-- J37: completed normally.
+INSERT INTO public.jobs(id,tenant_id,customer_id,driver_id,pickup_address,dropoff_address,scheduled_time,payment_method,payment_status,country_code,currency_code,status)
+ VALUES ('00000000-0000-4000-8000-000000000037','11111111-1111-4111-8111-111111111111','c0000000-0000-4000-8000-00000000000c','71000000-0000-4000-8000-000000000071','a','b',now(),'card','paid','GB','GBP','completed');
+SET LOCAL session_replication_role = origin;
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000035','71000000-0000-4000-8000-000000000071','k',ARRAY['created','acknowledged','accepted']);
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000037','71000000-0000-4000-8000-000000000071','k',ARRAY['created','acknowledged','accepted']);
+-- J36: accepted 40 days ago (outside the window), cancelled by X now: in neither numerator nor denominator.
+SELECT pg_temp.job('00000000-0000-4000-8000-000000000036','71000000-0000-4000-8000-000000000071');
+SELECT pg_temp.offer('00000000-0000-4000-8000-000000000036','71000000-0000-4000-8000-000000000071','k',ARRAY['created','acknowledged','accepted'],now()-interval '40 days');
+SELECT public.cancel_job_with_actor('00000000-0000-4000-8000-000000000036','x','71000000-0000-4000-8000-000000000071','driver');
+INSERT INTO results SELECT 7,'X: 6 assignments (J31 once despite 3 offers; J36 outside the window)',(m->>'acceptedBookings')::int=6,m::text FROM (SELECT pg_temp.m('71000000-0000-4000-8000-000000000071') m) s;
+INSERT INTO results SELECT 7,'X: 7 accepted offers (J31 accepted twice), acceptance is per offer',(m->>'acceptedOffers')::int=7,m->>'acceptedOffers' FROM (SELECT pg_temp.m('71000000-0000-4000-8000-000000000071') m) s;
+INSERT INTO results SELECT 7,'X: driver-cancelled 1 (J31 once; J36 out of window), handoffs 1 (J32 once)',
+  (m->>'driverCancelledBookings')::int=1 AND (m->>'driverHandoffs')::int=1,(m->>'driverCancelledBookings')||'/'||(m->>'driverHandoffs') FROM (SELECT pg_temp.m('71000000-0000-4000-8000-000000000071') m) s;
+INSERT INTO results SELECT 7,'X: excluded customer 1 (J33), admin 1 (J35), no-show 1 (J34), unattributed 0',
+  (m->>'customerCancellations')::int=1 AND (m->>'adminCancellations')::int=1 AND (m->>'customerNoShows')::int=1 AND (m->>'unattributedCancellations')::int=0,m::text FROM (SELECT pg_temp.m('71000000-0000-4000-8000-000000000071') m) s;
+-- Invariant for every driver in this test: each assignment classified at most once.
+INSERT INTO results SELECT 7,'invariant: classes never exceed accepted assignments (all drivers)',bool_and(
+  (m->>'driverCancelledBookings')::int+(m->>'driverHandoffs')::int+(m->>'customerCancellations')::int+(m->>'adminCancellations')::int
+  +(m->>'otherDriverCancellations')::int+(m->>'customerNoShows')::int+(m->>'unattributedCancellations')::int <= (m->>'acceptedBookings')::int),''
+  FROM (SELECT pg_temp.m(id) m FROM public.profiles WHERE role='driver') s;
+
 -- 6. Privileges: service_role only.
+INSERT INTO results SELECT 6,'record_negotiated_assignment: service_role yes, authenticated/anon no',
+  has_function_privilege('service_role','public.record_negotiated_assignment(uuid,uuid)','EXECUTE')
+  AND NOT has_function_privilege('authenticated','public.record_negotiated_assignment(uuid,uuid)','EXECUTE')
+  AND NOT has_function_privilege('anon','public.record_negotiated_assignment(uuid,uuid)','EXECUTE'),'';
 INSERT INTO results SELECT 6,'cancel_job_with_actor: service_role yes, authenticated/anon no',
   has_function_privilege('service_role','public.cancel_job_with_actor(uuid,text,uuid,text)','EXECUTE')
   AND NOT has_function_privilege('authenticated','public.cancel_job_with_actor(uuid,text,uuid,text)','EXECUTE')

@@ -720,7 +720,9 @@ router.post('/dispute', requireAdmin, async (req: Request, res: Response) => {
         .update({
           payment_status: fullRefund ? 'refunded' : 'requires_review',
           status: 'cancelled',
-          metadata: { ...job.metadata, refund_id: refund.id, refund_reason: reason, partial_refund: !fullRefund }
+          // Driver metrics (D9): an admin removal is never driver-initiated; keep any earlier actor.
+          metadata: { ...job.metadata, refund_id: refund.id, refund_reason: reason, partial_refund: !fullRefund,
+            ...((job.metadata as any)?.cancelled_by_role ? {} : { cancelled_by: adminId, cancelled_by_role: 'admin' }) }
         })
         .eq('id', bookingId);
       if (updateErr) {
@@ -1692,6 +1694,27 @@ router.post('/inspection-photos/:id/review', requireAdmin, async (req: Request, 
     if (!data) return res.status(409).json({ error: 'Photo is not pending review.', code: 'INSPECTION_NOT_PENDING' });
     await AuditService.logAdminAction(adminId, `inspection_${status}`, 'driver', data.driver_id, { photoId: data.id, slot: data.slot, reason: reason || null });
     return res.json({ success: true, photo: data });
+});
+
+/** Driver acceptance/cancellation metrics (policy D9: driver-initiated only). Read-only, tenant-scoped:
+ *  a tenant admin sees only drivers of their tenant; anything else is 404 (no existence leak). */
+router.get('/drivers/:driverId/offer-metrics', requireAdmin, async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const scope = await adminTenant(req);
+    if (scope.error) return res.status(500).json({ error: scope.error });
+    const { data: driver, error } = await supabaseAdmin.from('profiles').select('id,role,tenant_id').eq('id', req.params.driverId).maybeSingle();
+    if (error) return res.status(500).json({ error: 'Could not read the driver.' });
+    if (!driver || (driver as any).role !== 'driver' || (scope.tenant !== null && (driver as any).tenant_id !== scope.tenant)) {
+        return res.status(404).json({ error: 'Driver not found.', code: 'DRIVER_NOT_FOUND' });
+    }
+    const periodDays = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+    try {
+        const { reportDriverOfferMetrics } = await import('../services/driver-offer-metrics.service');
+        return res.json(await reportDriverOfferMetrics(String(req.params.driverId), periodDays));
+    } catch (metricsError) {
+        console.error('[AdminRoutes] offer-metrics failed:', (metricsError as Error)?.message);
+        return res.status(500).json({ error: 'Could not compute driver metrics.', code: 'METRICS_UNAVAILABLE' });
+    }
 });
 
 /** Read/set a driver's completion PIN policy (audited; beats market setting). */

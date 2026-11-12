@@ -9,10 +9,12 @@ import { supabaseAdmin } from './supabase.service';
  * - Acceptance rate: accepted / acknowledged OFFERS (per job + offer key). An offer counts only
  *   with an authenticated acknowledgement; accepting records it atomically (close_driver_offer).
  *   delivery_attempted alone is informational.
- * - Cancellation rate (policy D9, 2026-11-12: driver-initiated only): (bookings the assigned
- *   driver cancelled + accepted offers the driver handed back) / bookings the driver accepted in
- *   the period. The actor is server-verified; customer/admin cancellations and legacy rows with no
- *   recorded actor never count (the latter are reported as unattributedCancellations).
+ * - Cancellation rate (policy D9, 2026-11-12: driver-initiated only): driver-initiated
+ *   cancellations / accepted assignments. An assignment is (driver, job) accepted in the period,
+ *   counted once however many offers it took. Driver-initiated = the assigned driver cancelled, or
+ *   voluntarily handed the accepted assignment back (counted once, also reported as driverHandoffs).
+ *   Customer, admin, other-driver and no-show cancellations are excluded and reported; historical
+ *   cancellations with no recorded actor are reported as unattributedCancellations.
  */
 
 const MIN_ACKNOWLEDGED = 5; // insufficient-data below this
@@ -27,11 +29,14 @@ export interface DriverOfferMetrics {
   declinedOffers: number;
   expiredOffers: number;
   acceptanceRate: number | null;          // null = insufficient data
-  acceptedBookings: number;
-  driverCancellations: number;            // driverCancelledBookings + driverHandoffs
+  acceptedBookings: number;               // accepted assignments in the period (denominator)
+  driverCancellations: number;            // driverCancelledBookings + driverHandoffs (numerator)
   driverCancelledBookings: number;
   driverHandoffs: number;
-  unattributedCancellations: number;      // informational: cancelled with no recorded actor
+  excludedCancellations: {                // never counted against the driver
+    customer: number; admin: number; otherDriver: number; customerNoShow: number;
+  };
+  unattributedCancellations: number;      // historical: cancelled with no recorded actor
   cancellationRate: number | null;        // null = insufficient data
   insufficientData: { offers: boolean; cancellations: boolean };
 }
@@ -53,6 +58,15 @@ export async function reportDriverOfferMetrics(driverId: string, periodDays = 30
   const driverCancelledBookings = count(r.driverCancelledBookings);
   const driverHandoffs = count(r.driverHandoffs);
   const driverCancellations = driverCancelledBookings + driverHandoffs;
+  const excludedCancellations = {
+    customer: count(r.customerCancellations), admin: count(r.adminCancellations),
+    otherDriver: count(r.otherDriverCancellations), customerNoShow: count(r.customerNoShows),
+  };
+  const unattributedCancellations = count(r.unattributedCancellations);
+  // Every assignment is classified at most once, so the classes can never exceed the denominator.
+  const classified = driverCancellations + excludedCancellations.customer + excludedCancellations.admin
+    + excludedCancellations.otherDriver + excludedCancellations.customerNoShow + unattributedCancellations;
+  if (classified > acceptedBookings) throw new Error('driver_offer_metrics_v2 classes exceed accepted assignments');
   return {
     driverId,
     periodDays,
@@ -66,7 +80,8 @@ export async function reportDriverOfferMetrics(driverId: string, periodDays = 30
     driverCancellations,
     driverCancelledBookings,
     driverHandoffs,
-    unattributedCancellations: count(r.unattributedCancellations),
+    excludedCancellations,
+    unattributedCancellations,
     cancellationRate: acceptedBookings >= MIN_ACCEPTED ? Math.round((driverCancellations / acceptedBookings) * 1000) / 1000 : null,
     insufficientData: {
       offers: acknowledgedOffers < MIN_ACKNOWLEDGED,

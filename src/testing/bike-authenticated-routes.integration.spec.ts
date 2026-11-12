@@ -184,6 +184,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       '20261264700000_referral_adjudication_guard.sql',
       '20261264800000_profiles_moderation_audit.sql',
       '20261264900000_profiles_market_trigger_definer.sql',
+      '20261267000000_driver_cancellation_attribution.sql',
     ]) {
       const source = migration.startsWith('candidate/')
         ? join(process.cwd(), 'supabase', 'baseline', migration)
@@ -838,6 +839,57 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       try { sql(`SELECT public.post_wallet_event('${evKey}','topup','${tenantId}','${bikeDriver.user.id}','${cur}','[{"accountPurpose":"driver_cash_credit","amountMinor":${minor}},{"accountPurpose":"platform_funding","amountMinor":${-minor}}]'::jsonb);`); } catch {}
       expect(sql(`SELECT count(*)::text FROM public.wallet_movements m JOIN public.wallet_business_events e ON e.id=m.event_id WHERE e.event_key='${evKey}';`), `${cur}: duplicate event does not duplicate movements`).toBe('2');
     }
+    // Driver cancellation attribution (policy D9: driver-initiated only) through the real routes.
+    const d9Driver = await signup(`d9-driver-${suffix}@example.test`);
+    const d9Other = await signup(`d9-other-${suffix}@example.test`);
+    sql(`INSERT INTO public.profiles(id,tenant_id,role,country_code,registration_market_city,verification_status,onboarding_completed)
+      VALUES('${d9Driver.user.id}','${tenantId}','driver','GB','London','approved',true),('${d9Other.user.id}','${tenantId}','driver','GB','London','approved',true);`);
+    // Setup only: replication role skips triggers without changing any trigger's state.
+    const d9Job = (id: string, driver: string | null, status = 'assigned', withOffer = true) => {
+      sql(`SET session_replication_role = replica; INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,driver_id,accepted_driver_id,status,payment_method,payment_status,pickup_address,dropoff_address,scheduled_time)
+        VALUES('${id}','${tenantId}','${customer.user.id}','GB',${driver ? `'${driver}'` : 'NULL'},${driver ? `'${driver}'` : 'NULL'},'${status}','card','authorized','D9 A','D9 B',now());`);
+      if (withOffer && driver) for (const e of ['created', 'acknowledged', 'accepted'])
+        sql(`SELECT public.record_driver_offer_event('${tenantId}','${id}','${driver}','d9','${e}');`);
+    };
+    const cancelJob = (token: string, id: string, reason: string) => fetch(base + '/api/jobs/cancel', {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ jobId: id, reason }) });
+    const actorOf = (id: string) => sql(`SELECT status||'|'||coalesce(metadata->>'cancelled_by_role','none')||'|'||coalesce(metadata->>'cancelled_by','none') FROM public.jobs WHERE id='${id}';`);
+    const d9A = 'd9000000-0000-4000-8000-00000000000a', d9B = 'd9000000-0000-4000-8000-00000000000b';
+    const d9C = 'd9000000-0000-4000-8000-00000000000c', d9E = 'd9000000-0000-4000-8000-00000000000e';
+    d9Job(d9A, d9Driver.user.id);
+    expect((await cancelJob(d9Driver.access_token, d9A, 'Customer asked me to cancel')).status, 'assigned driver cancels').toBe(200);
+    expect(actorOf(d9A), 'actor recorded from the session, not the reason').toBe(`cancelled|driver|${d9Driver.user.id}`);
+    expect((await cancelJob(customer.access_token, d9A, 'retry')).status, 'retried cancel is accepted').toBe(200);
+    expect(actorOf(d9A), 'retry never overwrites the original actor').toBe(`cancelled|driver|${d9Driver.user.id}`);
+    d9Job(d9B, d9Other.user.id);
+    const notMine = await cancelJob(d9Driver.access_token, d9B, 'x');
+    expect(notMine.status, 'another driver cannot cancel').toBe(403);
+    expect(actorOf(d9B), 'refusal leaves the job untouched').toBe('assigned|none|none');
+    d9Job(d9C, d9Driver.user.id);
+    expect((await cancelJob(customer.access_token, d9C, 'driver was late')).status, 'customer cancels').toBe(200);
+    expect(actorOf(d9C), 'customer actor recorded; reason text never decides').toBe(`cancelled|customer|${customer.user.id}`);
+    d9Job(d9E, d9Driver.user.id);
+    const handback = (token: string) => fetch(base + '/api/jobs/driver-unable', {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ jobId: d9E, reason: 'Vehicle problem' }) });
+    expect((await handback(d9Driver.access_token)).status, 'driver hands back the accepted assignment').toBe(200);
+    expect((await handback(d9Driver.access_token)).status, 'a repeated handback is refused (no longer assigned)').toBe(403);
+    expect(sql(`SELECT count(*)::text FROM public.driver_offer_events WHERE job_id='${d9E}' AND event='declined';`), 'one handback event').toBe('1');
+    const metricsRes = await fetch(base + '/api/jobs/offer-metrics?days=30', { headers: { Authorization: 'Bearer ' + d9Driver.access_token } });
+    const d9m: any = await metricsRes.json();
+    expect(metricsRes.status, 'driver metrics route: ' + JSON.stringify(d9m)).toBe(200);
+    expect({ accepted: d9m.acceptedBookings, cancelled: d9m.driverCancelledBookings, handoffs: d9m.driverHandoffs, driverCancellations: d9m.driverCancellations, customer: d9m.excludedCancellations?.customer },
+      'D9 metrics over real routes').toEqual({ accepted: 3, cancelled: 1, handoffs: 1, driverCancellations: 2, customer: 1 });
+    expect(d9m.cancellationRate, 'rate = 2 driver-initiated / 3 accepted assignments').toBeCloseTo(0.667, 3);
+    // Admin reporting: same numbers for an admin of the driver's tenant; non-admin refused; other tenant 404.
+    const adminMetrics = (token: string, driver: string) => fetch(base + `/api/admin/drivers/${driver}/offer-metrics?days=30`, { headers: { Authorization: 'Bearer ' + token } });
+    const d9AdminRes = await adminMetrics(adminUser.access_token, d9Driver.user.id);
+    const d9AdminBody: any = await d9AdminRes.json();
+    expect(d9AdminRes.status, 'admin metrics route: ' + JSON.stringify(d9AdminBody)).toBe(200);
+    expect(d9AdminBody, 'admin sees exactly what the driver sees').toEqual(d9m);
+    expect((await adminMetrics(d9Driver.access_token, d9Driver.user.id)).status, 'a driver cannot use the admin route').toBe(403);
+    expect((await adminMetrics(adminUser.access_token, bikeB.user.id)).status, 'driver of another tenant is not found').toBe(404);
+    expect((await adminMetrics(adminUser.access_token, customer.user.id)).status, 'a non-driver is not found').toBe(404);
+
     // Extracted-API runtime (authenticated) against live fixture GoTrue + PostgREST.
     // Separate API process from the CURRENT source by default. Set VAYDU_EXTRACTED_API_ROOT to an
     // extracted release bundle (with node_modules) to run that archive instead. (This previously
@@ -848,7 +900,15 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     const extProxy = http.createServer(async (req, res) => {
       const u = String(req.url || '/');
       const upstream = u.startsWith('/auth/v1') ? authUrl + u.replace('/auth/v1', '') : restUrl + u.replace(/^\/rest\/v1/, '');
-      try { const ur = await fetch(upstream, { method: req.method, headers: req.headers as any }); res.writeHead(ur.status, { 'content-type': ur.headers.get('content-type') || 'application/json' }); res.end(await ur.text()); }
+      try {
+        // Forward the request body too (RPC calls are POSTs); host/length are recomputed by fetch.
+        const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);
+        const headers: Record<string, string> = {};
+        for (const [k, v] of Object.entries(req.headers)) if (v !== undefined && !['host', 'content-length', 'connection'].includes(k)) headers[k] = String(v);
+        const hasBody = !['GET', 'HEAD'].includes(String(req.method)) && chunks.length > 0;
+        const ur = await fetch(upstream, { method: req.method, headers, ...(hasBody ? { body: Buffer.concat(chunks) } : {}) });
+        res.writeHead(ur.status, { 'content-type': ur.headers.get('content-type') || 'application/json' }); res.end(await ur.text());
+      }
       catch { res.writeHead(502); res.end('proxy_down'); }
     });
     await new Promise<void>((r) => extProxy.listen(0, '127.0.0.1', r));
@@ -883,6 +943,19 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect(hit.currency_code, 'seeded currency').toBe('GBP');
     const debtsNoAuth = await fetch(`http://127.0.0.1:${extPort}/api/booking/debts`);
     expect([401, 403].includes(debtsNoAuth.status), 'unauthenticated /debts denied: ' + debtsNoAuth.status).toBe(true);
+    // Cancellation through the spawned API on the migrated database (20261267000000 applied).
+    // Current source records the actor. An older package (e.g. 635a285) still cancels through
+    // cancel_job_safely — migration-before-API compatibility — and records no actor, so the
+    // cancellation is reported as unattributed, never as driver-initiated.
+    const d9F = 'd9000000-0000-4000-8000-00000000000f';
+    d9Job(d9F, null, 'searching', false);
+    const extCancel = await fetch(`http://127.0.0.1:${extPort}/api/booking/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + customer.access_token },
+      body: JSON.stringify({ jobId: d9F, reason: 'changed plans' }) });
+    const extCancelBody = await extCancel.text();
+    expect(extCancel.status, `spawned API (${extSource}) cancels on the migrated DB: ${extCancelBody.slice(0, 300)}; log=${extLog.join('').slice(-800)}`).toBe(200);
+    expect(actorOf(d9F), `spawned API (${extSource}) cancellation attribution`).toBe(
+      extSource === 'current-source' ? `cancelled|customer|${customer.user.id}` : 'cancelled|none|none');
     extChild.kill('SIGTERM');
     await new Promise<void>((r) => { extChild.on('close', () => r()); setTimeout(() => { try { extChild.kill('SIGKILL'); } catch {} r(); }, 5000); });
     await new Promise<void>((r) => extProxy.close(() => r()));
