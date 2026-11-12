@@ -1,3 +1,4 @@
+import { cashRideBooking } from './payments/cash-ride-booking.instance';
 import {DriverPaymentAccountService,sandboxPayoutProvider} from './driver-payment-account.service';
 import { JobPayoutService } from './job-payout.service';
 import { IssuingSpendService } from './issuing-spend.service';
@@ -154,6 +155,25 @@ export class LogisticsService {
   /**
    * Complete a job and finalize payout
    */
+  private static async completeCashRide(job: any, driverId: string, completionPin?: string | null) {
+    const alreadyDone = job.status === 'completed' && job.payment_status === 'cash_collected';
+    const completionMetadata = alreadyDone ? {} : await this.assertCompletionPin(job, completionPin);
+    const { data: rows, error } = await supabaseAdmin.rpc('complete_cash_ride_v1e', {
+      p_job_id: job.id, p_driver_id: driverId,
+      p_metadata: { ...completionMetadata, completion_pin_verified_at: (completionMetadata as any).completion_pin_verified_at || job.metadata?.completion_pin_verified_at || new Date().toISOString() }
+    });
+    if (error) throw new Error(error.message || 'Cash ride completion failed');
+    const updated = Array.isArray(rows) ? rows[0] : rows;
+    if (!updated || updated.status !== 'completed' || updated.payment_status !== 'cash_collected') throw new Error('Cash ride completion was not recorded');
+    try { await cashRideBooking().releaseHold(job.id); }
+    catch (holdError) { console.error('[LogisticsService.completeCashRide] fee hold release pending:', (holdError as Error)?.message); }
+    if (!alreadyDone) {
+      await AuditService.logBooking(job.customer_id, 'job_completed', job.id, { total_price: updated.total_price, driver_payout: updated.driver_payout,
+        platform_fee: updated.platform_fee, payment_method: 'cash', stripe_transfer_id: null });
+    }
+    return updated;
+  }
+
   static async completeJob(jobId: string, completionPin?: string | null, expectedDriverId?: string | null) {
     const rawJobId = String(jobId || '').trim();
 
@@ -187,6 +207,13 @@ export class LogisticsService {
     // the driver assigned to this job.
     if (!expectedDriverId || String(expectedDriverId) !== String(driverId)) {
       throw new Error('Only the assigned driver can complete this request');
+    }
+
+    // Cash Ride: the customer paid the driver in cash. No card capture, no wallet debit, no
+    // driver transfer. One DB transaction completes it, records cash earnings and settles the
+    // cash-ride credit hold; then the card fee hold is released (never charged).
+    if (String(job.payment_method || '').toLowerCase() === 'cash' && job.metadata?.cash_collection_mode === 'full_customer_charge') {
+      return this.completeCashRide(job, String(driverId), completionPin);
     }
 
     const { data: existingQueue, error: existingQueueError } = await supabaseAdmin.from('job_payout_queue').select('job_id').eq('job_id', job.id).maybeSingle();

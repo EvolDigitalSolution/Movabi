@@ -77,5 +77,13 @@ cannot be dispatched, accepted or completed.
   market is enabled. Real Postgres: activation 10/10 and the full chain (booking, hold,
   activation, enrolled driver accepts, 1E reserves GBP 2.50 of GBP 100.00, consistent);
   driver visibility 0 before / 1 after the policy; all three rollbacks restore the baseline.
-- Phase 3: completion, no-show, cancellation, no-driver release, earnings record.
+- Phase 3 (done, 20261266300000 + server): `complete_cash_ride_v1e` completes a cash Ride
+  atomically (completed / cash_collected, earnings `paid` with `settlement_purpose='cash_ride'`,
+  gross = cash collected, no transfer, no payout queue; 1E settles the credit reservation in the
+  same transaction); `LogisticsService.completeJob` routes cash rides there before any card or
+  payout logic, then releases the card hold. No-show captures the fee from the hold; cancellation
+  captures the fee from the hold under the card rule (fee due and a driver assigned, uncovered
+  remainder becomes a receivable) or releases it; no driver found releases it. Real Postgres:
+  lifecycle 15/15 (completion with earnings and 1E settlement, refusals, idempotent repeat,
+  cancellation and no-show releasing the reservation); all four rollbacks run cleanly.
 - Phase 4: customer and driver UI, receipts; browser tests; Linux build and package.

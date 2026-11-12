@@ -42,7 +42,7 @@ function world(opts: { marketEnabled?: Record<string, boolean>; routes?: any[]; 
     },
   };
   // Stateful Stripe fake (test mode semantics, no network).
-  const pis = new Map<string, any>(); const creates: any[] = [];
+  const pis = new Map<string, any>(); const creates: any[] = []; const captures: any[] = []; const cancels: any[] = [];
   const stripe: any = { paymentIntents: {
     create: async (p: any, o: any) => {
       creates.push({ p, key: o?.idempotencyKey });
@@ -52,10 +52,16 @@ function world(opts: { marketEnabled?: Record<string, boolean>; routes?: any[]; 
       pis.set(id, pi); return { ...pi };
     },
     retrieve: async (id: string) => ({ ...pis.get(id) }),
+    capture: async (id: string, p: any, o: any) => { captures.push({ id, p, key: o?.idempotencyKey }); const pi = pis.get(id);
+      if (pi.status !== 'requires_capture' || p.amount_to_capture > pi.amount_capturable) throw Object.assign(Error('unexpected_state'), { type: 'StripeInvalidRequestError' });
+      Object.assign(pi, { status: 'succeeded', amount_received: p.amount_to_capture, amount_capturable: 0 }); return { ...pi }; },
+    cancel: async (id: string, _p: any, o: any) => { cancels.push({ id, key: o?.idempotencyKey }); const pi = pis.get(id);
+      if (!['requires_payment_method', 'requires_confirmation', 'requires_action', 'requires_capture'].includes(pi.status)) throw Object.assign(Error('unexpected_state'), { type: 'StripeInvalidRequestError' });
+      pi.status = 'canceled'; return { ...pi }; },
   } };
   const svc = new CashRideBookingService({ db: db as any, holdProviders: { stripe: new StripeCashFeeHold(stripe) }, enabled: () => opts.enabled ?? true });
   const authorise = (id: string) => { const pi = pis.get(id); pi.status = 'requires_capture'; pi.amount_capturable = pi.amount; };
-  return { svc, tables, rpcCalls, creates, pis, authorise, setActivation: (v: string) => { activation = v; } };
+  return { svc, tables, rpcCalls, creates, captures, cancels, pis, authorise, setActivation: (v: string) => { activation = v; } };
 }
 const cashJob = (over: any = {}, holdTerms: any = {}) => ({
   id: jobId, customer_id: customer, tenant_id: tenant, country_code: 'GB', currency_code: 'GBP', status: 'requested', driver_id: null,
@@ -150,5 +156,47 @@ describe('card fee hold lifecycle', () => {
     expect(await code(w.svc.confirmHold(cashJob(), customer))).toBe('CASH_ACTIVATION_REFUSED');
     w.setActivation('already_activated');
     expect(await w.svc.confirmHold(cashJob(), customer)).toBe('already_activated');
+  });
+});
+
+describe('fee hold settlement (completion, no-show, cancellation, no driver)', () => {
+  async function authorisedHold() { const w = world(); await w.svc.beginHold(cashJob(), customer); w.authorise('pi_hold1'); await w.svc.confirmHold(cashJob(), customer); w.tables.cash_ride_fee_holds_v1e[0].status = 'authorized'; return w; }
+  it('completion / early cancellation / no driver: releases the hold once; nothing is charged', async () => {
+    const w = await authorisedHold();
+    expect(await w.svc.releaseHold(jobId)).toBe('released');
+    expect(w.pis.get('pi_hold1').status).toBe('canceled'); expect(w.captures).toHaveLength(0);
+    expect(w.cancels).toEqual([{ id: 'pi_hold1', key: `vaydu-cash-fee-release:${jobId}` }]);
+    expect(w.tables.cash_ride_fee_holds_v1e[0].status).toBe('released');
+    expect(await w.svc.releaseHold(jobId)).toBe('released'); expect(w.cancels).toHaveLength(1);
+    expect(await w.svc.releaseHold('ffffffff-ffff-4fff-8fff-ffffffffffff')).toBe('no_hold');
+  });
+  it('a hold the customer never authorised is released too', async () => {
+    const w = world(); await w.svc.beginHold(cashJob(), customer);
+    expect(await w.svc.releaseHold(jobId)).toBe('released'); expect(w.pis.get('pi_hold1').status).toBe('canceled');
+  });
+  it('no-show / late cancellation: captures exactly the fee once; a repeat does not charge again', async () => {
+    const w = await authorisedHold();
+    expect(await w.svc.captureFee(jobId, 250, `no-show-capture-${jobId}`)).toBe('captured');
+    expect(w.captures).toEqual([{ id: 'pi_hold1', p: { amount_to_capture: 250 }, key: `no-show-capture-${jobId}` }]);
+    expect(w.pis.get('pi_hold1')).toMatchObject({ status: 'succeeded', amount_received: 250 });
+    expect(w.tables.cash_ride_fee_holds_v1e[0]).toMatchObject({ status: 'captured', captured_minor: 250 });
+    expect(await w.svc.captureFee(jobId, 250, `no-show-capture-${jobId}`)).toBe('captured'); expect(w.captures).toHaveLength(1);
+    expect(await code(w.svc.captureFee(jobId, 300, 'k'))).toBe('CASH_HOLD_CAPTURE_UNCONFIRMED');
+    // A captured hold is never "released" afterwards.
+    expect(await w.svc.releaseHold(jobId)).toBe('captured'); expect(w.cancels).toHaveLength(0);
+  });
+  it('refuses a fee above the hold, a zero fee, or an unauthorised hold', async () => {
+    const w = await authorisedHold();
+    expect(await code(w.svc.captureFee(jobId, 501, 'k'))).toBe('CASH_FEE_EXCEEDS_HOLD');
+    expect(await code(w.svc.captureFee(jobId, 0, 'k'))).toBe('CASH_FEE_EXCEEDS_HOLD');
+    const w2 = world(); await w2.svc.beginHold(cashJob(), customer);
+    expect(await code(w2.svc.captureFee(jobId, 100, 'k'))).toBe('CASH_HOLD_NOT_AUTHORISED');
+    expect(w.captures).toHaveLength(0); expect(w2.captures).toHaveLength(0);
+  });
+  it('a provider hold that already succeeded is reported, not cancelled', async () => {
+    const w = await authorisedHold();
+    Object.assign(w.pis.get('pi_hold1'), { status: 'succeeded', amount_received: 500 });
+    expect(await code(w.svc.releaseHold(jobId))).toBe('CASH_HOLD_ALREADY_CAPTURED');
+    expect(w.tables.cash_ride_fee_holds_v1e[0].status).toBe('authorized');
   });
 });

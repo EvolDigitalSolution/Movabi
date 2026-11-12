@@ -21,19 +21,13 @@ import { mapDriverAcquisitionError } from '../services/driver-eligibility.servic
 import { isDriverEligibleForService, toCanonicalDriverService } from '../services/driver-service-eligibility';
 import { PayoutEligibilityService } from '../services/payout-eligibility.service';
 import { NoShowService, NO_SHOW_ARRIVAL_MAX_DISTANCE_M, NO_SHOW_ARRIVAL_MAX_LOCATION_AGE_MS } from '../services/no-show.service';
-import { CashRideBookingService, StripeCashFeeHold } from '../services/payments/cash-ride-booking';
+import { cashRideBooking } from '../services/payments/cash-ride-booking.instance';
 import { PaymentLayerError } from '../services/payments/payment-contracts';
 import { FareSplitService } from '../services/fare-split.service';
 import { dispatchService } from '../services/dispatch.service';
 
 const router = Router();
 // Cash Ride booking (pilot markets only; off unless VAYDU_CASH_RIDE_BOOKING=true AND the market is enabled).
-// Created on first use, like the rest of this module (nothing is constructed at import time).
-let cashRideBookingInstance: CashRideBookingService | null = null;
-function cashRideBooking(): CashRideBookingService {
-    return cashRideBookingInstance ??= new CashRideBookingService({ db: supabaseAdmin as any,
-        holdProviders: { stripe: new StripeCashFeeHold(stripe) }, enabled: () => process.env.VAYDU_CASH_RIDE_BOOKING === 'true' });
-}
 const CASH_CONFLICT_CODES = new Set(['CASH_BOOKING_DISABLED','CASH_RIDE_ONLY','CASH_MARKET_UNAVAILABLE','CASH_MARKET_NOT_ENABLED','CASH_HOLD_ROUTE_UNAVAILABLE',
     'CASH_HOLD_PROVIDER_UNAVAILABLE','CASH_FEE_TERMS_UNAVAILABLE','CASH_JOB_NOT_CASH','CASH_HOLD_TERMS_INVALID','CASH_HOLD_NOT_NEEDED','CASH_HOLD_NOT_STARTED',
     'CASH_HOLD_NOT_AUTHORISED','CASH_HOLD_NOT_RESUMABLE','CASH_ACTIVATION_REFUSED','CASH_FIXED_FARE_ONLY','CASH_IMMEDIATE_ONLY','CASH_FARE_TERMS_UNAVAILABLE']);
@@ -1510,8 +1504,29 @@ router.post('/cancel', async (req: Request, res: Response) => {
         // intent (cash jobs, no intent, or authorisation already released)
         // becomes an explicit receivable — never faked as payment success.
         // Idempotent per (job, reason); duplicate cancels reuse the row.
+        const isCashRideJob = job.payment_method === 'cash' && job.metadata?.cash_collection_mode === 'full_customer_charge';
+        let cashUncoveredFeeMinor = 0;
+        if (isCashRideJob) {
+            try {
+                const feeMinor = FareSplitService.toMinor(Number(job.cancellation_fee || 0), String(job.currency_code || 'GBP').toUpperCase());
+                const { data: hold } = await supabaseAdmin.from('cash_ride_fee_holds_v1e').select('status,amount_minor').eq('job_id', jobId).maybeSingle();
+                if (job.driver_id && feeMinor > 0 && hold?.status === 'authorized') {
+                    const fromHold = Math.min(feeMinor, Number(hold.amount_minor));
+                    await cashRideBooking().captureFee(jobId, fromHold, `cash-cancel-fee-${jobId}`);
+                    cashUncoveredFeeMinor = feeMinor - fromHold;
+                } else {
+                    if (job.driver_id && feeMinor > 0) cashUncoveredFeeMinor = feeMinor;
+                    await cashRideBooking().releaseHold(jobId);
+                }
+                await supabaseAdmin.from('jobs').update({ payment_status: 'cancelled' }).eq('id', jobId);
+            } catch (cashError) {
+                console.error('[BookingRoutes] cash ride fee hold settlement failed:', (cashError as Error)?.message);
+                await supabaseAdmin.from('jobs').update({ payment_status: 'requires_review' }).eq('id', jobId);
+            }
+        }
+
         try {
-            const feeMajor = Number(job.cancellation_fee || 0);
+            const feeMajor = isCashRideJob ? cashUncoveredFeeMinor / 100 : Number(job.cancellation_fee || 0);
             const canChargeCard = job.payment_method === 'card' && job.payment_intent_id;
             if (feeMajor > 0 && job.customer_id && !canChargeCard) {
                 const { data: policy } = await supabaseAdmin.rpc('active_cancellation_policy', {
@@ -1520,7 +1535,7 @@ router.post('/cancel', async (req: Request, res: Response) => {
                 await supabaseAdmin.rpc('record_customer_receivable', {
                     p_tenant: job.tenant_id, p_customer: job.customer_id, p_job: jobId,
                     p_currency: String(job.currency_code || 'GBP').toUpperCase(),
-                    p_amount: Math.round(feeMajor * 100), p_reason: 'cancellation_fee',
+                    p_amount: isCashRideJob ? cashUncoveredFeeMinor : Math.round(feeMajor * 100), p_reason: 'cancellation_fee',
                     p_policy_version: (policy as any)?.version ?? null
                 });
             }
@@ -1586,6 +1601,8 @@ router.post('/cancel', async (req: Request, res: Response) => {
             }
         } else if (job.payment_method === 'wallet' || job.payment_status === 'wallet_funded') {
             await releaseWalletReservation(jobId, reason || 'Booking cancelled before completion');
+        } else if (isCashRideJob) {
+            // Settled above from the card hold.
         } else {
             await supabaseAdmin
                 .from('jobs')

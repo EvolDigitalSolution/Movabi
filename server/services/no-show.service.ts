@@ -1,3 +1,4 @@
+import { cashRideBooking } from './payments/cash-ride-booking.instance';
 import { stripe } from './stripe.service';
 import { supabaseAdmin } from './supabase.service';
 import { FareSplitService } from './fare-split.service';
@@ -214,6 +215,10 @@ export class NoShowService {
       await this.finalizeWalletNoShow(jobId, split);
     } else if (job.payment_intent_id) {
       await this.finalizeCardNoShow(job, split, currency);
+    } else if (paymentMethod === 'cash' && job.metadata?.cash_collection_mode === 'full_customer_charge') {
+      // Cash ride: the no-show fee comes from the card hold authorised at booking.
+      await cashRideBooking().captureFee(jobId, split.feeMinor, `no-show-capture-${jobId}`);
+      await this.recordFeeCharged(jobId);
     } else {
       throw new Error('No-show payment source requires reconciliation.');
     }

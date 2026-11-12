@@ -1,3 +1,4 @@
+import { cashRideBooking } from './payments/cash-ride-booking.instance';
 import {driverMatchesJobMarket} from './driver-market-scope';
 import {orderDriversByRoadEta} from './driver-road-eta';
 import { rankEligibleDrivers, readDriverReviewScores, DriverReliability } from './driver-ranking';
@@ -290,7 +291,11 @@ export class DispatchService {
         if (!job) return;
         // Wallet closure + release already committed atomically. Card release
         // retains the external Stripe compensation/review path.
-        if (job.payment_method !== 'wallet' && job.payment_status !== 'wallet_funded') {
+        if ((job as any).payment_method === 'cash' && (job as any).metadata?.cash_collection_mode === 'full_customer_charge') {
+            // Cash ride: nothing was paid; release the card fee hold (the credit hold is released by the DB).
+            try { await cashRideBooking().releaseHold(String(job.id)); }
+            catch (holdError) { console.error(`[DispatchService] cash fee hold release failed for ${jobId}; will need review:`, holdError); }
+        } else if (job.payment_method !== 'wallet' && job.payment_status !== 'wallet_funded') {
             await this.releaseNoDriverPayment(job as Job);
         }
 

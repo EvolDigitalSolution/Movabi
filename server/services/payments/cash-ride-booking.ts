@@ -25,6 +25,10 @@ export interface CashFeeHoldProvider {
   resume(reference: string, input: CashFeeHoldInput): Promise<{ clientSecret: string }>;
   /** Throws unless the hold is exactly this job's, authorised and fully capturable. */
   verifyAuthorised(reference: string, input: CashFeeHoldInput): Promise<void>;
+  /** Captures exactly amountMinor (<= the hold) once; the rest of the authorisation is released. */
+  capture(reference: string, input: CashFeeHoldInput, amountMinor: number, idempotencyKey: string): Promise<void>;
+  /** Releases an uncaptured hold so nothing can be charged later. */
+  release(reference: string, input: CashFeeHoldInput): Promise<void>;
 }
 
 export class StripeCashFeeHold implements CashFeeHoldProvider {
@@ -54,6 +58,23 @@ export class StripeCashFeeHold implements CashFeeHoldProvider {
     const pi = await this.stripe.paymentIntents.retrieve(reference);
     if (!this.matches(pi, input)) fail('CASH_HOLD_UNCONFIRMED', 'Card hold needs reconciliation');
     if (pi.status !== 'requires_capture' || pi.amount_capturable !== input.amountMinor) fail('CASH_HOLD_NOT_AUTHORISED', 'The card hold has not been authorised');
+  }
+  async capture(reference: string, input: CashFeeHoldInput, amountMinor: number, idempotencyKey: string) {
+    let pi = await this.stripe.paymentIntents.retrieve(reference);
+    if (!this.matches(pi, input)) fail('CASH_HOLD_UNCONFIRMED', 'Card hold needs reconciliation');
+    if (pi.status === 'requires_capture') {
+      pi = await this.stripe.paymentIntents.capture(reference, { amount_to_capture: amountMinor }, { idempotencyKey });
+    }
+    // A repeat after a lost response finds the same capture; any other amount needs review.
+    if (pi.status !== 'succeeded' || pi.amount_received !== amountMinor) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
+  }
+  async release(reference: string, input: CashFeeHoldInput) {
+    let pi = await this.stripe.paymentIntents.retrieve(reference);
+    if (!this.matches(pi, input)) fail('CASH_HOLD_UNCONFIRMED', 'Card hold needs reconciliation');
+    if (pi.status === 'canceled') return;
+    if (pi.status === 'succeeded' || pi.status === 'processing') fail('CASH_HOLD_ALREADY_CAPTURED', 'The card hold was already captured');
+    pi = await this.stripe.paymentIntents.cancel(reference, { cancellation_reason: 'abandoned' }, { idempotencyKey: `vaydu-cash-fee-release:${input.jobId}` });
+    if (pi.status !== 'canceled') fail('CASH_HOLD_RELEASE_UNCONFIRMED', 'Hold release requires reconciliation');
   }
 }
 
@@ -137,6 +158,42 @@ export class CashRideBookingService {
       if (again.error || again.data?.provider_payment_reference !== created.reference) fail('CASH_HOLD_UNCONFIRMED', 'Card hold needs reconciliation');
     }
     return { jobId: f.jobId, provider: f.provider, clientSecret: created.clientSecret, amountMinor: f.amountMinor, currency: f.currency };
+  }
+
+  private async holdRow(jobId: string) {
+    const r = await this.deps.db.from('cash_ride_fee_holds_v1e').select('*').eq('job_id', jobId).maybeSingle();
+    if (r.error) fail('CASH_HOLD_UNAVAILABLE', 'Card hold could not be loaded');
+    return r.data as any;
+  }
+  private holdInput(h: any): CashFeeHoldInput {
+    return { jobId: h.job_id, customerId: h.customer_id, merchantAccountRef: h.merchant_account_ref, amountMinor: Number(h.amount_minor), currency: h.currency_code };
+  }
+  /** Releases a cash ride's fee hold (completion, early cancellation, no driver). Idempotent. */
+  async releaseHold(jobId: string): Promise<'no_hold' | 'released' | 'captured'> {
+    const h = await this.holdRow(jobId);
+    if (!h) return 'no_hold';
+    if (h.status === 'released' || h.status === 'captured') return h.status;
+    if (h.provider_payment_reference) await this.holdProvider(h.provider).release(h.provider_payment_reference, this.holdInput(h));
+    const u = await this.deps.db.from('cash_ride_fee_holds_v1e').update({ status: 'released', updated_at: new Date().toISOString() })
+      .eq('job_id', jobId).eq('status', h.status).select('job_id');
+    if (u.error) fail('CASH_HOLD_RELEASE_UNCONFIRMED', 'Hold release requires reconciliation');
+    return 'released';
+  }
+  /** Captures a no-show / late-cancellation fee from the authorised hold, once. */
+  async captureFee(jobId: string, amountMinor: number, idempotencyKey: string): Promise<'captured'> {
+    const h = await this.holdRow(jobId);
+    if (!h) fail('CASH_HOLD_NOT_STARTED', 'No card hold secures this ride');
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > Number(h.amount_minor)) fail('CASH_FEE_EXCEEDS_HOLD', 'Fee exceeds the card hold');
+    if (h.status === 'captured') {
+      if (Number(h.captured_minor) !== amountMinor) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'A different fee was already captured');
+      return 'captured';
+    }
+    if (h.status !== 'authorized' || !h.provider_payment_reference) fail('CASH_HOLD_NOT_AUTHORISED', 'The card hold is not authorised');
+    await this.holdProvider(h.provider).capture(h.provider_payment_reference, this.holdInput(h), amountMinor, idempotencyKey);
+    const u = await this.deps.db.from('cash_ride_fee_holds_v1e').update({ status: 'captured', captured_minor: amountMinor, updated_at: new Date().toISOString() })
+      .eq('job_id', jobId).eq('status', 'authorized').select('job_id');
+    if (u.error) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
+    return 'captured';
   }
 
   /** Verifies the authorised hold at the provider, then activates the ride atomically. */
