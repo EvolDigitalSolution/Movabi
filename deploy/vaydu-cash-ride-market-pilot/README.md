@@ -144,3 +144,69 @@ DBQ < 20261266000000_driver_cash_credit_market_pilot.down.sql && echo ROLLED_BAC
 ```
 
 Then re-run step 1: the fingerprints must equal the precheck values.
+
+## Cash-ride booking migrations (2-4) and API flag
+
+Apply after migration 1 (`20261266000000`), in this order, only with approval:
+`20261266100000_cash_ride_booking_fee_hold`, `20261266200000_cash_ride_activation`,
+`20261266300000_cash_ride_completion`. They replace the deployed `enforce_job_payment_eligibility`,
+`jobs_payment_status_check` and the jobs SELECT policy "Users can view relevant jobs" (each
+generated from the deployed baseline with only the cash change), and add the fee-hold table and
+three functions. They enable no market. Plan and evidence: `CASH-BOOKING-PLAN.md`.
+
+Upload (Windows PowerShell, one line):
+
+```
+scp "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\supabase\migrations\20261266100000_cash_ride_booking_fee_hold.sql" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\supabase\migrations\20261266200000_cash_ride_activation.sql" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\supabase\migrations\20261266300000_cash_ride_completion.sql" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\deploy\vaydu-cash-ride-market-pilot\20261266100000_cash_ride_booking_fee_hold.down.sql" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\deploy\vaydu-cash-ride-market-pilot\20261266200000_cash_ride_activation.down.sql" "C:\Users\fedri\source\repos\Movabi-topup-on-2385da7\deploy\vaydu-cash-ride-market-pilot\20261266300000_cash_ride_completion.down.sql" edsadmin@87.106.64.25:~/
+```
+
+Fingerprint query (host, read-only):
+
+```
+FP2="select 'fn '||p.proname||' '||md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('enforce_job_payment_eligibility','cash_ride_acquirable_v1e','activate_cash_ride_v1e','complete_cash_ride_v1e') union all select 'check jobs_payment_status_check '||md5(pg_get_constraintdef(oid)) from pg_constraint where conname='jobs_payment_status_check' union all select 'policy view_jobs '||md5(qual) from pg_policies where tablename='jobs' and policyname='Users can view relevant jobs' union all select 'table cash_ride_fee_holds_v1e '||(to_regclass('public.cash_ride_fee_holds_v1e') is not null)::text order by 1;"
+echo "BEGIN READ ONLY; $FP2 ROLLBACK;" | DBQ
+```
+
+Expected BEFORE (deployed baseline; anything else: STOP):
+
+```
+check jobs_payment_status_check 310675a4224be123b4578c3f23696705
+fn enforce_job_payment_eligibility 4f6f2b08faa17b9903bb7fe1a9ee39fa
+policy view_jobs 974fab433b8d52f54138e782c252f0b6
+table cash_ride_fee_holds_v1e false
+```
+
+Apply:
+
+```
+for m in 20261266100000_cash_ride_booking_fee_hold 20261266200000_cash_ride_activation 20261266300000_cash_ride_completion; do DBQ < $m.sql && echo "APPLIED $m" || { echo "STOP at $m"; break; }; done
+```
+
+Expected AFTER:
+
+```
+check jobs_payment_status_check 0b25a3ee6f700660d8f9ff530ebab1a5
+fn activate_cash_ride_v1e a41bc181f186ddf0af5af900a3da6011
+fn cash_ride_acquirable_v1e 195f0f04dea63f46d75f4f93d2f78dcb
+fn complete_cash_ride_v1e 4f90f899236d645d717dfb2a14e832e8
+fn enforce_job_payment_eligibility 78db97885ab11c73090ee67c4d5bfaff
+policy view_jobs 749146063a5210ba952dd4c2e521e247
+table cash_ride_fee_holds_v1e true
+```
+
+API flag (cash booking stays off without it, even in an enabled market). Add under
+`services.api.environment` in `~/vaydu-develop-overrides/docker-compose.develop-wallet.override.yml`:
+
+```
+      VAYDU_CASH_RIDE_BOOKING: "true"
+```
+
+It takes effect when the API container is recreated (the API deployment step does that). Turning
+it off again: set it to "false" (or remove the line) and recreate the API.
+
+Rollback (reverse order; release or capture any authorised fee holds at Stripe first, and the
+status check rollback fails while any job is cash_due / cash_collected):
+
+```
+for m in 20261266300000_cash_ride_completion 20261266200000_cash_ride_activation 20261266100000_cash_ride_booking_fee_hold; do DBQ < $m.down.sql && echo "ROLLED BACK $m" || { echo "STOP at $m"; break; }; done
+```
