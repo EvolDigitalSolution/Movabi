@@ -1079,7 +1079,20 @@ type PackageSize = 'small' | 'medium' | 'large';
                             Use existing wallet credit
                           </label>
                         }
+                        @if (cashOffer()?.available) {
+                          <label class="flex items-center gap-2 text-sm text-white">
+                            <input type="radio" name="bookingPaymentChoice" value="cash" [checked]="paymentChoice() === 'cash'" (change)="chooseCash()" [disabled]="submitting() || paymentProcessing()">
+                            Pay the driver in cash
+                          </label>
+                        }
                       </fieldset>
+                      @if (cashChosen()) {
+                        <p class="text-xs text-slate-200" role="note" aria-label="Cash payment terms">
+                          Pay {{ formatRequestCurrency(walletPaymentRequired()) }} in cash to your driver at the end of the ride.
+                          Your card is not charged for the ride: we place a hold of {{ formatRequestCurrency(cashHoldMajor()) }} only to cover a
+                          no-show or late-cancellation fee. The hold is released when your ride is completed.
+                        </p>
+                      }
                     </div>
 
                     @if(cardFallbackRequired() && !stripeJourney()){<p class="rounded-xl bg-amber-50 p-4 text-sm" role="status">Payment setup for this journey market is not ready yet.</p>}
@@ -1087,14 +1100,14 @@ type PackageSize = 'small' | 'medium' | 'large';
                       <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                         <div class="flex items-center justify-between">
                           <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                            Card Payment
+                            {{ cashChosen() ? 'Card hold (not charged)' : 'Card Payment' }}
                           </p>
                           <p class="text-xs font-bold text-slate-700">
                             {{ formatRequestCurrency(cardFallbackAmount()) }}
                           </p>
                         </div>
 
-                        @if (savedCardsEnabled()) {
+                        @if (savedCardsEnabled() && !cashChosen()) {
                           <fieldset class="space-y-2">
                             <legend class="text-sm font-semibold">Your cards</legend>
                             <label class="flex gap-2 text-sm"><input type="radio" name="savedCard" [checked]="!selectedSavedCard()" (change)="selectedSavedCard.set(null)" [disabled]="submitting() || paymentProcessing()">Use a new card</label>
@@ -1712,7 +1725,32 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         return this.toMoney(this.cardChargeRequired() + this.walletBudgetRequired());
     });
 
-    paymentChoice = signal<'card' | 'wallet'>('card');
+    paymentChoice = signal<'card' | 'wallet' | 'cash'>('card');
+    /** Server decision for paying the current quote in cash (pilot markets); null = not offered. */
+    cashOffer = signal<{ available: boolean; holdAmountMinor?: number; currency?: string } | null>(null);
+    cashChosen = computed(() => this.paymentChoice() === 'cash' && !!this.cashOffer()?.available);
+    cashHoldMajor = computed(() => {
+        const offer = this.cashOffer();
+        if (!offer?.available || !offer.holdAmountMinor || !offer.currency) return 0;
+        const digits = new Intl.NumberFormat('en', { style: 'currency', currency: offer.currency }).resolvedOptions().maximumFractionDigits ?? 2;
+        return offer.holdAmountMinor / 10 ** digits;
+    });
+    chooseCash(): void {
+        // The hold is authorised with a new card on-session; saved cards belong to a payment customer the hold is not created for.
+        this.selectedSavedCard.set(null); this.saveCard.set(false); this.paymentChoice.set('cash');
+    }
+    private resetCashOffer(): void {
+        this.cashOffer.set(null);
+        if (this.paymentChoice() === 'cash') this.paymentChoice.set('card');
+    }
+    private async loadCashOffer(quoteId: string): Promise<void> {
+        try {
+            const offer = await this.paymentService.cashAvailability(quoteId);
+            if (this.lastQuoteReference !== quoteId) return;
+            this.cashOffer.set(offer?.available ? offer : null);
+            if (!offer?.available && this.paymentChoice() === 'cash') this.paymentChoice.set('card');
+        } catch { if (this.lastQuoteReference === quoteId) this.resetCashOffer(); }
+    }
 
     walletCoversPayment = computed(() => {
         const required = this.walletPaymentRequired();
@@ -1728,6 +1766,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     });
 
     cardFallbackAmount = computed(() => {
+        if (this.cashChosen()) return this.cashHoldMajor();
         return this.cardFallbackRequired() ? this.walletPaymentRequired() : 0;
     });
 
@@ -1897,6 +1936,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
         this.routeResult.set(null);
         this.lastFareBreakdown = null;
         this.lastQuoteReference = null;
+        this.resetCashOffer();
         this.lastQuoteExpiresAt = null;
 
         // Invalidate the COMPLETE quote authority/dedupe generation. Clearing the
@@ -2136,6 +2176,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     paymentPlanLabel(): string {
+        if (this.cashChosen()) return 'Pay the driver in cash';
         if (this.walletCoversPayment()) {
             return 'Wallet covers this request';
         }
@@ -2144,6 +2185,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
     }
 
     paymentPlanDescription(): string {
+        if (this.cashChosen()) return 'You pay your driver in cash at the end of the ride. Your card is only held for a no-show or late-cancellation fee and the hold is released when the ride is completed.';
         if (this.walletCoversPayment()) {
             if (this.type === ServiceTypeEnum.ERRAND && this.walletBudgetRequired() > 0) {
                 return 'Your item budget and service estimate will be reserved from wallet before matching a driver.';
@@ -2176,6 +2218,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 'Continue to Marketplace Fare';
         }
 
+        if (this.cashChosen()) return 'Request cash ride';
         return this.walletCoversPayment()
             ? 'Request with Wallet'
             : 'Request & Pay by Card';
@@ -2186,6 +2229,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             return 'Review and negotiate the fare before payment';
         }
 
+        if (this.cashChosen()) return 'Card hold secures fees only; the ride is paid in cash';
         return this.walletCoversPayment()
             ? 'Secure wallet reservation via Vaydu Pay'
             : 'Secure card payment via Vaydu Pay';
@@ -3321,6 +3365,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.lastFareBreakdown = breakdown;
             this.lastQuoteReference = response.quoteReference;
             this.lastQuoteExpiresAt = response.priceLockedUntil;
+            this.resetCashOffer();
+            void this.loadCashOffer(response.quoteReference);
             // Server-issued no-show terms (absent when disabled/ineligible).
             this.quoteNoShow.set(response.noShow ?? null);
 
@@ -3378,6 +3424,8 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             this.estimatedPrice.set(0);
             this.lastFareBreakdown = null;
             this.lastQuoteReference = null;
+            this.resetCashOffer();
+        this.resetCashOffer();
             this.lastQuoteExpiresAt = null;
             // No successful quote for this signature, so a retry must remain possible.
             this.lastQuotedSignature = null;
@@ -3647,6 +3695,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             const serviceCharge = this.cardChargeRequired();
             const totalDue = this.walletPaymentRequired();
             const walletWillCover = this.walletCoversPayment();
+            const cashWillPay = this.cashChosen();
             if (!this.lastQuoteReference || !this.lastQuoteExpiresAt || Date.parse(this.lastQuoteExpiresAt) <= Date.now()) {
                 throw new Error('Your fare quote expired. Please refresh the quote before booking.');
             }
@@ -3692,6 +3741,7 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                     quote_expires_at: this.lastQuoteExpiresAt,
                     customer_service_total: serviceCharge,
                     total_authorisation: totalDue,
+                    ...(cashWillPay ? { payment_choice: 'cash' } : {}),
                     no_show_acknowledged: this.showNoShowDisclosure(),
                     no_show_policy_version: this.showNoShowDisclosure() ? this.quoteNoShow()?.policyVersion : null,
                     ...(this.effectiveDiscount() ? { discount_minor: this.effectiveDiscount()!.discountMinor } : {}),
@@ -3725,6 +3775,23 @@ export class BookingRequestPage implements OnInit, OnDestroy {
                 await this.router.navigate(['/customer/marketplace-fare', booking.id], {
                     queryParams: { quoteId }
                 });
+                return;
+            }
+
+            if (cashWillPay) {
+                // Cash ride: the customer pays the driver in cash. The card is only HELD (not charged)
+                // for the fee terms; the server verifies the hold, then starts the driver search.
+                if (!this.card) throw new Error('Enter a card to secure your cash ride.');
+                loading.message = 'Securing your cash ride with a card hold...';
+                const hold = await this.paymentService.beginCashHold(booking.id);
+                await this.paymentService.authoriseCashHold(hold.clientSecret, this.card);
+                loading.message = 'Finding your driver...';
+                await this.paymentService.confirmCashHold(booking.id);
+                this.recordLocalServicePreference();
+                this.analytics.track('booking_created', { job_id: booking.id, type: this.type, pickup_source: this.pickupLocation.source,
+                    distance_km: ((bookingData.distance_meters || 0) / 1000).toFixed(2), payment_method: 'cash' });
+                await loading.dismiss();
+                await this.router.navigate(['/customer/tracking', booking.id]);
                 return;
             }
 
@@ -3811,7 +3878,9 @@ export class BookingRequestPage implements OnInit, OnDestroy {
             if (booking?.id) {
                 try {
                     const current = await this.bookingService.getBooking(booking.id);
-                    if (current && ['wallet_funded', 'authorized', 'paid', 'captured', 'succeeded'].includes(String(current.payment_status))) {
+                    const cashActive = (current as any)?.payment_method === 'cash' && String(current?.payment_status) === 'cash_due'
+                        && !['requested', 'cancelled', 'canceled', 'expired', 'failed', 'no_driver_found'].includes(String(current?.status));
+                    if (current && (cashActive || ['wallet_funded', 'authorized', 'paid', 'captured', 'succeeded'].includes(String(current.payment_status)))) {
                         await loading.dismiss();
                         await this.router.navigate(['/customer/tracking', booking.id]);
                         return;

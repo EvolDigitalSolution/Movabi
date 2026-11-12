@@ -84,6 +84,29 @@ export class PaymentService {
     async removeSavedCard(id:string):Promise<void> {
         await firstValueFrom(this.http.delete(`${this.apiUrl}/cards/${encodeURIComponent(id)}`,{headers:await this.getAuthHeaders()}));
     }
+    // ---- Cash Ride (pilot markets): the server decides; a card HOLD secures no-show/late-cancel fees.
+    private bookingApi(path:string){ return this.apiUrlService.getApiUrl('/api/booking/cash'+path); }
+    /** Server decision for paying this quote in cash, and the card hold amount (minor units). */
+    async cashAvailability(quoteId:string):Promise<{available:boolean;holdAmountMinor?:number;currency?:string;noShowFeeMinor?:number;lateCancelFeeMinor?:number;code?:string;reason?:string}> {
+        return firstValueFrom(this.http.post<any>(this.bookingApi('/availability'),{quoteId},{headers:await this.getAuthHeaders()}));
+    }
+    /** Starts (or resumes) the card hold of a cash ride; returns the hold's client secret. Never charges. */
+    async beginCashHold(jobId:string):Promise<{jobId:string;provider:string;clientSecret:string;amountMinor:number;currency:string}> {
+        return firstValueFrom(this.http.post<any>(this.bookingApi('/'+encodeURIComponent(jobId)+'/fee-hold'),{},{headers:await this.getAuthHeaders()}));
+    }
+    /** Server verifies the authorised hold and starts the driver search. */
+    async confirmCashHold(jobId:string):Promise<{success:boolean;result:string;booking:any}> {
+        return firstValueFrom(this.http.post<any>(this.bookingApi('/'+encodeURIComponent(jobId)+'/fee-hold/confirm'),{},{headers:await this.getAuthHeaders()}));
+    }
+    /** Authorises a cash ride's fee hold with a new card (on-session; 3D Secure when the bank asks). */
+    async authoriseCashHold(clientSecret:string,card:StripeCardElement) {
+        const stripe=await this.getStripe();if(!stripe)throw new Error('Payment service unavailable');
+        const result=await stripe.confirmCardPayment(clientSecret,{payment_method:{card}});
+        if(result.error||!result.paymentIntent)throw new Error(result.error?.message||'The card hold was not authorised');
+        if(result.paymentIntent.status!=='requires_capture')throw new Error('The card hold was not authorised');
+        return result.paymentIntent;
+    }
+
     async confirmSavedCard(clientSecret:string,methodId:string) {
         const stripe=await this.getStripe();if(!stripe)throw new Error('Payment service unavailable');
         const result=await stripe.confirmCardPayment(clientSecret,{payment_method:methodId});

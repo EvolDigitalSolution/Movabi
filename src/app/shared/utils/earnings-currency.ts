@@ -69,6 +69,7 @@ export function earningsSummary(rows: readonly any[], metric: EarningsMetric): s
 }
 export function recordedPayoutLabel(row: any): string {
   const status = String(row?.status || '').toLowerCase();
+  if (row?.settlement_purpose === 'cash_ride') return 'Cash collected · no payout';
   if (status === 'failed') return 'Payout failed';
   if (row?.stripe_transfer_id) return 'Transferred to Stripe account';
   if (status === 'paid') return 'Paid (recorded)';

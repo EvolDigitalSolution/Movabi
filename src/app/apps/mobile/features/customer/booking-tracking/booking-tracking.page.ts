@@ -1943,7 +1943,14 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
         return this.formatBookingCurrency(bookingTotal);
     }
 
+    /** Cash ride: the customer pays the driver; the card is only held for fee terms. */
+    paidInCash(): boolean {
+        const b = this.booking() as any;
+        return String(b?.payment_method || '').toLowerCase() === 'cash' && b?.metadata?.cash_collection_mode === 'full_customer_charge';
+    }
+
     paymentAmountLabel(): string {
+        if (this.paidInCash()) return String((this.booking() as any)?.payment_status) === 'cash_collected' ? 'Paid in cash' : 'Pay the driver in cash';
         if (this.showPaymentProtectionPanel()) {
             return this.paidByWallet() ? 'Wallet Reserved' : 'Card Authorised';
         }
@@ -3059,6 +3066,11 @@ export class BookingTrackingPage implements OnInit, OnDestroy {
     paymentRecordMessage(): string {
         const b=this.booking();
         if(!b)return 'Payment details are loading.';
+        if(this.paidInCash()){
+            if(String(b.payment_status)==='cash_collected')return 'Paid in cash to your driver. Your card hold has been released.';
+            if(this.isTerminalTrackingStatus(String(b.status)))return 'Cash ride ended. Any no-show or late-cancellation fee is taken from your card hold; otherwise the hold is released.';
+            return 'Pay your driver in cash at the end of the ride. Your card is only held for a no-show or late-cancellation fee.';
+        }
         if(['paid','captured'].includes(String(b.payment_status)))return 'Payment is recorded. Open the booking record to view your receipt.';
         if(this.isTerminalTrackingStatus(String(b.status)))return 'View the booking record for the confirmed payment, refund or authorization status.';
         return 'Wallet/card reservation is protected by Vaydu until the request is complete.';

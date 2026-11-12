@@ -303,6 +303,11 @@ type DriverRequestTab = 'overview' | 'workflow' | 'shopping' | 'pay' | 'chat' | 
                   </div>
                 }
 
+                @if (isCashRide()) {
+                  <p class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm font-semibold text-amber-900" role="note" aria-label="Cash ride">
+                    Cash ride: collect {{ cashToCollect() }} in cash from the customer. Your commission and the platform fee are taken from your cash-ride credit; there is no bank payout for this ride.
+                  </p>
+                }
                 @switch (job()?.status) {
                   @case ('accepted') {
                     <app-button variant="primary" size="lg" class="w-full h-14 rounded-2xl shadow-xl shadow-blue-600/20" (clicked)="updateStatus('arrived')">I Have Arrived</app-button>
@@ -991,6 +996,9 @@ export class JobDetailsPage implements OnInit, OnDestroy {
     automatedShoppingSpend(): boolean { return (this.issuingCardStatus()?.status === 'active' && !!this.issuingCardStatus()?.cardId) || this.funding()?.metadata?.['shopping_spend_source'] === 'issuing'; }
     pickupMapReady = signal(false);
     driverMoney = computed(() => driverMoneyView(this.job()));
+    /** Cash ride: the customer pays the driver in cash; no card capture or bank payout. */
+    isCashRide = computed(() => { const j: any = this.job(); return String(j?.payment_method || '').toLowerCase() === 'cash' && j?.metadata?.cash_collection_mode === 'full_customer_charge'; });
+    cashToCollect = computed(() => { const j: any = this.job(); const charge = Number(j?.fare_breakdown?.customerCharge ?? j?.total_price ?? j?.price); return Number.isFinite(charge) && charge > 0 ? this.formatPrice(charge) : 'the fare shown'; });
     readonly requestToolsOpen = signal(false);
     activeRequestTab = signal<DriverRequestTab>('overview');
     messageCount = signal(0);
