@@ -309,6 +309,11 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     const adminRouter = (await import('../../server/routes/admin.routes')).default;
     const app = express(); app.use(express.json()); app.use('/api/jobs', bookingRouter); app.use('/api/pricing/global-ai', pricingRouter); app.use('/api/admin', adminRouter);
     server = http.createServer(app);
+    // The synchronous docker/psql helpers block the event loop for seconds. With Node's default
+    // 5 s keep-alive, an idle pooled socket can be reused by fetch in the same tick the server's
+    // overdue keep-alive timer destroys it -> ECONNRESET (observed at the concurrent reassignment:
+    // 5.09 s idle). Keep idle sockets for the test's lifetime; behaviour under test is unchanged.
+    server.keepAliveTimeout = 10 * 60_000;
     await new Promise<void>(r => server!.listen(0, '127.0.0.1', r));
     const base = 'http://127.0.0.1:' + (server.address() as any).port;
     const acceptJob = (token: string, id: string) => fetch(base + '/api/jobs/accept', {
@@ -834,7 +839,12 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
       expect(sql(`SELECT count(*)::text FROM public.wallet_movements m JOIN public.wallet_business_events e ON e.id=m.event_id WHERE e.event_key='${evKey}';`), `${cur}: duplicate event does not duplicate movements`).toBe('2');
     }
     // Extracted-API runtime (authenticated) against live fixture GoTrue + PostgREST.
-    const extRoot = join(process.cwd(), 'release', '_ci3-9abfd8f', 'vaydu-develop-9abfd8f');
+    // Separate API process from the CURRENT source by default. Set VAYDU_EXTRACTED_API_ROOT to an
+    // extracted release bundle (with node_modules) to run that archive instead. (This previously
+    // hard-coded an untracked extract of the old 9abfd8f release that exists only in some checkouts.)
+    const extRoot = process.env['VAYDU_EXTRACTED_API_ROOT'] || process.cwd();
+    expect(existsSync(join(extRoot, 'server', 'index.ts')) && existsSync(join(extRoot, 'node_modules', 'ts-node', 'dist', 'bin.js')),
+      'extracted API root needs server/index.ts and node_modules/ts-node: ' + extRoot).toBe(true);
     const extProxy = http.createServer(async (req, res) => {
       const u = String(req.url || '/');
       const upstream = u.startsWith('/auth/v1') ? authUrl + u.replace('/auth/v1', '') : restUrl + u.replace(/^\/rest\/v1/, '');
@@ -921,7 +931,7 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect(refreshOk.status, 'other user still refreshes: ' + refreshOk.status).toBe(200);
 
   } finally {
-    server?.close();
+    server?.close(); server?.closeAllConnections();
     try { dumpDiagnostics(docker, logDir); } catch { }
     for (const name of [authName, restName, dbName]) { try { docker('rm', '-f', name); } catch { } }
     // Force-remove the network: disconnect-then-rm leaked the network because
