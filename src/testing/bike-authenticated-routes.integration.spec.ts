@@ -6,7 +6,7 @@ import express from 'express';
 import http from 'node:http';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 vi.mock('../../server/services/supabase.service', () => ({
   supabaseAdmin: globalThis.__TEST_SUPABASE_ADMIN__ as any,
@@ -855,7 +855,11 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     const extProxyUrl = 'http://127.0.0.1:' + (extProxy.address() as any).port;
     const extPort = 5200 + Math.floor(Math.random() * 300);
     const extLog: string[] = [];
-    const extChild = spawn(process.execPath, ['node_modules/ts-node/dist/bin.js', 'server/index.ts'], {
+    // Evidence label: which API ran (current source vs an extracted bundle and its SOURCE_SHA).
+    const extSource = existsSync(join(extRoot, 'SOURCE_SHA')) ? readFileSync(join(extRoot, 'SOURCE_SHA'), 'utf8').trim() : 'current-source';
+    console.log(`API_STARTUP_CHECK mode=${process.env['VAYDU_EXTRACTED_API_ROOT'] ? 'extracted-bundle' : 'current-source'} source=${extSource} root=${extRoot}`);
+    // Same entry as the release image CMD: ts-node --project server/tsconfig.json server/index.ts
+    const extChild = spawn(process.execPath, ['node_modules/ts-node/dist/bin.js', '--project', 'server/tsconfig.json', 'server/index.ts'], {
       cwd: extRoot, env: { ...process.env, NODE_ENV: 'production', SUPABASE_URL: extProxyUrl, SUPABASE_SERVICE_ROLE_KEY: jwt('service_role'), PORT: String(extPort) }, stdio: ['ignore', 'pipe', 'pipe'],
     });
     extChild.stdout.on('data', (d) => extLog.push(String(d)));
