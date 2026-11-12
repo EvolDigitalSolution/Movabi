@@ -1,0 +1,22 @@
+ FAIL  src/testing/batch2c-schema-lineage-guard.spec.ts > PHASE C1 — schema lineage & release integrity > A. every migration-shaped file in supabase/migrations is tracked by git
+ FAIL  src/testing/bike-assignment-trigger-pg.spec.ts > Bike assignment trigger (real PostgreSQL) > enforces bike-only assignment across insert, accept, reassign and admin paths
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > allows a fresh attempt only after definitive balance rejection
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks a mismatched existing transfer
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks a refunded charge with insufficient remaining value
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks ambiguous retries outside the safe key window
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > blocks an unsafe customer payment source
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > does not create a fresh key when eligibility blocks an ambiguous attempt
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > does not fall back to wallet funds when the card source lookup fails
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > does nothing without a database lease
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > keeps earnings pending when Stripe funds are unavailable
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > keeps old ambiguous attempts balance-funded without changing their parameters
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > never submits a transfer if its charge source cannot be persisted
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > preserves a frozen charge on an ambiguous retry
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > reconciles a successful transfer without transferring again
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > reports a local commit failure for reconciliation
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > retains the same key after an ambiguous failure
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > sends only driver earnings from the captured card charge with zero available balance
+ FAIL  src/testing/deployed-wallet-payout-regression.spec.ts > deployed Stripe payout worker preserved by wallet overlay > uses the persisted attempt as the idempotency key
+ FAIL  src/testing/manifest-drift.spec.ts > manifest drift guard > packaged ORDER.txt matches the executed list exactly
+ FAIL  src/testing/manifest-drift.spec.ts > manifest drift guard > packaged SHA256SUMS migration entries match the executed files
+ FAIL  src/testing/wallet-minimal-overlay.spec.ts

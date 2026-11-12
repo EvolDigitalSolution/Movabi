@@ -1,6 +1,6 @@
 import {addressSearchPlan} from '../../../shared/utils/address-country';
 import {RemoteMapsService} from './remote-maps.service';
-import { isNamedLandmark, landmarkTerminal, localPlacePlan, LocalSearchOptions, PlaceSearchPlan, placeCategory, categoryMatch, searchBoundingBox, searchDistanceKm } from '../../../shared/utils/local-place-search';
+import { validSearchPoint, isNamedLandmark, landmarkTerminal, localPlacePlan, LocalSearchOptions, PlaceSearchPlan, placeCategory, categoryMatch, searchBoundingBox, searchDistanceKm } from '../../../shared/utils/local-place-search';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { MapProviderService } from './map-provider.service';
@@ -62,13 +62,40 @@ export class GeocodingService {
         return addressSearchPlan(query,origin,options.scope,this.isPostalSearch(query));
     }
     private searchPlaces(query:string,origin:{lat:number;lng:number}|undefined,options:LocalSearchOptions,autocomplete:boolean):Observable<AutocompleteResult[]>{
-        // All address and place searches use the authenticated provider API.
+        // All address and place searches use the authenticated provider API (/api/maps-v23: Mapbox with
+        // TomTom fallback, configured countries only). The provider-independent search rules of the
+        // previous client pipeline still apply to its results: location requirement, no proximity bias for
+        // postcodes, category radius, relevance, terminal identity, explicit house number, de-duplication,
+        // ranking and distance.
         if(query.trim().length<4)return of([]);
-        return this.remoteMaps.configuration().pipe(switchMap(config=>{
-            if(!config.search)throw new Error('Address search is unavailable. Please sign in and retry.');
+        // The server has one provider chain; there is no second listings provider to spend on.
+        if(options.additionalListings)return of([]);
+        return defer(()=>{
             const plan=this.searchPlan(query,origin,options);
-            return this.remoteMaps.search(query,origin).pipe(map(results=>results.filter(r=>!plan.radiusKm||!plan.origin||searchDistanceKm(plan.origin,r)<=plan.radiusKm)));
-        }));
+            if(plan.needsLocation)return options.strict?throwError(()=>Object.assign(new Error('Set your current location or choose an address before searching nearby.'),{code:'location_required'})):of([]);
+            const rawQuery=plan.query,postcode=this.isPostalSearch(rawQuery);
+            const normalized=postcode?this.normalizeUkPostcode(rawQuery):this.normalizeQuery(rawQuery);
+            if(!normalized||normalized.length<3)return of([]);
+            return this.remoteMaps.configuration().pipe(switchMap(config=>{
+                if(!config.search)throw Object.assign(new Error('Address search is unavailable. Please sign in and retry.'),{code:'provider_unavailable'});
+                return this.remoteMaps.search(normalized,postcode?undefined:plan.origin).pipe(catchError(error=>throwError(()=>this.remoteSearchError(error))));
+            }),map(results=>{
+                const valid=(Array.isArray(results)?results:[]).filter(result=>!!validSearchPoint(result));
+                const bounded=valid.filter(result=>!plan.radiusKm||!plan.origin||searchDistanceKm(plan.origin,result)<=plan.radiusKm);
+                return this.rankResults(bounded,normalized,postcode,!rawQuery.includes(',')?plan.origin:undefined)
+                    .slice(0,autocomplete?8:5)
+                    .map(result=>({...result,...(plan.origin?{distanceKm:searchDistanceKm(plan.origin,result)}:{})}));
+            }));
+        });
+    }
+    /** Server failures become coded, user-safe errors (never the raw HTTP message, which names the API URL). */
+    private remoteSearchError(error:any):Error{
+        if(error?.code)return error;
+        const status=Number(error?.status);
+        if(status===401)return Object.assign(new Error('Sign in again to search addresses.'),{code:'auth_required'});
+        if(status===429)return Object.assign(new Error('Too many searches. Wait a moment and try again.'),{code:'rate_limited'});
+        if(status===400)return Object.assign(new Error('Enter a fuller address, postcode or place name.'),{code:'invalid_query'});
+        return Object.assign(new Error('Place search is temporarily unavailable. Please retry shortly or select a point on the map.'),{code:'provider_unavailable'});
     }
     private legacySearchPlaces(query:string,origin:{lat:number;lng:number}|undefined,options:LocalSearchOptions,autocomplete:boolean):Observable<AutocompleteResult[]>{
         return defer(()=>{

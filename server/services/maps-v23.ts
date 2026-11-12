@@ -67,7 +67,7 @@ export class MapsV23 {
   const data=await this.json(u);if(!Array.isArray(data.results))throw Error('MAP_PROVIDER_RESPONSE_INVALID');
   const results=data.results.flatMap((r:any)=>{const actualCountry=String(r.address?.countryCode||'').toUpperCase();if(!searchCountries(code).includes(actualCountry))return [];let p:MapPoint;try{p=mapPoint({lat:r.position?.lat,lng:r.position?.lon});}catch{return [];}
    const label=[r.poi?.name,r.address?.freeformAddress].filter(Boolean).join(', ');if(!label)return [];
-   return [{...p,label:label.slice(0,600),primaryText:String(r.poi?.name||r.address.freeformAddress).slice(0,300),secondaryText:String(r.address.freeformAddress).slice(0,300),countryCode:actualCountry,placeType:r.type==='POI'?'poi':'address'}];});
+   return [{...p,label:label.slice(0,600),primaryText:String(r.poi?.name||r.address.freeformAddress).slice(0,300),secondaryText:String(r.address.freeformAddress).slice(0,300),countryCode:actualCountry,placeType:r.type==='POI'?'poi':'address',...(Array.isArray(r.poi?.categories)?{categories:r.poi.categories.slice(0,10).map((c:any)=>String(c).slice(0,80))}:{}),...(r.address?.postalCode?{postalCode:String(r.address.postalCode).slice(0,20)}:{})}];});
   return {results,attribution:'© TomTom'};
  }
  private async mapboxReverse(point:MapPoint){

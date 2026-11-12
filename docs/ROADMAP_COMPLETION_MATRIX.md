@@ -170,7 +170,7 @@ Scope of each, so neither is read as the other:
 | D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
 | ~~D10~~ | **Resolved 2026-11-12 by the user: "Keep them off".** Courier (delivery/errand) cash stays off in every market, including cash-pilot markets; cash applies to Rides only, with a card hold. Already enforced by `20261269000000`: `courier_enabled` defaults to false; no migration, API route or runbook sets it (only disposable test fixtures do); the markets table is writable by the database owner only, so the API cannot switch it on. Turning it on later needs a new decision and an owner-level change. |
 | ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff after acceptance counts as driver-initiated — confirmed by the user ("Yes, count handoffs"). |
-| D11 | Address search provider of record on develop/production: confirm `VAYDU_MAPBOX_GEOCODING_V23` is enabled (server search depends on it; with it off address search returns nothing), or name the intended provider. Then the 52 place-search tests are rewritten against the server pipeline or the dead client pipeline is removed. |
+| D11 | ~~Address search provider configuration on develop~~ — **configuration readiness confirmed 2026-11-12** from host evidence supplied by the user (`VAYDU_MAPBOX_GEOCODING_V23=true`, Mapbox token set, TomTom key set; values not seen). **Address search is NOT verified**: that needs the actual-request check (`scripts/verify-server-place-search.cjs`, see "Address search (D11)"). Open sub-decision **D11b**: whether named landmarks, businesses and categories should go to TomTom first (Mapbox Geocoding v6 has no POI layer). That changes provider spend, so it is not changed here. |
 | D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
 
 Approved and recorded: driver card top-up fee 5% (`vaydu-driver-card-5pct-wallet-v1`), promo 5%,
@@ -206,7 +206,7 @@ fee hold / immediate-only / fixed-fare decisions (`CASH-BOOKING-PLAN.md`).
 
 ### Triage of the pre-existing failures (2026-11-12, user: "Yes, triage them")
 
-After triage: **73 distinct failing tests (75 reported) in 9 files, 3,368 passing**. Before: 109 in 29 files.
+After triage: **73 distinct failing tests (75 reported) in 9 files, 3,368 passing**. After D11 coverage move: **22 failing in 6 files** (`full-suite-failures-after-d11.txt`): wallet artefacts 18, real-PG container 1, manifest drift 2, schema lineage 1. All are environment, artefact or decision items. Before: 109 in 29 files.
 **No new failures** (`docs/roadmap-evidence/full-suite-failures-after-triage.txt`, compared by exact name).
 No assertion was removed without replacing it with the current, equally strict guarantee.
 
@@ -237,11 +237,12 @@ wallet booking lifecycle and protected quote audit stubs.
 
 | Group | Tests | Reason | Needed |
 |---|---|---|---|
-| Place search (business, heigit, local-shop, named-landmark, local-place-geofence) | 52 | Tests drive the legacy client pipeline (`legacySearchPlaces`), which is dead code: the app searches only through the server (`RemoteMapsService`), and with `VAYDU_MAPBOX_GEOCODING_V23` off server search returns nothing | **D11** |
+| ~~Place search~~ | ~~52~~ | **Resolved 2026-11-12**: coverage moved to the server path, see "Address search (D11)" | Actual-request check on the host |
 | Deployed wallet payout regression | 17 | Reads untracked `.temp/` deployment artefacts | Run against the deployment artefacts |
 | Wallet minimal overlay | 1 | Same (`.temp/`) | Same |
 | Bike assignment trigger (real PG) | 1 | Needs container `vaydu-pg-fresh` | Run with the container |
 | Manifest drift | 2 | Frozen `35b2590` validation bundle (see above) | Bundle re-cut when packaging is authorised |
+| Schema lineage guard | 1 | Correctly flags the untracked batch 1E migration (open item below) | Decision on versioning that file |
 
 **Open item found during triage:** `supabase/migrations/20261248000000_driver_cash_credit_batch1e.sql` is
 **not committed on any branch**. It exists only as an untracked file in this worktree, yet
@@ -250,6 +251,73 @@ spec passes only locally. The cash-pilot migrations (`20261266*`) are generated 
 already contains the v1e functions. That suggests the file matches what develop runs, but this is not verified.
 Committing it adds a migration to the tested chain, so it is left out of the triage commit. It needs a
 check against the develop schema export before being versioned.
+
+
+### Address search (D11) — server-backed pipeline (2026-11-12)
+
+**State:** configuration ready on develop (host evidence). Implemented and unit-verified with fake
+provider responses. **Actual requests are not verified yet.** No configuration change, packaging or
+deployment was made.
+
+Path: `GeocodingService.searchPlaces` → `RemoteMapsService` → `/api/maps-v23/search` (signed-in user,
+60/min) → `MapsV23` (Mapbox Geocoding v6, then TomTom on Mapbox failure or zero usable results;
+configured countries only, as designed in `docs/AUTOMATIC_ADDRESS_COUNTRY_V23.md`). The previous client
+pipeline (`legacySearchPlaces`, MapTiler/HeiGIT/ORS, ORS routing) is no longer reachable.
+
+**Defects found and fixed:**
+- The server path dropped every provider-independent search rule of the old pipeline. Restored by
+  reusing the existing helpers on the server results: location required for nearby categories
+  (`location_required`, no request), no proximity bias for postcodes, category radius 10/25 km/country,
+  relevance and category/cuisine evidence, terminal identity, explicit town, explicit house number,
+  de-duplication with merged categories, nearest-first, invalid-coordinate drop, and `distanceKm`.
+- Search failures reached the booking page as the raw HTTP message, which includes the API URL. They
+  also lacked the `provider_unavailable` code the page logic expects. They now become coded, user-safe
+  errors: `provider_unavailable`, `rate_limited`, `invalid_query` or `auth_required`.
+- "Additional listings" repeated the identical server search. The server has one provider chain, so
+  it now makes no request.
+- TomTom results dropped POI categories and the postcode. Both are now passed through, bounded, so
+  category searches can match. This adds no provider requests.
+
+**Billing guard (Mapbox permanent geocoding):** `MapsV23.mapbox()` is the only builder of Mapbox
+geocoding URLs, and it always sets `permanent=false` (forward and reverse). Tests assert this on every
+geocoding request, including postcodes and reverse, and assert that nothing sends `permanent=true`.
+The fallback route uses Mapbox Directions, which is not geocoding. The host script checks the same
+on real requests and prints URLs with credentials redacted.
+
+**Coverage:** `src/testing/server-place-search.spec.ts` has 43 tests. 22 of them fail against the previous
+`searchPlaces`, so they guard the restored rules. `maps-provider-v23.spec.ts` keeps the adapter suite.
+The old suites were reduced to their live-helper tests (business 1, landmark plan/terminal, geofence
+policy/geometry). `heigit-place-search` and `local-shop-search` were removed; every requirement maps below.
+
+| Old requirement (52 tests) | Now |
+|---|---|
+| POI by typed name + local coordinates; ORS venue names; business name when the label is only a street | TomTom POI name kept as `primaryText`, label = name + address, request carries lat/lon (server tests). Mapbox v6 cannot return POIs (D11b). |
+| Nearer branch first; unrelated results hidden; spelling variation kept; explicit town wins; invalid coordinates | Client tests on the server path |
+| Street search broad; postcode without proximity (GB, CA, IE, NG, NL, US) | Client tests (origin is withheld for postcodes) plus the server "no proximity without origin" test |
+| Onboarding/other-market country restriction | Replaced by the documented design: configured countries only, for both providers (server tests) |
+| Failed provider isolated; empty answers not cached indefinitely; per-town cache | TomTom fallback on failure/timeout; 60 s memo of successes only; cache keyed by location (server tests) |
+| Location required before any call; 10 km vs 25 km vs country; no silent broadening; out-of-circle discarded | Client tests. The server sends proximity only (no bbox); the circle is enforced on the client. |
+| All-provider timeout is a retryable error within the deadline; failure ≠ no match; missing configuration ≠ no results | 8 s abort signal per request, `MAP_PROVIDER_UNAVAILABLE` → `provider_unavailable`; `search:false` → `provider_unavailable` |
+| Same venue from two providers merged with metadata; no manufactured or different house number | Client tests |
+| Terminal 2 beyond radius preferred; no substitute terminal; T2≠T20; distant airport terminal rejected; near-me excludes distant | Client tests |
+| HeiGIT additional listings (explicit only, 25 km, category + cuisine, no listing search for address/postcode/explicit town, in-flight sharing) | No second provider exists, so "additional listings" makes no request. Category, cuisine and radius rules are enforced on the main path. In-flight sharing is the server memo (`maps-provider-v23` coalescing test). |
+| MapTiler-specific parameters (`types:poi`, `fuzzyMatch`, MapTiler-only calls); default proximity from the device country when no origin | Not applicable: the provider was replaced; no device-country bias, by design (global configured-country search) |
+| HeiGIT ORS routing endpoints | Routing is server-side (`/api/maps-v23/route`, TomTom then Mapbox Directions), covered by `maps-provider-v23.spec.ts` |
+
+**Actual-request verification (needed before "verified"):** run on the develop API host. It makes
+about 12 provider requests, reads only the container's own environment, and prints no credentials:
+
+    docker cp scripts/verify-server-place-search.cjs movabi-develop-api:/tmp/verify-server-place-search.cjs
+    docker exec -e TS_NODE_PROJECT=server/tsconfig.json -w /app movabi-develop-api node -r ts-node/register/transpile-only /tmp/verify-server-place-search.cjs --countries GB,NG
+
+The script checks address, postcode, street with origin, GB-only isolation, configured-country global
+search, TomTom fallback (Mapbox blocked locally), reverse geocoding, and `permanent=false` on every
+Mapbox geocoding request. For landmark, business and category queries it only records the results;
+those are the D11b evidence. Note: it exercises the **deployed** adapter (`f6e8c00`), which lacks the
+categories/postcode passthrough above.
+
+**Follow-up (not done):** delete the unreachable client pipeline (`legacySearchPlaces`, MapTiler/HeiGIT
+helpers, ORS routing in `RoutingService`) once the server path is verified with real requests.
 
 ## Dependencies
 
