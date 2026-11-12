@@ -37,7 +37,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Disposable Supabase integration failed' }
     Remove-Item Env:VAYDU_DISPOSABLE_DB
     DockerOk cp (Join-Path $root 'scripts/rollback-driver-topup-fees-v2.sql') "${name}:/tmp/refuse.sql"
-    $refusal = & docker exec $name psql -U postgres -d vaydu_batch2a_test -X -v ON_ERROR_STOP=1 -f /tmp/refuse.sql 2>&1 | Out-String
+    # The refusal is EXPECTED to fail on stderr; Windows PowerShell 5.1 would otherwise turn that into a terminating error.
+    $previousPreference=$ErrorActionPreference; $ErrorActionPreference='Continue'
+    try { $refusal = & docker exec $name psql -U postgres -d vaydu_batch2a_test -X -v ON_ERROR_STOP=1 -f /tmp/refuse.sql 2>&1 | Out-String } finally { $ErrorActionPreference=$previousPreference }
     if ($LASTEXITCODE -eq 0 -or $refusal -notmatch 'frozen financial schedules exist') { throw 'Financial rollback refusal failed' }
     Write-Host 'PASS: rollback refused after financial snapshots'
   }

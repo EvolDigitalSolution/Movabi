@@ -83,15 +83,28 @@ it.skipIf(!dbName)('real disposable Auth -> mounted route -> PostgREST -> SQL ->
    UPDATE public.market_payment_routes SET enabled=true,merchant_approved=true,adapter_ready=true,capabilities=ARRAY['collect'] WHERE country_code='GB' AND currency_code='GBP' AND provider='stripe';
    INSERT INTO public.wallet_topup_fee_schedules(version,provider,country_code,currency_code,method,exponent,fee_basis,fee_basis_points,fee_fixed_minor,rounding,approved_by,approved_at,active) VALUES('vaydu-driver-card-5pct-wallet-v1','stripe','GB','GBP','card',2,'wallet',500,0,'half_up','synthetic',now(),true);
    INSERT INTO public.driver_card_topup_sandbox_scopes(provider,method,country_code,currency_code,merchant_account_ref,provider_account_id,tenant_id,driver_id,fee_passing_mode,reviewed_by,reviewed_at,evidence_reference,policy_version,enabled) VALUES('stripe','card','GB','GBP','stripe-platform','acct_synthetic','11111111-1111-1111-1111-111111111111','${stripeUser.user.id}','merchant','synthetic',now(),'synthetic fixed-total checkout review','vaydu-driver-card-5pct-wallet-v1',true);`);
-  let stripePosts=0,metadata:any={},stripeReference='';
-  const stripeSession=()=>({id:'cs_test_synthetic',livemode:false,mode:'payment',amount_total:10500,currency:'gbp',client_reference_id:stripeReference,metadata,url:'https://checkout.stripe.com/c/pay/cs_test_synthetic',status:'complete',payment_status:'paid',payment_intent:'pi_synthetic'});
-  const sdk:any={accounts:{retrieve:async()=>({id:'acct_synthetic'})},checkout:{sessions:{create:async(params:any)=>{stripePosts++;metadata=params.metadata;stripeReference=params.client_reference_id;return stripeSession();},retrieve:async()=>stripeSession()}},paymentIntents:{retrieve:async()=>({livemode:false,status:'succeeded',amount:10500,amount_received:10500,currency:'gbp',metadata,latest_charge:{amount:10500,currency:'gbp',paid:true,captured:true,refunded:false,amount_refunded:0,payment_method_details:{type:'card'},balance_transaction:{id:'txn_synthetic',currency:'gbp',fee:700,net:9800}}})}};
+  // Mocked provider, current contract: the adapter creates an unconfirmed PaymentIntent that the
+  // in-app Card Element confirms; /verify re-queries that PaymentIntent. `paid` flips when the
+  // (simulated) customer completes the card payment.
+  let stripePosts=0,metadata:any={},paid=false;
+  const piBase=()=>({id:'pi_synthetic',object:'payment_intent',livemode:false,amount:10500,currency:'gbp',metadata,client_secret:'pi_synthetic_secret_synthetic'});
+  const sdk:any={accounts:{retrieve:async()=>({id:'acct_synthetic'})},paymentIntents:{
+   create:async(params:any)=>{stripePosts++;metadata=params.metadata;expect(params.confirm).toBe(false);expect(params.amount).toBe(10500);return {...piBase(),status:'requires_payment_method'};},
+   retrieve:async(id:string)=>{expect(id).toBe('pi_synthetic');return paid
+    ?{...piBase(),status:'succeeded',amount_received:10500,latest_charge:{amount:10500,currency:'gbp',paid:true,captured:true,refunded:false,amount_refunded:0,payment_method_details:{type:'card'},balance_transaction:{id:'txn_synthetic',currency:'gbp',fee:700,net:9800}}}
+    :{...piBase(),status:'requires_payment_method',amount_received:0,last_payment_error:null,latest_charge:null};}}};
   const stripeAdapter=new StripeDriverTopupSandbox(sdk,'sk_test_synthetic','stripe-platform',flutterwaveAttemptStore(db));
   app.use('/stripe',createDriverTopupRouter({supabase:db as any,adapter:stripeAdapter,config:{collectionEnabled:async()=>true,callbackUrl:()=> 'http://localhost:3000/driver-topup-return',flutterwaveSecret:()=>'',flutterwaveWebhookSecret:()=>'',flutterwaveMerchant:()=>''}}));
   const stripePost=(path:string,body:any)=>post('/stripe'+path,body,stripeUser.access_token);
   const stripeQuote=await stripePost('/checkout',input);expect(stripeQuote.status,JSON.stringify(stripeQuote)).toBe(200);expect(stripeQuote.body.totalChargeMinor).toBe(10500);
   const stripeSubmissions=await Promise.all([stripePost('/checkout',{...input,confirmedTotalMinor:10500}),stripePost('/checkout',{...input,confirmedTotalMinor:10500})]);
   expect(stripeSubmissions.map(r=>r.status).sort(),JSON.stringify(stripeSubmissions)).toEqual([200,409]);expect(stripePosts).toBe(1);
+  const stripeBalance=()=>sql(`SELECT count(*)||':'||coalesce(sum(m.amount_minor),0) FROM public.wallet_movements m JOIN public.wallet_accounts a ON a.id=m.account_id WHERE a.owner_id='${stripeUser.user.id}' AND a.balance_purpose='driver_cash_credit'`);
+  // Before the card payment succeeds, verification reports an explicit no-credit state and writes no ledger row.
+  const unpaid=await stripePost('/verify',{attemptId:stripeQuote.body.attemptId});
+  expect(unpaid.status,JSON.stringify(unpaid)).toBe(409);expect(unpaid.body.code).toBe('PAYMENT_NOT_COMPLETED');
+  expect(stripeBalance()).toBe('0:0');
+  paid=true;
   const stripeConfirmations=await Promise.all([stripePost('/verify',{attemptId:stripeQuote.body.attemptId}),stripePost('/verify',{attemptId:stripeQuote.body.attemptId})]);
   expect(stripeConfirmations.map(r=>r.status),JSON.stringify(stripeConfirmations)).toEqual([200,200]);
   expect(stripeConfirmations[0].body.creditedEventId).toBe(stripeConfirmations[1].body.creditedEventId);
