@@ -48,7 +48,7 @@ code those verifications exercise.
 | `18aaf2b` | Rehearsal harness: test-server keep-alive; extracted-API root no longer the untracked old 9abfd8f extract | No |
 | `a421583` | Rehearsal: API started with the image entry (`--project server/tsconfig.json`); startup-mode label | No |
 | `b56d808` | Matrix rewrite + rehearsal evidence logs | No |
-| (next commit) | D9 driver cancellation attribution + metrics v2 (migration, route, services, tests) | No — **not** in 635a285; needs its own release |
+| `0965669` | D9 driver cancellation attribution + metrics v2 (migration, route, services, tests) | No — **not** in 635a285; needs its own release |
 
 The two migrations versioned in `2217bd2` are older wallet migrations used by the disposable top-up
 test. They are not deployment content, and the runbook does not apply them.
