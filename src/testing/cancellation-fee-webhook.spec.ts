@@ -11,6 +11,7 @@ let jobRow: Record<string, any> | null = null;
 let rpcCalls: Array<{ fn: string; args: Record<string, any> }> = [];
 let settleResult: any = { status: 'settled' };
 let settleError: any = null;
+let holdRow: Record<string, any> | null = null;
 
 vi.mock('stripe', () => { const S = class { webhooks = { constructEvent: () => webhookEvent }; }; return { default: S, Stripe: S }; });
 const anyChain = (row: () => any): any => new Proxy({}, { get: (_t, p) =>
@@ -20,7 +21,7 @@ const anyChain = (row: () => any): any => new Proxy({}, { get: (_t, p) =>
     : () => anyChain(row) });
 vi.mock('@supabase/supabase-js', () => ({
     createClient: () => ({
-        from: (table: string) => anyChain(() => table === 'jobs' ? jobRow : null),
+        from: (table: string) => anyChain(() => table === 'jobs' ? jobRow : table === 'cash_ride_fee_holds_v1e' ? holdRow : null),
         rpc: async (fn: string, args: Record<string, any>) => {
             rpcCalls.push({ fn, args });
             if (fn === 'record_customer_receivable') return { data: { id: 'rrrrrrrr-rrrr-4rrr-8rrr-rrrrrrrrrrrr' }, error: null };
@@ -51,7 +52,7 @@ const settleCall = () => rpcCalls.find(c => c.fn === 'settle_cancellation_compen
 describe('cancellation fee webhook backstop (real router)', () => {
     beforeEach(() => {
         process.env.STRIPE_WEBHOOK_SECRET = 'wh_test';
-        rpcCalls = []; settleResult = { status: 'settled' }; settleError = null;
+        rpcCalls = []; settleResult = { status: 'settled' }; settleError = null; holdRow = null;
         jobRow = { id: JOB, tenant_id: 't', customer_id: 'u1', status: 'cancelled', payment_intent_id: 'pi_booking', metadata: { cancellation_fee_quote: frozen } };
     });
 
@@ -97,6 +98,26 @@ describe('cancellation fee webhook backstop (real router)', () => {
     it('no fee due in the frozen quote: nothing booked', async () => {
         jobRow = { ...jobRow!, metadata: { cancellation_fee_quote: { ...frozen, due: false, reasonCode: 'within_grace', feeMinor: 0 } } };
         webhookEvent = succeeded();
+        expect((await post(webhookEvent)).status).toBe(200);
+        expect(settleCall()).toBeUndefined();
+    });
+
+    const cashJobRow = () => ({ id: JOB, tenant_id: 't', customer_id: 'u1', status: 'cancelled', payment_method: 'cash', payment_intent_id: null,
+        metadata: { cancellation_fee_quote: frozen, cash_collection_mode: 'full_customer_charge' } });
+    const capturedHold = { provider: 'stripe', provider_payment_reference: 'pi_hold', merchant_account_ref: 'cash-merchant', currency_code: 'GBP', status: 'captured' };
+
+    it('cash ride: a HOLD intent (vaydu_cash_fee_hold) settles with the hold row merchant, not the event account', async () => {
+        jobRow = cashJobRow(); holdRow = { ...capturedHold };
+        webhookEvent = { id: 'evt_hold_1', type: 'payment_intent.succeeded', account: 'acct_other',
+            data: { object: { id: 'pi_hold', status: 'succeeded', currency: 'gbp', amount: 500, amount_received: 400, livemode: false, metadata: { vaydu_cash_fee_hold: JOB, vaydu_merchant: 'cash-merchant' } } } };
+        expect((await post(webhookEvent)).status).toBe(200);
+        expect(settleCall()?.args).toMatchObject({ p_payment_reference: 'pi_hold', p_merchant_account_ref: 'cash-merchant', p_collected_minor: 400 });
+    });
+
+    it('cash ride: an intent that is not the ride hold is not booked as its fee', async () => {
+        jobRow = cashJobRow(); holdRow = { ...capturedHold };
+        webhookEvent = { id: 'evt_hold_2', type: 'payment_intent.succeeded',
+            data: { object: { id: 'pi_forged', status: 'succeeded', currency: 'gbp', amount: 400, amount_received: 400, livemode: false, metadata: { vaydu_cash_fee_hold: JOB } } } };
         expect((await post(webhookEvent)).status).toBe(200);
         expect(settleCall()).toBeUndefined();
     });

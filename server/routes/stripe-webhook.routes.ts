@@ -343,7 +343,9 @@ router.post('/', async (req: Request, res: Response) => {
         // (receivable + driver compensation) idempotently — the same event /cancel settles, so a crash
         // there still converges. Facts that make it "not a fee" fall through to the normal path (which
         // never re-activates a cancelled booking); a storage failure answers 500 so Stripe re-delivers.
-        const feeJobId = String(paymentIntent.metadata?.jobId || '');
+        // Card booking intents carry metadata.jobId; cash-ride fee HOLD intents carry vaydu_cash_fee_hold
+        // (the service then binds the intent and merchant to the hold row, not to this event).
+        const feeJobId = String(paymentIntent.metadata?.jobId || paymentIntent.metadata?.vaydu_cash_fee_hold || '');
         if (feeJobId && paymentIntent.metadata?.purpose !== 'shopping_budget_reauthorization') {
           try {
             const outcome = await settleCapturedCancellationFee(supabase, feeJobId, paymentIntent, String((event as any).account || PLATFORM_MERCHANT));

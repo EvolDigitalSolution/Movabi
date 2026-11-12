@@ -965,6 +965,28 @@ it('Bike authenticated HTTP - Car driver denied, Bike driver succeeds', { timeou
     expect(sql(`SELECT public.reverse_cancellation_compensation((SELECT id FROM public.customer_receivables WHERE job_id='${comp1}' AND reason='cancellation_fee'),400,'re_rehearsal_1','stripe','stripe-platform','test')->>'status';`)).toBeTruthy();
     expect(sql(`SELECT refunded_minor||'|'||compensation_minor||'|'||platform_share_minor FROM public.customer_receivables WHERE job_id='${comp1}' AND reason='cancellation_fee';`),
       'full refund reverses the compensation').toBe('400|0|0');
+
+    // 6b, cash rides: the fee captured from the ride's card HOLD -> receivable + driver compensation.
+    // STAND-IN (documented): only the hold TABLE from 20261266100000 is created here (its exact DDL, read
+    // from the migration). The cash migrations' FUNCTION replacements conflict with this roadmap chain and
+    // await a merge, so they are deliberately not applied (nor its cash_due payment state: the row uses 'pending';
+    // the collection service does not read payment_status).
+    const holdDdl = /CREATE TABLE public\.cash_ride_fee_holds_v1e \([\s\S]*?\n\);/.exec(readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261266100000_cash_ride_booking_fee_hold.sql'), 'utf8'))?.[0];
+    expect(holdDdl, 'hold table DDL found in the migration').toBeTruthy();
+    sql(`${holdDdl} GRANT SELECT, INSERT, UPDATE ON public.cash_ride_fee_holds_v1e TO service_role;`);
+    const cashFee = 'fee00000-0000-4000-8000-0000000000c1';
+    sql(`SET session_replication_role = replica; INSERT INTO public.jobs(id,tenant_id,customer_id,country_code,currency_code,driver_id,accepted_driver_id,status,payment_method,payment_status,pickup_address,dropoff_address,scheduled_time,price,total_price,accepted_at,metadata)
+      VALUES('${cashFee}','${tenantId}','${customer.user.id}','GB','GBP','${d9Driver.user.id}','${d9Driver.user.id}','assigned','cash','pending','Cash A','Cash B',now(),12.00,12.00,now()-interval '10 minutes','{"cash_collection_mode":"full_customer_charge"}'::jsonb);
+      INSERT INTO public.cash_ride_fee_holds_v1e(job_id,tenant_id,customer_id,provider,merchant_account_ref,provider_payment_reference,amount_minor,currency_code,fee_terms,status,captured_minor)
+      VALUES('${cashFee}','${tenantId}','${customer.user.id}','stripe','stripe-cash-hold-merchant','pi_rehearsal_hold_1',500,'GBP','{}'::jsonb,'captured',400);`);
+    expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: true })).status).toBe(200);
+    expect(sql(`SELECT public.cancel_job_with_actor('${cashFee}','changed plans','${customer.user.id}','customer');`)).toBe('t');
+    const holdPi = (id: string) => ({ id, status: 'succeeded', currency: 'gbp', amount_received: 400, livemode: false });
+    expect(await settleCapturedCancellationFee(client, cashFee, holdPi('pi_booking_not_the_hold')), 'only the hold intent carries a cash ride fee').toMatchObject({ status: 'not_applicable', reason: 'other_payment_intent' });
+    expect(await settleCapturedCancellationFee(client, cashFee, holdPi('pi_rehearsal_hold_1'), 'caller-supplied-merchant'), 'cash fee booked from the hold').toMatchObject({ status: 'settled', collectedMinor: 400 });
+    expect(sql(`SELECT status||'|'||collected_minor||'|'||compensation_minor||'|'||platform_share_minor||'|'||payment_reference||'|'||merchant_account_ref FROM public.customer_receivables WHERE job_id='${cashFee}' AND reason='cancellation_fee';`),
+      'merchant identity comes from the hold row, never the caller').toBe('paid|400|320|80|pi_rehearsal_hold_1|stripe-cash-hold-merchant');
+    expect(await settleCapturedCancellationFee(client, cashFee, holdPi('pi_rehearsal_hold_1')), 'replay converges').toMatchObject({ status: 'already_settled' });
     expect((await adminPost(`/policies/cancellation/${publishedBody.policy.id}/enabled`, { tenantId, enabled: false })).status).toBe(200);
 
     // Extracted-API runtime (authenticated) against live fixture GoTrue + PostgREST.

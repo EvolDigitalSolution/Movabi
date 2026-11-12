@@ -20,14 +20,16 @@ const stripeCalls: Array<{ op: string; args: any[] }> = [];
 const jobUpdates: Array<Record<string, any>> = [];
 let settleResult: any = { status: 'settled' };
 let settleError: any = null;
+let holdRow: Record<string, any> | null = null;
+const cashCalls: Array<{ op: string; args: any[] }> = [];
 
 // Any query chain resolves to the job row (single/maybeSingle/await).
-const chain = (): any => new Proxy({}, {
+const chain = (row: () => any = () => jobRow): any => new Proxy({}, {
     get(_t, prop) {
-        if (prop === 'then') return (res: any) => Promise.resolve({ data: jobRow, error: null }).then(res);
-        if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: jobRow, error: null });
+        if (prop === 'then') return (res: any) => Promise.resolve({ data: row(), error: null }).then(res);
+        if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: row(), error: null });
         if (prop === 'update') return (payload: Record<string, any>) => { jobUpdates.push(payload); return chain(); };
-        return () => chain();
+        return () => chain(row);
     }
 });
 
@@ -37,7 +39,7 @@ vi.mock('../../server/services/supabase.service', () => ({
         from: (table: string) => table === 'profiles'
             ? new Proxy({}, { get: (_t, p) => p === 'then' ? (r: any) => Promise.resolve({ data: { account_status: 'active', role: 'customer' }, error: null }).then(r)
                 : (p === 'single' || p === 'maybeSingle') ? async () => ({ data: { account_status: 'active', role: 'customer' }, error: null }) : () => chain() })
-            : chain(),
+            : table === 'cash_ride_fee_holds_v1e' ? chain(() => holdRow) : chain(),
         rpc: async (fn: string, args: Record<string, any>) => {
             rpcCalls.push({ fn, args });
             if (fn === 'cancel_job_with_actor') { jobRow = { ...jobRow, status: 'cancelled' }; return { data: true, error: null }; }
@@ -59,6 +61,11 @@ vi.mock('../../server/services/stripe.service', () => ({
     }
 }));
 vi.mock('stripe', () => { const S = class { paymentIntents = {}; webhooks = {}; }; return { default: S, Stripe: S }; });
+vi.mock('../../server/services/payments/cash-ride-booking.instance', () => ({ cashRideBooking: () => ({
+    captureFee: async (...args: any[]) => { cashCalls.push({ op: 'captureFee', args }); return 'captured'; },
+    capturedFeeIntent: async (...args: any[]) => { cashCalls.push({ op: 'capturedFeeIntent', args }); return { id: 'pi_hold', status: 'succeeded', currency: 'gbp', amount_received: 400, livemode: false }; },
+    releaseHold: async (...args: any[]) => { cashCalls.push({ op: 'releaseHold', args }); return 'released'; },
+}) }));
 vi.mock('../../server/services/fraud.service', () => ({ FraudService: { trackCancellation: async () => {} } }));
 vi.mock('../../server/services/dispatch.service', () => ({ DispatchService: {} }));
 vi.mock('../../server/services/notification.service', () => ({ NotificationService: { notifyJobStatusUpdate: async () => {} } }));
@@ -86,7 +93,7 @@ const cardJob = (frozen: Record<string, unknown> | undefined, over: Record<strin
 const receivableCall = () => rpcCalls.find(c => c.fn === 'record_customer_receivable');
 
 describe('cancellation fee on the real booking router', () => {
-    beforeEach(() => { rpcCalls.length = 0; stripeCalls.length = 0; jobUpdates.length = 0; caller = CUSTOMER; quoteRpc = { data: null, error: null }; settleResult = { status: 'settled' }; settleError = null; });
+    beforeEach(() => { rpcCalls.length = 0; stripeCalls.length = 0; jobUpdates.length = 0; cashCalls.length = 0; holdRow = null; caller = CUSTOMER; quoteRpc = { data: null, error: null }; settleResult = { status: 'settled' }; settleError = null; });
 
     it('card: captures exactly the frozen fee (GBP 400), with an idempotency key, never re-quoting', async () => {
         jobRow = cardJob(quote());
@@ -226,5 +233,39 @@ describe('cancellation fee on the real booking router', () => {
         settleError = { message: 'connection reset' };
         await call('/cancel', 'POST', { jobId: JOB, reason: 'retry' });
         expect(jobUpdates.at(-1)).toEqual({ payment_status: 'requires_review' });
+    });
+
+    const cashJob = (frozen: Record<string, unknown>) => cardJob(frozen, { payment_method: 'cash', payment_intent_id: null, payment_status: 'pending',
+        metadata: { cancellation_fee_quote: frozen, cash_collection_mode: 'full_customer_charge' } });
+    const hold = { job_id: JOB, status: 'authorized', amount_minor: 500, provider: 'stripe', provider_payment_reference: 'pi_hold', merchant_account_ref: 'cash-merchant', currency_code: 'GBP' };
+
+    it('cash ride: hold covers the fee -> capture once, then booked from the HOLD intent with the hold merchant', async () => {
+        jobRow = cashJob(quote());
+        holdRow = { ...hold };
+        const r = await call('/cancel', 'POST', { jobId: JOB, reason: 'changed plans' });
+        expect(r.status).toBe(200);
+        expect(cashCalls.find(c => c.op === 'captureFee')?.args).toEqual([JOB, 400, 'cash-cancel-fee-' + JOB]);
+        expect(rpcCalls.find(c => c.fn === 'settle_cancellation_compensation')?.args).toEqual({ p_receivable: 'rec-1', p_collected_minor: 400,
+            p_payment_reference: 'pi_hold', p_provider: 'stripe', p_merchant_account_ref: 'cash-merchant', p_environment: 'test' });
+        expect(rpcCalls.filter(c => c.fn === 'record_customer_receivable')).toHaveLength(1);
+        expect(jobUpdates.some(u => u.payment_status === 'cancelled')).toBe(true);
+    });
+
+    it('cash ride: fee above the hold -> hold part captured, remainder stays debt, booking goes to review (no auto-compensation)', async () => {
+        jobRow = cashJob(quote({ feeMinor: 700 }));
+        holdRow = { ...hold };
+        await call('/cancel', 'POST', { jobId: JOB, reason: 'x' });
+        expect(cashCalls.find(c => c.op === 'captureFee')?.args[1]).toBe(500);
+        expect(rpcCalls.some(c => c.fn === 'settle_cancellation_compensation')).toBe(false);
+        expect(rpcCalls.find(c => c.fn === 'record_customer_receivable')?.args).toMatchObject({ p_amount: 200, p_reason: 'cancellation_fee' });
+        expect(jobUpdates.some(u => u.payment_status === 'requires_review')).toBe(true);
+    });
+
+    it('cash ride: no fee due -> hold released, nothing captured or booked', async () => {
+        jobRow = cashJob(quote({ due: false, reasonCode: 'within_grace', feeMinor: 0 }));
+        holdRow = { ...hold };
+        await call('/cancel', 'POST', { jobId: JOB, reason: 'x' });
+        expect(cashCalls.map(c => c.op)).toEqual(['releaseHold']);
+        expect(rpcCalls.some(c => c.fn === 'record_customer_receivable' || c.fn === 'settle_cancellation_compensation')).toBe(false);
     });
 });

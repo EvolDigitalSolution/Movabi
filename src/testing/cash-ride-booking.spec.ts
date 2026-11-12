@@ -185,6 +185,15 @@ describe('fee hold settlement (completion, no-show, cancellation, no driver)', (
     // A captured hold is never "released" afterwards.
     expect(await w.svc.releaseHold(jobId)).toBe('captured'); expect(w.cancels).toHaveLength(0);
   });
+  it('6b: capturedFeeIntent returns the hold own captured intent (read-only), never before capture', async () => {
+    const w = await authorisedHold();
+    expect(await code(w.svc.capturedFeeIntent(jobId))).toBe('CASH_HOLD_CAPTURE_UNCONFIRMED');
+    await w.svc.captureFee(jobId, 250, `cash-cancel-fee-${jobId}`);
+    const captures = w.captures.length;
+    expect(await w.svc.capturedFeeIntent(jobId)).toMatchObject({ id: 'pi_hold1', status: 'succeeded', amount_received: 250 });
+    expect(w.captures.length, 'inspection never captures').toBe(captures);
+    expect(await code(w.svc.capturedFeeIntent('ffffffff-ffff-4fff-8fff-ffffffffffff'))).toBe('CASH_HOLD_CAPTURE_UNCONFIRMED');
+  });
   it('refuses a fee above the hold, a zero fee, or an unauthorised hold', async () => {
     const w = await authorisedHold();
     expect(await code(w.svc.captureFee(jobId, 501, 'k'))).toBe('CASH_FEE_EXCEEDS_HOLD');

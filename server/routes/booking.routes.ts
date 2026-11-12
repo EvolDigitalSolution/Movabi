@@ -1533,15 +1533,31 @@ router.post('/cancel', async (req: Request, res: Response) => {
             try {
                 const feeMinor = quotedFeeMinor;
                 const { data: hold } = await supabaseAdmin.from('cash_ride_fee_holds_v1e').select('status,amount_minor').eq('job_id', jobId).maybeSingle();
+                let cashPaymentStatus = 'cancelled';
                 if (job.driver_id && feeMinor > 0 && hold?.status === 'authorized') {
                     const fromHold = Math.min(feeMinor, Number(hold.amount_minor));
                     await cashRideBooking().captureFee(jobId, fromHold, `cash-cancel-fee-${jobId}`);
                     cashUncoveredFeeMinor = feeMinor - fromHold;
+                    if (cashUncoveredFeeMinor === 0) {
+                        // The hold covered the whole fee: book the collection (receivable + driver compensation
+                        // under the frozen policy). The webhook settles the same hold intent if this fails.
+                        try {
+                            const outcome = await settleCapturedCancellationFee(supabaseAdmin, jobId, await cashRideBooking().capturedFeeIntent(jobId));
+                            if (outcome.status === 'not_applicable') console.warn('[BookingRoutes] cash cancellation fee not booked:', jobId, outcome.reason);
+                        } catch (collectionError) {
+                            console.error('[BookingRoutes] cash cancellation fee not yet settled (webhook will retry):', (collectionError as Error)?.message);
+                        }
+                    } else {
+                        // Rare: the fee now exceeds the hold disclosed at booking. The remainder stays the
+                        // customer's debt (below); the hold part is not auto-compensated — one receivable per
+                        // job+reason cannot hold a paid part and an open part — so it goes to review.
+                        cashPaymentStatus = 'requires_review';
+                    }
                 } else {
                     if (job.driver_id && feeMinor > 0) cashUncoveredFeeMinor = feeMinor;
                     await cashRideBooking().releaseHold(jobId);
                 }
-                await supabaseAdmin.from('jobs').update({ payment_status: 'cancelled' }).eq('id', jobId);
+                await supabaseAdmin.from('jobs').update({ payment_status: cashPaymentStatus }).eq('id', jobId);
             } catch (cashError) {
                 console.error('[BookingRoutes] cash ride fee hold settlement failed:', (cashError as Error)?.message);
                 await supabaseAdmin.from('jobs').update({ payment_status: 'requires_review' }).eq('id', jobId);

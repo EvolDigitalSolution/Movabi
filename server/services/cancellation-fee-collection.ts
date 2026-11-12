@@ -23,6 +23,11 @@ export function normaliseCancellationFeeQuote(raw: any): CancellationFeeQuote {
     };
 }
 
+/** A cash ride secured by a card fee hold (cash-ride booking phases 1-3). */
+export function isCashRide(job: any): boolean {
+    return job?.payment_method === 'cash' && job?.metadata?.cash_collection_mode === 'full_customer_charge';
+}
+
 /** Merchant/environment identity shared with the webhook so both settle the SAME collection event. */
 export const PLATFORM_MERCHANT = 'stripe-platform';
 
@@ -43,13 +48,25 @@ interface Db { from(table: string): any; rpc(fn: string, args: Record<string, un
  */
 export async function settleCapturedCancellationFee(db: Db, jobId: string, paymentIntent: any, merchantAccountRef = PLATFORM_MERCHANT): Promise<CollectionOutcome> {
     const { data: job, error } = await db.from('jobs')
-        .select('id,tenant_id,customer_id,status,payment_intent_id,metadata').eq('id', jobId).maybeSingle();
+        .select('id,tenant_id,customer_id,status,payment_method,payment_intent_id,metadata').eq('id', jobId).maybeSingle();
     if (error) throw new Error('cancellation fee collection: job read failed');
     if (!job) return { status: 'not_applicable', reason: 'job_not_found' };
     if (!['cancelled', 'canceled'].includes(String(job.status))) return { status: 'not_applicable', reason: 'job_not_cancelled' };
     const quote = normaliseCancellationFeeQuote(job.metadata?.cancellation_fee_quote);
     if (!quote.due || quote.exponent === null) return { status: 'not_applicable', reason: 'no_fee_due' };
-    if (!paymentIntent || String(paymentIntent.id || '') !== String(job.payment_intent_id || '')) return { status: 'not_applicable', reason: 'other_payment_intent' };
+    // Which intent can carry this booking's fee, and under which merchant identity: a cash ride's fee
+    // comes from its card HOLD (identity from the hold row, never from the caller); a card booking's
+    // fee comes from its own PaymentIntent.
+    let expectedIntent = String(job.payment_intent_id || '');
+    if (isCashRide(job)) {
+        const { data: hold, error: holdError } = await db.from('cash_ride_fee_holds_v1e')
+            .select('provider,provider_payment_reference,merchant_account_ref,currency_code,status').eq('job_id', jobId).maybeSingle();
+        if (holdError) throw new Error('cancellation fee collection: hold read failed');
+        if (!hold || hold.provider !== 'stripe' || !hold.provider_payment_reference) return { status: 'not_applicable', reason: 'no_hold' };
+        expectedIntent = String(hold.provider_payment_reference);
+        merchantAccountRef = String(hold.merchant_account_ref);
+    }
+    if (!paymentIntent || !expectedIntent || String(paymentIntent.id || '') !== expectedIntent) return { status: 'not_applicable', reason: 'other_payment_intent' };
     if (paymentIntent.status !== 'succeeded') return { status: 'not_applicable', reason: 'not_captured' };
     // Facts that make this NOT a fee collection are answered, never thrown (a webhook would otherwise
     // retry forever); only storage failures throw so the caller retries.

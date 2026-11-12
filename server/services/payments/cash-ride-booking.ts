@@ -29,6 +29,8 @@ export interface CashFeeHoldProvider {
   capture(reference: string, input: CashFeeHoldInput, amountMinor: number, idempotencyKey: string): Promise<void>;
   /** Releases an uncaptured hold so nothing can be charged later. */
   release(reference: string, input: CashFeeHoldInput): Promise<void>;
+  /** Read-only: the hold's provider intent after capture, only if it is exactly this job's hold. */
+  inspectCaptured?(reference: string, input: CashFeeHoldInput): Promise<unknown>;
 }
 
 export class StripeCashFeeHold implements CashFeeHoldProvider {
@@ -67,6 +69,11 @@ export class StripeCashFeeHold implements CashFeeHoldProvider {
     }
     // A repeat after a lost response finds the same capture; any other amount needs review.
     if (pi.status !== 'succeeded' || pi.amount_received !== amountMinor) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
+  }
+  async inspectCaptured(reference: string, input: CashFeeHoldInput) {
+    const pi = await this.stripe.paymentIntents.retrieve(reference);
+    if (!this.matches(pi, input) || pi.status !== 'succeeded') fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
+    return pi;
   }
   async release(reference: string, input: CashFeeHoldInput) {
     let pi = await this.stripe.paymentIntents.retrieve(reference);
@@ -194,6 +201,15 @@ export class CashRideBookingService {
       .eq('job_id', jobId).eq('status', 'authorized').select('job_id');
     if (u.error) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Fee capture requires reconciliation');
     return 'captured';
+  }
+
+  /** The captured hold intent (provider-verified, read-only) so the collection can be booked. */
+  async capturedFeeIntent(jobId: string): Promise<unknown> {
+    const h = await this.holdRow(jobId);
+    if (!h || h.status !== 'captured' || !h.provider_payment_reference) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'No captured hold for this ride');
+    const provider = this.holdProvider(h.provider);
+    if (!provider.inspectCaptured) fail('CASH_HOLD_CAPTURE_UNCONFIRMED', 'Provider cannot confirm the capture');
+    return provider.inspectCaptured!(h.provider_payment_reference, this.holdInput(h));
   }
 
   /** Verifies the authorised hold at the provider, then activates the ride atomically. */
