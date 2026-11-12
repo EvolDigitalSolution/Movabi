@@ -21,8 +21,35 @@ import { mapDriverAcquisitionError } from '../services/driver-eligibility.servic
 import { isDriverEligibleForService, toCanonicalDriverService } from '../services/driver-service-eligibility';
 import { PayoutEligibilityService } from '../services/payout-eligibility.service';
 import { NoShowService, NO_SHOW_ARRIVAL_MAX_DISTANCE_M, NO_SHOW_ARRIVAL_MAX_LOCATION_AGE_MS } from '../services/no-show.service';
+import { CashRideBookingService, StripeCashFeeHold } from '../services/payments/cash-ride-booking';
+import { PaymentLayerError } from '../services/payments/payment-contracts';
+import { FareSplitService } from '../services/fare-split.service';
+import { dispatchService } from '../services/dispatch.service';
 
 const router = Router();
+// Cash Ride booking (pilot markets only; off unless VAYDU_CASH_RIDE_BOOKING=true AND the market is enabled).
+// Created on first use, like the rest of this module (nothing is constructed at import time).
+let cashRideBookingInstance: CashRideBookingService | null = null;
+function cashRideBooking(): CashRideBookingService {
+    return cashRideBookingInstance ??= new CashRideBookingService({ db: supabaseAdmin as any,
+        holdProviders: { stripe: new StripeCashFeeHold(stripe) }, enabled: () => process.env.VAYDU_CASH_RIDE_BOOKING === 'true' });
+}
+const CASH_CONFLICT_CODES = new Set(['CASH_BOOKING_DISABLED','CASH_RIDE_ONLY','CASH_MARKET_UNAVAILABLE','CASH_MARKET_NOT_ENABLED','CASH_HOLD_ROUTE_UNAVAILABLE',
+    'CASH_HOLD_PROVIDER_UNAVAILABLE','CASH_FEE_TERMS_UNAVAILABLE','CASH_JOB_NOT_CASH','CASH_HOLD_TERMS_INVALID','CASH_HOLD_NOT_NEEDED','CASH_HOLD_NOT_STARTED',
+    'CASH_HOLD_NOT_AUTHORISED','CASH_HOLD_NOT_RESUMABLE','CASH_ACTIVATION_REFUSED','CASH_FIXED_FARE_ONLY','CASH_IMMEDIATE_ONLY','CASH_FARE_TERMS_UNAVAILABLE']);
+function cashFailure(res: Response, error: unknown) {
+    if (error instanceof PaymentLayerError) {
+        const status = error.code === 'CASH_JOB_NOT_FOUND' ? 404 : CASH_CONFLICT_CODES.has(error.code) ? 409 : 503;
+        return res.status(status).json({ code: error.code, error: error.message });
+    }
+    console.error('[BookingRoutes] cash booking failed:', (error as Error)?.message);
+    return res.status(503).json({ code: 'CASH_BOOKING_UNCONFIRMED', error: 'Cash booking is temporarily unavailable.' });
+}
+/** Canonical frozen fare required by cash-ride credit (cash_credit_terms_v1e). */
+function cashFareTermsOk(b: any): boolean {
+    return !!b && b.policyVersion === 'fare-split-v1' && b.platformFeeType === 'percentage'
+        && b.commissionPercent != null && b.platformFeePercent != null;
+}
 router.use('/early-stop', earlyStopRoutes);
 
 router.get('/:jobId/nearby-availability', rateLimit({windowMs:60000,limit:15}), async (req: Request, res: Response) => {
@@ -733,6 +760,34 @@ router.post('/create', bookingCreateLimiter, async (req: Request, res: Response)
         insertPayload.platform_fee = null;
         insertPayload.driver_payout = null;
         insertPayload.tax_amount = null;
+        // Cash Ride (pilot markets only): the customer pays the driver in cash; the booking is
+        // secured by an on-session card hold for its fee terms, frozen here from server policy.
+        // Card/wallet bookings are unaffected; nothing here charges.
+        if (String(payload.payment_method || metadata.payment_choice || '').toLowerCase() === 'cash') {
+            if (insertPayload.status === 'pending_fare_confirmation' || insertPayload.negotiation_mode_enabled || insertPayload.bid_mode_enabled)
+                return res.status(409).json({ code: 'CASH_FIXED_FARE_ONLY', error: 'Cash rides use the quoted fare only.' });
+            const scheduledMs = Date.parse(String(insertPayload.scheduled_time || ''));
+            if (Number.isFinite(scheduledMs) && scheduledMs > Date.now() + 5 * 60 * 1000)
+                return res.status(409).json({ code: 'CASH_IMMEDIATE_ONLY', error: 'Cash is available for rides now, not scheduled rides.' });
+            if (!cashFareTermsOk(insertPayload.fare_breakdown))
+                return res.status(409).json({ code: 'CASH_FARE_TERMS_UNAVAILABLE', error: 'This quote cannot be paid in cash. Get a new quote or pay by card.' });
+            // Fee terms (and so the hold amount) follow the customer's own tenant, never the request.
+            const { data: cashProfile } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
+            if (!cashProfile?.tenant_id || String(cashProfile.tenant_id) !== String(insertPayload.tenant_id || ''))
+                return res.status(409).json({ code: 'CASH_MARKET_UNAVAILABLE', error: 'Cash booking is not available for this account.' });
+            const cashCurrency = String(insertPayload.currency_code || '').toUpperCase();
+            const noShowFeeMinor = noShowConfig.noShowEnabled && isRide && isUkGbp
+                ? NoShowService.computeCurrentNoShowSplit(FareSplitService.toMinor(quotedFare, cashCurrency), cashCurrency).feeMinor : 0;
+            try {
+                const terms = await cashRideBooking().terms({ tenantId: String(insertPayload.tenant_id || ''), country: String(insertPayload.country_code || ''),
+                    currency: cashCurrency, service: canonicalService, noShowFeeMinor });
+                insertPayload.payment_method = 'cash';
+                insertPayload.payment_status = 'cash_due';
+                insertPayload.status = 'requested';
+                insertPayload.metadata = { ...(insertPayload.metadata as Record<string, unknown> || {}), payment_choice: 'cash',
+                    cash_collection_mode: 'full_customer_charge', cash_fee_hold: terms };
+            } catch (cashError) { return cashFailure(res, cashError); }
+        }
         // Snapshot server policy; client metadata cannot disable verification.
         const pinPolicy = await MarketplaceConfigService.getRawSetting('completion_pin_policy',
             typeof insertPayload.tenant_id === 'string' ? insertPayload.tenant_id : null);
@@ -2766,6 +2821,57 @@ router.post('/negotiation/:id/counter', async (req: Request, res: Response) => {
         console.error('[BookingRoutes] negotiation counter error:', error);
         return res.status(500).json({ error: error.message || 'Failed to counter negotiation' });
     }
+});
+
+/** Server decision for paying a quote in cash: pilot market, Ride, hold route and the fee hold amount. */
+router.post('/cash/availability', async (req: Request, res: Response) => {
+    try {
+        const userId = await getAuthUserId(req);
+        if (!userId) return res.status(401).json({ error: 'Authentication required' });
+        const quoteId = String(req.body?.quoteId || '').trim();
+        if (!quoteId) return res.status(400).json({ code: 'INVALID_INPUT', error: 'quoteId is required' });
+        const { data: profile } = await supabaseAdmin.from('profiles').select('tenant_id').eq('id', userId).maybeSingle();
+        const tenantId = String(profile?.tenant_id || '');
+        const { data: q, error } = await supabaseAdmin.from('quote_market_adjustments').select('country_code,currency,service_type,returned_customer_fare')
+            .eq('quote_reference', quoteId).maybeSingle();
+        if (error || !q) return res.status(404).json({ code: 'QUOTE_NOT_VERIFIED', error: 'Quote not found' });
+        const currency = String(q.currency || '').toUpperCase(), country = String(q.country_code || '').toUpperCase();
+        const noShowConfig = await NoShowService.getEnabledConfig();
+        const noShowFeeMinor = noShowConfig.noShowEnabled && q.service_type === 'ride' && country === 'GB' && currency === 'GBP'
+            ? NoShowService.computeCurrentNoShowSplit(FareSplitService.toMinor(Number(q.returned_customer_fare), currency), currency).feeMinor : 0;
+        const terms = await cashRideBooking().terms({ tenantId, country, currency, service: String(q.service_type || ''), noShowFeeMinor });
+        return res.json({ available: true, holdAmountMinor: terms.amountMinor, currency: terms.currency, provider: terms.provider,
+            noShowFeeMinor: terms.noShowFeeMinor, lateCancelFeeMinor: terms.lateCancelFeeMinor });
+    } catch (error) {
+        if (error instanceof PaymentLayerError) return res.json({ available: false, code: error.code, reason: error.message });
+        return cashFailure(res, error);
+    }
+});
+
+/** Starts (or continues) the card hold securing a cash ride. Owner only; never charges. */
+router.post('/cash/:jobId/fee-hold', async (req: Request, res: Response) => {
+    try {
+        const userId = await getAuthUserId(req);
+        if (!userId) return res.status(401).json({ error: 'Authentication required' });
+        const { data: job } = await supabaseAdmin.from('jobs').select('*').eq('id', req.params.jobId).maybeSingle();
+        return res.json(await cashRideBooking().beginHold(job, userId));
+    } catch (error) { return cashFailure(res, error); }
+});
+
+/** Verifies the authorised hold with the provider, then starts the driver search atomically. */
+router.post('/cash/:jobId/fee-hold/confirm', async (req: Request, res: Response) => {
+    try {
+        const userId = await getAuthUserId(req);
+        if (!userId) return res.status(401).json({ error: 'Authentication required' });
+        const { data: job } = await supabaseAdmin.from('jobs').select('*').eq('id', req.params.jobId).maybeSingle();
+        const result = await cashRideBooking().confirmHold(job, userId);
+        const { data: updated } = await supabaseAdmin.from('jobs').select('*, service_type:service_types(*)').eq('id', req.params.jobId).single();
+        if (result === 'activated' && updated?.status === 'searching' && !updated.driver_id) {
+            try { await dispatchService.notifyNearbyDrivers(updated, updated.tenant_id, updated.city_id); }
+            catch (dispatchError) { console.error('[BookingRoutes] cash ride initial driver notification failed:', dispatchError); }
+        }
+        return res.json({ success: true, result, booking: updated });
+    } catch (error) { return cashFailure(res, error); }
 });
 
 export default router;

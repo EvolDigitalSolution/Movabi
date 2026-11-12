@@ -67,6 +67,15 @@ cannot be dispatched, accepted or completed.
   PaymentIntent, enabled pilot market, authorised hold for the same job/customer/tenant/currency.
   Real-Postgres: 16/16 (including a NULL bypass the test caught and the fix closed); rollback
   restores a byte-identical schema.
-- Phase 2: server cash booking (create branch, hold create/confirm, dispatch start).
+- Phase 2 (done, 20261266200000 + server): `/api/booking/create` cash branch (fixed quoted fare,
+  immediate, canonical cash fare terms, customer's own tenant; terms frozen in
+  `metadata.cash_fee_hold`); `POST /api/booking/cash/availability`, `/cash/:jobId/fee-hold`
+  (starts or resumes the SAME hold), `/cash/:jobId/fee-hold/confirm` (verifies at the provider,
+  then `activate_cash_ride_v1e` atomically starts the search); hold provider from the market's
+  card route, Stripe adapter only (shared registry still refuses Kora/Fincra booking routes);
+  drivers can read unassigned `cash_due` jobs. Off unless `VAYDU_CASH_RIDE_BOOKING=true` and the
+  market is enabled. Real Postgres: activation 10/10 and the full chain (booking, hold,
+  activation, enrolled driver accepts, 1E reserves GBP 2.50 of GBP 100.00, consistent);
+  driver visibility 0 before / 1 after the policy; all three rollbacks restore the baseline.
 - Phase 3: completion, no-show, cancellation, no-driver release, earnings record.
 - Phase 4: customer and driver UI, receipts; browser tests; Linux build and package.
