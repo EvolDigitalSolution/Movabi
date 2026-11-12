@@ -4,6 +4,10 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { PaymentMarginService } from '../../server/services/payment-margin.service';
 import {assertMarketFareConfigured} from '../../server/services/market-fare-guard';
+// These behaviours were first proven against an untracked snapshot of the payout worker deployed in
+// October (.temp/deployed-wallet-source-comparison), which is not in the repository. The worker that
+// ships is the tracked source, so the same assertions now run against it (2026-11-12: 29/29).
+const PAYOUT_WORKER='server/services/job-payout.service.ts';
 function loadWorker(options: any = {}) {
   const updates: any[] = [], creates: any[] = [], finishes: any[] = [];
   const row = {job_id:'job',driver_id:'driver',destination:'acct_driver',amount_minor:624,currency:'gbp',status:'processing',attempt:1,token:'token',attempted_at:new Date().toISOString(),...options.row};
@@ -13,7 +17,7 @@ function loadWorker(options: any = {}) {
   }, from:()=>({select(){return this;},eq(){return this;},single:async()=>({data:options.job || {payment_method:'wallet',payment_status:'paid'},error:options.jobError}),update:(value:any)=>{ updates.push(value); const chain:any={eq:()=>chain,in:()=>chain,select:async()=>({data:options.persistFailure?[]:[{job_id:'job'}]})};return chain;}})};
   const stripe = {paymentIntents:{retrieve:async()=>options.payment || {status:'succeeded',currency:'gbp',latest_charge:'ch_customer'}},charges:{retrieve:async()=>options.charge || {id:'ch_customer',payment_intent:'pi_customer',paid:true,captured:true,currency:'gbp',amount_captured:4100,amount_refunded:0}},transfers:{list:async()=>({data:options.transfers || [],has_more:!!options.hasMore}),create:async(payload:any,headers:any)=>{creates.push({payload,headers});if(options.failure)throw options.failure;return {id:'tr_new'};}},balance:{retrieve:async()=>({available:[{currency:'gbp',amount:options.balance ?? 1000}]})}};
   const context:any={exports:{},console,Date,setInterval,require:(name:string)=>name.includes('stripe.service')?{stripe}:name.includes('supabase.service')?{supabaseAdmin:db}:{PayoutEligibilityService:{assertEligible:async()=>{if(options.ineligible)throw Error('blocked');}}}};
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync('.temp/deployed-wallet-source-comparison/deployed/server/services/job-payout.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(PAYOUT_WORKER,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
   return {worker:context.exports.JobPayoutService,updates,creates,finishes};
 }
 describe('deployed Stripe payout worker preserved by wallet overlay',()=>{
