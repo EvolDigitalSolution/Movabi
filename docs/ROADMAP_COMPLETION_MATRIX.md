@@ -26,9 +26,9 @@ Provider evidence is labelled **mock** (simulated provider) or **sandbox** (real
 |---|---|---|
 | Release line | `release/topup-3ds-on-2385da7`, worktree `Movabi-topup-on-2385da7`. | `git worktree list` |
 | Roadmap code | v2.3 roadmap content is in the release line (squash-merged; v2.3 commits are not ancestors). | presence of every roadmap migration/service/spec at HEAD |
-| Develop web | **`f6e8c00`** at 2026-11-12 09:45 UTC: 12/12 entry assets byte-identical to `release/vaydu-develop-f6e8c00-topup-linux`; 5/12 differ from the 635a285 bundle. | sha256 of live assets |
-| Develop API | Up (`/health` 200; top-up route mounted). Revision **?** (no host access; prior record: `release-f6e8c00-topup`). | public HTTP |
-| Develop DB | Last committed export (`supabase/baseline/deployed_public_schema.sql`, `95d745b`, 10 Nov) lacks `driver_offer_events`, `driver_pin_policies`, `cancellation_policies`, `customer_receivables`, `campaigns`, `referrals`, `reward_credit_spends`, `job_funding_breakdown`, compensation RPCs. Current state **?**. | grep of the export |
+| Develop web | **`f6e8c00`** (12/12 entry assets byte-identical to `release/vaydu-develop-f6e8c00-topup-linux`, re-checked 2026-11-12 20:30 UTC; inventory: `movabi-web:release-f6e8c00-topup-linux`, up 22 h). | sha256 of live assets; host inventory `20261112T203946Z` |
+| Develop API | **`f6e8c00`** (`/app/SOURCE_SHA`; image `movabi-api:release-f6e8c00-topup`). Its API files equal the local `f6e8c00` bundle (CR-insensitive). Stripe test mode (`sk_test`); Mapbox/TomTom keys set; flags recorded (no `VAYDU_CASH_RIDE_BOOKING`). | host inventory `20261112T203946Z` (secrets as set/missing only) |
+| Develop DB | PostgreSQL 15.1, 28 MB, 80 jobs, no migration-tracking table. Live public schema (138 tables, 261 functions) versioned as `supabase/baseline/develop_live_public_schema_20261112.sql`; its function fingerprints reproduce the host's exactly. Applied: the rehearsal chain up to `20261264900000` plus `20261265*` (42 migrations). **Pending: 7** (`20261266000000`–`20261266300000`, `20261267`, `20261268`, `20261269`). Develop-only drift (untouched, unused by the code): `driver_vehicle_inspection_photos.reason` and a 6-argument `register_driver_inspection_photo`. | `scripts/release/reconcile-live-schema.sh` + `classify-live.cjs` |
 | Other line | `origin/develop` (`e596989`) has 33 commits not in the release line (separate top-up `recover()` work, admin market badges). Must be reconciled before go-live. | `git rev-list` |
 
 ### Deployment source: `635a285`, not the current branch tip
@@ -74,6 +74,28 @@ test. They are not deployment content, and the runbook does not apply them.
   web still serves f6e8c00 (09:45 UTC). The agent has no host access and has not deployed anything.
 - **Not authorised:** enabling GB/GBP (or any) cash rides, the API cash flag, other markets/cohorts,
   production, packaging for go-live.
+
+### Develop release `3c91991` (authorised 2026-11-12 for DEVELOP; prepared, not yet executed)
+
+The user authorised deploying the completed, integrated roadmap changes to shared develop, and enabling
+features whose approved policies and prerequisites are met. Production and go-live stay gated.
+The earlier 635a285 plan is **superseded**: it never ran (develop is still f6e8c00), and this release
+contains its content.
+
+| Item | State |
+|---|---|
+| Package | `release/vaydu-develop-3c91991-release-linux.tar.gz` (sha256 `e398335d55c0400ff6b165b520ff7fe4b770aeb8cf42d894468f1831c0824caa`). API source `3c91991` (shipped API files identical to `26863d7`); web built on Linux (`node:22-alpine`, `npm ci --legacy-peer-deps`) at `d472487` from identical web inputs. |
+| Runbook | `deploy/vaydu-develop-release/RUNBOOK.md`: upload, verify, predeploy, backup, restore drill, gate + dry run, migrate, API, web, checks, recovery. |
+| vs running API | exactly the 29 files of `git diff f6e8c00 3c91991`; no unexpected host change (`release/expected-api-changes-3c91991.txt`) |
+| vs running web | 97 of 368 files (48 renamed bundles + `index.html`; `release/expected-web-changes-3c91991.txt`) |
+| Database | `release-up.sql`: the 7 pending migrations as ONE transaction (generated; asserted outer BEGIN/COMMIT removal). `release-down.sql`: their rollbacks, then develop's exact pre-release bodies of the 4 replaced functions (the older cash rollbacks restored pre-roadmap bodies, which would have dropped the cash-custody exemption and hold-reopen guard). `release-dryrun.sql` ends in ROLLBACK. `PREREQ.sql` / `VERIFY.sql` gates. |
+| Batch 1E | `20261248000000` versioned as already-applied history. It is a no-op on the 10 Nov baseline; on live its own guard refuses it (its tables were extended later). Never applied. |
+| Live-schema rehearsal | `bash scripts/release/rehearse-live-upgrade.sh .tmp-release/live_public_schema.sql <reconcile-dir>` on postgres:15.1: **26/26** (`docs/roadmap-evidence/rehearse-live-3c91991.log`) |
+| Route rehearsal on live + release | current source: pass; **running f6e8c00 API** as a separate process: pass (migration-first is safe). Env: `VAYDU_REHEARSAL_SCHEMA/PG_IMAGE/CHAIN/SEED` (+ `VAYDU_EXTRACTED_API_ROOT`). |
+| Real-data rehearsal | runbook step 4 (restore drill of the fresh backup into a throwaway container on the host): **pending host execution** |
+| Deployed | ✗ (pending host execution) |
+| Enabled by this release | **nothing new.** Every feature still off depends on an unresolved decision (below). Already on and kept: GB Stripe driver top-ups (sandbox scope), Mapbox/TomTom search and routing. |
+
 
 ## Rehearsal: upgraded database clone (PASSING)
 
@@ -172,6 +194,26 @@ Scope of each, so neither is read as the other:
 | ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff after acceptance counts as driver-initiated — confirmed by the user ("Yes, count handoffs"). |
 | D11 | ~~Address search provider configuration on develop~~ — configuration ready (host evidence). The develop host check of 2026-11-12 **passed** for connectivity, country filtering, basic address/postcode, reverse, failure fallback and `permanent=false`. **Landmark, business and category search are NOT verified**; see "Address search (D11)". ~~D11b~~ resolved by the user: implement intent-aware POI/category routing using supported provider capabilities (done; not deployed). |
 | D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
+
+### Decisions for review, with options (2026-11-12)
+
+Each blocked feature is built and tested, but stays **off** until you choose. No option below fills in
+a value on your behalf: where a value is needed, the option names it.
+
+| ID | Blocks | Options |
+|---|---|---|
+| D1 | Surge / traffic pricing (4b) | (a) Display-only traffic: no fare change; surge stays at `maxSurge` 1. (b) Traffic-aware fares with a surge cap, trigger rule and markets you supply. (c) Keep off for launch. |
+| D2 | Map styling (4c) | (a) Keep the current MapLibre/MapTiler base style. (b) A named provider + style id per platform (you supply). |
+| D3 | Reliability weights in matching (1b) | (a) Confirm 0: location only, reliability reported but not ranked. (b) Weights for acceptance rate, cancellation rate and new-driver exposure (you supply). Separately, (c) enable road-ETA ranking: this needs `VAYDU_TOMTOM_MATRIX_V23`, currently `false`, which adds TomTom matrix spend; or keep it off. |
+| D4 | Account-sharing policy (2b) | (a) Detection only: report signals to admins and take no automatic action. (b) Signals + action (e.g. suspend for review), with the signal definition you supply. Today only suspension/token revocation exists. |
+| D5 | Completion PIN (3) | Default per market: (a) off; (b) on for rides only; (c) on for all services. Per-driver overrides already exist. |
+| D6 | Promotions, referrals, campaigns, cancellation fees, overdue debt (6a/6c/7a/7b) | The rates are approved (5% promo, referrals, 80/20, debt threshold 50% of the minimum fare). Missing per market+currency: promo cap and minimum fare; referral caps and minimum fare; campaign budgets; cancellation fee amount, cap and grace period; overdue-debt terms. (a) Supply values for GB/GBP develop only. (b) Keep off. |
+| D7 | Driver bonuses (7c) | (a) Bonus rules and amounts (you supply). (b) Keep out of launch. |
+| D8 | GB develop cash-ride cohort (5b) | Supply the test driver id, the tenant id and the accepted cash terms version, plus separate approval to enable. (b) Keep off. |
+| D12 | Develop-only schema drift | `driver_vehicle_inspection_photos.reason` and a 6-argument `register_driver_inspection_photo` exist only on develop, applied outside the migrations. The code uses neither. (a) Capture them in a migration so all environments match. (b) Drop them in a later release. (c) Leave as is. |
+| D13 | Cancellation-fee `exempt_reasons` (6a) | (a) Structured reasons the customer picks (e.g. driver late, wrong pickup), list supplied by you. (b) No exemptions (current behaviour). Matching free text is not offered: anyone could avoid the fee. |
+| D14 | Fee larger than the cash-ride hold disclosed at booking (6b) | (a) Build a partial-collection receivable model so the hold part is compensated automatically. (b) Keep the current manual review (`requires_review`). |
+| D-AF | Africa payment providers | Deferred, as instructed. |
 
 Approved and recorded: driver card top-up fee 5% (`vaydu-driver-card-5pct-wallet-v1`), promo 5%,
 customer referral 5% (90-day credit, ≤5/month), driver referral 5% × 20 jobs/30 days (≤3/month,
@@ -391,7 +433,7 @@ helpers, ORS routing in `RoutingService`) once the server path is verified with 
   (delivery/errand) cash stays OFF (D10 resolved: "Keep them off"); the roadmap code path exists only behind `courier_enabled` (off by
   default) — decision **D10**. **Release order:** any release carrying the roadmap chain onto a database
   that has the cash chain must apply `20261269000000` last, before any API that relies on either.
-- Develop deployment of 635a285: authorised, pending host execution (agent has no SSH).
+- Develop deployment: release `3c91991` authorised and prepared (supersedes 635a285); pending host execution (agent has no SSH).
 - Roadmap schemas on develop (areas 1, 3, 6, 7): they apply cleanly to the deployed schema in the
   rehearsal, but a reviewed develop rollout for them has **not** been prepared or authorised.
 - `origin/develop` reconciliation (33 commits).

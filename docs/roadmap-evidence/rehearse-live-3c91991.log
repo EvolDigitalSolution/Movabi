@@ -1,0 +1,30 @@
+live schema restored: 138 tables, 261 functions
+PASS: injected failure aborted the release (division by zero)
+PASS: after an aborted release the schema is unchanged
+PASS: dry run completed
+PASS: dry run leaves the schema unchanged
+PASS: PREREQ.sql accepts the pre-release live schema
+PASS: VERIFY.sql refuses the pre-release schema
+PASS: release-up.sql applied as one transaction
+PASS: VERIFY.sql accepts the released schema (VERIFY OK: release schema present (15 functions), no cash-ride market enabled)
+PASS: PREREQ.sql refuses the released schema
+PASS: combined release = the 7 files applied one by one (identical schema)
+PASS: every function of the reconciled chain's final state is identical after the release
+INFO: functions present only on develop (out-of-chain, untouched by the release): public.register_driver_inspection_photo(p_driver uuid, p_tenant uuid, p_vehicle uuid, p_revision uuid, p_slot text, p_path text) 
+PASS: cash markets table exists and no market is enabled
+PASS: new functions present
+PASS: no client grant on the new cash hold table
+PASS: cash-ride: realdb-market-pilot-test.sql (0 | 15)
+PASS: cash-ride: realdb-cash-booking-acquisition-test.sql (0 | 16)
+PASS: cash-ride: realdb-cash-booking-chain-test.sql (0 | 13)
+PASS: cash-ride: realdb-cash-ride-lifecycle-test.sql (0 | 15)
+PASS: merge behaviour (0 | 21)
+PASS: driver metrics (D9) (0 | 38)
+PASS: cancellation fee quote (0 | 22)
+PASS: behaviour suites left the schema unchanged
+PASS: release-down.sql applied as one transaction
+PASS: rollback restores the exact pre-release schema
+RE-APPLIED release-up.sql
+PASS: re-applying after rollback restores the release schema
+PASS: the release is idempotent (second application changes nothing)
+ALL LIVE-SCHEMA RELEASE REHEARSAL CHECKS PASSED

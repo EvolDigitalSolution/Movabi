@@ -1,0 +1,6 @@
+.tmp-release/rehearsal-live-routes.log:API_STARTUP_CHECK mode=current-source source=current-source root=C:\Users\fedri\source\repos\Movabi-topup-on-2385da7
+.tmp-release/rehearsal-live-routes.log: ✓ src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds 186910ms
+.tmp-release/rehearsal-live-routes.log:      Tests  1 passed (1)
+.tmp-release/rehearsal-f6e8c00-on-release.log:API_STARTUP_CHECK mode=extracted-bundle source=f6e8c00 root=C:/Users/fedri/source/repos/Movabi-topup-on-2385da7/.tmp-release/f6e8c00-api
+.tmp-release/rehearsal-f6e8c00-on-release.log: ✓ src/testing/bike-authenticated-routes.integration.spec.ts > Bike authenticated HTTP - Car driver denied, Bike driver succeeds 214927ms
+.tmp-release/rehearsal-f6e8c00-on-release.log:      Tests  1 passed (1)
