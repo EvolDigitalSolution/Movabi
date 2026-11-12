@@ -49,6 +49,8 @@ code those verifications exercise.
 | `a421583` | Rehearsal: API started with the image entry (`--project server/tsconfig.json`); startup-mode label | No |
 | `b56d808` | Matrix rewrite + rehearsal evidence logs | No |
 | `0965669` | D9 driver cancellation attribution + metrics v2 (migration, route, services, tests) | No — **not** in 635a285; needs its own release |
+| `7320c62`, `23cb912` | Matrix: commit reference; handoff decision recorded | No |
+| `bcd6ab9` | D9 completion: assignment identity, exclusions, negotiated assignments, admin/driver reporting, rehearsal + extracted-bundle checks | No — **not** in 635a285 |
 
 The two migrations versioned in `2217bd2` are older wallet migrations used by the disposable top-up
 test. They are not deployment content, and the runbook does not apply them.
@@ -70,13 +72,25 @@ test. They are not deployment content, and the runbook does not apply them.
 `src/testing/bike-authenticated-routes.integration.spec.ts` builds a disposable stack: `postgres:16.15`,
 the committed deployed develop schema, the reviewed roadmap migration chain
 (`20261101000000` … `20261264900000`, incl. offer events, inspection, PIN, cancellation debt,
-campaigns/referrals, cash 1E/1F, reward credits, refunds, bike, compensation, referral lifecycle),
+campaigns/referrals, cash 1E/1F, reward credits, refunds, bike, compensation, referral lifecycle,
+**plus `20261267000000_driver_cancellation_attribution` since `bcd6ab9`**),
 real GoTrue `v2.132.3` and PostgREST `v10.1.2`. The real booking/pricing/admin routers run in-process.
 
 | Check | Command (release worktree) | Commit | Result | Evidence |
 |---|---|---|---|---|
-| **1. Current-source API** — in-process routers + a separately spawned API from the current source against the upgraded clone | `npx vitest run src/testing/bike-authenticated-routes.integration.spec.ts --silent=false --reporter=verbose` | `a421583` | **Pass** (1/1) | `docs/roadmap-evidence/rehearsal-current-source.log` (`API_STARTUP_CHECK mode=current-source`) |
-| **2. Extracted release bundle** — the spawned API is the extracted `635a285` package (checksums verified, `SOURCE_SHA` 635a285, own `npm install --legacy-peer-deps --include=dev`) | as above with `VAYDU_EXTRACTED_API_ROOT=<extract>/vaydu-develop-635a285-topup-linux` | `a421583` | **Pass** (1/1) | `docs/roadmap-evidence/rehearsal-extracted-bundle-635a285.log` (`API_STARTUP_CHECK mode=extracted-bundle source=635a285`) |
+| **1. Current-source API** — in-process routers + a separately spawned API from the current source against the upgraded clone | `npx vitest run src/testing/bike-authenticated-routes.integration.spec.ts --silent=false --reporter=verbose` | `bcd6ab9` (earlier pass at `a421583`) | **Pass** (1/1) | `docs/roadmap-evidence/rehearsal-current-source.log` (`API_STARTUP_CHECK mode=current-source`) |
+| **2. Extracted release bundle** — the spawned API is the extracted `635a285` package (checksums verified, `SOURCE_SHA` 635a285, own `npm install --legacy-peer-deps --include=dev`) | as above with `VAYDU_EXTRACTED_API_ROOT=<extract>/vaydu-develop-635a285-topup-linux` | `bcd6ab9` (earlier pass at `a421583`) | **Pass** (1/1) | `docs/roadmap-evidence/rehearsal-extracted-bundle-635a285.log` (`API_STARTUP_CHECK mode=extracted-bundle source=635a285`) |
+
+D9 steps added at `bcd6ab9` (run in-process from the current source in both checks): assigned driver
+cancels through `/api/jobs/cancel` (actor recorded from the session), retry keeps the original actor,
+another driver is refused 403 with the job untouched, customer cancel records the customer, a voluntary
+handback through `/driver-unable` succeeds once and a repeat is refused 403 with one `declined` event,
+`/offer-metrics` returns 3 assignments / 1 cancelled / 1 handback / rate 0.667, the admin route returns
+the identical body, a driver is refused 403 on it, and another tenant's driver and a non-driver are 404.
+Spawned-API step (mode-aware, **migration-before-API compatibility**): a customer cancel through the
+spawned API returns 200 in both checks. The current source records the customer actor; the 635a285
+package (which predates this work) cancels through `cancel_job_safely` and records no actor, so its
+cancellations appear as `unattributedCancellations` and are never counted against a driver.
 
 Scope of each, so neither is read as the other:
 - Check 1 does **not** show that the package starts. Check 2 does **not** re-test the in-process steps
@@ -112,7 +126,7 @@ Scope of each, so neither is read as the other:
 
 | # | Feature | Implemented | Integrated | Verified | Deployed | Enabled | Evidence / missing work |
 |---|---|---|---|---|---|---|---|
-| 1a | Driver acceptance/cancellation metrics from offer events | ✓ | ✓ | ✓ real-PG 28/28 against recorded events (`bash scripts/driver-metrics/run-realdb-tests.sh`, log `docs/roadmap-evidence/driver-metrics-realdb.log`) + service/route specs | ✗ | ✗ | **D9 applied (driver-initiated only).** `20261267000000_driver_cancellation_attribution.sql`: `cancel_job_with_actor` records the server-verified actor (`cancelled_by`, `cancelled_by_role`, `cancelled_driver_id`) in the same transaction as `cancel_job_safely` (unchanged); `driver_offer_metrics_v2` aggregates in SQL per offer (no row limit; 1,500 counted exactly), denominator = bookings the driver accepted in the window (reassigned/released ones kept). `/api/booking/cancel` passes the session user and role; `updateDriverReliability` uses the actor. Proven: driver cancel counts with a reason never mentioning a driver; customer "driver was late", admin, other-driver and legacy no-actor cancels do not; handoff after acceptance counts; guards 42501/22023; repeat cancel never overwrites the actor; old rule contrast shows 3 wrong + 1 missed. **Confirmed by the user 2026-11-12 ("Yes, count handoffs"):** a `/driver-unable` handoff after acceptance counts as driver-initiated (also reported separately as `driverHandoffs`). **Release order:** this migration must be on the database before an API that calls `cancel_job_with_actor`. Not yet in the upgraded-clone rehearsal chain. |
+| 1a | Driver acceptance/cancellation metrics from offer events (incl. driver + admin reporting) | ✓ | ✓ | ✓ at `bcd6ab9`: real-PG **38/38** + 7 migration-lifecycle checks (`bash scripts/driver-metrics/run-realdb-tests.sh`, `docs/roadmap-evidence/driver-metrics-realdb.log`); upgraded-clone rehearsal checks 1 + 2 (above); specs 121/121 (`driver-offer-metrics`, `driver-offer-metrics-view`, `batch2c-phase-b-transition`, `wallet-auth-payment-consistency`, `driver-ranking-v23`, `batch2c-schema-lineage-guard`, `campaign-admin-controls`); `npm run build:mobile:develop` and `ng build admin` pass | ✗ | ✗ | **D9 (user, 2026-11-12): driver-initiated only; a voluntary handback of an accepted assignment counts once and is also reported as `driverHandoffs` — settled, not to be re-asked.** `20261267000000`: `cancel_job_with_actor` (actor recorded in the cancelling transaction; `cancel_job_safely` unchanged); `record_negotiated_assignment` (negotiated acceptances enter the denominator; owner-only; idempotent); `driver_offer_metrics_v2` (SQL aggregate, no row limit). **Identity + window:** one assignment = (driver, job) whose acceptance is in the window, counted once however many offers/re-acceptances; numerator and every exclusion class are subsets of exactly those assignments, each classified once (invariant tested for every driver; the service fails closed if violated). **Proven on real PG:** reason text never decides; repeated offers (3) = 1 assignment, 2 accepted offers; duplicate handback event = 1 row, 1 handoff; handback then re-accept then cancel = counted once; assignment accepted 40 days ago and cancelled now is in neither side; customer, admin (dispute refund now records the admin), other-driver and customer no-show are excluded and reported; historical no-actor = `unattributedCancellations`; guards 42501/22023; retries never overwrite the actor; service_role-only on all three functions; 1,500 assignments counted exactly. **Migration/API order:** migration first is compatible (old API keeps working, its cancels are unattributed — proven with the 635a285 package). An API calling `cancel_job_with_actor` without the migration is refused and changes nothing (proven post-rollback). Re-apply is idempotent; rollback restores the schema exactly and keeps recorded history. **Reporting:** driver dashboard and admin driver modal (`GET /api/admin/drivers/:driverId/offer-metrics`, tenant-scoped) show counted vs not-counted cancellations. **Gaps:** admin-assigned jobs (no offer, no negotiation) are outside the metric; no browser test of the two UI cards yet. |
 | 1b | Location-aware matching using reliability | ✓ | ✓ | prior (unit 81/81) | ? | ✗ | Weights default 0 → reliability off until D3. |
 | 1c | Availability messages = server decision | ~ | ✓ | prior | ? | n/a | Customer "no driver" text not browser-bound to the server reason yet. |
 | 2a | Six-slot vehicle inspection | ✓ | ✓ | prior | ~ (inspection release per records) | ? | On-device upload unverified. |
@@ -123,7 +137,7 @@ Scope of each, so neither is read as the other:
 | 4c | Approved map styling | ? | ? | ✗ | ? | ✗ | Needs D2. |
 | 5a | Driver cash wallet + verified top-ups | ✓ | ✓ | ✓ (row 0) | ~ (f6e8c00 lacks the reset/message fixes) | ~ GB sandbox scope | Africa providers deferred (D-AF). |
 | 5b | Cash-job accounting | ✓ | ✓ | ✓ book/activate/complete/cancel/no-show (real-PG); reassign incl. concurrency (rehearsal); early-stop prior | ✗ | ✗ | |
-| 6a | Cancellation fees + policy publish | ✓ | ✓ | ~ migrations apply (rehearsal); flows prior | ✗ | ✗ | |
+| 6a | Cancellation fees + policy publish | ~ | ~ | ~ migrations apply (rehearsal); flows prior | ✗ | ✗ | **Open finding (2026-11-12, code + deployed-schema reading, not yet test-proven):** `GET /api/booking/:jobId/cancel-preview` selects `jobs.cancellation_fee`, which the deployed `jobs` table does not have (the column exists only on another table; no migration adds it), and ignores the error → always 404; no app screen calls it. `/cancel` reads `job.cancellation_fee` (always undefined → 0), so this path never records a fee receivable. Next: prove on the upgraded clone, then derive the fee from the published cancellation policy. Also: the API transition table (`logistics.service.ts:123`) has no entry for `accepted`, `heading_to_pickup` or `driver_en_route`, which `cancel_job_safely` allows — such bookings cannot be cancelled through the API. |
 | 6b | Driver compensation 80% of collected | ✓ | ✓ | prior (PG 14 + webhook 7) | ✗ | ✗ | Approved 80/20 on collection. |
 | 6c | Customer debt + repayment | ✓ | ✓ | ✓ authenticated `/debts` returns a seeded receivable on the upgraded clone (both checks); repayment prior | ✗ | ✗ | Real Stripe repayment return unverified; overdue terms D6. |
 | 7a | Customer promotion (5% first booking) | ✓ | ✓ | prior | ✗ | ✗ | Caps/min fare/budget D6. |
