@@ -86,8 +86,11 @@ describe('driver reliability cancellation reason', () => {
 
   it('reads the authoritative metadata location, not a nonexistent column', () => {
     expect(fn()).toContain("select('status, metadata')");
-    expect(fn()).toContain('(j.metadata as any)?.cancellation_reason');
     expect(fn()).not.toContain("select('status, cancellation_reason')");
+    // Policy D9 (2026-11-12): driver-initiated only — the recorded actor, never the free-text reason.
+    expect(fn()).toContain("(j.metadata as any)?.cancelled_by_role === 'driver'");
+    expect(fn()).toContain('(j.metadata as any)?.cancelled_by');
+    expect(fn()).not.toContain('cancellation_reason ??');
   });
 
   it('surfaces a query error instead of silently returning', () => {

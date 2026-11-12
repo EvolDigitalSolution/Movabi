@@ -531,9 +531,12 @@ export class LogisticsService {
 
       const total = jobs.length;
       const completed = jobs.filter(j => j.status === 'completed').length;
+      // Policy D9: driver-initiated only — the server-recorded actor (cancel_job_with_actor),
+      // never the free-text cancellation_reason.
       const cancelledByDriver = jobs.filter(j =>
         j.status === 'cancelled' &&
-        String((j.metadata as any)?.cancellation_reason ?? '').toLowerCase().includes('driver')
+        (j.metadata as any)?.cancelled_by_role === 'driver' &&
+        String((j.metadata as any)?.cancelled_by ?? '') === String(driverId)
       ).length;
 
       const completionRate = (completed / total) * 100;

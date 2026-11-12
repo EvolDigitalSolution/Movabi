@@ -759,6 +759,10 @@ describe('Phase B.1 — booking mutation routes require authentication', () => {
         expect(handler).toContain('isJobParticipant(job, userId)');
         expect(handler).toContain('isAdminUser(userId)');
         expect(handler).toContain("code: 'NOT_A_PARTICIPANT'");
+        // Policy D9: the server-verified actor is recorded with the cancellation, in one transaction.
+        expect(handler).toContain("rpc('cancel_job_with_actor'");
+        expect(handler).toContain('p_actor: userId');
+        expect(handler).not.toContain("rpc('cancel_job_safely'");
     });
 
     it('38. /driver-unable derives the acting driver from the session', () => {

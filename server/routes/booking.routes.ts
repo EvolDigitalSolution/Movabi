@@ -1481,9 +1481,17 @@ router.post('/cancel', async (req: Request, res: Response) => {
             });
         }
 
-        const { data: cancelled, error: rpcError } = await supabaseAdmin.rpc('cancel_job_safely', {
+        // Policy D9: record the server-verified actor with the cancellation (same transaction).
+        // The assigned driver cancelling is driver-initiated; the free-text reason never decides it.
+        // Same participants as isJobParticipant: driver_id or accepted_driver_id is the driver.
+        const actorRole = (String(job.driver_id || '') === userId || String(job.accepted_driver_id || '') === userId) ? 'driver'
+            : String(job.customer_id || '') === userId ? 'customer'
+            : 'admin'; // a non-participant reaches here only after isAdminUser above
+        const { data: cancelled, error: rpcError } = await supabaseAdmin.rpc('cancel_job_with_actor', {
             p_job_id: jobId,
-            p_reason: reason || 'User cancelled'
+            p_reason: reason || 'User cancelled',
+            p_actor: userId,
+            p_actor_role: actorRole
         });
 
         if (rpcError || !cancelled) {

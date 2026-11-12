@@ -47,7 +47,8 @@ code those verifications exercise.
 | `c9d10a1` | `DEVELOP-DEPLOY-635a285.md` runbook; `NEXT-STEPS.txt` versioned with a superseded note | No |
 | `18aaf2b` | Rehearsal harness: test-server keep-alive; extracted-API root no longer the untracked old 9abfd8f extract | No |
 | `a421583` | Rehearsal: API started with the image entry (`--project server/tsconfig.json`); startup-mode label | No |
-| (this commit) | Matrix rewrite + rehearsal evidence logs | No |
+| `b56d808` | Matrix rewrite + rehearsal evidence logs | No |
+| (next commit) | D9 driver cancellation attribution + metrics v2 (migration, route, services, tests) | No — **not** in 635a285; needs its own release |
 
 The two migrations versioned in `2217bd2` are older wallet migrations used by the disposable top-up
 test. They are not deployment content, and the runbook does not apply them.
@@ -111,7 +112,7 @@ Scope of each, so neither is read as the other:
 
 | # | Feature | Implemented | Integrated | Verified | Deployed | Enabled | Evidence / missing work |
 |---|---|---|---|---|---|---|---|
-| 1a | Driver acceptance/cancellation metrics from offer events | ~ | ✓ | ~ migrations apply on the upgraded clone (this session); metric values vs recorded events **not** verified | ✗ (absent from export) | ✗ | Code review of `server/services/driver-offer-metrics.service.ts` (not yet test-proven): (i) driver-cancellation attribution = the cancelling client's free-text `reason` containing "driver" (`booking.routes.ts:1486` → `cancel_job_safely` writes it to `metadata.cancellation_reason`); the cancelling actor is not recorded and the driver app has no cancel action — needs **D9**; (ii) cancellation denominator = jobs *currently* assigned to the driver with `updated_at` in the window, not accepted-offer events (reassigned jobs drop out); (iii) acknowledgements keyed by job, not offer; (iv) both reads unbounded — subject to the PostgREST row limit. Next: real-PG/PostgREST test of these cases, then fix (ii)–(iv), which need no policy. |
+| 1a | Driver acceptance/cancellation metrics from offer events | ✓ | ✓ | ✓ real-PG 28/28 against recorded events (`bash scripts/driver-metrics/run-realdb-tests.sh`, log `docs/roadmap-evidence/driver-metrics-realdb.log`) + service/route specs | ✗ | ✗ | **D9 applied (driver-initiated only).** `20261267000000_driver_cancellation_attribution.sql`: `cancel_job_with_actor` records the server-verified actor (`cancelled_by`, `cancelled_by_role`, `cancelled_driver_id`) in the same transaction as `cancel_job_safely` (unchanged); `driver_offer_metrics_v2` aggregates in SQL per offer (no row limit; 1,500 counted exactly), denominator = bookings the driver accepted in the window (reassigned/released ones kept). `/api/booking/cancel` passes the session user and role; `updateDriverReliability` uses the actor. Proven: driver cancel counts with a reason never mentioning a driver; customer "driver was late", admin, other-driver and legacy no-actor cancels do not; handoff after acceptance counts; guards 42501/22023; repeat cancel never overwrites the actor; old rule contrast shows 3 wrong + 1 missed. **Interpretation to confirm:** a `/driver-unable` handoff after acceptance is counted as driver-initiated (reported separately as `driverHandoffs`). **Release order:** this migration must be on the database before an API that calls `cancel_job_with_actor`. Not yet in the upgraded-clone rehearsal chain. |
 | 1b | Location-aware matching using reliability | ✓ | ✓ | prior (unit 81/81) | ? | ✗ | Weights default 0 → reliability off until D3. |
 | 1c | Availability messages = server decision | ~ | ✓ | prior | ? | n/a | Customer "no driver" text not browser-bound to the server reason yet. |
 | 2a | Six-slot vehicle inspection | ✓ | ✓ | prior | ~ (inspection release per records) | ? | On-device upload unverified. |
@@ -144,13 +145,20 @@ Scope of each, so neither is read as the other:
 | D6 | Per market+currency money values: promo cap + min fare, referral caps + min fare, funded campaign budgets, overdue-debt terms. |
 | D7 | Driver bonus rules and amounts. |
 | D8 | GB develop cash-ride cohort: driver id, tenant id, accepted terms version (and separate approval to enable). |
-| D9 | Definition of a driver-attributable cancellation: driver-initiated only (requires a driver cancel action and recording the actor), and/or customer cancellations for a stated driver reason, driver no-show, or driver unassign — and whether the customer's free-text reason may ever decide it. |
+| ~~D9~~ | **Resolved 2026-11-12 by the user: "Driver-initiated only".** Implemented as above; handoff-after-acceptance counted as driver-initiated (flagged for confirmation). |
 | D-AF | Africa payment providers: **explicitly deferred** (`africa/deferred-2026-11-01`); multi-region architecture retained. |
 
 Approved and recorded: driver card top-up fee 5% (`vaydu-driver-card-5pct-wallet-v1`), promo 5%,
 customer referral 5% (90-day credit, ≤5/month), driver referral 5% × 20 jobs/30 days (≤3/month,
 7-day review), debt threshold 50% of market minimum fare, compensation 80/20 on collection, cash-ride
 fee hold / immediate-only / fixed-fare decisions (`CASH-BOOKING-PLAN.md`).
+
+## Pre-existing test failures (not caused by this work)
+
+Fail identically at the committed baseline with the working changes stashed (2026-11-12): 5 in
+`src/testing/driver-settlement-remediation.spec.ts` (UK payout scope, earnings label, acquisition
+payout eligibility ×3) and 1 in `src/testing/payment-agreement-authority.spec.ts` (server amount
+source). They need investigation against their own baseline before go-live; not weakened.
 
 ## Dependencies
 

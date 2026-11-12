@@ -1,84 +1,71 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// The counts themselves are computed in SQL (driver_offer_metrics_v2) and verified against recorded
+// events on real PostgreSQL: bash scripts/driver-metrics/run-realdb-tests.sh. This spec covers the
+// service's mapping, thresholds and fail-closed handling.
 vi.mock('../../server/services/supabase.service', () => {
-    const data = { events: [] as any[], cancels: [] as any[], assigned: [] as any[] };
-    const chain = (pick: (isCancel: boolean) => any[]) => {
-        const c: any = {
-            select: () => c,
-            eq: (field: string, value: any) => {
-                if (field === 'status' && value === 'cancelled') c._isCancel = true;
-                return c;
-            },
-            gte: () => c,
-            lte: () => c,
-            _isCancel: false,
-            then: (resolve: any) => Promise.resolve({ data: pick(c._isCancel), error: null }).then(resolve),
-        };
-        return c;
-    };
+    const state = { result: { data: null as any, error: null as any }, calls: [] as any[] };
     return {
-        __data: data,
+        __state: state,
         supabaseAdmin: {
-            from: (table: string) =>
-                table === 'driver_offer_events'
-                    ? chain(() => data.events)
-                    : table === 'jobs'
-                        ? chain((isCancel: boolean) => (isCancel ? data.cancels : data.assigned))
-                        : chain(() => []),
+            rpc: async (fn: string, args: any) => { state.calls.push({ fn, args }); return state.result; },
+            from: () => { throw new Error('metrics must not read tables directly (row limits)'); },
         },
     };
 });
 
 import { reportDriverOfferMetrics } from '../../server/services/driver-offer-metrics.service';
-const { __data } = await import('../../server/services/supabase.service') as any;
+const { __state } = await import('../../server/services/supabase.service') as any;
 
-describe('reportDriverOfferMetrics', () => {
-    beforeEach(() => { __data.events = []; __data.cancels = []; __data.assigned = []; });
+const counts = (over: Record<string, number> = {}) => ({
+    acknowledgedOffers: 0, deliveredAttempts: 0, acceptedOffers: 0, declinedOffers: 0, expiredOffers: 0,
+    acceptedBookings: 0, driverCancelledBookings: 0, driverHandoffs: 0, unattributedCancellations: 0, ...over,
+});
+
+describe('reportDriverOfferMetrics (policy D9: driver-initiated only)', () => {
+    beforeEach(() => { __state.calls = []; __state.result = { data: counts(), error: null }; });
+
+    it('asks the database for this driver over the period', async () => {
+        const before = Date.now();
+        await reportDriverOfferMetrics('d1', 30);
+        expect(__state.calls).toHaveLength(1);
+        expect(__state.calls[0].fn).toBe('driver_offer_metrics_v2');
+        expect(__state.calls[0].args.p_driver).toBe('d1');
+        const since = Date.parse(__state.calls[0].args.p_since);
+        expect(Math.abs(since - (before - 30 * 86400_000))).toBeLessThan(5_000);
+    });
 
     it('returns insufficient-data nulls below thresholds — never invents rates', async () => {
+        __state.result.data = counts({ acknowledgedOffers: 4, acceptedOffers: 4, acceptedBookings: 2, driverCancelledBookings: 1 });
         const m = await reportDriverOfferMetrics('d1', 30);
         expect(m.acceptanceRate).toBeNull();
         expect(m.cancellationRate).toBeNull();
         expect(m.insufficientData).toEqual({ offers: true, cancellations: true });
     });
 
-    it('denominator is authenticated acknowledgement only — delivery_attempted alone never counts', async () => {
-        __data.events = [
-            // 5 attempted but UNACKNOWLEDGED offers with 3 accepts → still insufficient
-            ...Array.from({ length: 5 }, (_, i) => ({ event: 'created', job_id: `j${i}`, driver_id: 'd1' })),
-            ...Array.from({ length: 5 }, (_, i) => ({ event: 'delivery_attempted', job_id: `j${i}`, driver_id: 'd1' })),
-            ...Array.from({ length: 3 }, (_, i) => ({ event: 'accepted', job_id: `j${i}`, driver_id: 'd1' })),
-        ];
+    it('acceptance rate = accepted / acknowledged offers', async () => {
+        __state.result.data = counts({ acknowledgedOffers: 5, acceptedOffers: 3, declinedOffers: 2, deliveredAttempts: 9 });
         const m = await reportDriverOfferMetrics('d1', 30);
-        expect(m.deliveredAttempts).toBe(5);
-        expect(m.acknowledgedOffers).toBe(0);
-        expect(m.acceptanceRate).toBeNull();
-        expect(m.insufficientData.offers).toBe(true);
-    });
-
-    it('acceptance rate only over acknowledged offers; accepted implies ack via atomic close', async () => {
-        __data.events = [
-            ...Array.from({ length: 5 }, (_, i) => ({ event: 'created', job_id: `j${i}`, driver_id: 'd1' })),
-            // accepted rows get an acknowledged row from close_driver_offer;
-            // two declined offers acknowledged directly
-            ...Array.from({ length: 5 }, (_, i) => ({ event: 'acknowledged', job_id: `j${i}`, driver_id: 'd1' })),
-            ...Array.from({ length: 3 }, (_, i) => ({ event: 'accepted', job_id: `j${i}`, driver_id: 'd1' })),
-            ...Array.from({ length: 2 }, (_, i) => ({ event: 'declined', job_id: `j${i + 3}`, driver_id: 'd1' })),
-        ];
-        const m = await reportDriverOfferMetrics('d1', 30);
-        expect(m.acknowledgedOffers).toBe(5);
         expect(m.acceptanceRate).toBeCloseTo(0.6);
+        expect(m.deliveredAttempts).toBe(9);
     });
 
-    it('counts only driver-attributable cancellations via canonical metadata reason', async () => {
-        __data.assigned = [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }];
-        __data.cancels = [
-            { id: 'c1', metadata: { cancellation_reason: 'Driver cancelled' }, driver_id: 'd1' },
-            { id: 'c2', metadata: { cancellation_reason: 'Customer changed plans' }, driver_id: 'd1' }, // excluded
-            { id: 'c3', metadata: {}, driver_id: 'd1' }, // no reason → excluded
-        ];
+    it('cancellation rate = (driver-cancelled bookings + handoffs) / accepted bookings; unattributed never counts', async () => {
+        __state.result.data = counts({ acceptedBookings: 8, driverCancelledBookings: 1, driverHandoffs: 1, unattributedCancellations: 5 });
         const m = await reportDriverOfferMetrics('d1', 30);
-        expect(m.driverCancellations).toBe(1);
-        expect(m.cancellationRate).toBeCloseTo(1 / 3);
+        expect(m.driverCancellations).toBe(2);
+        expect(m.driverCancelledBookings).toBe(1);
+        expect(m.driverHandoffs).toBe(1);
+        expect(m.unattributedCancellations).toBe(5);
+        expect(m.cancellationRate).toBeCloseTo(0.25);
+    });
+
+    it('fails closed on a database error or a malformed count', async () => {
+        __state.result = { data: null, error: new Error('rpc failed') };
+        await expect(reportDriverOfferMetrics('d1', 30)).rejects.toThrow('rpc failed');
+        __state.result = { data: counts({ acceptedBookings: -1 }), error: null };
+        await expect(reportDriverOfferMetrics('d1', 30)).rejects.toThrow('invalid count');
+        __state.result = { data: { ...counts(), acceptedOffers: 'x' }, error: null };
+        await expect(reportDriverOfferMetrics('d1', 30)).rejects.toThrow('invalid count');
     });
 });

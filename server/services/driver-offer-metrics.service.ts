@@ -2,15 +2,17 @@ import { supabaseAdmin } from './supabase.service';
 
 /**
  * Driver offer/cancellation metrics — read-only, no penalties.
- * Acceptance rate denominator counts ONLY offers with authenticated
- * acknowledgement (delivery_attempted alone proves nothing about receipt).
- * Accepting an offer records its acknowledgement atomically in
- * close_driver_offer, so accepted offers always appear delivered.
- * Cancellations count only driver-attributable cancels on accepted
- * bookings — attribution uses the canonical metadata.cancellation_reason
- * convention (see LogisticsService.updateDriverReliability). An
- * 'unanswered offer' can never appear here: cancelled+driver_id requires
- * an actual acceptance first.
+ *
+ * Counts come from `driver_offer_metrics_v2` (one bounded SQL aggregate over recorded
+ * `driver_offer_events` and the actor recorded at cancellation), so no client row limit can
+ * truncate them.
+ * - Acceptance rate: accepted / acknowledged OFFERS (per job + offer key). An offer counts only
+ *   with an authenticated acknowledgement; accepting records it atomically (close_driver_offer).
+ *   delivery_attempted alone is informational.
+ * - Cancellation rate (policy D9, 2026-11-12: driver-initiated only): (bookings the assigned
+ *   driver cancelled + accepted offers the driver handed back) / bookings the driver accepted in
+ *   the period. The actor is server-verified; customer/admin cancellations and legacy rows with no
+ *   recorded actor never count (the latter are reported as unattributedCancellations).
  */
 
 const MIN_ACKNOWLEDGED = 5; // insufficient-data below this
@@ -26,69 +28,48 @@ export interface DriverOfferMetrics {
   expiredOffers: number;
   acceptanceRate: number | null;          // null = insufficient data
   acceptedBookings: number;
-  driverCancellations: number;
+  driverCancellations: number;            // driverCancelledBookings + driverHandoffs
+  driverCancelledBookings: number;
+  driverHandoffs: number;
+  unattributedCancellations: number;      // informational: cancelled with no recorded actor
   cancellationRate: number | null;        // null = insufficient data
   insufficientData: { offers: boolean; cancellations: boolean };
 }
 
+const count = (v: unknown): number => {
+  const n = Number(v);
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error('driver_offer_metrics_v2 returned an invalid count');
+  return n;
+};
+
 export async function reportDriverOfferMetrics(driverId: string, periodDays = 30): Promise<DriverOfferMetrics> {
   const since = new Date(Date.now() - periodDays * 86400_000).toISOString();
-
-  const { data: events, error: evErr } = await supabaseAdmin
-    .from('driver_offer_events')
-    .select('event, job_id, driver_id')
-    .eq('driver_id', driverId)
-    .gte('event_at', since);
-  if (evErr) throw evErr;
-
-  // Reliably delivered = authenticated acknowledgement only.
-  const acknowledged = new Set(
-    (events || []).filter((e: any) => e.event === 'acknowledged').map((e: any) => e.job_id)
-  );
-  const attempted = new Set(
-    (events || []).filter((e: any) => e.event === 'delivery_attempted').map((e: any) => e.job_id)
-  );
-  const accepted = (events || []).filter((e: any) => e.event === 'accepted' && acknowledged.has(e.job_id));
-  const declined = (events || []).filter((e: any) => e.event === 'declined' && acknowledged.has(e.job_id));
-  const expired = (events || []).filter((e: any) => e.event === 'expired' && acknowledged.has(e.job_id));
-
-  // Canonical convention: reason lives in jobs.metadata.cancellation_reason;
-  // driver attribution = reason contains 'driver' (LogisticsService:467).
-  const { data: cancels, error: cErr } = await supabaseAdmin
-    .from('jobs')
-    .select('id, metadata, driver_id')
-    .eq('driver_id', driverId)
-    .eq('status', 'cancelled')
-    .gte('updated_at', since);
-  if (cErr) throw cErr;
-
-  const driverCancels = (cancels || []).filter((j: any) =>
-    String((j.metadata as any)?.cancellation_reason ?? '').toLowerCase().includes('driver')
-  );
-
-  const { data: assigned, error: aErr } = await supabaseAdmin
-    .from('jobs')
-    .select('id')
-    .eq('driver_id', driverId)
-    .gte('updated_at', since);
-  if (aErr) throw aErr;
-  const acceptedBookings = (assigned || []).length;
-
-  const acknowledgedCount = acknowledged.size;
+  const { data, error } = await supabaseAdmin.rpc('driver_offer_metrics_v2', { p_driver: driverId, p_since: since });
+  if (error) throw error;
+  const r: any = data || {};
+  const acknowledgedOffers = count(r.acknowledgedOffers);
+  const acceptedOffers = count(r.acceptedOffers);
+  const acceptedBookings = count(r.acceptedBookings);
+  const driverCancelledBookings = count(r.driverCancelledBookings);
+  const driverHandoffs = count(r.driverHandoffs);
+  const driverCancellations = driverCancelledBookings + driverHandoffs;
   return {
     driverId,
     periodDays,
-    acknowledgedOffers: acknowledgedCount,
-    deliveredAttempts: attempted.size,
-    acceptedOffers: accepted.length,
-    declinedOffers: declined.length,
-    expiredOffers: expired.length,
-    acceptanceRate: acknowledgedCount >= MIN_ACKNOWLEDGED ? Math.round((accepted.length / acknowledgedCount) * 1000) / 1000 : null,
+    acknowledgedOffers,
+    deliveredAttempts: count(r.deliveredAttempts),
+    acceptedOffers,
+    declinedOffers: count(r.declinedOffers),
+    expiredOffers: count(r.expiredOffers),
+    acceptanceRate: acknowledgedOffers >= MIN_ACKNOWLEDGED ? Math.round((acceptedOffers / acknowledgedOffers) * 1000) / 1000 : null,
     acceptedBookings,
-    driverCancellations: driverCancels.length,
-    cancellationRate: acceptedBookings >= MIN_ACCEPTED ? Math.round((driverCancels.length / acceptedBookings) * 1000) / 1000 : null,
+    driverCancellations,
+    driverCancelledBookings,
+    driverHandoffs,
+    unattributedCancellations: count(r.unattributedCancellations),
+    cancellationRate: acceptedBookings >= MIN_ACCEPTED ? Math.round((driverCancellations / acceptedBookings) * 1000) / 1000 : null,
     insufficientData: {
-      offers: acknowledgedCount < MIN_ACKNOWLEDGED,
+      offers: acknowledgedOffers < MIN_ACKNOWLEDGED,
       cancellations: acceptedBookings < MIN_ACCEPTED,
     },
   };
