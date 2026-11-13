@@ -318,3 +318,51 @@ application:
 - uploading all slots changes it to "Under review";
 - admin approves each photo in the admin app;
 - the section shows "Complete", and submission and going online are allowed.
+
+## Follow-up release `be0c761` (API + web, 2026-11-13)
+
+This release contains everything in `39fc5ce` (inspection readiness and enforcement, separate review
+sections), plus:
+- **Area 8:** market readiness reports collection, payout and cash ride as separate states. It is tenant-scoped and fails closed.
+- **Area 1c:** a driver handoff no longer shows the driver's own words to the customer.
+- **Driver Setup:** fits 320 px phones.
+- **Read-only checks:** `host-live-config.sh` + `live-config.sql`, and `trace-driver-inspection.sql`.
+
+There is **no database change** (release SQL byte-identical) and **nothing is switched on**.
+
+| | Value |
+|---|---|
+| Package | `release/vaydu-develop-be0c761-release-linux.tar.gz`, sha256 `a125f43a1e6c4217f00f2b266d291525827bb79a78b7d791170f5e54987b04a2` (web built on Linux from be0c761) |
+| vs 39fc5ce API | 3 files: `server/routes/admin.routes.ts`, `server/routes/booking.routes.ts`, `server/services/market-readiness.service.ts` (more if the host still runs c972037 or 3c91991: `host-predeploy.sh` lists them) |
+| vs 39fc5ce web | 7 files (Driver Setup page) |
+| Rollback | `$PRE4` from `host-predeploy.sh` records the running images; `host-rollback.sh "$PRE4" api|web|both` returns to them. No database step is involved. |
+
+```
+sha256sum -c vaydu-develop-be0c761-release-linux.tar.gz.sha256
+tar xzf vaydu-develop-be0c761-release-linux.tar.gz
+(cd vaydu-develop-be0c761-release-linux && bash host-live-config.sh) > live-config-before-be0c761.txt 2>&1
+bash host-predeploy.sh vaydu-develop-be0c761-release-linux.tar.gz
+PRE4=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); cat "$PRE4/running-source-sha.txt"; cat "$PRE4/api-changes.txt"; wc -l < "$PRE4/web-changes.txt"
+export ARCHIVE=vaydu-develop-be0c761-release-linux.tar.gz BUNDLE_DIR=vaydu-develop-be0c761-release-linux EXPECTED_SOURCE_SHA=be0c761
+API_TAG=release-be0c761 WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
+docker exec movabi-develop-api cat /app/SOURCE_SHA; curl -s https://movabi-api-develop.apps.evolsolution.com/health
+docker logs --since 5m movabi-develop-api 2>&1 | grep -iE 'error|fatal' | head
+API_TAG=release-be0c761 WEB_TAG=release-be0c761-linux bash rollout-develop-52097ef.sh --deploy-web-only
+docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
+(cd vaydu-develop-be0c761-release-linux && bash host-live-config.sh) > live-config-after-be0c761.txt 2>&1
+diff <(grep -v '^== taken at\|^== images\|movabi-develop\|source sha' live-config-before-be0c761.txt) <(grep -v '^== taken at\|^== images\|movabi-develop\|source sha' live-config-after-be0c761.txt) && echo "SWITCHES UNCHANGED"
+```
+
+**Expected:**
+- `VERIFY OK` from the rollout;
+- `be0c761` and `{"status":"ok"}`, with no new errors;
+- `movabi-web:release-be0c761-linux Up …`;
+- `SWITCHES UNCHANGED` (this release turns nothing on);
+- every Mapbox `permanent` occurrence in the code check reads `permanent=false`/`permanent: false`.
+
+**On failure:** stop, then `bash host-rollback.sh "$PRE4" api` (or `web` / `both`).
+
+**Paste back:** `live-config-after-be0c761.txt`, plus the outputs above. The agent then:
+- hash-compares the live web with the bundle;
+- checks the readiness report for GB and NG;
+- walks your Driver Setup review (inspection "Missing photos", then upload, then admin approval).
