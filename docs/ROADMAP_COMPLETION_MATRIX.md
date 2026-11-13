@@ -2,7 +2,7 @@
 
 Single source of truth for the nine mandatory roadmap areas. Supersedes the status tables in
 `LAUNCH-ROADMAP-HANDOFF.md` and `BIKE_COMPLETION_MATRIX.md` (kept as history). Update this file in
-the same commit as any change that moves a state. Last updated 2026-11-12.
+the same commit as any change that moves a state. Last updated 2026-11-13.
 
 **Go-live gate:** no release packaging or go-live until every mandatory, non-deferred row is
 Implemented, Integrated and Verified and every decision below is resolved. Not met.
@@ -145,6 +145,76 @@ Scope of each, so neither is read as the other:
 - Correction to an earlier note: `requireAdmin`'s unguarded `getUser` is not a crash defect. Express
   5.2.1 forwards async rejections to the error handler (`server/index.ts:218`), so the client gets a 500.
 
+## Develop enablement status (2026-11-13)
+
+The four states are reported separately:
+- **Implemented**: code and migrations exist in the release line.
+- **Deployed**: observed on develop (API image, web and DB objects).
+- **Enabled**: its switch is on for the develop test scope.
+- **Verified on develop**: a real journey on develop was observed.
+
+Mock tests and readiness reports never count as Verified on develop.
+
+**Live state must be read before any activation.** The baseline is the 2026-11-12 host inventory plus
+step 9 on 2026-11-13. It is a baseline, not proof of current state:
+`deploy/vaydu-develop-release/host-live-config.sh` (read-only, with `live-config.sql`) reads every switch below.
+Its SQL ran without errors on develop's live schema.
+
+**Nothing was switched on by this change.** No feature below has all of its dependencies and approved
+policies satisfied while still off: each one that is off waits on a decision, on Africa's deferral, or
+on a host step.
+
+### Already on (no switch left to turn on)
+
+| Feature | Implemented | Deployed | Enabled | Verified on develop | What is still needed |
+|---|---|---|---|---|---|
+| 5a Driver card top-up (GB/GBP, Stripe test) | ✓ | ✓ 3c91991 | ✓ `VAYDU_DRIVER_TOPUP_API=true`, provider stripe (baseline) | ✗ | A real sandbox top-up on develop, then the ledger check (one credit). |
+| 1a Acceptance/cancellation metrics | ✓ | ✓ 3c91991 + PostgREST reload | ✓ (no switch) | ✗ | A test driver accepts, then cancels, one job; the driver card and the admin modal show it. |
+| 4a Traffic indicators | ✓ | ✓ | ✓ `VAYDU_TOMTOM_ROUTING_V23=true` (baseline) | ✗ | Seen in a customer quote on develop. |
+| 2a Vehicle inspection in readiness and enforcement, plus the separate review layout | ✓ | **in progress**: you started the `39fc5ce` deploy, outcome not reported | enforced once deployed | ✗ | The deploy result, then your review screen ("Missing photos 0 of 6") and the admin approval flow. |
+| 1c Customer "no driver" text = server reason | ✓ browser 5/5; handoff no longer shows the driver's own words | ~ (reasons since 3c91991; handoff fix in the next bundle) | ✓ (no switch) | ✗ | Next bundle; one no-driver booking on develop. |
+| 8 Readiness: collection / payout / cash ride as separate states | ✓ 10/10, tenant-scoped, fails closed | ✗ next bundle | n/a (report only) | ✗ | Next bundle; `GET /api/admin/market-readiness` for GB and NG on develop. A report never completes area 8 on its own. |
+| Driver Setup responsive layout (320–412 px) | ✓ browser 3/3: no sideways scroll; "VEHICLE" no longer breaks; the count sits on the status line | ✗ next bundle | n/a | ✗ | Next bundle; check on a phone. |
+
+### Off: exact switch, scope, approved policy, missing decision, verification
+
+| Feature | Exact switch | Scope available in code | Approved policy already available | Missing (decision) | Verification required before marking complete |
+|---|---|---|---|---|---|
+| 5b Cash rides | `VAYDU_CASH_RIDE_BOOKING=true` (API env) **and** `driver_cash_credit_config_v1e` global on **and** a `driver_cash_credit_markets_v1e` row GB/GBP `enabled` (DB owner only) | per market + currency; rides only (courier off, D10) | Hold at booking, immediate-only, fixed fare (`CASH-BOOKING-PLAN.md`) | **D8**: GB test driver id, tenant id, accepted cash-terms version; approval to flip the three switches for GB/GBP only | Real-PG suites on develop's drill; a browser cash booking; book → complete → driver ledger; `enabled_cash_markets 1` (GB only); NG unaffected |
+| 6a Cancellation fees | a `cancellation_policies` row for tenant + market, published then enabled by an admin (audited) | per tenant + market; the currency must equal the booking currency (fails closed) | 80/20 compensation on collection; debt threshold 50% of the minimum fare; grace counted from acceptance | **D6**: `fee_minor`, `fee_cap_minor`, `grace_seconds` for GB/GBP; **D13** exemptions | Customer cancel after grace on develop: preview = charge; Stripe test capture; receivable when nothing can be captured |
+| 6b Driver compensation | follows 6a (no separate switch) | as 6a | 80/20 on collection | 6a values; **D14** fee above the cash hold | A captured fee settles 80/20 once (webhook replay too) on develop |
+| 6c Customer debt + repayment | live; a receivable only arises from 6a fees | per tenant + market | threshold 50% of the minimum fare | **D6**: overdue-debt terms | A receivable from a 6a cancel, then a Stripe test repayment on develop |
+| 7a First-booking promotion | a `campaigns` row `kind=customer_discount`, `enabled`, not paused | per tenant + market + currency + service | 5% | **D6**: `max_discount_minor`, `min_qualifying_fare_minor`, `budget_minor`. Blank means *uncapped and unlimited*, so it is not enabled with blanks | First booking on develop shows and charges the discount; a second booking does not; budget guard |
+| 7b Referrals | a `campaigns` row `kind=referral` (`referral_reward_bps` 500) | per tenant + market + currency | Customer 5% (90-day credit, ≤5/month); driver 5% × 20 jobs/30 days (≤3/month, 7-day review) | **D6**: `reward_cap_minor`, `qualifying_fare_minor`, `budget_minor` | Referee's qualifying job on develop earns once; reversal on refund |
+| 3 Completion PIN | `marketplace_settings.completion_pin_policy` (per tenant); per-driver `driver_pin_policies` | **per tenant**, not per market: a market-level default (D5's options) needs a code change | none for the default | **D5**: default for GB. Note: **without a setting, the code requires the PIN**, so it may already be on; the live check shows which | Booking on develop: PIN shown to the customer, required at completion (or not, per D5) |
+| 1b Reliability ranking | `VAYDU_DRIVER_RANKING_V23=true` (API env) + `smart_matching` weights (per tenant) | per tenant | none | **D3**: weights or confirm 0; review-score ranking on/off; road ETA `VAYDU_TOMTOM_MATRIX_V23` (TomTom cost) | A dispatch on develop with two drivers ranked as configured |
+| 4b Surge / traffic pricing | `marketplace_settings.dynamic_pricing` (`maxSurge`/`maxMultiplier`, per tenant) | per tenant | none (`maxSurge` 1 = off) | **D1** | A quote on develop under the configured trigger |
+| 4c Map style | client style config | per platform | none | **D2** | Rendered style on web and Android |
+| 7c Driver bonuses | not built (~) | — | none | **D7** | Build, then test |
+| 2b Account sharing | only suspension/revocation exists | per tenant | none | **D4** | Depends on D4 |
+| 9a Ops alerts | `report-unresolved-payment-ops.cjs` exists; no schedule | platform | none | **D16**: alert destination and frequency | One alert received from develop |
+| 9b Backup restore | host step | develop | n/a | none (your host step) | Restore the step-2 backup into an isolated database; row counts match |
+| NG payouts / bank account | `driver_payout_markets` NG + `VAYDU_DRIVER_PAYOUT_SANDBOX` | NG/NGN only (DB check) | — | **D-AF** deferred | — |
+| Develop-only drift | — | — | — | **D12** | — |
+
+### Consolidated decisions (one table; nothing is filled in on your behalf)
+
+| ID | Unblocks | Exact value(s) needed (develop: GB/GBP) | Options |
+|---|---|---|---|
+| D1 | 4b | Surge cap; trigger rule; whether traffic changes the fare | (a) display-only traffic, `maxSurge` 1 · (b) supply the values · (c) out of launch |
+| D2 | 4c | Map provider + style id per platform | (a) keep the current MapLibre/MapTiler style · (b) supply one |
+| D3 | 1b | Acceptance-rate weight, cancellation-rate weight, new-driver exposure (km); review-score ranking on/off; road-ETA ranking on/off (TomTom matrix cost) | (a) confirm 0 / off · (b) supply the weights |
+| D4 | 2b | Which signals count as account sharing; the action taken | (a) detect and report only · (b) signals + action |
+| D5 | 3 | Default PIN for the GB tenant | (a) off · (b) rides only · (c) all services. (b) and per-market needs a small code change. |
+| D6 | 6a 6b 6c 7a 7b | Cancellation: fee, cap, grace seconds. Promo: max discount, minimum fare, budget. Referral: reward cap, qualifying fare, budget. Overdue debt: terms | (a) supply GB/GBP values for develop · (b) keep off |
+| D7 | 7c | Bonus rules and amounts | (a) supply them · (b) out of launch |
+| D8 | 5b | GB cash test driver id, tenant id, accepted cash-terms version; approval to flip the three cash switches for GB/GBP only | (a) supply them and approve · (b) keep off |
+| D12 | drift | `driver_vehicle_inspection_photos.reason` and the 6-argument RPC exist only on develop | (a) capture in a migration · (b) drop later · (c) leave |
+| D13 | 6a | Structured exemption reasons the customer can pick | (a) supply the list · (b) no exemptions |
+| D14 | 6b | Fee higher than the cash-ride hold | (a) build partial-collection compensation · (b) keep manual review |
+| D16 | 9a | Alert destination (email, Slack or other) and how often the report runs | (a) supply both · (b) keep it manual |
+| D-AF | NG payouts | Africa providers | Deferred, as instructed. |
+
 ## 0. Unfinished work started first
 
 | Sub-requirement | Implemented | Integrated | Verified | Deployed | Enabled | Evidence / gap |
@@ -161,10 +231,10 @@ Scope of each, so neither is read as the other:
 |---|---|---|---|---|---|---|---|
 | 1a | Driver acceptance/cancellation metrics from offer events (incl. driver + admin reporting) | ✓ | ✓ | ✓ at `bcd6ab9`: real-PG **38/38** + 7 migration-lifecycle checks (`bash scripts/driver-metrics/run-realdb-tests.sh`, `docs/roadmap-evidence/driver-metrics-realdb.log`); upgraded-clone rehearsal checks 1 + 2 (above); specs 121/121 (`driver-offer-metrics`, `driver-offer-metrics-view`, `batch2c-phase-b-transition`, `wallet-auth-payment-consistency`, `driver-ranking-v23`, `batch2c-schema-lineage-guard`, `campaign-admin-controls`); `npm run build:mobile:develop` and `ng build admin` pass | ✗ | ✗ | **D9 (user, 2026-11-12): driver-initiated only; a voluntary handback of an accepted assignment counts once and is also reported as `driverHandoffs` — settled, not to be re-asked.** `20261267000000`: `cancel_job_with_actor` (actor recorded in the cancelling transaction; `cancel_job_safely` unchanged); `record_negotiated_assignment` (negotiated acceptances enter the denominator; owner-only; idempotent); `driver_offer_metrics_v2` (SQL aggregate, no row limit). **Identity + window:** one assignment = (driver, job) whose acceptance is in the window, counted once however many offers/re-acceptances; numerator and every exclusion class are subsets of exactly those assignments, each classified once (invariant tested for every driver; the service fails closed if violated). **Proven on real PG:** reason text never decides; repeated offers (3) = 1 assignment, 2 accepted offers; duplicate handback event = 1 row, 1 handoff; handback then re-accept then cancel = counted once; assignment accepted 40 days ago and cancelled now is in neither side; customer, admin (dispute refund now records the admin), other-driver and customer no-show are excluded and reported; historical no-actor = `unattributedCancellations`; guards 42501/22023; retries never overwrite the actor; service_role-only on all three functions; 1,500 assignments counted exactly. **Migration/API order:** migration first is compatible (old API keeps working, its cancels are unattributed — proven with the 635a285 package). An API calling `cancel_job_with_actor` without the migration is refused and changes nothing (proven post-rollback). Re-apply is idempotent; rollback restores the schema exactly and keeps recorded history. **Reporting:** driver dashboard and admin driver modal (`GET /api/admin/drivers/:driverId/offer-metrics`, tenant-scoped) show counted vs not-counted cancellations. **Gaps:** admin-assigned jobs (no offer, no negotiation) are outside the metric; no browser test of the two UI cards yet. |
 | 1b | Location-aware matching using reliability | ✓ | ✓ | prior (unit 81/81) | ? | ✗ | Weights default 0 → reliability off until D3. |
-| 1c | Availability messages = server decision | ~ | ✓ | prior | ? | n/a | Customer "no driver" text not browser-bound to the server reason yet. |
+| 1c | Availability messages = server decision | ✓ | ✓ | ✓ 2026-11-13: `e2e/customer-no-driver-reason.spec.ts` 5/5 (the real tracking page renders the three dispatch reasons and the handoff reason verbatim, with a generic fallback when there is none); `no-driver-reason-customer-text.spec.ts` 3/3 (fails on the old code) | ~ (handoff fix pending the next bundle) | n/a | **Fixed:** `/driver-unable` wrote the driver's own free text into the customer-visible reason. It is now fixed server text; the driver's text stays in `metadata.driver_handoff_history`. |
 | 2a | Vehicle inspection (6 slots for motor vehicles, 3 for bikes) **in readiness, submission, approval and eligibility** | ✓ | ✓ | ✓ local (2026-11-13), on a **real backend** and the **real review screen**; see below | ✗ (develop still runs 3c91991, which shows "Complete" with no photos) | n/a | **NOT complete until deployed to develop and your own application is re-checked there.** On-device upload still unverified. |
 | 2b | Account-sharing protections | ~ | ✓ | ✓ suspension revokes the same token + refresh (rehearsal, both checks) | ? | n/a | Only suspension/revocation exists; the sharing policy itself is undefined (D4). |
-| 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ~ migration applies (rehearsal); PIN flow prior (7/7) | ✗ | ✗ | Needs D5. |
+| 3 | Backend per-driver completion PIN policy | ✓ | ✓ | ~ migration applies (rehearsal); PIN flow prior (7/7) | ✓ schema + code | **?** the code requires the PIN unless the tenant `completion_pin_policy` disables it; live value unread | Needs D5; the default is per tenant, not per market. |
 | 4a | Traffic indicators | ✓ | ✓ | prior (`traffic-route.spec.ts`) | ? | ? | Live TomTom key unverified. |
 | 4b | Traffic-aware pricing + surge | ~ | ~ | prior | ? | ✗ | `maxSurge` default 1 (off). Needs D1. |
 | 4c | Approved map styling | ? | ? | ✗ | ? | ✗ | Needs D2. |
@@ -176,7 +246,7 @@ Scope of each, so neither is read as the other:
 | 7a | Customer promotion (5% first booking) | ✓ | ✓ | prior | ✗ | ✗ | Caps/min fare/budget D6. |
 | 7b | Referrals (5% customer / 5% × 20 jobs driver) | ✓ | ✓ | ~ migrations apply (rehearsal); lifecycle prior (14/14) | ✗ | ✗ | |
 | 7c | Driver bonuses | ~ | ~ | ✗ | ✗ | ✗ | Needs D7. |
-| 8 | Ride-market readiness validation | ~ | ✓ | prior | ? | n/a | Must report collection, payout and cash-ride readiness as separate states. |
+| 8 | Ride-market readiness validation | ✓ | ✓ | ✓ 2026-11-13: `market-readiness-states.spec.ts` 10/10 | ✗ (next bundle) | n/a | `collection`, `payout` and `cash_ride` are each `ready`/`blocked`/`unknown` with reasons, read from the runtime gates: legacy GB/GBP Stripe or `market_payment_routes`; Stripe Connect or `driver_payout_markets` plus the sandbox runtime; `VAYDU_CASH_RIDE_BOOKING` plus `driver_cash_credit_market_enabled_v1e`. **Fixed:** the tenant id was ignored, so drivers were counted across tenants; it is now enforced for tenant admins. Read errors were silently "not configured" and are now `unknown`. City rows no longer shadow the country row. Report only: it enables nothing. No admin UI yet (API only). |
 | 9a | Operational reporting + monitoring | ~ | ~ | ✓ `report-unresolved-payment-ops.cjs` exit 0 / 2 / 3 against the upgraded clone (rehearsal) | ? | ✗ | No scheduled consumer or alert target. |
 | 9b | Backup restoration + recovery | ~ | n/a | ✗ | ~ | n/a | Fresh isolated restore drill of a current develop backup outstanding (runbook step 2 creates one). |
 

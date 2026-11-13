@@ -2253,6 +2253,11 @@ router.get('/market-readiness', requireAdmin, async (req: Request, res: Response
     const market = String(req.query.market || '');
     const service = String(req.query.service || 'ride');
     if (!tenantId || !market) return res.status(400).json({ error: 'tenantId and market are required' });
+    if (!/^[A-Za-z]{2}$/.test(market)) return res.status(400).json({ error: 'market must be a 2-letter country code' });
+    // Tenant-scoped admins can only read their own tenant's readiness.
+    const scope = await adminTenant(req);
+    if (scope.error) return res.status(500).json({ error: scope.error });
+    if (scope.tenant !== null && scope.tenant !== tenantId) return res.status(403).json({ error: "You cannot read another tenant's readiness." });
     try {
         const { reportMarketReadiness } = await import('../services/market-readiness.service');
         return res.json(await reportMarketReadiness(tenantId, market, service));

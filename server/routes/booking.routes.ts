@@ -1756,7 +1756,7 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
                 .from('jobs')
                 .update({
                     status: 'requires_review',
-                    no_driver_reason: `Driver cannot continue after spend/card activity: ${reasonText}`,
+                    no_driver_reason: 'Your driver could not continue. Our team is reviewing this booking.',
                     metadata: nextMetadata,
                     updated_at: new Date().toISOString()
                 })
@@ -1801,7 +1801,7 @@ router.post('/driver-unable', async (req: Request, res: Response) => {
                 dispatch_started_at: new Date().toISOString(),
                 driver_search_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
                 dispatch_attempts: Number(job.dispatch_attempts || 0) + 1,
-                no_driver_reason: `Previous driver could not continue: ${reasonText}`,
+                no_driver_reason: 'Your previous driver could not continue. Finding another driver.',
                 metadata: nextMetadata,
                 updated_at: new Date().toISOString()
             })

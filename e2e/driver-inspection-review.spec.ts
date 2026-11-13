@@ -73,3 +73,35 @@ for (const [name, sectionLabel, present, absent] of cases) {
     await inspection.screenshot({ path: `.temp/playwright-inspection-review/${name}-vehicle-inspection.png` });
   });
 }
+
+// Responsive layout: Driver Setup must fit narrow phones (no sideways scroll; status labels stay inside cards).
+for (const width of [320, 360, 412]) {
+  test(`review screen fits a ${width}px-wide phone`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 860 });
+    await openReview(page, fixture('partial-uploads'));
+    const overflow = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, view: window.innerWidth }));
+    await page.screenshot({ path: `.temp/playwright-inspection-review/responsive-${width}.png`, fullPage: true });
+    expect(overflow.scroll, 'page scrolls sideways').toBeLessThanOrEqual(overflow.view);
+    const bad = await page.evaluate(() => {
+      const out: string[] = [];
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-stage-nav] button, .rounded-2xl span, .rounded-2xl h3'))) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0) continue;
+        if (r.right > window.innerWidth + 0.5 || r.left < -0.5) out.push(`${el.tagName} "${el.textContent?.trim().slice(0, 40)}" ${Math.round(r.left)}..${Math.round(r.right)}`);
+        if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow !== 'visible') out.push(`clipped "${el.textContent?.trim().slice(0, 40)}"`);
+      }
+      return out;
+    });
+    expect(bad, 'elements outside the screen').toEqual([]);
+    // Stage labels fit their button on one line (no "VEHICL/E" break, no overflow).
+    const labels = await page.locator('[data-stage-nav] button').evaluateAll((buttons) => buttons.map((b) => {
+      const label = b.querySelectorAll('span')[1] as HTMLElement; const cs = getComputedStyle(b);
+      const inner = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      return { text: label.textContent?.trim(), fits: label.scrollWidth <= inner + 0.5, lines: Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight)) };
+    }));
+    for (const l of labels) expect(l, `stage label ${l.text}`).toMatchObject({ fits: true, lines: 1 });
+    // The progress count sits on the status line, not above it.
+    const [status, count] = await Promise.all([page.locator('section h2').first().boundingBox(), page.getByText(/^\d+ \/ \d+$/).first().boundingBox()]);
+    expect(Math.abs((status!.y + status!.height) - (count!.y + count!.height)), 'count baseline').toBeLessThan(6);
+  });
+}
