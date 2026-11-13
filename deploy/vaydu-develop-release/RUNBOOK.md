@@ -423,22 +423,68 @@ under review, replaced, uploaded, plus the develop-only `reason` value) and an i
   - the correct PIN passes and is recorded once.
 - **Audit:** `audit_logs` rows `admin_pin_policy_changed` and `admin_pin_policy_cleared`, each with the admin and the reason.
 
-### Host steps (stop at the first failure)
+### Host steps (stop at the first failure; paste each output)
 
+Names below use `$N` for the bundle name and `$SHA` for its source commit. Both are recorded with the cut bundle further down.
+
+**0. Running version (read-only).** The API must be one of `be0c761`, `39fc5ce`, `c972037` or `3c91991`, and
+PREREQ must pass. That means release 1 is exact and release 2 is not applied.
 ```
-sha256sum -c <bundle>.tar.gz.sha256 && tar xzf <bundle>.tar.gz && B=~/<bundle-dir>
-(cd "$B" && bash host-live-config.sh) > live-config-before-r2.txt 2>&1
-bash "$B/host-db-release.sh" "$B" backup                 # BACKUP_OK <dump> (+ globals, exact row counts, sha256)
-bash "$B/host-db-release.sh" "$B" drill <dump>           # restore into a throwaway container: counts equal, PREREQ,
-                                                         # release-up, VERIFY, 8 suites, release-down = exact schema
+docker inspect -f '{{.Config.Image}} {{.State.Status}}' movabi-develop-api; docker exec movabi-develop-api cat /app/SOURCE_SHA
+docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
+sha256sum -c $N.tar.gz.sha256 && tar xzf $N.tar.gz && B=~/$N && cat "$B/SOURCE_SHA" "$B/ORDER.txt"
 bash "$B/host-db-release.sh" "$B" prereq                 # PREREQ OK: release 1 exact, release 2 not applied
-bash "$B/host-db-release.sh" "$B" dryrun                 # DRYRUN_OK, develop unchanged
-bash host-predeploy.sh <bundle>.tar.gz; PRE5=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1)
-bash "$B/host-db-release.sh" "$B" apply                  # PREREQ -> release-up (one transaction) -> VERIFY OK
-docker logs --since 2m movabi-develop-rest 2>&1 | tail -3 # schema cache reloaded
-# then the API and web steps exactly as in the be0c761 section, with this bundle's names and SHA
+(cd "$B" && bash host-live-config.sh) > live-config-before-r2.txt 2>&1
+```
+**1. Backup and restore drill (no change to develop).**
+```
+bash "$B/host-db-release.sh" "$B" backup                 # BACKUP_OK <dump> (+ globals, exact row counts, sha256)
+bash "$B/host-db-release.sh" "$B" drill <dump>           # throwaway copy: row counts equal the backup, PREREQ,
+                                                         # release-up, VERIFY, 8 suites (incl. completion PIN 17/17),
+                                                         # release-down = exact pre-release schema, DRILL_DONE
+```
+**2. Dry run on develop's real data (ends in ROLLBACK).**
+```
+bash "$B/host-db-release.sh" "$B" dryrun                 # DRYRUN_OK, then "develop still in the pre-release state"
+```
+**3. Record the running images, then apply release 2** (migration order: `20261270000000`, then `20261270100000`; one transaction).
+```
+bash host-predeploy.sh $N.tar.gz; PRE5=$(ls -td ~/vaydu-topup-fix-predeploy-* | head -1); cat "$PRE5/running-source-sha.txt"
+bash "$B/host-db-release.sh" "$B" apply                  # PREREQ -> release-up -> "VERIFY OK: release 1 + release 2 present ..."
+sleep 3; docker logs --since 2m movabi-develop-rest 2>&1 | tail -3   # schema cache reloaded
+```
+**4. API, then web** (the rollout runs release 2's VERIFY before building anything).
+```
+export ARCHIVE=$N.tar.gz BUNDLE_DIR=$N EXPECTED_SOURCE_SHA=$SHA
+API_TAG=release-$SHA WEB_TAG=release-3c91991-linux bash rollout-develop-52097ef.sh --deploy-api-only
+docker exec movabi-develop-api cat /app/SOURCE_SHA; curl -s https://movabi-api-develop.apps.evolsolution.com/health
+docker logs --since 5m movabi-develop-api 2>&1 | grep -iE 'error|fatal' | head
+API_TAG=release-$SHA WEB_TAG=release-$SHA-linux bash rollout-develop-52097ef.sh --deploy-web-only
+docker ps --filter label=com.docker.compose.service=web --filter label=com.docker.compose.project=movabi-develop --format '{{.Image}} {{.Status}}'
+bash "$B/host-db-release.sh" "$B" verify
 (cd "$B" && bash host-live-config.sh) > live-config-after-r2.txt 2>&1
 ```
+**On failure:** before step 3, nothing on develop has changed. At step 3, the one transaction rolls back by
+itself. After step 3, use `bash host-rollback.sh "$PRE5" api|web|both`. Database rollback is only for the
+limits listed below.
+
+**5. Post-deploy journeys on develop** (these are what move areas to Verified):
+1. **Web check:** the agent hash-compares the live web assets with `mobile/browser`.
+2. **Area 2a, your driver account:** Driver Setup review shows **Vehicle details** and **Vehicle inspection — Missing photos (0 of 6 uploaded)**.
+   Then a GB test driver uploads the 6 photos, sees **Under review**, an admin approves them in Admin → Drivers, and the driver sees **Complete**.
+3. **Area 3, admin PIN control:**
+   1. In Admin → Drivers → a GB test driver → Completion PIN, set **Not used** with a reason.
+   2. Assign a test booking to that driver. The driver completes it without being asked for a PIN.
+   3. Set **Follow the booking market**. The driver's next job asks for the PIN, a wrong PIN is refused, and the right one completes.
+   4. Read-only checks:
+      `SELECT metadata->>'completion_pin_effective', metadata->>'completion_pin_source' FROM jobs WHERE id='<job>';`
+      `SELECT action, metadata->>'reason', created_at FROM audit_logs WHERE action LIKE 'admin_pin_policy_%' ORDER BY created_at DESC LIMIT 5;`
+4. **Area 8:** `GET /api/admin/market-readiness?tenantId=<GB tenant>&market=GB` and `…&market=NG` (admin token). GB shows
+   collection and payout ready (Stripe) and cash ride blocked. NG shows collection and payout blocked, with the reasons.
+5. **Area 1c:** a booking with no driver shows the server's reason on the tracking screen.
+6. **Driver Setup layout:** checked on a narrow phone.
+7. **Switches:** `live-config-after-r2.txt` against `live-config-before-r2.txt`. The only expected difference is the API source SHA:
+   **no switch changes**, and `permanent=false` throughout.
 
 ### Compatibility
 
