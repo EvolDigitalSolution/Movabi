@@ -108,6 +108,19 @@ run_test rel "$root/scripts/driver-metrics/realdb-driver-metrics-test.sql" "driv
 run_test rel "$root/scripts/cancellation-fee/realdb-cancellation-fee-test.sql" "cancellation fee quote"
 check "behaviour suites left the schema unchanged" "$(diff -q "$tmp/after.sql" <(dump rel) >/dev/null && echo same || echo differs)" same
 
+# Real-data conditions (as found by the host drill): develop's on_auth_user_created trigger and its
+# market rows. Without the drill preamble the suites must fail as on the host; with it they must pass.
+q postgres -c "CREATE DATABASE realish TEMPLATE rel;"
+q realish -c "CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();"
+q realish -c "INSERT INTO public.market_availability(country_code,market_city,supported_currency,launch_status,enabled,quote_enabled,booking_enabled,payment_enabled,timezone) VALUES ('GB','London','GBP','live',true,true,true,true,'Europe/London'),('GB',NULL,'GBP','live',true,true,true,true,'Europe/London'),('NG',NULL,'NGN','live',true,true,true,true,'Africa/Lagos');"
+with_preamble(){ awk -v pre="$rel/drill-preamble.sql" 'BEGIN{done=0} { print } !done && $0 ~ /^BEGIN;[ 	]*$/ { while ((getline l < pre) > 0) print l; done=1 }' "$1"; }
+raw_fail=0
+for t in "$root"/deploy/vaydu-cash-ride-market-pilot/realdb-*-test.sql "$root"/scripts/migration-merge/realdb-merge-test.sql "$root"/scripts/driver-metrics/realdb-driver-metrics-test.sql "$root"/scripts/cancellation-fee/realdb-cancellation-fee-test.sql; do
+  out="$(q realish -F ' | ' < "$t" 2>&1)" && [ "$(echo "$out" | tail -1 | cut -d' ' -f1)" = 0 ] || raw_fail=$((raw_fail+1))
+  with_preamble "$t" > "$tmp/pre-$(basename "$t")"; run_test realish "$tmp/pre-$(basename "$t")" "real-data conditions + drill preamble: $(basename "$t")"
+done
+check "without the preamble the suites fail under real-data conditions (reproduces the host drill)" "$([ "$raw_fail" -ge 6 ] && echo yes || echo "no ($raw_fail)")" yes
+
 # Recovery: the rollback restores the exact pre-release schema; re-applying restores the release.
 if q rel < "$rel/release-down.sql" > "$tmp/down.log" 2>&1; then echo "PASS: release-down.sql applied as one transaction"; else echo "FAIL: release-down.sql"; grep -v NOTICE "$tmp/down.log" | tail -8; fail=1; fi
 check "rollback restores the exact pre-release schema" "$(diff -q "$tmp/before.sql" <(dump rel) >/dev/null && echo same || echo differs)" same

@@ -22,6 +22,14 @@ PASS: merge behaviour (0 | 21)
 PASS: driver metrics (D9) (0 | 38)
 PASS: cancellation fee quote (0 | 22)
 PASS: behaviour suites left the schema unchanged
+PASS: real-data conditions + drill preamble: realdb-cash-booking-acquisition-test.sql (0 | 16)
+PASS: real-data conditions + drill preamble: realdb-cash-booking-chain-test.sql (0 | 13)
+PASS: real-data conditions + drill preamble: realdb-cash-ride-lifecycle-test.sql (0 | 15)
+PASS: real-data conditions + drill preamble: realdb-market-pilot-test.sql (0 | 15)
+PASS: real-data conditions + drill preamble: realdb-merge-test.sql (0 | 21)
+PASS: real-data conditions + drill preamble: realdb-driver-metrics-test.sql (0 | 38)
+PASS: real-data conditions + drill preamble: realdb-cancellation-fee-test.sql (0 | 22)
+PASS: without the preamble the suites fail under real-data conditions (reproduces the host drill)
 PASS: release-down.sql applied as one transaction
 PASS: rollback restores the exact pre-release schema
 RE-APPLIED release-up.sql
