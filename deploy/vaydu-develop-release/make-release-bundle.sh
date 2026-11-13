@@ -34,7 +34,8 @@ echo "API source files byte-identical to HEAD: $(wc -l < "$OUT.actual-blobs")"
 rm -f "$OUT.expected-blobs" "$OUT.actual-blobs" "release/$NAME.files"
 cp -r "$WEB" "$OUT/mobile/browser"
 # Database release + gates + host script (committed bytes), and the real-DB behaviour suites for the drill.
-for f in VERIFY.sql PREREQ.sql ORDER.txt release-up.sql release-dryrun.sql release-down.sql RELEASE-MIGRATIONS.sha256 host-db-release.sh; do git -c core.autocrlf=false cat-file -p "HEAD:$REL/$f" > "$OUT/$f"; done
+# Read-only host checks (live switches; one driver's inspection evidence) travel with every bundle.
+for f in VERIFY.sql PREREQ.sql ORDER.txt release-up.sql release-dryrun.sql release-down.sql RELEASE-MIGRATIONS.sha256 host-db-release.sh host-live-config.sh live-config.sql trace-driver-inspection.sql; do git -c core.autocrlf=false cat-file -p "HEAD:$REL/$f" > "$OUT/$f"; done
 for t in deploy/vaydu-cash-ride-market-pilot/realdb-market-pilot-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-acquisition-test.sql \
          deploy/vaydu-cash-ride-market-pilot/realdb-cash-booking-chain-test.sql deploy/vaydu-cash-ride-market-pilot/realdb-cash-ride-lifecycle-test.sql \
          scripts/migration-merge/realdb-merge-test.sql scripts/driver-metrics/realdb-driver-metrics-test.sql scripts/cancellation-fee/realdb-cancellation-fee-test.sql; do
